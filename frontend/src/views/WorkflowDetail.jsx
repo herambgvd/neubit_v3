@@ -96,12 +96,12 @@ export default function WorkflowDetailPage() {
   // SOP definition: states + transitions to render the state machine + allowed moves.
   const statesQ = useQuery({
     queryKey: ["wf-states", sopId],
-    queryFn: () => wfApi.states.list({ sop_id: sopId, limit: 200 }),
+    queryFn: () => wfApi.states.list(sopId, { limit: 200 }),
     enabled: !!sopId,
   });
   const transitionsQ = useQuery({
     queryKey: ["wf-transitions", sopId],
-    queryFn: () => wfApi.transitions.list({ sop_id: sopId, limit: 200 }),
+    queryFn: () => wfApi.transitions.list(sopId, { limit: 200 }),
     enabled: !!sopId,
   });
   const forms = useQuery({

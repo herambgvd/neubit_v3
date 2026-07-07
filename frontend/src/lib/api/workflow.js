@@ -46,10 +46,21 @@ function resource(path) {
   };
 }
 
+// States + transitions are NESTED under a SOP on the backend
+// (/workflow/sops/{sop_id}/states, .../transitions) — not flat resources.
+function nested(child) {
+  return {
+    list: (sopId, params = {}) => unwrap(api.get(`${WF}/sops/${sopId}/${child}${qs(params)}`)),
+    create: (sopId, body) => unwrap(api.post(`${WF}/sops/${sopId}/${child}`, body)),
+    update: (sopId, childId, body) => unwrap(api.patch(`${WF}/sops/${sopId}/${child}/${childId}`, body)),
+    remove: (sopId, childId) => unwrap(api.delete(`${WF}/sops/${sopId}/${child}/${childId}`)),
+  };
+}
+
 export const workflow = {
   sops: resource("sops"),
-  states: resource("states"),
-  transitions: resource("transitions"),
+  states: nested("states"),
+  transitions: nested("transitions"),
   triggers: resource("triggers"),
   forms: resource("forms"),
 

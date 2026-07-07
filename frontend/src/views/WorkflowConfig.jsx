@@ -322,18 +322,18 @@ function SopForm({ sop, onCancel, onSaved }) {
 function StatesSection({ sopId }) {
   const qc = useQueryClient();
   const key = ["wf-states", sopId];
-  const q = useQuery({ queryKey: key, queryFn: () => wfApi.states.list({ sop_id: sopId, limit: 200 }), enabled: !!sopId });
+  const q = useQuery({ queryKey: key, queryFn: () => wfApi.states.list(sopId, { limit: 200 }), enabled: !!sopId });
   const states = asItems(q.data);
   const [form, setForm] = useState(null); // {} for new, state obj for edit
   const [confirm, setConfirm] = useState(null);
 
   const save = useMutation({
-    mutationFn: ({ id, body }) => (id ? wfApi.states.update(id, body) : wfApi.states.create(body)),
+    mutationFn: ({ id, body }) => (id ? wfApi.states.update(sopId, id, body) : wfApi.states.create(sopId, body)),
     onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: key }); setForm(null); },
     onError: (e) => toast.error(apiError(e)),
   });
   const remove = useMutation({
-    mutationFn: (id) => wfApi.states.remove(id),
+    mutationFn: (id) => wfApi.states.remove(sopId, id),
     onSuccess: () => { toast.success("State removed"); qc.invalidateQueries({ queryKey: key }); },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -428,8 +428,8 @@ function StateForm({ state, pending, onCancel, onSubmit }) {
 function TransitionsSection({ sopId }) {
   const qc = useQueryClient();
   const key = ["wf-transitions", sopId];
-  const q = useQuery({ queryKey: key, queryFn: () => wfApi.transitions.list({ sop_id: sopId, limit: 200 }), enabled: !!sopId });
-  const statesQ = useQuery({ queryKey: ["wf-states", sopId], queryFn: () => wfApi.states.list({ sop_id: sopId, limit: 200 }), enabled: !!sopId });
+  const q = useQuery({ queryKey: key, queryFn: () => wfApi.transitions.list(sopId, { limit: 200 }), enabled: !!sopId });
+  const statesQ = useQuery({ queryKey: ["wf-states", sopId], queryFn: () => wfApi.states.list(sopId, { limit: 200 }), enabled: !!sopId });
   const transitions = asItems(q.data);
   const states = asItems(statesQ.data);
   const [form, setForm] = useState(null);
@@ -438,12 +438,12 @@ function TransitionsSection({ sopId }) {
   const sName = (sid) => states.find((s) => idOf(s, "id", "state_id") === sid)?.name || sid || "—";
 
   const save = useMutation({
-    mutationFn: ({ id, body }) => (id ? wfApi.transitions.update(id, body) : wfApi.transitions.create(body)),
+    mutationFn: ({ id, body }) => (id ? wfApi.transitions.update(sopId, id, body) : wfApi.transitions.create(sopId, body)),
     onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: key }); setForm(null); },
     onError: (e) => toast.error(apiError(e)),
   });
   const remove = useMutation({
-    mutationFn: (id) => wfApi.transitions.remove(id),
+    mutationFn: (id) => wfApi.transitions.remove(sopId, id),
     onSuccess: () => { toast.success("Transition removed"); qc.invalidateQueries({ queryKey: key }); },
     onError: (e) => toast.error(apiError(e)),
   });
