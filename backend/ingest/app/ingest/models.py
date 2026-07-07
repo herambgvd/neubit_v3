@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     String,
+    Text,
     Uuid,
     text,
 )
@@ -67,6 +70,11 @@ class IngestCategory(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
+
+
+# The maximum size (in serialized-JSON chars) of a raw payload we persist verbatim.
+# Anything larger is truncated to a marker so a hostile/huge body can't bloat the log.
+MAX_RAW_PAYLOAD_CHARS = 64_000
 
 
 class Webhook(Base):
@@ -120,5 +128,72 @@ class Webhook(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+
+class IngestEventLog(Base):
+    """One row per inbound ``POST /ingest/hooks/{token}`` request — the audit trail.
+
+    Captures the outcome at each pipeline stage (auth → schema → transform →
+    publish) so operators can see exactly what happened to every delivery,
+    including auth failures on unknown tokens (webhook_id / category_id NULL).
+    ``raw_payload`` is stored verbatim but capped at ``MAX_RAW_PAYLOAD_CHARS``
+    (``raw_truncated`` flags when it was clipped). Written in the same txn as the
+    receiver so recording never lags the accept.
+
+    Outcome columns are short plain strings (no DB enum — avoids the asyncpg
+    add-column enum footgun): auth_outcome/schema_outcome/transform_outcome ∈
+    {"ok","failed","skipped"} (auth is only ok/failed).
+    """
+
+    __tablename__ = "ingest_event_logs"
+    __table_args__ = (
+        Index("ix_ingest_event_logs_tenant_received", "tenant_id", "received_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    # --- multi-tenancy: the owning tenant (NULL only on an unknown-token auth fail). ---
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+
+    # Nullable: a failed auth on an unknown token has no webhook/category.
+    # No FK — the log must survive the webhook/category being deleted (audit trail).
+    webhook_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    category_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
+    source_ip: Mapped[str | None] = mapped_column(String(64))
+
+    # Per-stage outcomes. auth ∈ {ok,failed}; schema/transform ∈ {ok,failed,skipped}.
+    auth_outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    schema_outcome: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'skipped'")
+    )
+    transform_outcome: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'skipped'")
+    )
+
+    published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), index=True
+    )
+    target_subject: Mapped[str | None] = mapped_column(String(256))
+    error: Mapped[str | None] = mapped_column(Text)
+
+    raw_payload: Mapped[Any] = mapped_column(JSON, nullable=False)
+    raw_truncated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    transformed_payload: Mapped[Any | None] = mapped_column(JSON)
+
+    # The ingest event_id stamped on the published envelope (NULL if not published).
+    event_id: Mapped[str | None] = mapped_column(String(36))
+    # True when this row was produced by a replay of an earlier log.
+    is_replay: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), index=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )

@@ -347,6 +347,13 @@ async def create_instance(body: S.CreateInstanceRequest, svc: Annotated[Instance
     return S.InstancePublic.from_row(await svc.create(body, actor=actor))
 
 
+@instance_router.get("/stats", response_model=S.InstanceStatsResponse,
+                     dependencies=[Depends(require_permission("workflow.instance.read"))])
+async def instance_stats(svc: Annotated[InstanceService, Depends(_inst_svc)],
+                         site_id: Optional[str] = Query(None)):
+    return S.InstanceStatsResponse(**await svc.stats(site_id=site_id))
+
+
 @instance_router.get("/{instance_id}", response_model=S.InstancePublic,
                      dependencies=[Depends(require_permission("workflow.instance.read"))])
 async def get_instance(instance_id: str, svc: Annotated[InstanceService, Depends(_inst_svc)]):

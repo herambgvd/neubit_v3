@@ -64,6 +64,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.dispatch_notifications",
         "schedule": crontab(minute="*"),  # every minute
     },
+    "workflow-dedup-cleanup": {
+        "task": "app.worker.dedup_cleanup",
+        "schedule": crontab(minute="*/10"),  # every 10 minutes
+    },
 }
 
 
@@ -86,6 +90,12 @@ def timeout_sweep() -> int:
 def dispatch_notifications() -> int:
     """Drain the notification outbox through the connector registry."""
     return asyncio.run(wf_tasks.dispatch_notifications())
+
+
+@celery_app.task(name="app.worker.dedup_cleanup")
+def dedup_cleanup() -> int:
+    """Delete expired correlation-dedup slots."""
+    return asyncio.run(wf_tasks.dedup_cleanup())
 
 
 @celery_app.task(name="app.worker.run_correlation_consumer")

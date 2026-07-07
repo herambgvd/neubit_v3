@@ -183,3 +183,133 @@ class IngestResponse(BaseModel):
 
     accepted: bool
     event_id: Optional[str] = None
+
+
+# ── Event logs ──────────────────────────────────────────────────────
+
+
+class EventLogSummary(BaseModel):
+    """List-row view of an ingest delivery (no payload bodies)."""
+
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    webhook_id: Optional[str] = None
+    category_id: Optional[str] = None
+    received_at: datetime
+    source_ip: Optional[str] = None
+    auth_outcome: str
+    schema_outcome: str
+    transform_outcome: str
+    published: bool
+    target_subject: Optional[str] = None
+    error: Optional[str] = None
+    event_id: Optional[str] = None
+    is_replay: bool = False
+
+    @classmethod
+    def from_row(cls, row) -> "EventLogSummary":
+        return cls.model_validate(
+            {
+                "id": row.id,
+                "webhook_id": row.webhook_id,
+                "category_id": row.category_id,
+                "received_at": row.received_at,
+                "source_ip": row.source_ip,
+                "auth_outcome": row.auth_outcome,
+                "schema_outcome": row.schema_outcome,
+                "transform_outcome": row.transform_outcome,
+                "published": row.published,
+                "target_subject": row.target_subject,
+                "error": row.error,
+                "event_id": row.event_id,
+                "is_replay": row.is_replay,
+            }
+        )
+
+
+class EventLogDetail(EventLogSummary):
+    """Full event log incl. raw + transformed payload bodies."""
+
+    raw_payload: Any = None
+    raw_truncated: bool = False
+    transformed_payload: Optional[Any] = None
+
+    @classmethod
+    def from_row(cls, row) -> "EventLogDetail":
+        return cls.model_validate(
+            {
+                "id": row.id,
+                "webhook_id": row.webhook_id,
+                "category_id": row.category_id,
+                "received_at": row.received_at,
+                "source_ip": row.source_ip,
+                "auth_outcome": row.auth_outcome,
+                "schema_outcome": row.schema_outcome,
+                "transform_outcome": row.transform_outcome,
+                "published": row.published,
+                "target_subject": row.target_subject,
+                "error": row.error,
+                "event_id": row.event_id,
+                "is_replay": row.is_replay,
+                "raw_payload": row.raw_payload,
+                "raw_truncated": row.raw_truncated,
+                "transformed_payload": row.transformed_payload,
+            }
+        )
+
+
+class EventLogListResponse(BaseModel):
+    items: list[EventLogSummary]
+    total: int
+    skip: int
+    limit: int
+
+
+class ReplayResponse(BaseModel):
+    """Result of replaying a stored event log through the webhook pipeline."""
+
+    replay_log_id: str
+    published: bool
+    event_id: Optional[str] = None
+    target_subject: Optional[str] = None
+    schema_outcome: str
+    transform_outcome: str
+    error: Optional[str] = None
+
+
+# ── Webhook test (dry-run) ──────────────────────────────────────────
+
+
+class WebhookTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class WebhookTestResponse(BaseModel):
+    """Dry-run outcome — nothing published, nothing logged."""
+
+    schema_valid: bool
+    schema_errors: list[str] = Field(default_factory=list)
+    transformed: Optional[Any] = None
+    transform_errors: list[str] = Field(default_factory=list)
+    would_publish_subject: Optional[str] = None
+    auth_type: str
+
+
+# ── Rotate secret ───────────────────────────────────────────────────
+
+
+class RotateSecretRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Also mint a fresh auth secret (only meaningful for api_key / basic webhooks).
+    rotate_auth_secret: bool = False
+
+
+class RotateSecretResponse(BaseModel):
+    """Returned ONCE — the plaintext token/secret is never retrievable again."""
+
+    id: str
+    token: str
+    ingest_url: str
+    # Present only when rotate_auth_secret was requested on an authed webhook.
+    auth_secret: Optional[str] = None

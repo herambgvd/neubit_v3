@@ -15,17 +15,21 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from contextlib import asynccontextmanager
 
+from sqlalchemy import delete, or_, pool, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from kernel.config import get_settings
 from kernel.events import EventBus, subject
 
-from app.db import get_engine
 from .connectors import registry
 from .connectors.base import DeliveryContext
 from .models import (
+    CorrelationDedup,
     Notification,
     NotificationChannel,
     SOP,
@@ -45,9 +49,38 @@ log = logging.getLogger("workflow.tasks")
 MAX_NOTIFY_ATTEMPTS = 5
 DEFAULT_INSTANCE_TIMEOUT_HOURS = int(os.getenv("VE_WORKFLOW_INSTANCE_TIMEOUT_HOURS", "72"))
 
+# Exponential-backoff tuning for notification retries (seconds).
+NOTIFY_BACKOFF_BASE_SECONDS = int(os.getenv("VE_WORKFLOW_NOTIFY_BACKOFF_BASE", "30"))
+NOTIFY_BACKOFF_CAP_SECONDS = int(os.getenv("VE_WORKFLOW_NOTIFY_BACKOFF_CAP", "3600"))
 
-def _sessionmaker() -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(get_engine(), expire_on_commit=False, class_=AsyncSession)
+
+def _backoff_delay(attempts: int) -> timedelta:
+    """Exponential backoff with jitter: min(base * 2**attempts, cap) ± jitter.
+
+    ``attempts`` is the number of attempts already made (>=1 when scheduling the
+    next retry). Jitter is ±20% to avoid thundering-herd re-dispatch.
+    """
+    raw = min(NOTIFY_BACKOFF_BASE_SECONDS * (2 ** max(attempts, 0)), NOTIFY_BACKOFF_CAP_SECONDS)
+    jitter = raw * 0.2 * (random.random() * 2 - 1)  # ±20%
+    return timedelta(seconds=max(1.0, raw + jitter))
+
+
+@asynccontextmanager
+async def _task_session():
+    """Yield an ``AsyncSession`` bound to a fresh, per-run NullPool engine.
+
+    Each Celery task body runs under its own ``asyncio.run()`` loop. Reusing the
+    process-wide pooled engine leaks connections bound to a previous loop and
+    raises "Future attached to a different loop". A per-run NullPool engine (no
+    cross-loop connection reuse), disposed on exit, keeps each sweep loop-safe.
+    """
+    engine = create_async_engine(get_settings().database_url, poolclass=pool.NullPool)
+    sm = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    try:
+        async with sm() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 # ── Escalation sweep ───────────────────────────────────────────────────
@@ -59,9 +92,8 @@ async def escalation_sweep() -> int:
     changed = 0
     bus = EventBus(source="workflow-escalation")
     await bus.connect()
-    sm = _sessionmaker()
     try:
-        async with sm() as session:
+        async with _task_session() as session:
             stmt = select(WorkflowInstance).where(
                 WorkflowInstance.status.in_(
                     [InstanceStatus.ACTIVE.value, InstanceStatus.PAUSED.value]
@@ -124,9 +156,55 @@ async def _evaluate_instance(session, inst, now, bus) -> bool:
                               {"tenant_id": tid, "instance_id": inst.instance_id,
                                "priority": new_pri.value, "level": inst.escalation["level"],
                                "notify_role_ids": rule.get("notify_role_ids", [])})
+            # Enqueue notifications for the rule's recipients (roles/users). Role→user
+            # resolution lives in core; we can't reach it here, so we create pending
+            # rows keyed by the role_id/user_id and let dispatch/core resolve later.
+            _enqueue_escalation_notifications(session, inst, rule, new_pri, now)
             changed = True
             cur = new_pri
     return changed
+
+
+def _enqueue_escalation_notifications(session, inst, rule, new_pri, now) -> None:
+    """Create pending Notification rows for a SOP escalation rule's recipients.
+
+    ``notify_role_ids`` (and optional ``notify_user_ids``) come from the SOP's
+    escalation rule. We cannot resolve a role → concrete users/addresses from this
+    service (that's core data), so we enqueue one webhook-channel row per recipient
+    with the recipient set to ``role:<id>`` / ``user:<id>`` and a TODO marker in
+    metadata. A downstream resolver (or the connector) can expand these; nothing is
+    silently dropped.
+    """
+    role_ids = rule.get("notify_role_ids") or []
+    user_ids = rule.get("notify_user_ids") or []
+    if not role_ids and not user_ids:
+        return
+    subject_text = f"[{new_pri.value.upper()}] {inst.name or inst.instance_id} escalated"
+    body_text = (
+        f"Incident {inst.name or inst.instance_id} was escalated to "
+        f"priority {new_pri.value} by SOP rule (after {rule.get('after_hours', 0)}h)."
+    )
+    recipients = [("role", rid) for rid in role_ids] + [("user", uid) for uid in user_ids]
+    for kind, ident in recipients:
+        session.add(Notification(
+            tenant_id=inst.tenant_id,
+            # webhook is the safe default: role/user recipients need core resolution
+            # before an email address exists. A resolver may re-route to "email".
+            channel_type="webhook",
+            recipient=f"{kind}:{ident}",
+            subject=subject_text,
+            body=body_text,
+            status="pending",
+            instance_id=inst.instance_id,
+            extra={
+                "kind": "escalation",
+                "recipient_kind": kind,
+                "recipient_id": str(ident),
+                "priority": new_pri.value,
+                # TODO(core-resolve): expand role→users / user→address via core.
+                "needs_recipient_resolution": True,
+            },
+        ))
 
 
 def _escalate(inst, now, reason: str, *, by: str) -> None:
@@ -158,9 +236,8 @@ async def timeout_sweep(timeout_hours: int = DEFAULT_INSTANCE_TIMEOUT_HOURS) -> 
     cancelled = 0
     bus = EventBus(source="workflow-timeout")
     await bus.connect()
-    sm = _sessionmaker()
     try:
-        async with sm() as session:
+        async with _task_session() as session:
             stmt = select(WorkflowInstance).where(
                 WorkflowInstance.status.in_(
                     [InstanceStatus.ACTIVE.value, InstanceStatus.PAUSED.value]
@@ -189,13 +266,24 @@ async def timeout_sweep(timeout_hours: int = DEFAULT_INSTANCE_TIMEOUT_HOURS) -> 
 
 
 async def dispatch_notifications(limit: int = 50) -> int:
-    """Drain pending notifications through the pluggable connector registry."""
+    """Drain due pending notifications through the pluggable connector registry.
+
+    Only rows whose ``next_attempt_at`` is NULL (never tried) or <= now are picked
+    up; on failure the row is rescheduled with exponential backoff (+jitter) so a
+    flaky provider doesn't get hammered.
+    """
     sent = 0
-    sm = _sessionmaker()
-    async with sm() as session:
+    now = utcnow()
+    async with _task_session() as session:
         stmt = (
             select(Notification)
-            .where(Notification.status == "pending")
+            .where(
+                Notification.status == "pending",
+                or_(
+                    Notification.next_attempt_at.is_(None),
+                    Notification.next_attempt_at <= now,
+                ),
+            )
             .order_by(Notification.created_at.asc())
             .limit(limit)
         )
@@ -223,11 +311,17 @@ async def dispatch_notifications(limit: int = 50) -> int:
                 ))
                 note.status = "sent"
                 note.sent_at = utcnow()
+                note.next_attempt_at = None
                 note.error = None
                 sent += 1
             except Exception as exc:  # keep pending for retry unless capped
                 note.error = str(exc)
-                note.status = "pending" if note.attempts < MAX_NOTIFY_ATTEMPTS else "failed"
+                if note.attempts < MAX_NOTIFY_ATTEMPTS:
+                    note.status = "pending"
+                    note.next_attempt_at = utcnow() + _backoff_delay(note.attempts)
+                else:
+                    note.status = "failed"
+                    note.next_attempt_at = None
                 log.warning("notification %s dispatch failed (attempt %d): %s",
                             note.notification_id, note.attempts, exc)
             note.updated_at = utcnow()
@@ -235,6 +329,26 @@ async def dispatch_notifications(limit: int = 50) -> int:
     if sent:
         log.info("dispatched %d notification(s)", sent)
     return sent
+
+
+# ── Dedup cleanup ──────────────────────────────────────────────────────
+
+
+async def dedup_cleanup() -> int:
+    """Delete expired correlation-dedup slots (``expires_at`` < now)."""
+    now = utcnow()
+    async with _task_session() as session:
+        result = await session.execute(
+            delete(CorrelationDedup).where(
+                CorrelationDedup.expires_at.is_not(None),
+                CorrelationDedup.expires_at < now,
+            )
+        )
+        await session.commit()
+    deleted = int(result.rowcount or 0)
+    if deleted:
+        log.info("dedup cleanup: removed %d expired slot(s)", deleted)
+    return deleted
 
 
 async def _resolve_channel_config(session, note) -> dict:

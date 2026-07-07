@@ -34,9 +34,15 @@ from .models import (
 )
 from .shared import (
     CLOSED_STATUSES,
+    InstancePriority,
     InstanceStatus,
+    build_instance_context,
+    is_legal_status_change,
+    matches_conditions,
     utcnow,
+    validate_form_data,
 )
+from .templating import build_notification_context, render_template
 
 log = logging.getLogger("workflow.service")
 
@@ -634,6 +640,33 @@ class InstanceService:
     async def get(self, instance_id: str) -> WorkflowInstance:
         return await self._row(instance_id)
 
+    async def stats(self, *, site_id=None) -> dict:
+        """Incident counts grouped by status and by priority for the tenant scope.
+
+        Returns ``{by_status: {...}, by_priority: {...}, total: N}`` with every
+        known status/priority key present (zero-filled) so the frontend strip is
+        stable regardless of which buckets currently have rows.
+        """
+        base = scoped(select(WorkflowInstance), WorkflowInstance, self.scope)
+        if site_id is not None:
+            base = base.where(WorkflowInstance.site_id == site_id)
+        sub = base.subquery()
+
+        by_status = {s.value: 0 for s in InstanceStatus}
+        status_stmt = select(sub.c.status, func.count()).group_by(sub.c.status)
+        for value, count in (await self.db.execute(status_stmt)).all():
+            by_status[str(value)] = int(count)
+
+        by_priority = {p.value: 0 for p in InstancePriority}
+        priority_stmt = select(sub.c.priority, func.count()).group_by(sub.c.priority)
+        for value, count in (await self.db.execute(priority_stmt)).all():
+            by_priority[str(value)] = int(count)
+
+        total = sum(by_status.values())
+        # Convenience alias — "completed" is the v2 name some UIs use for resolved.
+        by_status["completed"] = by_status[InstanceStatus.RESOLVED.value]
+        return {"by_status": by_status, "by_priority": by_priority, "total": total}
+
     async def get_available_transitions(self, instance_id: str) -> list[Transition]:
         inst = await self._row(instance_id)
         if inst.status != InstanceStatus.ACTIVE.value or not inst.current_state:
@@ -642,7 +675,11 @@ class InstanceService:
             Transition.sop_id == inst.sop_id,
             Transition.from_state_id == inst.current_state,
         )
-        return list((await self.db.execute(stmt)).scalars().all())
+        rows = list((await self.db.execute(stmt)).scalars().all())
+        # Gate on each transition's conditions against the instance context.
+        # Empty conditions (None / []) always pass (matches_conditions contract).
+        ctx = build_instance_context(inst)
+        return [t for t in rows if matches_conditions(ctx, t.conditions or [])]
 
     async def transition(self, instance_id: str, body, *, actor, actor_name=None) -> WorkflowInstance:
         inst = await self._row(instance_id)
@@ -656,20 +693,33 @@ class InstanceService:
         if trans.requires_note and not (body.notes and body.notes.strip()):
             raise ValidationError("Transition requires a note")
 
+        # Gate: the transition's conditions must be satisfied by the instance context.
+        # Empty conditions always pass; a failing gate is a 409 (state precondition).
+        if trans.conditions:
+            ctx = build_instance_context(inst)
+            if not matches_conditions(ctx, trans.conditions):
+                raise ConflictError("Transition conditions are not satisfied")
+
         from_state = await self.db.get(State, trans.from_state_id)
         to_state = await self.db.get(State, trans.to_state_id)
         if not from_state or not to_state:
             raise ConflictError("Transition endpoints missing")
 
-        # Resolve field labels from the transition's form, if any.
+        # Validate submitted form_data against the transition's form definition.
         form_labels = None
-        if trans.form_id and body.form_data:
+        if trans.form_id:
             form = await self.db.get(Form, trans.form_id)
             if form and form.fields:
-                form_labels = {
-                    str(f.get("id")): f.get("label")
-                    for f in form.fields if str(f.get("id")) in body.form_data
-                } or None
+                form_errors = validate_form_data(form.fields, body.form_data)
+                if form_errors:
+                    raise ValidationError(
+                        "Form validation failed", details={"fields": form_errors}
+                    )
+                if body.form_data:
+                    form_labels = {
+                        str(f.get("id")): f.get("label")
+                        for f in form.fields if str(f.get("id")) in body.form_data
+                    } or None
 
         now = utcnow()
         entry = {
@@ -729,8 +779,15 @@ class InstanceService:
 
     async def change_status(self, instance_id: str, body, *, actor) -> WorkflowInstance:
         inst = await self._row(instance_id)
-        if InstanceStatus(inst.status) in CLOSED_STATUSES:
+        current = InstanceStatus(inst.status)
+        if current in CLOSED_STATUSES:
             raise ConflictError("Cannot mutate a closed instance")
+        # Enforce the legal status machine (PENDING→ACTIVE→PAUSED↔ACTIVE→RESOLVED/
+        # CANCELLED; terminal states can't change). A no-op is allowed.
+        if not is_legal_status_change(current, body.status):
+            raise ConflictError(
+                f"Illegal status change: {current.value} → {body.status.value}"
+            )
         now = utcnow()
         inst.status = body.status.value
         if body.outcome:
@@ -767,18 +824,46 @@ class InstanceService:
         ntype = cfg.get("type", "none")
         if ntype == "none":
             return
-        ctx = {"instance_name": inst.name, "from_state": from_name,
-               "to_state": to_name, "priority": inst.priority}
-        subject = (cfg.get("email_subject") or f"[{inst.priority.upper()}] {inst.name}").format(**ctx)
-        body_text = (cfg.get("email_body")
-                     or "Incident {instance_name} moved from {from_state} to {to_state}.").format(**ctx)
+
+        # Render context exposed to templates (and .format fallback below).
+        render_ctx = build_notification_context(
+            inst, from_state=from_name, to_state=to_name, sop_name=inst.sop_name
+        )
+
+        # If a NotificationTemplate is referenced, render its subject/body with
+        # Jinja2. Otherwise fall back to the inline config strings (or a default),
+        # rendered through Jinja2 too so {{ }} placeholders work uniformly.
+        template = None
+        template_id = cfg.get("template_id")
+        if template_id:
+            template = await self.db.get(NotificationTemplate, template_id)
+            # Scope guard: only use a template the caller's tenant owns.
+            if template is not None and template.tenant_id not in (None, inst.tenant_id):
+                template = None
+
+        if template is not None:
+            subject = render_template(template.subject, render_ctx)
+            body_text = render_template(template.body, render_ctx)
+        else:
+            subject_src = cfg.get("email_subject") or "[{{ priority|upper }}] {{ instance_name }}"
+            body_src = cfg.get("email_body") or (
+                "Incident {{ instance_name }} moved from {{ from_state }} "
+                "to {{ to_state }}."
+            )
+            subject = render_template(subject_src, render_ctx)
+            body_text = render_template(body_src, render_ctx)
+
         # Recipients: explicit addresses in the config (user resolution lives in core).
+        default_channel = "email" if ntype in ("email", "both") else "webhook"
         for addr in cfg.get("recipients", []) or []:
-            channel_type = "email" if ntype in ("email", "both") else "webhook"
+            channel_type = (
+                template.channel_type if template is not None else default_channel
+            )
             self.db.add(Notification(
                 tenant_id=inst.tenant_id, channel_type=channel_type, recipient=addr,
                 subject=subject, body=body_text, status="pending",
                 instance_id=inst.instance_id,
-                extra={"transition_id": trans.transition_id},
+                extra={"transition_id": trans.transition_id,
+                       "template_id": template_id if template is not None else None},
             ))
         await self.db.commit()

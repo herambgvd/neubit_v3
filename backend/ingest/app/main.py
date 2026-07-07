@@ -20,7 +20,7 @@ from kernel.config import get_settings
 from kernel.errors import register_error_handlers
 from kernel.events import EventBus, subject
 
-from app.ingest.router import build_public_router, config_router
+from app.ingest.router import bind_event_bus, build_public_router, config_router
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("ingest")
@@ -61,6 +61,8 @@ def create_app() -> FastAPI:
             "is_platform": scope.is_platform,
         }
 
+    # Give the authed router the live event bus (its replay endpoint re-publishes).
+    bind_event_bus(bus)
     # Authed config API (category + webhook CRUD) under the versioned prefix.
     app.include_router(config_router, prefix=settings.api_prefix)
     # PUBLIC receiver — NO JWT; mounted at the root so the URL is /ingest/hooks/{token}.

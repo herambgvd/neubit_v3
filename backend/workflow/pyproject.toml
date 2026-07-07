@@ -19,6 +19,7 @@ dependencies = [
     "nats-py>=2.6",          # correlation consumer (JetStream durable subscribe)
     "aiosmtplib>=3.0",       # EmailConnector (SMTP delivery)
     "httpx>=0.27",           # WebhookConnector (HTTP POST delivery)
+    "jinja2>=3.1",           # sandboxed notification-template rendering
 ]
 
 [project.optional-dependencies]

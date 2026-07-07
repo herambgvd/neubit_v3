@@ -318,6 +318,11 @@ class Notification(Base, _TenantTimestamped):
     channel_id: Mapped[str | None] = mapped_column(String(36))
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Earliest time a pending row may be (re)dispatched — drives exponential backoff.
+    # NULL == dispatch immediately (never attempted).
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

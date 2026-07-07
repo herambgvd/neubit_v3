@@ -12,6 +12,7 @@ Two router objects, split by trust boundary:
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
@@ -27,18 +28,41 @@ from .schemas import (
     CategoryListResponse,
     CategoryPublic,
     CategoryUpdate,
+    EventLogDetail,
+    EventLogListResponse,
     IngestResponse,
+    ReplayResponse,
+    RotateSecretRequest,
+    RotateSecretResponse,
     WebhookCreate,
     WebhookListResponse,
     WebhookPublic,
+    WebhookTestRequest,
+    WebhookTestResponse,
     WebhookUpdate,
 )
-from .service import CategoryService, ReceiverService, WebhookService
+from .service import (
+    CategoryService,
+    EventLogService,
+    ReceiverService,
+    WebhookService,
+)
 
 # Permission keys this service gates on. Kernel grants if the JWT carries the key
 # (or "*"/super-admin) — no local permission registry needed on a satellite.
 PERM_READ = "ingest.read"
 PERM_MANAGE = "ingest.manage"
+
+# The service-wide EventBus, injected by main via ``bind_event_bus`` at app build.
+# Used by the authed replay endpoint (which re-publishes to NATS). Falls back to a
+# fresh, unconnected bus so imports never fail if binding is skipped (tests).
+_bus: EventBus = EventBus(source="ingest")
+
+
+def bind_event_bus(bus: EventBus) -> None:
+    """Wire the live (connected) EventBus into the authed router (for replay)."""
+    global _bus
+    _bus = bus
 
 
 # ── Authed config API ──────────────────────────────────────────────────
@@ -189,6 +213,107 @@ async def delete_webhook(
 ) -> Response:
     await svc.delete(webhook_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@config_router.post(
+    "/webhooks/{webhook_id}/test",
+    response_model=WebhookTestResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def test_webhook(
+    webhook_id: str,
+    body: WebhookTestRequest,
+    svc: Annotated[WebhookService, Depends(_webhook_service)],
+) -> WebhookTestResponse:
+    """Dry-run a sample payload through validate+transform. Nothing published/logged."""
+    return await svc.test(webhook_id, body.payload)
+
+
+@config_router.post(
+    "/webhooks/{webhook_id}/rotate-secret",
+    response_model=RotateSecretResponse,
+)
+async def rotate_webhook_secret(
+    webhook_id: str,
+    body: RotateSecretRequest,
+    svc: Annotated[WebhookService, Depends(_webhook_service)],
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> RotateSecretResponse:
+    """Regenerate the public token (and optionally the auth secret). Returned once."""
+    return await svc.rotate_secret(
+        webhook_id, rotate_auth_secret=body.rotate_auth_secret, actor=actor
+    )
+
+
+# --- Event logs ---
+
+
+async def _event_log_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> EventLogService:
+    return EventLogService(db, scope, _bus)
+
+
+@config_router.get(
+    "/event-logs",
+    response_model=EventLogListResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def list_event_logs(
+    svc: Annotated[EventLogService, Depends(_event_log_service)],
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=500),
+    webhook_id: Optional[str] = Query(None, max_length=36),
+    auth_outcome: Optional[str] = Query(None, pattern="^(ok|failed)$"),
+    published: Optional[bool] = Query(None),
+    since: Optional[datetime] = Query(None),
+    until: Optional[datetime] = Query(None),
+) -> EventLogListResponse:
+    items, total = await svc.list_(
+        skip=skip,
+        limit=limit,
+        webhook_id=webhook_id,
+        auth_outcome=auth_outcome,
+        published=published,
+        since=since,
+        until=until,
+    )
+    return EventLogListResponse(items=items, total=total, skip=skip, limit=limit)
+
+
+@config_router.get(
+    "/event-logs/{log_id}",
+    response_model=EventLogDetail,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def get_event_log(
+    log_id: str,
+    svc: Annotated[EventLogService, Depends(_event_log_service)],
+) -> EventLogDetail:
+    return await svc.get(log_id)
+
+
+@config_router.post(
+    "/event-logs/{log_id}/replay",
+    response_model=ReplayResponse,
+)
+async def replay_event_log(
+    log_id: str,
+    svc: Annotated[EventLogService, Depends(_event_log_service)],
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> ReplayResponse:
+    """Re-run the stored raw payload through the webhook pipeline (new log row)."""
+    row = await svc.replay(log_id)
+    return ReplayResponse(
+        replay_log_id=row.id,
+        published=row.published,
+        event_id=row.event_id,
+        target_subject=row.target_subject,
+        schema_outcome=row.schema_outcome,
+        transform_outcome=row.transform_outcome,
+        error=row.error,
+    )
 
 
 # ── Public receiver ────────────────────────────────────────────────────

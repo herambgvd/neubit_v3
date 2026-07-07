@@ -17,7 +17,7 @@ from kernel.config import get_settings
 from app.db import Base
 
 # Import all model modules so their tables register on Base.metadata.
-import app.ingest.models  # noqa: E402,F401  (IngestCategory + Webhook)
+import app.ingest.models  # noqa: E402,F401  (IngestCategory + Webhook + IngestEventLog)
 
 config = context.config
 if config.config_file_name:

@@ -559,3 +559,17 @@ class InstanceListResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+class InstanceStatsResponse(BaseModel):
+    """Incident counts for the stats strip.
+
+    ``by_status`` keys: pending | active | paused | resolved | completed |
+    cancelled (``completed`` is an alias of ``resolved``). ``by_priority`` keys:
+    critical | high | medium | low. Every key is present (zero-filled).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_priority: dict[str, int] = Field(default_factory=dict)
+    total: int = 0
