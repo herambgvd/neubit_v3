@@ -22,8 +22,8 @@ import { toast } from "sonner";
 
 import { Badge, Button, Modal, PageHeader, Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
-import { workflow as wfApi } from "@/lib/api/workflow";
-import { STATUS_COLOR, PRIORITY_COLOR, titleize } from "@/views/Workflow";
+import { workflow as wfApi } from "./api";
+import { STATUS_COLOR, PRIORITY_COLOR, titleize } from "./IncidentList";
 
 const asItems = (d) => (Array.isArray(d) ? d : d?.items || []);
 

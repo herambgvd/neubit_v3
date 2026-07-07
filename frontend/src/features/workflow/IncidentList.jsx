@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 import { Badge, Button, Card, PageHeader, Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { workflow as wfApi } from "@/lib/api/workflow";
+import { workflow as wfApi } from "./api";
 import { sites as sitesApi } from "@/lib/api/sites";
 
 const rowId = (it) => it.id ?? it.instance_id;

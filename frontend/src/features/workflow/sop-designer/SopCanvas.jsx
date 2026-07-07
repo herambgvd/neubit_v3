@@ -27,7 +27,7 @@ import { toast } from "sonner";
 
 import { Button, ConfirmDialog, Modal, Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { workflow as wfApi } from "@/lib/api/workflow";
+import { workflow as wfApi } from "../api";
 
 const NODE_W = 190;
 const NODE_H = 76;

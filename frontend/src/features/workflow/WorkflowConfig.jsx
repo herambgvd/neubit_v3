@@ -17,9 +17,9 @@ import { toast } from "sonner";
 
 import { Button, ConfirmDialog, PageHeader, Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { workflow as wfApi } from "@/lib/api/workflow";
+import { workflow as wfApi } from "./api";
 import { sites as sitesApi } from "@/lib/api/sites";
-import SopCanvas from "@/components/sop-builder/SopCanvas";
+import SopCanvas from "./sop-designer/SopCanvas";
 
 const PRIORITIES = ["low", "medium", "high", "critical"];
 const TRIGGER_OPS = ["eq", "ne", "gt", "gte", "lt", "lte", "in", "contains", "regex"];
