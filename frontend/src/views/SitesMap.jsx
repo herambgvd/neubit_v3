@@ -3,9 +3,12 @@
 // Sites Map — every site with coordinates rendered as a Google Maps marker, colored by
 // threat level, with an info window showing site details. Ported from neubit_v2's
 // app/(app)/map/page.jsx and adapted to neubit_v3:
-//   • API key comes from process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY (a build-time public
-//     env var) instead of neubit_v2's platform-settings proxy. If it's unset we render a
-//     graceful "Maps not configured" placeholder rather than crashing.
+//   • The Maps API key + enabled flag + default centre come from the platform settings
+//     store via GET /settings/maps (a super-admin-configurable setting), NOT a build-time
+//     env var. The browser receives the api_key because the Google Maps JS loader needs
+//     it in-browser; the real security boundary is the HTTP-referrer restriction on the
+//     key in Google Cloud Console. If Maps is disabled or the key is empty we render a
+//     graceful "not configured" placeholder rather than crashing.
 //   • Camera-count badges were dropped (no cameras backend in neubit_v3 yet).
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -14,10 +17,10 @@ import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-map
 import { Icon } from "@iconify/react";
 
 import { Button, PageHeader, Spinner } from "@/components/ui/kit";
+import { api } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 
 const CONTAINER_STYLE = { width: "100%", height: "100%" };
-const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
 const THREAT_PIN = {
   normal: { color: "#22c55e", label: "Normal" },
@@ -31,12 +34,21 @@ const DEFAULT_CENTER = { lat: 22.9734, lng: 78.6569 }; // India centre
 const DEFAULT_ZOOM = 5;
 
 export default function SitesMapPage() {
+  const cfgQ = useQuery({
+    queryKey: ["maps-config"],
+    queryFn: () => api.get("/settings/maps").then((r) => r.data),
+    staleTime: 5 * 60_000,
+  });
   const sitesQ = useQuery({
     queryKey: ["sites-map"],
     queryFn: () => sitesApi.list({ limit: 100 }),
   });
 
   const sites = sitesQ.data?.items || [];
+
+  const enabled = !!cfgQ.data?.enabled;
+  const apiKey = cfgQ.data?.api_key || "";
+  const defaultZoom = cfgQ.data?.default_zoom || DEFAULT_ZOOM;
 
   const sitesWithCoords = useMemo(
     () =>
@@ -63,11 +75,15 @@ export default function SitesMapPage() {
   const [selected, setSelected] = useState(null);
 
   const center = useMemo(() => {
-    if (filtered.length === 0) return DEFAULT_CENTER;
+    if (filtered.length === 0) {
+      return cfgQ.data?.default_lat != null && cfgQ.data?.default_lng != null
+        ? { lat: cfgQ.data.default_lat, lng: cfgQ.data.default_lng }
+        : DEFAULT_CENTER;
+    }
     const lat = filtered.reduce((a, s) => a + s.coordinates.latitude, 0) / filtered.length;
     const lng = filtered.reduce((a, s) => a + s.coordinates.longitude, 0) / filtered.length;
     return { lat, lng };
-  }, [filtered]);
+  }, [filtered, cfgQ.data]);
 
   return (
     <div className="flex h-full flex-col">
@@ -98,15 +114,17 @@ export default function SitesMapPage() {
 
       <section className="sites-map-root relative min-h-0 flex-1 overflow-hidden rounded-xl border border-card-border bg-hover/40" style={{ minHeight: "60vh" }}>
         <MapPopupStyleFix />
-        {!MAPS_API_KEY ? (
+        {cfgQ.isLoading ? (
+          <Loading />
+        ) : !enabled || !apiKey ? (
           <Disabled />
         ) : sitesQ.isLoading ? (
           <Loading />
         ) : (
           <SitesMap
-            apiKey={MAPS_API_KEY}
+            apiKey={apiKey}
             center={center}
-            zoom={DEFAULT_ZOOM}
+            zoom={defaultZoom}
             sites={filtered}
             selected={selected}
             onSelect={setSelected}
@@ -262,9 +280,10 @@ function Disabled() {
       </span>
       <p className="text-sm font-semibold text-foreground">Google Maps not configured</p>
       <p className="max-w-md text-xs text-muted">
-        Set <span className="font-mono text-foreground">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</span> in the
-        frontend environment and rebuild. Once a key is present, this map populates from sites
-        whose coordinates have been set under Config → Sites.
+        A super-admin must enable Google Maps and save an API key under{" "}
+        <span className="font-medium text-foreground">Platform Settings → Google Maps</span>. Once a
+        key is saved and the toggle is on, this map populates from sites whose coordinates have been
+        set under Config → Sites.
       </p>
     </div>
   );

@@ -20,6 +20,7 @@ import { Button, ConfirmDialog, PageHeader, Spinner } from "@/components/ui/kit"
 import { apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { FloorPlanEditorModal } from "@/components/floor-builder/floor-plan-editor";
+import TagPicker from "@/components/tags/TagPicker";
 
 /* Backend canonical enums */
 const SITE_TYPES = [
@@ -399,6 +400,9 @@ function SiteInfoPanel({ site }) {
             <p className="text-sm text-muted">{site.description}</p>
           </Field>
         )}
+        <Field label="Tags" full>
+          <TagPicker entityType="site" entityId={site.site_id} />
+        </Field>
         <Field label="Address" full>
           <p className="text-sm text-foreground">{fullAddress || "—"}</p>
         </Field>
@@ -930,6 +934,9 @@ function ZonesPanel({ site }) {
                     {z.alert_on_entry ? "Alert on entry · " : ""}
                     {z.alert_on_exit ? "Alert on exit · " : ""}
                     {z.description || "No description"}
+                  </div>
+                  <div className="mt-2">
+                    <TagPicker entityType="zone" entityId={z.zone_id} size="xs" />
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">

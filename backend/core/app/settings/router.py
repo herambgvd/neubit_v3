@@ -11,14 +11,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.deps import require_permission
+from ..auth.deps import get_current_user, require_permission
 from ..auth.models import User
 from ..auth.permissions import CorePerm
 from ..core.audit import record as audit_record
 from ..db.base import get_db
 from ..tenancy.deps import optional_tenant_id
 from . import catalog
-from .schemas import SettingsOut, UpdateSettingsIn
+from .schemas import MapsConfigOut, SettingsOut, UpdateSettingsIn
 from .service import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -36,6 +36,28 @@ async def public_settings(
     page and unauthenticated screens must always get a sane answer.
     """
     return await SettingsService(db, tenant_id).public_values()
+
+
+@router.get("/maps", response_model=MapsConfigOut)
+async def get_maps_config(
+    db: AsyncSession = Depends(get_db),
+    _actor: User = Depends(get_current_user),
+) -> MapsConfigOut:
+    """Google Maps config for the browser JS loader — any AUTHENTICATED user.
+
+    Reads the PLATFORM-DEFAULT (tenant_id NULL) values that the super-admin edits
+    under /admin/platform/settings. The api_key is intentionally returned to the
+    browser (the Maps JavaScript API loader needs it); restrict it by HTTP referrer
+    in Google Cloud Console. Not part of the unauthenticated /public subset.
+    """
+    values = await SettingsService(db, None).all_values()
+    return MapsConfigOut(
+        enabled=bool(values.get("google_maps_enabled", False)),
+        api_key=str(values.get("google_maps_api_key") or ""),
+        default_lat=float(values.get("google_maps_default_lat") or 0.0),
+        default_lng=float(values.get("google_maps_default_lng") or 0.0),
+        default_zoom=int(values.get("google_maps_default_zoom") or 5),
+    )
 
 
 @router.get("", response_model=SettingsOut)

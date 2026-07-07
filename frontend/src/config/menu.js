@@ -33,7 +33,7 @@ export const configTabs = [
   { title: "Sites", icon: "heroicons:map-pin", link: "/sites", perm: "neubit.read" },
   { title: "Users", icon: "heroicons-outline:users", link: "/users", perm: "user.read" },
   { title: "Roles", icon: "heroicons-outline:shield-check", link: "/roles", perm: "role.read" },
-  { title: "Tags", icon: "heroicons:tag", link: "/config/tags", disabled: true },
+  { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
   { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", disabled: true },
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", disabled: true },
   { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", disabled: true },

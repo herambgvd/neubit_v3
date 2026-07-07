@@ -28,6 +28,7 @@ import app.device_brands.models  # noqa: F401
 import app.sites.site.models  # noqa: F401
 import app.sites.floor.models  # noqa: F401
 import app.sites.zone.models  # noqa: F401
+import app.tags.models  # noqa: F401
 
 config = context.config
 if config.config_file_name:

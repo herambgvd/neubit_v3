@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Palette, SlidersHorizontal } from "lucide-react";
+import { Loader2, Map as MapIcon, Palette, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 import { adminApi, apiError } from "@/lib/api";
@@ -23,6 +23,7 @@ export default function PlatformSettingsPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <SettingsCard />
         <BrandingCard />
+        <MapsCard />
       </div>
     </div>
   );
@@ -105,22 +106,27 @@ function SettingsCard() {
 
   useEffect(() => {
     if (data) {
+      // GET /admin/platform/settings returns { catalog, values } — read from values.
+      const v = data?.values ?? data;
       setForm({
-        announcement: data.announcement ?? "",
-        support_email: data.support_email ?? "",
-        allow_avatar_uploads: !!data.allow_avatar_uploads,
-        allow_signups: !!data.allow_signups,
+        announcement: v.announcement ?? "",
+        support_email: v.support_email ?? "",
+        allow_avatar_uploads: !!v.allow_avatar_uploads,
+        allow_signups: !!v.allow_signups,
       });
     }
   }, [data]);
 
   const save = useMutation({
+    // PATCH expects { values: { key: val } }.
     mutationFn: () =>
       adminApi.updatePlatformSettings({
-        announcement: form.announcement,
-        support_email: form.support_email.trim(),
-        allow_avatar_uploads: form.allow_avatar_uploads,
-        allow_signups: form.allow_signups,
+        values: {
+          announcement: form.announcement,
+          support_email: form.support_email.trim(),
+          allow_avatar_uploads: form.allow_avatar_uploads,
+          allow_signups: form.allow_signups,
+        },
       }),
     onSuccess: () => {
       toast.success("Settings saved");
@@ -174,6 +180,127 @@ function SettingsCard() {
             checked={form.allow_signups}
             onChange={set("allow_signups")}
           />
+          <div className="flex justify-end pt-1">
+            <SaveButton pending={save.isPending} />
+          </div>
+        </form>
+      )}
+    </Card>
+  );
+}
+
+function MapsCard() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    google_maps_enabled: false,
+    google_maps_api_key: "",
+    google_maps_default_lat: "",
+    google_maps_default_lng: "",
+    google_maps_default_zoom: "",
+  });
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["platform", "settings"],
+    queryFn: () => adminApi.getPlatformSettings(),
+  });
+
+  // The endpoint returns { catalog, values }; read the effective values map.
+  useEffect(() => {
+    const v = data?.values ?? data;
+    if (v) {
+      setForm({
+        google_maps_enabled: !!v.google_maps_enabled,
+        google_maps_api_key: v.google_maps_api_key ?? "",
+        google_maps_default_lat: v.google_maps_default_lat ?? "",
+        google_maps_default_lng: v.google_maps_default_lng ?? "",
+        google_maps_default_zoom: v.google_maps_default_zoom ?? "",
+      });
+    }
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      adminApi.updatePlatformSettings({
+        values: {
+          google_maps_enabled: form.google_maps_enabled,
+          google_maps_api_key: form.google_maps_api_key.trim(),
+          google_maps_default_lat: Number(form.google_maps_default_lat) || 0,
+          google_maps_default_lng: Number(form.google_maps_default_lng) || 0,
+          google_maps_default_zoom: Number(form.google_maps_default_zoom) || 5,
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Google Maps settings saved");
+      qc.invalidateQueries({ queryKey: ["platform", "settings"] });
+    },
+    onError: (err) => toast.error(apiError(err, "Could not save Google Maps settings")),
+  });
+
+  function onSubmit(e) {
+    e.preventDefault();
+    if (!save.isPending) save.mutate();
+  }
+
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
+  return (
+    <Card icon={MapIcon} title="Google Maps" subtitle="API key + default map centre for the Sites Map.">
+      {isLoading ? (
+        <CardSkeleton />
+      ) : isError ? (
+        <p className="text-sm text-red-300">{apiError(error, "Failed to load settings")}</p>
+      ) : (
+        <form onSubmit={onSubmit} className="space-y-4">
+          <Toggle
+            label="Enable Google Maps"
+            description="Render the Sites Map with Google Maps."
+            checked={form.google_maps_enabled}
+            onChange={set("google_maps_enabled")}
+          />
+          <Field label="Maps API key">
+            <input
+              type="password"
+              autoComplete="off"
+              value={form.google_maps_api_key}
+              onChange={(e) => set("google_maps_api_key")(e.target.value)}
+              placeholder="AIza…"
+              className={inputCls}
+            />
+            <p className="text-xs text-slate-500">Restrict the key by HTTP referrer in Google Cloud Console.</p>
+          </Field>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Default lat">
+              <input
+                type="number"
+                step="any"
+                value={form.google_maps_default_lat}
+                onChange={(e) => set("google_maps_default_lat")(e.target.value)}
+                placeholder="22.9734"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Default lng">
+              <input
+                type="number"
+                step="any"
+                value={form.google_maps_default_lng}
+                onChange={(e) => set("google_maps_default_lng")(e.target.value)}
+                placeholder="78.6569"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Default zoom">
+              <input
+                type="number"
+                min="1"
+                max="22"
+                value={form.google_maps_default_zoom}
+                onChange={(e) => set("google_maps_default_zoom")(e.target.value)}
+                placeholder="5"
+                className={inputCls}
+              />
+            </Field>
+          </div>
           <div className="flex justify-end pt-1">
             <SaveButton pending={save.isPending} />
           </div>

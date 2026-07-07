@@ -96,6 +96,11 @@ class CorePerm:
     ZONES_CREATE = "zones.create"
     ZONES_UPDATE = "zones.update"
     ZONES_DELETE = "zones.delete"
+    # --- Tags domain (cross-cutting labels applied across modules) ---------
+    TAGS_READ = "tags.read"
+    TAGS_CREATE = "tags.create"
+    TAGS_UPDATE = "tags.update"
+    TAGS_DELETE = "tags.delete"
 
 
 PERMISSIONS.register(
@@ -123,4 +128,9 @@ PERMISSIONS.register(
     Permission(CorePerm.ZONES_CREATE, "Create zones", "Sites"),
     Permission(CorePerm.ZONES_UPDATE, "Edit zones", "Sites"),
     Permission(CorePerm.ZONES_DELETE, "Delete zones", "Sites"),
+    # --- Tags domain -------------------------------------------------------
+    Permission(CorePerm.TAGS_READ, "View tags", "Tags"),
+    Permission(CorePerm.TAGS_CREATE, "Create tags", "Tags"),
+    Permission(CorePerm.TAGS_UPDATE, "Edit / assign tags", "Tags"),
+    Permission(CorePerm.TAGS_DELETE, "Delete tags", "Tags"),
 )

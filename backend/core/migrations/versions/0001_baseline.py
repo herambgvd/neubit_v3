@@ -33,6 +33,7 @@ def _metadata():
     import app.sites.site.models  # noqa: F401
     import app.sites.floor.models  # noqa: F401
     import app.sites.zone.models  # noqa: F401
+    import app.tags.models  # noqa: F401
 
     return Base.metadata
 

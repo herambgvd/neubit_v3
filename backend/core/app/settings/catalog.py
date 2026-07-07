@@ -58,6 +58,56 @@ CATALOG: list[dict] = [
         "description": "Automatically delete audit entries older than this. 0 keeps them forever.",
         "public": False,
     },
+    # --- Google Maps ---------------------------------------------------------
+    # The browser JS loader needs the api_key in-browser, so it is exposed to any
+    # authenticated user via GET /settings/maps (NOT the unauthenticated /public
+    # subset). The real security boundary is the HTTP-referrer restriction on the
+    # key in Google Cloud Console, not hiding it from logged-in operators.
+    {
+        "key": "google_maps_enabled",
+        "type": "bool",
+        "default": False,
+        "group": "Google Maps",
+        "label": "Enable Google Maps",
+        "description": "Render the Sites Map with Google Maps. Requires an API key below.",
+        "public": False,
+    },
+    {
+        "key": "google_maps_api_key",
+        "type": "text",
+        "default": "",
+        "group": "Google Maps",
+        "label": "Maps API key",
+        "description": "Google Maps JavaScript API key. Restrict it by HTTP referrer in Google Cloud Console.",
+        "public": False,
+    },
+    {
+        "key": "google_maps_default_lat",
+        "type": "number",
+        "default": 22.9734,
+        "group": "Google Maps",
+        "label": "Default latitude",
+        "description": "Initial map centre latitude when no sites have coordinates.",
+        "public": False,
+    },
+    {
+        "key": "google_maps_default_lng",
+        "type": "number",
+        "default": 78.6569,
+        "group": "Google Maps",
+        "label": "Default longitude",
+        "description": "Initial map centre longitude when no sites have coordinates.",
+        "public": False,
+    },
+    {
+        "key": "google_maps_default_zoom",
+        "type": "number",
+        "default": 5,
+        "group": "Google Maps",
+        "label": "Default zoom",
+        "description": "Initial map zoom level (1–22).",
+        "public": False,
+    },
 ]
 
 _BY_KEY = {item["key"]: item for item in CATALOG}
