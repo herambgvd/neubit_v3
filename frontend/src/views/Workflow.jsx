@@ -96,7 +96,7 @@ export default function WorkflowPage() {
   return (
     <div>
       <PageHeader
-        title="Workflow"
+        title="Events"
         subtitle="Track and respond to incidents driven by standard operating procedures."
         actions={
           <Link
