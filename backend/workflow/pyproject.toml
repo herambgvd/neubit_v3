@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neubit-workflow"
+version = "0.1.0"
+description = "Workflow service — SOP / automation engine. Control-plane on the edge core; cross-domain via NATS; scheduled/async work via Celery."
+requires-python = ">=3.11"
+
+dependencies = [
+    "kernel",          # shared kernel (installed as a path dep — see [tool.uv.sources])
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "celery>=5.3",            # async task + beat scheduler
+    "redis>=5.0",            # Celery broker/result backend
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+[tool.uv.sources]
+kernel = { path = "/opt/kernel", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100

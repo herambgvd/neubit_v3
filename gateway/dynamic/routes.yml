@@ -4,10 +4,25 @@
 http:
   routers:
     # Priorities are explicit so host + path rules resolve deterministically
-    # (Traefik's default = rule length, which mis-ranks Host vs PathPrefix here):
-    #   core (100)  — /api|/health|/metrics|/files ALWAYS win, on every host
-    #   admin (50)  — the admin.localhost host, for everything core didn't claim
-    #   frontend(1) — catch-all operator console (localhost + any other host)
+    # (Traefik's default = rule length, which mis-ranks Host vs PathPrefix here).
+    # HIGHER priority wins. Core owns the broad `/api/` prefix, so the satellite
+    # services must sit ABOVE it (110 > 100) to peel off their more-specific
+    # prefixes; everything else under `/api/` still falls through to core.
+    #   ingest/workflow (110) — /api/v1/ingest·/api/v1/workflow (+ /ingest) FIRST
+    #   core       (100)      — /api/|/health|/metrics|/files ALWAYS win otherwise
+    #   admin      (50)       — the admin.localhost host, for what core didn't claim
+    #   frontend   (1)        — catch-all operator console (localhost + any host)
+    ingest:
+      # /api/v1/ingest/... (the versioned API) plus a bare /ingest/... prefix.
+      rule: "PathPrefix(`/api/v1/ingest`) || PathPrefix(`/ingest`)"
+      service: ingest
+      entryPoints: [web]
+      priority: 110
+    workflow:
+      rule: "PathPrefix(`/api/v1/workflow`)"
+      service: workflow
+      entryPoints: [web]
+      priority: 110
     core:
       # NOTE: `/api/` (trailing slash) — a bare `/api` prefix also swallows frontend
       # routes like `/api-keys`. Backend endpoints are all under `/api/v1/...`.
@@ -31,6 +46,14 @@ http:
       loadBalancer:
         servers:
           - url: "http://core:8000"
+    ingest:
+      loadBalancer:
+        servers:
+          - url: "http://ingest:8000"
+    workflow:
+      loadBalancer:
+        servers:
+          - url: "http://workflow:8000"
     frontend:
       loadBalancer:
         servers:

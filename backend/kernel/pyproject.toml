@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kernel"
+version = "0.1.0"
+description = "Shared kernel for neubit_v3 services (config, JWT auth, tenancy scope, NATS events, db, errors) — byte-compatible with the platform core."
+requires-python = ">=3.11"
+
+# Kept intentionally small — just what a control-plane service needs to boot,
+# authorize a JWT locally, scope by tenant, publish/subscribe events, and talk to
+# its own Postgres. Mirrors the relevant subset of the core's deps.
+dependencies = [
+    "fastapi>=0.111",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "pyjwt[crypto]>=2.8",
+    "nats-py>=2.6",
+]
+
+[tool.setuptools.packages.find]
+include = ["kernel*"]
+
+[tool.ruff]
+line-length = 100

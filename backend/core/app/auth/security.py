@@ -82,9 +82,24 @@ def create_access_token(user, sid: str | None = None) -> str:
     # are convenience claims — authoritative scoping still re-reads the User row
     # each request (see auth/deps.get_current_user), so a tenant/role change
     # takes effect immediately without waiting for the token to expire.
+    #
+    # ``permissions`` is the caller's EFFECTIVE permission list, baked into the
+    # token so SATELLITE services (ingest/workflow) can authorize locally without
+    # a round-trip to core. Super-admins get the wildcard ["*"]; everyone else
+    # gets their role's permission set. Core itself ignores this claim — it still
+    # loads permissions fresh from the role each request (deps.require_permission),
+    # so the additive claim never changes core's own behaviour.
+    role = getattr(user, "role", None)
+    if bool(getattr(user, "is_superadmin", False)):
+        permissions = ["*"]
+    elif role is not None and getattr(role, "permissions", None) is not None:
+        permissions = list(role.permissions)
+    else:
+        permissions = []
     extra = {
         "tenant_id": str(user.tenant_id) if getattr(user, "tenant_id", None) else None,
         "is_superadmin": bool(getattr(user, "is_superadmin", False)),
+        "permissions": permissions,
     }
     return _encode(user.id, "access", ttl, sid=sid, extra=extra)
 

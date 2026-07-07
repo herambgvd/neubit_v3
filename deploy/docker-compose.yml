@@ -29,7 +29,12 @@ services:
     image: timescale/timescaledb:2.17.2-pg16
     env_file: .env
     ports: ["5432:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates neubit_ingest + neubit_workflow — but ONLY on a fresh volume
+      # (Postgres runs initdb scripts on first init only). On an existing volume
+      # create them manually (see deploy/postgres/init-service-dbs.sh header).
+      - ./postgres/init-service-dbs.sh:/docker-entrypoint-initdb.d/10-init-service-dbs.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 5s
@@ -90,6 +95,69 @@ services:
       - traefik.http.routers.core.rule=PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/metrics`) || PathPrefix(`/files`)
       - traefik.http.routers.core.entrypoints=web
       - traefik.http.services.core.loadbalancer.server.port=8000
+
+  # ── ingest service (Python / neubit_common) ─────────────────────
+  # External webhooks / event ingestion. Owns its own DB (neubit_ingest).
+  # Authorizes core-minted JWTs locally; cross-domain via NATS.
+  ingest:
+    build:
+      context: ../backend
+      dockerfile: ingest/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_ingest
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+    command: >
+      bash -c "alembic upgrade head &&
+               uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks: [neubit]
+
+  # ── workflow service (Python / neubit_common) ───────────────────
+  # SOP / automation engine. Owns its own DB (neubit_workflow). API + a Celery
+  # worker + beat (three containers sharing one image).
+  workflow:
+    build:
+      context: ../backend
+      dockerfile: workflow/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      nats: { condition: service_started }
+    command: >
+      bash -c "alembic upgrade head &&
+               uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks: [neubit]
+
+  workflow-worker:
+    build:
+      context: ../backend
+      dockerfile: workflow/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
+    depends_on:
+      redis: { condition: service_healthy }
+      workflow: { condition: service_started }
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"]
+    networks: [neubit]
+
+  workflow-beat:
+    build:
+      context: ../backend
+      dockerfile: workflow/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
+    depends_on:
+      redis: { condition: service_healthy }
+      workflow: { condition: service_started }
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+    networks: [neubit]
 
   # ── operator console (Next.js) ──────────────────────────────────
   frontend:
