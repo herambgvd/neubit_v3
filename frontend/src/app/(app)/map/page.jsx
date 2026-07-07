@@ -1,1 +1,1 @@
-export { default } from "@/features/sites/SitesMap";
+export { default } from "@/features/core/sites/SitesMap";

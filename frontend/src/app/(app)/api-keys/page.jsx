@@ -1,1 +1,1 @@
-export { default } from "@/features/api-keys/ApiKeys";
+export { default } from "@/features/core/api-keys/ApiKeys";

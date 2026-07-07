@@ -1,1 +1,1 @@
-export { default } from "@/features/users/Users";
+export { default } from "@/features/core/users/Users";

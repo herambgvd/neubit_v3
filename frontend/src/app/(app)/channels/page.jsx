@@ -1,1 +1,1 @@
-export { default } from "@/features/notifications/Channels";
+export { default } from "@/features/core/notifications/Channels";

@@ -1,1 +1,1 @@
-export { default } from "@/features/system/NotFound";
+export { default } from "@/features/core/system/NotFound";

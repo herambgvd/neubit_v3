@@ -1,1 +1,1 @@
-export { default } from "@/features/branding/Branding";
+export { default } from "@/features/core/branding/Branding";

@@ -1,1 +1,1 @@
-export { default } from "@/features/system-health/Health";
+export { default } from "@/features/core/system-health/Health";

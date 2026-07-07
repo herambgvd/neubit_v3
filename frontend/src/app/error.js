@@ -1,2 +1,2 @@
 "use client";
-export { default } from "@/features/system/ErrorView";
+export { default } from "@/features/core/system/ErrorView";

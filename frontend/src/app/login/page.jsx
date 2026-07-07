@@ -1,1 +1,1 @@
-export { default } from "@/features/auth/Login";
+export { default } from "@/features/core/auth/Login";

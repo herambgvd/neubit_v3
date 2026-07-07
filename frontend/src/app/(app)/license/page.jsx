@@ -1,1 +1,1 @@
-export { default } from "@/features/license/License";
+export { default } from "@/features/core/license/License";

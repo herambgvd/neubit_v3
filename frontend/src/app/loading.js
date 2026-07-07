@@ -1,1 +1,1 @@
-export { default } from "@/features/system/Loading";
+export { default } from "@/features/core/system/Loading";

@@ -1,1 +1,1 @@
-export { default } from "@/features/system/Home";
+export { default } from "@/features/core/system/Home";
