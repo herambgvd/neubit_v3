@@ -45,6 +45,20 @@ export const ingest = {
     create: (body) => unwrap(api.post(WEBHOOKS, body)),
     update: (id, body) => unwrap(api.patch(`${WEBHOOKS}/${id}`, body)),
     remove: (id) => unwrap(api.delete(`${WEBHOOKS}/${id}`)),
+    // Dry-run: validate+transform a sample payload (no publish, no log).
+    // → { schema_valid, schema_errors, transformed, transform_errors, would_publish_subject, auth_type }
+    test: (id, payload) => unwrap(api.post(`${WEBHOOKS}/${id}/test`, { payload })),
+    // Rotate the public receiver token (+ optional auth secret). Returned once.
+    // → { id, token, ingest_url, auth_secret }
+    rotateSecret: (id, rotate_auth_secret = false) =>
+      unwrap(api.post(`${WEBHOOKS}/${id}/rotate-secret`, { rotate_auth_secret })),
+  },
+
+  // Inbound request audit trail (one row per receiver call).
+  eventLogs: {
+    list: (params = {}) => unwrap(api.get(`/ingest/event-logs${qs(params)}`)),
+    get: (id) => unwrap(api.get(`/ingest/event-logs/${id}`)),
+    replay: (id) => unwrap(api.post(`/ingest/event-logs/${id}/replay`, {})),
   },
 };
 

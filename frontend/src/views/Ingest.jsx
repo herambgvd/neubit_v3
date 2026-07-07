@@ -32,9 +32,11 @@ const AUTH_PILL = {
 const authLabel = (t) => AUTH_TYPES.find((a) => a.value === t)?.label || t || "None";
 
 // Build the public receiver URL shown to integrators (backend serves it).
+// NOTE: the receiver is mounted at ROOT (/ingest/hooks/{token}), NOT under the
+// /api/v1 prefix — the gateway routes /ingest/hooks straight to the ingest service.
 function receiverUrl(token) {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  return `${origin}/api/v1/ingest/hooks/${token || ""}`;
+  return `${origin}/ingest/hooks/${token || ""}`;
 }
 
 function copyToClipboard(text) {
@@ -413,23 +415,54 @@ function WebhooksPanel({ category, catId }) {
           </ul>
         ))}
 
-      {detail && <WebhookDetailModal webhook={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <WebhookDetailModal
+          webhook={detail}
+          onClose={() => setDetail(null)}
+          onChanged={() => qc.invalidateQueries({ queryKey: key })}
+        />
+      )}
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
     </div>
   );
 }
 
-/* ─── Webhook detail (shows the read-only public receiver URL) ───── */
-function WebhookDetailModal({ webhook, onClose }) {
+/* ─── Webhook detail — Overview / Test / Events tabs ────────────── */
+const OUTCOME_PILL = {
+  ok: "bg-green-500/10 text-green-500",
+  failed: "bg-red-500/10 text-red-500",
+  skipped: "bg-hover text-muted",
+};
+const DETAIL_TABS = [
+  { key: "overview", label: "Overview", icon: "heroicons-outline:information-circle" },
+  { key: "test", label: "Test", icon: "heroicons-outline:beaker" },
+  { key: "events", label: "Recent events", icon: "heroicons-outline:queue-list" },
+];
+
+function WebhookDetailModal({ webhook, onClose, onChanged }) {
+  const [tab, setTab] = useState("overview");
+  const [token, setToken] = useState(webhook.token); // updates live after a rotate
+  const [confirm, setConfirm] = useState(null);
+  const hookId = webhook.id ?? webhook.webhook_id;
+
   useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape") onClose?.();
-    }
+    function onKey(e) { if (e.key === "Escape") onClose?.(); }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const url = receiverUrl(webhook.token);
+  const rotate = useMutation({
+    mutationFn: () => ingestApi.webhooks.rotateSecret(hookId, false),
+    onSuccess: (res) => {
+      toast.success("Receiver token rotated");
+      if (res?.token) setToken(res.token);
+      onChanged?.();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const url = receiverUrl(token);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
@@ -440,55 +473,225 @@ function WebhookDetailModal({ webhook, onClose }) {
             <Icon icon="heroicons-outline:x-mark" className="text-xl" />
           </button>
         </div>
-        <div className="px-6 py-5 space-y-5 overflow-y-auto">
-          <div>
-            <FLabel>Public receiver URL</FLabel>
-            <div className="mt-1 flex items-center gap-2">
-              <code className="flex-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground break-all">
-                {url}
-              </code>
+
+        <nav className="flex items-stretch gap-0.5 border-b border-card-border px-3 shrink-0">
+          {DETAIL_TABS.map((t) => {
+            const active = tab === t.key;
+            return (
               <button
-                onClick={() => copyToClipboard(url)}
-                className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-2 text-xs text-foreground hover:bg-hover shrink-0"
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition ${active ? "text-foreground border-foreground" : "text-muted border-transparent hover:text-foreground"}`}
               >
-                <Icon icon="heroicons-outline:clipboard-document" className="text-sm" /> Copy
+                <Icon icon={t.icon} className="text-base" />
+                {t.label}
               </button>
+            );
+          })}
+        </nav>
+
+        <div className="px-6 py-5 overflow-y-auto">
+          {tab === "overview" && (
+            <div className="space-y-5">
+              <div>
+                <FLabel>Public receiver URL</FLabel>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="flex-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground break-all">{url}</code>
+                  <button onClick={() => copyToClipboard(url)} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-2 text-xs text-foreground hover:bg-hover shrink-0">
+                    <Icon icon="heroicons-outline:clipboard-document" className="text-sm" /> Copy
+                  </button>
+                  <button
+                    onClick={() => setConfirm({
+                      title: "Rotate receiver token?",
+                      message: "The current URL will stop working immediately. Any integrations must be updated to the new URL.",
+                      confirmLabel: "Rotate",
+                      onConfirm: () => { rotate.mutate(); setConfirm(null); },
+                    })}
+                    disabled={rotate.isPending}
+                    className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-500 hover:bg-amber-500/20 shrink-0 disabled:opacity-50"
+                  >
+                    <Icon icon="heroicons-outline:arrow-path" className="text-sm" /> Rotate
+                  </button>
+                </div>
+                <p className="mt-1 text-[11px] text-muted/70">Point your external system at this URL to POST events.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><FLabel>Auth type</FLabel><p className="mt-1 text-sm text-foreground">{authLabel(webhook.auth_type)}</p></div>
+                <div><FLabel>Status</FLabel><p className="mt-1 text-sm text-foreground">{webhook.is_active !== false ? "Active" : "Inactive"}</p></div>
+              </div>
+              <div>
+                <FLabel>Transform (field map)</FLabel>
+                <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+                  {webhook.transform && Object.keys(webhook.transform).length ? JSON.stringify(webhook.transform, null, 2) : "—"}
+                </pre>
+              </div>
+              <div>
+                <FLabel>Schema (JSON)</FLabel>
+                <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all max-h-52 overflow-auto">
+                  {webhook.payload_schema && Object.keys(webhook.payload_schema).length ? JSON.stringify(webhook.payload_schema, null, 2) : "—"}
+                </pre>
+              </div>
             </div>
-            <p className="mt-1 text-[11px] text-muted/70">
-              Point your external system at this URL to POST events. The server receives on this path.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <FLabel>Auth type</FLabel>
-              <p className="mt-1 text-sm text-foreground">{authLabel(webhook.auth_type)}</p>
-            </div>
-            <div>
-              <FLabel>Status</FLabel>
-              <p className="mt-1 text-sm text-foreground">{webhook.is_active !== false ? "Active" : "Inactive"}</p>
-            </div>
-          </div>
-          <div>
-            <FLabel>Transform (JMESPath)</FLabel>
-            <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
-              {webhook.transform || "—"}
-            </pre>
-          </div>
-          <div>
-            <FLabel>Schema (JSON)</FLabel>
-            <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all max-h-52 overflow-auto">
-              {webhook.schema
-                ? typeof webhook.schema === "string"
-                  ? webhook.schema
-                  : JSON.stringify(webhook.schema, null, 2)
-                : "—"}
-            </pre>
-          </div>
+          )}
+
+          {tab === "test" && <WebhookTestPanel hookId={hookId} />}
+          {tab === "events" && <WebhookEventsPanel hookId={hookId} />}
         </div>
+
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-card-border shrink-0">
           <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={rotate.isPending} />
+    </div>
+  );
+}
+
+/* ─── Test panel — dry-run validate + transform (no publish/log) ── */
+function WebhookTestPanel({ hookId }) {
+  const [sample, setSample] = useState('{\n  "event": {\n    "name": "Door forced",\n    "severity": "high"\n  }\n}');
+  const [jsonErr, setJsonErr] = useState("");
+
+  const run = useMutation({
+    mutationFn: (payload) => ingestApi.webhooks.test(hookId, payload),
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  function submit() {
+    let payload;
+    try { payload = JSON.parse(sample); }
+    catch { setJsonErr("Sample must be valid JSON"); return; }
+    setJsonErr("");
+    run.mutate(payload);
+  }
+
+  const res = run.data;
+  return (
+    <div className="space-y-4">
+      <div>
+        <FLabel>Sample payload (JSON)</FLabel>
+        <textarea
+          rows={7}
+          value={sample}
+          onChange={(e) => { setSample(e.target.value); if (jsonErr) setJsonErr(""); }}
+          className={`${AREA_CLS} ${jsonErr ? "!border-red-500" : ""}`}
+        />
+        {jsonErr && <p className="mt-1 text-xs text-red-500">{jsonErr}</p>}
+        <p className="mt-1 text-[11px] text-muted/70">Runs schema validation + JMESPath transform. Nothing is published or logged.</p>
+      </div>
+      <div className="flex justify-end">
+        <Button onClick={submit} disabled={run.isPending} icon="heroicons-outline:play" className="!px-3 !py-1.5 text-xs">
+          {run.isPending ? "Running…" : "Run test"}
+        </Button>
+      </div>
+
+      {res && (
+        <div className="space-y-3 rounded-lg border border-card-border bg-hover/30 p-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted">Schema</span>
+            <span className={`text-[11px] rounded-full px-2 py-0.5 font-medium ${res.schema_valid ? OUTCOME_PILL.ok : OUTCOME_PILL.failed}`}>
+              {res.schema_valid ? "Valid" : "Invalid"}
+            </span>
+            {res.would_publish_subject && (
+              <span className="ml-auto text-[11px] font-mono text-muted truncate">→ {res.would_publish_subject}</span>
+            )}
+          </div>
+          {Array.isArray(res.schema_errors) && res.schema_errors.length > 0 && (
+            <ul className="text-xs text-red-500 list-disc list-inside space-y-0.5">
+              {res.schema_errors.map((er, i) => <li key={i}>{typeof er === "string" ? er : JSON.stringify(er)}</li>)}
+            </ul>
+          )}
+          {Array.isArray(res.transform_errors) && res.transform_errors.length > 0 && (
+            <ul className="text-xs text-red-500 list-disc list-inside space-y-0.5">
+              {res.transform_errors.map((er, i) => <li key={i}>{typeof er === "string" ? er : JSON.stringify(er)}</li>)}
+            </ul>
+          )}
+          <div>
+            <FLabel>Transformed output</FLabel>
+            <pre className="mt-1 rounded-lg border border-field bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all max-h-52 overflow-auto">
+              {res.transformed !== undefined && res.transformed !== null ? JSON.stringify(res.transformed, null, 2) : "—"}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Recent events panel — inbound audit log for this webhook ───── */
+function WebhookEventsPanel({ hookId }) {
+  const qc = useQueryClient();
+  const key = ["ingest-event-logs", hookId];
+  const q = useQuery({ queryKey: key, queryFn: () => ingestApi.eventLogs.list({ webhook_id: hookId, limit: 30 }) });
+  const rows = useMemo(() => { const d = q.data; return Array.isArray(d) ? d : d?.items || []; }, [q.data]);
+  const [expanded, setExpanded] = useState(null);
+
+  const replay = useMutation({
+    mutationFn: (id) => ingestApi.eventLogs.replay(id),
+    onSuccess: () => { toast.success("Event replayed"); qc.invalidateQueries({ queryKey: key }); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  if (q.isLoading) return <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Loading events…</div>;
+  if (rows.length === 0) return <p className="text-sm text-muted py-6 text-center">No inbound events recorded yet.</p>;
+
+  const fmt = (ts) => (ts ? new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
+
+  return (
+    <ul className="rounded-lg border border-card-border divide-y divide-card-border">
+      {rows.map((r) => {
+        const open = expanded === r.id;
+        return (
+          <li key={r.id} className="text-sm">
+            <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-hover">
+              <button onClick={() => setExpanded(open ? null : r.id)} className="flex-1 flex items-center gap-2 text-left min-w-0">
+                <Icon icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"} className="text-muted text-sm shrink-0" />
+                <span className="text-xs text-muted font-mono shrink-0">{fmt(r.received_at)}</span>
+                <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${OUTCOME_PILL[r.auth_outcome] || OUTCOME_PILL.skipped}`}>auth {r.auth_outcome}</span>
+                <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${OUTCOME_PILL[r.schema_outcome] || OUTCOME_PILL.skipped}`}>schema {r.schema_outcome}</span>
+                {r.published ? (
+                  <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-green-500/10 text-green-500">published</span>
+                ) : (
+                  <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-hover text-muted">not published</span>
+                )}
+                {r.is_replay && <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-blue-500/10 text-blue-500">replay</span>}
+              </button>
+              <button onClick={() => replay.mutate(r.id)} disabled={replay.isPending} title="Replay" className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-blue-500 shrink-0 disabled:opacity-50">
+                <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
+              </button>
+            </div>
+            {open && <EventLogDetail id={r.id} error={r.error} />}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function EventLogDetail({ id, error }) {
+  const q = useQuery({ queryKey: ["ingest-event-log", id], queryFn: () => ingestApi.eventLogs.get(id) });
+  const d = q.data;
+  return (
+    <div className="px-4 py-3 bg-hover/30 border-t border-card-border space-y-3">
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      {q.isLoading ? (
+        <div className="flex items-center gap-2 text-xs text-muted"><Spinner className="!h-3.5 !w-3.5" /> Loading…</div>
+      ) : (
+        <>
+          <div>
+            <FLabel>Raw payload</FLabel>
+            <pre className="mt-1 rounded-lg border border-field bg-card px-3 py-2 text-[11px] font-mono text-foreground whitespace-pre-wrap break-all max-h-40 overflow-auto">
+              {d?.raw_payload ? JSON.stringify(d.raw_payload, null, 2) : "—"}{d?.raw_truncated ? "\n… (truncated)" : ""}
+            </pre>
+          </div>
+          <div>
+            <FLabel>Transformed</FLabel>
+            <pre className="mt-1 rounded-lg border border-field bg-card px-3 py-2 text-[11px] font-mono text-foreground whitespace-pre-wrap break-all max-h-40 overflow-auto">
+              {d?.transformed_payload ? JSON.stringify(d.transformed_payload, null, 2) : "—"}
+            </pre>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -580,12 +783,12 @@ function WebhookForm({ categoryId, webhook, onCancel, onSaved }) {
   const isEdit = !!webhook;
   const [name, setName] = useState(webhook?.name || "");
   const [authType, setAuthType] = useState(webhook?.auth_type || "none");
-  const [transform, setTransform] = useState(webhook?.transform || "");
+  const [transform, setTransform] = useState(
+    webhook?.transform && Object.keys(webhook.transform).length ? JSON.stringify(webhook.transform, null, 2) : "",
+  );
   const [schema, setSchema] = useState(
-    webhook?.schema
-      ? typeof webhook.schema === "string"
-        ? webhook.schema
-        : JSON.stringify(webhook.schema, null, 2)
+    webhook?.payload_schema && Object.keys(webhook.payload_schema).length
+      ? JSON.stringify(webhook.payload_schema, null, 2)
       : "",
   );
   const [isActive, setIsActive] = useState(webhook?.is_active !== false);
@@ -607,14 +810,19 @@ function WebhookForm({ categoryId, webhook, onCancel, onSaved }) {
     e.preventDefault();
     const next = {};
     if (!name.trim()) next.name = "Name is required";
-    // Validate the JSON schema textarea if provided.
-    let parsedSchema = null;
+    // Both fields are JSON objects on the backend (payload_schema: dict, transform: {key: JMESPath}).
+    let parsedSchema = {};
     if (schema.trim()) {
-      try {
-        parsedSchema = JSON.parse(schema);
-      } catch {
-        next.schema = "Schema must be valid JSON";
-      }
+      try { parsedSchema = JSON.parse(schema); }
+      catch { next.schema = "Schema must be valid JSON"; }
+    }
+    let parsedTransform = {};
+    if (transform.trim()) {
+      try { parsedTransform = JSON.parse(transform); }
+      catch { next.transform = "Transform must be a valid JSON object"; }
+    }
+    if (parsedTransform && (typeof parsedTransform !== "object" || Array.isArray(parsedTransform))) {
+      next.transform = "Transform must be a JSON object of { field: expression }";
     }
     if (Object.keys(next).length) {
       setErrors(next);
@@ -623,8 +831,8 @@ function WebhookForm({ categoryId, webhook, onCancel, onSaved }) {
     const body = {
       name: name.trim(),
       auth_type: authType,
-      transform: transform.trim() || null,
-      schema: parsedSchema,
+      transform: parsedTransform,
+      payload_schema: parsedSchema,
       is_active: isActive,
     };
     if (!isEdit) body.category_id = categoryId;
@@ -665,16 +873,20 @@ function WebhookForm({ categoryId, webhook, onCancel, onSaved }) {
       </div>
 
       <div>
-        <FLabel>Transform (JMESPath)</FLabel>
+        <FLabel>Transform (field map)</FLabel>
         <textarea
-          rows={2}
+          rows={3}
           value={transform}
-          onChange={(e) => setTransform(e.target.value)}
-          placeholder='e.g. { title: event.name, priority: event.severity }'
-          className={AREA_CLS}
+          onChange={(e) => {
+            setTransform(e.target.value);
+            if (errors.transform) setErrors((p) => ({ ...p, transform: undefined }));
+          }}
+          placeholder={'{\n  "title": "event.name",\n  "priority": "event.severity"\n}'}
+          className={`${AREA_CLS} ${errors.transform ? "!border-red-500" : ""}`}
         />
+        {errors.transform && <p className="mt-1 text-xs text-red-500">{errors.transform}</p>}
         <p className="mt-1 text-[11px] text-muted/70">
-          Optional JMESPath expression applied to the incoming payload before processing.
+          Optional JSON object mapping each output field to a JMESPath expression over the incoming payload.
         </p>
       </div>
 

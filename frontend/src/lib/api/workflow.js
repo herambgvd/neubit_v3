@@ -52,17 +52,34 @@ export const workflow = {
   transitions: resource("transitions"),
   triggers: resource("triggers"),
   forms: resource("forms"),
-  notifications: resource("notifications"),
-  threatLevels: resource("threat-levels"),
+
+  // Notifications split into templates + channels (backend: /notifications/{templates,channels}).
+  notifications: {
+    templates: resource("notifications/templates"),
+    channels: resource("notifications/channels"),
+  },
+
+  // Threat-level is a per-site (or deployment-wide) posture register: GET list + PUT set.
+  threatLevels: {
+    list: (params = {}) => unwrap(api.get(`${WF}/threat-levels${qs(params)}`)),
+    set: (body) => unwrap(api.put(`${WF}/threat-levels`, body)),
+  },
 
   instances: {
     list: (params = {}) => unwrap(api.get(`${WF}/instances${qs(params)}`)),
     get: (id) => unwrap(api.get(`${WF}/instances/${id}`)),
+    stats: (params = {}) => unwrap(api.get(`${WF}/instances/stats${qs(params)}`)),
+    availableTransitions: (id) => unwrap(api.get(`${WF}/instances/${id}/available-transitions`)),
     // Advance the state machine by transition_id (backend contract); `form_data` is
     // the filled form payload when the chosen transition requires one.
     transition: (id, body = {}) => unwrap(api.patch(`${WF}/instances/${id}/transition`, body)),
-    assign: (id, assignee_id) =>
-      unwrap(api.patch(`${WF}/instances/${id}/assign`, { assignee_id })),
+    assign: (id, assigned_to) =>
+      unwrap(api.patch(`${WF}/instances/${id}/assign`, { assigned_to: assigned_to || null })),
+    // Status machine: pause/resume/resolve/cancel via {status, outcome?}.
+    setStatus: (id, status, outcome) =>
+      unwrap(api.patch(`${WF}/instances/${id}/status`, { status, outcome })),
+    escalate: (id, reason) =>
+      unwrap(api.patch(`${WF}/instances/${id}/escalate`, { reason })),
   },
 };
 

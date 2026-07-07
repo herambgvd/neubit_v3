@@ -20,8 +20,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Badge, Button, PageHeader, Spinner } from "@/components/ui/kit";
-import { apiError } from "@/lib/api";
+import { Badge, Button, Modal, PageHeader, Spinner } from "@/components/ui/kit";
+import { api, apiError } from "@/lib/api";
 import { workflow as wfApi } from "@/lib/api/workflow";
 import { STATUS_COLOR, PRIORITY_COLOR, titleize } from "@/views/Workflow";
 
@@ -30,6 +30,11 @@ const asItems = (d) => (Array.isArray(d) ? d : d?.items || []);
 // Normalise id accessors across possible backend field names.
 const stateId = (s) => s?.id ?? s?.state_id;
 const stateName = (s) => s?.name ?? s?.state_name;
+// Form field id + required (backend FormFieldSchema: {id, validation:{required}}).
+const fieldKey = (f) => f?.id ?? f?.key ?? f?.label;
+const fieldRequired = (f) => !!(f?.validation?.required ?? f?.required);
+
+const userLabel = (u) => u?.full_name || u?.name || u?.email || u?.username || String(u?.id || "").slice(0, 8);
 
 function fmtWhen(ts) {
   if (!ts) return "—";
@@ -37,6 +42,40 @@ function fmtWhen(ts) {
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+
+// SLA remaining vs a deadline. Returns null (no SLA), or {breached, label, color}.
+function slaInfo(deadline, status) {
+  if (!deadline) return null;
+  const end = new Date(deadline).getTime();
+  if (Number.isNaN(end)) return null;
+  const terminal = status === "resolved" || status === "completed" || status === "cancelled";
+  const diffMin = (end - Date.now()) / 60000;
+  const fmt = (m) => {
+    const a = Math.abs(m);
+    if (a < 60) return `${Math.round(a)}m`;
+    if (a < 1440) return `${Math.floor(a / 60)}h ${Math.round(a % 60)}m`;
+    return `${Math.floor(a / 1440)}d ${Math.floor((a % 1440) / 60)}h`;
+  };
+  if (terminal) return { breached: false, label: `SLA ${fmt(diffMin)}`, color: "bg-hover text-muted" };
+  if (diffMin < 0) return { breached: true, label: `SLA breached ${fmt(diffMin)} ago`, color: "bg-red-500/10 text-red-500" };
+  if (diffMin < 60) return { breached: false, label: `SLA due in ${fmt(diffMin)}`, color: "bg-amber-500/10 text-amber-500" };
+  return { breached: false, label: `SLA in ${fmt(diffMin)}`, color: "bg-green-500/10 text-green-500" };
+}
+
+// Which status actions are offered from the current status.
+const STATUS_ACTIONS = {
+  pending: [{ status: "active", label: "Activate", variant: "primary", reason: false }],
+  active: [
+    { status: "paused", label: "Pause", variant: "secondary", reason: false },
+    { status: "resolved", label: "Resolve", variant: "success", reason: true },
+    { status: "cancelled", label: "Cancel", variant: "danger", reason: true },
+  ],
+  paused: [
+    { status: "active", label: "Resume", variant: "primary", reason: false },
+    { status: "resolved", label: "Resolve", variant: "success", reason: true },
+    { status: "cancelled", label: "Cancel", variant: "danger", reason: true },
+  ],
+};
 
 export default function WorkflowDetailPage() {
   const params = useParams();
@@ -89,16 +128,53 @@ export default function WorkflowDetailPage() {
   }, [transitions, states, currentStateId, currentStateName]);
 
   const [transitionModal, setTransitionModal] = useState(null); // the chosen transition
+  const [reasonAction, setReasonAction] = useState(null); // { title, verb, run(reason) }
+
+  // Users for the assignee picker (core /auth/users).
+  const usersQ = useQuery({
+    queryKey: ["auth-users-min"],
+    queryFn: () => api.get("/auth/users", { params: { page_size: 200 } }).then((r) => r.data),
+  });
+  const users = asItems(usersQ.data);
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["wf-instance", id] });
 
   const doTransition = useMutation({
     mutationFn: (body) => wfApi.instances.transition(id, body),
     onSuccess: () => {
       toast.success("Transition applied");
-      qc.invalidateQueries({ queryKey: ["wf-instance", id] });
+      invalidate();
       setTransitionModal(null);
     },
     onError: (e) => toast.error(apiError(e)),
   });
+  const assignMut = useMutation({
+    mutationFn: (assignee_id) => wfApi.instances.assign(id, assignee_id),
+    onSuccess: () => { toast.success("Assignee updated"); invalidate(); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const escalateMut = useMutation({
+    mutationFn: (reason) => wfApi.instances.escalate(id, reason),
+    onSuccess: () => { toast.success("Incident escalated"); invalidate(); setReasonAction(null); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const statusMut = useMutation({
+    mutationFn: ({ status, reason }) => wfApi.instances.setStatus(id, status, reason),
+    onSuccess: () => { toast.success("Status updated"); invalidate(); setReasonAction(null); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const actionPending = assignMut.isPending || escalateMut.isPending || statusMut.isPending;
+
+  function runStatus(a) {
+    if (a.reason) {
+      setReasonAction({ title: `${a.label} incident`, verb: a.label, run: (reason) => statusMut.mutate({ status: a.status, reason }) });
+    } else {
+      statusMut.mutate({ status: a.status });
+    }
+  }
+  function runEscalate() {
+    setReasonAction({ title: "Escalate incident", verb: "Escalate", run: (reason) => escalateMut.mutate(reason) });
+  }
 
   function runTransition(t) {
     const formRef = t.form_id ?? t.form_config?.form_id;
@@ -132,6 +208,9 @@ export default function WorkflowDetailPage() {
   const title =
     inst.title || inst.reference || inst.name || `Incident ${String(id).slice(0, 8)}`;
   const history = asItems(inst.history || inst.timeline || inst.events);
+  const sla = slaInfo(inst.sla_deadline, inst.status);
+  const eventPayload = inst.trigger_data ?? inst.event ?? inst.event_data ?? null;
+  const escalationLevel = inst.escalation?.level ?? inst.escalation_level ?? 0;
 
   return (
     <div>
@@ -168,6 +247,18 @@ export default function WorkflowDetailPage() {
           <Icon icon="heroicons-outline:user" className="text-sm" />
           {inst.assignee_name || inst.assignee?.full_name || inst.assignee?.email || "Unassigned"}
         </span>
+        {sla && (
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${sla.color}`}>
+            <Icon icon="heroicons-outline:clock" className="text-sm" />
+            {sla.label}
+          </span>
+        )}
+        {escalationLevel > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 text-red-500 px-2.5 py-0.5 text-xs font-medium">
+            <Icon icon="heroicons-outline:arrow-trending-up" className="text-sm" />
+            Escalated · L{escalationLevel}
+          </span>
+        )}
         <span className="ml-auto text-xs text-muted">Created {fmtWhen(inst.created_at)}</span>
       </div>
 
@@ -209,6 +300,9 @@ export default function WorkflowDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Trigger event payload (collapsible) */}
+          {eventPayload && <EventPayloadInspector payload={eventPayload} eventType={inst.event_type} />}
         </div>
 
         {/* Right: current state + allowed transitions */}
@@ -216,6 +310,39 @@ export default function WorkflowDetailPage() {
           <div className="rounded-xl border border-card-border bg-card p-5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Current state</div>
             <div className="mt-1 text-lg font-semibold text-foreground">{currentStateName || "—"}</div>
+          </div>
+
+          {/* Manage: assignment, escalation, status */}
+          <div className="rounded-xl border border-card-border bg-card">
+            <header className="px-5 py-4 border-b border-card-border">
+              <h3 className="text-sm font-semibold text-foreground">Manage</h3>
+            </header>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted">Assignee</label>
+                <select
+                  value={inst.assigned_to ?? inst.assignee_id ?? ""}
+                  onChange={(e) => assignMut.mutate(e.target.value || null)}
+                  disabled={assignMut.isPending || usersQ.isLoading}
+                  className="mt-1 h-10 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted disabled:opacity-50"
+                >
+                  <option value="" className="bg-card">Unassigned</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id} className="bg-card">{userLabel(u)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(STATUS_ACTIONS[inst.status] || []).map((a) => (
+                  <Button key={a.status} variant={a.variant} onClick={() => runStatus(a)} disabled={actionPending} className="!px-3 !py-1.5 text-xs">
+                    {a.label}
+                  </Button>
+                ))}
+                <Button variant="secondary" icon="heroicons-outline:arrow-trending-up" onClick={runEscalate} disabled={actionPending || inst.status === "resolved" || inst.status === "cancelled" || inst.status === "completed"} className="!px-3 !py-1.5 text-xs">
+                  Escalate
+                </Button>
+              </div>
+            </div>
           </div>
 
           <div className="rounded-xl border border-card-border bg-card">
@@ -268,6 +395,66 @@ export default function WorkflowDetailPage() {
             doTransition.mutate({ transition_id: transitionModal.transition_id ?? transitionModal.id, form_data });
           }}
         />
+      )}
+
+      {reasonAction && (
+        <ReasonModal
+          action={reasonAction}
+          pending={escalateMut.isPending || statusMut.isPending}
+          onCancel={() => setReasonAction(null)}
+          onSubmit={(reason) => reasonAction.run(reason)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── Reason modal (escalate / resolve / cancel) ────────────────── */
+function ReasonModal({ action, pending, onCancel, onSubmit }) {
+  const [reason, setReason] = useState("");
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      title={action.title}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel} disabled={pending}>Cancel</Button>
+          <Button onClick={() => onSubmit(reason.trim() || null)} disabled={pending}>
+            {pending ? "Working…" : action.verb}
+          </Button>
+        </>
+      }
+    >
+      <label className="text-xs font-medium uppercase tracking-wide text-muted">Reason (optional)</label>
+      <textarea
+        rows={3}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        autoFocus
+        className="mt-1 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
+        placeholder="Add context for this action"
+      />
+    </Modal>
+  );
+}
+
+/* ─── Trigger event payload inspector (collapsible) ─────────────── */
+function EventPayloadInspector({ payload, eventType }) {
+  const [open, setOpen] = useState(false);
+  let json = "";
+  try { json = JSON.stringify(payload, null, 2); } catch { json = String(payload); }
+  return (
+    <div className="rounded-xl border border-card-border bg-card">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-5 py-4 text-left">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Trigger event</h3>
+          {eventType && <p className="text-xs text-muted mt-0.5 font-mono">{eventType}</p>}
+        </div>
+        <Icon icon={open ? "heroicons-outline:chevron-up" : "heroicons-outline:chevron-down"} className="text-muted text-base shrink-0" />
+      </button>
+      {open && (
+        <pre className="px-5 pb-4 text-xs font-mono text-muted overflow-x-auto whitespace-pre-wrap break-words max-h-96 overflow-y-auto border-t border-card-border pt-4">{json}</pre>
       )}
     </div>
   );
@@ -342,8 +529,9 @@ function TransitionFormModal({ transition, states, formList, pending, onCancel, 
     e.preventDefault();
     const next = {};
     for (const f of fields) {
-      if (f.required && (values[f.key] === undefined || values[f.key] === "" || values[f.key] === null)) {
-        next[f.key] = `${f.label || f.key} is required`;
+      const k = fieldKey(f);
+      if (fieldRequired(f) && (values[k] === undefined || values[k] === "" || values[k] === null)) {
+        next[k] = `${f.label || k} is required`;
       }
     }
     if (Object.keys(next).length) {
@@ -376,15 +564,18 @@ function TransitionFormModal({ transition, states, formList, pending, onCancel, 
             {fields.length === 0 ? (
               <p className="text-sm text-muted">Confirm to apply this transition.</p>
             ) : (
-              fields.map((f) => (
-                <FormFieldInput
-                  key={f.key}
-                  field={f}
-                  value={values[f.key]}
-                  error={errors[f.key]}
-                  onChange={(v) => setField(f.key, v)}
-                />
-              ))
+              fields.map((f) => {
+                const k = fieldKey(f);
+                return (
+                  <FormFieldInput
+                    key={k}
+                    field={f}
+                    value={values[k]}
+                    error={errors[k]}
+                    onChange={(v) => setField(k, v)}
+                  />
+                );
+              })
             )}
           </div>
           <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-card-border shrink-0">
@@ -403,8 +594,8 @@ function TransitionFormModal({ transition, states, formList, pending, onCancel, 
 function FormFieldInput({ field, value, error, onChange }) {
   const label = (
     <label className="text-xs font-medium uppercase tracking-wide text-muted">
-      {field.label || field.key}
-      {field.required && <span className="text-red-500 ml-1">*</span>}
+      {field.label || fieldKey(field)}
+      {fieldRequired(field) && <span className="text-red-500 ml-1">*</span>}
     </label>
   );
   const cls = `mt-1 h-10 w-full rounded-lg border ${error ? "border-red-500" : "border-field"} bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted`;

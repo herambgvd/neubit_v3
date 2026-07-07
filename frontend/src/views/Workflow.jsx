@@ -8,12 +8,16 @@
 // (SSE/WS) will come later via the core realtime-bridge — see the comment on the query.
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
+import { toast } from "sonner";
 
-import { Badge, Card, PageHeader, Spinner } from "@/components/ui/kit";
+import { Badge, Button, Card, PageHeader, Spinner } from "@/components/ui/kit";
+import { apiError } from "@/lib/api";
 import { workflow as wfApi } from "@/lib/api/workflow";
 import { sites as sitesApi } from "@/lib/api/sites";
+
+const rowId = (it) => it.id ?? it.instance_id;
 
 // Domain statuses mirror neubit_v2's incident lifecycle (pending→active→…→completed).
 export const INCIDENT_STATUSES = ["pending", "active", "paused", "completed", "cancelled"];
@@ -79,6 +83,48 @@ export default function WorkflowPage() {
   const instances = asItems(instancesQ.data);
   const total = instancesQ.data?.total ?? instances.length;
 
+  const qc = useQueryClient();
+
+  // Stats strip (defensive: if the /stats endpoint isn't live yet, retry:false hides it).
+  const statsQ = useQuery({
+    queryKey: ["wf-stats"],
+    queryFn: () => wfApi.instances.stats(),
+    retry: false,
+    refetchInterval: 15000,
+  });
+  const statusCounts = useMemo(() => {
+    const d = statsQ.data;
+    if (!d) return null;
+    return d.by_status || d.status || d.statuses || d.counts || d;
+  }, [statsQ.data]);
+
+  // Bulk selection over the current page.
+  const [selected, setSelected] = useState(() => new Set());
+  const toggle = (id) =>
+    setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const clearSel = () => setSelected(new Set());
+  const allSelected = instances.length > 0 && instances.every((it) => selected.has(rowId(it)));
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(instances.map(rowId)));
+
+  const bulk = useMutation({
+    mutationFn: async (kind) => {
+      const ids = [...selected];
+      const fn = kind === "escalate"
+        ? (id) => wfApi.instances.escalate(id, null)
+        : (id) => wfApi.instances.setStatus(id, kind, null); // 'paused' | 'cancelled'
+      const results = await Promise.allSettled(ids.map(fn));
+      return { total: ids.length, failed: results.filter((r) => r.status === "rejected").length };
+    },
+    onSuccess: ({ total: n, failed }) => {
+      (failed ? toast.warning : toast.success)(`${n - failed}/${n} updated${failed ? ` · ${failed} not applicable` : ""}`);
+      clearSel();
+      qc.invalidateQueries({ queryKey: ["wf-instances"] });
+      statsQ.refetch();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
   const sopName = useMemo(() => {
     const m = {};
     for (const s of sops) m[s.id ?? s.sop_id] = s.name;
@@ -108,6 +154,26 @@ export default function WorkflowPage() {
           </Link>
         }
       />
+
+      {/* Stats strip — click a tile to filter by that status */}
+      {statusCounts && (
+        <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {[{ k: "", label: "Total" }, ...INCIDENT_STATUSES.map((s) => ({ k: s, label: titleize(s) }))].map(({ k, label }) => {
+            const count = k === "" ? (statusCounts.total ?? total) : (Number(statusCounts[k]) || 0);
+            const isActive = status === k;
+            return (
+              <button
+                key={k || "total"}
+                onClick={() => setStatus(k)}
+                className={`rounded-xl border px-3 py-2.5 text-left transition ${isActive ? "border-foreground bg-hover" : "border-card-border hover:bg-hover"}`}
+              >
+                <div className="text-lg font-semibold text-foreground">{count}</div>
+                <div className="text-[11px] text-muted">{label}</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -151,6 +217,19 @@ export default function WorkflowPage() {
         <span className="ml-auto text-xs text-muted">{total} incident(s)</span>
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-card-border bg-card px-3 py-2">
+          <span className="text-sm font-medium text-foreground">{selected.size} selected</span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="secondary" onClick={() => bulk.mutate("paused")} disabled={bulk.isPending} className="!px-3 !py-1.5 text-xs">Pause</Button>
+            <Button variant="secondary" icon="heroicons-outline:arrow-trending-up" onClick={() => bulk.mutate("escalate")} disabled={bulk.isPending} className="!px-3 !py-1.5 text-xs">Escalate</Button>
+            <Button variant="danger" onClick={() => bulk.mutate("cancelled")} disabled={bulk.isPending} className="!px-3 !py-1.5 text-xs">Cancel</Button>
+            <button onClick={clearSel} className="text-xs text-muted hover:text-foreground px-2">Clear</button>
+          </div>
+        </div>
+      )}
+
       <Card className="overflow-hidden">
         {instancesQ.isLoading ? (
           <div className="flex justify-center py-16">
@@ -169,6 +248,7 @@ export default function WorkflowPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted border-b border-card-border">
+                  <th className="w-10 px-4 py-3"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all" /></th>
                   <th className="font-medium px-4 py-3">Incident</th>
                   <th className="font-medium px-4 py-3">SOP</th>
                   <th className="font-medium px-4 py-3">State</th>
@@ -186,6 +266,9 @@ export default function WorkflowPage() {
                   const siteRef = it.site_id ?? it.site?.site_id;
                   return (
                     <tr key={id} className="border-b border-card-border hover:bg-hover transition">
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={selected.has(id)} onChange={() => toggle(id)} aria-label="Select incident" />
+                      </td>
                       <td className="px-4 py-3">
                         <Link href={`/events/${id}`} className="flex flex-col">
                           <span className="font-medium text-foreground">{it.title || it.reference || `Incident ${String(id).slice(0, 8)}`}</span>
