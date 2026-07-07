@@ -12,17 +12,17 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from edge.core.config import get_settings
-from edge.db.base import Base
+from app.core.config import get_settings
+from app.db.base import Base
 
 # Import all model modules so their tables register on Base.metadata.
-import edge.auth.models  # noqa: F401
-import edge.tenancy.models  # noqa: F401
-import edge.core.audit  # noqa: F401
-import edge.messaging  # noqa: F401
-import edge.branding.models  # noqa: F401
-import edge.reports.models  # noqa: F401
-import edge.settings.models  # noqa: F401
+import app.auth.models  # noqa: F401
+import app.tenancy.models  # noqa: F401
+import app.core.audit  # noqa: F401
+import app.messaging  # noqa: F401
+import app.branding.models  # noqa: F401
+import app.reports.models  # noqa: F401
+import app.settings.models  # noqa: F401
 
 config = context.config
 if config.config_file_name:

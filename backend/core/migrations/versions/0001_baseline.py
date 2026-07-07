@@ -21,13 +21,13 @@ depends_on = None
 
 def _metadata():
     # Import inside the function so the models register on Base.metadata at run time.
-    from edge.db.base import Base
-    import edge.auth.models  # noqa: F401
-    import edge.core.audit  # noqa: F401
-    import edge.messaging  # noqa: F401
-    import edge.branding.models  # noqa: F401
-    import edge.reports.models  # noqa: F401
-    import edge.settings.models  # noqa: F401
+    from app.db.base import Base
+    import app.auth.models  # noqa: F401
+    import app.core.audit  # noqa: F401
+    import app.messaging  # noqa: F401
+    import app.branding.models  # noqa: F401
+    import app.reports.models  # noqa: F401
+    import app.settings.models  # noqa: F401
 
     return Base.metadata
 

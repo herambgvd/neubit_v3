@@ -25,7 +25,7 @@ depends_on = None
 
 def _tenants_table():
     # Import inside the function so the model registers on Base.metadata at run time.
-    from edge.tenancy.models import Tenant
+    from app.tenancy.models import Tenant
 
     return Tenant.__table__
 

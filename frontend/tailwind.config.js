@@ -1,14 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
-    "./app/**/*.{js,ts,jsx,tsx}",
-    "./pages/**/*.{js,ts,jsx,tsx}",
-    "./components/**/*.{js,ts,jsx,tsx}",
-    "./views/**/*.{js,ts,jsx,tsx}",   // scenario UI (moved out of platform/web)
-    "./menu.js",
-    "./web/**/*.{js,ts,jsx,tsx}",
-
-    // Or if using `src` directory:
+    // Enterprise src/ layout: routes, components, views, lib, config all live here.
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   mode: "jit",

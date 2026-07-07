@@ -20,14 +20,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    from edge.db.base import Base
-    import edge.settings.models  # noqa: F401  registers app_settings on metadata
+    from app.db.base import Base
+    import app.settings.models  # noqa: F401  registers app_settings on metadata
 
     Base.metadata.tables["app_settings"].create(op.get_bind(), checkfirst=True)
 
 
 def downgrade() -> None:
-    from edge.db.base import Base
-    import edge.settings.models  # noqa: F401
+    from app.db.base import Base
+    import app.settings.models  # noqa: F401
 
     Base.metadata.tables["app_settings"].drop(op.get_bind(), checkfirst=True)

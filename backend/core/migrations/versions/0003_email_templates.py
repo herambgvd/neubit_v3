@@ -16,7 +16,7 @@ depends_on = None
 
 
 def _tables():
-    from edge.messaging.template_store import EmailTemplate
+    from app.messaging.template_store import EmailTemplate
 
     return [EmailTemplate.__table__]
 

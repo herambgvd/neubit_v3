@@ -18,7 +18,7 @@ depends_on = None
 
 
 def _new_tables():
-    from edge.auth.models import PasswordResetToken, RefreshToken
+    from app.auth.models import PasswordResetToken, RefreshToken
 
     return [RefreshToken.__table__, PasswordResetToken.__table__]
 

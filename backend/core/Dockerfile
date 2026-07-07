@@ -1,4 +1,4 @@
-# Neubit v3 platform core (Python / edge). Built with uv — fast, reproducible.
+# Neubit v3 platform core (Python / app). Built with uv — fast, reproducible.
 FROM python:3.11-slim
 
 # uv: fast Python package manager (replaces pip).
@@ -12,11 +12,10 @@ RUN apt-get update \
 
 # Deps first (layer cache), then source. AI extras (runtime/gpu/openvino/vector) are dropped.
 COPY pyproject.toml ./
-COPY edge ./edge
-COPY example ./example
+COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini ./
 RUN uv pip install --system --no-cache -e ".[messaging,tasks,reports,system,storage]"
 
 EXPOSE 8000
-CMD ["uvicorn", "example.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
