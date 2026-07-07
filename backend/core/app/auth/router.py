@@ -24,8 +24,9 @@ from ..core.pagination import Page, PageParams, page_params, paginate
 from ..core.ratelimit import login_rate_limit
 from ..core.storage import get_storage
 from ..db.base import get_db
+from ..tenancy.scope import scope_of
 from .deps import get_current_sid, get_current_user, require_permission
-from .models import Role, User
+from .models import User
 from .permissions import PERMISSIONS, CorePerm
 from .schemas import (
     AccessOut,
@@ -172,7 +173,7 @@ async def upload_avatar(
     """Upload/replace the current user's profile picture (self-service)."""
     from ..settings.service import SettingsService
 
-    if not await SettingsService(db).get("allow_avatar_uploads"):
+    if not await SettingsService(db, user.tenant_id).get("allow_avatar_uploads"):
         raise ValidationError("Profile photo uploads are disabled by the administrator.")
     data = await file.read()
     ext = os.path.splitext(file.filename or "")[1]
@@ -370,7 +371,7 @@ async def create_role(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.ROLE_MANAGE)),
 ):
-    role = await AuthService(db).create_role(data)
+    role = await AuthService(db).create_role(data, scope_of(actor))
     await audit_record(
         db, actor=actor, action="role.create", target_type="role",
         target_id=str(role.id), meta={"name": role.name},
@@ -382,9 +383,13 @@ async def create_role(
 async def list_roles(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission(CorePerm.ROLE_READ)),
+    actor: User = Depends(require_permission(CorePerm.ROLE_READ)),
 ):
-    return await paginate(db, AuthService(db).roles_query(), params, item_model=RoleOut)
+    # Tenant scoping: a tenant-admin sees their own roles + shared system roles;
+    # super-admins see all. The shared Administrator role stays visible to everyone.
+    return await paginate(
+        db, AuthService(db).roles_query(scope_of(actor)), params, item_model=RoleOut
+    )
 
 
 @router.patch("/roles/{role_id}", response_model=RoleOut)
@@ -394,7 +399,7 @@ async def update_role(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.ROLE_MANAGE)),
 ):
-    role = await AuthService(db).update_role(role_id, data)
+    role = await AuthService(db).update_role(role_id, data, scope_of(actor))
     await audit_record(
         db, actor=actor, action="role.update", target_type="role",
         target_id=str(role_id), meta={"name": role.name},
@@ -408,7 +413,7 @@ async def delete_role(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.ROLE_MANAGE)),
 ) -> None:
-    await AuthService(db).delete_role(role_id)
+    await AuthService(db).delete_role(role_id, scope_of(actor))
     await audit_record(
         db, actor=actor, action="role.delete", target_type="role", target_id=str(role_id),
     )
@@ -421,7 +426,9 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
 ) -> UserOut:
-    user = await AuthService(db).create_user(data)
+    # Scope forces a tenant-admin's new users into their own tenant and blocks
+    # setting is_superadmin / a cross-tenant tenant_id (see AuthService.create_user).
+    user = await AuthService(db).create_user(data, scope_of(actor))
     await audit_record(
         db, actor=actor, action="user.create", target_type="user",
         target_id=str(user.id), meta={"email": user.email},
@@ -448,13 +455,17 @@ async def _send_invite_email(db: AsyncSession, user: User) -> None:
         _, raw = res
         settings = get_settings()
         activate_url = f"{settings.frontend_url.rstrip('/')}/forgot-password?token={raw}"
-        branding = await branding_service.get_or_create(db)
+        # Brand the invite with the new user's tenant (falls back to the platform
+        # default), and pull the welcome template override from the same tenant.
+        branding = await branding_service.resolve(db, user.tenant_id)
         ctx = {
             "name": user.full_name or user.email,
             "app_name": branding.app_name,
             "activate_url": activate_url,
         }
-        subject, body = await email_templates.render_with_overrides(db, "welcome", ctx)
+        subject, body = await email_templates.render_with_overrides(
+            db, "welcome", ctx, tenant_id=user.tenant_id
+        )
         html = email_templates.wrap_email(branding.app_name, body)
         await send_email(db, [user.email], subject, html)
     except Exception:  # pragma: no cover - invites are best-effort
@@ -470,7 +481,8 @@ async def list_users(
     # Tenant scoping: a non-superadmin only ever sees their own tenant's users.
     # Super-admins (tenant_id NULL) see everyone here; they normally manage
     # tenants via the /admin API instead.
-    tenant_id = None if actor.is_superadmin else actor.tenant_id
+    scope = scope_of(actor)
+    tenant_id = None if scope.is_platform else scope.tenant_id
     page = await paginate(db, AuthService(db).users_query(tenant_id), params)
     page.items = [await _user_out(u) for u in page.items]
     return page
@@ -527,7 +539,10 @@ async def import_users(
     """
     raw = (await file.read()).decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(raw))
-    roles = (await db.execute(select(Role))).scalars().all()
+    scope = scope_of(actor)
+    # Only offer roles the acting admin can actually assign (own-tenant + shared
+    # system roles for a tenant-admin; all roles for a super-admin).
+    roles = (await db.execute(AuthService(db).roles_query(scope))).scalars().all()
     role_by_name = {r.name.lower(): r for r in roles}
 
     created, skipped, errors = 0, 0, []
@@ -541,6 +556,7 @@ async def import_users(
         send_invite = _truthy(row.get("send_invite", "true"))
         password = (row.get("password") or "").strip() or (secrets.token_urlsafe(10) + "aA1")
         try:
+            # scope stamps each imported user with the acting admin's tenant.
             user = await svc.create_user(
                 CreateUserIn(
                     email=email,
@@ -548,7 +564,8 @@ async def import_users(
                     full_name=(row.get("full_name") or "").strip() or None,
                     role_id=role.id,
                     send_invite=send_invite,
-                )
+                ),
+                scope,
             )
             if send_invite:
                 await _send_invite_email(db, user)
@@ -564,6 +581,18 @@ async def import_users(
     return {"created": created, "skipped": skipped, "errors": errors[:20]}
 
 
+@router.get("/users/{user_id}", response_model=UserOut)
+async def get_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_permission(CorePerm.USER_READ)),
+) -> UserOut:
+    """Fetch one user. A tenant-admin only sees users in their own tenant (404
+    otherwise); super-admins see any user."""
+    user = await AuthService(db).get_user(user_id, scope_of(actor))
+    return await _user_out(user)
+
+
 @router.patch("/users/{user_id}", response_model=UserOut)
 async def update_user(
     user_id: uuid.UUID,
@@ -571,7 +600,7 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
 ) -> UserOut:
-    user = await AuthService(db).update_user(user_id, data)
+    user = await AuthService(db).update_user(user_id, data, scope_of(actor))
     await audit_record(
         db, actor=actor, action="user.update", target_type="user",
         target_id=str(user_id), meta=data.model_dump(exclude_none=True),
@@ -593,7 +622,7 @@ async def delete_user(
     svc = AuthService(db)
     if not svc.verify_actor_password(actor, data.password):
         raise UnauthorizedError("Password confirmation failed.")
-    user = await svc.delete_user(user_id)
+    user = await svc.delete_user(user_id, scope_of(actor))
     await audit_record(
         db, actor=actor, action="user.delete", target_type="user",
         target_id=str(user_id), meta={"email": user.email},
@@ -607,7 +636,7 @@ async def create_api_key(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.APIKEY_MANAGE)),
 ) -> ApiKeyCreatedOut:
-    key, raw = await AuthService(db).create_api_key(data)
+    key, raw = await AuthService(db).create_api_key(data, scope_of(actor))
     await audit_record(
         db, actor=actor, action="apikey.create", target_type="api_key",
         target_id=str(key.id), meta={"name": key.name},
@@ -619,9 +648,12 @@ async def create_api_key(
 async def list_api_keys(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission(CorePerm.APIKEY_MANAGE)),
+    actor: User = Depends(require_permission(CorePerm.APIKEY_MANAGE)),
 ) -> Page[ApiKeyOut]:
-    return await paginate(db, AuthService(db).api_keys_query(), params, item_model=ApiKeyOut)
+    # Tenant scoping: a tenant-admin only sees their own tenant's keys.
+    return await paginate(
+        db, AuthService(db).api_keys_query(scope_of(actor)), params, item_model=ApiKeyOut
+    )
 
 
 @router.delete("/api-keys/{key_id}", status_code=204)
@@ -630,7 +662,7 @@ async def revoke_api_key(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.APIKEY_MANAGE)),
 ) -> None:
-    await AuthService(db).revoke_api_key(key_id)
+    await AuthService(db).revoke_api_key(key_id, scope_of(actor))
     await audit_record(
         db, actor=actor, action="apikey.revoke", target_type="api_key", target_id=str(key_id),
     )

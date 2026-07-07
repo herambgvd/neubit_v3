@@ -107,15 +107,18 @@ def _require_known_channel(channel: str) -> None:
 
 
 # --- channel config (admin, settings.manage) ---------------------------------
+# Multi-tenancy: a tenant-admin sees/edits THEIR tenant's channel config (resolved
+# with a platform-default fallback for reads); a super-admin (tenant_id None) edits
+# the platform default. Every helper below threads ``user.tenant_id``.
 @router.get("/channels", response_model=list[ChannelOut])
 async def list_channels(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> list[ChannelOut]:
     """List every channel's config (masked). Channels never configured show defaults."""
     out: list[ChannelOut] = []
     for channel in sorted(_CHANNELS):
-        row = await channel_config.get_channel(db, channel)
+        row = await channel_config.get_channel(db, channel, user.tenant_id)
         if row is None:
             out.append(ChannelOut(channel=channel, enabled=False, config={}))
         else:
@@ -133,11 +136,11 @@ async def list_channels(
 async def get_channel(
     channel: str,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> ChannelOut:
     """Get one channel's masked config."""
     _require_known_channel(channel)
-    row = await channel_config.get_channel(db, channel)
+    row = await channel_config.get_channel(db, channel, user.tenant_id)
     if row is None:
         return ChannelOut(channel=channel, enabled=False, config={})
     return ChannelOut(
@@ -152,11 +155,13 @@ async def update_channel(
     channel: str,
     data: ChannelUpdateIn,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> ChannelOut:
-    """Create/update a channel's config (secret fields are encrypted at rest)."""
+    """Create/update the caller's channel config (secret fields encrypted at rest)."""
     _require_known_channel(channel)
-    row = await channel_config.upsert_channel(db, channel, data.enabled, data.config)
+    row = await channel_config.upsert_channel(
+        db, channel, data.enabled, data.config, user.tenant_id
+    )
     return ChannelOut(
         channel=channel,
         enabled=row.enabled,
@@ -186,7 +191,7 @@ async def test_channel(
         tokens = [t for (t,) in result.all()]
         ok = await send_push(db, tokens, "Test notification", "This is a test push.")
     elif channel == "webhook":
-        cfg = await channel_config.get_config_decrypted(db, channel) or {}
+        cfg = await channel_config.get_config_decrypted(db, channel, user.tenant_id) or {}
         ok = await send_webhook(
             cfg.get("url", ""), {"test": True, "message": "edge messaging test"},
             secret=cfg.get("secret"),
@@ -233,15 +238,18 @@ async def mark_notification_read(
 # --- email templates (admin, settings.manage) --------------------------------
 # Admins customise the built-in "ready" email templates from the DB; a missing
 # override falls back to the code default (see templates.render_with_overrides).
+# Multi-tenancy: overrides resolve/write in the caller's scope (tenant-admin → their
+# tenant, super-admin → the platform default), with reads falling back to the
+# platform default (see template_store.get_override).
 @router.get("/templates", response_model=list[TemplateSummaryOut])
 async def list_templates(
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> list[TemplateSummaryOut]:
     """List the built-in template names, flagging which are overridden."""
     out: list[TemplateSummaryOut] = []
     for name in email_templates.available_template_names():
-        override = await template_store.get_override(db, name)
+        override = await template_store.get_override(db, name, user.tenant_id)
         if override is not None:
             out.append(
                 TemplateSummaryOut(name=name, overridden=True, subject=override.subject)
@@ -261,10 +269,10 @@ async def list_templates(
 async def get_template(
     name: str,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> TemplateOut:
     """The effective template for ``name`` — the override if set, else the default."""
-    override = await template_store.get_override(db, name)
+    override = await template_store.get_override(db, name, user.tenant_id)
     if override is not None:
         return TemplateOut(
             name=name, subject=override.subject, html=override.html, is_override=True
@@ -282,14 +290,16 @@ async def get_template(
 async def preview_template(
     name: str,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> dict:
     """Render the (effective) template with realistic sample data and a branded
     email shell, so admins see a real email — not raw Jinja placeholders."""
     from ..branding import service as branding_service
 
-    branding = await branding_service.get_or_create(db)
-    subject, html = await email_templates.render_preview(db, name, app_name=branding.app_name)
+    branding = await branding_service.resolve(db, user.tenant_id)
+    subject, html = await email_templates.render_preview(
+        db, name, app_name=branding.app_name, tenant_id=user.tenant_id
+    )
     return {"subject": subject, "html": html}
 
 
@@ -298,10 +308,12 @@ async def upsert_template(
     name: str,
     data: TemplateUpsertIn,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> TemplateOut:
-    """Create/update the override for ``name`` (matches a built-in or a custom name)."""
-    row = await template_store.upsert_override(db, name, data.subject, data.html)
+    """Create/update the caller's override for ``name`` (built-in or custom name)."""
+    row = await template_store.upsert_override(
+        db, name, data.subject, data.html, user.tenant_id
+    )
     return TemplateOut(
         name=row.name, subject=row.subject, html=row.html, is_override=True
     )
@@ -311,10 +323,11 @@ async def upsert_template(
 async def delete_template(
     name: str,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> dict:
-    """Remove the override for ``name``, reverting to the built-in default (404 if none)."""
-    deleted = await template_store.delete_override(db, name)
+    """Remove the CALLER'S override for ``name``, reverting to the fallback (404 if
+    the caller has no override of their own)."""
+    deleted = await template_store.delete_override(db, name, user.tenant_id)
     if not deleted:
         raise NotFoundError(f"no override for template '{name}'")
     return {"name": name, "reverted": True}

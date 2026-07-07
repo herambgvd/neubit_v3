@@ -17,10 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.deps import require_permission
 from ..auth.models import User
 from ..auth.permissions import CorePerm
-from ..core.errors import NotFoundError, ValidationError
+from ..core.errors import ValidationError
 from ..core.pagination import Page, PageParams, page_params, paginate
 from ..core.storage import get_storage
 from ..db.base import get_db
+from ..tenancy.scope import assert_owned, scope_of
 from . import service
 from .models import ReportJob
 from .schemas import CreateReportIn, ReportJobOut
@@ -32,10 +33,12 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 async def list_reports(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission(CorePerm.REPORT_READ)),
+    user: User = Depends(require_permission(CorePerm.REPORT_READ)),
 ) -> Page[ReportJobOut]:
-    """Paginated list of report jobs, newest first."""
-    return await paginate(db, service.list_query(), params, item_model=ReportJobOut)
+    """Paginated list of report jobs, newest first (tenant-scoped)."""
+    return await paginate(
+        db, service.list_query(scope_of(user)), params, item_model=ReportJobOut
+    )
 
 
 @router.post("", response_model=ReportJobOut, status_code=201)
@@ -48,20 +51,22 @@ async def create_report(
 
     Generation is deferred to the owning scenario, which supplies the actual rows
     to ``service.generate_report_now`` (inline) or ``run_report_task`` (worker).
+    The job is stamped with the requester's tenant so it stays tenant-isolated.
     """
-    return await service.create_job(db, data.name, data.format, requested_by=user.id)
+    return await service.create_job(
+        db, data.name, data.format, requested_by=user.id, tenant_id=user.tenant_id
+    )
 
 
 @router.get("/{job_id}", response_model=ReportJobOut)
 async def get_report(
     job_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission(CorePerm.REPORT_READ)),
+    user: User = Depends(require_permission(CorePerm.REPORT_READ)),
 ) -> ReportJob:
-    """Fetch a single report job (poll this for its status)."""
+    """Fetch a single report job (poll this for its status). Tenant-owned only."""
     job = await db.get(ReportJob, job_id)
-    if job is None:
-        raise NotFoundError("report job not found")
+    assert_owned(job, scope_of(user), message="report job not found")
     return job
 
 
@@ -69,17 +74,17 @@ async def get_report(
 async def download_report(
     job_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission(CorePerm.REPORT_EXPORT)),
+    user: User = Depends(require_permission(CorePerm.REPORT_EXPORT)),
 ) -> dict:
     """Return a fetchable URL for a finished report's file.
 
     We hand back a URL (local file link or presigned S3 link) rather than
     streaming bytes through the API — the browser fetches the blob directly from
-    storage. 404 if the job doesn't exist; 422 if it isn't ``done`` yet.
+    storage. 404 if the job doesn't exist OR belongs to another tenant; 422 if it
+    isn't ``done`` yet.
     """
     job = await db.get(ReportJob, job_id)
-    if job is None:
-        raise NotFoundError("report job not found")
+    assert_owned(job, scope_of(user), message="report job not found")
     if job.status != "done" or not job.result_key:
         raise ValidationError(f"report is not ready (status={job.status})")
     url = await get_storage().url(job.result_key)

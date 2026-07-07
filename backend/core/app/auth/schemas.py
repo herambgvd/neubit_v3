@@ -138,6 +138,11 @@ class CreateUserIn(BaseModel):
     is_active: bool = True
     # When true, email the new user a welcome + "set your password" invite link.
     send_invite: bool = False
+    # Multi-tenancy: only a super-admin may target a specific tenant here. For a
+    # tenant-admin this is IGNORED — the new user is forced into the admin's own
+    # tenant (a tenant-admin can never provision into another tenant). A tenant-admin
+    # can also never set is_superadmin (there is no field for it).
+    tenant_id: uuid.UUID | None = None
 
 
 class UpdateUserIn(BaseModel):

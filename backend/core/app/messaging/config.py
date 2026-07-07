@@ -20,7 +20,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, String, Uuid, func, select
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    Uuid,
+    func,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,10 +51,22 @@ class ChannelConfig(Base):
 
     __tablename__ = "channel_configs"
 
+    # One config per channel PER TENANT, plus one platform-default (tenant_id NULL).
+    __table_args__ = (
+        UniqueConstraint("channel", "tenant_id", name="uq_channel_configs_channel_tenant"),
+    )
+
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    # "email" | "push" | "webhook" — one config per channel, hence unique.
-    channel: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    # "email" | "push" | "webhook". One config per channel PER TENANT (uniqueness is
+    # (channel, tenant_id), enforced in the service + a per-tenant unique index).
+    channel: Mapped[str] = mapped_column(String, nullable=False, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # --- multi-tenancy -----------------------------------------------------
+    # The tenant this channel config belongs to. NULL = the PLATFORM-DEFAULT config
+    # a tenant falls back to when it has not configured its own channel.
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
     # Free-form per-channel settings. Secret fields are stored ENCRYPTED here.
     config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     updated_at: Mapped[datetime] = mapped_column(
@@ -53,16 +75,40 @@ class ChannelConfig(Base):
 
 
 # --- service functions -------------------------------------------------------
-async def get_channel(db: AsyncSession, channel: str) -> ChannelConfig | None:
-    """Fetch the raw row for a channel (secrets still encrypted). None if unset."""
-    result = await db.execute(select(ChannelConfig).where(ChannelConfig.channel == channel))
-    return result.scalar_one_or_none()
+# Multi-tenancy: channel configs are per-tenant with a platform-default (tenant_id
+# NULL) fall-back. ``get_channel`` resolves the caller's tenant row first, else the
+# platform-default row. Writes target the caller's OWN scope.
+def _scoped_stmt(channel: str, tenant_id: uuid.UUID | None):
+    stmt = select(ChannelConfig).where(ChannelConfig.channel == channel)
+    if tenant_id is None:
+        return stmt.where(ChannelConfig.tenant_id.is_(None))
+    return stmt.where(ChannelConfig.tenant_id == tenant_id)
+
+
+async def _row_exact(
+    db: AsyncSession, channel: str, tenant_id: uuid.UUID | None
+) -> ChannelConfig | None:
+    """The row for EXACTLY (channel, tenant_id) — no fallback."""
+    return (await db.execute(_scoped_stmt(channel, tenant_id))).scalar_one_or_none()
+
+
+async def get_channel(
+    db: AsyncSession, channel: str, tenant_id: uuid.UUID | None = None
+) -> ChannelConfig | None:
+    """Resolve the effective config row for ``channel``: the caller's tenant row if
+    any, else the platform-default (tenant_id NULL) row. None if neither exists."""
+    if tenant_id is not None:
+        row = await _row_exact(db, channel, tenant_id)
+        if row is not None:
+            return row
+    return await _row_exact(db, channel, None)
 
 
 async def upsert_channel(
-    db: AsyncSession, channel: str, enabled: bool, config: dict
+    db: AsyncSession, channel: str, enabled: bool, config: dict,
+    tenant_id: uuid.UUID | None = None,
 ) -> ChannelConfig:
-    """Create or update a channel's config, encrypting its secret fields first.
+    """Create or update a channel's config in the caller's scope, encrypting secrets.
 
     ``config`` comes from the admin UI with secrets in PLAINTEXT; we encrypt the
     declared ``SECRET_FIELDS`` for that channel before persisting.
@@ -73,9 +119,11 @@ async def upsert_channel(
         if stored.get(field):  # only encrypt non-empty values
             stored[field] = encrypt_secret(str(stored[field]))
 
-    row = await get_channel(db, channel)
+    row = await _row_exact(db, channel, tenant_id)
     if row is None:
-        row = ChannelConfig(channel=channel, enabled=enabled, config=stored)
+        row = ChannelConfig(
+            channel=channel, enabled=enabled, config=stored, tenant_id=tenant_id
+        )
         db.add(row)
     else:
         row.enabled = enabled
@@ -85,13 +133,12 @@ async def upsert_channel(
     return row
 
 
-async def get_config_decrypted(db: AsyncSession, channel: str) -> dict | None:
-    """Return the channel's config with secret fields DECRYPTED — for senders.
-
-    Returns None if the channel has never been configured. (Callers separately
-    check ``enabled``.)
-    """
-    row = await get_channel(db, channel)
+async def get_config_decrypted(
+    db: AsyncSession, channel: str, tenant_id: uuid.UUID | None = None
+) -> dict | None:
+    """Return the channel's config (resolved with tenant fallback) with secret fields
+    DECRYPTED — for senders. None if the channel has never been configured."""
+    row = await get_channel(db, channel, tenant_id)
     if row is None:
         return None
     decrypted = dict(row.config or {})

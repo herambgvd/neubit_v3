@@ -38,6 +38,10 @@ class ReportJob(Base):
     error: Mapped[str | None] = mapped_column(String, nullable=True)
     # Who requested it (a User id) — nullable for system/scheduled jobs.
     requested_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # --- multi-tenancy -----------------------------------------------------
+    # The tenant that owns this report (the requester's tenant). NULL = a
+    # platform/super-admin/system job. Tenant-admins only see their own reports.
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

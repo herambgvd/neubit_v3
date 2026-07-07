@@ -31,6 +31,13 @@ class Role(Base):
     permissions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # System roles (the built-in Administrator) can't be edited or deleted.
     is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # --- multi-tenancy -----------------------------------------------------
+    # The tenant this role belongs to. NULL = a SHARED SYSTEM role (the built-in
+    # Administrator), visible to every tenant. A tenant-admin's custom roles carry
+    # their tenant_id and are only visible/usable within that tenant.
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -119,6 +126,12 @@ class ApiKey(Base):
     key_hash: Mapped[str] = mapped_column(String, nullable=False)
     role_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("roles.id"), nullable=False)
     role: Mapped[Role] = relationship(lazy="selectin")
+    # --- multi-tenancy -----------------------------------------------------
+    # The tenant this API key belongs to. NULL = a platform-level key (super-admin
+    # created). Tenant-admin keys carry their tenant_id and are scoped to it.
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
+from ..tenancy.scope import Scope, assert_owned
 from .models import ApiKey, PasswordResetToken, RefreshToken, Role, User
 from .permissions import PERMISSIONS, WILDCARD
 from .schemas import (
@@ -323,23 +324,38 @@ class AuthService:
         return raw
 
     # --- roles (dynamic RBAC) ---------------------------------------------
-    async def create_role(self, data: CreateRoleIn) -> Role:
+    async def create_role(self, data: CreateRoleIn, scope: Scope | None = None) -> Role:
         unknown = PERMISSIONS.unknown(data.permissions)
         if unknown:
             raise ValidationError(f"unknown permissions: {unknown}")
         if WILDCARD in data.permissions:
             raise ValidationError("wildcard '*' is reserved for the system Administrator role")
+        # Role.name carries a GLOBAL unique constraint (unchanged by 0007), so names
+        # stay unique across the whole platform. (Per-tenant name reuse would need a
+        # composite unique + migration; not required here.)
         if await self._role_by_name(data.name):
             raise ConflictError("a role with this name already exists")
-        role = Role(name=data.name, description=data.description, permissions=list(data.permissions))
+        # A tenant-admin's roles are stamped with their tenant; a super-admin (no
+        # scope, or a platform scope) creates a shared platform role (tenant_id NULL).
+        tenant_id = None if scope is None or scope.is_platform else scope.tenant_id
+        role = Role(
+            name=data.name, description=data.description,
+            permissions=list(data.permissions), tenant_id=tenant_id,
+        )
         self.db.add(role)
         await self.db.commit()
         await self.db.refresh(role)
         return role
 
-    async def update_role(self, role_id: uuid.UUID, data: UpdateRoleIn) -> Role:
+    async def update_role(self, role_id: uuid.UUID, data: UpdateRoleIn,
+                          scope: Scope | None = None) -> Role:
         role = await self.db.get(Role, role_id)
         if role is None:
+            raise NotFoundError("role not found")
+        # Tenant isolation: a tenant-admin may only touch their own tenant's roles.
+        # Shared system roles (tenant_id NULL) are read-only to tenant-admins anyway
+        # (blocked by is_system below), and invisible-as-editable to other tenants.
+        if scope is not None and not scope.is_platform and role.tenant_id != scope.tenant_id:
             raise NotFoundError("role not found")
         if role.is_system:
             raise ValidationError("the system Administrator role cannot be modified")
@@ -358,9 +374,13 @@ class AuthService:
         await self.db.refresh(role)
         return role
 
-    async def delete_role(self, role_id: uuid.UUID) -> None:
+    async def delete_role(self, role_id: uuid.UUID, scope: Scope | None = None) -> None:
         role = await self.db.get(Role, role_id)
         if role is None:
+            raise NotFoundError("role not found")
+        # A tenant-admin may only delete their own tenant's roles (a shared system
+        # role has tenant_id NULL and is blocked by is_system regardless).
+        if scope is not None and not scope.is_platform and role.tenant_id != scope.tenant_id:
             raise NotFoundError("role not found")
         if role.is_system:
             raise ValidationError("the system Administrator role cannot be deleted")
@@ -372,44 +392,83 @@ class AuthService:
         await self.db.delete(role)
         await self.db.commit()
 
-    def roles_query(self):
-        return select(Role).order_by(Role.name)
+    def roles_query(self, scope: Scope | None = None):
+        """Roles visible to the caller: their own tenant's roles + shared system
+        roles (tenant_id NULL). Super-admins see every role."""
+        stmt = select(Role).order_by(Role.name)
+        if scope is not None and not scope.is_platform:
+            # Own-tenant roles OR shared platform/system roles (NULL tenant).
+            stmt = stmt.where(
+                (Role.tenant_id == scope.tenant_id) | (Role.tenant_id.is_(None))
+            )
+        return stmt
 
     async def _role_by_name(self, name: str) -> Role | None:
         return (
             await self.db.execute(select(Role).where(Role.name == name))
         ).scalar_one_or_none()
 
-    async def _require_role(self, role_id: uuid.UUID) -> Role:
+    async def _require_role(self, role_id: uuid.UUID, scope: Scope | None = None) -> Role:
         role = await self.db.get(Role, role_id)
         if role is None:
             raise ValidationError("role_id does not reference an existing role")
+        # A tenant-admin may only assign a role they can see: their own tenant's
+        # roles or a shared system role (tenant_id NULL). Assigning another tenant's
+        # role would leak/borrow its permissions, so it's rejected as invalid.
+        if scope is not None and not scope.is_platform:
+            if role.tenant_id is not None and role.tenant_id != scope.tenant_id:
+                raise ValidationError("role_id does not reference an existing role")
         return role
 
     # --- users -------------------------------------------------------------
-    async def create_user(self, data: CreateUserIn) -> User:
+    async def create_user(self, data: CreateUserIn, scope: Scope | None = None) -> User:
         if (await self.db.execute(select(User).where(User.email == data.email))).scalar_one_or_none():
             raise ConflictError("email already registered")
         validate_password(data.password)
-        await self._require_role(data.role_id)
+        await self._require_role(data.role_id, scope)
+        # Multi-tenancy: decide the new user's tenant.
+        #   * tenant-admin → FORCED into their own tenant (data.tenant_id ignored).
+        #   * super-admin  → may target data.tenant_id (or None for a platform user).
+        #   * no scope (bootstrap/import from a super-admin path) → data.tenant_id.
+        if scope is not None and not scope.is_platform:
+            tenant_id = scope.tenant_id  # tenant-admins can only create in-tenant
+        else:
+            tenant_id = data.tenant_id
         user = User(
             email=data.email,
             full_name=data.full_name,
             role_id=data.role_id,
             password_hash=hash_password(data.password),
             is_active=True if data.is_active is None else data.is_active,
+            tenant_id=tenant_id,
+            # A tenant-admin can NEVER mint a super-admin. Only a bootstrap/seed path
+            # (no scope) promotes explicitly elsewhere (seed_tenancy). Always False here.
+            is_superadmin=False,
         )
         self.db.add(user)
         await self.db.commit()
         await self.db.refresh(user)
         return user
 
-    async def update_user(self, user_id: uuid.UUID, data: UpdateUserIn) -> User:
+    async def get_user(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
+        """Fetch one user, enforcing tenant ownership (404 if in another tenant)."""
         user = await self.db.get(User, user_id)
         if user is None:
             raise NotFoundError("user not found")
+        if scope is not None:
+            assert_owned(user, scope, message="user not found")
+        return user
+
+    async def update_user(self, user_id: uuid.UUID, data: UpdateUserIn,
+                          scope: Scope | None = None) -> User:
+        user = await self.db.get(User, user_id)
+        if user is None:
+            raise NotFoundError("user not found")
+        # Isolation: a tenant-admin can only update users in their own tenant.
+        if scope is not None:
+            assert_owned(user, scope, message="user not found")
         if data.role_id is not None:
-            await self._require_role(data.role_id)
+            await self._require_role(data.role_id, scope)
             user.role_id = data.role_id
         if data.is_active is not None:
             user.is_active = data.is_active
@@ -432,11 +491,14 @@ class AuthService:
             stmt = stmt.where(User.tenant_id == tenant_id)
         return stmt
 
-    async def delete_user(self, user_id: uuid.UUID) -> User:
+    async def delete_user(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
         """Hard-delete a user. Refresh/reset tokens cascade automatically."""
         user = await self.db.get(User, user_id)
         if user is None:
             raise NotFoundError("user not found")
+        # Isolation: a tenant-admin can only delete users in their own tenant.
+        if scope is not None:
+            assert_owned(user, scope, message="user not found")
         await self.db.delete(user)
         await self.db.commit()
         return user
@@ -541,21 +603,33 @@ class AuthService:
         return admin
 
     # --- API keys ----------------------------------------------------------
-    async def create_api_key(self, data: ApiKeyCreateIn) -> tuple[ApiKey, str]:
-        await self._require_role(data.role_id)
+    async def create_api_key(self, data: ApiKeyCreateIn, scope: Scope | None = None) -> tuple[ApiKey, str]:
+        await self._require_role(data.role_id, scope)
         raw, prefix, key_hash = generate_api_key()
-        key = ApiKey(name=data.name, role_id=data.role_id, prefix=prefix, key_hash=key_hash)
+        # Stamp the key with the creating admin's tenant (NULL for a super-admin's
+        # platform key). Scoped listing + scoped auth then keep keys tenant-isolated.
+        tenant_id = None if scope is None or scope.is_platform else scope.tenant_id
+        key = ApiKey(
+            name=data.name, role_id=data.role_id, prefix=prefix, key_hash=key_hash,
+            tenant_id=tenant_id,
+        )
         self.db.add(key)
         await self.db.commit()
         await self.db.refresh(key)
         return key, raw
 
-    def api_keys_query(self):
-        return select(ApiKey).order_by(ApiKey.created_at.desc())
+    def api_keys_query(self, scope: Scope | None = None):
+        stmt = select(ApiKey).order_by(ApiKey.created_at.desc())
+        if scope is not None and not scope.is_platform:
+            stmt = stmt.where(ApiKey.tenant_id == scope.tenant_id)
+        return stmt
 
-    async def revoke_api_key(self, key_id: uuid.UUID) -> None:
+    async def revoke_api_key(self, key_id: uuid.UUID, scope: Scope | None = None) -> None:
         key = await self.db.get(ApiKey, key_id)
         if key is None:
             raise NotFoundError("api key not found")
+        # Isolation: a tenant-admin can only revoke their own tenant's keys.
+        if scope is not None:
+            assert_owned(key, scope, message="api key not found")
         key.is_active = False
         await self.db.commit()

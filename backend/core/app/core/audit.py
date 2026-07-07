@@ -46,6 +46,10 @@ class AuditLog(Base):
     # system / anonymous actions.
     actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     actor_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    # --- multi-tenancy -----------------------------------------------------
+    # The tenant this action belongs to (the actor's tenant at the time). NULL =
+    # a platform/super-admin/system action. Tenant-admins only see their own rows.
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     # What happened, e.g. "user.delete", "license.replace", "role.update".
     action: Mapped[str] = mapped_column(String, nullable=False)
     # What it happened to (optional): a type name + its id, e.g. ("user", "<uuid>").
@@ -78,6 +82,9 @@ async def record(
     entry = AuditLog(
         actor_id=getattr(actor, "id", None),
         actor_email=getattr(actor, "email", None),
+        # Stamp the actor's tenant so the trail is tenant-scoped. Super-admins (and
+        # system/anonymous actions) have no tenant → NULL (platform scope).
+        tenant_id=getattr(actor, "tenant_id", None),
         action=action,
         target_type=target_type,
         target_id=target_id,
@@ -112,10 +119,16 @@ audit_router = APIRouter(prefix="/audit", tags=["audit"])
 async def list_audit(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission(CorePerm.AUDIT_READ)),
+    user=Depends(require_permission(CorePerm.AUDIT_READ)),
 ) -> Page[AuditLogOut]:
-    """List audit entries, newest first. Requires the ``audit.read`` permission."""
-    stmt = select(AuditLog).order_by(AuditLog.ts.desc())
+    """List audit entries, newest first. Requires the ``audit.read`` permission.
+
+    Tenant-scoped: a tenant-admin only sees actions recorded under their own tenant;
+    a super-admin sees the whole platform trail (incl. tenant_id NULL rows).
+    """
+    from ..tenancy.scope import scope_of, scoped
+
+    stmt = scoped(select(AuditLog).order_by(AuditLog.ts.desc()), AuditLog, scope_of(user))
     return await paginate(db, stmt, params, item_model=AuditLogOut)
 
 
@@ -144,10 +157,13 @@ class PurgeIn(BaseModel):
 @audit_router.get("/retention", response_model=RetentionOut)
 async def audit_retention(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(require_permission(CorePerm.AUDIT_READ)),
+    user=Depends(require_permission(CorePerm.AUDIT_READ)),
 ) -> RetentionOut:
-    """Current retention policy + total number of stored audit entries."""
-    total = int(await db.scalar(select(func.count()).select_from(AuditLog)) or 0)
+    """Current retention policy + total number of stored audit entries (scoped)."""
+    from ..tenancy.scope import scope_of, scoped
+
+    count_stmt = scoped(select(func.count()).select_from(AuditLog), AuditLog, scope_of(user))
+    total = int(await db.scalar(count_stmt) or 0)
     return RetentionOut(retention_days=await _retention_days(db), total=total)
 
 
@@ -166,7 +182,13 @@ async def purge_audit(
     if not days or days <= 0:
         raise ValidationError("Set a positive number of days (or a retention policy) to purge.")
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    result = await db.execute(delete(AuditLog).where(AuditLog.ts < cutoff))
+    from ..tenancy.scope import scope_of
+
+    scope = scope_of(actor)
+    stmt = delete(AuditLog).where(AuditLog.ts < cutoff)
+    if not scope.is_platform:  # a tenant-admin only purges their own tenant's trail
+        stmt = stmt.where(AuditLog.tenant_id == scope.tenant_id)
+    result = await db.execute(stmt)
     await db.commit()
     deleted = result.rowcount or 0
     # Leave a trail of the purge itself (this entry is newer than the cutoff).

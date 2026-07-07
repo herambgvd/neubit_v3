@@ -50,21 +50,39 @@ def _build_bytes(fmt: str, name: str, rows: list[dict], columns: list[str]) -> b
 
 
 async def create_job(
-    db: AsyncSession, name: str, format: str, requested_by: uuid.UUID | None
+    db: AsyncSession,
+    name: str,
+    format: str,
+    requested_by: uuid.UUID | None,
+    tenant_id: uuid.UUID | None = None,
 ) -> ReportJob:
-    """Register a new pending report job (writes commit)."""
+    """Register a new pending report job (writes commit).
+
+    ``tenant_id`` stamps the owning tenant (the requester's) so the job is only
+    visible/downloadable within that tenant. NULL = a platform/super-admin job.
+    """
     if format not in _CONTENT_TYPES:
         raise ValidationError(f"unsupported report format: {format!r}")
-    job = ReportJob(name=name, format=format, status="pending", requested_by=requested_by)
+    job = ReportJob(
+        name=name, format=format, status="pending",
+        requested_by=requested_by, tenant_id=tenant_id,
+    )
     db.add(job)
     await db.commit()
     await db.refresh(job)
     return job
 
 
-def list_query() -> Select:
-    """A SELECT of all report jobs, newest first — feed to ``paginate``."""
-    return select(ReportJob).order_by(ReportJob.created_at.desc())
+def list_query(scope=None) -> Select:
+    """A SELECT of report jobs, newest first — feed to ``paginate``.
+
+    When ``scope`` is a tenant-admin, only that tenant's jobs are returned; a
+    super-admin (or no scope) sees all.
+    """
+    stmt = select(ReportJob).order_by(ReportJob.created_at.desc())
+    if scope is not None and not scope.is_platform:
+        stmt = stmt.where(ReportJob.tenant_id == scope.tenant_id)
+    return stmt
 
 
 async def generate_report_now(

@@ -88,19 +88,18 @@ def available_template_names() -> list[str]:
     return list(DEFAULT_TEMPLATES)
 
 
-async def render_with_overrides(db, name: str, ctx: dict) -> tuple[str, str]:
+async def render_with_overrides(db, name: str, ctx: dict, tenant_id=None) -> tuple[str, str]:
     """Render ``name`` preferring a DB override, falling back to the code default.
 
-    If an admin has customised the template (a row in ``email_templates``), its
-    subject+html are rendered with the SAME Jinja Environment as the built-ins.
-    Otherwise we defer to ``render`` for the code default. Raises ``ValidationError``
-    when neither an override nor a built-in exists for ``name``.
+    Override resolution is tenant-aware: the caller's tenant override wins, else the
+    platform-default (tenant_id NULL) override, else the code default. Raises
+    ``ValidationError`` when none of those exist for ``name``.
     """
     # Local import avoids a circular import (template_store imports nothing here,
     # but keep the module boundary clean and lazy).
     from . import template_store
 
-    override = await template_store.get_override(db, name)
+    override = await template_store.get_override(db, name, tenant_id)
     if override is not None:
         ctx = ctx or {}
         subject = _env.from_string(override.subject).render(**ctx)
@@ -141,8 +140,8 @@ def wrap_email(app_name: str, body_html: str) -> str:
     )
 
 
-async def render_preview(db, name: str, app_name: str = "Neubit") -> tuple[str, str]:
+async def render_preview(db, name: str, app_name: str = "Neubit", tenant_id=None) -> tuple[str, str]:
     """Render ``name`` with sample data and a branded shell → (subject, html)."""
     ctx = {**_SAMPLE_CTX, "app_name": app_name}
-    subject, body = await render_with_overrides(db, name, ctx)
+    subject, body = await render_with_overrides(db, name, ctx, tenant_id=tenant_id)
     return subject, wrap_email(app_name, body)
