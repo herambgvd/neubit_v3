@@ -14,6 +14,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from kernel.auth import Principal, Scope, get_principal, get_scope
 from kernel.config import get_settings
@@ -42,6 +43,17 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Neubit Ingest", lifespan=lifespan)
     register_error_handlers(app)
+
+    # CORS — the operator UI may call this satellite directly (dev :3000) instead of
+    # through the gateway. Mirror core's policy (shared kernel settings).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_origin_regex=settings.cors_origin_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/health")
     async def health() -> dict:
