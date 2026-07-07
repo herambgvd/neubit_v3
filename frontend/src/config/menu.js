@@ -18,8 +18,9 @@ export const menuItems = [
   { title: "Dashboard", icon: "heroicons-outline:chart-bar", link: "/dashboard", disabled: true },
   { title: "Devices", icon: "heroicons-outline:video-camera", link: "/devices", disabled: true },
   { title: "Streaming", icon: "heroicons:signal", link: "/streaming", disabled: true },
-  { title: "Events", icon: "heroicons:calendar-days", link: "/events", disabled: true },
-  { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow", perm: "neubit.read" },
+  // Events = the incident surface (SOP-driven incidents live here, like neubit_v2).
+  // Workflow itself is NOT a top-nav item — its config lives under Config → Workflow.
+  { title: "Events", icon: "heroicons:calendar-days", link: "/events", perm: "neubit.read" },
   { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true },
   { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true },
   // Config is a SECTION: clicking it enters the Config sub-tab bar (first enabled tab).

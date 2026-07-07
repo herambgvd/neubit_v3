@@ -122,7 +122,7 @@ export default function WorkflowDetailPage() {
       <div className="py-20 text-center">
         <Icon icon="heroicons-outline:exclamation-triangle" className="text-4xl text-muted mb-3 opacity-60" />
         <p className="text-foreground font-medium">Incident not found</p>
-        <Link href="/workflow" className="mt-3 inline-block text-sm text-blue-500 hover:underline">
+        <Link href="/events" className="mt-3 inline-block text-sm text-blue-500 hover:underline">
           Back to incidents
         </Link>
       </div>
@@ -138,7 +138,7 @@ export default function WorkflowDetailPage() {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            <Link href="/workflow" className="text-muted hover:text-foreground">
+            <Link href="/events" className="text-muted hover:text-foreground">
               <Icon icon="heroicons-outline:arrow-left" className="text-lg" />
             </Link>
             {title}

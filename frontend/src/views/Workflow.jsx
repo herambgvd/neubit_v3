@@ -187,7 +187,7 @@ export default function WorkflowPage() {
                   return (
                     <tr key={id} className="border-b border-card-border hover:bg-hover transition">
                       <td className="px-4 py-3">
-                        <Link href={`/workflow/${id}`} className="flex flex-col">
+                        <Link href={`/events/${id}`} className="flex flex-col">
                           <span className="font-medium text-foreground">{it.title || it.reference || `Incident ${String(id).slice(0, 8)}`}</span>
                           <span className="text-xs text-muted font-mono">{String(id).slice(0, 8)}</span>
                         </Link>
