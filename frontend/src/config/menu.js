@@ -19,6 +19,7 @@ export const menuItems = [
   { title: "Devices", icon: "heroicons-outline:video-camera", link: "/devices", disabled: true },
   { title: "Streaming", icon: "heroicons:signal", link: "/streaming", disabled: true },
   { title: "Events", icon: "heroicons:calendar-days", link: "/events", disabled: true },
+  { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow", perm: "neubit.read" },
   { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true },
   { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true },
   // Config is a SECTION: clicking it enters the Config sub-tab bar (first enabled tab).
@@ -37,8 +38,8 @@ export const configTabs = [
   { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", disabled: true },
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", disabled: true },
   { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", disabled: true },
-  { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/config/workflow", disabled: true },
-  { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/config/ingest", disabled: true },
+  { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read" },
+  { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read" },
   { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
   { title: "Activity", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
   { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },

@@ -124,6 +124,8 @@ services:
     env_file: .env
     environment:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
+      # Host the NATS→incident correlation consumer in this API process (v1 simple).
+      VE_WORKFLOW_INLINE_CORRELATION: "1"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

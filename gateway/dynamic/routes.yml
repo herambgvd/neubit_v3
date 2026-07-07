@@ -13,8 +13,9 @@ http:
     #   admin      (50)       — the admin.localhost host, for what core didn't claim
     #   frontend   (1)        — catch-all operator console (localhost + any host)
     ingest:
-      # /api/v1/ingest/... (the versioned API) plus a bare /ingest/... prefix.
-      rule: "PathPrefix(`/api/v1/ingest`) || PathPrefix(`/ingest`)"
+      # The versioned config API + ONLY the public webhook receiver (/ingest/hooks).
+      # A bare /ingest prefix would swallow the operator UI's /ingest page → keep it narrow.
+      rule: "PathPrefix(`/api/v1/ingest`) || PathPrefix(`/ingest/hooks`)"
       service: ingest
       entryPoints: [web]
       priority: 110

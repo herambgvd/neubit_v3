@@ -17,7 +17,9 @@ from kernel.config import get_settings
 from app.db import Base
 
 # Import all model modules so their tables register on Base.metadata.
-# (none yet — the workflow skeleton owns no tables. Add: `import app.<domain>.models`.)
+# Workflow domain: SOP / State / Transition / Trigger / WorkflowInstance / Form /
+# NotificationTemplate / NotificationChannel / Notification / ThreatLevel / CorrelationDedup.
+import app.workflow.models  # noqa: F401,E402
 
 config = context.config
 if config.config_file_name:
