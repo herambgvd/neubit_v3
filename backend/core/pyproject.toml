@@ -37,6 +37,10 @@ messaging = ["aiosmtplib>=3.0", "jinja2>=3.1"]
 tasks     = ["celery>=5.3", "redis>=5.0", "psycopg2-binary>=2.9"]  # sync DB driver for workers/streams
 reports   = ["openpyxl>=3.1", "reportlab>=4.0"]
 system    = ["psutil>=5.9"]
+# Floor-plan conversion (sites module): PDF→PNG needs poppler-utils (system dep);
+# DXF→SVG needs ezdxf + matplotlib. All imported LAZILY so the core boots without
+# them — install this extra only where floor-plan upload is used.
+sites     = ["pdf2image>=1.17", "ezdxf>=1.1", "matplotlib>=3.8", "Pillow>=10.0"]
 dev       = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "aiosqlite>=0.20"]
 
 [tool.setuptools.packages.find]

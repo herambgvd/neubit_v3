@@ -83,6 +83,19 @@ class CorePerm:
     SYSTEM_READ = "system.read"
     REPORT_READ = "report.read"
     REPORT_EXPORT = "report.export"
+    # --- Sites domain (site → floor → zone hierarchy) ----------------------
+    SITES_READ = "sites.read"
+    SITES_CREATE = "sites.create"
+    SITES_UPDATE = "sites.update"
+    SITES_DELETE = "sites.delete"
+    FLOORS_READ = "floors.read"
+    FLOORS_CREATE = "floors.create"
+    FLOORS_UPDATE = "floors.update"
+    FLOORS_DELETE = "floors.delete"
+    ZONES_READ = "zones.read"
+    ZONES_CREATE = "zones.create"
+    ZONES_UPDATE = "zones.update"
+    ZONES_DELETE = "zones.delete"
 
 
 PERMISSIONS.register(
@@ -97,4 +110,17 @@ PERMISSIONS.register(
     Permission(CorePerm.SYSTEM_READ, "View system resources", "System"),
     Permission(CorePerm.REPORT_READ, "View reports", "Reports"),
     Permission(CorePerm.REPORT_EXPORT, "Export reports", "Reports"),
+    # --- Sites domain ------------------------------------------------------
+    Permission(CorePerm.SITES_READ, "View sites", "Sites"),
+    Permission(CorePerm.SITES_CREATE, "Create sites", "Sites"),
+    Permission(CorePerm.SITES_UPDATE, "Edit sites", "Sites"),
+    Permission(CorePerm.SITES_DELETE, "Delete sites", "Sites"),
+    Permission(CorePerm.FLOORS_READ, "View floors", "Sites"),
+    Permission(CorePerm.FLOORS_CREATE, "Create floors", "Sites"),
+    Permission(CorePerm.FLOORS_UPDATE, "Edit floors", "Sites"),
+    Permission(CorePerm.FLOORS_DELETE, "Delete floors", "Sites"),
+    Permission(CorePerm.ZONES_READ, "View zones", "Sites"),
+    Permission(CorePerm.ZONES_CREATE, "Create zones", "Sites"),
+    Permission(CorePerm.ZONES_UPDATE, "Edit zones", "Sites"),
+    Permission(CorePerm.ZONES_DELETE, "Delete zones", "Sites"),
 )

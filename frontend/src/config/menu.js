@@ -30,7 +30,7 @@ export const menuItems = [
 //   so nothing is lost. Enabled tabs map to real neubit_v3 routes; the rest are disabled
 //   placeholders until their feature ships.
 export const configTabs = [
-  { title: "Sites", icon: "heroicons:map-pin", link: "/config/sites", disabled: true },
+  { title: "Sites", icon: "heroicons:map-pin", link: "/sites", perm: "neubit.read" },
   { title: "Users", icon: "heroicons-outline:users", link: "/users", perm: "user.read" },
   { title: "Roles", icon: "heroicons-outline:shield-check", link: "/roles", perm: "role.read" },
   { title: "Tags", icon: "heroicons:tag", link: "/config/tags", disabled: true },
@@ -51,7 +51,7 @@ export const configTabs = [
 ];
 
 // The route the Config top-nav item jumps to (first enabled config tab).
-export const CONFIG_ENTRY = "/users";
+export const CONFIG_ENTRY = "/sites";
 
 // True when the current path belongs to the Config section (drives the sub-tab bar +
 // the "Config" top-nav active state). Matches any enabled config tab's route.
