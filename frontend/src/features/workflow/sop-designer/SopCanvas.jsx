@@ -1,95 +1,33 @@
 "use client";
 
-// Visual SOP state-machine designer — ported from neubit_v2's canvas SOP builder
-// (components/workflow/sop-builder/*) but re-implemented as an SVG/DOM canvas so it
-// themes cleanly with neubit_v3's semantic tokens and supports drag-to-connect handles.
-//
-// Structure:
-//   • Background: a themed dotted grid inside a pannable/zoomable viewport.
-//   • Nodes: absolutely-positioned DOM cards (world coords → screen via the transform).
-//       Each state renders name, a left color accent (state.color), and Initial/Terminal/
-//       Cancellation badges. Nodes are draggable; on drop we PATCH position_x/position_y.
-//   • Edges: a single full-canvas <svg> painting curved bezier transitions with an
-//       arrowhead + a label chip at the curve midpoint (from_state → to_state).
-//   • Connect: each node has a right-edge handle; drag it to a target node to create a
-//       transition (opens a small modal for label + requires_note).
-//   • Pan: drag the empty background. Zoom: mouse wheel (anchored to cursor) + toolbar.
-//   • Fit/reset: toolbar button re-frames all nodes.
+// Visual SOP state-machine designer — orchestrator. Owns the states/transitions
+// queries, the persistence mutations, the pointer interactions (node drag, pan,
+// drag-to-connect, selection), and the modal wiring. Presentational pieces live
+// alongside: CanvasToolbar, CanvasNode, CanvasEdge, StateModal, TransitionModal;
+// pan/zoom viewport in hooks/usePanZoom; geometry in lib/canvasGeometry.
 //
 // Data contract (v3 backend): state {state_id,name,description,color,position_x,
 // position_y,is_initial,is_terminal,is_cancellation,...}; transition {transition_id,
 // from_state_id,to_state_id,label,requires_note,...}.
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Modal, Spinner } from "@/components/ui/kit";
+import { ConfirmDialog, Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
+import { asItems, idOf } from "@/lib/format";
 import { workflow as wfApi } from "../api";
+import { NODE_W, NODE_H, nodeCenter } from "./lib/canvasGeometry";
+import { usePanZoom } from "./hooks/usePanZoom";
+import CanvasToolbar from "./CanvasToolbar";
+import CanvasNode from "./CanvasNode";
+import CanvasEdge, { PendingEdge } from "./CanvasEdge";
+import StateModal from "./StateModal";
+import TransitionModal from "./TransitionModal";
 
-const NODE_W = 190;
-const NODE_H = 76;
-const MIN_SCALE = 0.35;
-const MAX_SCALE = 2.5;
-const DEFAULT_COLOR = "#6366F1";
-
-const asItems = (d) => (Array.isArray(d) ? d : d?.items || []);
-const idOf = (o, ...keys) => keys.map((k) => o?.[k]).find((v) => v != null);
 const sid = (s) => idOf(s, "state_id", "id");
 const tid = (t) => idOf(t, "transition_id", "id");
-
-const nodeCenter = (s) => ({
-  x: (s.position_x ?? 0) + NODE_W / 2,
-  y: (s.position_y ?? 0) + NODE_H / 2,
-});
-
-// Bezier control points between two node centers — mirrors v2's transitionGeometry
-// (drops a little so parallel edges separate and the curve reads as directional).
-function edgePath(from, to) {
-  const a = nodeCenter(from);
-  const b = nodeCenter(to);
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const ox = dx * 0.3;
-  const oy = dy * 0.3;
-  const c1 = { x: a.x + ox, y: a.y + oy + 30 };
-  const c2 = { x: b.x - ox, y: b.y - oy - 30 };
-  return { a, b, c1, c2 };
-}
-
-// Point at t on the cubic bezier (for label placement + arrowhead angle).
-function bezierPoint(a, c1, c2, b, t) {
-  const u = 1 - t;
-  return {
-    x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x,
-    y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * b.y,
-  };
-}
-
-function computeFit(states, w, h) {
-  if (!states.length || !w || !h) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const s of states) {
-    const x = s.position_x ?? 0;
-    const y = s.position_y ?? 0;
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + NODE_W);
-    maxY = Math.max(maxY, y + NODE_H);
-  }
-  const bw = maxX - minX || 1;
-  const bh = maxY - minY || 1;
-  const scale = Math.max(MIN_SCALE, Math.min((w - 100) / bw, (h - 100) / bh, 1.2));
-  return {
-    scale,
-    offset: {
-      x: (w - bw * scale) / 2 - minX * scale,
-      y: (h - bh * scale) / 2 - minY * scale,
-    },
-  };
-}
 
 export default function SopCanvas({ sopId }) {
   const qc = useQueryClient();
@@ -101,10 +39,7 @@ export default function SopCanvas({ sopId }) {
   const states = useMemo(() => asItems(statesQ.data), [statesQ.data]);
   const transitions = useMemo(() => asItems(transQ.data), [transQ.data]);
 
-  const wrapRef = useRef(null);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 40, y: 40 });
-  const [size, setSize] = useState({ w: 0, h: 0 });
+  const { wrapRef, scale, offset, setOffset, size, screenToWorld, zoomBy, doFit } = usePanZoom(states);
 
   const [selection, setSelection] = useState(null); // { kind: "state"|"transition", id }
   const [stateModal, setStateModal] = useState(null); // state obj or {} (new)
@@ -118,7 +53,6 @@ export default function SopCanvas({ sopId }) {
   const [panning, setPanning] = useState(false);
   const connectRef = useRef(null); // { fromId }
   const [connect, setConnect] = useState(null); // { fromId, x, y } world coords of cursor
-  const didFitRef = useRef(false);
 
   const stateById = useMemo(() => {
     const m = new Map();
@@ -129,86 +63,6 @@ export default function SopCanvas({ sopId }) {
     return m;
   }, [states, dragPos]);
   const effStates = useMemo(() => Array.from(stateById.values()), [stateById]);
-
-  /* ── measure container ── */
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setSize({ w: el.clientWidth, h: el.clientHeight });
-    });
-    ro.observe(el);
-    setSize({ w: el.clientWidth, h: el.clientHeight });
-    return () => ro.disconnect();
-  }, []);
-
-  /* ── auto-fit once states first load ── */
-  useEffect(() => {
-    if (didFitRef.current || !states.length || !size.w) return;
-    const fit = computeFit(states, size.w, size.h);
-    if (fit) {
-      setScale(fit.scale);
-      setOffset(fit.offset);
-      didFitRef.current = true;
-    }
-  }, [states, size]);
-
-  const doFit = useCallback(() => {
-    const fit = computeFit(states, size.w, size.h);
-    if (fit) {
-      setScale(fit.scale);
-      setOffset(fit.offset);
-    } else {
-      setScale(1);
-      setOffset({ x: 40, y: 40 });
-    }
-  }, [states, size]);
-
-  const screenToWorld = useCallback(
-    (sx, sy) => ({ x: (sx - offset.x) / scale, y: (sy - offset.y) / scale }),
-    [offset, scale],
-  );
-
-  /* ── wheel zoom (non-passive, anchored to cursor) ── */
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const onWheel = (e) => {
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-      setScale((prev) => {
-        const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev * factor));
-        setOffset((off) => {
-          const wx = (mx - off.x) / prev;
-          const wy = (my - off.y) / prev;
-          return { x: mx - wx * next, y: my - wy * next };
-        });
-        return next;
-      });
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-
-  const zoomBy = useCallback(
-    (factor) => {
-      const cx = size.w / 2;
-      const cy = size.h / 2;
-      setScale((prev) => {
-        const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev * factor));
-        setOffset((off) => {
-          const wx = (cx - off.x) / prev;
-          const wy = (cy - off.y) / prev;
-          return { x: cx - wx * next, y: cy - wy * next };
-        });
-        return next;
-      });
-    },
-    [size],
-  );
 
   /* ── persistence mutations ── */
   const moveState = useMutation({
@@ -282,7 +136,7 @@ export default function SopCanvas({ sopId }) {
         });
       }
     },
-    [screenToWorld],
+    [screenToWorld, wrapRef, setOffset],
   );
 
   const endInteractions = useCallback(() => {
@@ -318,7 +172,7 @@ export default function SopCanvas({ sopId }) {
         moved: false,
       };
     },
-    [screenToWorld],
+    [screenToWorld, wrapRef],
   );
 
   const onHandlePointerDown = useCallback((e, s) => {
@@ -343,21 +197,13 @@ export default function SopCanvas({ sopId }) {
 
   return (
     <div className="rounded-xl border border-card-border bg-card overflow-hidden flex flex-col" style={{ height: "clamp(440px, 64vh, 760px)" }}>
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-card-border px-3 py-2 bg-card">
-        <Button variant="success" icon="heroicons-outline:plus" onClick={addState} className="!px-2.5 !py-1 text-xs">
-          Add state
-        </Button>
-        <span className="text-[11px] text-muted hidden sm:inline">
-          Drag a node to move · drag the <Icon icon="heroicons-outline:arrow-right-circle" className="inline align-[-2px] text-xs" /> handle to connect
-        </span>
-        <div className="ml-auto flex items-center gap-1">
-          <ToolBtn icon="heroicons-outline:minus" title="Zoom out" onClick={() => zoomBy(1 / 1.2)} />
-          <span className="text-[11px] text-muted w-10 text-center tabular-nums">{Math.round(scale * 100)}%</span>
-          <ToolBtn icon="heroicons-outline:plus" title="Zoom in" onClick={() => zoomBy(1.2)} />
-          <ToolBtn icon="heroicons-outline:viewfinder-circle" title="Fit to view" onClick={doFit} />
-        </div>
-      </div>
+      <CanvasToolbar
+        scale={scale}
+        onAddState={addState}
+        onZoomIn={() => zoomBy(1.2)}
+        onZoomOut={() => zoomBy(1 / 1.2)}
+        onFit={doFit}
+      />
 
       {/* Canvas viewport */}
       <div
@@ -384,7 +230,7 @@ export default function SopCanvas({ sopId }) {
               if (!from || !to) return null;
               const isSel = selection?.kind === "transition" && selection.id === tid(t);
               return (
-                <Edge
+                <CanvasEdge
                   key={tid(t)}
                   from={from}
                   to={to}
@@ -408,7 +254,7 @@ export default function SopCanvas({ sopId }) {
           style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`, transformOrigin: "0 0" }}
         >
           {effStates.map((s) => (
-            <StateNode
+            <CanvasNode
               key={sid(s)}
               state={s}
               selected={selection?.kind === "state" && selection.id === sid(s)}
@@ -500,131 +346,6 @@ export default function SopCanvas({ sopId }) {
   );
 }
 
-/* ── small toolbar icon button ── */
-function ToolBtn({ icon, title, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border bg-card text-muted hover:bg-hover hover:text-foreground transition"
-    >
-      <Icon icon={icon} className="text-sm" />
-    </button>
-  );
-}
-
-/* ── a draggable state node card ── */
-function StateNode({ state, selected, onPointerDown, onPointerUp, onHandleDown, onEdit }) {
-  const color = state.color || DEFAULT_COLOR;
-  const badges = [];
-  if (state.is_initial) badges.push(["Initial", "heroicons-solid:play", "#10b981"]);
-  if (state.is_terminal) badges.push(["Terminal", "heroicons-solid:stop", "#64748b"]);
-  if (state.is_cancellation) badges.push(["Cancel", "heroicons-solid:x-circle", "#ef4444"]);
-
-  return (
-    <div
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onDoubleClick={(e) => { e.stopPropagation(); onEdit(); }}
-      className="absolute rounded-xl border bg-card shadow-sm transition-shadow"
-      style={{
-        left: state.position_x ?? 0,
-        top: state.position_y ?? 0,
-        width: NODE_W,
-        minHeight: NODE_H,
-        cursor: "grab",
-        borderColor: selected ? color : "var(--card-border)",
-        boxShadow: selected ? `0 0 0 2px ${color}55, 0 6px 18px rgba(0,0,0,0.14)` : "0 2px 8px rgba(0,0,0,0.08)",
-      }}
-    >
-      {/* color accent bar */}
-      <div className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-xl" style={{ backgroundColor: color }} />
-      <div className="pl-4 pr-3 py-2.5">
-        <div className="flex items-start gap-2">
-          <span className="mt-1 h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-          <span className="text-sm font-semibold text-foreground leading-snug break-words">{state.name || "Untitled"}</span>
-        </div>
-        {badges.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {badges.map(([label, icon, c]) => (
-              <span
-                key={label}
-                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                style={{ backgroundColor: `${c}1a`, color: c }}
-              >
-                <Icon icon={icon} className="text-[11px]" /> {label}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      {/* connect handle (right edge) */}
-      <button
-        type="button"
-        title="Drag to connect"
-        onPointerDown={onHandleDown}
-        className="absolute -right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full border-2 border-card bg-card text-muted hover:text-foreground flex items-center justify-center shadow"
-        style={{ cursor: "crosshair", color }}
-      >
-        <Icon icon="heroicons-solid:plus" className="text-[11px]" />
-      </button>
-    </div>
-  );
-}
-
-/* ── a transition edge (bezier + arrowhead + label chip) ── */
-function Edge({ from, to, label, selected, onSelect, onEdit }) {
-  const { a, b, c1, c2 } = edgePath(from, to);
-  const d = `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`;
-  const mid = bezierPoint(a, c1, c2, b, 0.5);
-  // Arrowhead: end tangent from c2→b.
-  const ang = Math.atan2(b.y - c2.y, b.x - c2.x);
-  const ah = 11;
-  const stroke = selected ? "var(--foreground)" : "var(--muted)";
-  const p1 = { x: b.x - Math.cos(ang - Math.PI / 7) * ah, y: b.y - Math.sin(ang - Math.PI / 7) * ah };
-  const p2 = { x: b.x - Math.cos(ang + Math.PI / 7) * ah, y: b.y - Math.sin(ang + Math.PI / 7) * ah };
-  const charW = 6.4;
-  const chipW = Math.max(28, (label || "").length * charW + 16);
-
-  return (
-    <g className="pointer-events-auto" style={{ cursor: "pointer" }}
-       onPointerDown={(e) => { e.stopPropagation(); onSelect(); }}
-       onDoubleClick={(e) => { e.stopPropagation(); onEdit(); }}>
-      {/* fat invisible hit area */}
-      <path d={d} stroke="transparent" strokeWidth={14} fill="none" />
-      <path d={d} stroke={stroke} strokeWidth={selected ? 2.5 : 2} fill="none" />
-      <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} L ${p2.x} ${p2.y} Z`} fill={stroke} />
-      {label && (
-        <>
-          <rect
-            x={mid.x - chipW / 2}
-            y={mid.y - 11}
-            width={chipW}
-            height={22}
-            rx={11}
-            fill="var(--card)"
-            stroke={selected ? "var(--foreground)" : "var(--card-border)"}
-          />
-          <text x={mid.x} y={mid.y + 1} textAnchor="middle" dominantBaseline="middle" fontSize={12} fill="var(--foreground)">
-            {label}
-          </text>
-        </>
-      )}
-    </g>
-  );
-}
-
-function PendingEdge({ from, to }) {
-  const a = nodeCenter(from);
-  const dx = to.x - a.x;
-  const dy = to.y - a.y;
-  const c1 = { x: a.x + dx * 0.3, y: a.y + dy * 0.3 + 30 };
-  const c2 = { x: to.x - dx * 0.3, y: to.y - dy * 0.3 - 30 };
-  const d = `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${to.x} ${to.y}`;
-  return <path d={d} stroke="var(--foreground)" strokeWidth={2} strokeDasharray="5 4" fill="none" opacity={0.7} />;
-}
-
 /* ── floating action bar for the current selection ── */
 function SelectionBar({ selection, states, transitions, onEdit, onDelete }) {
   let title = "";
@@ -642,171 +363,5 @@ function SelectionBar({ selection, states, transitions, onEdit, onDelete }) {
         <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
       </button>
     </div>
-  );
-}
-
-/* ════════════════════════════ modals ════════════════════════════ */
-const FLD = "mt-1 h-10 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted";
-const LBL = "text-xs font-medium uppercase tracking-wide text-muted";
-const STATE_COLORS = ["#6366F1", "#10B981", "#F59E0B", "#EF4444", "#3B82F6", "#8B5CF6", "#EC4899", "#64748B"];
-
-function StateModal({ sopId, state, defaults, onClose, onSaved }) {
-  const isEdit = !!state;
-  const [name, setName] = useState(state?.name || "");
-  const [description, setDescription] = useState(state?.description || "");
-  const [color, setColor] = useState(state?.color || DEFAULT_COLOR);
-  const [isInitial, setIsInitial] = useState(!!state?.is_initial);
-  const [isTerminal, setIsTerminal] = useState(!!state?.is_terminal);
-  const [isCancellation, setIsCancellation] = useState(!!state?.is_cancellation);
-  const [err, setErr] = useState("");
-
-  const save = useMutation({
-    mutationFn: (body) => (isEdit ? wfApi.states.update(sopId, sid(state), body) : wfApi.states.create(sopId, body)),
-    onSuccess: () => { toast.success(isEdit ? "State updated" : "State created"); onSaved(); },
-    onError: (e) => toast.error(apiError(e)),
-  });
-
-  function submit() {
-    if (!name.trim()) { setErr("Name is required"); return; }
-    save.mutate({
-      name: name.trim(),
-      description: description.trim() || null,
-      color,
-      is_initial: isInitial,
-      is_terminal: isTerminal,
-      is_cancellation: isCancellation,
-      position_x: state?.position_x ?? defaults?.position_x ?? 40,
-      position_y: state?.position_y ?? defaults?.position_y ?? 40,
-    });
-  }
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={isEdit ? `Edit state · ${state.name}` : "Add state"}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>
-          <Button variant="success" onClick={submit} disabled={save.isPending}>{save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add state"}</Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div>
-          <label className={LBL}>Name <span className="text-red-500">*</span></label>
-          <input autoFocus value={name} onChange={(e) => { setName(e.target.value); if (err) setErr(""); }} className={`${FLD} ${err ? "!border-red-500" : ""}`} placeholder="e.g. Acknowledged" />
-          {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
-        </div>
-        <div>
-          <label className={LBL}>Description</label>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} className={FLD} placeholder="Optional" />
-        </div>
-        <div>
-          <label className={LBL}>Color</label>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            {STATE_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setColor(c)}
-                className="h-7 w-7 rounded-full border-2 transition"
-                style={{ backgroundColor: c, borderColor: color === c ? "var(--foreground)" : "transparent" }}
-                title={c}
-              />
-            ))}
-            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-7 w-9 rounded border border-card-border bg-transparent cursor-pointer" title="Custom color" />
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-4 text-sm text-foreground">
-          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={isInitial} onChange={(e) => setIsInitial(e.target.checked)} /> Initial</label>
-          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={isTerminal} onChange={(e) => setIsTerminal(e.target.checked)} /> Terminal</label>
-          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={isCancellation} onChange={(e) => setIsCancellation(e.target.checked)} /> Cancellation</label>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function TransitionModal({ sopId, states, transition, defaults, onClose, onSaved }) {
-  const isEdit = !!transition;
-  const [label, setLabel] = useState(transition?.label || "");
-  const [description, setDescription] = useState(transition?.description || "");
-  const [fromId, setFromId] = useState(transition?.from_state_id ?? defaults?.from_state_id ?? "");
-  const [toId, setToId] = useState(transition?.to_state_id ?? defaults?.to_state_id ?? "");
-  const [requiresNote, setRequiresNote] = useState(!!transition?.requires_note);
-  const [confirmationRequired, setConfirmationRequired] = useState(!!transition?.confirmation_required);
-  const [errors, setErrors] = useState({});
-
-  const save = useMutation({
-    mutationFn: (body) => (isEdit ? wfApi.transitions.update(sopId, tid(transition), body) : wfApi.transitions.create(sopId, body)),
-    onSuccess: () => { toast.success(isEdit ? "Transition updated" : "Transition created"); onSaved(); },
-    onError: (e) => toast.error(apiError(e)),
-  });
-
-  function submit() {
-    const next = {};
-    if (!label.trim()) next.label = "Label is required";
-    if (!fromId) next.fromId = "From state required";
-    if (!toId) next.toId = "To state required";
-    if (Object.keys(next).length) { setErrors(next); return; }
-    save.mutate({
-      label: label.trim(),
-      description: description.trim() || null,
-      from_state_id: fromId,
-      to_state_id: toId,
-      requires_note: requiresNote,
-      confirmation_required: confirmationRequired,
-    });
-  }
-
-  const opts = states.map((s) => ({ id: sid(s), name: s.name }));
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={isEdit ? `Edit transition · ${transition.label}` : "Add transition"}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>
-          <Button variant="success" onClick={submit} disabled={save.isPending}>{save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add transition"}</Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div>
-          <label className={LBL}>Label <span className="text-red-500">*</span></label>
-          <input autoFocus value={label} onChange={(e) => { setLabel(e.target.value); if (errors.label) setErrors((p) => ({ ...p, label: undefined })); }} className={`${FLD} ${errors.label ? "!border-red-500" : ""}`} placeholder="e.g. Acknowledge" />
-          {errors.label && <p className="mt-1 text-xs text-red-500">{errors.label}</p>}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={LBL}>From <span className="text-red-500">*</span></label>
-            <select value={fromId} onChange={(e) => { setFromId(e.target.value); if (errors.fromId) setErrors((p) => ({ ...p, fromId: undefined })); }} className={`${FLD} ${errors.fromId ? "!border-red-500" : ""}`}>
-              <option value="" className="bg-card">Select…</option>
-              {opts.map((o) => <option key={o.id} value={o.id} className="bg-card">{o.name}</option>)}
-            </select>
-            {errors.fromId && <p className="mt-1 text-xs text-red-500">{errors.fromId}</p>}
-          </div>
-          <div>
-            <label className={LBL}>To <span className="text-red-500">*</span></label>
-            <select value={toId} onChange={(e) => { setToId(e.target.value); if (errors.toId) setErrors((p) => ({ ...p, toId: undefined })); }} className={`${FLD} ${errors.toId ? "!border-red-500" : ""}`}>
-              <option value="" className="bg-card">Select…</option>
-              {opts.map((o) => <option key={o.id} value={o.id} className="bg-card">{o.name}</option>)}
-            </select>
-            {errors.toId && <p className="mt-1 text-xs text-red-500">{errors.toId}</p>}
-          </div>
-        </div>
-        <div>
-          <label className={LBL}>Description</label>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} className={FLD} placeholder="Optional" />
-        </div>
-        <div className="flex flex-wrap items-center gap-4 text-sm text-foreground">
-          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={requiresNote} onChange={(e) => setRequiresNote(e.target.checked)} /> Requires note</label>
-          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={confirmationRequired} onChange={(e) => setConfirmationRequired(e.target.checked)} /> Confirmation required</label>
-        </div>
-      </div>
-    </Modal>
   );
 }

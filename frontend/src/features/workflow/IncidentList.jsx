@@ -1,8 +1,8 @@
 "use client";
 
-// Workflow — INCIDENTS list. Ported from neubit_v2's workflow/events incident list,
-// rethemed to neubit_v3's Vercel tokens + kit components. Filters (status / priority /
-// site / sop), status + priority badges, assignee, click-through to the detail view.
+// Workflow — INCIDENTS list (page entry; a route wrapper re-exports this default).
+// Thin orchestrator: owns filters, bulk selection, and the queries; renders the
+// stats strip, filter row, bulk bar, and table components.
 //
 // Near-real-time: TanStack Query `refetchInterval` polls every ~10s. True realtime
 // (SSE/WS) will come later via the core realtime-bridge — see the comment on the query.
@@ -12,47 +12,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Badge, Button, Card, PageHeader, Spinner } from "@/components/ui/kit";
+import { PageHeader } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { workflow as wfApi } from "./api";
+import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
+import { workflow as wfApi } from "./api";
+import IncidentStatsStrip from "./components/incidents/IncidentStatsStrip";
+import IncidentFilters from "./components/incidents/IncidentFilters";
+import IncidentBulkBar from "./components/incidents/IncidentBulkBar";
+import IncidentTable from "./components/incidents/IncidentTable";
+
+// Re-export domain constants from their canonical home for any legacy consumers.
+export { STATUS_COLOR, PRIORITY_COLOR, INCIDENT_STATUSES, PRIORITIES } from "./constants";
 
 const rowId = (it) => it.id ?? it.instance_id;
-
-// Domain statuses mirror neubit_v2's incident lifecycle (pending→active→…→completed).
-export const INCIDENT_STATUSES = ["pending", "active", "paused", "completed", "cancelled"];
-export const PRIORITIES = ["low", "medium", "high", "critical"];
-
-// status → kit Badge color
-export const STATUS_COLOR = {
-  pending: "amber",
-  active: "blue",
-  paused: "amber",
-  completed: "green",
-  cancelled: "neutral",
-};
-// priority → kit Badge color
-export const PRIORITY_COLOR = {
-  low: "slate",
-  medium: "blue",
-  high: "amber",
-  critical: "red",
-};
-
-export const titleize = (s) => (s ? String(s).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "—");
-
-function fmtWhen(ts) {
-  if (!ts) return "—";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return "—";
-  const diffMin = (Date.now() - d.getTime()) / 60000;
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${Math.floor(diffMin)}m ago`;
-  if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h ago`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-const asItems = (d) => (Array.isArray(d) ? d : d?.items || []);
 
 export default function WorkflowPage() {
   const [status, setStatus] = useState("");
@@ -136,8 +109,12 @@ export default function WorkflowPage() {
     return m;
   }, [sitesList]);
 
-  const selCls =
-    "h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted";
+  const clearFilters = () => {
+    setStatus("");
+    setPriority("");
+    setSiteId("");
+    setSopId("");
+  };
 
   return (
     <div>
@@ -155,149 +132,41 @@ export default function WorkflowPage() {
         }
       />
 
-      {/* Stats strip — click a tile to filter by that status */}
-      {statusCounts && (
-        <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-          {[{ k: "", label: "Total" }, ...INCIDENT_STATUSES.map((s) => ({ k: s, label: titleize(s) }))].map(({ k, label }) => {
-            const count = k === "" ? (statusCounts.total ?? total) : (Number(statusCounts[k]) || 0);
-            const isActive = status === k;
-            return (
-              <button
-                key={k || "total"}
-                onClick={() => setStatus(k)}
-                className={`rounded-xl border px-3 py-2.5 text-left transition ${isActive ? "border-foreground bg-hover" : "border-card-border hover:bg-hover"}`}
-              >
-                <div className="text-lg font-semibold text-foreground">{count}</div>
-                <div className="text-[11px] text-muted">{label}</div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <IncidentStatsStrip statusCounts={statusCounts} total={total} active={status} onSelect={setStatus} />
 
-      {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className={selCls}>
-          <option value="" className="bg-card">All statuses</option>
-          {INCIDENT_STATUSES.map((s) => (
-            <option key={s} value={s} className="bg-card">{titleize(s)}</option>
-          ))}
-        </select>
-        <select value={priority} onChange={(e) => setPriority(e.target.value)} className={selCls}>
-          <option value="" className="bg-card">All priorities</option>
-          {PRIORITIES.map((p) => (
-            <option key={p} value={p} className="bg-card">{titleize(p)}</option>
-          ))}
-        </select>
-        <select value={siteId} onChange={(e) => setSiteId(e.target.value)} className={selCls}>
-          <option value="" className="bg-card">All sites</option>
-          {sitesList.map((s) => (
-            <option key={s.site_id} value={s.site_id} className="bg-card">{s.name}</option>
-          ))}
-        </select>
-        <select value={sopId} onChange={(e) => setSopId(e.target.value)} className={selCls}>
-          <option value="" className="bg-card">All SOPs</option>
-          {sops.map((s) => (
-            <option key={s.id ?? s.sop_id} value={s.id ?? s.sop_id} className="bg-card">{s.name}</option>
-          ))}
-        </select>
-        {(status || priority || siteId || sopId) && (
-          <button
-            onClick={() => {
-              setStatus("");
-              setPriority("");
-              setSiteId("");
-              setSopId("");
-            }}
-            className="inline-flex items-center gap-1 rounded-lg border border-card-border px-2.5 h-9 text-xs text-muted hover:bg-hover hover:text-foreground"
-          >
-            <Icon icon="heroicons-outline:x-mark" className="text-sm" /> Clear
-          </button>
-        )}
-        <span className="ml-auto text-xs text-muted">{total} incident(s)</span>
-      </div>
+      <IncidentFilters
+        status={status}
+        priority={priority}
+        siteId={siteId}
+        sopId={sopId}
+        onStatus={setStatus}
+        onPriority={setPriority}
+        onSite={setSiteId}
+        onSop={setSopId}
+        onClear={clearFilters}
+        sites={sitesList}
+        sops={sops}
+        total={total}
+      />
 
-      {/* Bulk action bar */}
-      {selected.size > 0 && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg border border-card-border bg-card px-3 py-2">
-          <span className="text-sm font-medium text-foreground">{selected.size} selected</span>
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="secondary" onClick={() => bulk.mutate("paused")} disabled={bulk.isPending} className="!px-3 !py-1.5 text-xs">Pause</Button>
-            <Button variant="secondary" icon="heroicons-outline:arrow-trending-up" onClick={() => bulk.mutate("escalate")} disabled={bulk.isPending} className="!px-3 !py-1.5 text-xs">Escalate</Button>
-            <Button variant="danger" onClick={() => bulk.mutate("cancelled")} disabled={bulk.isPending} className="!px-3 !py-1.5 text-xs">Cancel</Button>
-            <button onClick={clearSel} className="text-xs text-muted hover:text-foreground px-2">Clear</button>
-          </div>
-        </div>
-      )}
+      <IncidentBulkBar
+        count={selected.size}
+        pending={bulk.isPending}
+        onAction={(kind) => bulk.mutate(kind)}
+        onClear={clearSel}
+      />
 
-      <Card className="overflow-hidden">
-        {instancesQ.isLoading ? (
-          <div className="flex justify-center py-16">
-            <Spinner />
-          </div>
-        ) : instances.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Icon icon="heroicons-outline:inbox" className="text-4xl text-muted mb-3 opacity-60" />
-            <p className="text-foreground font-medium">No incidents</p>
-            <p className="text-muted text-sm mt-1">
-              {status || priority || siteId || sopId ? "Try clearing filters." : "Incidents will appear here as they are raised."}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-muted border-b border-card-border">
-                  <th className="w-10 px-4 py-3"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all" /></th>
-                  <th className="font-medium px-4 py-3">Incident</th>
-                  <th className="font-medium px-4 py-3">SOP</th>
-                  <th className="font-medium px-4 py-3">State</th>
-                  <th className="font-medium px-4 py-3">Status</th>
-                  <th className="font-medium px-4 py-3">Priority</th>
-                  <th className="font-medium px-4 py-3">Site</th>
-                  <th className="font-medium px-4 py-3">Assignee</th>
-                  <th className="font-medium px-4 py-3">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {instances.map((it) => {
-                  const id = it.id ?? it.instance_id;
-                  const sid = it.sop_id ?? it.sop?.id;
-                  const siteRef = it.site_id ?? it.site?.site_id;
-                  return (
-                    <tr key={id} className="border-b border-card-border hover:bg-hover transition">
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={selected.has(id)} onChange={() => toggle(id)} aria-label="Select incident" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/events/${id}`} className="flex flex-col">
-                          <span className="font-medium text-foreground">{it.title || it.reference || `Incident ${String(id).slice(0, 8)}`}</span>
-                          <span className="text-xs text-muted font-mono">{String(id).slice(0, 8)}</span>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-muted">{it.sop_name || sopName[sid] || "—"}</td>
-                      <td className="px-4 py-3">
-                        <span className="text-foreground">{titleize(it.current_state || it.state)}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge color={STATUS_COLOR[it.status] || "neutral"}>{titleize(it.status)}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge color={PRIORITY_COLOR[it.priority] || "neutral"}>{titleize(it.priority)}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-muted">{it.site_name || siteName[siteRef] || "—"}</td>
-                      <td className="px-4 py-3 text-muted">
-                        {it.assignee_name || it.assignee?.full_name || it.assignee?.email || "Unassigned"}
-                      </td>
-                      <td className="px-4 py-3 text-muted">{fmtWhen(it.updated_at || it.created_at)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      <IncidentTable
+        rows={instances}
+        loading={instancesQ.isLoading}
+        hasFilters={!!(status || priority || siteId || sopId)}
+        selected={selected}
+        onToggle={toggle}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        sopName={sopName}
+        siteName={siteName}
+      />
     </div>
   );
 }
