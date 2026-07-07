@@ -6,6 +6,8 @@ import Link from "next/link";
 import {
   Blocks,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   Cpu,
   LayoutDashboard,
   LogOut,
@@ -18,32 +20,44 @@ import {
 
 import { tokens } from "@/lib/api";
 
-const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/tenants", label: "Tenants", icon: Building2 },
-  { href: "/modules", label: "Modules", icon: Blocks },
-  { href: "/device-brands", label: "Device Brands", icon: Cpu },
-  { href: "/platform-settings", label: "Platform", icon: SlidersHorizontal },
-  { href: "/infrastructure", label: "Infrastructure", icon: ServerCog },
-  { href: "/audit", label: "Audit", icon: ScrollText },
-  { href: "/profile", label: "Profile", icon: UserCircle },
+// Grouped nav — a proper admin sidebar instead of a crowded top bar.
+const GROUPS = [
+  { label: "Overview", items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
+  { label: "Tenancy", items: [{ href: "/tenants", label: "Tenants", icon: Building2 }] },
+  {
+    label: "Platform",
+    items: [
+      { href: "/modules", label: "Modules", icon: Blocks },
+      { href: "/device-brands", label: "Device Brands", icon: Cpu },
+      { href: "/platform-settings", label: "Platform Settings", icon: SlidersHorizontal },
+      { href: "/audit", label: "Audit", icon: ScrollText },
+    ],
+  },
+  { label: "System", items: [{ href: "/infrastructure", label: "Infrastructure", icon: ServerCog }] },
 ];
 
-// Authed shell for the super-admin panel: guards the session (no token → /login)
-// and frames every panel page with a top bar (brand + nav + logout).
 export default function PanelLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (!tokens.access) {
       router.replace("/login");
       return;
     }
+    setCollapsed(localStorage.getItem("neubit.admin.sidebar") === "1");
     setReady(true);
   }, [router]);
 
+  function toggle() {
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem("neubit.admin.sidebar", next ? "1" : "0");
+      return next;
+    });
+  }
   function logout() {
     tokens.clear();
     router.replace("/login");
@@ -57,51 +71,103 @@ export default function PanelLayout({ children }) {
     );
   }
 
+  const navLink = (href, label, Icon) => {
+    const active = pathname === href || pathname.startsWith(`${href}/`);
+    return (
+      <Link
+        key={href}
+        href={href}
+        title={collapsed ? label : undefined}
+        className={
+          "flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition " +
+          (collapsed ? "justify-center " : "") +
+          (active
+            ? "bg-white/10 font-medium text-white"
+            : "text-slate-400 hover:bg-white/5 hover:text-white")
+        }
+      >
+        <Icon className="h-[18px] w-[18px] shrink-0" />
+        {!collapsed && <span className="truncate">{label}</span>}
+      </Link>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-black text-slate-200">
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-black/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-6">
-          <Link href="/dashboard" className="inline-flex shrink-0 items-center gap-3">
+    <div className="flex min-h-screen bg-black text-slate-200">
+      <aside
+        className={
+          "sticky top-0 flex h-screen shrink-0 flex-col border-r border-white/10 bg-black/60 backdrop-blur-xl transition-[width] duration-200 " +
+          (collapsed ? "w-[68px]" : "w-60")
+        }
+      >
+        {/* Brand */}
+        <div className="flex h-14 items-center gap-2 border-b border-white/10 px-4">
+          <Link href="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-6 w-auto invert brightness-0" />
-            <span className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-xs font-medium text-cyan-300 sm:inline-flex">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Super-admin
-            </span>
+            <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-6 w-auto shrink-0 invert brightness-0" />
+            {!collapsed && (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-cyan-300">
+                <ShieldCheck className="h-3 w-3" />
+                Super-admin
+              </span>
+            )}
           </Link>
+        </div>
 
-          <nav className="flex flex-1 items-center gap-1">
-            {NAV.map(({ href, label, icon: Icon }) => {
-              const active = pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={
-                    "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-[13px] transition " +
-                    (active
-                      ? "bg-white/10 font-medium text-white"
-                      : "text-slate-400 hover:bg-white/5 hover:text-white")
-                  }
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
+        {/* Grouped nav */}
+        <nav className="flex-1 overflow-y-auto px-2 py-3">
+          {GROUPS.map((g) => (
+            <div key={g.label} className="mb-2">
+              {!collapsed && (
+                <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                  {g.label}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {g.items.map((it) => navLink(it.href, it.label, it.icon))}
+              </div>
+            </div>
+          ))}
+        </nav>
 
+        {/* Footer: account + collapse */}
+        <div className="space-y-0.5 border-t border-white/10 p-2">
+          {navLink("/profile", "Profile", UserCircle)}
           <button
             onClick={logout}
-            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
+            title={collapsed ? "Log out" : undefined}
+            className={
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-slate-400 transition hover:bg-white/5 hover:text-white " +
+              (collapsed ? "justify-center" : "")
+            }
           >
-            <LogOut className="h-3.5 w-3.5" />
-            Log out
+            <LogOut className="h-[18px] w-[18px] shrink-0" />
+            {!collapsed && "Log out"}
+          </button>
+          <button
+            onClick={toggle}
+            title={collapsed ? "Expand" : "Collapse"}
+            className={
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-slate-500 transition hover:bg-white/5 hover:text-white " +
+              (collapsed ? "justify-center" : "")
+            }
+          >
+            {collapsed ? (
+              <ChevronRight className="h-[18px] w-[18px] shrink-0" />
+            ) : (
+              <>
+                <ChevronLeft className="h-[18px] w-[18px] shrink-0" />
+                Collapse
+              </>
+            )}
           </button>
         </div>
-      </header>
+      </aside>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      {/* Full-width content */}
+      <main className="min-w-0 flex-1">
+        <div className="px-8 py-8">{children}</div>
+      </main>
     </div>
   );
 }
