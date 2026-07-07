@@ -1,1 +1,1 @@
-export { default } from "@/views/SettingsGeneral";
+export { default } from "@/features/settings/SettingsGeneral";

@@ -1,1 +1,1 @@
-export { default } from "@/views/Tags";
+export { default } from "@/features/tags/Tags";

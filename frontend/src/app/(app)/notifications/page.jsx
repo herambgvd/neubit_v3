@@ -1,1 +1,1 @@
-export { default } from "@/views/Notifications";
+export { default } from "@/features/notifications/Notifications";

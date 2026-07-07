@@ -1,1 +1,1 @@
-export { default } from "@/views/ForgotPassword";
+export { default } from "@/features/auth/ForgotPassword";

@@ -9,7 +9,7 @@ build the edge UI **once**, not per scenario.
 The scenario's frontend **bind-mounts** this folder into its app tree at `/app/web`
 (see `frs/backend/docker-compose.yml` → frontend service). Because the app's
 `jsconfig.json` maps `@/* → ./src/*`, everything here is importable as
-`@/components/...`, `@/lib/...`, `@/views/...`, and `@/config/...`.
+`@/components/...`, `@/lib/...`, `@/features/...`, and `@/config/...`.
 
 ```yaml
 # docker-compose (frontend service)
@@ -41,7 +41,7 @@ Next.js App Router is file-based, so each route is a 1-line re-export:
 
 ```js
 // app/(app)/users/page.jsx
-export { default } from "@/views/Users";
+export { default } from "@/features/users/Users";
 ```
 
 Scenario-specific screens (e.g. FRS cameras/POIs/live-wall) live in the scenario's

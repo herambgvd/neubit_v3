@@ -1,1 +1,1 @@
-export { default } from "@/views/Sites";
+export { default } from "@/features/sites/Sites";

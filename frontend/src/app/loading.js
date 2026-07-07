@@ -1,1 +1,1 @@
-export { default } from "@/views/Loading";
+export { default } from "@/features/system/Loading";

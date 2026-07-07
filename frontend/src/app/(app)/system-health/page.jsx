@@ -1,1 +1,1 @@
-export { default } from "@/views/Health";
+export { default } from "@/features/system-health/Health";

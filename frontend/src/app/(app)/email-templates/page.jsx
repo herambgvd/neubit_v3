@@ -1,1 +1,1 @@
-export { default } from "@/views/EmailTemplates";
+export { default } from "@/features/email-templates/EmailTemplates";

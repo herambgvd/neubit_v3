@@ -1,1 +1,1 @@
-export { default } from "@/views/Branding";
+export { default } from "@/features/branding/Branding";
