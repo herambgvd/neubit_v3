@@ -1,1 +1,1 @@
-export { default } from "@/views/Ingest";
+export { default } from "@/features/ingest/IngestConfig";

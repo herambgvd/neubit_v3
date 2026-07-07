@@ -17,7 +17,7 @@ import { toast } from "sonner";
 
 import { Button, ConfirmDialog, PageHeader, Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { ingest as ingestApi } from "@/lib/api/ingest";
+import { ingest as ingestApi } from "./api";
 
 const AUTH_TYPES = [
   { value: "none", label: "None (open)" },
