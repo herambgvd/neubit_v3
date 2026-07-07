@@ -53,10 +53,29 @@ services:
     ports: ["4222:4222", "8222:8222"]
     networks: [neubit]
 
+  # ── infra-control sidecar (privileged) ──────────────────────────
+  # The ONLY service that mounts the docker socket. NO host port, NO traefik
+  # labels — reachable only on the internal `neubit` network, and only from
+  # `core`, which authenticates every call with X-Ops-Token. Never mount the
+  # docker socket into core.
+  ops-agent:
+    build: ../backend/ops-agent
+    environment:
+      OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
+      COMPOSE_PROJECT: neubit-v3
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [neubit]
+    restart: unless-stopped
+
   # ── platform core (Python / edge) ───────────────────────────────
   core:
     build: ../backend/core
     env_file: .env
+    environment:
+      # Reach the privileged infra sidecar over the internal network (see ops-agent).
+      OPS_AGENT_URL: ${OPS_AGENT_URL}
+      OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

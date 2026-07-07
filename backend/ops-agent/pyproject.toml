@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neubit-ops-agent"
+version = "0.1.0"
+description = "Privileged infrastructure-control sidecar for neubit-v3 (the ONLY service that touches the Docker socket)."
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "docker>=7.1",       # Docker SDK for Python — talks to the mounted /var/run/docker.sock
+    "psutil>=5.9",       # optional host CPU/mem/disk stats for GET /host
+]
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.ruff]
+line-length = 100

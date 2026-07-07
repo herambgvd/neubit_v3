@@ -30,6 +30,7 @@ def base_routers() -> list[APIRouter]:
     from .core.audit import audit_router
     from .core.realtime import realtime_router
     from .core.storage import files_router
+    from .infra import router as infra_router
     from .licensing import router as licensing_router
     from .messaging import router as messaging_router
     from .reports import router as reports_router
@@ -40,6 +41,7 @@ def base_routers() -> list[APIRouter]:
     return [
         auth_router,
         admin_router,
+        infra_router,
         licensing_router,
         files_router,
         audit_router,

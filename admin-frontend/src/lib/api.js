@@ -120,4 +120,36 @@ export const adminApi = {
     const { data } = await api.post(`/admin/tenants/${id}/impersonate`);
     return data;
   },
+
+  // Infrastructure — container fleet controls for the host.
+  async listContainers() {
+    const { data } = await api.get("/admin/infra/containers");
+    return data;
+  },
+  async containerLogs(name, tail = 200) {
+    const { data } = await api.get(`/admin/infra/containers/${name}/logs`, {
+      params: { tail },
+    });
+    return data;
+  },
+  async restartContainer(name) {
+    const { data } = await api.post(`/admin/infra/containers/${name}/restart`);
+    return data;
+  },
+  async stopContainer(name) {
+    const { data } = await api.post(`/admin/infra/containers/${name}/stop`);
+    return data;
+  },
+  async startContainer(name) {
+    const { data } = await api.post(`/admin/infra/containers/${name}/start`);
+    return data;
+  },
+  async scaleService(name, replicas) {
+    const { data } = await api.post(`/admin/infra/services/${name}/scale`, { replicas });
+    return data;
+  },
+  async infraHost() {
+    const { data } = await api.get("/admin/infra/host");
+    return data;
+  },
 };

@@ -1,0 +1,6 @@
+# Pinned runtime deps for the ops-agent. Mirrors pyproject [project.dependencies].
+# Kept as a plain requirements.txt too so the image can install without a build backend.
+fastapi>=0.111
+uvicorn[standard]>=0.30
+docker>=7.1
+psutil>=5.9
