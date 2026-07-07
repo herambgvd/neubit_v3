@@ -1,0 +1,79 @@
+<svg width="680" viewBox="0 0 680 500" role="img" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Segoe UI, system-ui, sans-serif">
+  <title>Neubit v3 — all-Go, protocol-first, event-driven, multi-tenant command center</title>
+  <desc>Clients reach a Traefik edge gateway, then Go domain services that communicate only through a central NATS event spine; a protocol-first driver layer publishes normalized events up to the spine, persistence and the media plane sit below, and video reaches the browser directly, bypassing the bus.</desc>
+  <defs>
+    <marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/></marker>
+    <style>
+      .th{fill:#ededed;font-size:14px;font-weight:500}
+      .ts{fill:#a1a1a1;font-size:12px}
+      .box{fill:#14161b;stroke:#2a2f3a;stroke-width:1}
+      .region{fill:#0e0f13;stroke:#23272f;stroke-width:1}
+      .blue{fill:#12294a;stroke:#2f6fd0;stroke-width:1}
+      .bluet{fill:#cfe3ff;font-size:14px;font-weight:500}
+      .teal{fill:#0c3b38;stroke:#17b8a8;stroke-width:1.4}
+      .con{stroke:#6b7280;stroke-width:1.5;fill:none}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="680" height="500" fill="#0a0a0a"/>
+
+  <!-- clients -->
+  <rect class="box" x="44" y="44" width="176" height="42" rx="6"/>
+  <text class="th" x="132" y="64" text-anchor="middle">Operator console</text>
+  <text class="ts" x="132" y="79" text-anchor="middle">browser · real-time</text>
+  <rect class="box" x="252" y="44" width="176" height="42" rx="6"/>
+  <text class="th" x="340" y="64" text-anchor="middle">Mobile app</text>
+  <text class="ts" x="340" y="79" text-anchor="middle">operator on the go</text>
+  <rect class="box" x="460" y="44" width="180" height="42" rx="6"/>
+  <text class="th" x="550" y="64" text-anchor="middle">External VMS</text>
+  <text class="ts" x="550" y="79" text-anchor="middle">onvif profile s/g/t</text>
+
+  <line class="con" x1="340" y1="86" x2="340" y2="118" marker-end="url(#ah)"/>
+
+  <!-- traefik -->
+  <rect class="box" x="120" y="120" width="440" height="42" rx="6"/>
+  <text class="th" x="340" y="139" text-anchor="middle">Traefik edge gateway</text>
+  <text class="ts" x="340" y="154" text-anchor="middle">tls · tenant routing · forwardauth to go auth</text>
+
+  <line class="con" x1="340" y1="162" x2="340" y2="188" marker-end="url(#ah)"/>
+
+  <!-- services -->
+  <rect class="region" x="44" y="190" width="592" height="70" rx="8"/>
+  <text class="ts" x="54" y="206" text-anchor="start">Domain services · Go · one shared platform core (auth · tenant · rbac · license · audit)</text>
+  <rect class="blue" x="54" y="216" width="90" height="34" rx="5"/><text class="bluet" x="99" y="237" text-anchor="middle">platform</text>
+  <rect class="blue" x="152" y="216" width="90" height="34" rx="5"/><text class="bluet" x="197" y="237" text-anchor="middle">vision</text>
+  <rect class="blue" x="250" y="216" width="90" height="34" rx="5"/><text class="bluet" x="295" y="237" text-anchor="middle">nvr</text>
+  <rect class="blue" x="348" y="216" width="90" height="34" rx="5"/><text class="bluet" x="393" y="237" text-anchor="middle">gates</text>
+  <rect class="blue" x="446" y="216" width="90" height="34" rx="5"/><text class="bluet" x="491" y="237" text-anchor="middle">fire</text>
+  <rect class="blue" x="544" y="216" width="90" height="34" rx="5"/><text class="bluet" x="589" y="237" text-anchor="middle">octosense</text>
+
+  <line class="con" x1="288" y1="260" x2="288" y2="290" marker-end="url(#ah)"/>
+  <text class="ts" x="278" y="278" text-anchor="end">publish</text>
+  <line class="con" x1="396" y1="290" x2="396" y2="260" marker-end="url(#ah)"/>
+  <text class="ts" x="406" y="278" text-anchor="start">subscribe</text>
+
+  <!-- nats -->
+  <rect class="teal" x="44" y="292" width="592" height="50" rx="8"/>
+  <text class="th" x="340" y="313" text-anchor="middle">NATS + JetStream · event spine</text>
+  <text class="ts" x="340" y="330" text-anchor="middle">subjects: tenant.id.domain.event · request-reply where sync is needed</text>
+
+  <line class="con" x1="160" y1="372" x2="160" y2="344" marker-end="url(#ah)"/>
+  <line class="con" x1="494" y1="342" x2="494" y2="370" marker-end="url(#ah)"/>
+
+  <!-- driver layer -->
+  <text class="ts" x="44" y="362" text-anchor="start">Integration / driver layer — protocol → api → brand</text>
+  <rect class="box" x="44" y="370" width="136" height="30" rx="5"/><text class="ts" x="112" y="389" text-anchor="middle">Camera · ONVIF/RTSP</text>
+  <rect class="box" x="192" y="370" width="136" height="30" rx="5"/><text class="ts" x="260" y="389" text-anchor="middle">3rd-party NVR · G/API</text>
+  <rect class="box" x="44" y="406" width="136" height="30" rx="5"/><text class="ts" x="112" y="425" text-anchor="middle">AI analytics · API</text>
+  <rect class="box" x="192" y="406" width="136" height="30" rx="5"/><text class="ts" x="260" y="425" text-anchor="middle">Access · Fire · IoT</text>
+
+  <!-- persistence + media -->
+  <text class="ts" x="352" y="362" text-anchor="start">Persistence &amp; media</text>
+  <rect class="box" x="352" y="370" width="284" height="30" rx="5"/><text class="ts" x="494" y="389" text-anchor="middle">Postgres / Timescale · per-tenant schemas</text>
+  <rect class="box" x="352" y="406" width="284" height="30" rx="5"/><text class="ts" x="494" y="425" text-anchor="middle">MediaMTX + ffmpeg · video direct to browser</text>
+
+  <!-- legend -->
+  <rect class="blue" x="44" y="458" width="14" height="14" rx="3"/><text class="ts" x="64" y="469" text-anchor="start">Go domain services</text>
+  <rect class="teal" x="196" y="458" width="14" height="14" rx="3"/><text class="ts" x="216" y="469" text-anchor="start">event spine</text>
+  <text class="ts" x="352" y="469" text-anchor="start">video plane is direct — never through the bus</text>
+</svg>

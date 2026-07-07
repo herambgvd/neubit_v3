@@ -1,0 +1,48 @@
+# Dynamic config: shared middlewares. Route→service mapping is via Docker labels on each
+# service (see deploy/docker-compose.yml), so adding a service needs no gateway edit.
+
+http:
+  middlewares:
+
+    # Every protected route runs ForwardAuth to the core service. core validates the JWT
+    # (issuer/audience pinned, HS256/EdDSA), resolves the tenant, and returns identity
+    # headers that Traefik injects downstream. Services trust these headers only.
+    forward-auth:
+      forwardAuth:
+        address: "http://core:8000/internal/auth/verify"
+        authResponseHeaders:
+          - X-User-Id
+          - X-User-Role
+          - X-Tenant-Id
+          - X-Permissions
+
+    # Strip any client-supplied identity headers before auth injects the trusted ones.
+    strip-identity:
+      headers:
+        customRequestHeaders:
+          X-User-Id: ""
+          X-User-Role: ""
+          X-Tenant-Id: ""
+          X-Permissions: ""
+
+    sec-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: strict-origin-when-cross-origin
+
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
+
+    # Chain applied to all /api/* routes except the public auth endpoints.
+    api-protected:
+      chain:
+        middlewares:
+          - strip-identity
+          - forward-auth
+          - sec-headers
+          - rate-limit

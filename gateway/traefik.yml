@@ -1,0 +1,36 @@
+# Traefik static configuration. Dynamic routing lives in dynamic/ (file provider) and via
+# Docker labels. See gateway/README.md.
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+entryPoints:
+  web:
+    address: ":80"
+  # prod: add websecure:443 + TLS and redirect web→websecure. Dev serves plain :80.
+
+providers:
+  # File provider: routers/services defined in dynamic/ (reliable on Docker Desktop).
+  # The docker label provider can be enabled later for auto-discovery once the socket
+  # proxy is sorted; for a fixed base set, file routing is simplest.
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+api:
+  dashboard: true                    # protect in prod (basic-auth middleware)
+
+log:
+  level: INFO
+
+accessLog: {}
+
+# TLS: dev uses a self-signed cert; prod uses ACME (Let's Encrypt) or client-provided certs.
+# certificatesResolvers:
+#   le:
+#     acme:
+#       email: ops@neubit.example
+#       storage: /certs/acme.json
+#       httpChallenge:
+#         entryPoint: web

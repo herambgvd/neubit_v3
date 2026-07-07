@@ -1,0 +1,41 @@
+# File-provider routing for the base stack. Services reachable by container name on the
+# `neubit` network. Add a router+service block here as each new service comes online.
+
+http:
+  routers:
+    # Priorities are explicit so host + path rules resolve deterministically
+    # (Traefik's default = rule length, which mis-ranks Host vs PathPrefix here):
+    #   core (100)  — /api|/health|/metrics|/files ALWAYS win, on every host
+    #   admin (50)  — the admin.localhost host, for everything core didn't claim
+    #   frontend(1) — catch-all operator console (localhost + any other host)
+    core:
+      # NOTE: `/api/` (trailing slash) — a bare `/api` prefix also swallows frontend
+      # routes like `/api-keys`. Backend endpoints are all under `/api/v1/...`.
+      rule: "PathPrefix(`/api/`) || PathPrefix(`/health`) || PathPrefix(`/metrics`) || PathPrefix(`/files`)"
+      service: core
+      entryPoints: [web]
+      priority: 100
+    admin:
+      rule: "Host(`admin.localhost`)"
+      service: admin-frontend
+      entryPoints: [web]
+      priority: 50
+    frontend:
+      rule: "PathPrefix(`/`)"
+      service: frontend
+      entryPoints: [web]
+      priority: 1              # lowest — everything not matched above falls here
+
+  services:
+    core:
+      loadBalancer:
+        servers:
+          - url: "http://core:8000"
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
+    admin-frontend:
+      loadBalancer:
+        servers:
+          - url: "http://admin-frontend:3000"

@@ -1,0 +1,104 @@
+# Neubit v3 — local development stack.
+# Base tier: gateway (Traefik) · postgres · redis · core (Python/edge) · frontend.
+# nvr / realtime / admin-frontend / domain services are added as they are built.
+
+name: neubit-v3
+
+networks:
+  neubit:
+    name: neubit
+
+volumes:
+  pgdata:
+
+services:
+
+  # ── edge gateway ────────────────────────────────────────────────
+  gateway:
+    image: traefik:v3.1
+    command: ["--configFile=/etc/traefik/traefik.yml"]
+    ports: ["80:80", "8090:8080"]              # 8090 = dashboard (dev)
+    volumes:
+      - ../gateway/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ../gateway/dynamic:/etc/traefik/dynamic:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [neubit]
+
+  # ── data ────────────────────────────────────────────────────────
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    env_file: .env
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks: [neubit]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [neubit]
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data"]
+    ports: ["4222:4222", "8222:8222"]
+    networks: [neubit]
+
+  # ── platform core (Python / edge) ───────────────────────────────
+  core:
+    build: ../backend/core
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      nats: { condition: service_started }
+    ports: ["8000:8000"]
+    command: >
+      bash -c "alembic upgrade head &&
+               uvicorn example.main:app --host 0.0.0.0 --port 8000"
+    networks: [neubit]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.core.rule=PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/metrics`) || PathPrefix(`/files`)
+      - traefik.http.routers.core.entrypoints=web
+      - traefik.http.services.core.loadbalancer.server.port=8000
+
+  # ── operator console (Next.js) ──────────────────────────────────
+  frontend:
+    build: ../frontend
+    env_file: .env
+    depends_on: [core]
+    ports: ["3000:3000"]
+    # Bind-mount source for hot reload (WATCHPACK_POLLING handles Docker Desktop mac).
+    # Anonymous volumes keep the container's linux node_modules + .next build cache.
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks: [neubit]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.web.rule=PathPrefix(`/`)
+      - traefik.http.routers.web.entrypoints=web
+      - traefik.http.services.web.loadbalancer.server.port=3000
+
+  # ── super-admin panel (separate app) ────────────────────────────
+  admin-frontend:
+    build: ../admin-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost
+    depends_on: [core]
+    volumes:
+      - ../admin-frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks: [neubit]

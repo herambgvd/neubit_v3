@@ -1,0 +1,60 @@
+<svg width="680" viewBox="0 0 680 584" role="img" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Segoe UI, system-ui, sans-serif">
+<title>Neubit v3 detailed architecture — polyglot services around a NATS event spine</title>
+<desc>Clients reach Traefik, then a Python platform core and Python domain services plus Go data-plane services, all communicating through a NATS event spine; a polyglot driver layer publishes normalized events, and MediaMTX plus per-tenant databases sit at the bottom with video going directly to clients.</desc>
+<defs>
+<marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/></marker>
+<style>
+.th{fill:#ededed;font-size:13px;font-weight:500}
+.t{fill:#ededed;font-size:12px}
+.ts{fill:#9aa0aa;font-size:11px}
+.bt{fill:#cfe3ff;font-size:11px;font-weight:500}
+.gt{fill:#bbf7d0;font-size:11px;font-weight:500}
+.box{fill:#14161b;stroke:#2a2f3a}
+.reg{fill:#0d0e12;stroke:#23262e}
+.blue{fill:#12294a;stroke:#2f6fd0}
+.green{fill:#0c3b2a;stroke:#16a34a}
+.nats{fill:#0c3b38;stroke:#17b8a8;stroke-width:1.4}
+.c{stroke:#6b7280;stroke-width:1.4;fill:none}
+</style>
+</defs>
+<rect x="0" y="0" width="680" height="584" fill="#0a0a0a"/>
+<rect class="box" x="40" y="40" width="141" height="38" rx="6"/><text class="th" x="110" y="63" text-anchor="middle">Operator console</text>
+<rect class="box" x="193" y="40" width="141" height="38" rx="6"/><text class="th" x="263" y="63" text-anchor="middle">Desktop · Wails</text>
+<rect class="box" x="346" y="40" width="141" height="38" rx="6"/><text class="th" x="416" y="63" text-anchor="middle">Mobile</text>
+<rect class="box" x="499" y="40" width="141" height="38" rx="6"/><text class="th" x="569" y="63" text-anchor="middle">External VMS</text>
+<line class="c" x1="340" y1="78" x2="340" y2="102" marker-end="url(#a)"/>
+<rect class="box" x="110" y="104" width="460" height="38" rx="6"/><text class="th" x="340" y="121" text-anchor="middle">Traefik edge gateway</text><text class="ts" x="340" y="135" text-anchor="middle">tls · tenant routing · forwardauth → core</text>
+<line class="c" x1="340" y1="142" x2="340" y2="160" marker-end="url(#a)"/>
+<rect class="blue" x="44" y="162" width="592" height="44" rx="7"/><text class="th" x="340" y="181" text-anchor="middle">core · platform  (Python / edge)</text><text class="ts" x="340" y="197" text-anchor="middle">identity · tenant · rbac · license · settings · branding · messaging · reports · audit</text>
+<line class="c" x1="340" y1="206" x2="340" y2="220" marker-end="url(#a)"/>
+<rect class="reg" x="44" y="222" width="592" height="98" rx="8"/>
+<text class="ts" x="54" y="238" text-anchor="start">Services — Python control plane (blue) · Go data plane (green)</text>
+<rect class="blue" x="54" y="246" width="76" height="30" rx="5"/><text class="bt" x="92" y="265" text-anchor="middle">sites</text>
+<rect class="blue" x="138" y="246" width="76" height="30" rx="5"/><text class="bt" x="176" y="265" text-anchor="middle">device</text>
+<rect class="blue" x="222" y="246" width="76" height="30" rx="5"/><text class="bt" x="260" y="265" text-anchor="middle">workflow</text>
+<rect class="blue" x="306" y="246" width="76" height="30" rx="5"/><text class="bt" x="344" y="265" text-anchor="middle">vision</text>
+<rect class="blue" x="390" y="246" width="76" height="30" rx="5"/><text class="bt" x="428" y="265" text-anchor="middle">gates</text>
+<rect class="blue" x="474" y="246" width="76" height="30" rx="5"/><text class="bt" x="512" y="265" text-anchor="middle">fire</text>
+<rect class="blue" x="558" y="246" width="76" height="30" rx="5"/><text class="bt" x="596" y="265" text-anchor="middle">octosense</text>
+<rect class="green" x="54" y="282" width="76" height="30" rx="5"/><text class="gt" x="92" y="301" text-anchor="middle">nvr</text>
+<rect class="green" x="138" y="282" width="76" height="30" rx="5"/><text class="gt" x="176" y="301" text-anchor="middle">realtime</text>
+<text class="ts" x="228" y="301" text-anchor="start">nvr = recording engine · realtime = NATS→WS push</text>
+<line class="c" x1="288" y1="320" x2="288" y2="342" marker-end="url(#a)"/><text class="ts" x="278" y="335" text-anchor="end">publish</text>
+<line class="c" x1="396" y1="342" x2="396" y2="320" marker-end="url(#a)"/><text class="ts" x="406" y="335" text-anchor="start">subscribe</text>
+<rect class="nats" x="44" y="342" width="592" height="44" rx="7"/><text class="th" x="340" y="361" text-anchor="middle">NATS + JetStream · event spine</text><text class="ts" x="340" y="377" text-anchor="middle">subjects: tenant.id.domain.event · request-reply where sync is needed</text>
+<line class="c" x1="340" y1="410" x2="340" y2="388" marker-end="url(#a)"/><text class="ts" x="350" y="401" text-anchor="start">publish events</text>
+<rect class="reg" x="44" y="410" width="592" height="62" rx="8"/>
+<text class="ts" x="54" y="426" text-anchor="start">Integration / driver layer · polyglot · protocol → api → brand</text>
+<rect class="box" x="54" y="434" width="88" height="30" rx="5"/><text class="ts" x="98" y="453" text-anchor="middle">cameras</text>
+<rect class="box" x="149" y="434" width="88" height="30" rx="5"/><text class="ts" x="193" y="453" text-anchor="middle">nvr estate</text>
+<rect class="box" x="244" y="434" width="88" height="30" rx="5"/><text class="ts" x="288" y="453" text-anchor="middle">ai · api</text>
+<rect class="box" x="339" y="434" width="88" height="30" rx="5"/><text class="ts" x="383" y="453" text-anchor="middle">access</text>
+<rect class="box" x="434" y="434" width="88" height="30" rx="5"/><text class="ts" x="478" y="453" text-anchor="middle">fire</text>
+<rect class="box" x="529" y="434" width="88" height="30" rx="5"/><text class="ts" x="573" y="453" text-anchor="middle">iot</text>
+<rect class="box" x="44" y="498" width="190" height="38" rx="6"/><text class="t" x="139" y="516" text-anchor="middle">MediaMTX + ffmpeg</text><text class="ts" x="139" y="529" text-anchor="middle">h.264 / h.265 · recording</text>
+<rect class="box" x="246" y="498" width="190" height="38" rx="6"/><text class="t" x="341" y="516" text-anchor="middle">Postgres / Timescale</text><text class="ts" x="341" y="529" text-anchor="middle">db per tenant</text>
+<rect class="box" x="448" y="498" width="192" height="38" rx="6"/><text class="t" x="544" y="516" text-anchor="middle">Object store</text><text class="ts" x="544" y="529" text-anchor="middle">bucket per tenant</text>
+<rect class="blue" x="44" y="556" width="12" height="12" rx="3"/><text class="ts" x="62" y="566" text-anchor="start">Python control plane</text>
+<rect class="green" x="200" y="556" width="12" height="12" rx="3"/><text class="ts" x="218" y="566" text-anchor="start">Go data plane</text>
+<text class="ts" x="330" y="566" text-anchor="start">video is direct to clients — never through the bus</text>
+</svg>
