@@ -15,6 +15,8 @@ from app.auth.service import AuthService
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.base import get_sessionmaker
+from app.device_brands import seed_brands
+from app.module_catalog import seed_modules
 from app.tenancy.seed import seed_tenancy
 from app.core import events_nats
 
@@ -35,6 +37,10 @@ async def lifespan(app):
     # ensure the Genius Vision tenant exists. Idempotent (safe every startup).
     async with get_sessionmaker()() as db:
         await seed_tenancy(db, bootstrap_admin_email=settings.bootstrap_admin_email)
+    # Seed the platform catalogs (module registry + device brands). Idempotent.
+    async with get_sessionmaker()() as db:
+        await seed_modules(db)
+        await seed_brands(db)
     await events_nats.connect()
     await events_nats.publish("system", "core", "startup", {"service": "core"})
     yield

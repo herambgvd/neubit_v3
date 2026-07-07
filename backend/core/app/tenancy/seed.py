@@ -11,6 +11,8 @@ Call after AuthService.ensure_admin() in the app lifespan.
 
 from __future__ import annotations
 
+import os
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +26,10 @@ log = get_logger("tenancy.seed")
 GENIUS_VISION_SLUG = "genius-vision"
 GENIUS_VISION_NAME = "Genius Vision"
 GENIUS_VISION_ADMIN_EMAIL = "herambmishra@geniusvision.in"
-GENIUS_VISION_ADMIN_PASSWORD = "India@2026"
+# The tenant-admin seed password is read from the environment — never hardcode a
+# secret in source. If VE_SEED_TENANT_PASSWORD is unset, the tenant seed is SKIPPED
+# (create the tenant later via the /admin API instead).
+SEED_TENANT_PASSWORD_ENV = "VE_SEED_TENANT_PASSWORD"
 
 
 async def seed_tenancy(db: AsyncSession, *, bootstrap_admin_email: str | None) -> None:
@@ -47,6 +52,18 @@ async def seed_tenancy(db: AsyncSession, *, bootstrap_admin_email: str | None) -
     if exists is not None:
         return  # already seeded — nothing to do
 
+    # The seed password MUST come from the environment — no hardcoded secret. Without
+    # it we cannot create the tenant admin, so skip the tenant seed entirely (the
+    # super-admin can create the tenant later via POST /admin/tenants).
+    seed_password = os.environ.get(SEED_TENANT_PASSWORD_ENV)
+    if not seed_password:
+        log.info(
+            "skipping Genius Vision seed: %s not set (create the tenant via the "
+            "/admin API instead)",
+            SEED_TENANT_PASSWORD_ENV,
+        )
+        return
+
     # Guard against a pre-existing user with that email (created some other way):
     # create_tenant would ConflictError, so skip tenant creation and just log.
     clash = (
@@ -62,7 +79,7 @@ async def seed_tenancy(db: AsyncSession, *, bootstrap_admin_email: str | None) -
         return
 
     tenant = await TenantService(db).create_tenant(
-        GENIUS_VISION_NAME, GENIUS_VISION_ADMIN_EMAIL, GENIUS_VISION_ADMIN_PASSWORD
+        GENIUS_VISION_NAME, GENIUS_VISION_ADMIN_EMAIL, seed_password
     )
     log.info("seeded tenant '%s' (%s) + admin %s", tenant.name, tenant.slug,
              GENIUS_VISION_ADMIN_EMAIL)

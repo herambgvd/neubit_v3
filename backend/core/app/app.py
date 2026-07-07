@@ -30,9 +30,12 @@ def base_routers() -> list[APIRouter]:
     from .core.audit import audit_router
     from .core.realtime import realtime_router
     from .core.storage import files_router
+    from .device_brands import router as device_brands_router
     from .infra import router as infra_router
     from .licensing import router as licensing_router
     from .messaging import router as messaging_router
+    from .module_catalog import router as module_catalog_router
+    from .platform_admin import router as platform_admin_router
     from .reports import router as reports_router
     from .search import router as search_router
     from .settings import router as settings_router
@@ -42,6 +45,9 @@ def base_routers() -> list[APIRouter]:
         auth_router,
         admin_router,
         infra_router,
+        platform_admin_router,
+        module_catalog_router,
+        device_brands_router,
         licensing_router,
         files_router,
         audit_router,

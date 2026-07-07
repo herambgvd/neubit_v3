@@ -23,6 +23,8 @@ import app.messaging  # noqa: F401
 import app.branding.models  # noqa: F401
 import app.reports.models  # noqa: F401
 import app.settings.models  # noqa: F401
+import app.module_catalog.models  # noqa: F401
+import app.device_brands.models  # noqa: F401
 
 config = context.config
 if config.config_file_name:

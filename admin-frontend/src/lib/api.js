@@ -152,4 +152,58 @@ export const adminApi = {
     const { data } = await api.get("/admin/infra/host");
     return data;
   },
+
+  // Module catalog — platform features tenants inherit.
+  async listModules() {
+    const { data } = await api.get("/admin/modules");
+    return data;
+  },
+  async createModule(body) {
+    const { data } = await api.post("/admin/modules", body);
+    return data;
+  },
+  async updateModule(key, body) {
+    const { data } = await api.patch(`/admin/modules/${key}`, body);
+    return data;
+  },
+  async deleteModule(key) {
+    const { data } = await api.delete(`/admin/modules/${key}`);
+    return data;
+  },
+
+  // Device brands — supported camera/device integrations.
+  async listDeviceBrands() {
+    const { data } = await api.get("/admin/device-brands");
+    return data;
+  },
+  async getDeviceBrand(id) {
+    const { data } = await api.get(`/admin/device-brands/${id}`);
+    return data;
+  },
+
+  // Platform-wide defaults tenants inherit.
+  async getPlatformSettings() {
+    const { data } = await api.get("/admin/platform/settings");
+    return data;
+  },
+  async updatePlatformSettings(body) {
+    const { data } = await api.patch("/admin/platform/settings", body);
+    return data;
+  },
+  async getPlatformBranding() {
+    const { data } = await api.get("/admin/platform/branding");
+    return data;
+  },
+  async updatePlatformBranding(body) {
+    const { data } = await api.patch("/admin/platform/branding", body);
+    return data;
+  },
+
+  // Cross-tenant audit log — paginated { items, total, page, page_size }.
+  async listAudit({ tenantId = "", page = 1 } = {}) {
+    const params = { page };
+    if (tenantId) params.tenant_id = tenantId;
+    const { data } = await api.get("/admin/audit", { params });
+    return data;
+  },
 };

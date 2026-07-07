@@ -3,14 +3,29 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Building2, LayoutDashboard, LogOut, ServerCog, ShieldCheck, UserCircle } from "lucide-react";
+import {
+  Blocks,
+  Building2,
+  Cpu,
+  LayoutDashboard,
+  LogOut,
+  ScrollText,
+  ServerCog,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserCircle,
+} from "lucide-react";
 
 import { tokens } from "@/lib/api";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tenants", label: "Tenants", icon: Building2 },
+  { href: "/modules", label: "Modules", icon: Blocks },
+  { href: "/device-brands", label: "Device Brands", icon: Cpu },
+  { href: "/platform-settings", label: "Platform", icon: SlidersHorizontal },
   { href: "/infrastructure", label: "Infrastructure", icon: ServerCog },
+  { href: "/audit", label: "Audit", icon: ScrollText },
   { href: "/profile", label: "Profile", icon: UserCircle },
 ];
 

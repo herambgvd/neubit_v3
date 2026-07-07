@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.deps import get_current_user
 from ..auth.models import User
 from ..auth.security import decode_token
+from ..core.config import get_settings
 from ..core.errors import ForbiddenError
 from ..db.base import get_db
 
@@ -25,9 +26,20 @@ _optional_bearer = HTTPBearer(auto_error=False)
 
 
 async def require_superadmin(user: User = Depends(get_current_user)) -> User:
-    """Allow only platform super-admins through (403 otherwise)."""
+    """Allow only platform super-admins through (403 otherwise).
+
+    Optional hardening: when ``VE_REQUIRE_SUPERADMIN_2FA`` is on, a super-admin must
+    have TOTP 2FA enrolled — otherwise they get 403 SUPERADMIN_2FA_REQUIRED and must
+    first enrol via ``/auth/me/2fa/*``. Off by default so the very first super-admin
+    can bootstrap their 2FA before the flag is turned on.
+    """
     if not user.is_superadmin:
         raise ForbiddenError("super-admin privileges required")
+    if get_settings().require_superadmin_2fa and not getattr(user, "totp_enabled", False):
+        raise ForbiddenError(
+            "2FA is required for super-admins — enrol via /auth/me/2fa before continuing",
+            code="SUPERADMIN_2FA_REQUIRED",
+        )
     return user
 
 

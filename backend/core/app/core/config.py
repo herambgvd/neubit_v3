@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # reuse of the last N password hashes.
     password_expiry_days: int = 0
     password_history_count: int = 5
+    # When true, platform super-admins MUST have 2FA (TOTP) enrolled to use any
+    # super-admin-gated endpoint. Off by default so the first super-admin can enrol
+    # 2FA (via /auth/me/2fa/*) before turning this on. Opt-in hardening.
+    require_superadmin_2fa: bool = False
 
     # --- Sensitive-media protection (STQC / DPDP) --------------------------
     # Object keys under any of these prefixes are transparently encrypted at rest
