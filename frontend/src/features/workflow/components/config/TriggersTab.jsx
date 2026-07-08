@@ -12,6 +12,7 @@ import { apiError } from "@/lib/api";
 import { asItems, idOf } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
 import TriggerForm from "./TriggerForm";
+import TriggerTestModal from "./TriggerTestModal";
 
 export default function TriggersTab() {
   const qc = useQueryClient();
@@ -21,6 +22,7 @@ export default function TriggersTab() {
   const sops = asItems(sopsQ.data);
   const [form, setForm] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [test, setTest] = useState(null);
 
   const sopName = (sid) => sops.find((s) => idOf(s, "id", "sop_id") === sid)?.name || "—";
 
@@ -32,6 +34,11 @@ export default function TriggersTab() {
   const remove = useMutation({
     mutationFn: (id) => wfApi.triggers.remove(id),
     onSuccess: () => { toast.success("Trigger removed"); qc.invalidateQueries({ queryKey: ["wf-triggers"] }); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const toggle = useMutation({
+    mutationFn: ({ id, enabled }) => (enabled ? wfApi.triggers.disable(id) : wfApi.triggers.enable(id)),
+    onSuccess: (_d, v) => { toast.success(v.enabled ? "Disabled" : "Enabled"); qc.invalidateQueries({ queryKey: ["wf-triggers"] }); },
     onError: (e) => toast.error(apiError(e)),
   });
 
@@ -66,13 +73,20 @@ export default function TriggersTab() {
                 <span className="flex-1 min-w-0">
                   <span className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-foreground">{t.name}</span>
-                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${t.enabled === false ? "bg-hover text-muted" : "bg-green-500/10 text-green-500"}`}>{t.enabled === false ? "Disabled" : "Enabled"}</span>
+                    <button
+                      type="button"
+                      onClick={() => toggle.mutate({ id: idOf(t, "id", "trigger_id"), enabled: t.enabled !== false })}
+                      disabled={toggle.isPending}
+                      title={t.enabled === false ? "Click to enable" : "Click to disable"}
+                      className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium transition hover:opacity-80 disabled:opacity-50 ${t.enabled === false ? "bg-hover text-muted" : "bg-green-500/10 text-green-500"}`}
+                    >{t.enabled === false ? "Disabled" : "Enabled"}</button>
                   </span>
                   <span className="block text-[11px] text-muted font-mono truncate">
                     {t.event_source ? `${t.event_source}:` : ""}{t.event_type} → {sopName(t.sop_id)}
                     {t.conditions?.length ? ` · ${t.conditions.length} condition(s)` : ""}
                   </span>
                 </span>
+                <button onClick={() => setTest(t)} title="Test trigger" className="h-7 w-7 inline-flex items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground"><Icon icon="heroicons-outline:beaker" className="text-sm" /></button>
                 <button onClick={() => setForm(t)} className="h-7 w-7 inline-flex items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground"><Icon icon="heroicons-outline:pencil-square" className="text-sm" /></button>
                 <button onClick={() => setConfirm({ title: "Delete trigger?", message: `Delete "${t.name}"?`, confirmLabel: "Delete", onConfirm: () => { remove.mutate(idOf(t, "id", "trigger_id")); setConfirm(null); } })} className="h-7 w-7 inline-flex items-center justify-center rounded text-red-500 hover:bg-red-500/10"><Icon icon="heroicons-outline:trash" className="text-sm" /></button>
               </li>
@@ -81,6 +95,7 @@ export default function TriggersTab() {
         )}
       </div>
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
+      <TriggerTestModal open={!!test} trigger={test} onClose={() => setTest(null)} />
     </div>
   );
 }

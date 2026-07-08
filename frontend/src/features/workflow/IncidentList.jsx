@@ -21,6 +21,7 @@ import IncidentStatsStrip from "./components/incidents/IncidentStatsStrip";
 import IncidentFilters from "./components/incidents/IncidentFilters";
 import IncidentBulkBar from "./components/incidents/IncidentBulkBar";
 import IncidentTable from "./components/incidents/IncidentTable";
+import { useIncidentStream } from "./hooks/useIncidentStream";
 
 // Re-export domain constants from their canonical home for any legacy consumers.
 export { STATUS_COLOR, PRIORITY_COLOR, INCIDENT_STATUSES, PRIORITIES } from "./constants";
@@ -38,8 +39,8 @@ export default function WorkflowPage() {
   const sops = asItems(sopsQ.data);
   const sitesList = asItems(sitesQ.data);
 
-  // NOTE: polling for near-real-time. Replace with the core realtime-bridge (SSE/WS)
-  // when available so incidents stream in without a 10s poll.
+  // Realtime via the core SSE bridge (below) drives refreshes; the interval is just
+  // a slow safety-net in case the stream drops.
   const instancesQ = useQuery({
     queryKey: ["wf-instances", { status, priority, siteId, sopId }],
     queryFn: () =>
@@ -50,7 +51,7 @@ export default function WorkflowPage() {
         sop_id: sopId || undefined,
         limit: 100,
       }),
-    refetchInterval: 10000,
+    refetchInterval: 60000,
   });
 
   const instances = asItems(instancesQ.data);
@@ -58,12 +59,19 @@ export default function WorkflowPage() {
 
   const qc = useQueryClient();
 
+  // Live incidents push (SSE). On each incident.created / trigger.fired, refresh the
+  // list + stats immediately instead of waiting for the safety-net poll.
+  useIncidentStream(() => {
+    qc.invalidateQueries({ queryKey: ["wf-instances"] });
+    qc.invalidateQueries({ queryKey: ["wf-stats"] });
+  });
+
   // Stats strip (defensive: if the /stats endpoint isn't live yet, retry:false hides it).
   const statsQ = useQuery({
     queryKey: ["wf-stats"],
     queryFn: () => wfApi.instances.stats(),
     retry: false,
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
   const statusCounts = useMemo(() => {
     const d = statsQ.data;

@@ -14,6 +14,7 @@ import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { titleize } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import FormPreview from "./FormPreview";
 
 // Form field kinds the builder can create (mirrors backend FieldType enum).
 const FIELD_TYPES = ["text", "textarea", "number", "email", "phone", "date", "datetime", "select", "radio", "checkbox", "boolean", "file"];
@@ -72,6 +73,7 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
   }
 
   return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
     <form onSubmit={submit} className="rounded-lg border border-card-border bg-hover/40 p-4 space-y-4">
       <h4 className="text-sm font-semibold text-foreground">{isEdit ? `Edit ${form.name}` : "New form"}</h4>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -123,5 +125,7 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
         <Button type="submit" disabled={saving.isPending} className="!px-3 !py-1.5 text-xs">{saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create form"}</Button>
       </div>
     </form>
+      <FormPreview name={name} description={description} fields={fields} />
+    </div>
   );
 }

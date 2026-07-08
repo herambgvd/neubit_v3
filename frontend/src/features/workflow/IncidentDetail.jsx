@@ -1,7 +1,7 @@
 "use client";
 
 // Workflow — INCIDENT DETAIL (page entry; a route wrapper re-exports this default).
-// Thin orchestrator: owns the instance/SOP/users queries + all mutations, derives
+// Thin orchestrator: owns the instance/SOP queries + status/escalate/transition
 // the allowed transitions from the current state, and wires the meta/state-machine/
 // timeline/manage components + the transition-form and reason modals.
 //
@@ -16,14 +16,16 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { Button, PageHeader, Spinner } from "@/components/ui/kit";
-import { api, apiError } from "@/lib/api";
+import { apiError } from "@/lib/api";
 import { titleize, asItems } from "@/lib/format";
 import { workflow as wfApi } from "./api";
 import IncidentMeta from "./components/detail/IncidentMeta";
 import StateMachine, { stateId, stateName } from "./components/detail/StateMachine";
 import IncidentTimeline from "./components/detail/IncidentTimeline";
 import EventPayloadInspector from "./components/detail/EventPayloadInspector";
+import IncidentActionBar from "./components/detail/IncidentActionBar";
 import ManagePanel from "./components/detail/ManagePanel";
+import AssignModal from "./components/detail/AssignModal";
 import TransitionFormModal from "./components/detail/TransitionFormModal";
 import ReasonModal from "./components/detail/ReasonModal";
 
@@ -79,13 +81,7 @@ export default function WorkflowDetailPage() {
 
   const [transitionModal, setTransitionModal] = useState(null); // the chosen transition
   const [reasonAction, setReasonAction] = useState(null); // { title, verb, run(reason) }
-
-  // Users for the assignee picker (core /auth/users).
-  const usersQ = useQuery({
-    queryKey: ["auth-users-min"],
-    queryFn: () => api.get("/auth/users", { params: { page_size: 200 } }).then((r) => r.data),
-  });
-  const users = asItems(usersQ.data);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["wf-instance", id] });
 
@@ -98,11 +94,6 @@ export default function WorkflowDetailPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
-  const assignMut = useMutation({
-    mutationFn: (assignee_id) => wfApi.instances.assign(id, assignee_id),
-    onSuccess: () => { toast.success("Assignee updated"); invalidate(); },
-    onError: (e) => toast.error(apiError(e)),
-  });
   const escalateMut = useMutation({
     mutationFn: (reason) => wfApi.instances.escalate(id, reason),
     onSuccess: () => { toast.success("Incident escalated"); invalidate(); setReasonAction(null); },
@@ -113,7 +104,7 @@ export default function WorkflowDetailPage() {
     onSuccess: () => { toast.success("Status updated"); invalidate(); setReasonAction(null); },
     onError: (e) => toast.error(apiError(e)),
   });
-  const actionPending = assignMut.isPending || escalateMut.isPending || statusMut.isPending;
+  const actionPending = escalateMut.isPending || statusMut.isPending;
 
   function runStatus(a) {
     if (a.reason) {
@@ -183,7 +174,15 @@ export default function WorkflowDetailPage() {
         }
       />
 
-      <IncidentMeta instance={inst} />
+      <IncidentActionBar
+        instance={inst}
+        actionPending={actionPending}
+        onStatusAction={runStatus}
+        onEscalate={runEscalate}
+        onAssign={() => setAssignOpen(true)}
+      />
+
+      <IncidentMeta instance={inst} currentStateName={currentStateName} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_20rem] gap-4">
         {/* Left: state machine + timeline */}
@@ -195,19 +194,11 @@ export default function WorkflowDetailPage() {
 
         {/* Right: current state + allowed transitions */}
         <ManagePanel
-          instance={inst}
           currentStateName={currentStateName}
           states={states}
           allowed={allowed}
-          users={users}
-          usersLoading={usersQ.isLoading}
-          assignPending={assignMut.isPending}
-          actionPending={actionPending}
           transitionPending={doTransition.isPending}
           sopLoading={statesQ.isLoading || transitionsQ.isLoading}
-          onAssign={(v) => assignMut.mutate(v)}
-          onStatusAction={runStatus}
-          onEscalate={runEscalate}
           onRunTransition={runTransition}
         />
       </div>
@@ -233,6 +224,14 @@ export default function WorkflowDetailPage() {
           onSubmit={(reason) => reasonAction.run(reason)}
         />
       )}
+
+      <AssignModal
+        open={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        instanceId={id}
+        currentAssigneeId={inst.assigned_to ?? inst.assignee_id ?? inst.assignment?.assigned_to ?? ""}
+        onAssigned={invalidate}
+      />
     </div>
   );
 }

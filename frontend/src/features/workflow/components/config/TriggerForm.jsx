@@ -10,8 +10,16 @@ import { Button } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { titleize, idOf } from "@/lib/format";
 import { PRIORITIES } from "../../constants";
+import { MATCHER_OPS, OP_LABEL } from "../../lib/matcher";
+import ConditionsPreview from "./ConditionsPreview";
 
-const TRIGGER_OPS = ["eq", "ne", "gt", "gte", "lt", "lte", "in", "contains", "regex"];
+const TRIGGER_OPS = MATCHER_OPS;
+
+const DEDUP_STRATEGIES = [
+  { value: "per_event_type", label: "Per event type", hint: "One incident per (source, type) within the window. Default." },
+  { value: "per_event_id", label: "Per event ID", hint: "Suppress repeats sharing the envelope's event_id." },
+  { value: "per_field", label: "Per field value", hint: "Group by a payload field (e.g. payload.device_id)." },
+];
 
 export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit }) {
   const isEdit = !!trigger;
@@ -23,8 +31,13 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
   const [enabled, setEnabled] = useState(trigger?.enabled !== false);
   const [conditions, setConditions] = useState(
     Array.isArray(trigger?.conditions) && trigger.conditions.length
-      ? trigger.conditions.map((c) => ({ path: c.path || "", op: c.op || "eq", value: c.value ?? "" }))
+      ? trigger.conditions.map((c) => ({ path: c.path || c.field || "", op: c.op || c.operator || "eq", value: c.value ?? "" }))
       : [],
+  );
+  const [dedupStrategy, setDedupStrategy] = useState(trigger?.dedup?.strategy || "per_event_type");
+  const [dedupKeyField, setDedupKeyField] = useState(trigger?.dedup?.key_field || "");
+  const [dedupWindow, setDedupWindow] = useState(
+    trigger?.dedup?.window_seconds ?? 3600,
   );
   const [errors, setErrors] = useState({});
 
@@ -42,6 +55,11 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
     const cleanConds = conditions
       .filter((c) => c.path.trim())
       .map((c) => ({ path: c.path.trim(), op: c.op, value: c.value === "" ? null : c.value }));
+    const dedup = {
+      strategy: dedupStrategy,
+      window_seconds: Number(dedupWindow) || 0,
+    };
+    if (dedupStrategy === "per_field") dedup.key_field = dedupKeyField.trim() || null;
     onSubmit({
       name: name.trim(),
       event_source: eventSource.trim() || null,
@@ -50,6 +68,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
       priority: priority || null,
       enabled,
       conditions: cleanConds,
+      dedup,
     });
   }
 
@@ -112,7 +131,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
               <div key={i} className="flex items-center gap-2">
                 <input value={c.path} onChange={(e) => updateCond(i, { path: e.target.value })} placeholder="payload.path" className="h-9 flex-1 rounded-lg border border-field bg-transparent px-2.5 text-sm font-mono text-foreground outline-none focus:border-muted" />
                 <select value={c.op} onChange={(e) => updateCond(i, { op: e.target.value })} className="h-9 rounded-lg border border-field bg-transparent px-2 text-sm text-foreground outline-none focus:border-muted">
-                  {TRIGGER_OPS.map((o) => <option key={o} value={o} className="bg-card">{o}</option>)}
+                  {TRIGGER_OPS.map((o) => <option key={o} value={o} className="bg-card">{OP_LABEL[o] || o}</option>)}
                 </select>
                 <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted" />
                 <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
@@ -120,6 +139,46 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
             ))}
           </div>
         )}
+        <div className="mt-2">
+          <ConditionsPreview conditions={conditions} />
+        </div>
+      </div>
+
+      {/* Deduplication */}
+      <div>
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted">Deduplication</label>
+        <p className="mb-2 text-[11px] text-muted/70">Within the window, events resolving to the same dedup key are suppressed — only the first raises an incident.</p>
+        <div className="space-y-2">
+          {DEDUP_STRATEGIES.map((s) => {
+            const active = dedupStrategy === s.value;
+            return (
+              <label key={s.value} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-blue-500/50 bg-blue-500/10" : "border-card-border bg-card hover:bg-hover"}`}>
+                <input type="radio" name="dedup-strategy" checked={active} onChange={() => setDedupStrategy(s.value)} className="mt-0.5" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-foreground">{s.label}</span>
+                  <span className="mt-0.5 block text-[11px] text-muted">{s.hint}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
+          {dedupStrategy === "per_field" && (
+            <Field
+              label="Key field"
+              value={dedupKeyField}
+              onChange={(e) => setDedupKeyField(e.target.value)}
+              placeholder="payload.device_id"
+            />
+          )}
+          <Field
+            label="Window (seconds)"
+            type="number"
+            min={0}
+            value={dedupWindow}
+            onChange={(e) => setDedupWindow(e.target.value === "" ? "" : Number(e.target.value))}
+          />
+        </div>
       </div>
 
       <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">

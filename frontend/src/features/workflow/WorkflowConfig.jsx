@@ -11,16 +11,20 @@ import { PageHeader } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
 import SopsTab from "./components/config/SopsTab";
 import TriggersTab from "./components/config/TriggersTab";
+import FormatsTab from "./components/config/FormatsTab";
 import FormsTab from "./components/config/FormsTab";
 import NotificationTemplatesTab from "./components/config/NotificationTemplatesTab";
 import ThreatLevelsTab from "./components/config/ThreatLevelsTab";
+import SimulatorTab from "./components/config/SimulatorTab";
 
 const TABS = [
   { key: "sops", label: "SOPs", icon: "heroicons:rectangle-stack" },
   { key: "triggers", label: "Triggers", icon: "heroicons:bolt" },
+  { key: "formats", label: "Formats", icon: "heroicons-outline:swatch" },
   { key: "forms", label: "Forms", icon: "heroicons-outline:clipboard-document-list" },
   { key: "notifications", label: "Notifications", icon: "heroicons-outline:bell-alert" },
   { key: "threat", label: "Threat levels", icon: "heroicons-outline:shield-exclamation" },
+  { key: "simulator", label: "Simulator", icon: "heroicons-outline:beaker" },
 ];
 
 export default function WorkflowConfigPage() {
@@ -46,9 +50,11 @@ export default function WorkflowConfigPage() {
 
       {tab === "sops" && <SopsTab />}
       {tab === "triggers" && <TriggersTab />}
+      {tab === "formats" && <FormatsTab />}
       {tab === "forms" && <FormsTab />}
       {tab === "notifications" && <NotificationTemplatesTab />}
       {tab === "threat" && <ThreatLevelsTab />}
+      {tab === "simulator" && <SimulatorTab />}
     </div>
   );
 }

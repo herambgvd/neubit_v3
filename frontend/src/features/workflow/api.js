@@ -61,8 +61,20 @@ export const workflow = {
   sops: resource("sops"),
   states: nested("states"),
   transitions: nested("transitions"),
-  triggers: resource("triggers"),
+  triggers: {
+    ...resource("triggers"),
+    enable: (id) => unwrap(api.post(`${WF}/triggers/${id}/enable`)),
+    disable: (id) => unwrap(api.post(`${WF}/triggers/${id}/disable`)),
+  },
   forms: resource("forms"),
+
+  // Alert formats — map an alert_code to a SOP (category/severity/priority/icon/sound).
+  alertFormats: resource("alert-formats"),
+
+  // Dry-run (or live) a synthetic event through trigger + alert-format matching.
+  //   body { event_type, payload?, site_id?, alert_code?, dry_run=true }
+  //   → { matched_triggers, matched_format, skipped, created_instance_id?, ... }
+  simulate: (body) => unwrap(api.post(`${WF}/events/simulate`, body)),
 
   // Notifications split into templates + channels (backend: /notifications/{templates,channels}).
   notifications: {
@@ -91,6 +103,8 @@ export const workflow = {
       unwrap(api.patch(`${WF}/instances/${id}/status`, { status, outcome })),
     escalate: (id, reason) =>
       unwrap(api.patch(`${WF}/instances/${id}/escalate`, { reason })),
+    // Incident PDF export — fetched as an authed blob (header auth; <a> can't set it).
+    pdfBlob: (id) => api.get(`${WF}/instances/${id}/pdf`, { responseType: "blob" }).then((r) => r.data),
   },
 };
 
