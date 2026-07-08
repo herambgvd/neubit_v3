@@ -61,3 +61,34 @@ async def emit_camera_status(
     subj = subject(tid, "vms", "camera.status")
     await (_bus or bus).publish(subj, {"tenant_id": tid, **payload})
     return subj
+
+
+async def emit_nvr_lifecycle(
+    tenant_id: uuid.UUID | str | None,
+    event: str,
+    payload: dict,
+    *,
+    _bus: EventBus | None = None,
+) -> str:
+    """Publish ``tenant.<id>.device.nvr.<event>`` (registered|updated|deregistered|status).
+
+    The DEVICE stream core/sites consume (an NVR is a placed appliance like a camera or
+    door). Payload carries ``nvr_id`` + ``status`` + ``storage``. Best-effort — never raises.
+    """
+    tid = _tid(tenant_id)
+    subj = subject(tid, "device", f"nvr.{event}")
+    await (_bus or bus).publish(subj, {"tenant_id": tid, **payload})
+    return subj
+
+
+async def emit_nvr_status(
+    tenant_id: uuid.UUID | str | None,
+    payload: dict,
+    *,
+    _bus: EventBus | None = None,
+) -> str:
+    """Publish ``tenant.<id>.vms.nvr.status`` (VMS realtime / workflow correlation stream)."""
+    tid = _tid(tenant_id)
+    subj = subject(tid, "vms", "nvr.status")
+    await (_bus or bus).publish(subj, {"tenant_id": tid, **payload})
+    return subj

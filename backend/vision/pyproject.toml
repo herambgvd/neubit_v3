@@ -15,14 +15,19 @@ dependencies = [
     "asyncpg>=0.29",
     "alembic>=1.13",
     "httpx>=0.27",             # ONVIF/ISAPI/brand REST clients (drivers)
+    # ONVIF SDK — the OnvifDriver + NvrService SOAP paths need these to talk to real
+    # ONVIF cameras/NVRs (GetProfiles / enumerate_channels / GetCapabilities / PTZ /
+    # PullPoint events). Drivers import them LAZILY and still degrade gracefully if the
+    # wheel is somehow absent, but they are pinned as RUNTIME deps (same as gvd_nvr —
+    # see gvd_nvr backend/requirements.txt `onvif-zeep` + `WSDiscovery`) so the shipped
+    # image has a working ONVIF client. WITHOUT them the SOAP driver paths no-op with
+    # "not installed" — this was the P1-D gap.
+    "onvif-zeep>=0.2.12",
+    "WSDiscovery>=2.0.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
-# ONVIF SDK — the OnvifDriver imports these LAZILY and degrades gracefully if absent
-# (SOAP-probe + subnet-scan paths still work). Install for full ONVIF SDK ops (PTZ,
-# GetProfiles, imaging, PullPoint events) against real devices.
-onvif = ["onvif-zeep>=0.2.12", "WSDiscovery>=2.0"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

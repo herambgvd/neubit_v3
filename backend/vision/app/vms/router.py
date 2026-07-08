@@ -469,5 +469,8 @@ async def put_camera_acl(
     return CameraACLListResponse(items=items, total=len(items))
 
 
-# Router list mounted by app.main (mirrors the access service's export).
-routers = [router]
+# Router list mounted by app.main (mirrors the access service's export). The NVR
+# onboarding router (P1-E) is appended here so app.main mounts it alongside cameras.
+from .nvr_router import nvr_routers  # noqa: E402
+
+routers = [router, *nvr_routers]

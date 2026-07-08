@@ -160,6 +160,28 @@ def _autodetect_subnet() -> str | None:
         return None
 
 
+async def _tcp_reachable(host: str, port: int, timeout: float = 2.0) -> bool:
+    """Fast TCP pre-check before invoking the BLOCKING onvif-zeep SDK.
+
+    The onvif-zeep / zeep SDK constructs an ``ONVIFCamera`` synchronously (WSDL load +
+    SOAP call) with long internal retry/connect timeouts — against an unreachable host a
+    single ``GetProfiles`` can block ~75s. Since the SDK became a runtime dep (P1-E), an
+    onboarding request against a down NVR would hang. Gate every SDK-backed method on a
+    2s TCP connect first: unreachable → return the graceful empty result immediately;
+    reachable → proceed to the (now safe) SDK call. Keeps graceful-on-unreachable FAST."""
+    try:
+        fut = asyncio.open_connection(host, port)
+        _reader, writer = await asyncio.wait_for(fut, timeout=timeout)
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:  # noqa: BLE001
+            pass
+        return True
+    except (asyncio.TimeoutError, OSError):
+        return False
+
+
 async def _probe_host(ip: str, timeout: float) -> dict[str, Any] | None:
     """TCP-probe ONVIF_PROBE_PORTS; first open port → candidate.
     Ported from gvd_nvr ``_probe_host``."""
@@ -372,6 +394,10 @@ class OnvifDriver(CameraDriver):
                 error=None if reachable else "python-onvif-zeep not installed; SOAP probe failed",
             )
 
+        # Fast TCP gate: skip the ~75s blocking SDK call when the host is down.
+        if not await _tcp_reachable(host, creds.port):
+            return DeviceInfo(reachable=False, error=f"host {host}:{creds.port} unreachable (TCP connect failed)")
+
         def _query() -> DeviceInfo:
             try:
                 cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
@@ -421,6 +447,11 @@ class OnvifDriver(CameraDriver):
         cleanup + main/sub-by-resolution). Never raises."""
         if not _HAS_ONVIF:
             log.warning("enumerate_channels: python-onvif-zeep not installed")
+            return []
+
+        # Fast TCP gate: skip the ~75s blocking SDK call when the host is down.
+        if not await _tcp_reachable(host, creds.port):
+            log.info("enumerate_channels: %s:%s unreachable (TCP) — []", host, creds.port)
             return []
 
         username, password = creds.username, creds.password
@@ -567,6 +598,9 @@ class OnvifDriver(CameraDriver):
         ``get_stream_uris_media2`` + ``get_stream_uris``. Never raises."""
         if not _HAS_ONVIF:
             return StreamUris()
+        # Fast TCP gate: skip the ~75s blocking SDK call when the host is down.
+        if not await _tcp_reachable(host, creds.port):
+            return StreamUris()
         media2 = await asyncio.to_thread(self._stream_uris_media2, host, creds)
         if media2 and media2.main:
             media2.media_version = 2
@@ -672,6 +706,10 @@ class OnvifDriver(CameraDriver):
         if not _HAS_ONVIF:
             return Capabilities()
 
+        # Fast TCP gate: skip the ~75s blocking SDK call when the host is down.
+        if not await _tcp_reachable(host, creds.port):
+            return Capabilities()
+
         def _caps() -> Capabilities:
             try:
                 cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
@@ -715,6 +753,10 @@ class OnvifDriver(CameraDriver):
         """Fetch a JPEG: ONVIF GetSnapshotUri + (anon|basic|digest) HTTP, then RTSP
         single-frame via ffmpeg. Ported from gvd_nvr ``fetch_snapshot``. Never raises."""
         import httpx
+
+        # Fast TCP gate: skip the blocking SDK snapshot-URI call when the host is down.
+        if not await _tcp_reachable(host, creds.port):
+            return None
 
         uri = await asyncio.to_thread(self._snapshot_uri, host, creds, profile)
         if uri:
