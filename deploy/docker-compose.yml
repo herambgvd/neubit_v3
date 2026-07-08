@@ -86,8 +86,13 @@ services:
       redis: { condition: service_healthy }
       nats: { condition: service_started }
     ports: ["8000:8000"]
+    # The 0001 baseline builds the full current schema from the ORM metadata
+    # (create_all), so the later incremental deltas (0002-0010) would collide on a
+    # fresh DB. Create the baseline schema, then stamp head to record the deltas as
+    # applied. (Existing DBs upgrading from an older schema are out of scope here.)
     command: >
-      bash -c "alembic upgrade head &&
+      bash -c "alembic upgrade 0001 &&
+               alembic stamp head &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks: [neubit]
     labels:

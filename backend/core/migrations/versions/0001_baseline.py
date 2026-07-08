@@ -23,6 +23,7 @@ def _metadata():
     # Import inside the function so the models register on Base.metadata at run time.
     from app.db.base import Base
     import app.auth.models  # noqa: F401
+    import app.tenancy.models  # noqa: F401
     import app.core.audit  # noqa: F401
     import app.messaging  # noqa: F401
     import app.branding.models  # noqa: F401
