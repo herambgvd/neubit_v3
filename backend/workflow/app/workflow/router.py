@@ -409,9 +409,9 @@ async def list_instances(svc: Annotated[InstanceService, Depends(_inst_svc)],
                          skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
                          status: Optional[str] = Query(None), priority: Optional[str] = Query(None),
                          site_id: Optional[str] = Query(None), sop_id: Optional[str] = Query(None),
-                         assigned_to: Optional[str] = Query(None)):
+                         assigned_to: Optional[str] = Query(None), q: Optional[str] = Query(None)):
     items, total = await svc.list_(skip=skip, limit=limit, status=status, priority=priority,
-                                   site_id=site_id, sop_id=sop_id, assigned_to=assigned_to)
+                                   site_id=site_id, sop_id=sop_id, assigned_to=assigned_to, q=q)
     return S.InstanceListResponse(items=[S.InstancePublic.from_row(r) for r in items],
                                   total=total, skip=skip, limit=limit)
 

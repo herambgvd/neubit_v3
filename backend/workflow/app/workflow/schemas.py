@@ -239,7 +239,9 @@ class CreateTriggerRequest(BaseModel):
     description: Optional[str] = None
     sop_id: str
     event_source: str = ""
-    event_type: str = ""
+    # Optional — a trigger may match on event_source alone. Empty/None == match any
+    # event_type (the correlation engine treats "" as "match any").
+    event_type: Optional[str] = None
     conditions: list[TransitionCondition] = Field(default_factory=list)
     dedup: DedupConfig = Field(default_factory=DedupConfig)
     priority: InstancePriority = InstancePriority.MEDIUM
@@ -363,6 +365,7 @@ class CreateTemplateRequest(BaseModel):
     channel_type: str = "email"
     subject: Optional[str] = None
     body: str
+    provider_template_ref: Optional[str] = None
     is_active: bool = True
 
 
@@ -373,6 +376,7 @@ class UpdateTemplateRequest(BaseModel):
     channel_type: Optional[str] = None
     subject: Optional[str] = None
     body: Optional[str] = None
+    provider_template_ref: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -384,6 +388,7 @@ class TemplatePublic(BaseModel):
     channel_type: str
     subject: Optional[str] = None
     body: str
+    provider_template_ref: Optional[str] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -393,6 +398,7 @@ class TemplatePublic(BaseModel):
         return cls(
             template_id=r.template_id, name=r.name, description=r.description,
             channel_type=r.channel_type, subject=r.subject, body=r.body,
+            provider_template_ref=r.provider_template_ref,
             is_active=r.is_active, created_at=r.created_at, updated_at=r.updated_at,
         )
 

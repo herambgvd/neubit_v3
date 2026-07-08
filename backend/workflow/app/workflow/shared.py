@@ -102,6 +102,7 @@ class FieldType(str, Enum):
     BOOLEAN = "boolean"
     FILE = "file"
     RATING = "rating"
+    MULTISELECT = "multiselect"
 
 
 # Priority ordering for escalation bumps (low → critical).
@@ -312,6 +313,15 @@ def validate_form_data(
             opts = _option_values(field.get("options"))
             if opts and value not in opts:
                 errors.append(f"{label}: '{value}' is not a valid option")
+        elif ftype == "multiselect":
+            if not isinstance(value, (list, tuple)):
+                errors.append(f"{label}: must be a list of options")
+                continue
+            opts = _option_values(field.get("options"))
+            if opts:
+                bad = [v for v in value if v not in opts]
+                if bad:
+                    errors.append(f"{label}: {bad} not valid option(s)")
         elif ftype in ("date", "datetime"):
             if not _is_date(value):
                 errors.append(f"{label}: must be a valid date")

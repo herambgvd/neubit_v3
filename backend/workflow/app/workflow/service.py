@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, assert_owned, scoped
@@ -312,7 +312,7 @@ class TriggerService:
             description=body.description,
             sop_id=body.sop_id,
             event_source=body.event_source,
-            event_type=body.event_type,
+            event_type=body.event_type or "",
             conditions=[c.model_dump(mode="json") for c in body.conditions],
             dedup=body.dedup.model_dump(mode="json"),
             priority=body.priority.value,
@@ -462,6 +462,7 @@ class NotificationService:
         row = NotificationTemplate(
             tenant_id=self.scope.tenant_id, name=body.name, description=body.description,
             channel_type=body.channel_type, subject=body.subject, body=body.body,
+            provider_template_ref=body.provider_template_ref,
             is_active=body.is_active, created_by=_actor_id(actor), updated_by=_actor_id(actor),
         )
         self.db.add(row)
@@ -632,7 +633,7 @@ class InstanceService:
         return row
 
     async def list_(self, *, skip=0, limit=50, status=None, priority=None, site_id=None,
-                    sop_id=None, assigned_to=None):
+                    sop_id=None, assigned_to=None, q=None):
         stmt = scoped(select(WorkflowInstance), WorkflowInstance, self.scope)
         count = scoped(select(func.count()).select_from(WorkflowInstance), WorkflowInstance, self.scope)
         for col, val in [
@@ -645,6 +646,12 @@ class InstanceService:
             if val is not None:
                 stmt = stmt.where(col == val)
                 count = count.where(col == val)
+        # Full-text-ish search over the incident name + its SOP name (v2 parity).
+        if q:
+            like = f"%{q.strip()}%"
+            search = or_(WorkflowInstance.name.ilike(like), WorkflowInstance.sop_name.ilike(like))
+            stmt = stmt.where(search)
+            count = count.where(search)
         stmt = stmt.order_by(WorkflowInstance.created_at.desc()).offset(skip).limit(limit)
         rows = (await self.db.execute(stmt)).scalars().all()
         total = int(await self.db.scalar(count) or 0)

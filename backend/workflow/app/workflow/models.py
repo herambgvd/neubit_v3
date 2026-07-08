@@ -272,6 +272,8 @@ class NotificationTemplate(Base, _TenantTimestamped):
     channel_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     subject: Mapped[str | None] = mapped_column(String(512))
     body: Mapped[str] = mapped_column(String(8192), nullable=False)
+    # Provider-side template id (WhatsApp / Meta Cloud API pre-approved template).
+    provider_template_ref: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true"), index=True
     )
