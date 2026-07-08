@@ -121,11 +121,14 @@ class LiveService:
                     chosen = mp.rtsp_path
                     break
 
-        username = camera.onvif_user or "admin"
+        username = camera.onvif_user or ""
         password = decrypt_secret(camera.onvif_enc_pass) or ""
+        # Only embed creds when BOTH are present — a user-only / pass-only RTSP URL
+        # is rejected by MediaMTX ("username and password must be both provided").
+        use_creds = bool(username and password)
 
         if chosen:
-            return _inject_rtsp_creds(chosen, username, password)
+            return _inject_rtsp_creds(chosen, username, password) if use_creds else chosen
 
         # Fallback: construct a Hikvision-style RTSP from host + rtsp_port.
         host = camera.onvif_host or (camera.network_info or {}).get("ip")
@@ -137,7 +140,7 @@ class LiveService:
         sub = 2 if profile == "sub" else 1
         stream_path = f"/Streaming/Channels/{channel:d}0{sub:d}"
         base = f"rtsp://{host}:{rtsp_port}{stream_path}"
-        return _inject_rtsp_creds(base, username, password)
+        return _inject_rtsp_creds(base, username, password) if use_creds else base
 
     # ── start / renew / release ─────────────────────────────────────────
     async def start_live(self, camera_id: str, profile: str, *, actor):
