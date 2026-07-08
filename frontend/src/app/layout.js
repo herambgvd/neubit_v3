@@ -26,7 +26,13 @@ export default function RootLayout({ children }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: noFlashScript }} />
       </head>
-      <body className={`${GeistSans.className} antialiased bg-background text-foreground`}>
+      {/* suppressHydrationWarning: browser extensions (Grammarly etc.) inject attributes
+          into <body> before React hydrates — ignore that one-level attribute mismatch,
+          not real content mismatches. */}
+      <body
+        suppressHydrationWarning
+        className={`${GeistSans.className} antialiased bg-background text-foreground`}
+      >
         <Providers>{children}</Providers>
       </body>
     </html>

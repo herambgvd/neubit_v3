@@ -5,19 +5,19 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
-import { menuItems, configTabs } from "@/config/menu";
+import { menuItems, configTabs, deviceTabs } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 
 // Flatten the nav into a list of {title, link, icon, perm} entries the palette can offer
 // as "Pages". Disabled placeholders (unbuilt features) and section entries (no own link)
-// are dropped; the Config sub-tabs are hoisted so their pages are searchable too.
+// are dropped; the Config + Devices sub-tabs are hoisted so their pages are searchable too.
 function navPages() {
   const out = [];
   for (const item of menuItems) {
     if (item.disabled || item.section || !item.link) continue;
     out.push(item);
   }
-  for (const t of configTabs) {
+  for (const t of [...configTabs, ...deviceTabs]) {
     if (t.disabled || !t.link) continue;
     out.push(t);
   }

@@ -4,7 +4,7 @@
 // to neubit_v3's Vercel dark tokens:
 //   • TOP horizontal nav  → domain surfaces (Home, Dashboard, Devices, …, Config)
 //   • CONFIG sub-tab bar  → a SECOND horizontal bar shown under the header when you're
-//     in the Config section (Sites, Users, Roles, …, System) — see web/shell/ConfigTabs.
+//     in the Config or Devices section (Sites, Users, …; Access Control, …) — see shell/SectionTabs.
 //
 // Items whose feature isn't built yet carry `disabled: true` — they render greyed with a
 // "Soon" pill (visible but not clickable) so the full menu shape is present from day one.
@@ -16,7 +16,9 @@
 export const menuItems = [
   { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "neubit.read" },
   { title: "Dashboard", icon: "heroicons-outline:chart-bar", link: "/dashboard", disabled: true },
-  { title: "Devices", icon: "heroicons-outline:video-camera", link: "/devices", disabled: true },
+  // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
+  // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
+  { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices" },
   { title: "Streaming", icon: "heroicons:signal", link: "/streaming", disabled: true },
   // Events = the incident surface (SOP-driven incidents live here, like neubit_v2).
   // Workflow itself is NOT a top-nav item — its config lives under Config → Workflow.
@@ -40,7 +42,6 @@ export const configTabs = [
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", disabled: true },
   { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", disabled: true },
   { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read" },
-  { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read" },
   { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read" },
   { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
   { title: "Activity", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
@@ -52,6 +53,26 @@ export const configTabs = [
   { title: "System Health", icon: "heroicons-outline:heart", link: "/system-health", perm: "system.read" },
   { title: "License", icon: "heroicons-outline:check-badge", link: "/license" },
 ];
+
+// ── Devices sub-tab bar (second horizontal bar for the Devices section) ──
+//   Access Control ships now; Cameras / NVR are disabled placeholders until VMS lands.
+export const deviceTabs = [
+  { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read" },
+  { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", disabled: true },
+  { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", disabled: true },
+];
+
+// The route the Devices top-nav item jumps to (first enabled device tab).
+export const DEVICES_ENTRY = "/access-control";
+
+// True when the current path belongs to the Devices section (drives the sub-tab bar +
+// the "Devices" top-nav active state). Matches any enabled device tab's route.
+export function isDevicesRoute(pathname) {
+  if (!pathname) return false;
+  return deviceTabs.some(
+    (t) => !t.disabled && (pathname === t.link || pathname.startsWith(`${t.link}/`)),
+  );
+}
 
 // The route the Config top-nav item jumps to (first enabled config tab).
 export const CONFIG_ENTRY = "/sites";

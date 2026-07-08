@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
 import { Avatar } from "@/components/ui/kit";
-import { menuItems, CONFIG_ENTRY, isConfigRoute } from "@/config/menu";
+import { menuItems, CONFIG_ENTRY, isConfigRoute, DEVICES_ENTRY, isDevicesRoute } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/components/theme";
 
@@ -171,6 +171,16 @@ function NavEntry({ item, pathname }) {
   if (item.section === "config") {
     return (
       <Link href={CONFIG_ENTRY} className={pill(isConfigRoute(pathname))}>
+        <Icon icon={item.icon} className="text-base shrink-0" />
+        {item.title}
+      </Link>
+    );
+  }
+
+  // Devices section: link to the first device tab; active across the whole section.
+  if (item.section === "devices") {
+    return (
+      <Link href={DEVICES_ENTRY} className={pill(isDevicesRoute(pathname))}>
         <Icon icon={item.icon} className="text-base shrink-0" />
         {item.title}
       </Link>

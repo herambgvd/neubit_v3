@@ -1,13 +1,21 @@
 "use client";
 
-// Workflow — INCIDENTS list (page entry; a route wrapper re-exports this default).
-// Thin orchestrator: owns filters, bulk selection, and the queries; renders the
-// stats strip, filter row, bulk bar, and table components.
+// Workflow — EVENTS (route /events): a live alarm monitor in the style of Genetec
+// Security Center / Milestone Alarm Manager. Two views over the same incident
+// stream:
+//   • Board (default) — rich AlarmCards (severity band, SLA countdown, NEW marker,
+//     inline Ack/Assign) sorted most-urgent-first.
+//   • Map — a floor-plan situational map placing incident markers by zone.
 //
-// Near-real-time: TanStack Query `refetchInterval` polls every ~10s. True realtime
-// (SSE/WS) will come later via the core realtime-bridge — see the comment on the query.
+// A situational StatHeader (Critical open / Active / SLA breaching / Unassigned) +
+// a PriorityBar sit above both. The existing filters, bulk actions, pagination and
+// click-through to IncidentDetail are all preserved.
+//
+// Realtime: useIncidentStream (core SSE bridge) drives list/stat refresh, the
+// Live/Reconnecting badge (onStatus), and NEW-highlighting of just-arrived
+// incidents; a slow poll is the safety-net.
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -17,16 +25,21 @@ import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { workflow as wfApi } from "./api";
-import IncidentStatsStrip from "./components/incidents/IncidentStatsStrip";
 import IncidentFilters from "./components/incidents/IncidentFilters";
 import IncidentBulkBar from "./components/incidents/IncidentBulkBar";
-import IncidentTable from "./components/incidents/IncidentTable";
+import StatHeader from "./components/incidents/StatHeader";
+import PriorityBar from "./components/incidents/PriorityBar";
+import ViewToggle from "./components/incidents/ViewToggle";
+import AlarmBoard from "./components/incidents/AlarmBoard";
+import IncidentMap from "./components/incidents/IncidentMap";
+import AssignModal from "./components/detail/AssignModal";
 import { useIncidentStream } from "./hooks/useIncidentStream";
+import { incId, incAssignedId, isOpen, isSlaBreaching, NEW_WINDOW_MS } from "./components/incidents/lib";
 
 // Re-export domain constants from their canonical home for any legacy consumers.
 export { STATUS_COLOR, PRIORITY_COLOR, INCIDENT_STATUSES, PRIORITIES } from "./constants";
 
-const rowId = (it) => it.id ?? it.instance_id;
+const rowId = (it) => incId(it);
 const PAGE_SIZE = 25;
 
 // Small debounce so the search input doesn't refire the query on every keystroke.
@@ -47,6 +60,7 @@ export default function WorkflowPage() {
   const [siteId, setSiteId] = useState("");
   const [sopId, setSopId] = useState("");
   const [page, setPage] = useState(0);
+  const [view, setView] = useState("board");
 
   // Any filter change resets to the first page.
   useEffect(() => {
@@ -58,8 +72,6 @@ export default function WorkflowPage() {
   const sops = asItems(sopsQ.data);
   const sitesList = asItems(sitesQ.data);
 
-  // Realtime via the core SSE bridge (below) drives refreshes; the interval is just
-  // a slow safety-net in case the stream drops.
   const instancesQ = useQuery({
     queryKey: ["wf-instances", { q, status, priority, siteId, sopId, page }],
     queryFn: () =>
@@ -81,29 +93,97 @@ export default function WorkflowPage() {
 
   const qc = useQueryClient();
 
-  // Live incidents push (SSE). On each incident.created / trigger.fired, refresh the
-  // list + stats immediately instead of waiting for the safety-net poll. The hook
-  // doesn't report connection status, so we flip a best-effort "connected" flag the
-  // first time any frame arrives — good enough for the Live/Offline indicator.
-  const [connected, setConnected] = useState(false);
-  useIncidentStream(() => {
-    setConnected(true);
-    qc.invalidateQueries({ queryKey: ["wf-instances"] });
-    qc.invalidateQueries({ queryKey: ["wf-stats"] });
-  });
+  // NEW tracking: ids first seen via SSE (or freshly-created) glow for a short
+  // window. We stamp each id with its first-seen time and prune on read.
+  const [newSeen, setNewSeen] = useState(() => new Map()); // id -> ts
+  const stampNew = (id) =>
+    setNewSeen((m) => {
+      const n = new Map(m);
+      n.set(String(id), Date.now());
+      return n;
+    });
 
-  // Stats strip (defensive: if the /stats endpoint isn't live yet, retry:false hides it).
+  // Live incidents push (SSE). On each incident.created / trigger.fired, refresh
+  // the list + stats immediately and mark the incident NEW. The badge reflects the
+  // REAL SSE connection state (onopen → Live, onerror → Reconnecting).
+  const [connected, setConnected] = useState(false);
+  useIncidentStream(
+    (evt) => {
+      const id = evt?.data?.instance_id ?? evt?.data?.id;
+      if (id) stampNew(id);
+      qc.invalidateQueries({ queryKey: ["wf-instances"] });
+      qc.invalidateQueries({ queryKey: ["wf-stats"] });
+    },
+    { onStatus: setConnected },
+  );
+
+  // Prune expired NEW stamps roughly once the window passes so the glow clears.
+  useEffect(() => {
+    if (newSeen.size === 0) return undefined;
+    const t = setInterval(() => {
+      setNewSeen((m) => {
+        const now = Date.now();
+        let changed = false;
+        const n = new Map();
+        for (const [k, v] of m) {
+          if (now - v < NEW_WINDOW_MS) n.set(k, v);
+          else changed = true;
+        }
+        return changed ? n : m;
+      });
+    }, 15000);
+    return () => clearInterval(t);
+  }, [newSeen.size]);
+
+  // Set of ids currently "new" (fresh SSE stamp OR created within the window).
+  const newIds = useMemo(() => {
+    const now = Date.now();
+    const s = new Set();
+    for (const [k, v] of newSeen) if (now - v < NEW_WINDOW_MS) s.add(k);
+    for (const it of instances) {
+      const c = it.created_at ? new Date(it.created_at).getTime() : 0;
+      if (c && now - c < NEW_WINDOW_MS) s.add(String(rowId(it)));
+    }
+    return s;
+  }, [newSeen, instances]);
+
+  // Stats strip (defensive: if the /stats endpoint isn't live, retry:false hides it).
   const statsQ = useQuery({
     queryKey: ["wf-stats"],
     queryFn: () => wfApi.instances.stats(),
     retry: false,
     refetchInterval: 60000,
   });
-  const statusCounts = useMemo(() => {
-    const d = statsQ.data;
-    if (!d) return null;
-    return d.by_status || d.status || d.statuses || d.counts || d;
-  }, [statsQ.data]);
+  const byStatus = statsQ.data?.by_status || null;
+  const byPriority = statsQ.data?.by_priority || null;
+
+  // Situational metrics. "Active" comes from the stats endpoint (deployment-wide).
+  // "Critical open" prefers stats but subtracts terminal via the loaded page when
+  // needed; SLA-breaching + Unassigned are computed from the loaded page (the
+  // fields aren't in /stats). Documented as "on this page" in the tile hints.
+  const criticalOpen = useMemo(() => {
+    // by_priority is a total (not split by open/closed); the loaded page lets us
+    // count *open* criticals precisely for the current filter context.
+    const fromPage = instances.filter((it) => it.priority === "critical" && isOpen(it.status)).length;
+    // If unfiltered and stats has it, prefer the (larger) stats number.
+    const statNum = Number(byPriority?.critical);
+    return Number.isFinite(statNum) && !status && !priority ? Math.max(statNum, fromPage) : fromPage;
+  }, [instances, byPriority, status, priority]);
+
+  const activeCount = useMemo(() => {
+    const statNum = Number(byStatus?.active);
+    if (Number.isFinite(statNum) && !status && !priority && !siteId && !sopId && !q) return statNum;
+    return instances.filter((it) => it.status === "active").length;
+  }, [byStatus, instances, status, priority, siteId, sopId, q]);
+
+  const slaBreaching = useMemo(
+    () => instances.filter((it) => isSlaBreaching(it)).length,
+    [instances],
+  );
+  const unassigned = useMemo(
+    () => instances.filter((it) => isOpen(it.status) && !incAssignedId(it)).length,
+    [instances],
+  );
 
   // Bulk selection over the current page.
   const [selected, setSelected] = useState(() => new Set());
@@ -131,6 +211,23 @@ export default function WorkflowPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
+
+  // Inline quick action: Acknowledge = activate a pending incident (matches
+  // STATUS_ACTIONS in IncidentActionBar). Reuses the real status endpoint.
+  const quick = useMutation({
+    mutationFn: ({ id }) => wfApi.instances.setStatus(id, "active", null),
+    onSuccess: () => {
+      toast.success("Incident acknowledged");
+      qc.invalidateQueries({ queryKey: ["wf-instances"] });
+      statsQ.refetch();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const onAck = (it) => quick.mutate({ id: rowId(it) });
+
+  // Assign quick action opens the shared AssignModal for that incident.
+  const [assignFor, setAssignFor] = useState(null);
+  const onAssign = (it) => setAssignFor(it);
 
   const sopName = useMemo(() => {
     const m = {};
@@ -162,15 +259,16 @@ export default function WorkflowPage() {
               title={connected ? "Live stream connected" : "Live stream connecting…"}
             >
               <span
-                className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500"}`}
+                className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}
               />
               {connected ? "Live" : "Reconnecting…"}
             </span>
           </span>
         }
-        subtitle="Track and respond to incidents driven by standard operating procedures."
+        subtitle="Live alarm monitor — track and respond to incidents driven by standard operating procedures."
         actions={
           <div className="flex items-center gap-2">
+            <ViewToggle view={view} onChange={setView} />
             <Link
               href="/workflow-config"
               className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
@@ -189,7 +287,18 @@ export default function WorkflowPage() {
         }
       />
 
-      <IncidentStatsStrip statusCounts={statusCounts} total={total} active={status} onSelect={setStatus} />
+      <StatHeader
+        criticalOpen={criticalOpen}
+        active={activeCount}
+        slaBreaching={slaBreaching}
+        unassigned={unassigned}
+        activePriority={priority}
+        activeStatus={status}
+        onPriority={setPriority}
+        onStatus={setStatus}
+      />
+
+      <PriorityBar byPriority={byPriority} />
 
       <IncidentFilters
         qInput={qInput}
@@ -215,21 +324,48 @@ export default function WorkflowPage() {
         onClear={clearSel}
       />
 
-      <IncidentTable
-        rows={instances}
-        loading={instancesQ.isLoading}
-        hasFilters={!!(q || status || priority || siteId || sopId)}
-        selected={selected}
-        onToggle={toggle}
-        allSelected={allSelected}
-        onToggleAll={toggleAll}
-        sopName={sopName}
-        siteName={siteName}
-        total={total}
-        page={page}
-        pageSize={PAGE_SIZE}
-        onPage={setPage}
-      />
+      {view === "map" ? (
+        <IncidentMap
+          incidents={instances}
+          sites={sitesList}
+          siteName={siteName}
+          sopName={sopName}
+        />
+      ) : (
+        <AlarmBoard
+          rows={instances}
+          loading={instancesQ.isLoading}
+          hasFilters={!!(q || status || priority || siteId || sopId)}
+          selected={selected}
+          onToggle={toggle}
+          allSelected={allSelected}
+          onToggleAll={toggleAll}
+          sopName={sopName}
+          siteName={siteName}
+          newIds={newIds}
+          onAck={onAck}
+          onAssign={onAssign}
+          actionPending={quick.isPending}
+          total={total}
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPage={setPage}
+        />
+      )}
+
+      {assignFor && (
+        <AssignModal
+          open={!!assignFor}
+          onClose={() => setAssignFor(null)}
+          instanceId={rowId(assignFor)}
+          currentAssigneeId={incAssignedId(assignFor)}
+          onAssigned={() => {
+            qc.invalidateQueries({ queryKey: ["wf-instances"] });
+            statsQ.refetch();
+            setAssignFor(null);
+          }}
+        />
+      )}
     </div>
   );
 }

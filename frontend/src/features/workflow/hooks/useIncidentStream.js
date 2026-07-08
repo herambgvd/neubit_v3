@@ -11,9 +11,11 @@ import { api, tokens } from "@/lib/api";
 
 const EVENTS = ["incident.created", "trigger.fired"];
 
-export function useIncidentStream(onEvent, { enabled = true } = {}) {
+export function useIncidentStream(onEvent, { enabled = true, onStatus } = {}) {
   const cbRef = useRef(onEvent);
   cbRef.current = onEvent;
+  const statusRef = useRef(onStatus);
+  statusRef.current = onStatus;
 
   useEffect(() => {
     if (!enabled || typeof window === "undefined" || typeof EventSource === "undefined") return;
@@ -37,9 +39,10 @@ export function useIncidentStream(onEvent, { enabled = true } = {}) {
       };
       for (const type of EVENTS) es.addEventListener(type, handler(type));
 
-      es.onopen = () => { retry = 0; };
+      es.onopen = () => { retry = 0; statusRef.current?.(true); };
       es.onerror = () => {
         es?.close();
+        statusRef.current?.(false);
         if (closed) return;
         // Manual capped-backoff reconnect (also covers an expired/rotated token).
         retry = Math.min(retry + 1, 6);
