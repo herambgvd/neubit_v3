@@ -8,6 +8,8 @@
 #   docker compose exec postgres createdb -U "$POSTGRES_USER" neubit_ingest
 #   docker compose exec postgres createdb -U "$POSTGRES_USER" neubit_workflow
 #   docker compose exec postgres createdb -U "$POSTGRES_USER" neubit_access
+#   docker compose exec postgres createdb -U "$POSTGRES_USER" neubit_vision
+#   docker compose exec postgres createdb -U "$POSTGRES_USER" neubit_nvr
 #
 # The control DB (POSTGRES_DB, e.g. neubit_control) is created by the base image.
 set -euo pipefail
@@ -19,6 +21,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neubit_workflow')\gexec
     SELECT 'CREATE DATABASE neubit_access'
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neubit_access')\gexec
+    SELECT 'CREATE DATABASE neubit_vision'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neubit_vision')\gexec
+    SELECT 'CREATE DATABASE neubit_nvr'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neubit_nvr')\gexec
 EOSQL
 
-echo "init-service-dbs: ensured neubit_ingest + neubit_workflow + neubit_access exist"
+echo "init-service-dbs: ensured neubit_ingest + neubit_workflow + neubit_access + neubit_vision + neubit_nvr exist"

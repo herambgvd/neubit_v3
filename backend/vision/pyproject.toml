@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neubit-vision"
+version = "0.1.0"
+description = "VMS control-plane service (vision) — camera + NVR master records, ONVIF onboarding/discovery, multi-brand drivers, config, per-camera ACL, health aggregation. Owns its own DB (neubit_vision). Reuses core RBAC; interoperates with the Go nvr data-plane over NATS + REST."
+requires-python = ">=3.11"
+
+dependencies = [
+    "kernel",          # shared kernel (installed as a path dep — see [tool.uv.sources])
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "httpx>=0.27",             # ONVIF/ISAPI/brand REST clients (drivers, next module)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+# When installed with uv, resolve kernel from the sibling source dir.
+[tool.uv.sources]
+kernel = { path = "/opt/kernel", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100

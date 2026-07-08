@@ -30,6 +30,18 @@ http:
       service: access
       entryPoints: [web]
       priority: 110
+    vision:
+      # VMS control-plane — cameras/NVR/discovery/config/health under /api/v1/vms.
+      rule: "PathPrefix(`/api/v1/vms`)"
+      service: vision
+      entryPoints: [web]
+      priority: 110
+    nvr:
+      # VMS data-plane (Go) — data-plane status/ops under /api/v1/nvr.
+      rule: "PathPrefix(`/api/v1/nvr`)"
+      service: nvr
+      entryPoints: [web]
+      priority: 110
     core:
       # NOTE: `/api/` (trailing slash) — a bare `/api` prefix also swallows frontend
       # routes like `/api-keys`. Backend endpoints are all under `/api/v1/...`.
@@ -65,6 +77,14 @@ http:
       loadBalancer:
         servers:
           - url: "http://access:8000"
+    vision:
+      loadBalancer:
+        servers:
+          - url: "http://vision:8000"
+    nvr:
+      loadBalancer:
+        servers:
+          - url: "http://nvr:8000"
     frontend:
       loadBalancer:
         servers:

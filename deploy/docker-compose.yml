@@ -186,6 +186,45 @@ services:
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks: [neubit]
 
+  # ── vision — VMS control-plane (Python / neubit kernel) ─────────
+  # Camera + NVR master records, ONVIF onboarding/discovery, multi-brand drivers,
+  # config, per-camera ACL, health aggregation. Owns its own DB (neubit_vision).
+  # Reuses core RBAC (verifies core-minted JWTs locally); interoperates with the Go
+  # `nvr` data-plane over NATS + REST. Emits tenant.<id>.vms.* + device.camera.*.
+  vision:
+    build:
+      context: ../backend
+      dockerfile: vision/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_vision
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+    command: >
+      bash -c "alembic upgrade head &&
+               uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks: [neubit]
+
+  # ── nvr — VMS data-plane (Go / gokernel) ────────────────────────
+  # FIRST Go service in the stack. Recording/streaming engine (P2–P3); P1 is a
+  # scaffold: boots, /health, JWT-verified /api/v1/nvr, NATS connect, own DB
+  # (neubit_nvr) + baseline migration. Built on the shared Go kernel so it shares
+  # the SAME JWT + NATS envelope + error contract as the Python services.
+  nvr:
+    build:
+      context: ../backend
+      dockerfile: nvr/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_nvr
+      VE_APP_NAME: nvr
+      VE_PORT: "8000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+    networks: [neubit]
+
   # ── operator console (Next.js) ──────────────────────────────────
   frontend:
     build: ../frontend
