@@ -18,6 +18,9 @@ export default function SopForm({ sop, onCancel, onSaved }) {
   const [description, setDescription] = useState(sop?.description || "");
   const [priority, setPriority] = useState(sop?.default_priority || "medium");
   const [slaHours, setSlaHours] = useState(sop?.sla_hours ?? "");
+  const [tagsCsv, setTagsCsv] = useState((sop?.tags || []).join(", "));
+  const [eventCsv, setEventCsv] = useState((sop?.trigger_event_types || []).join(", "));
+  const [escalationCsv, setEscalationCsv] = useState(JSON.stringify(sop?.escalation_rules || [], null, 2));
   const [isActive, setIsActive] = useState(sop?.is_active !== false);
   const [errors, setErrors] = useState({});
 
@@ -30,11 +33,23 @@ export default function SopForm({ sop, onCancel, onSaved }) {
   function submit(e) {
     e.preventDefault();
     if (!name.trim()) { setErrors({ name: "Name is required" }); return; }
+    let escalation_rules = [];
+    try {
+      const v = JSON.parse(escalationCsv || "[]");
+      if (Array.isArray(v)) escalation_rules = v;
+    } catch {
+      setErrors({ escalation_rules: "Escalation rules must be valid JSON" });
+      toast.error("Escalation rules must be valid JSON");
+      return;
+    }
     saving.mutate({
       name: name.trim(),
       description: description.trim() || null,
       default_priority: priority,
       sla_hours: slaHours === "" ? null : Number(slaHours),
+      tags: tagsCsv.split(",").map((s) => s.trim()).filter(Boolean),
+      trigger_event_types: eventCsv.split(",").map((s) => s.trim()).filter(Boolean),
+      escalation_rules,
       is_active: isActive,
     });
   }
@@ -78,6 +93,33 @@ export default function SopForm({ sop, onCancel, onSaved }) {
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Optional"
         />
+        <Field
+          label="Tags (comma-separated)"
+          value={tagsCsv}
+          onChange={(e) => setTagsCsv(e.target.value)}
+          placeholder="alarm, after-hours"
+        />
+        <Field
+          label="Trigger event types (comma-separated)"
+          value={eventCsv}
+          onChange={(e) => setEventCsv(e.target.value)}
+          placeholder="vms.camera.motion"
+        />
+        <div className="md:col-span-2">
+          <Field
+            as="textarea"
+            rows={6}
+            label="Escalation rules (JSON)"
+            value={escalationCsv}
+            onChange={(e) => { setEscalationCsv(e.target.value); if (errors.escalation_rules) setErrors({}); }}
+            error={errors.escalation_rules}
+            placeholder='[{ "after_hours": 2, "to_priority": "high", "notify_role_ids": [] }]'
+            className="font-mono text-xs"
+          />
+          <p className="mt-1 text-[11px] text-muted">
+            Array of objects: <code className="font-mono">{`{ after_hours, to_priority, notify_role_ids }`}</code>
+          </p>
+        </div>
         <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active
         </label>

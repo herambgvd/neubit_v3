@@ -162,7 +162,19 @@ export default function WorkflowDetailPage() {
             {title}
           </span>
         }
-        subtitle={`SOP: ${inst.sop_name || "—"} · ${String(id)}`}
+        subtitle={
+          <span>
+            SOP:{" "}
+            {inst.sop_name ? (
+              <Link href="/workflow-config" className="text-blue-500 hover:underline">
+                {inst.sop_name}
+              </Link>
+            ) : (
+              "—"
+            )}{" "}
+            · {String(id)}
+          </span>
+        }
         actions={
           <Button
             variant="secondary"

@@ -14,7 +14,7 @@ import { apiError } from "@/lib/api";
 import { titleize, asItems, idOf } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
 import SopForm from "./SopForm";
-import SopCanvas from "../../sop-designer/SopCanvas";
+import SopBuilder from "./SopBuilder";
 
 const sopId = (s) => idOf(s, "id", "sop_id");
 
@@ -26,12 +26,19 @@ export default function SopsTab() {
   const [selectedId, setSelectedId] = useState(null);
   const [mode, setMode] = useState("view"); // view | create | edit
   const [confirm, setConfirm] = useState(null);
+  const [q, setQ] = useState("");
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return sops;
+    return sops.filter((x) => (x.name || "").toLowerCase().includes(s) || (x.description || "").toLowerCase().includes(s));
+  }, [sops, q]);
 
   const selected = useMemo(() => sops.find((s) => sopId(s) === selectedId) || null, [sops, selectedId]);
 
   useEffect(() => {
-    if (mode === "view" && !selected && sops[0]) setSelectedId(sopId(sops[0]));
-  }, [sops, selected, mode]);
+    if (mode === "view" && !selected && filtered[0]) setSelectedId(sopId(filtered[0]));
+  }, [filtered, selected, mode]);
 
   const remove = useMutation({
     mutationFn: (id) => wfApi.sops.remove(id),
@@ -47,19 +54,22 @@ export default function SopsTab() {
     <ListPanel
       title="SOPs"
       count={sops.length}
+      search={q}
+      onSearch={setQ}
+      searchPlaceholder="Search SOPs…"
       action={
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setMode("create")} className="!px-2.5 !py-1 text-xs">
+        <Button variant="success" icon="heroicons-outline:plus" onClick={() => { setMode("create"); setSelectedId(null); }} className="!px-2.5 !py-1 text-xs">
           New
         </Button>
       }
     >
       {sopsQ.isLoading ? (
         <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Loading…</div>
-      ) : sops.length === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-muted">No SOPs yet. Click <b>New</b>.</div>
+      ) : filtered.length === 0 ? (
+        <div className="px-4 py-12 text-center text-sm text-muted">{q.trim() ? "No SOPs match your search." : <>No SOPs yet. Click <b>New</b>.</>}</div>
       ) : (
         <ul className="divide-y divide-card-border">
-          {sops.map((s) => {
+          {filtered.map((s) => {
             const isSel = sopId(s) === selectedId && mode !== "create";
             return (
               <li key={sopId(s)} className="relative">
@@ -89,7 +99,7 @@ export default function SopsTab() {
   );
 
   return (
-    <MasterDetail aside={aside} gridCols="lg:grid-cols-[20rem_1fr]" className="min-h-[60vh]">
+    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" className="min-h-[60vh]">
       <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
         {mode === "create" || mode === "edit" ? (
           <SopForm
@@ -103,15 +113,12 @@ export default function SopsTab() {
             }}
           />
         ) : !selected ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-            <Icon icon="heroicons:rectangle-stack" className="text-3xl text-muted opacity-60" />
-            <div className="mt-3 text-sm font-semibold text-foreground">No SOP selected</div>
-          </div>
+          <EmptyDetail icon="heroicons:rectangle-stack" title="No SOP selected" subtitle="Pick one from the list or click New." />
         ) : (
-          <SopDetail
+          <SopBuilder
+            key={sopId(selected)}
             sop={selected}
-            sopId={sopId(selected)}
-            onEdit={() => setMode("edit")}
+            onSaved={() => qc.invalidateQueries({ queryKey: ["wf-sops"] })}
             onDelete={() =>
               setConfirm({
                 title: "Delete SOP?",
@@ -126,37 +133,5 @@ export default function SopsTab() {
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
     </MasterDetail>
-  );
-}
-
-function SopDetail({ sop, sopId, onEdit, onDelete }) {
-  return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-foreground truncate">{sop.name}</h2>
-          {sop.description && <p className="mt-0.5 text-xs text-muted">{sop.description}</p>}
-          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted flex-wrap">
-            {typeof sop.version === "number" && <span>v{sop.version}</span>}
-            <span className="rounded-full bg-blue-500/10 text-blue-500 px-2 py-0.5 capitalize">{titleize(sop.default_priority || "medium")}</span>
-            {sop.sla_hours != null && <span>SLA {sop.sla_hours}h</span>}
-            <span className={`rounded-full px-2 py-0.5 ${sop.is_active === false ? "bg-hover text-muted" : "bg-green-500/10 text-green-500"}`}>
-              {sop.is_active === false ? "Inactive" : "Active"}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover">
-            <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-          </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20">
-            <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
-          </button>
-        </div>
-      </header>
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
-        <SopCanvas key={sopId} sopId={sopId} />
-      </div>
-    </div>
   );
 }

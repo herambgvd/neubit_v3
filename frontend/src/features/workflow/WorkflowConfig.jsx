@@ -20,11 +20,11 @@ import SimulatorTab from "./components/config/SimulatorTab";
 const TABS = [
   { key: "sops", label: "SOPs", icon: "heroicons:rectangle-stack" },
   { key: "triggers", label: "Triggers", icon: "heroicons:bolt" },
-  { key: "formats", label: "Formats", icon: "heroicons-outline:swatch" },
   { key: "forms", label: "Forms", icon: "heroicons-outline:clipboard-document-list" },
+  { key: "formats", label: "Formats", icon: "heroicons-outline:swatch" },
+  { key: "simulator", label: "Simulator", icon: "heroicons-outline:beaker" },
   { key: "notifications", label: "Notifications", icon: "heroicons-outline:bell-alert" },
   { key: "threat", label: "Threat levels", icon: "heroicons-outline:shield-exclamation" },
-  { key: "simulator", label: "Simulator", icon: "heroicons-outline:beaker" },
 ];
 
 export default function WorkflowConfigPage() {

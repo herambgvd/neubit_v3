@@ -11,6 +11,8 @@ const selCls =
   "h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted";
 
 export default function IncidentFilters({
+  qInput,
+  onQInput,
   status,
   priority,
   siteId,
@@ -24,9 +26,32 @@ export default function IncidentFilters({
   sops = [],
   total,
 }) {
-  const hasFilter = status || priority || siteId || sopId;
+  const hasFilter = qInput || status || priority || siteId || sopId;
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
+      <label className="relative min-w-[220px] flex-1">
+        <Icon
+          icon="heroicons-outline:magnifying-glass"
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted"
+        />
+        <input
+          value={qInput}
+          onChange={(e) => onQInput(e.target.value)}
+          placeholder="Search incidents…"
+          className="h-9 w-full rounded-lg border border-field bg-transparent pl-8 pr-7 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
+        />
+        {qInput ? (
+          <button
+            type="button"
+            onClick={() => onQInput("")}
+            aria-label="Clear search"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+          >
+            <Icon icon="heroicons-outline:x-mark" className="text-sm" />
+          </button>
+        ) : null}
+      </label>
+
       <select value={status} onChange={(e) => onStatus(e.target.value)} className={selCls}>
         <option value="" className="bg-card">All statuses</option>
         {INCIDENT_STATUSES.map((s) => (

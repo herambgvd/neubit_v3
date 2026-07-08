@@ -5,8 +5,9 @@
 // submit" runs client-side validation and shows the resulting form_data — no API.
 //
 // Accepts the FormBuilder editor rows ({ label, type, required, options: comma
-// string, placeholder }) and normalises them to the renderer/validation field
-// shape ({ id, label, type, options:[{value,label}], validation:{required} }).
+// string, placeholder, default_value, help_text, pattern }) and normalises them
+// to the renderer/validation field shape ({ id, label, type, help_text,
+// default_value, options:[{value,label}], validation:{required, pattern} }).
 import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 
@@ -14,7 +15,7 @@ import { Button } from "@/components/ui/kit";
 import FormRenderer from "./FormRenderer";
 import FormSubmitTestModal from "./FormSubmitTestModal";
 
-const FIELDS_WITH_OPTIONS = new Set(["select", "radio"]);
+const FIELDS_WITH_OPTIONS = new Set(["select", "radio", "multiselect"]);
 
 const slug = (s, i) =>
   ((s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `field_${i + 1}`);
@@ -37,8 +38,10 @@ export function normalizeFields(rows) {
         label: f.label.trim(),
         type: f.type,
         placeholder: f.placeholder || "",
+        help_text: f.help_text || "",
+        default_value: f.default_value,
         options,
-        validation: { required: !!f.required, pattern: f.pattern || undefined },
+        validation: { required: !!f.required, pattern: (f.pattern || "").trim() || undefined },
       };
     });
 }

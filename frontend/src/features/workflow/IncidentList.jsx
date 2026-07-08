@@ -7,7 +7,7 @@
 // Near-real-time: TanStack Query `refetchInterval` polls every ~10s. True realtime
 // (SSE/WS) will come later via the core realtime-bridge — see the comment on the query.
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -27,12 +27,31 @@ import { useIncidentStream } from "./hooks/useIncidentStream";
 export { STATUS_COLOR, PRIORITY_COLOR, INCIDENT_STATUSES, PRIORITIES } from "./constants";
 
 const rowId = (it) => it.id ?? it.instance_id;
+const PAGE_SIZE = 25;
+
+// Small debounce so the search input doesn't refire the query on every keystroke.
+function useDebounced(value, delay = 300) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return v;
+}
 
 export default function WorkflowPage() {
+  const [qInput, setQInput] = useState("");
+  const q = useDebounced(qInput, 300);
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [siteId, setSiteId] = useState("");
   const [sopId, setSopId] = useState("");
+  const [page, setPage] = useState(0);
+
+  // Any filter change resets to the first page.
+  useEffect(() => {
+    setPage(0);
+  }, [q, status, priority, siteId, sopId]);
 
   const sopsQ = useQuery({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
   const sitesQ = useQuery({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }) });
@@ -42,15 +61,18 @@ export default function WorkflowPage() {
   // Realtime via the core SSE bridge (below) drives refreshes; the interval is just
   // a slow safety-net in case the stream drops.
   const instancesQ = useQuery({
-    queryKey: ["wf-instances", { status, priority, siteId, sopId }],
+    queryKey: ["wf-instances", { q, status, priority, siteId, sopId, page }],
     queryFn: () =>
       wfApi.instances.list({
+        q: q || undefined,
         status: status || undefined,
         priority: priority || undefined,
         site_id: siteId || undefined,
         sop_id: sopId || undefined,
-        limit: 100,
+        skip: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
       }),
+    keepPreviousData: true,
     refetchInterval: 60000,
   });
 
@@ -60,8 +82,12 @@ export default function WorkflowPage() {
   const qc = useQueryClient();
 
   // Live incidents push (SSE). On each incident.created / trigger.fired, refresh the
-  // list + stats immediately instead of waiting for the safety-net poll.
+  // list + stats immediately instead of waiting for the safety-net poll. The hook
+  // doesn't report connection status, so we flip a best-effort "connected" flag the
+  // first time any frame arrives — good enough for the Live/Offline indicator.
+  const [connected, setConnected] = useState(false);
   useIncidentStream(() => {
+    setConnected(true);
     qc.invalidateQueries({ queryKey: ["wf-instances"] });
     qc.invalidateQueries({ queryKey: ["wf-stats"] });
   });
@@ -118,6 +144,7 @@ export default function WorkflowPage() {
   }, [sitesList]);
 
   const clearFilters = () => {
+    setQInput("");
     setStatus("");
     setPriority("");
     setSiteId("");
@@ -127,22 +154,46 @@ export default function WorkflowPage() {
   return (
     <div>
       <PageHeader
-        title="Events"
+        title={
+          <span className="inline-flex items-center gap-2.5">
+            Events
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-card-border px-2 py-0.5 text-[11px] font-normal text-muted"
+              title={connected ? "Live stream connected" : "Live stream connecting…"}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500"}`}
+              />
+              {connected ? "Live" : "Reconnecting…"}
+            </span>
+          </span>
+        }
         subtitle="Track and respond to incidents driven by standard operating procedures."
         actions={
-          <Link
-            href="/workflow-config"
-            className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
-          >
-            <Icon icon="heroicons-outline:cog-6-tooth" className="text-base" />
-            Configure
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/workflow-config"
+              className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
+            >
+              <Icon icon="heroicons-outline:cog-6-tooth" className="text-base" />
+              Configure
+            </Link>
+            <Link
+              href="/workflow-config"
+              className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
+            >
+              <Icon icon="heroicons-outline:clipboard-document-list" className="text-base" />
+              SOPs
+            </Link>
+          </div>
         }
       />
 
       <IncidentStatsStrip statusCounts={statusCounts} total={total} active={status} onSelect={setStatus} />
 
       <IncidentFilters
+        qInput={qInput}
+        onQInput={setQInput}
         status={status}
         priority={priority}
         siteId={siteId}
@@ -167,13 +218,17 @@ export default function WorkflowPage() {
       <IncidentTable
         rows={instances}
         loading={instancesQ.isLoading}
-        hasFilters={!!(status || priority || siteId || sopId)}
+        hasFilters={!!(q || status || priority || siteId || sopId)}
         selected={selected}
         onToggle={toggle}
         allSelected={allSelected}
         onToggleAll={toggleAll}
         sopName={sopName}
         siteName={siteName}
+        total={total}
+        page={page}
+        pageSize={PAGE_SIZE}
+        onPage={setPage}
       />
     </div>
   );

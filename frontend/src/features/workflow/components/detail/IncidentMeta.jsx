@@ -5,6 +5,7 @@
 // current state + when it was entered, priority, status, site, assignee, created,
 // SLA deadline (with a remaining/breached indicator), escalation level, and tags.
 // Resilient to missing keys — always falls back to "—".
+import Link from "next/link";
 import { Icon } from "@iconify/react";
 import { Badge } from "@/components/ui/kit";
 import { titleize, fmtDateTime } from "@/lib/format";
@@ -84,8 +85,22 @@ export default function IncidentMeta({ instance, currentStateName }) {
 
       {/* Identity grid */}
       <div className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-2 lg:grid-cols-3">
+        <MetaField label="Instance ID">
+          <span className="font-mono text-xs">
+            {inst.instance_id || inst.id || "—"}
+          </span>
+        </MetaField>
         <MetaField label="SOP">
-          {inst.sop_name || "—"}
+          {inst.sop_name ? (
+            <Link
+              href="/workflow-config"
+              className="text-blue-500 hover:underline"
+            >
+              {inst.sop_name}
+            </Link>
+          ) : (
+            "—"
+          )}
           {inst.sop_version != null && (
             <span className="ml-1 text-xs text-muted">v{inst.sop_version}</span>
           )}
@@ -112,6 +127,13 @@ export default function IncidentMeta({ instance, currentStateName }) {
           )}
         </MetaField>
         <MetaField label="Escalation level">{`L${escalationLevel}`}</MetaField>
+        {inst.description && (
+          <MetaField label="Description" full>
+            <p className="whitespace-pre-wrap text-sm text-muted">
+              {inst.description}
+            </p>
+          </MetaField>
+        )}
         {tags && (
           <MetaField label="Tags" full>
             <div className="flex flex-wrap gap-1.5">

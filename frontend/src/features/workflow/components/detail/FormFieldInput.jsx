@@ -36,7 +36,7 @@ export default function FormFieldInput({ field, value, error, onChange }) {
           <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
           {field.placeholder || "Yes"}
         </label>
-      ) : field.type === "select" || field.type === "multiselect" ? (
+      ) : field.type === "select" ? (
         <select
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
@@ -47,11 +47,60 @@ export default function FormFieldInput({ field, value, error, onChange }) {
             <option key={o.value} value={o.value} className="bg-card">{o.label}</option>
           ))}
         </select>
+      ) : field.type === "radio" ? (
+        <div className="mt-1 flex flex-col gap-1.5">
+          {options.length === 0 && <span className="text-xs text-muted/70">No options</span>}
+          {options.map((o) => (
+            <label key={o.value} className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
+              <input type="radio" checked={value === o.value} onChange={() => onChange(o.value)} />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </div>
+      ) : field.type === "multiselect" ? (
+        (() => {
+          const arr = Array.isArray(value) ? value : [];
+          return (
+            <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-field bg-transparent p-2">
+              {options.length === 0 && <span className="text-xs text-muted/70 px-1">No options</span>}
+              {options.map((o) => (
+                <label key={o.value} className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={arr.includes(o.value)}
+                    onChange={(e) => onChange(e.target.checked ? [...arr, o.value] : arr.filter((x) => x !== o.value))}
+                  />
+                  <span>{o.label}</span>
+                </label>
+              ))}
+            </div>
+          );
+        })()
+      ) : field.type === "rating" ? (
+        (() => {
+          const num = Number(value) || 0;
+          return (
+            <div className="mt-1 inline-flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => onChange(n === num ? 0 : n)}
+                  title={`${n} of 5`}
+                  className={`text-lg leading-none ${n <= num ? "text-amber-400" : "text-muted/40"} hover:text-amber-400`}
+                >
+                  ★
+                </button>
+              ))}
+              <span className="ml-1.5 text-xs text-muted">{num || "—"}/5</span>
+            </div>
+          );
+        })()
       ) : (
         <input
           type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
           value={value ?? ""}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange(field.type === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)}
           placeholder={field.placeholder || ""}
           className={cls}
         />

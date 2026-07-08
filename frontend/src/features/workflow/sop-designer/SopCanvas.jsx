@@ -25,6 +25,7 @@ import CanvasNode from "./CanvasNode";
 import CanvasEdge, { PendingEdge } from "./CanvasEdge";
 import StateModal from "./StateModal";
 import TransitionModal from "./TransitionModal";
+import SopSidePanel from "./SopSidePanel";
 
 const sid = (s) => idOf(s, "state_id", "id");
 const tid = (t) => idOf(t, "transition_id", "id");
@@ -205,14 +206,15 @@ export default function SopCanvas({ sopId }) {
         onFit={doFit}
       />
 
-      {/* Canvas viewport */}
+      {/* Canvas viewport (flex-1) + optional selection side-panel (w-72) */}
+      <div className="flex flex-1 min-h-0 gap-3 p-3">
       <div
         ref={wrapRef}
         onPointerDown={onBgPointerDown}
         onPointerMove={onWrapPointerMove}
         onPointerUp={endInteractions}
         onPointerLeave={endInteractions}
-        className="relative flex-1 min-h-0 overflow-hidden select-none"
+        className="relative flex-1 min-w-0 min-h-0 overflow-hidden select-none rounded-lg border border-card-border"
         style={{
           cursor: panning ? "grabbing" : connect ? "crosshair" : "grab",
           backgroundColor: "var(--hover)",
@@ -284,12 +286,15 @@ export default function SopCanvas({ sopId }) {
           </div>
         )}
 
-        {/* Selection action bar */}
+      </div>
+
+        {/* Selection side-panel (appears only when a node/transition is selected) */}
         {selection && (
-          <SelectionBar
+          <SopSidePanel
             selection={selection}
-            states={stateById}
+            states={effStates}
             transitions={transitions}
+            onClose={() => setSelection(null)}
             onEdit={() => {
               if (selection.kind === "state") {
                 const s = stateById.get(selection.id);
@@ -342,26 +347,6 @@ export default function SopCanvas({ sopId }) {
         />
       )}
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={removeState.isPending || removeTransition.isPending} />
-    </div>
-  );
-}
-
-/* ── floating action bar for the current selection ── */
-function SelectionBar({ selection, states, transitions, onEdit, onDelete }) {
-  let title = "";
-  if (selection.kind === "state") title = states.get(selection.id)?.name || "State";
-  else title = transitions.find((t) => tid(t) === selection.id)?.label || "Transition";
-  return (
-    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-lg border border-card-border bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur">
-      <span className="px-1.5 text-xs text-muted max-w-[180px] truncate">
-        {selection.kind === "state" ? "State" : "Transition"}: <span className="text-foreground font-medium">{title}</span>
-      </span>
-      <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-xs text-foreground hover:bg-hover">
-        <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-      </button>
-      <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-500 hover:bg-red-500/20">
-        <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
-      </button>
     </div>
   );
 }

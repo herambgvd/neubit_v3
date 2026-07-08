@@ -22,7 +22,16 @@ export default function IncidentTable({
   onToggleAll,
   sopName = {},
   siteName = {},
+  total = 0,
+  page = 0,
+  pageSize = 25,
+  onPage,
 }) {
+  const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
+  const showingFrom = total === 0 ? 0 : page * pageSize + 1;
+  const showingTo = Math.min((page + 1) * pageSize, total || rows.length);
+  const showPager = !loading && rows.length > 0;
+
   return (
     <Card className="overflow-hidden">
       {loading ? (
@@ -89,6 +98,35 @@ export default function IncidentTable({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {showPager && (
+        <div className="flex items-center justify-between border-t border-card-border px-4 py-2.5 text-xs text-muted">
+          <span>
+            {showingFrom}–{showingTo} of {total || rows.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page === 0}
+              onClick={() => onPage?.(Math.max(0, page - 1))}
+              className="rounded-md border border-card-border px-2.5 py-1 hover:bg-hover hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              Previous
+            </button>
+            <span>
+              Page {page + 1} of {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page + 1 >= totalPages}
+              onClick={() => onPage?.(page + 1)}
+              className="rounded-md border border-card-border px-2.5 py-1 hover:bg-hover hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
     </Card>

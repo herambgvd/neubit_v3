@@ -21,11 +21,14 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
   const isEdit = !!template;
   const [name, setName] = useState(template?.name || "");
   const [channelType, setChannelType] = useState(template?.channel_type || "email");
+  const [description, setDescription] = useState(template?.description || "");
   const [subject, setSubject] = useState(template?.subject || "");
   const [body, setBody] = useState(template?.body || "");
+  const [providerRef, setProviderRef] = useState(template?.provider_template_ref || "");
   const [isActive, setIsActive] = useState(template?.is_active !== false);
   const [errors, setErrors] = useState({});
   const showSubject = channelType === "email";
+  const showProviderRef = channelType === "whatsapp";
 
   const saving = useMutation({
     mutationFn: (payload) => (isEdit ? wfApi.notifications.templates.update(template.template_id, payload) : wfApi.notifications.templates.create(payload)),
@@ -39,13 +42,16 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
     if (!name.trim()) next.name = "Name is required";
     if (!body.trim()) next.body = "Body is required";
     if (Object.keys(next).length) { setErrors(next); return; }
-    saving.mutate({
+    const payload = {
       name: name.trim(),
-      channel_type: channelType,
+      description: description.trim() || null,
       subject: showSubject ? (subject.trim() || null) : null,
       body: body,
+      provider_template_ref: showProviderRef ? (providerRef.trim() || null) : null,
       is_active: isActive,
-    });
+    };
+    if (!isEdit) payload.channel_type = channelType;
+    saving.mutate(payload);
   }
 
   return (
@@ -60,14 +66,27 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
           placeholder="e.g. Fire escalation email"
           error={errors.name}
         />
-        <Field
-          as="select"
-          label="Channel"
-          value={channelType}
-          onChange={(e) => setChannelType(e.target.value)}
-          options={CHANNEL_TYPES.map((c) => ({ value: c, label: titleize(c) }))}
-        />
+        {isEdit ? (
+          <Field label="Channel" value={titleize(channelType)} disabled hint="Can't be changed after create." />
+        ) : (
+          <Field
+            as="select"
+            label="Channel"
+            value={channelType}
+            onChange={(e) => setChannelType(e.target.value)}
+            options={CHANNEL_TYPES.map((c) => ({ value: c, label: titleize(c) }))}
+          />
+        )}
       </div>
+      <Field
+        as="textarea"
+        rows={2}
+        label="Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        maxLength={1024}
+        placeholder="Optional — what this template is for"
+      />
       {showSubject && (
         <Field
           label="Subject"
@@ -87,6 +106,16 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
           ))}
         </div>
       </div>
+      {showProviderRef && (
+        <Field
+          label="Provider template ref"
+          value={providerRef}
+          onChange={(e) => setProviderRef(e.target.value)}
+          placeholder="e.g. alarm_fired_v1"
+          className="font-mono"
+          hint="Meta/WhatsApp provider-side template id — must match an approved template."
+        />
+      )}
       <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active</label>
       <div className="flex items-center justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { titleize, idOf } from "@/lib/format";
 
+const ALERT_CATEGORIES = ["custom", "security", "performance", "maintenance", "system"];
 const SEVERITIES = ["low", "medium", "high", "critical"];
 const PRIORITIES = ["low", "medium", "high", "critical"];
 const SOP_MODES = ["manual", "automatic"];
@@ -90,11 +91,11 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
           placeholder="Optional — what this alert means"
         />
         <Field
+          as="select"
           label="Category"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          placeholder="e.g. custom, intrusion, fire"
-          hint="Free text — defaults to “custom”."
+          options={ALERT_CATEGORIES.map((c) => ({ value: c, label: titleize(c) }))}
         />
         <Field
           as="select"
