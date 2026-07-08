@@ -60,6 +60,21 @@ export const ingest = {
     get: (id) => unwrap(api.get(`/ingest/event-logs/${id}`)),
     replay: (id) => unwrap(api.post(`/ingest/event-logs/${id}/replay`, {})),
   },
+
+  // Payload-driven routing rules per webhook (priority-ordered; first match wins).
+  //   rule: { name, description?, priority, match_conditions:[{path,op,value?}],
+  //           field_map:{}, event_type, target_domain?, enabled }
+  eventRules: {
+    list: (webhookId, params = {}) =>
+      unwrap(api.get(`${WEBHOOKS}/${webhookId}/rules${qs(params)}`)),
+    create: (webhookId, body) => unwrap(api.post(`${WEBHOOKS}/${webhookId}/rules`, body)),
+    get: (ruleId) => unwrap(api.get(`/ingest/event-rules/${ruleId}`)),
+    update: (ruleId, body) => unwrap(api.patch(`/ingest/event-rules/${ruleId}`, body)),
+    remove: (ruleId) => unwrap(api.delete(`/ingest/event-rules/${ruleId}`)),
+    // Dry-run a rule against a sample payload (existing rule or a proposed shape).
+    // → { matched, condition_results:[{ok,op,path,actual,expected}], extracted, event_type }
+    test: (ruleId, body) => unwrap(api.post(`/ingest/event-rules/${ruleId}/test`, body)),
+  },
 };
 
 export default ingest;

@@ -16,9 +16,11 @@ import { authLabel } from "../constants";
 import { receiverUrl, copyToClipboard } from "../lib/receiverUrl";
 import WebhookTestPanel from "./WebhookTestPanel";
 import WebhookEventsPanel from "./WebhookEventsPanel";
+import RulesPanel from "./RulesPanel";
 
 const DETAIL_TABS = [
   { key: "overview", label: "Overview", icon: "heroicons-outline:information-circle" },
+  { key: "rules", label: "Rules", icon: "heroicons-outline:funnel" },
   { key: "test", label: "Test", icon: "heroicons-outline:beaker" },
   { key: "events", label: "Recent events", icon: "heroicons-outline:queue-list" },
 ];
@@ -104,6 +106,7 @@ export default function WebhookDetailModal({ webhook, onClose, onChanged }) {
             </div>
           )}
 
+          {tab === "rules" && <RulesPanel webhookId={hookId} />}
           {tab === "test" && <WebhookTestPanel hookId={hookId} />}
           {tab === "events" && <WebhookEventsPanel hookId={hookId} />}
         </div>
