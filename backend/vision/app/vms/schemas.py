@@ -541,3 +541,223 @@ class CameraHealthPublic(BaseModel):
 class CameraHealthListResponse(BaseModel):
     items: list[CameraHealthPublic]
     total: int
+
+
+# ── Discovery / onboarding request bodies (driver-backed) ─────────────────────────
+
+
+class DiscoverBody(BaseModel):
+    """POST /cameras/onvif/discover — LAN scan (graceful empty if none/unreachable)."""
+
+    model_config = ConfigDict(extra="forbid")
+    network: Optional[str] = Field(default=None, max_length=64)  # CIDR (None = auto)
+    brand: Optional[str] = Field(default=None, max_length=64)
+
+
+class DiscoveredPublic(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    ip: str
+    port: int = 80
+    xaddr: Optional[str] = None
+    name: Optional[str] = None
+    manufacturer: Optional[str] = None
+    model: Optional[str] = None
+    firmware: Optional[str] = None
+    serial_number: Optional[str] = None
+    mac: Optional[str] = None
+    brand: str = "onvif"
+    auth_required: bool = False
+
+
+class DiscoverResponse(BaseModel):
+    items: list[DiscoveredPublic] = Field(default_factory=list)
+    total: int = 0
+
+
+class ProbeBody(BaseModel):
+    """POST /cameras/onvif/probe — reachability + identity + capabilities."""
+
+    model_config = ConfigDict(extra="forbid")
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=80, ge=1, le=65535)
+    username: str = Field(default="admin", max_length=255)
+    password: str = Field(default="", max_length=1024)
+    brand: Optional[str] = Field(default=None, max_length=64)
+
+
+class ProbeResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    reachable: bool
+    manufacturer: Optional[str] = None
+    model: Optional[str] = None
+    firmware: Optional[str] = None
+    serial_number: Optional[str] = None
+    hardware_id: Optional[str] = None
+    mac: Optional[str] = None
+    channel_count: int = 0
+    has_ptz: bool = False
+    has_imaging: bool = False
+    has_events: bool = False
+    has_analytics: bool = False
+    has_audio: bool = False
+    error: Optional[str] = None
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChannelsBody(BaseModel):
+    """POST /cameras/onvif/channels — enumerate NVR/DVR/encoder channels."""
+
+    model_config = ConfigDict(extra="forbid")
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=80, ge=1, le=65535)
+    username: str = Field(default="admin", max_length=255)
+    password: str = Field(default="", max_length=1024)
+    brand: Optional[str] = Field(default=None, max_length=64)
+
+
+class StreamInfoPublic(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    profile_token: Optional[str] = None
+    stream_url: Optional[str] = None
+    resolution: Optional[str] = None
+    fps: Optional[int] = None
+    codec: Optional[str] = None
+    bitrate: Optional[int] = None
+
+
+class ChannelPublic(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    channel: int
+    name: str
+    source_token: Optional[str] = None
+    channel_number: Optional[int] = None
+    main: Optional[StreamInfoPublic] = None
+    sub: Optional[StreamInfoPublic] = None
+    snapshot_url: Optional[str] = None
+    ptz_capable: bool = False
+
+
+class ChannelsResponse(BaseModel):
+    items: list[ChannelPublic] = Field(default_factory=list)
+    total: int = 0
+
+
+class SnapshotBody(BaseModel):
+    """POST /cameras/onvif/snapshot — grab a single JPEG (502 graceful if none)."""
+
+    model_config = ConfigDict(extra="forbid")
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=80, ge=1, le=65535)
+    username: str = Field(default="admin", max_length=255)
+    password: str = Field(default="", max_length=1024)
+    brand: Optional[str] = Field(default=None, max_length=64)
+
+
+class BulkAddChannel(BaseModel):
+    """One channel spec for POST /cameras/onvif/bulk-add."""
+
+    model_config = ConfigDict(extra="forbid")
+    channel_number: Optional[int] = Field(default=None, ge=0)
+    name: Optional[str] = Field(default=None, max_length=255)
+    profile_token: Optional[str] = Field(default=None, max_length=255)
+    nvr_id: Optional[str] = Field(default=None, max_length=36)
+    site_id: Optional[str] = Field(default=None, max_length=36)
+    floor_id: Optional[str] = Field(default=None, max_length=36)
+
+
+class BulkAddBody(BaseModel):
+    """POST /cameras/onvif/bulk-add — create N cameras (one per channel) in one tx."""
+
+    model_config = ConfigDict(extra="forbid")
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=80, ge=1, le=65535)
+    username: str = Field(default="admin", max_length=255)
+    password: str = Field(default="", max_length=1024)
+    brand: str = Field(default="onvif", max_length=64)
+    channels: list[BulkAddChannel] = Field(min_length=1, max_length=200)
+
+
+# ── Config sub-resource request bodies (driver / local) ───────────────────────────
+
+
+PtzAction = Literal[
+    "continuous", "stop", "relative", "absolute",
+    "goto_preset", "set_preset", "delete_preset", "get_presets",
+]
+
+
+class PtzBody(BaseModel):
+    """POST /cameras/{id}/ptz — a single PTZ action (driver.ptz)."""
+
+    model_config = ConfigDict(extra="forbid")
+    action: PtzAction
+    pan: float = 0.0
+    tilt: float = 0.0
+    zoom: float = 0.0
+    speed: float = Field(default=0.5, ge=0.0, le=1.0)
+    preset_token: Optional[str] = Field(default=None, max_length=255)
+    preset_name: Optional[str] = Field(default=None, max_length=255)
+    profile_token: Optional[str] = Field(default=None, max_length=255)
+
+
+class ImagingBody(BaseModel):
+    """PATCH /cameras/{id}/imaging — driver.configure('imaging', ...)."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+class IoBody(BaseModel):
+    """PATCH /cameras/{id}/io — driver.configure('io', ...)."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+class MotionConfigBody(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class PrivacyMasksBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    masks: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class OnvifEventsBody(BaseModel):
+    """PUT /cameras/{id}/onvif-events — persist enabled + topics (ingest at scale = P5)."""
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+    topics: list[str] = Field(default_factory=list)
+
+
+class ConfigResult(BaseModel):
+    """Generic driver/local config result echo."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+# ── ACL PUT body ──────────────────────────────────────────────────────────────────
+
+
+class CameraACLEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subject_type: AclSubjectType
+    subject_id: str = Field(min_length=1, max_length=64)
+    privileges: list[AclPrivilege] = Field(default_factory=list)
+
+
+class CameraACLPutBody(BaseModel):
+    """PUT /cameras/{id}/acl — replace the per-camera ACL wholesale."""
+
+    model_config = ConfigDict(extra="forbid")
+    entries: list[CameraACLEntry] = Field(default_factory=list, max_length=500)
+
+
+# ── Bulk result ───────────────────────────────────────────────────────────────────
+
+
+class BulkResult(BaseModel):
+    affected: int = 0
+
+
+class ReorderResult(BaseModel):
+    reordered: int = 0

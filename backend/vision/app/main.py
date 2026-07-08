@@ -25,15 +25,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from kernel.auth import Principal, Scope, get_principal, get_scope
 from kernel.config import get_settings
 from kernel.errors import register_error_handlers
-from kernel.events import EventBus, subject
+from kernel.events import subject
+
+# The onboarding service publishes through the shared VMS event bus
+# (``app.vms.events``) — one process-wide bus that both startup announcements and
+# camera lifecycle/status events ride. The VMS subject namespace is
+# ``tenant.<id>.vms.*`` (+ ``device.camera.*`` for the Map / core), shared with the
+# Go ``nvr`` service.
+from app.vms.events import bus
+from app.vms.router import routers as vms_routers
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vision")
-
-# One event bus per service; source names this emitter in every envelope. The VMS
-# subject namespace is ``tenant.<id>.vms.*`` (+ ``device.camera.*`` for the Map /
-# core), shared with the Go ``nvr`` service.
-bus = EventBus(source="vision")
 
 
 @asynccontextmanager
@@ -81,11 +84,11 @@ def create_app() -> FastAPI:
             "service": "vision",
         }
 
-    # VMS REST routers (cameras / nvr / discovery / config / health) mount here in
-    # the next module:
-    #   from app.vms.router import routers as vms_routers
-    #   for r in vms_routers:
-    #       app.include_router(r, prefix=settings.api_prefix)
+    # VMS REST routers (P1-D: camera onboarding — CRUD, ONVIF discovery/probe/
+    # channels/bulk-add/snapshot, config sub-resources, groups + ACL). NVR
+    # onboarding mounts alongside in P1-E.
+    for r in vms_routers:
+        app.include_router(r, prefix=settings.api_prefix)
 
     return app
 

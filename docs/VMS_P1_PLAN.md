@@ -1,5 +1,7 @@
 # VMS — Phase 1 implementation plan (camera + NVR onboarding, drivers, health, placement)
 
+Port sources (cross-reference BOTH — nearly identical NVR codebases; use whichever is more complete per module): **gvd_nvr** (`/Users/snowden/office/side_project/gvd_nvr`, +`relay/`) and **vizor_nvr** (`/Users/snowden/project/vizor_nvr`, the original). Enterprise modules present in both to mine in later phases: **`onvif_device`** (⭐ our VMS acts as an ONVIF server so 3rd-party VMS can pull from us — interop feature), **`storage`** (pools local/NFS/SMB/RAID + tiering, P3), **`cluster`** (multi-node, P5), **`license`** (Ed25519), **`relay`/`spot_output`** (alarm-relay + spot-monitor), `bookmarks`/`snapshots`/`monitoring` (P4/health).
+
 Derived from `docs/VMS_DESIGN.md` (decisions D1–D8 locked). **Enterprise-from-start, build-once, mobile-ready, no double-engineering.** P1 = the foundation + everything visible without video yet: onboard cameras + multi-brand NVRs, detect capabilities, monitor health, place on floor-plans/maps. Live/record/playback = P2–P4.
 
 Plane split (D8): **`vision` (Python)** = control brain · **`nvr` (Go)** = data-plane muscle (scaffold only in P1; heavy work P2–P3) · **MediaMTX** = media (P2). Management/RBAC = **core** (reuse).

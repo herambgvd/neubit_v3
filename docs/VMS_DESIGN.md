@@ -290,7 +290,7 @@ Legend: **[M]** = MVP for the 200-ch order (must ship) · **[E]** = full-enterpr
 
 ### M. Integrations
 - [M] **Access-control ↔ video** (we have gates): access event (door forced/held) → auto-pop camera + record (video verification). Big PSIM differentiator.
-- [E] 3rd-party via REST/webhooks/ONVIF Profile G/T; AI-analytics as a pluggable event source (later).
+- [E] 3rd-party via REST/webhooks; **our VMS as an ONVIF server (Profile S/G)** so external VMS/recorders (Milestone/Genetec/NVRs) can pull OUR live streams + recordings — port gvd_nvr/vizor_nvr `onvif_device`. Big interop/enterprise differentiator. AI-analytics as a pluggable event source (later).
 
 ## 15. Distributed / HA architecture (enterprise)
 
