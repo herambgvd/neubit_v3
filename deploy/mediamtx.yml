@@ -1,0 +1,75 @@
+# MediaMTX — neubit_v3 VMS media node (P2-A, local dev config).
+#
+# Ported from neubit_v2 deploy/local/mediamtx.yml. This is the media data-plane:
+# the Go `nvr` service adds/patches/deletes paths at runtime via the control API
+# on :9997 (each path's `source` is a camera RTSP URL; MediaMTX pulls on demand).
+# Browsers play HLS (:8888) / WebRTC-WHEP (:8889) — the :9997 control API stays
+# INTERNAL (nvr-only, never routed through the public Traefik gateway).
+
+logLevel: info
+
+# ── Authentication ──
+# Single permissive internal user — the local docker network is private and the
+# control API is not exposed publicly. Public HLS/WebRTC token-auth lands at the
+# Traefik ForwardAuth layer in P2-C, not here.
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass: ""
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+      - action: metrics
+      - action: pprof
+
+# ── REST control API (INTERNAL — nvr adds/patches/deletes paths at runtime) ──
+api: yes
+apiAddress: :9997
+
+# ── Timeouts / buffers ──
+readTimeout: 30s
+writeTimeout: 30s
+readBufferCount: 2048
+
+# ── Protocol listeners ──
+rtspAddress: :8554
+rtmpAddress: :1935
+hlsAddress: :8888
+webrtcAddress: :8889
+
+# ── HLS ──
+# fmp4 supports H.265; alwaysRemux keeps the muxer hot between viewers so the
+# next reader doesn't pay a cold-start penalty (v1/v2 behaviour — makes stream
+# resume immediate after navigation).
+hlsVariant: fmp4
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+hlsAlwaysRemux: yes
+
+# ── WebRTC ──
+# Advertise `localhost` as an extra ICE host candidate so the browser (on the
+# docker host) can reach the listener; without this MediaMTX only advertises the
+# container's docker-network IP and ICE never completes.
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts: [localhost]
+webrtcICEServers2: []
+
+# ── CORS ──
+hlsAllowOrigins: ["*"]
+webrtcAllowOrigins: ["*"]
+
+# ── Path defaults ──
+# nvr sets sourceOnDemand per path via the API. Defaults here only cover any
+# path that bypasses the service; on-demand so an idle path does not pull RTSP.
+pathDefaults:
+  sourceOnDemand: yes
+  sourceOnDemandStartTimeout: 20s
+  sourceOnDemandCloseAfter: 120s
+  rtspTransport: tcp
+  record: no

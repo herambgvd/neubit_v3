@@ -206,11 +206,36 @@ services:
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks: [neubit]
 
+  # ── mediamtx — VMS media node (P2-A) ────────────────────────────
+  # The live-video data plane. The Go `nvr` service adds/patches/deletes paths at
+  # runtime via the control API on :9997 (each path's `source` = a camera RTSP
+  # URL; MediaMTX pulls on demand). Browsers play HLS (:8888) / WebRTC-WHEP
+  # (:8889). The :9997 control API is INTERNAL — reachable only inside the neubit
+  # network by nvr, NEVER routed through the public Traefik gateway. Public
+  # HLS/WebRTC token-auth is added at the Traefik ForwardAuth layer in P2-C.
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    restart: unless-stopped
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8554:8554"     # RTSP
+      - "1935:1935"     # RTMP (ingest for synthetic test sources)
+      - "8888:8888"     # HLS
+      - "8889:8889"     # WebRTC HTTP signaling (WHEP)
+      - "8189:8189/udp" # WebRTC ICE (UDP)
+      - "8189:8189/tcp" # WebRTC ICE (TCP)
+      # NOTE: 9997 (control API) is deliberately NOT published to the host — it is
+      # reachable only on the internal `neubit` network by nvr.
+    networks: [neubit]
+
   # ── nvr — VMS data-plane (Go / gokernel) ────────────────────────
-  # FIRST Go service in the stack. Recording/streaming engine (P2–P3); P1 is a
-  # scaffold: boots, /health, JWT-verified /api/v1/nvr, NATS connect, own DB
-  # (neubit_nvr) + baseline migration. Built on the shared Go kernel so it shares
-  # the SAME JWT + NATS envelope + error contract as the Python services.
+  # FIRST Go service in the stack. Recording/streaming engine (P2–P3). P2-A owns
+  # the live-stream orchestration: a MediaMTX client + a stream-supervisor that
+  # shards cameras across MediaMTX node(s) and exposes internal /streams/ensure|
+  # DELETE|list endpoints (called service-to-service by `vision`). Own DB
+  # (neubit_nvr) + migrations. Built on the shared Go kernel so it shares the SAME
+  # JWT + NATS envelope + error contract as the Python services.
   nvr:
     build:
       context: ../backend
@@ -220,9 +245,21 @@ services:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_nvr
       VE_APP_NAME: nvr
       VE_PORT: "8000"
+      # MediaMTX wiring. VE_MEDIAMTX_API_URL is the INTERNAL control API (docker
+      # DNS). The public base URLs are host-reachable (browser-facing) and are
+      # returned to callers in ensure responses.
+      VE_MEDIAMTX_API_URL: ${VE_MEDIAMTX_API_URL:-http://mediamtx:9997}
+      VE_MEDIAMTX_HLS_BASE: ${VE_MEDIAMTX_HLS_BASE:-http://localhost:8888}
+      VE_MEDIAMTX_WEBRTC_BASE: ${VE_MEDIAMTX_WEBRTC_BASE:-http://localhost:8889}
+      VE_MEDIAMTX_RTSP_BASE: ${VE_MEDIAMTX_RTSP_BASE:-rtsp://localhost:8554}
+      # The nvr's own MediaMTX node id (the supervisor registers this on boot).
+      VE_MEDIA_NODE_ID: ${VE_MEDIA_NODE_ID:-mediamtx-0}
+      # Idle-path reaper: delete paths with 0 readers idle for this many seconds.
+      VE_STREAM_IDLE_TTL_SEC: ${VE_STREAM_IDLE_TTL_SEC:-300}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
+      mediamtx: { condition: service_started }
     networks: [neubit]
 
   # ── operator console (Next.js) ──────────────────────────────────

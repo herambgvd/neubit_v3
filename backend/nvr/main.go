@@ -17,6 +17,7 @@ import (
 	"embed"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -27,6 +28,10 @@ import (
 	"github.com/neubit/gokernel/db"
 	"github.com/neubit/gokernel/events"
 	"github.com/neubit/gokernel/httpx"
+
+	"github.com/neubit/nvr/internal/mediamtx"
+	"github.com/neubit/nvr/internal/streams"
+	"github.com/neubit/nvr/internal/supervisor"
 )
 
 const serviceName = "nvr"
@@ -41,17 +46,22 @@ func main() {
 	cfg := config.Load()
 	cfg.AppName = serviceName
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Long-lived context for the service (reaper, background loops); a short child
+	// is used for the boot-time DB connect + migration.
+	runCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+
+	bootCtx, cancel := context.WithTimeout(runCtx, 30*time.Second)
 	defer cancel()
 
 	// --- DB: this service's OWN database (neubit_nvr) + baseline migration -----
-	pool, err := db.Connect(ctx, cfg.NormalizedDSN())
+	pool, err := db.Connect(bootCtx, cfg.NormalizedDSN())
 	if err != nil {
 		log.Fatalf("database connect failed: %v", err)
 	}
 	defer pool.Close()
 
-	applied, err := db.Migrate(ctx, pool, migrationsFS, "migrations")
+	applied, err := db.Migrate(bootCtx, pool, migrationsFS, "migrations")
 	if err != nil {
 		log.Fatalf("migration failed: %v", err)
 	}
@@ -69,6 +79,26 @@ func main() {
 	defer bus.Close()
 	// Announce startup on the same spine the Python services use.
 	_ = bus.Publish(events.Subject(nil, serviceName, "startup"), map[string]any{"service": serviceName})
+
+	// --- Stream orchestration (P2-A): MediaMTX client + stream-supervisor -------
+	// The supervisor owns the media-node registry + camera→node shards (own DB)
+	// and drives MediaMTX path provisioning. In P2 nvr registers its single local
+	// node from env; multi-node registration is the same call per node in P6.
+	localNode := mediamtx.Node{
+		ID:         env("VE_MEDIA_NODE_ID", "mediamtx-0"),
+		APIURL:     env("VE_MEDIAMTX_API_URL", "http://mediamtx:9997"),
+		HLSBase:    env("VE_MEDIAMTX_HLS_BASE", "http://localhost:8888"),
+		WebRTCBase: env("VE_MEDIAMTX_WEBRTC_BASE", "http://localhost:8889"),
+		RTSPBase:   env("VE_MEDIAMTX_RTSP_BASE", "rtsp://localhost:8554"),
+	}
+	idleTTL := time.Duration(envInt("VE_STREAM_IDLE_TTL_SEC", 300)) * time.Second
+	mtxClient := mediamtx.New()
+	sup := supervisor.New(pool, mtxClient, idleTTL, serviceName)
+	if err := sup.EnsureNode(bootCtx, localNode); err != nil {
+		// Node registration failing is fatal — without it no stream can be assigned.
+		log.Fatalf("media node registration failed: %v", err)
+	}
+	sup.Start(runCtx) // idle-path reaper (stops when runCtx is cancelled)
 
 	// --- HTTP: chi + shared middleware; /health public, /api/v1/nvr JWT-gated --
 	verifier := auth.NewVerifier(cfg.JWTSecret)
@@ -102,18 +132,22 @@ func main() {
 			})
 		})
 
-		// Data-plane health/status — gated by the vms.* permission catalog. In P1
-		// it just reports readiness + NATS state; P2 adds shard/stream metrics.
+		// Data-plane health/status — gated by the vms.* permission catalog.
 		api.With(httpx.RequirePermission("vms.camera.read")).
 			Get("/status", func(w http.ResponseWriter, _ *http.Request) {
 				httpx.JSON(w, http.StatusOK, map[string]any{
 					"service":   serviceName,
 					"plane":     "data",
-					"phase":     "P1-scaffold",
+					"phase":     "P2-A-streaming",
 					"nats":      bus.IsConnected(),
-					"streaming": false, // P2
+					"streaming": true,
+					"node":      localNode.ID,
 				})
 			})
+
+		// Internal stream-orchestration endpoints (service-to-service; called by
+		// the Python vision control-plane in P2-B). JWT-gated + vms.* permissions.
+		streams.Mount(api, sup)
 	})
 
 	addr := ":" + strconv.Itoa(cfg.Port)
@@ -126,4 +160,22 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("http server: %v", err)
 	}
+}
+
+// env reads a VE_* var with a default (config.Load handles the shared kernel
+// fields; these media-node vars are nvr-specific, so read them directly here).
+func env(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
