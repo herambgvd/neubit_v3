@@ -1,8 +1,6 @@
 "use client";
 
 // Floor-plan editor toolbar — ported from neubit_v2, rethemed to neubit_v3 tokens.
-// The "Devices" mode button is DISABLED (deferred — no devices backend in neubit_v3).
-// Re-enable by removing `disabled` on the Devices mode below in the devices phase.
 import { Icon } from "@iconify/react";
 
 import { EDITOR_MODES } from "@/components/floor-builder/constants";
@@ -10,8 +8,7 @@ import { EDITOR_MODES } from "@/components/floor-builder/constants";
 const MODES = [
   { mode: EDITOR_MODES.VIEW, label: "View" },
   { mode: EDITOR_MODES.ZONE_DRAW, label: "Zones" },
-  // Deferred: device placement has no backend yet in neubit_v3.
-  { mode: EDITOR_MODES.DEVICE_PLACE, label: "Devices", disabled: true },
+  { mode: EDITOR_MODES.DEVICE_PLACE, label: "Devices" },
 ];
 
 export function FloorPlanToolbar({
@@ -69,7 +66,7 @@ export function FloorPlanToolbar({
           <div className="h-8 w-px bg-card-border" />
           <div className="text-center">
             <div className="text-[11px] uppercase tracking-wide text-muted">Devices</div>
-            <div className="text-base font-semibold text-muted/50">{deviceCount}</div>
+            <div className="text-base font-semibold text-foreground">{deviceCount}</div>
           </div>
         </div>
 

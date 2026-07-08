@@ -96,6 +96,11 @@ class CorePerm:
     ZONES_CREATE = "zones.create"
     ZONES_UPDATE = "zones.update"
     ZONES_DELETE = "zones.delete"
+    # --- Device placement (devices plotted onto floor plans) ---------------
+    DEVICES_READ = "devices.read"
+    DEVICES_CREATE = "devices.create"
+    DEVICES_UPDATE = "devices.update"
+    DEVICES_DELETE = "devices.delete"
     # --- Tags domain (cross-cutting labels applied across modules) ---------
     TAGS_READ = "tags.read"
     TAGS_CREATE = "tags.create"
@@ -128,6 +133,11 @@ PERMISSIONS.register(
     Permission(CorePerm.ZONES_CREATE, "Create zones", "Sites"),
     Permission(CorePerm.ZONES_UPDATE, "Edit zones", "Sites"),
     Permission(CorePerm.ZONES_DELETE, "Delete zones", "Sites"),
+    # --- Device placement --------------------------------------------------
+    Permission(CorePerm.DEVICES_READ, "View device placements", "Sites"),
+    Permission(CorePerm.DEVICES_CREATE, "Place devices on floor plans", "Sites"),
+    Permission(CorePerm.DEVICES_UPDATE, "Move / edit device placements", "Sites"),
+    Permission(CorePerm.DEVICES_DELETE, "Remove device placements", "Sites"),
     # --- Tags domain -------------------------------------------------------
     Permission(CorePerm.TAGS_READ, "View tags", "Tags"),
     Permission(CorePerm.TAGS_CREATE, "Create tags", "Tags"),

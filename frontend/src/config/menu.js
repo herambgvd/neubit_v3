@@ -40,6 +40,7 @@ export const configTabs = [
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", disabled: true },
   { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", disabled: true },
   { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read" },
+  { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read" },
   { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read" },
   { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
   { title: "Activity", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },

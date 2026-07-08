@@ -11,8 +11,8 @@ and adapted to neubit_v3 conventions:
   * Domain events on the NATS spine (``app.core.events_nats``) under
     ``tenant.<tenant_id>.sites.<entity>.<event>``.
 
-The device-placement submodule from v2 is intentionally NOT ported — device
-placement is deferred to the devices phase.
+The device-placement submodule (device plotted onto a floor plan) is ported from
+v2's ``module/sites/device`` — CRUD + by-floor/by-zone queries, tenant-scoped.
 
 Wire into a scenario app::
 
@@ -20,11 +20,18 @@ Wire into a scenario app::
     app = create_base_app(..., extra_routers=[*sites.routers])
 """
 
+from .device.router import router as device_router
 from .floor.router import router as floor_router
 from .site.router import router as site_router
 from .zone.router import router as zone_router
 
-# All three routers — mounted by create_base_app under the api_prefix.
-routers = [site_router, floor_router, zone_router]
+# All routers — mounted by create_base_app under the api_prefix.
+routers = [site_router, floor_router, zone_router, device_router]
 
-__all__ = ["routers", "site_router", "floor_router", "zone_router"]
+__all__ = [
+    "routers",
+    "site_router",
+    "floor_router",
+    "zone_router",
+    "device_router",
+]

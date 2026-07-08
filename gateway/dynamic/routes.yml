@@ -8,7 +8,7 @@ http:
     # HIGHER priority wins. Core owns the broad `/api/` prefix, so the satellite
     # services must sit ABOVE it (110 > 100) to peel off their more-specific
     # prefixes; everything else under `/api/` still falls through to core.
-    #   ingest/workflow (110) — /api/v1/ingest·/api/v1/workflow (+ /ingest) FIRST
+    #   ingest/workflow/access (110) — /api/v1/{ingest,workflow,access} (+ /ingest) FIRST
     #   core       (100)      — /api/|/health|/metrics|/files ALWAYS win otherwise
     #   admin      (50)       — the admin.localhost host, for what core didn't claim
     #   frontend   (1)        — catch-all operator console (localhost + any host)
@@ -22,6 +22,12 @@ http:
     workflow:
       rule: "PathPrefix(`/api/v1/workflow`)"
       service: workflow
+      entryPoints: [web]
+      priority: 110
+    access:
+      # Access-control API — instance CRUD + reconcile + mirror reads under /api/v1/access.
+      rule: "PathPrefix(`/api/v1/access`)"
+      service: access
       entryPoints: [web]
       priority: 110
     core:
@@ -55,6 +61,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://workflow:8000"
+    access:
+      loadBalancer:
+        servers:
+          - url: "http://access:8000"
     frontend:
       loadBalancer:
         servers:

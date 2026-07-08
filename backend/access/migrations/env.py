@@ -1,8 +1,9 @@
-"""Alembic environment (async).
+"""Alembic environment (async) for the access-control service.
 
-The DB URL comes from VE_DATABASE_URL (via edge settings), not alembic.ini. We
-import every model module so Base.metadata is complete — this powers both the
-baseline migration and future `alembic revision --autogenerate` for scenarios.
+The DB URL comes from VE_DATABASE_URL (via kernel settings), not alembic.ini.
+Import every domain model module below so ``Base.metadata`` is COMPLETE — a table
+whose module isn't imported here is silently dropped from the metadata and never
+created (project-memory gotcha). All access tables live in one module.
 """
 
 import asyncio
@@ -12,24 +13,14 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app.core.config import get_settings
-from app.db.base import Base
+from kernel.config import get_settings
+
+from app.db import Base
 
 # Import all model modules so their tables register on Base.metadata.
-import app.auth.models  # noqa: F401
-import app.tenancy.models  # noqa: F401
-import app.core.audit  # noqa: F401
-import app.messaging  # noqa: F401
-import app.branding.models  # noqa: F401
-import app.reports.models  # noqa: F401
-import app.settings.models  # noqa: F401
-import app.module_catalog.models  # noqa: F401
-import app.device_brands.models  # noqa: F401
-import app.sites.site.models  # noqa: F401
-import app.sites.floor.models  # noqa: F401
-import app.sites.zone.models  # noqa: F401
-import app.sites.device.models  # noqa: F401
-import app.tags.models  # noqa: F401
+# access domain: Instance + AccessMirror + Door + AccessEvent + SyncJob
+#                + AccessGroup + Schedule (local instance-scoped catalogs).
+import app.access.models  # noqa: E402,F401
 
 config = context.config
 if config.config_file_name:
