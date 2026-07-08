@@ -13,9 +13,9 @@ function normalize(res) {
 }
 
 function CategoryBadge({ category }) {
-  if (!category) return <span className="text-slate-500">—</span>;
+  if (!category) return <span className="text-muted">—</span>;
   return (
-    <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-xs font-medium capitalize text-slate-300">
+    <span className="rounded-full border border-card-border bg-card px-2.5 py-0.5 text-xs font-medium capitalize text-foreground">
       {category}
     </span>
   );
@@ -59,14 +59,14 @@ export default function ModulesPage() {
     <div>
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-white">Modules</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Modules</h1>
+          <p className="mt-1 text-sm text-muted">
             The feature catalog every tenant inherits. Toggle defaults or add new capabilities.
           </p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+          className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-semibold text-background transition hover:opacity-90"
         >
           <Plus className="h-4 w-4" />
           Add module
@@ -75,20 +75,20 @@ export default function ModulesPage() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search key, name or category…"
-            className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20"
+            className="h-10 w-full rounded-lg border border-card-border bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20"
           />
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+      <div className="overflow-hidden rounded-2xl border border-card-border bg-card">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-500">
+            <tr className="border-b border-card-border text-xs uppercase tracking-wide text-muted">
               <th className="px-5 py-3 font-medium">Module</th>
               <th className="px-5 py-3 font-medium">Category</th>
               <th className="px-5 py-3 font-medium">Default</th>
@@ -101,7 +101,7 @@ export default function ModulesPage() {
 
             {isError && (
               <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-sm text-red-300">
+                <td colSpan={5} className="px-5 py-10 text-center text-sm text-red-600 dark:text-red-300">
                   {apiError(error, "Failed to load modules")}
                 </td>
               </tr>
@@ -111,13 +111,13 @@ export default function ModulesPage() {
               <tr>
                 <td colSpan={5} className="px-5 py-16 text-center">
                   <div className="mx-auto flex max-w-xs flex-col items-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-cyan-300">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-card-border bg-card text-cyan-600 dark:text-cyan-300">
                       <Blocks className="h-5 w-5" />
                     </div>
-                    <p className="mt-4 text-sm font-medium text-slate-200">
+                    <p className="mt-4 text-sm font-medium text-foreground">
                       {q ? "No matching modules" : "No modules yet"}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-muted">
                       {q ? "Try a different search." : "Add your first module."}
                     </p>
                   </div>
@@ -128,12 +128,12 @@ export default function ModulesPage() {
             {!isLoading &&
               !isError &&
               filtered.map((m) => (
-                <tr key={m.key} className="border-b border-white/5 last:border-0 transition hover:bg-white/[0.03]">
+                <tr key={m.key} className="border-b border-card-border last:border-0 transition hover:bg-card">
                   <td className="px-5 py-3.5">
-                    <div className="font-medium text-white">{m.name || m.key}</div>
-                    <div className="font-mono text-xs text-slate-500">{m.key}</div>
+                    <div className="font-medium text-foreground">{m.name || m.key}</div>
+                    <div className="font-mono text-xs text-muted">{m.key}</div>
                     {m.description && (
-                      <div className="mt-0.5 max-w-md text-xs text-slate-500">{m.description}</div>
+                      <div className="mt-0.5 max-w-md text-xs text-muted">{m.description}</div>
                     )}
                   </td>
                   <td className="px-5 py-3.5">
@@ -141,25 +141,25 @@ export default function ModulesPage() {
                   </td>
                   <td className="px-5 py-3.5">
                     {m.default_enabled ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-300">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                         On
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-xs font-medium text-slate-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-card-border bg-card px-2.5 py-0.5 text-xs font-medium text-muted">
+                        <span className="h-1.5 w-1.5 rounded-full bg-muted" />
                         Off
                       </span>
                     )}
                   </td>
                   <td className="px-5 py-3.5">
                     {m.is_system ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-0.5 text-xs font-medium text-cyan-300">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-0.5 text-xs font-medium text-cyan-600 dark:text-cyan-300">
                         <Lock className="h-3 w-3" />
                         System
                       </span>
                     ) : (
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-xs font-medium text-slate-400">
+                      <span className="rounded-full border border-card-border bg-card px-2.5 py-0.5 text-xs font-medium text-muted">
                         Custom
                       </span>
                     )}
@@ -170,7 +170,7 @@ export default function ModulesPage() {
                         title="Edit"
                         aria-label="Edit"
                         onClick={() => setEditing(m)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400 transition hover:border-cyan-400/40 hover:text-cyan-300"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-card-border bg-card text-muted transition hover:border-cyan-400/40 hover:text-cyan-600 dark:hover:text-cyan-300"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
@@ -181,7 +181,7 @@ export default function ModulesPage() {
                         onClick={() => {
                           if (window.confirm(`Delete module "${m.name || m.key}"?`)) del.mutate(m.key);
                         }}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400 transition hover:border-red-400/40 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:text-slate-400"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-card-border bg-card text-muted transition hover:border-red-400/40 hover:text-red-600 dark:hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-card-border disabled:hover:text-muted"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -193,7 +193,7 @@ export default function ModulesPage() {
         </table>
       </div>
 
-      <div className="mt-4 text-xs text-slate-500">
+      <div className="mt-4 text-xs text-muted">
         {modules.length} module{modules.length === 1 ? "" : "s"}
         {isFetching ? " · updating…" : ""}
       </div>
@@ -223,10 +223,10 @@ export default function ModulesPage() {
 
 function SkeletonRows() {
   return Array.from({ length: 5 }).map((_, i) => (
-    <tr key={i} className="border-b border-white/5 last:border-0">
+    <tr key={i} className="border-b border-card-border last:border-0">
       {Array.from({ length: 5 }).map((__, j) => (
         <td key={j} className="px-5 py-4">
-          <div className="h-3.5 w-full max-w-[120px] animate-pulse rounded bg-white/10" />
+          <div className="h-3.5 w-full max-w-[120px] animate-pulse rounded bg-hover" />
         </td>
       ))}
     </tr>
@@ -274,22 +274,22 @@ function ModuleModal({ module, onClose, onSaved }) {
   }
 
   const inputCls =
-    "h-11 w-full rounded-lg border border-white/10 bg-white/[0.04] px-3.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-white/20";
+    "h-11 w-full rounded-lg border border-card-border bg-card px-3.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-muted";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 animate-fade-in bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="animate-modal-in relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl shadow-black/50">
+      <div className="animate-modal-in relative z-10 w-full max-w-md rounded-2xl border border-card-border bg-card p-6 shadow-2xl shadow-black/50">
         <div className="mb-5 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight text-white">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
               {isEdit ? "Edit module" : "Add module"}
             </h2>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-muted">
               {isEdit ? "Update this platform feature." : "Register a new platform feature."}
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-300" aria-label="Close">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-muted transition hover:bg-hover hover:text-foreground" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -319,13 +319,13 @@ function ModuleModal({ module, onClose, onSaved }) {
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What this module does…"
               rows={3}
-              className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-white/20"
+              className="w-full rounded-lg border border-card-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-muted"
             />
           </Field>
-          <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-3">
+          <label className="flex cursor-pointer items-center justify-between rounded-lg border border-card-border bg-card px-3.5 py-3">
             <div>
-              <div className="text-sm font-medium text-slate-200">Enabled by default</div>
-              <div className="text-xs text-slate-500">New tenants inherit this state.</div>
+              <div className="text-sm font-medium text-foreground">Enabled by default</div>
+              <div className="text-xs text-muted">New tenants inherit this state.</div>
             </div>
             <input
               type="checkbox"
@@ -336,10 +336,10 @@ function ModuleModal({ module, onClose, onSaved }) {
           </label>
 
           <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-white/20 hover:text-white">
+            <button type="button" onClick={onClose} className="rounded-lg border border-card-border bg-card px-3.5 py-2 text-sm font-medium text-foreground transition hover:border-muted hover:text-foreground">
               Cancel
             </button>
-            <button type="submit" disabled={save.isPending} className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:opacity-60">
+            <button type="submit" disabled={save.isPending} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-60">
               {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {isEdit ? "Save changes" : "Add module"}
             </button>
@@ -353,7 +353,7 @@ function ModuleModal({ module, onClose, onSaved }) {
 function Field({ label, children }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-sm font-medium text-slate-300">{label}</label>
+      <label className="text-sm font-medium text-foreground">{label}</label>
       {children}
     </div>
   );

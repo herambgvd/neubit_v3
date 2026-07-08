@@ -4,8 +4,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { Toaster } from "sonner";
 
-// App-wide client providers for the admin console: TanStack Query + sonner toasts.
-// The console is dark-only, so no theme provider is needed.
+import { ThemeProvider, useTheme } from "@/components/theme";
+
+function ThemedToaster() {
+  const { theme } = useTheme();
+  return <Toaster theme={theme} position="bottom-right" richColors closeButton />;
+}
+
+// App-wide client providers for the admin console: theme + TanStack Query + sonner toasts.
 export default function Providers({ children }) {
   const [client] = useState(
     () =>
@@ -16,9 +22,11 @@ export default function Providers({ children }) {
       })
   );
   return (
-    <QueryClientProvider client={client}>
-      {children}
-      <Toaster theme="dark" position="bottom-right" richColors closeButton />
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={client}>
+        {children}
+        <ThemedToaster />
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

@@ -8,14 +8,14 @@ import { toast } from "sonner";
 import { adminApi, apiError } from "@/lib/api";
 
 const inputCls =
-  "h-11 w-full rounded-lg border border-white/10 bg-white/[0.04] px-3.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-white/20";
+  "h-11 w-full rounded-lg border border-card-border bg-card px-3.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-muted";
 
 export default function PlatformSettingsPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-white">Platform</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Platform</h1>
+        <p className="mt-1 text-sm text-muted">
           Platform-wide defaults every tenant inherits. Individual tenants can override these in their own settings.
         </p>
       </div>
@@ -31,14 +31,14 @@ export default function PlatformSettingsPage() {
 
 function Card({ icon: Icon, title, subtitle, children }) {
   return (
-    <div className="animate-fade-in rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+    <div className="animate-fade-in rounded-2xl border border-card-border bg-card p-6">
       <div className="mb-5 flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-cyan-300">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-card-border bg-card text-cyan-600 dark:text-cyan-300">
           <Icon className="h-4 w-4" />
         </div>
         <div>
-          <h2 className="text-sm font-semibold text-white">{title}</h2>
-          <p className="text-xs text-slate-500">{subtitle}</p>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <p className="text-xs text-muted">{subtitle}</p>
         </div>
       </div>
       {children}
@@ -49,7 +49,7 @@ function Card({ icon: Icon, title, subtitle, children }) {
 function Field({ label, children }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-sm font-medium text-slate-300">{label}</label>
+      <label className="text-sm font-medium text-foreground">{label}</label>
       {children}
     </div>
   );
@@ -57,10 +57,10 @@ function Field({ label, children }) {
 
 function Toggle({ label, description, checked, onChange }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-3">
+    <label className="flex cursor-pointer items-center justify-between rounded-lg border border-card-border bg-card px-3.5 py-3">
       <div>
-        <div className="text-sm font-medium text-slate-200">{label}</div>
-        {description && <div className="text-xs text-slate-500">{description}</div>}
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        {description && <div className="text-xs text-muted">{description}</div>}
       </div>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-cyan-400" />
     </label>
@@ -72,7 +72,7 @@ function SaveButton({ pending }) {
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:opacity-60"
+      className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
     >
       {pending && <Loader2 className="h-4 w-4 animate-spin" />}
       Save
@@ -84,7 +84,7 @@ function CardSkeleton() {
   return (
     <div className="space-y-4">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="h-11 animate-pulse rounded-lg bg-white/[0.04]" />
+        <div key={i} className="h-11 animate-pulse rounded-lg bg-card" />
       ))}
     </div>
   );
@@ -147,7 +147,7 @@ function SettingsCard() {
       {isLoading ? (
         <CardSkeleton />
       ) : isError ? (
-        <p className="text-sm text-red-300">{apiError(error, "Failed to load settings")}</p>
+        <p className="text-sm text-red-600 dark:text-red-300">{apiError(error, "Failed to load settings")}</p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="Announcement">
@@ -156,7 +156,7 @@ function SettingsCard() {
               onChange={(e) => set("announcement")(e.target.value)}
               placeholder="Shown as a platform-wide banner…"
               rows={3}
-              className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-white/20"
+              className="w-full rounded-lg border border-card-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-muted"
             />
           </Field>
           <Field label="Support email">
@@ -248,7 +248,7 @@ function MapsCard() {
       {isLoading ? (
         <CardSkeleton />
       ) : isError ? (
-        <p className="text-sm text-red-300">{apiError(error, "Failed to load settings")}</p>
+        <p className="text-sm text-red-600 dark:text-red-300">{apiError(error, "Failed to load settings")}</p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
           <Toggle
@@ -266,7 +266,7 @@ function MapsCard() {
               placeholder="AIza…"
               className={inputCls}
             />
-            <p className="text-xs text-slate-500">Restrict the key by HTTP referrer in Google Cloud Console.</p>
+            <p className="text-xs text-muted">Restrict the key by HTTP referrer in Google Cloud Console.</p>
           </Field>
           <div className="grid grid-cols-3 gap-3">
             <Field label="Default lat">
@@ -355,7 +355,7 @@ function BrandingCard() {
       {isLoading ? (
         <CardSkeleton />
       ) : isError ? (
-        <p className="text-sm text-red-300">{apiError(error, "Failed to load branding")}</p>
+        <p className="text-sm text-red-600 dark:text-red-300">{apiError(error, "Failed to load branding")}</p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="App name">
@@ -377,10 +377,10 @@ function BrandingCard() {
             />
           </Field>
           {form.logo_url ? (
-            <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-3">
+            <div className="flex items-center gap-3 rounded-lg border border-card-border bg-card px-3.5 py-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={form.logo_url} alt="Logo preview" className="h-8 w-auto max-w-[140px] object-contain" />
-              <span className="text-xs text-slate-500">Logo preview</span>
+              <span className="text-xs text-muted">Logo preview</span>
             </div>
           ) : null}
           <Toggle

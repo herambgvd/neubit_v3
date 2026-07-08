@@ -11,14 +11,17 @@ import {
   Cpu,
   LayoutDashboard,
   LogOut,
+  Moon,
   ScrollText,
   ServerCog,
   ShieldCheck,
   SlidersHorizontal,
+  Sun,
   UserCircle,
 } from "lucide-react";
 
 import { tokens } from "@/lib/api";
+import { useTheme } from "@/components/theme";
 
 // Grouped nav — a proper admin sidebar instead of a crowded top bar.
 const GROUPS = [
@@ -39,6 +42,7 @@ const GROUPS = [
 export default function PanelLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [ready, setReady] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -65,7 +69,7 @@ export default function PanelLayout({ children }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-black text-slate-500">
+      <div className="flex min-h-screen items-center justify-center bg-background text-muted">
         Loading…
       </div>
     );
@@ -82,8 +86,8 @@ export default function PanelLayout({ children }) {
           "flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition " +
           (collapsed ? "justify-center " : "") +
           (active
-            ? "bg-white/10 font-medium text-white"
-            : "text-slate-400 hover:bg-white/5 hover:text-white")
+            ? "bg-hover font-medium text-foreground"
+            : "text-muted hover:bg-hover hover:text-foreground")
         }
       >
         <Icon className="h-[18px] w-[18px] shrink-0" />
@@ -93,20 +97,20 @@ export default function PanelLayout({ children }) {
   };
 
   return (
-    <div className="flex min-h-screen bg-black text-slate-200">
+    <div className="flex min-h-screen bg-background text-foreground">
       <aside
         className={
-          "sticky top-0 flex h-screen shrink-0 flex-col border-r border-white/10 bg-black/60 backdrop-blur-xl transition-[width] duration-200 " +
+          "sticky top-0 flex h-screen shrink-0 flex-col border-r border-card-border bg-background/60 backdrop-blur-xl transition-[width] duration-200 " +
           (collapsed ? "w-[68px]" : "w-60")
         }
       >
         {/* Brand */}
-        <div className="flex h-14 items-center gap-2 border-b border-white/10 px-4">
+        <div className="flex h-14 items-center gap-2 border-b border-card-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-6 w-auto shrink-0 invert brightness-0" />
+            <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-6 w-auto shrink-0 brightness-0 dark:invert dark:brightness-0" />
             {!collapsed && (
-              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-cyan-300">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-card-border bg-hover px-2 py-0.5 text-[11px] font-medium text-cyan-500 dark:text-cyan-300">
                 <ShieldCheck className="h-3 w-3" />
                 Super-admin
               </span>
@@ -119,7 +123,7 @@ export default function PanelLayout({ children }) {
           {GROUPS.map((g) => (
             <div key={g.label} className="mb-2">
               {!collapsed && (
-                <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted">
                   {g.label}
                 </div>
               )}
@@ -130,14 +134,29 @@ export default function PanelLayout({ children }) {
           ))}
         </nav>
 
-        {/* Footer: account + collapse */}
-        <div className="space-y-0.5 border-t border-white/10 p-2">
+        {/* Footer: account + theme + collapse */}
+        <div className="space-y-0.5 border-t border-card-border p-2">
           {navLink("/profile", "Profile", UserCircle)}
+          <button
+            onClick={toggleTheme}
+            title={collapsed ? (theme === "dark" ? "Light mode" : "Dark mode") : undefined}
+            className={
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-muted transition hover:bg-hover hover:text-foreground " +
+              (collapsed ? "justify-center" : "")
+            }
+          >
+            {theme === "dark" ? (
+              <Sun className="h-[18px] w-[18px] shrink-0" />
+            ) : (
+              <Moon className="h-[18px] w-[18px] shrink-0" />
+            )}
+            {!collapsed && (theme === "dark" ? "Light mode" : "Dark mode")}
+          </button>
           <button
             onClick={logout}
             title={collapsed ? "Log out" : undefined}
             className={
-              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-slate-400 transition hover:bg-white/5 hover:text-white " +
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-muted transition hover:bg-hover hover:text-foreground " +
               (collapsed ? "justify-center" : "")
             }
           >
@@ -148,7 +167,7 @@ export default function PanelLayout({ children }) {
             onClick={toggle}
             title={collapsed ? "Expand" : "Collapse"}
             className={
-              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-slate-500 transition hover:bg-white/5 hover:text-white " +
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-muted transition hover:bg-hover hover:text-foreground " +
               (collapsed ? "justify-center" : "")
             }
           >

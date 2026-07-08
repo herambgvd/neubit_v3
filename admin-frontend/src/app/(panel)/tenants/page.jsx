@@ -24,8 +24,8 @@ function StatusBadge({ status }) {
       className={
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium " +
         (active
-          ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
-          : "border-amber-400/20 bg-amber-500/10 text-amber-300")
+          ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+          : "border-amber-400/20 bg-amber-500/10 text-amber-600 dark:text-amber-300")
       }
     >
       <span className={"h-1.5 w-1.5 rounded-full " + (active ? "bg-emerald-400" : "bg-amber-400")} />
@@ -36,9 +36,9 @@ function StatusBadge({ status }) {
 
 function LicenseBadge({ state }) {
   const map = {
-    active: ["border-white/10 bg-white/[0.04] text-slate-300", "Licensed"],
-    grace: ["border-amber-400/20 bg-amber-500/10 text-amber-300", "Grace"],
-    expired: ["border-red-400/20 bg-red-500/10 text-red-300", "Expired"],
+    active: ["border-card-border bg-card text-foreground", "Licensed"],
+    grace: ["border-amber-400/20 bg-amber-500/10 text-amber-600 dark:text-amber-300", "Grace"],
+    expired: ["border-red-400/20 bg-red-500/10 text-red-600 dark:text-red-300", "Expired"],
   };
   const [cls, label] = map[state] || map.active;
   return <span className={"rounded-full border px-2.5 py-0.5 text-xs font-medium " + cls}>{label}</span>;
@@ -67,12 +67,12 @@ export default function TenantsPage() {
     <div>
       <div className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-white">Tenants</h1>
-          <p className="mt-1 text-sm text-slate-400">Manage every organization on the platform.</p>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Tenants</h1>
+          <p className="mt-1 text-sm text-muted">Manage every organization on the platform.</p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+          className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-semibold text-background transition hover:opacity-90"
         >
           <Plus className="h-4 w-4" />
           Create tenant
@@ -82,7 +82,7 @@ export default function TenantsPage() {
       {/* Search + status filter */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[220px]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             value={q}
             onChange={(e) => {
@@ -90,10 +90,10 @@ export default function TenantsPage() {
               setPage(1);
             }}
             placeholder="Search name or slug…"
-            className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20"
+            className="h-10 w-full rounded-lg border border-card-border bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20"
           />
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+        <div className="flex items-center gap-1 rounded-lg border border-card-border bg-card p-1">
           {[
             ["", "All"],
             ["active", "Active"],
@@ -107,7 +107,7 @@ export default function TenantsPage() {
               }}
               className={
                 "rounded-md px-3 py-1.5 text-xs font-medium transition " +
-                (status === val ? "bg-white/10 text-white" : "text-slate-400 hover:text-white")
+                (status === val ? "bg-hover text-foreground" : "text-muted hover:text-foreground")
               }
             >
               {label}
@@ -116,10 +116,10 @@ export default function TenantsPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+      <div className="overflow-hidden rounded-2xl border border-card-border bg-card">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-500">
+            <tr className="border-b border-card-border text-xs uppercase tracking-wide text-muted">
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3 font-medium">License</th>
@@ -133,7 +133,7 @@ export default function TenantsPage() {
 
             {isError && (
               <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-sm text-red-300">
+                <td colSpan={6} className="px-5 py-10 text-center text-sm text-red-600 dark:text-red-300">
                   {apiError(error, "Failed to load tenants")}
                 </td>
               </tr>
@@ -143,13 +143,13 @@ export default function TenantsPage() {
               <tr>
                 <td colSpan={6} className="px-5 py-16 text-center">
                   <div className="mx-auto flex max-w-xs flex-col items-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-cyan-300">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-card-border bg-card text-cyan-600 dark:text-cyan-300">
                       <Building2 className="h-5 w-5" />
                     </div>
-                    <p className="mt-4 text-sm font-medium text-slate-200">
+                    <p className="mt-4 text-sm font-medium text-foreground">
                       {q || status ? "No matching tenants" : "No tenants yet"}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-muted">
                       {q || status ? "Try a different search or filter." : "Create your first tenant."}
                     </p>
                   </div>
@@ -162,18 +162,18 @@ export default function TenantsPage() {
               tenants.map((t) => (
                 <tr
                   key={t.id}
-                  className="cursor-pointer border-b border-white/5 last:border-0 transition hover:bg-white/[0.03]"
+                  className="cursor-pointer border-b border-card-border last:border-0 transition hover:bg-hover"
                   onClick={() => (window.location.href = `/tenants/${t.id}`)}
                 >
                   <td className="px-5 py-3.5">
                     <Link
                       href={`/tenants/${t.id}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="font-medium text-white hover:text-cyan-300"
+                      className="font-medium text-foreground hover:text-cyan-600 dark:hover:text-cyan-300"
                     >
                       {t.name}
                     </Link>
-                    <div className="font-mono text-xs text-slate-500">{t.slug}</div>
+                    <div className="font-mono text-xs text-muted">{t.slug}</div>
                   </td>
                   <td className="px-5 py-3.5">
                     <StatusBadge status={t.status} />
@@ -181,14 +181,14 @@ export default function TenantsPage() {
                   <td className="px-5 py-3.5">
                     <LicenseBadge state={t.license_state} />
                   </td>
-                  <td className="px-5 py-3.5 text-slate-300">{t.plan || "—"}</td>
-                  <td className="px-5 py-3.5 text-slate-300">
+                  <td className="px-5 py-3.5 text-foreground">{t.plan || "—"}</td>
+                  <td className="px-5 py-3.5 text-foreground">
                     <span className="inline-flex items-center gap-1.5">
-                      <Users className="h-3.5 w-3.5 text-slate-500" />
+                      <Users className="h-3.5 w-3.5 text-muted" />
                       {t.users ?? 0}
                     </span>
                   </td>
-                  <td className="px-5 py-3.5 text-slate-400">{fmtDate(t.created_at)}</td>
+                  <td className="px-5 py-3.5 text-muted">{fmtDate(t.created_at)}</td>
                 </tr>
               ))}
           </tbody>
@@ -196,7 +196,7 @@ export default function TenantsPage() {
       </div>
 
       {/* Pagination */}
-      <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+      <div className="mt-4 flex items-center justify-between text-xs text-muted">
         <span>
           {total} tenant{total === 1 ? "" : "s"}
           {isFetching ? " · updating…" : ""}
@@ -205,7 +205,7 @@ export default function TenantsPage() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
-            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 transition hover:border-white/20 disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded-lg border border-card-border bg-card px-2.5 py-1.5 transition hover:border-muted disabled:opacity-40"
           >
             <ChevronLeft className="h-3.5 w-3.5" /> Prev
           </button>
@@ -215,7 +215,7 @@ export default function TenantsPage() {
           <button
             onClick={() => setPage((p) => Math.min(pages, p + 1))}
             disabled={page >= pages}
-            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 transition hover:border-white/20 disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded-lg border border-card-border bg-card px-2.5 py-1.5 transition hover:border-muted disabled:opacity-40"
           >
             Next <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -237,10 +237,10 @@ export default function TenantsPage() {
 
 function SkeletonRows() {
   return Array.from({ length: 5 }).map((_, i) => (
-    <tr key={i} className="border-b border-white/5 last:border-0">
+    <tr key={i} className="border-b border-card-border last:border-0">
       {Array.from({ length: 6 }).map((__, j) => (
         <td key={j} className="px-5 py-4">
-          <div className="h-3.5 w-full max-w-[120px] animate-pulse rounded bg-white/10" />
+          <div className="h-3.5 w-full max-w-[120px] animate-pulse rounded bg-hover" />
         </td>
       ))}
     </tr>
@@ -277,18 +277,18 @@ function CreateTenantModal({ onClose, onCreated }) {
   }
 
   const inputCls =
-    "h-11 w-full rounded-lg border border-white/10 bg-white/[0.04] px-3.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-white/20";
+    "h-11 w-full rounded-lg border border-card-border bg-card px-3.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-muted";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 animate-fade-in bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="animate-modal-in relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl shadow-black/50">
+      <div className="animate-modal-in relative z-10 w-full max-w-md rounded-2xl border border-card-border bg-card p-6 shadow-2xl shadow-black/50">
         <div className="mb-5 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight text-white">Create tenant</h2>
-            <p className="mt-1 text-xs text-slate-400">Provision an organization and its first admin.</p>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">Create tenant</h2>
+            <p className="mt-1 text-xs text-muted">Provision an organization and its first admin.</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-300" aria-label="Close">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-muted transition hover:bg-hover hover:text-foreground" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -305,10 +305,10 @@ function CreateTenantModal({ onClose, onCreated }) {
           </Field>
 
           <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-white/20 hover:text-white">
+            <button type="button" onClick={onClose} className="rounded-lg border border-card-border bg-card px-3.5 py-2 text-sm font-medium text-foreground transition hover:border-muted hover:text-foreground">
               Cancel
             </button>
-            <button type="submit" disabled={create.isPending} className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:opacity-60">
+            <button type="submit" disabled={create.isPending} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-60">
               {create.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Create tenant
             </button>
@@ -322,7 +322,7 @@ function CreateTenantModal({ onClose, onCreated }) {
 function Field({ label, children }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-sm font-medium text-slate-300">{label}</label>
+      <label className="text-sm font-medium text-foreground">{label}</label>
       {children}
     </div>
   );

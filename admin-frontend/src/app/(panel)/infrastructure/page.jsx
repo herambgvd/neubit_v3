@@ -70,16 +70,16 @@ function stateTone(container) {
 }
 
 const TONE_BADGE = {
-  emerald: "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
-  amber: "border-amber-400/20 bg-amber-500/10 text-amber-300",
-  red: "border-red-400/20 bg-red-500/10 text-red-300",
-  slate: "border-white/10 bg-white/[0.04] text-slate-300",
+  emerald: "border-emerald-400/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+  amber: "border-amber-400/20 bg-amber-500/10 text-amber-600 dark:text-amber-300",
+  red: "border-red-400/20 bg-red-500/10 text-red-600 dark:text-red-300",
+  slate: "border-card-border bg-card text-foreground",
 };
 const TONE_DOT = {
   emerald: "bg-emerald-400",
   amber: "bg-amber-400",
   red: "bg-red-400",
-  slate: "bg-slate-400",
+  slate: "bg-muted",
 };
 
 function StateBadge({ container }) {
@@ -111,8 +111,8 @@ function MemBar({ used, limit }) {
   const tone = pct >= 90 ? "bg-red-400" : pct >= 70 ? "bg-amber-400" : "bg-cyan-400";
   return (
     <div className="min-w-[110px]">
-      <div className="text-xs tabular-nums text-slate-300">{fmtMem(used, limit)}</div>
-      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+      <div className="text-xs tabular-nums text-foreground">{fmtMem(used, limit)}</div>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-hover">
         <div className={"h-full rounded-full transition-all " + tone} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -182,8 +182,8 @@ export default function InfrastructurePage() {
     <div>
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-white">Infrastructure</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">Infrastructure</h1>
+          <p className="mt-1 text-sm text-muted">
             Live container fleet on the host — state, resources, logs, and scaling.
           </p>
         </div>
@@ -192,17 +192,17 @@ export default function InfrastructurePage() {
 
       {/* Host summary strip */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm">
-          <Server className="h-4 w-4 text-cyan-300" />
-          <span className="text-slate-400">Containers</span>
-          <span className="font-semibold tabular-nums text-white">
+        <div className="inline-flex items-center gap-2 rounded-lg border border-card-border bg-card px-3.5 py-2 text-sm">
+          <Server className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
+          <span className="text-muted">Containers</span>
+          <span className="font-semibold tabular-nums text-foreground">
             {hostRunning}
-            <span className="text-slate-500"> / {hostTotal}</span>
+            <span className="text-muted"> / {hostTotal}</span>
           </span>
-          <span className="text-xs text-slate-500">running</span>
+          <span className="text-xs text-muted">running</span>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm text-slate-400">
-          <Activity className={"h-4 w-4 " + (isFetching ? "animate-pulse text-emerald-300" : "text-slate-500")} />
+        <div className="inline-flex items-center gap-2 rounded-lg border border-card-border bg-card px-3.5 py-2 text-sm text-muted">
+          <Activity className={"h-4 w-4 " + (isFetching ? "animate-pulse text-emerald-600 dark:text-emerald-300" : "text-muted")} />
           Auto-refresh · 4s
         </div>
       </div>
@@ -210,21 +210,21 @@ export default function InfrastructurePage() {
       {/* Search */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Filter by name or image…"
-            className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20"
+            className="h-10 w-full rounded-lg border border-card-border bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20"
           />
         </div>
       </div>
 
       {/* Containers table */}
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+      <div className="overflow-hidden rounded-2xl border border-card-border bg-card">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-500">
+            <tr className="border-b border-card-border text-xs uppercase tracking-wide text-muted">
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Image</th>
               <th className="px-5 py-3 font-medium">State</th>
@@ -239,7 +239,7 @@ export default function InfrastructurePage() {
 
             {isError && (
               <tr>
-                <td colSpan={7} className="px-5 py-10 text-center text-sm text-red-300">
+                <td colSpan={7} className="px-5 py-10 text-center text-sm text-red-600 dark:text-red-300">
                   {apiError(error, "Failed to load containers")}
                 </td>
               </tr>
@@ -249,13 +249,13 @@ export default function InfrastructurePage() {
               <tr>
                 <td colSpan={7} className="px-5 py-16 text-center">
                   <div className="mx-auto flex max-w-xs flex-col items-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-cyan-300">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-card-border bg-card text-cyan-600 dark:text-cyan-300">
                       <Boxes className="h-5 w-5" />
                     </div>
-                    <p className="mt-4 text-sm font-medium text-slate-200">
+                    <p className="mt-4 text-sm font-medium text-foreground">
                       {q ? "No matching containers" : "No containers found"}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-muted">
                       {q ? "Try a different filter." : "The host reports no running containers."}
                     </p>
                   </div>
@@ -271,7 +271,7 @@ export default function InfrastructurePage() {
                 return (
                   <tr
                     key={c.id || c.name}
-                    className="cursor-pointer border-b border-white/5 last:border-0 transition hover:bg-white/[0.03]"
+                    className="cursor-pointer border-b border-card-border last:border-0 transition hover:bg-hover"
                     onClick={() => setSelected(c.name)}
                   >
                     <td className="px-5 py-3.5">
@@ -280,30 +280,30 @@ export default function InfrastructurePage() {
                           e.stopPropagation();
                           setSelected(c.name);
                         }}
-                        className="text-left font-medium text-white hover:text-cyan-300"
+                        className="text-left font-medium text-foreground hover:text-cyan-600 dark:hover:text-cyan-300"
                       >
                         {c.name}
                       </button>
-                      <div className="font-mono text-xs text-slate-500">
+                      <div className="font-mono text-xs text-muted">
                         {(c.id || "").slice(0, 12)}
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="font-mono text-xs text-slate-400">{c.image || "—"}</span>
+                      <span className="font-mono text-xs text-muted">{c.image || "—"}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       <StateBadge container={c} />
                     </td>
-                    <td className="px-5 py-3.5 text-slate-300">
+                    <td className="px-5 py-3.5 text-foreground">
                       <span className="inline-flex items-center gap-1.5 tabular-nums">
-                        <Cpu className="h-3.5 w-3.5 text-slate-500" />
+                        <Cpu className="h-3.5 w-3.5 text-muted" />
                         {fmtPct(c.cpu_pct)}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
                       <MemBar used={c.mem_used_mb} limit={c.mem_limit_mb} />
                     </td>
-                    <td className="px-5 py-3.5 text-slate-400 tabular-nums">{uptime(c.created_at)}</td>
+                    <td className="px-5 py-3.5 text-muted tabular-nums">{uptime(c.created_at)}</td>
                     <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
                         <ActionButton
@@ -346,7 +346,7 @@ export default function InfrastructurePage() {
         </table>
       </div>
 
-      <div className="mt-4 text-xs text-slate-500">
+      <div className="mt-4 text-xs text-muted">
         {containers.length} container{containers.length === 1 ? "" : "s"}
         {isFetching ? " · updating…" : ""}
       </div>
@@ -360,9 +360,9 @@ export default function InfrastructurePage() {
 
 function ActionButton({ title, tone, icon: Icon, onClick, busy, disabled }) {
   const toneCls = {
-    amber: "hover:border-amber-400/40 hover:text-amber-300",
-    red: "hover:border-red-400/40 hover:text-red-300",
-    emerald: "hover:border-emerald-400/40 hover:text-emerald-300",
+    amber: "hover:border-amber-400/40 hover:text-amber-600 dark:hover:text-amber-300",
+    red: "hover:border-red-400/40 hover:text-red-600 dark:hover:text-red-300",
+    emerald: "hover:border-emerald-400/40 hover:text-emerald-600 dark:hover:text-emerald-300",
   }[tone];
   return (
     <button
@@ -371,7 +371,7 @@ function ActionButton({ title, tone, icon: Icon, onClick, busy, disabled }) {
       onClick={onClick}
       disabled={disabled}
       className={
-        "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400 transition disabled:opacity-40 " +
+        "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-card-border bg-card text-muted transition disabled:opacity-40 " +
         toneCls
       }
     >
@@ -382,10 +382,10 @@ function ActionButton({ title, tone, icon: Icon, onClick, busy, disabled }) {
 
 function SkeletonRows() {
   return Array.from({ length: 6 }).map((_, i) => (
-    <tr key={i} className="border-b border-white/5 last:border-0">
+    <tr key={i} className="border-b border-card-border last:border-0">
       {Array.from({ length: 7 }).map((__, j) => (
         <td key={j} className="px-5 py-4">
-          <div className="h-3.5 w-full max-w-[120px] animate-pulse rounded bg-white/10" />
+          <div className="h-3.5 w-full max-w-[120px] animate-pulse rounded bg-hover" />
         </td>
       ))}
     </tr>
@@ -426,7 +426,7 @@ function ScaleControl() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
+        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-card-border bg-card px-3.5 py-2 text-sm font-medium text-foreground transition hover:border-muted hover:text-foreground"
       >
         <ServerCog className="h-4 w-4" />
         Scale service
@@ -437,26 +437,26 @@ function ScaleControl() {
   return (
     <form
       onSubmit={submit}
-      className="flex shrink-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-1.5"
+      className="flex shrink-0 items-center gap-2 rounded-lg border border-card-border bg-card p-1.5"
     >
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="service name"
         autoFocus
-        className="h-8 w-36 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-xs text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60"
+        className="h-8 w-36 rounded-md border border-card-border bg-card px-2.5 text-xs text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60"
       />
       <input
         type="number"
         min={0}
         value={replicas}
         onChange={(e) => setReplicas(e.target.value)}
-        className="h-8 w-16 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-xs tabular-nums text-white outline-none transition focus:border-cyan-400/60"
+        className="h-8 w-16 rounded-md border border-card-border bg-card px-2.5 text-xs tabular-nums text-foreground outline-none transition focus:border-cyan-400/60"
       />
       <button
         type="submit"
         disabled={scale.isPending}
-        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-3 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:opacity-60"
+        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-3 text-xs font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
       >
         {scale.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Scale
@@ -464,7 +464,7 @@ function ScaleControl() {
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-300"
+        className="rounded-md p-1.5 text-muted transition hover:bg-hover hover:text-foreground"
         aria-label="Cancel"
       >
         <X className="h-3.5 w-3.5" />
@@ -476,10 +476,10 @@ function ScaleControl() {
 // ── logs drawer ────────────────────────────────────────────────────────────
 function lineTone(line) {
   const s = line.toUpperCase();
-  if (/\b(ERROR|ERR|FATAL|CRITICAL|EXCEPTION|TRACEBACK)\b/.test(s)) return "text-red-300";
-  if (/\b(WARN|WARNING)\b/.test(s)) return "text-amber-300";
-  if (/\b(INFO|DEBUG)\b/.test(s)) return "text-slate-400";
-  return "text-slate-300";
+  if (/\b(ERROR|ERR|FATAL|CRITICAL|EXCEPTION|TRACEBACK)\b/.test(s)) return "text-red-600 dark:text-red-300";
+  if (/\b(WARN|WARNING)\b/.test(s)) return "text-amber-600 dark:text-amber-300";
+  if (/\b(INFO|DEBUG)\b/.test(s)) return "text-muted";
+  return "text-foreground";
 }
 
 function LogsDrawer({ name, onClose }) {
@@ -525,19 +525,19 @@ function LogsDrawer({ name, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 animate-fade-in bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="animate-modal-in relative z-10 flex h-full w-full max-w-3xl flex-col border-l border-white/10 bg-[#0a0a0a] shadow-2xl shadow-black/50">
+      <div className="animate-modal-in relative z-10 flex h-full w-full max-w-3xl flex-col border-l border-card-border bg-card shadow-2xl shadow-black/50">
         {/* header */}
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-card-border px-5 py-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-sm font-semibold text-white">
-              <Boxes className="h-4 w-4 text-cyan-300" />
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Boxes className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
               <span className="truncate font-mono">{name}</span>
             </div>
-            <p className="mt-0.5 text-xs text-slate-500">Tailing container logs</p>
+            <p className="mt-0.5 text-xs text-muted">Tailing container logs</p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-300"
+            className="rounded-lg p-1.5 text-muted transition hover:bg-hover hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -545,15 +545,15 @@ function LogsDrawer({ name, onClose }) {
         </div>
 
         {/* controls */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-5 py-3">
-          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+        <div className="flex flex-wrap items-center gap-2 border-b border-card-border px-5 py-3">
+          <div className="flex items-center gap-1 rounded-lg border border-card-border bg-card p-1">
             {TAIL_OPTIONS.map((n) => (
               <button
                 key={n}
                 onClick={() => setTail(n)}
                 className={
                   "rounded-md px-2.5 py-1 text-xs font-medium transition " +
-                  (tail === n ? "bg-white/10 text-white" : "text-slate-400 hover:text-white")
+                  (tail === n ? "bg-hover text-foreground" : "text-muted hover:text-foreground")
                 }
               >
                 {n}
@@ -563,7 +563,7 @@ function LogsDrawer({ name, onClose }) {
 
           <button
             onClick={() => refetch()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground transition hover:border-muted hover:text-foreground"
           >
             <RefreshCw className={"h-3.5 w-3.5 " + (isFetching ? "animate-spin" : "")} />
             Refresh
@@ -574,8 +574,8 @@ function LogsDrawer({ name, onClose }) {
             className={
               "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition " +
               (auto
-                ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
-                : "border-white/10 bg-white/[0.03] text-slate-400 hover:text-white")
+                ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                : "border-card-border bg-card text-muted hover:text-foreground")
             }
           >
             {auto ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
@@ -583,12 +583,12 @@ function LogsDrawer({ name, onClose }) {
           </button>
 
           <div className="relative min-w-[160px] flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter lines…"
-              className="h-8 w-full rounded-lg border border-white/10 bg-white/[0.04] pl-8 pr-3 text-xs text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60"
+              className="h-8 w-full rounded-lg border border-card-border bg-card pl-8 pr-3 text-xs text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60"
             />
           </div>
         </div>
@@ -600,15 +600,15 @@ function LogsDrawer({ name, onClose }) {
           className="flex-1 overflow-auto bg-black/40 px-4 py-3 font-mono text-xs leading-relaxed"
         >
           {isLoading ? (
-            <div className="flex h-full items-center justify-center text-slate-500">
+            <div className="flex h-full items-center justify-center text-muted">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading logs…
             </div>
           ) : isError ? (
-            <div className="flex h-full items-center justify-center text-red-300">
+            <div className="flex h-full items-center justify-center text-red-600 dark:text-red-300">
               {apiError(error, "Failed to load logs")}
             </div>
           ) : shown.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-slate-500">
+            <div className="flex h-full items-center justify-center text-muted">
               {filter ? "No lines match the filter." : "No log output."}
             </div>
           ) : (
@@ -620,7 +620,7 @@ function LogsDrawer({ name, onClose }) {
           )}
         </div>
 
-        <div className="border-t border-white/10 px-5 py-2 text-[11px] text-slate-500">
+        <div className="border-t border-card-border px-5 py-2 text-[11px] text-muted">
           {shown.length} line{shown.length === 1 ? "" : "s"} shown
           {filter && lines.length !== shown.length ? ` · ${lines.length} total` : ""}
         </div>

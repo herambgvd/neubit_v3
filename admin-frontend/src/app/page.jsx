@@ -12,7 +12,7 @@ export default function IndexPage() {
     router.replace(tokens.access ? "/dashboard" : "/login");
   }, [router]);
   return (
-    <div className="flex min-h-screen items-center justify-center bg-black text-slate-500">
+    <div className="flex min-h-screen items-center justify-center bg-background text-muted">
       Loading…
     </div>
   );
