@@ -55,11 +55,11 @@ export const configTabs = [
 ];
 
 // ── Devices sub-tab bar (second horizontal bar for the Devices section) ──
-//   Access Control ships now; Cameras / NVR are disabled placeholders until VMS lands.
+//   Access Control + Cameras + NVR ship now (VMS P1); Streaming stays "Soon" (P2).
 export const deviceTabs = [
   { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read" },
-  { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", disabled: true },
-  { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", disabled: true },
+  { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read" },
+  { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).

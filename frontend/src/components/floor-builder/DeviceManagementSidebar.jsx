@@ -16,7 +16,7 @@ import { Icon } from "@iconify/react";
 import { useQuery } from "@tanstack/react-query";
 
 import { ConfirmDialog, Input } from "@/components/ui/kit";
-import { accessInventory } from "@/lib/api/deviceInventory";
+import { accessInventory, vmsInventory } from "@/lib/api/deviceInventory";
 
 // Device-type → icon (heroicons via iconify).
 function iconForType(type) {
@@ -27,10 +27,12 @@ function iconForType(type) {
   return "heroicons-outline:video-camera";
 }
 
-// Type filter options. Only the access-backed types resolve today; the rest are
-// kept so the filter matches v2 and is ready when vms/fire land.
+// Type filter options. Access + VMS (camera/NVR) resolve today; `panel` (fire) is
+// kept so the filter matches v2 and is ready when fire lands.
 const TYPE_OPTIONS = [
   { value: "all", label: "All" },
+  { value: "camera", label: "Camera" },
+  { value: "nvr", label: "NVR" },
   { value: "access_control", label: "Access controller" },
   { value: "door", label: "Door" },
 ];
@@ -113,9 +115,21 @@ export function DeviceManagementSidebar({
     queryKey: ["floor-builder", "access-doors"],
     queryFn: () => accessInventory.doors(),
   });
+  // VMS sources — cameras + NVRs (VMS P1). Cameras carry service "vms" +
+  // device_type "camera" so the Map's cameraRenderer draws their FoV cone.
+  const camerasQ = useQuery({
+    queryKey: ["floor-builder", "vms-cameras"],
+    queryFn: () => vmsInventory.cameras(),
+  });
+  const nvrsQ = useQuery({
+    queryKey: ["floor-builder", "vms-nvrs"],
+    queryFn: () => vmsInventory.nvrs(),
+  });
 
   const instances = instancesQ.data?.items ?? [];
   const doors = doorsQ.data?.items ?? [];
+  const cameras = camerasQ.data?.items ?? [];
+  const nvrDevices = nvrsQ.data?.items ?? [];
 
   const inventory = useMemo(() => {
     // Access controllers/panels → placeable devices. Identifier field is `id`.
@@ -134,8 +148,24 @@ export function DeviceManagementSidebar({
       service: "access_control",
       search_ip: "",
     }));
-    return [...instanceItems, ...doorItems];
-  }, [instances, doors]);
+    // Cameras → placeable devices with a FoV cone on the floor plan.
+    const cameraItems = cameras.map((c) => ({
+      device_id: c.id,
+      name: c.name,
+      device_type: "camera",
+      service: "vms",
+      search_ip: c.network_info?.ip || c.onvif?.host || "",
+    }));
+    // NVRs → placeable server-glyph devices.
+    const nvrItems = nvrDevices.map((n) => ({
+      device_id: n.id,
+      name: n.name,
+      device_type: "nvr",
+      service: "vms",
+      search_ip: n.host || "",
+    }));
+    return [...cameraItems, ...nvrItems, ...instanceItems, ...doorItems];
+  }, [instances, doors, cameras, nvrDevices]);
 
   const inventoryById = useMemo(() => {
     const m = new Map();
@@ -175,7 +205,7 @@ export function DeviceManagementSidebar({
     });
   }, [placements, inventoryById, deviceTypeFilter, search]);
 
-  const loading = instancesQ.isLoading || doorsQ.isLoading;
+  const loading = instancesQ.isLoading || doorsQ.isLoading || camerasQ.isLoading || nvrsQ.isLoading;
 
   return (
     <aside className="flex w-72 shrink-0 flex-col rounded-lg border border-card-border bg-card">
