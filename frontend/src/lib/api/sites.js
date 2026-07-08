@@ -5,16 +5,14 @@
 //   • neubit_v2 used bespoke get/post helpers that returned the raw body; here we
 //     wrap the shared `api` axios instance (baseURL already "/api/v1") and unwrap
 //     `.data` so callers keep receiving plain objects.
-//   • Paths are relative to /api/v1 → "/sites", "/floors", "/zones".
-//
-// NOTE: device-placement endpoints are intentionally omitted — there is no devices
-// backend yet in neubit_v3 (the floor-builder's device UI is disabled). Re-add a
-// `devicePlacements` sub-object here when the devices phase lands.
+//   • Paths are relative to /api/v1 → "/sites", "/floors", "/zones",
+//     "/device-placements" (all served by the core service).
 import { api } from "@/lib/api";
 
 const SITES = "/sites";
 const FLOORS = "/floors";
 const ZONES = "/zones";
+const DEVICE_PLACEMENTS = "/device-placements";
 
 const unwrap = (p) => p.then((r) => r.data);
 
@@ -76,6 +74,19 @@ export const sites = {
     update: (id, body) => unwrap(api.patch(`${ZONES}/${id}`, body)),
     remove: (id) => unwrap(api.delete(`${ZONES}/${id}`)),
     restore: (id) => unwrap(api.post(`${ZONES}/${id}/restore`, {})),
+  },
+
+  // Device placements — a device pinned onto a floor at { x, y, rotation }.
+  // Addressed by `device_id`; `register` is an upsert-by-device_id within the
+  // tenant. Served by the core service under /api/v1/device-placements.
+  devicePlacements: {
+    register: (body) => unwrap(api.post(`${DEVICE_PLACEMENTS}/register`, body)),
+    get: (deviceId) => unwrap(api.get(`${DEVICE_PLACEMENTS}/${deviceId}`)),
+    update: (deviceId, body) => unwrap(api.patch(`${DEVICE_PLACEMENTS}/${deviceId}`, body)),
+    remove: (deviceId) => unwrap(api.delete(`${DEVICE_PLACEMENTS}/${deviceId}`)),
+    listByFloor: (floorId, params = {}) =>
+      unwrap(api.get(`${DEVICE_PLACEMENTS}/by-floor/${floorId}${qs(params)}`)),
+    listByZone: (zoneId) => unwrap(api.get(`${DEVICE_PLACEMENTS}/by-zone/${zoneId}`)),
   },
 };
 

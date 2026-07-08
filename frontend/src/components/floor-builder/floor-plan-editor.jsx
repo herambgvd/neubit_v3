@@ -2,15 +2,14 @@
 
 // Floor-plan editor — ported from neubit_v2, adapted to neubit_v3.
 //
-// WHAT'S KEPT: floorplan display, zone-polygon drawing/editing, zone sidebar, save
+// Zones: floorplan display, zone-polygon drawing/editing, zone sidebar, save
 // (create/update/delete zones), undo/redo, upload/replace floorplan.
 //
-// WHAT'S DEFERRED (device placement): neubit_v3 has no devices/NVR/access/fire backend
-// yet, so all device-inventory queries, drag-drop placement, and the DeviceManagementSidebar
-// are removed. The editor never enters DEVICE_PLACE mode (that toolbar button is disabled).
-// The canvas still carries the (dormant) device-draw/drag code so re-enabling is contained:
-// when the devices phase lands, restore the inventory queries + placement save loop from
-// neubit_v2's floor-plan-editor.jsx and mount DeviceManagementSidebar here.
+// Devices: drag a device from the palette onto the canvas (must land inside a zone),
+// move it (its zone is recomputed via point-in-polygon), rotate cameras (FoV arc),
+// select/delete, and persist via the save loop (draft→register, changed→update,
+// deleted→remove, then refetch by-floor). Device inventory for the palette comes from
+// the access-control service (controllers + doors) — see DeviceManagementSidebar.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -18,6 +17,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/kit";
 import { CanvasToolControls } from "@/components/floor-builder/canvas-tool-controls";
 import { EDITOR_MODES, TOOL_TYPES } from "@/components/floor-builder/constants";
+import { DeviceManagementSidebar } from "@/components/floor-builder/DeviceManagementSidebar";
+import { drawCameraPlacement } from "@/components/floor-builder/cameraRenderer";
 import { FloorPlanCanvas } from "@/components/floor-builder/floor-plan-canvas";
 import { FloorPlanToolbar } from "@/components/floor-builder/floor-plan-toolbar";
 import { FloorUploadModal } from "@/components/floor-builder/floor-upload-modal";
@@ -42,14 +43,60 @@ function buildZonePayload(zone) {
   };
 }
 
+// Flatten nested floor_position into top-level x/y/rotation so the canvas can read
+// them directly (the canvas draws from `device.x/y/rotation`).
+function normalizePlacement(p) {
+  return {
+    ...p,
+    x: p.floor_position?.x ?? p.x ?? 0,
+    y: p.floor_position?.y ?? p.y ?? 0,
+    rotation: p.floor_position?.rotation ?? p.rotation ?? 0,
+  };
+}
+
+function pointInPolygon(pt, points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [xi, yi] = points[i];
+    const [xj, yj] = points[j];
+    const intersect =
+      yi > pt[1] !== yj > pt[1] &&
+      pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi + 1e-9) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function isInsideAnyZone(point, zones = []) {
+  if (!zones.length) return false;
+  return zones.some(
+    (z) =>
+      Array.isArray(z.polygon) &&
+      z.polygon.length >= 3 &&
+      pointInPolygon([point.x, point.y], z.polygon),
+  );
+}
+
+function getZoneIdForPoint(point, zones = []) {
+  const zone = zones.find(
+    (z) =>
+      Array.isArray(z.polygon) &&
+      z.polygon.length >= 3 &&
+      pointInPolygon([point.x, point.y], z.polygon),
+  );
+  return zone?.zone_id ?? null;
+}
+
 export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
   const canvasRef = useRef(null);
   const [floor, setFloor] = useState(initialFloor);
   const [zones, setZones] = useState([]);
+  const [placements, setPlacements] = useState([]);
   const [editorMode, setEditorMode] = useState(EDITOR_MODES.VIEW);
   const [activeTool, setActiveTool] = useState(TOOL_TYPES.SELECT);
   const [scale, setScale] = useState(1);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const [history, setHistory] = useState([]);
@@ -57,6 +104,8 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
   const [unsaved, setUnsaved] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savedPlacementsRef = useRef([]);
+  const [deletedDeviceIds, setDeletedDeviceIds] = useState(() => new Set());
 
   // ── Sync `floor` when parent passes a different one (render-phase reset) ──
   const lastFloorIdRef = useRef(initialFloor?.floor_id);
@@ -65,15 +114,34 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
     setFloor(initialFloor);
   }
 
-  // ── Load zones when floor changes ─────────────────────────────────
+  // Placements carry a `name` (from the register payload); fall back to id.
+  const displayPlacements = useMemo(
+    () =>
+      placements.map((p) => ({
+        ...p,
+        name: p.name || p.label || p.device_id,
+      })),
+    [placements],
+  );
+
+  // ── Load zones + placements when floor changes ─────────────────────
   useEffect(() => {
     if (!floor?.floor_id) return;
     let cancelled = false;
     (async () => {
       try {
-        const zoneRes = await sites.zones.list({ floor_id: floor.floor_id, limit: 100 });
+        const [zoneRes, placementRes] = await Promise.all([
+          sites.zones.list({ floor_id: floor.floor_id, limit: 100 }),
+          sites.devicePlacements.listByFloor(floor.floor_id).catch(() => ({ items: [] })),
+        ]);
         if (!cancelled) {
+          const nextPlacements = (placementRes?.items ?? [])
+            .map(normalizePlacement)
+            .map((p) => ({ ...p, is_draft: false }));
           setZones(zoneRes?.items ?? []);
+          setPlacements(nextPlacements);
+          savedPlacementsRef.current = nextPlacements;
+          setDeletedDeviceIds(new Set());
           setHistory([]);
           setRedoStack([]);
           setUnsaved(false);
@@ -177,12 +245,15 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
     [zones, selectedZoneId, pushHistory],
   );
 
-  // ── Save (zones only) ──────────────────────────────────────────────
+  // ── Save (zones + device placements) ───────────────────────────────
   const save = useCallback(async () => {
     if (!floor?.floor_id) return;
     setSaving(true);
     try {
       const updated = [];
+      // Map draft (client-side) zone ids → real persisted ids, so device placements
+      // dropped into a freshly-drawn zone reference a valid zone.
+      const draftToReal = new Map();
       for (const zone of zones) {
         const payload = buildZonePayload(zone);
         if (zone.is_draft) {
@@ -191,6 +262,7 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
             site_id: floor.site_id,
             floor_id: floor.floor_id,
           });
+          if (created?.zone_id) draftToReal.set(zone.zone_id, created.zone_id);
           updated.push(created);
         } else {
           const u = await sites.zones.update(zone.zone_id, payload);
@@ -206,6 +278,69 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
         }
       }
 
+      // ── Device placements ──────────────────────────────────────────
+      const savedById = new Map(savedPlacementsRef.current.map((p) => [p.device_id, p]));
+
+      // Remove placements deleted this session (only if they were ever persisted).
+      for (const deletedId of deletedDeviceIds) {
+        const wasSaved = savedById.get(deletedId);
+        if (wasSaved && !wasSaved.is_draft) {
+          await sites.devicePlacements.remove(deletedId);
+        }
+      }
+
+      for (const placement of placements) {
+        if (deletedDeviceIds.has(placement.device_id)) continue;
+
+        const persisted = savedById.get(placement.device_id);
+        const rawZoneId = placement.zone_id || getZoneIdForPoint(placement, zones);
+        // Remap any draft zone id to its persisted id (drawn-then-placed zones).
+        const zone_id = (rawZoneId && draftToReal.get(rawZoneId)) || rawZoneId;
+        const floor_position = {
+          x: placement.x ?? placement.floor_position?.x ?? 0,
+          y: placement.y ?? placement.floor_position?.y ?? 0,
+          rotation: placement.rotation ?? placement.floor_position?.rotation ?? 0,
+        };
+        const metadata = placement.metadata ?? null;
+        const needsCreate = placement.is_draft || !persisted;
+        const needsUpdate =
+          persisted &&
+          (persisted.x !== placement.x ||
+            persisted.y !== placement.y ||
+            persisted.rotation !== placement.rotation ||
+            persisted.zone_id !== zone_id ||
+            persisted.device_type !== placement.device_type ||
+            persisted.service !== placement.service);
+
+        if (needsCreate) {
+          await sites.devicePlacements.register({
+            device_id: placement.device_id,
+            device_type: placement.device_type,
+            service: placement.service,
+            site_id: floor.site_id,
+            floor_id: floor.floor_id,
+            zone_id,
+            floor_position,
+            metadata,
+          });
+        } else if (needsUpdate) {
+          await sites.devicePlacements.update(placement.device_id, {
+            zone_id,
+            floor_position,
+            metadata,
+          });
+        }
+      }
+
+      // Refetch persisted placements as the new baseline.
+      const refreshed = await sites.devicePlacements.listByFloor(floor.floor_id);
+      const syncedPlacements = (refreshed?.items ?? [])
+        .map(normalizePlacement)
+        .map((p) => ({ ...p, is_draft: false }));
+
+      setPlacements(syncedPlacements);
+      savedPlacementsRef.current = syncedPlacements;
+      setDeletedDeviceIds(new Set());
       setZones(updated);
       setUnsaved(false);
       setLastSavedAt(new Date().toISOString());
@@ -216,7 +351,7 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
     } finally {
       setSaving(false);
     }
-  }, [floor, zones, onSaved]);
+  }, [floor, zones, placements, deletedDeviceIds, onSaved]);
 
   // ── Mode/tool sync (render-phase) ──────────────────────────────────
   const lastModeRef = useRef(editorMode);
@@ -225,6 +360,111 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
     if (editorMode === EDITOR_MODES.ZONE_DRAW) setActiveTool(TOOL_TYPES.ZONE_POLYGON);
     else setActiveTool(TOOL_TYPES.SELECT);
   }
+
+  // ── Device placement handlers ──────────────────────────────────────
+  const onDevicePaletteDrop = useCallback(
+    ({ payload, point }) => {
+      const deviceId = payload?.device_id;
+      if (!floor?.floor_id || !deviceId) return;
+      if (!isInsideAnyZone(point, zones)) {
+        toast.error("Device can only be placed inside a zone boundary");
+        return;
+      }
+      const zone_id = getZoneIdForPoint(point, zones);
+      setPlacements((p) => [
+        ...p,
+        {
+          device_id: deviceId,
+          device_type: payload.device_type || "other",
+          service: payload.service || "access_control",
+          site_id: floor.site_id,
+          floor_id: floor.floor_id,
+          zone_id,
+          floor_position: { x: point.x, y: point.y, rotation: 0 },
+          x: point.x,
+          y: point.y,
+          rotation: 0,
+          metadata: payload.metadata ?? null,
+          name: payload.name || deviceId,
+          is_draft: true,
+        },
+      ]);
+      setDeletedDeviceIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deviceId);
+        return next;
+      });
+      setSelectedDeviceId(deviceId);
+      setUnsaved(true);
+      toast.success(`Placed ${payload.name || deviceId} on the floor`);
+    },
+    [floor, zones],
+  );
+
+  const onDeviceMove = useCallback(
+    (device, { x, y }) => {
+      if (!isInsideAnyZone({ x, y }, zones)) {
+        toast.error("Device must remain inside a zone boundary");
+        return;
+      }
+      const zone_id = getZoneIdForPoint({ x, y }, zones);
+      setPlacements((arr) =>
+        arr.map((p) =>
+          p.device_id === device.device_id
+            ? {
+                ...p,
+                x,
+                y,
+                zone_id,
+                floor_position: {
+                  x,
+                  y,
+                  rotation: p.rotation ?? p.floor_position?.rotation ?? 0,
+                },
+              }
+            : p,
+        ),
+      );
+      setUnsaved(true);
+    },
+    [zones],
+  );
+
+  const onDeviceRotate = useCallback(
+    (device, rotation) => {
+      if ((device.device_type || "camera") !== "camera") return;
+      if (editorMode === EDITOR_MODES.VIEW) return;
+      setPlacements((arr) =>
+        arr.map((p) =>
+          p.device_id === device.device_id
+            ? {
+                ...p,
+                rotation,
+                floor_position: {
+                  x: p.x ?? p.floor_position?.x ?? 0,
+                  y: p.y ?? p.floor_position?.y ?? 0,
+                  rotation,
+                },
+              }
+            : p,
+        ),
+      );
+      setUnsaved(true);
+    },
+    [editorMode],
+  );
+
+  const onDeviceDelete = useCallback((device) => {
+    setPlacements((arr) => arr.filter((p) => p.device_id !== device.device_id));
+    setDeletedDeviceIds((prev) => {
+      const next = new Set(prev);
+      next.add(device.device_id);
+      return next;
+    });
+    setSelectedDeviceId(null);
+    setUnsaved(true);
+    toast.success(`Removed ${device.name || device.label || device.device_id} from floor`);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -272,7 +512,7 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
         editorMode={editorMode}
         onModeChange={setEditorMode}
         zoneCount={zones.length}
-        deviceCount={0}
+        deviceCount={placements.length}
         unsavedChanges={unsaved}
         lastSavedAt={lastSavedAt}
         canUndo={history.length > 0}
@@ -291,18 +531,37 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
               No floor plan uploaded yet
             </div>
           )}
+          {editorMode === EDITOR_MODES.DEVICE_PLACE && (
+            <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-md border border-card-border bg-card/90 px-3 py-1.5 text-xs text-muted shadow">
+              <Icon icon="heroicons-outline:cursor-arrow-rays" className="mr-1 inline text-sm" />
+              Drag a device from the right onto a zone. Drag to move; drag a selected
+              camera&apos;s cone to rotate.
+            </div>
+          )}
           <FloorPlanCanvas
             ref={canvasRef}
             floor={floor}
             floorplanUrl={floor?.floorplan_url}
             zones={zones}
-            devices={[]}
+            devices={displayPlacements}
             editorMode={editorMode}
             activeTool={activeTool}
             selectedZoneId={selectedZoneId}
-            onSelectZone={(z) => setSelectedZoneId(z.zone_id)}
+            selectedDeviceId={selectedDeviceId}
+            onSelectZone={(z) => {
+              setSelectedZoneId(z.zone_id);
+              setSelectedDeviceId(null);
+            }}
+            onSelectDevice={(d) => {
+              setSelectedDeviceId(d.device_id);
+              setSelectedZoneId(null);
+            }}
             onZoneCreate={onZoneCreate}
             onZoneUpdate={onZoneUpdate}
+            onDeviceDrop={onDevicePaletteDrop}
+            onDeviceMove={onDeviceMove}
+            onDeviceRotate={onDeviceRotate}
+            deviceRenderer={drawCameraPlacement}
           />
           {editorMode === EDITOR_MODES.ZONE_DRAW && (
             <CanvasToolControls
@@ -317,18 +576,27 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
           )}
         </div>
 
-        <ZoneManagementSidebar
-          zones={zones}
-          selectedZoneId={selectedZoneId}
-          onSelectZone={(z) => setSelectedZoneId(z.zone_id)}
-          onZoneUpdate={onZoneUpdate}
-          onZoneDelete={onZoneDelete}
-          onStartDrawing={() => {
-            setEditorMode(EDITOR_MODES.ZONE_DRAW);
-            setActiveTool(TOOL_TYPES.ZONE_POLYGON);
-            toast.info("Click on the canvas to add polygon points; press Enter to finish");
-          }}
-        />
+        {editorMode === EDITOR_MODES.DEVICE_PLACE ? (
+          <DeviceManagementSidebar
+            placements={displayPlacements}
+            selectedDeviceId={selectedDeviceId}
+            onSelectDevice={(p) => setSelectedDeviceId(p.device_id)}
+            onDeleteDevice={onDeviceDelete}
+          />
+        ) : (
+          <ZoneManagementSidebar
+            zones={zones}
+            selectedZoneId={selectedZoneId}
+            onSelectZone={(z) => setSelectedZoneId(z.zone_id)}
+            onZoneUpdate={onZoneUpdate}
+            onZoneDelete={onZoneDelete}
+            onStartDrawing={() => {
+              setEditorMode(EDITOR_MODES.ZONE_DRAW);
+              setActiveTool(TOOL_TYPES.ZONE_POLYGON);
+              toast.info("Click on the canvas to add polygon points; press Enter to finish");
+            }}
+          />
+        )}
       </div>
 
       <FloorUploadModal

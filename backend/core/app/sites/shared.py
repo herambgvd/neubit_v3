@@ -46,6 +46,21 @@ ZoneType = Literal[
     "other",
 ]
 
+# Device-placement literals — ported verbatim from neubit_v2's
+# ``module/sites/shared.py`` (device_type / service are part of the API contract).
+DEVICE_TYPES = {
+    "camera",
+    "nvr",
+    "access_control",
+    "panel",
+    "sensor",
+    "door",
+    "reader",
+    "other",
+}
+
+SERVICE_TYPES = {"vms", "access_control", "iot", "fire"}
+
 
 # ── Validators (Pydantic field_validator helpers) ──────────────────────
 

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neubit-access"
+version = "0.1.0"
+description = "Access-control (gates) service — registers controller instances (DDS via OData + SignalR), mirrors their entities, ingests real-time access events onto the NATS spine. Control-plane on the edge core; talks to core/workflow via NATS."
+requires-python = ">=3.11"
+
+dependencies = [
+    "kernel",          # shared kernel (installed as a path dep — see [tool.uv.sources])
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "httpx>=0.27",             # OData REST client
+    "signalrcore>=0.9.5",      # DDS SignalR EventsHub client
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+# When installed with uv, resolve kernel from the sibling source dir.
+[tool.uv.sources]
+kernel = { path = "/opt/kernel", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
