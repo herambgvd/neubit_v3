@@ -19,7 +19,8 @@ export const menuItems = [
   // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
   // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
   { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices" },
-  { title: "Streaming", icon: "heroicons:signal", link: "/streaming", disabled: true },
+  // Streaming = the live video-wall surface (VMS P2-D). Reads the camera estate.
+  { title: "Streaming", icon: "heroicons:signal", link: "/streaming", perm: "neubit.read" },
   // Events = the incident surface (SOP-driven incidents live here, like neubit_v2).
   // Workflow itself is NOT a top-nav item — its config lives under Config → Workflow.
   { title: "Events", icon: "heroicons:calendar-days", link: "/events", perm: "neubit.read" },

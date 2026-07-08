@@ -15,10 +15,17 @@ import { vms } from "../api";
 import { CONFIG_TABS } from "../constants";
 import { fromCamera, toUpdateBody, validateCamera } from "../formUtils";
 import CameraConfigForm from "./CameraConfigForm";
+import LivePlayer from "./LivePlayer";
 import { usePlacementFloorsZones } from "../hooks/usePlacementFloorsZones";
 
+// A "View" (live video) tab prepended to the config tabs — the camera detail's
+// live surface (P2-D). The config tabs' own "live" key is the network/placement
+// config; this is the actual video.
+const VIEW_TAB = { key: "view", label: "View", icon: "heroicons-outline:play-circle" };
+const DETAIL_TABS = [VIEW_TAB, ...CONFIG_TABS];
+
 export default function EditCameraModal({ camera, onClose, onSuccess, sites = [] }) {
-  const [tab, setTab] = useState("live");
+  const [tab, setTab] = useState("view");
   const [form, setForm] = useState(() => fromCamera(camera));
   const [errors, setErrors] = useState({});
   // Cascading placement: floors of the selected site, zones of the selected floor.
@@ -63,17 +70,23 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
       }
     >
       <div className="-mt-1">
-        <TabBar tabs={CONFIG_TABS} active={tab} onChange={setTab} className="mb-4" />
-        <CameraConfigForm
-          tab={tab}
-          form={form}
-          set={set}
-          errors={errors}
-          sites={sites}
-          floors={floors}
-          zones={zones}
-          isEdit
-        />
+        <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="mb-4" />
+        {tab === "view" ? (
+          <div className="aspect-video w-full overflow-hidden rounded-lg border border-card-border bg-black">
+            <LivePlayer cameraId={camera.id} cameraName={camera.name} className="h-full" />
+          </div>
+        ) : (
+          <CameraConfigForm
+            tab={tab}
+            form={form}
+            set={set}
+            errors={errors}
+            sites={sites}
+            floors={floors}
+            zones={zones}
+            isEdit
+          />
+        )}
       </div>
     </Modal>
   );

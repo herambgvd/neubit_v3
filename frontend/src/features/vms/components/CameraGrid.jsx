@@ -1,15 +1,15 @@
 "use client";
 
-// Card/grid view of cameras. Each tile shows a snapshot placeholder ("Live — P2":
-// no player until the media plane lands), status, name, brand and a hover action
-// bar (snapshot/edit/delete). Selection via the corner checkbox.
+// Card/grid view of cameras. Each tile is a click-to-go-live thumbnail (opens
+// the LivePlayer modal via onLive — P2-D), with status, name, brand and a hover
+// action bar (live/snapshot/edit/delete). Selection via the corner checkbox.
 import { Icon } from "@iconify/react";
 
 import { titleize } from "@/lib/format";
 import { RECORDING_MODES } from "../constants";
 import StatusBadge, { StatusDot } from "./StatusBadge";
 
-function Tile({ camera, health, siteName, selected, onToggleSelect, onOpen, onSnapshot, onEdit, onDelete }) {
+function Tile({ camera, health, siteName, selected, onToggleSelect, onLive, onSnapshot, onEdit, onDelete }) {
   const rec = RECORDING_MODES.find((m) => m.value === camera.recording?.mode);
   return (
     <div
@@ -17,15 +17,16 @@ function Tile({ camera, health, siteName, selected, onToggleSelect, onOpen, onSn
         selected ? "border-foreground" : "border-card-border"
       }`}
     >
-      {/* Snapshot placeholder — P2 shows a live tile here. */}
+      {/* Click-to-go-live thumbnail (opens the LivePlayer modal). */}
       <button
         type="button"
-        onClick={() => onOpen?.(camera)}
+        onClick={() => onLive?.(camera)}
+        title="Go live"
         className="relative flex aspect-video w-full items-center justify-center bg-gradient-to-br from-hover to-background"
       >
-        <div className="flex flex-col items-center gap-1 text-muted">
-          <Icon icon="heroicons-outline:video-camera" className="text-2xl opacity-50" />
-          <span className="text-[10px] uppercase tracking-wide">Live — P2</span>
+        <div className="flex flex-col items-center gap-1 text-muted transition group-hover:text-foreground">
+          <Icon icon="heroicons-solid:play" className="text-3xl opacity-70 transition group-hover:scale-110" />
+          <span className="text-[10px] uppercase tracking-wide">Live</span>
         </div>
         <div className="absolute left-2 top-2">
           <StatusBadge status={camera.status} />
@@ -53,6 +54,9 @@ function Tile({ camera, health, siteName, selected, onToggleSelect, onOpen, onSn
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+          <button type="button" title="Go live" onClick={() => onLive?.(camera)} className="rounded p-1 text-muted hover:bg-hover hover:text-foreground">
+            <Icon icon="heroicons-outline:play" className="text-sm" />
+          </button>
           <button type="button" title="Snapshot" onClick={() => onSnapshot?.(camera)} className="rounded p-1 text-muted hover:bg-hover hover:text-foreground">
             <Icon icon="heroicons-outline:camera" className="text-sm" />
           </button>
@@ -74,7 +78,7 @@ export default function CameraGrid({
   siteNames = {},
   selectedIds,
   onToggleSelect,
-  onOpen,
+  onLive,
   onSnapshot,
   onEdit,
   onDelete,
@@ -89,7 +93,7 @@ export default function CameraGrid({
           siteName={siteNames[c.placement?.site_id]}
           selected={selectedIds.has(c.id)}
           onToggleSelect={onToggleSelect}
-          onOpen={onOpen}
+          onLive={onLive}
           onSnapshot={onSnapshot}
           onEdit={onEdit}
           onDelete={onDelete}

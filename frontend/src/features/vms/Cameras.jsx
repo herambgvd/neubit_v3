@@ -5,7 +5,8 @@
 // actions, drag-reorder, per-row snapshot/edit/delete. Ported from gvd_nvr's
 // Cameras page UX, rethemed to v3's dark tokens + the shared kit/common layer.
 //
-// Live video / playback are P2 — tiles show a snapshot placeholder, not a player.
+// Live video (P2-D): grid tiles + the row "Go live" action open a LivePlayer
+// modal (WebRTC + HLS fallback); playback (recorded) is P3/P4.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -25,6 +26,7 @@ import OnboardCameraModal from "./components/OnboardCameraModal";
 import EditCameraModal from "./components/EditCameraModal";
 import OnvifDiscoveryModal from "./components/OnvifDiscoveryModal";
 import SnapshotModal from "./components/SnapshotModal";
+import LivePlayerModal from "./components/LivePlayerModal";
 
 export default function CamerasPage() {
   const qc = useQueryClient();
@@ -39,6 +41,7 @@ export default function CamerasPage() {
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [snapTarget, setSnapTarget] = useState(null);
+  const [liveTarget, setLiveTarget] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
   // ── Data ─────────────────────────────────────────────────────────────
@@ -234,6 +237,7 @@ export default function CamerasPage() {
           onToggleSelect={toggleSelect}
           onToggleAll={toggleAll}
           onOpen={(c) => setEditTarget(c)}
+          onLive={(c) => setLiveTarget(c)}
           onSnapshot={(c) => setSnapTarget(c)}
           onEdit={(c) => setEditTarget(c)}
           onDelete={askDelete}
@@ -246,7 +250,7 @@ export default function CamerasPage() {
           siteNames={siteNames}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
-          onOpen={(c) => setSnapTarget(c)}
+          onLive={(c) => setLiveTarget(c)}
           onSnapshot={(c) => setSnapTarget(c)}
           onEdit={(c) => setEditTarget(c)}
           onDelete={askDelete}
@@ -285,6 +289,7 @@ export default function CamerasPage() {
         />
       )}
       {snapTarget && <SnapshotModal camera={snapTarget} onClose={() => setSnapTarget(null)} />}
+      {liveTarget && <LivePlayerModal camera={liveTarget} onClose={() => setLiveTarget(null)} />}
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending || bulk.isPending} />
     </div>

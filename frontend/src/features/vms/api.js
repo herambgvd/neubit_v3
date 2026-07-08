@@ -131,6 +131,29 @@ export const vms = {
     // POST /cameras/{id}/health/refresh → a fresh sample.
     refresh: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/health/refresh`, {})),
   },
+
+  // ── Live streaming (P2-D) — PlaybackSession issue / renew / release ──────
+  // The Go `nvr` orchestrates MediaMTX; Python `vision` issues sessions. The
+  // returned hls_url/webrtc_url are ALREADY gateway-routed and ALREADY carry
+  // "?token=" — the player consumes them verbatim (never re-append the token).
+  // webrtc_url already ends in "/whep" (the WHEP endpoint), so POST the SDP
+  // offer straight to it.
+  live: {
+    // POST /cameras/{id}/live { profile } → PlaybackSessionPublic
+    //   { session_id, camera_id, profile, hls_url, webrtc_url, rtsp_url,
+    //     token, expires_at, ready }. `profile` defaults to the low-bandwidth
+    //   "sub" stream; the backend falls back to main/onvif when absent.
+    start: (cameraId, profile = "sub") =>
+      unwrap(api.post(`${CAMERAS}/${cameraId}/live`, { profile })),
+    // POST /cameras/{id}/live/{session}/renew → fresh token + expiry (call
+    //   before expiry to keep long views alive; TTL ~300s). Does NOT re-ensure
+    //   the MediaMTX path — playback never drops.
+    renew: (cameraId, sessionId) =>
+      unwrap(api.post(`${CAMERAS}/${cameraId}/live/${sessionId}/renew`, {})),
+    // DELETE /live/{session} → release the session (nvr path teardown + row).
+    //   Call on unmount so idle MediaMTX paths get reaped.
+    release: (sessionId) => unwrap(api.delete(`/vms/live/${sessionId}`)),
+  },
 };
 
 export default vms;
