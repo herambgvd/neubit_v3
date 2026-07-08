@@ -24,6 +24,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     Uuid,
@@ -98,7 +99,12 @@ class Webhook(Base):
     token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     description: Mapped[str | None] = mapped_column(String(1024))
 
-    # "none" | "api_key" | "basic".
+    # "post" (read body) | "get" (read query params). Plain string (no PG enum).
+    request_method: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default=text("'post'")
+    )
+
+    # "none" | "api_key" | "basic" | "bearer" | "hmac".
     auth_type: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'none'")
     )
@@ -122,6 +128,72 @@ class Webhook(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true"), index=True
     )
+    created_by: Mapped[str | None] = mapped_column(String(36))
+    updated_by: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+
+class IngestEventRule(Base):
+    """A payload-driven routing rule owned by one webhook.
+
+    Ported 1:1 from neubit_v2's ``IngestEventRuleORM``. A webhook with at least
+    one enabled rule uses the rule-based flow: walk rules by ``priority`` (ASC,
+    then ``created_at`` ASC), evaluate each rule's ``match_conditions`` against
+    the transformed payload, and the FIRST matching rule wins — its ``field_map``
+    extraction is applied to the published payload and its ``event_type`` becomes
+    the emitted event type. A webhook with zero (enabled) rules falls back to the
+    webhook-level ``transform`` + default ``event_type`` (original v3 behavior).
+
+    Unlike v2 (which stored a Kafka ``target_topic`` and a per-rule
+    ``workflow_id``), a v3 rule simply EMITS an ``event_type`` — SOP binding is
+    done downstream by workflow triggers matching on that type. ``target_domain``
+    is an optional per-rule override of the category's routing domain.
+
+    Tenant-scoped (``tenant_id`` mirrors the owning webhook). JSON columns are
+    portable generic types; no PG enum (dodges the asyncpg add-column footgun).
+    """
+
+    __tablename__ = "ingest_event_rules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    # --- multi-tenancy: the owning tenant (mirrors the webhook's tenant_id). ---
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+
+    webhook_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ingest_webhooks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1024))
+    # Lower value = evaluated first; stable tiebreak by created_at.
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("100")
+    )
+    # [{path, op, value}, ...] — evaluated by matcher.py.
+    match_conditions: Mapped[Any] = mapped_column(
+        JSON, nullable=False, server_default=text("'[]'")
+    )
+    # {target_field: "jmespath_expr"} — the extraction applied when this rule wins.
+    field_map: Mapped[dict] = mapped_column(
+        JSON, nullable=False, server_default=text("'{}'")
+    )
+    # The event ``type`` stamped on the published envelope when this rule matches.
+    event_type: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default=text("'ingest.event'")
+    )
+    # Optional per-rule override of the category's routing domain (else category's).
+    target_domain: Mapped[str | None] = mapped_column(String(64))
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+
     created_by: Mapped[str | None] = mapped_column(String(36))
     updated_by: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime] = mapped_column(
@@ -189,6 +261,8 @@ class IngestEventLog(Base):
 
     # The ingest event_id stamped on the published envelope (NULL if not published).
     event_id: Mapped[str | None] = mapped_column(String(36))
+    # The IngestEventRule that determined the emitted event_type (NULL = default/none).
+    matched_rule_id: Mapped[str | None] = mapped_column(String(36))
     # True when this row was produced by a replay of an earlier log.
     is_replay: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), index=True

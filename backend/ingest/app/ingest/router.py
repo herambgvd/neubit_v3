@@ -30,10 +30,16 @@ from .schemas import (
     CategoryUpdate,
     EventLogDetail,
     EventLogListResponse,
+    EventRuleCreate,
+    EventRuleListResponse,
+    EventRulePublic,
+    EventRuleUpdate,
     IngestResponse,
     ReplayResponse,
     RotateSecretRequest,
     RotateSecretResponse,
+    RuleTestRequest,
+    RuleTestResponse,
     WebhookCreate,
     WebhookListResponse,
     WebhookPublic,
@@ -45,6 +51,7 @@ from .service import (
     CategoryService,
     EventLogService,
     ReceiverService,
+    RuleService,
     WebhookService,
 )
 
@@ -82,6 +89,13 @@ async def _webhook_service(
     scope: Annotated[Scope, Depends(get_scope)],
 ) -> WebhookService:
     return WebhookService(db, scope)
+
+
+async def _rule_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> RuleService:
+    return RuleService(db, scope)
 
 
 # --- Categories ---
@@ -245,6 +259,89 @@ async def rotate_webhook_secret(
     )
 
 
+# --- Event rules (payload-driven routing) ---
+
+
+@config_router.get(
+    "/webhooks/{webhook_id}/rules",
+    response_model=EventRuleListResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def list_rules(
+    webhook_id: str,
+    svc: Annotated[RuleService, Depends(_rule_service)],
+) -> EventRuleListResponse:
+    items = await svc.list_for_webhook(webhook_id)
+    return EventRuleListResponse(items=items, total=len(items))
+
+
+@config_router.post(
+    "/webhooks/{webhook_id}/rules",
+    response_model=EventRulePublic,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_rule(
+    webhook_id: str,
+    body: EventRuleCreate,
+    svc: Annotated[RuleService, Depends(_rule_service)],
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> EventRulePublic:
+    return await svc.create(webhook_id, body, actor=actor)
+
+
+@config_router.get(
+    "/event-rules/{rule_id}",
+    response_model=EventRulePublic,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def get_rule(
+    rule_id: str,
+    svc: Annotated[RuleService, Depends(_rule_service)],
+) -> EventRulePublic:
+    return await svc.get(rule_id)
+
+
+@config_router.patch("/event-rules/{rule_id}", response_model=EventRulePublic)
+async def update_rule(
+    rule_id: str,
+    body: EventRuleUpdate,
+    svc: Annotated[RuleService, Depends(_rule_service)],
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> EventRulePublic:
+    return await svc.update(rule_id, body, actor=actor)
+
+
+@config_router.delete(
+    "/event-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_rule(
+    rule_id: str,
+    svc: Annotated[RuleService, Depends(_rule_service)],
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> Response:
+    await svc.delete(rule_id, actor=actor)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@config_router.post(
+    "/event-rules/{rule_id}/test",
+    response_model=RuleTestResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def test_rule(
+    rule_id: str,
+    body: RuleTestRequest,
+    svc: Annotated[RuleService, Depends(_rule_service)],
+) -> RuleTestResponse:
+    """Dry-run: evaluate the rule (or a proposed shape) against a sample payload."""
+    return await svc.test(
+        rule_id,
+        body.payload,
+        match_conditions=body.match_conditions,
+        field_map=body.field_map,
+    )
+
+
 # --- Event logs ---
 
 
@@ -322,10 +419,16 @@ public_router = APIRouter(prefix="/ingest", tags=["Ingest (public)"])
 
 
 def build_public_router(bus: EventBus) -> APIRouter:
-    """Bind the receiver to the service's EventBus and return the public router."""
+    """Bind the receiver to the service's EventBus and return the public router.
 
-    @public_router.post(
+    Mounted for BOTH GET and POST: the service enforces the webhook's configured
+    ``request_method``. For GET the payload is read from query params (repeated
+    keys become arrays); for POST from the JSON body.
+    """
+
+    @public_router.api_route(
         "/hooks/{token}",
+        methods=["GET", "POST"],
         response_model=IngestResponse,
         status_code=status.HTTP_202_ACCEPTED,
     )
@@ -334,13 +437,26 @@ def build_public_router(bus: EventBus) -> APIRouter:
         request: Request,
         db: Annotated[AsyncSession, Depends(get_db)],
     ) -> IngestResponse:
-        # Tolerant body parse — an empty body is a valid {} payload.
-        try:
-            payload = await request.json()
-        except Exception:
-            payload = {}
+        raw_body = await request.body()
+        if request.method.upper() == "GET":
+            # Query params → payload. Repeated keys become arrays.
+            payload: dict = {}
+            for key, val in request.query_params.multi_items():
+                if key in payload:
+                    if isinstance(payload[key], list):
+                        payload[key].append(val)
+                    else:
+                        payload[key] = [payload[key], val]
+                else:
+                    payload[key] = val
+        else:
+            # Tolerant body parse — an empty body is a valid {} payload.
+            try:
+                payload = await request.json() if raw_body else {}
+            except Exception:
+                payload = {}
         svc = ReceiverService(db, bus)
-        _event_type, event_id = await svc.handle(token, request, payload)
+        _event_type, event_id = await svc.handle(token, request, payload, raw_body)
         return IngestResponse(accepted=True, event_id=event_id)
 
     return public_router

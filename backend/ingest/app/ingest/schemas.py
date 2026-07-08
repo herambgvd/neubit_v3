@@ -16,6 +16,13 @@ class AuthType(str, Enum):
     NONE = "none"
     API_KEY = "api_key"
     BASIC = "basic"
+    BEARER = "bearer"
+    HMAC = "hmac"
+
+
+class InboundMethod(str, Enum):
+    POST = "post"
+    GET = "get"
 
 
 # ── Category ────────────────────────────────────────────────────────
@@ -95,10 +102,12 @@ class WebhookCreate(BaseModel):
     # Optional — server mints a secure random token if omitted.
     token: Optional[str] = Field(default=None, min_length=8, max_length=64)
     description: Optional[str] = Field(default=None, max_length=1024)
+    # "post" reads the request body; "get" reads query params.
+    request_method: InboundMethod = InboundMethod.POST
 
     auth_type: AuthType = AuthType.NONE
     auth_username: Optional[str] = Field(default=None, max_length=128)
-    # Plaintext on create; server hashes before storing (never persisted raw).
+    # Plaintext on create; server hashes (or encrypts, for hmac) before storing.
     auth_secret: Optional[str] = Field(default=None, max_length=1024)
 
     payload_schema: dict[str, Any] = Field(default_factory=dict)
@@ -120,6 +129,7 @@ class WebhookUpdate(BaseModel):
     category_id: Optional[str] = Field(default=None, min_length=1, max_length=36)
     name: Optional[str] = Field(default=None, min_length=1, max_length=128)
     description: Optional[str] = Field(default=None, max_length=1024)
+    request_method: Optional[InboundMethod] = None
     auth_type: Optional[AuthType] = None
     auth_username: Optional[str] = Field(default=None, max_length=128)
     # Provide to rotate the secret; omit to leave unchanged.
@@ -137,6 +147,7 @@ class WebhookPublic(BaseModel):
     name: str
     token: str
     description: Optional[str] = None
+    request_method: str = "post"
     auth_type: str
     auth_username: Optional[str] = None
     has_secret: bool = False
@@ -157,6 +168,7 @@ class WebhookPublic(BaseModel):
                 "name": row.name,
                 "token": row.token,
                 "description": row.description,
+                "request_method": getattr(row, "request_method", "post") or "post",
                 "auth_type": row.auth_type,
                 "auth_username": row.auth_username,
                 "has_secret": bool(row.auth_secret_hash),
@@ -204,6 +216,7 @@ class EventLogSummary(BaseModel):
     target_subject: Optional[str] = None
     error: Optional[str] = None
     event_id: Optional[str] = None
+    matched_rule_id: Optional[str] = None
     is_replay: bool = False
 
     @classmethod
@@ -222,6 +235,7 @@ class EventLogSummary(BaseModel):
                 "target_subject": row.target_subject,
                 "error": row.error,
                 "event_id": row.event_id,
+                "matched_rule_id": getattr(row, "matched_rule_id", None),
                 "is_replay": row.is_replay,
             }
         )
@@ -250,6 +264,7 @@ class EventLogDetail(EventLogSummary):
                 "target_subject": row.target_subject,
                 "error": row.error,
                 "event_id": row.event_id,
+                "matched_rule_id": getattr(row, "matched_rule_id", None),
                 "is_replay": row.is_replay,
                 "raw_payload": row.raw_payload,
                 "raw_truncated": row.raw_truncated,
@@ -294,6 +309,121 @@ class WebhookTestResponse(BaseModel):
     transform_errors: list[str] = Field(default_factory=list)
     would_publish_subject: Optional[str] = None
     auth_type: str
+    # The event_type the live receiver would emit for this sample (rule-resolved).
+    resolved_event_type: Optional[str] = None
+    # The rule id/name that would win (None → webhook default event_type).
+    matched_rule_id: Optional[str] = None
+    matched_rule_name: Optional[str] = None
+
+
+# ── Event rules ─────────────────────────────────────────────────────
+
+
+class MatchOp(str, Enum):
+    EXISTS = "exists"
+    NOT_EXISTS = "not_exists"
+    EQUALS = "equals"
+    NOT_EQUALS = "not_equals"
+    CONTAINS = "contains"
+
+
+class MatchCondition(BaseModel):
+    """One predicate on the incoming (transformed) payload.
+
+    ``path`` is a JMESPath expression (typically a simple dotted/indexed path).
+    ``op`` selects the comparison. ``value`` is required for equals / not_equals
+    / contains, and ignored for exists / not_exists.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    path: str = Field(min_length=1, max_length=512)
+    op: MatchOp = MatchOp.EXISTS
+    value: Optional[Any] = None
+
+
+class EventRuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=128)
+    description: Optional[str] = Field(default=None, max_length=1024)
+    priority: int = Field(default=100, ge=0, le=10_000)
+    match_conditions: list[MatchCondition] = Field(default_factory=list)
+    field_map: dict[str, str] = Field(default_factory=dict)
+    # The event type this rule EMITS when it wins.
+    event_type: str = Field(default="ingest.event", max_length=128)
+    # Optional per-rule override of the category's routing domain.
+    target_domain: Optional[str] = Field(default=None, max_length=64)
+    enabled: bool = True
+
+
+class EventRuleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    description: Optional[str] = Field(default=None, max_length=1024)
+    priority: Optional[int] = Field(default=None, ge=0, le=10_000)
+    match_conditions: Optional[list[MatchCondition]] = None
+    field_map: Optional[dict[str, str]] = None
+    event_type: Optional[str] = Field(default=None, max_length=128)
+    target_domain: Optional[str] = Field(default=None, max_length=64)
+    enabled: Optional[bool] = None
+
+
+class EventRulePublic(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    webhook_id: str
+    name: str
+    description: Optional[str] = None
+    priority: int
+    match_conditions: list[MatchCondition] = Field(default_factory=list)
+    field_map: dict[str, str] = Field(default_factory=dict)
+    event_type: str
+    target_domain: Optional[str] = None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, row) -> "EventRulePublic":
+        return cls.model_validate(
+            {
+                "id": row.id,
+                "webhook_id": row.webhook_id,
+                "name": row.name,
+                "description": row.description,
+                "priority": row.priority,
+                "match_conditions": row.match_conditions or [],
+                "field_map": row.field_map or {},
+                "event_type": row.event_type,
+                "target_domain": row.target_domain,
+                "enabled": row.enabled,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            }
+        )
+
+
+class EventRuleListResponse(BaseModel):
+    items: list[EventRulePublic]
+    total: int
+
+
+class RuleTestRequest(BaseModel):
+    """Dry-run a sample payload against an existing or proposed rule shape."""
+
+    model_config = ConfigDict(extra="forbid")
+    payload: dict[str, Any] = Field(default_factory=dict)
+    # If provided, evaluate against an unsaved rule shape (form live preview);
+    # otherwise evaluate against the persisted rule.
+    match_conditions: Optional[list[MatchCondition]] = None
+    field_map: Optional[dict[str, str]] = None
+
+
+class RuleTestResponse(BaseModel):
+    matched: bool
+    condition_results: list[dict[str, Any]] = Field(default_factory=list)
+    extracted: Optional[dict[str, Any]] = None
+    # The event_type this rule would emit on a match.
+    event_type: Optional[str] = None
 
 
 # ── Rotate secret ───────────────────────────────────────────────────

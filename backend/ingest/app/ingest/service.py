@@ -28,10 +28,12 @@ from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
 from kernel.events import EventBus, subject
 
+from .matcher import evaluate_rule, match_first
 from .models import (
     MAX_RAW_PAYLOAD_CHARS,
     IngestCategory,
     IngestEventLog,
+    IngestEventRule,
     Webhook,
 )
 from .schemas import (
@@ -40,13 +42,17 @@ from .schemas import (
     CategoryUpdate,
     EventLogDetail,
     EventLogSummary,
+    EventRuleCreate,
+    EventRulePublic,
+    EventRuleUpdate,
     RotateSecretResponse,
+    RuleTestResponse,
     WebhookCreate,
     WebhookPublic,
     WebhookTestResponse,
     WebhookUpdate,
 )
-from .security import hash_secret, verify_inbound
+from .security import store_secret, verify_inbound
 from .transform import apply_transform, validate_payload
 
 
@@ -85,6 +91,19 @@ def _actor_id(actor) -> str | None:
     if actor is None:
         return None
     return str(getattr(actor, "user_id", "")) or None
+
+
+async def _load_rules(
+    db: AsyncSession, webhook_id: str, *, only_enabled: bool = True
+) -> list[IngestEventRule]:
+    """Rules for a webhook, ordered priority ASC then created_at ASC."""
+    stmt = select(IngestEventRule).where(IngestEventRule.webhook_id == webhook_id)
+    if only_enabled:
+        stmt = stmt.where(IngestEventRule.enabled.is_(True))
+    stmt = stmt.order_by(
+        IngestEventRule.priority.asc(), IngestEventRule.created_at.asc()
+    )
+    return list((await db.execute(stmt)).scalars().all())
 
 
 # ── Category CRUD ──────────────────────────────────────────────────────
@@ -199,9 +218,15 @@ class WebhookService:
         existing = await self.db.scalar(select(Webhook).where(Webhook.token == token))
         if existing is not None:
             raise ConflictError("token already in use")
-        if body.auth_type != "none" and not body.auth_secret and body.auth_type == "api_key":
-            raise ValidationError("api_key auth requires auth_secret")
-        secret_hash = hash_secret(body.auth_secret) if body.auth_secret else None
+        at = body.auth_type.value
+        # api_key / bearer / hmac require a secret on create; basic requires user+secret.
+        if at in ("api_key", "bearer", "hmac") and not body.auth_secret:
+            raise ValidationError(f"{at} auth requires auth_secret")
+        if at == "basic" and not body.auth_username:
+            raise ValidationError("basic auth requires auth_username")
+        secret_stored = store_secret(at, body.auth_secret) if body.auth_secret else None
+        # bearer/hmac never carry a username.
+        auth_username = body.auth_username if at == "basic" else None
         actor_id = _actor_id(actor)
         row = Webhook(
             tenant_id=self.scope.tenant_id,
@@ -209,9 +234,10 @@ class WebhookService:
             name=body.name,
             token=token,
             description=body.description,
-            auth_type=body.auth_type.value,
-            auth_username=body.auth_username,
-            auth_secret_hash=secret_hash,
+            request_method=body.request_method.value,
+            auth_type=at,
+            auth_username=auth_username,
+            auth_secret_hash=secret_stored,
             payload_schema=body.payload_schema or {},
             transform=body.transform or {},
             event_type=body.event_type,
@@ -255,12 +281,24 @@ class WebhookService:
         if body.category_id and body.category_id != row.category_id:
             await self._assert_category(body.category_id)
 
-        update = body.model_dump(exclude_none=True, exclude={"auth_secret", "auth_type"})
+        update = body.model_dump(
+            exclude_none=True, exclude={"auth_secret", "auth_type", "request_method"}
+        )
+        if body.request_method is not None:
+            update["request_method"] = body.request_method.value
+        effective_auth = row.auth_type
         if body.auth_type is not None:
-            update["auth_type"] = body.auth_type.value
-        # Rotate the secret only when a new plaintext is supplied.
+            effective_auth = body.auth_type.value
+            update["auth_type"] = effective_auth
+        # Rotate the secret only when a new plaintext is supplied (stored per auth_type).
         if body.auth_secret is not None:
-            update["auth_secret_hash"] = hash_secret(body.auth_secret)
+            update["auth_secret_hash"] = store_secret(effective_auth, body.auth_secret)
+        # Canonicalize auth fields when the type changes.
+        if effective_auth == "none":
+            update["auth_username"] = None
+            update["auth_secret_hash"] = None
+        elif effective_auth in ("bearer", "hmac", "api_key"):
+            update["auth_username"] = None
         actor_id = _actor_id(actor)
         if actor_id:
             update["updated_by"] = actor_id
@@ -286,19 +324,39 @@ class WebhookService:
 
         v = validate_payload(payload, row.payload_schema or {})
         t = apply_transform(payload, row.transform or {})
+        transformed = t.value if t.ok else None
 
         category = await self.db.get(IngestCategory, row.category_id)
-        domain = (category.target_domain if category else None) or "ingest"
+        cat_domain = (category.target_domain if category else None) or "ingest"
+
+        # Resolve which rule (if any) would win, and the emitted event_type.
+        resolved_event_type = row.event_type or "ingest.event"
+        matched_rule_id: str | None = None
+        matched_rule_name: str | None = None
+        domain = cat_domain
+        if transformed is not None:
+            rules = await _load_rules(self.db, row.id, only_enabled=True)
+            if rules:
+                rule, _results = match_first(transformed, rules)
+                if rule is not None:
+                    matched_rule_id = rule.id
+                    matched_rule_name = rule.name
+                    resolved_event_type = rule.event_type or resolved_event_type
+                    domain = (rule.target_domain or cat_domain)
+
         tenant_id = str(row.tenant_id) if row.tenant_id else None
         would_subject = subject(tenant_id, domain, "event.received")
 
         return WebhookTestResponse(
             schema_valid=v.ok,
             schema_errors=v.errors[:20],
-            transformed=t.value if t.ok else None,
+            transformed=transformed,
             transform_errors=t.errors[:20],
             would_publish_subject=would_subject,
             auth_type=row.auth_type,
+            resolved_event_type=resolved_event_type,
+            matched_rule_id=matched_rule_id,
+            matched_rule_name=matched_rule_name,
         )
 
     async def rotate_secret(
@@ -318,9 +376,9 @@ class WebhookService:
         row.token = new_token
 
         new_secret: str | None = None
-        if rotate_auth_secret and row.auth_type in ("api_key", "basic"):
+        if rotate_auth_secret and row.auth_type in ("api_key", "basic", "bearer", "hmac"):
             new_secret = secrets.token_urlsafe(24)
-            row.auth_secret_hash = hash_secret(new_secret)
+            row.auth_secret_hash = store_secret(row.auth_type, new_secret)
 
         actor_id = _actor_id(actor)
         if actor_id:
@@ -334,6 +392,115 @@ class WebhookService:
             token=row.token,
             ingest_url=f"/ingest/hooks/{row.token}",
             auth_secret=new_secret,
+        )
+
+
+# ── Event rule CRUD + test ─────────────────────────────────────────────
+
+
+class RuleService:
+    """Tenant-scoped CRUD + dry-run over ``ingest_event_rules`` (per webhook).
+
+    A rule is owned by a webhook; ownership + tenant isolation are enforced by
+    walking through the parent webhook (``assert_owned``). New rows inherit the
+    webhook's ``tenant_id``.
+    """
+
+    def __init__(self, db: AsyncSession, scope: Scope) -> None:
+        self.db = db
+        self.scope = scope
+
+    async def _get_webhook(self, webhook_id: str) -> Webhook:
+        row = await self.db.get(Webhook, webhook_id)
+        assert_owned(row, self.scope, message="Webhook not found")
+        return row
+
+    async def _get_rule(self, rule_id: str) -> IngestEventRule:
+        rule = await self.db.get(IngestEventRule, rule_id)
+        assert_owned(rule, self.scope, message="Rule not found")
+        return rule
+
+    async def list_for_webhook(self, webhook_id: str) -> list[EventRulePublic]:
+        await self._get_webhook(webhook_id)  # ownership gate
+        rows = await _load_rules(self.db, webhook_id, only_enabled=False)
+        return [EventRulePublic.from_row(r) for r in rows]
+
+    async def create(
+        self, webhook_id: str, body: EventRuleCreate, *, actor
+    ) -> EventRulePublic:
+        webhook = await self._get_webhook(webhook_id)
+        actor_id = _actor_id(actor)
+        row = IngestEventRule(
+            tenant_id=webhook.tenant_id,
+            webhook_id=webhook.id,
+            name=body.name,
+            description=body.description,
+            priority=body.priority,
+            match_conditions=[c.model_dump() for c in body.match_conditions],
+            field_map=body.field_map or {},
+            event_type=body.event_type,
+            target_domain=body.target_domain,
+            enabled=body.enabled,
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        self.db.add(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return EventRulePublic.from_row(row)
+
+    async def get(self, rule_id: str) -> EventRulePublic:
+        return EventRulePublic.from_row(await self._get_rule(rule_id))
+
+    async def update(
+        self, rule_id: str, body: EventRuleUpdate, *, actor
+    ) -> EventRulePublic:
+        row = await self._get_rule(rule_id)
+        update = body.model_dump(exclude_none=True, exclude={"match_conditions"})
+        if body.match_conditions is not None:
+            update["match_conditions"] = [c.model_dump() for c in body.match_conditions]
+        actor_id = _actor_id(actor)
+        if actor_id:
+            update["updated_by"] = actor_id
+        update["updated_at"] = _utcnow()
+        for k, v in update.items():
+            setattr(row, k, v)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return EventRulePublic.from_row(row)
+
+    async def delete(self, rule_id: str, *, actor) -> None:
+        row = await self._get_rule(rule_id)
+        await self.db.delete(row)
+        await self.db.commit()
+
+    async def test(
+        self,
+        rule_id: str,
+        payload: Any,
+        *,
+        match_conditions: list[Any] | None = None,
+        field_map: dict[str, str] | None = None,
+    ) -> RuleTestResponse:
+        """Evaluate the (persisted or proposed) rule against a sample payload."""
+        row = await self._get_rule(rule_id)
+        conditions = (
+            [c.model_dump() for c in match_conditions]
+            if match_conditions is not None
+            else (row.match_conditions or [])
+        )
+        fmap = field_map if field_map is not None else (row.field_map or {})
+        matched, results = evaluate_rule(payload, conditions)
+
+        extracted: dict[str, Any] | None = None
+        if matched and fmap:
+            t = apply_transform(payload, fmap)
+            extracted = t.value
+        return RuleTestResponse(
+            matched=matched,
+            condition_results=results,
+            extracted=extracted,
+            event_type=row.event_type if matched else None,
         )
 
 
@@ -438,6 +605,7 @@ class ReceiverService:
     def __init__(self, db: AsyncSession, bus: EventBus) -> None:
         self.db = db
         self.bus = bus
+        self._resolved_event_type: str | None = None
 
     async def _record(self, log: IngestEventLog) -> IngestEventLog:
         self.db.add(log)
@@ -446,12 +614,13 @@ class ReceiverService:
         return log
 
     async def handle(
-        self, token: str, request: Request, payload: Any
+        self, token: str, request: Request, payload: Any, raw_body: bytes = b""
     ) -> tuple[str, str | None]:
         """Run lookup → auth → validate → transform → publish, logging the outcome.
 
         Returns (event_type, event_id) on success; raises 401/422 on rejection
-        AFTER recording the log row.
+        AFTER recording the log row. ``raw_body`` is the exact bytes received
+        (needed to verify an HMAC signature).
         """
         source_ip = _client_ip(request)
         raw_stored, raw_truncated = _cap_raw(payload)
@@ -476,12 +645,36 @@ class ReceiverService:
             )
             raise UnauthorizedError("invalid webhook")
 
-        # Per-webhook auth (bare 401, generic reason).
+        # Enforce the webhook's configured HTTP method (405 on mismatch).
+        expected_method = (getattr(webhook, "request_method", "post") or "post").upper()
+        if request is not None and request.method.upper() != expected_method:
+            await self._record(
+                IngestEventLog(
+                    tenant_id=webhook.tenant_id,
+                    webhook_id=webhook.id,
+                    category_id=webhook.category_id,
+                    source_ip=source_ip,
+                    auth_outcome="failed",
+                    schema_outcome="skipped",
+                    transform_outcome="skipped",
+                    published=False,
+                    error=f"method {request.method.upper()} not allowed; expected {expected_method}",
+                    raw_payload=raw_stored,
+                    raw_truncated=raw_truncated,
+                )
+            )
+            raise ValidationError(
+                f"method not allowed; expected {expected_method}",
+                details={"expected_method": expected_method},
+            )
+
+        # Per-webhook auth (bare 401, generic reason). raw_body feeds HMAC verify.
         auth = verify_inbound(
             request,
             auth_type=webhook.auth_type,
             auth_username=webhook.auth_username,
             auth_secret_hash=webhook.auth_secret_hash,
+            raw_body=raw_body,
         )
         if not auth.ok:
             await self._record(
@@ -513,7 +706,8 @@ class ReceiverService:
         if not row.published:
             # run_pipeline recorded the failure; surface the matching 422.
             raise ValidationError(row.error or "ingest failed", details={"log_id": row.id})
-        return (webhook.event_type or "ingest.event"), row.event_id
+        # run_pipeline stashes the resolved (rule-driven) event_type on the service.
+        return (getattr(self, "_resolved_event_type", None) or webhook.event_type or "ingest.event"), row.event_id
 
     async def run_pipeline(
         self,
@@ -557,21 +751,44 @@ class ReceiverService:
             log.error = "schema: " + "; ".join(v.errors[:10])
             return await self._record(log)
 
-        # 2. JMESPath transform.
+        # 2. JMESPath transform (webhook-level).
         t = apply_transform(payload, webhook.transform or {})
         log.transform_outcome = "ok" if t.ok else "failed"
         if not t.ok:
             log.error = "transform: " + "; ".join(t.errors[:10])
             return await self._record(log)
         transformed = t.value or {}
-        log.transformed_payload = transformed
 
-        # 3. Resolve subject via the webhook's category, then publish.
+        # 3. Payload-driven routing. If the webhook has enabled rules, walk them
+        #    by priority; the FIRST match determines the emitted event_type (and
+        #    optional target_domain), and its field_map re-extracts the payload.
+        #    No rules (or no match) → fall back to the webhook's default.
         category = await self.db.get(IngestCategory, webhook.category_id)
-        domain = (category.target_domain if category else None) or "ingest"
+        cat_domain = (category.target_domain if category else None) or "ingest"
+        domain = cat_domain
+        event_type = webhook.event_type or "ingest.event"
+
+        rules = await _load_rules(self.db, webhook.id, only_enabled=True)
+        if rules:
+            rule, _results = match_first(transformed, rules)
+            if rule is not None:
+                log.matched_rule_id = rule.id
+                event_type = rule.event_type or event_type
+                if rule.target_domain:
+                    domain = rule.target_domain
+                # Apply the rule's field_map extraction (empty → keep transformed).
+                if rule.field_map:
+                    rt = apply_transform(transformed, rule.field_map)
+                    if rt.ok and rt.value is not None:
+                        transformed = rt.value
+
+        log.transformed_payload = transformed
+        # Stash the resolved type so handle()/replay callers can read it.
+        self._resolved_event_type = event_type
+
+        # 4. Resolve subject, then publish.
         tenant_id = str(webhook.tenant_id) if webhook.tenant_id else None
         event_id = str(uuid.uuid4())
-        event_type = webhook.event_type or "ingest.event"
         subj = subject(tenant_id, domain, "event.received")
         log.target_subject = subj
 
@@ -586,6 +803,7 @@ class ReceiverService:
                     "category_id": webhook.category_id,
                     "event_type": event_type,
                     "ingest_event_id": event_id,
+                    "matched_rule_id": log.matched_rule_id,
                     "data": transformed,
                 },
             )
