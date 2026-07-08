@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Principal, Scope, get_scope, require_permission
@@ -24,9 +24,11 @@ from kernel.auth import Principal, Scope, get_scope, require_permission
 from app.db import get_db
 from . import schemas as S
 from .service import (
+    AlertFormatService,
     FormService,
     InstanceService,
     NotificationService,
+    SimulatorService,
     SopService,
     StateService,
     ThreatLevelService,
@@ -67,6 +69,14 @@ async def _threat_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope
 
 async def _inst_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
     return InstanceService(db, scope)
+
+
+async def _format_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+    return AlertFormatService(db, scope)
+
+
+async def _sim_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+    return SimulatorService(db, scope)
 
 
 # ── SOP router ─────────────────────────────────────────────────────────
@@ -207,6 +217,71 @@ async def update_trigger(trigger_id: str, body: S.UpdateTriggerRequest,
                        dependencies=[Depends(require_permission("workflow.trigger.delete"))])
 async def delete_trigger(trigger_id: str, svc: Annotated[TriggerService, Depends(_trig_svc)]):
     await svc.delete(trigger_id)
+
+
+@trigger_router.post("/{trigger_id}/enable", response_model=S.TriggerPublic)
+async def enable_trigger(trigger_id: str, svc: Annotated[TriggerService, Depends(_trig_svc)],
+                         actor: Principal = Depends(require_permission("workflow.trigger.update"))):
+    return S.TriggerPublic.from_row(await svc.set_enabled(trigger_id, True, actor=actor))
+
+
+@trigger_router.post("/{trigger_id}/disable", response_model=S.TriggerPublic)
+async def disable_trigger(trigger_id: str, svc: Annotated[TriggerService, Depends(_trig_svc)],
+                          actor: Principal = Depends(require_permission("workflow.trigger.update"))):
+    return S.TriggerPublic.from_row(await svc.set_enabled(trigger_id, False, actor=actor))
+
+
+# ── Alert format router (alert_code → SOP mapping) ─────────────────────
+
+alert_format_router = APIRouter(prefix="/workflow/alert-formats", tags=["Workflow · Alert Formats"])
+
+
+@alert_format_router.get("", response_model=S.AlertFormatListResponse,
+                         dependencies=[Depends(require_permission("workflow.sop.read"))])
+async def list_alert_formats(svc: Annotated[AlertFormatService, Depends(_format_svc)],
+                             skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+                             is_active: Optional[bool] = Query(None)):
+    items, total = await svc.list_(skip=skip, limit=limit, is_active=is_active)
+    return S.AlertFormatListResponse(items=[S.AlertFormatPublic.from_row(r) for r in items],
+                                     total=total, skip=skip, limit=limit)
+
+
+@alert_format_router.post("", response_model=S.AlertFormatPublic, status_code=status.HTTP_201_CREATED)
+async def create_alert_format(body: S.CreateAlertFormatRequest,
+                              svc: Annotated[AlertFormatService, Depends(_format_svc)],
+                              actor: Principal = Depends(require_permission("workflow.sop.create"))):
+    return S.AlertFormatPublic.from_row(await svc.create(body, actor=actor))
+
+
+@alert_format_router.get("/{format_id}", response_model=S.AlertFormatPublic,
+                         dependencies=[Depends(require_permission("workflow.sop.read"))])
+async def get_alert_format(format_id: str, svc: Annotated[AlertFormatService, Depends(_format_svc)]):
+    return S.AlertFormatPublic.from_row(await svc.get(format_id))
+
+
+@alert_format_router.patch("/{format_id}", response_model=S.AlertFormatPublic)
+async def update_alert_format(format_id: str, body: S.UpdateAlertFormatRequest,
+                              svc: Annotated[AlertFormatService, Depends(_format_svc)],
+                              actor: Principal = Depends(require_permission("workflow.sop.update"))):
+    return S.AlertFormatPublic.from_row(await svc.update(format_id, body, actor=actor))
+
+
+@alert_format_router.delete("/{format_id}", status_code=status.HTTP_204_NO_CONTENT,
+                            dependencies=[Depends(require_permission("workflow.sop.delete"))])
+async def delete_alert_format(format_id: str, svc: Annotated[AlertFormatService, Depends(_format_svc)]):
+    await svc.delete(format_id)
+
+
+# ── Event simulator router ─────────────────────────────────────────────
+
+event_router = APIRouter(prefix="/workflow/events", tags=["Workflow · Events"])
+
+
+@event_router.post("/simulate", response_model=S.SimulateEventResponse)
+async def simulate_event(body: S.SimulateEventRequest,
+                         svc: Annotated[SimulatorService, Depends(_sim_svc)],
+                         actor: Principal = Depends(require_permission("workflow.instance.create"))):
+    return S.SimulateEventResponse(**await svc.simulate(body, actor=actor))
 
 
 # ── Form router ────────────────────────────────────────────────────────
@@ -360,6 +435,17 @@ async def get_instance(instance_id: str, svc: Annotated[InstanceService, Depends
     return S.InstancePublic.from_row(await svc.get(instance_id))
 
 
+@instance_router.get("/{instance_id}/pdf",
+                     dependencies=[Depends(require_permission("workflow.instance.read"))])
+async def instance_pdf(instance_id: str, svc: Annotated[InstanceService, Depends(_inst_svc)]):
+    pdf_bytes = await svc.render_pdf(instance_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="incident-{instance_id}.pdf"'},
+    )
+
+
 @instance_router.get("/{instance_id}/available-transitions", response_model=list[S.TransitionPublic],
                      dependencies=[Depends(require_permission("workflow.instance.read"))])
 async def available_transitions(instance_id: str, svc: Annotated[InstanceService, Depends(_inst_svc)]):
@@ -400,6 +486,8 @@ routers = [
     state_router,
     transition_router,
     trigger_router,
+    alert_format_router,
+    event_router,
     form_router,
     notification_router,
     threat_router,

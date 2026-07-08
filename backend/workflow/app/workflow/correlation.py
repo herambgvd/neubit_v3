@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from kernel.events import EventBus, subject
 
 from app.db import get_engine
-from .models import SOP, CorrelationDedup, State, Trigger, WorkflowInstance
+from .models import SOP, AlertFormat, CorrelationDedup, State, Trigger, WorkflowInstance
 from .shared import InstancePriority, InstanceStatus, matches_conditions, utcnow, walk
 
 log = logging.getLogger("workflow.correlation")
@@ -72,6 +72,89 @@ def _parse_dt(raw: Any) -> datetime | None:
 def _sessionmaker() -> async_sessionmaker[AsyncSession]:
     """A fresh sessionmaker bound to this service's engine (lazy)."""
     return async_sessionmaker(get_engine(), expire_on_commit=False, class_=AsyncSession)
+
+
+# ── Alert-code extraction + shared matching (used by live engine AND simulate) ──
+
+
+def extract_alert_code(envelope: dict[str, Any]) -> str | None:
+    """Pull an alert code out of an event envelope.
+
+    Checks the common keys in priority order: top-level ``alert_code`` / ``code``,
+    then ``payload.alert_code`` / ``payload.code``. Returns the raw code (stripped)
+    or None. Matching against AlertFormat.alert_code is case-insensitive.
+    """
+    payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+    for candidate in (
+        envelope.get("alert_code"),
+        envelope.get("code"),
+        payload.get("alert_code"),
+        payload.get("code"),
+    ):
+        if candidate is not None and str(candidate).strip():
+            return str(candidate).strip()
+    return None
+
+
+async def find_alert_format(
+    session: AsyncSession, tenant_id: Any, alert_code: str
+) -> AlertFormat | None:
+    """Active AlertFormat for this tenant whose alert_code matches (case-insensitive).
+
+    NULL-tenant (platform) formats also match. Filtering is done in Python on the
+    small operator-configured set so the match is case-insensitive + whitespace-safe.
+    """
+    stmt = select(AlertFormat).where(AlertFormat.is_active.is_(True))
+    if tenant_id:
+        import uuid as _uuid
+
+        try:
+            tid = _uuid.UUID(str(tenant_id))
+            stmt = stmt.where((AlertFormat.tenant_id == tid) | (AlertFormat.tenant_id.is_(None)))
+        except (ValueError, TypeError):
+            stmt = stmt.where(AlertFormat.tenant_id.is_(None))
+    code_l = alert_code.strip().lower()
+    for row in (await session.execute(stmt)).scalars().all():
+        if (row.alert_code or "").strip().lower() == code_l:
+            return row
+    return None
+
+
+async def initial_state(session: AsyncSession, sop_id: str) -> State | None:
+    stmt = select(State).where(State.sop_id == sop_id, State.is_initial.is_(True)).limit(1)
+    return (await session.execute(stmt)).scalars().first()
+
+
+async def build_incident_from_sop(
+    session: AsyncSession,
+    *,
+    sop: SOP,
+    initial: State,
+    envelope: dict[str, Any],
+    tenant_id: Any,
+    priority: str,
+    status: str,
+    name: str,
+    description: str | None,
+    source: dict[str, Any],
+) -> WorkflowInstance:
+    """Construct + add (not commit) a WorkflowInstance in the SOP's initial state."""
+    now = utcnow()
+    site_id = envelope.get("site_id")
+    sla_deadline = now + timedelta(hours=sop.sla_hours) if sop.sla_hours else None
+    instance = WorkflowInstance(
+        tenant_id=tenant_id,
+        sop_id=sop.sop_id, sop_name=sop.name, sop_version=sop.version,
+        name=name, description=description, priority=priority, site_id=site_id,
+        current_state=initial.state_id, current_state_name=initial.name,
+        status=status,
+        trigger_data=envelope, event_id=envelope.get("event_id"),
+        event_type=envelope.get("type") or envelope.get("event_type"),
+        sla_hours=sop.sla_hours, sla_deadline=sla_deadline, state_entered_at=now,
+        timeline=[], extra=source,
+    )
+    session.add(instance)
+    return instance
 
 
 class CorrelationEngine:
@@ -125,9 +208,13 @@ class CorrelationEngine:
                     continue
                 if await self._fire(session, trig, envelope):
                     fired += 1
+            # AlertFormat path — an event carrying an alert code that maps to an
+            # active SOP creates an incident too (in ADDITION to trigger matches).
+            if await self._fire_alert_format(session, tenant_id, envelope):
+                fired += 1
             await session.commit()
             if fired:
-                log.info("correlation: event_type=%s fired %d trigger(s)", event_type, fired)
+                log.info("correlation: event_type=%s fired %d incident(s)", event_type, fired)
 
     async def _matching_triggers(
         self, session: AsyncSession, tenant_id: str | None, event_type: str
@@ -207,6 +294,74 @@ class CorrelationEngine:
         })
         log.info("incident created instance_id=%s trigger_id=%s event_type=%s",
                  instance.instance_id, trigger.trigger_id, envelope.get("type"))
+        return True
+
+    async def _fire_alert_format(
+        self, session: AsyncSession, tenant_id: Any, envelope: dict[str, Any]
+    ) -> bool:
+        """Match an event's alert code against AlertFormats → create an incident.
+
+        Mirrors v2's ``_fire_alert_formats``: look up the active AlertFormat for the
+        tenant, and if it maps to an active SOP with an initial state, create an
+        incident (ACTIVE for automatic sop_mode, PENDING for manual). Honours the
+        same dedup slots so re-delivery of the same event never double-creates.
+        Returns True iff an incident was created.
+        """
+        alert_code = extract_alert_code(envelope)
+        if not alert_code:
+            return False
+        fmt = await find_alert_format(session, tenant_id, alert_code)
+        if not fmt or not fmt.sop_id:
+            return False
+        sop = await session.get(SOP, fmt.sop_id)
+        if not sop or not sop.is_active:
+            return False
+        initial = await initial_state(session, sop.sop_id)
+        if not initial:
+            log.warning("alert format %s maps to SOP %s with no initial state",
+                        fmt.format_id, sop.sop_id)
+            return False
+
+        # Dedup — key the alert-format firing on format_id + event identity.
+        source_event_id = envelope.get("event_id")
+        dedup_key = (
+            f"event:{source_event_id}" if source_event_id
+            else f"code:{alert_code}:site:{envelope.get('site_id')}"
+        )
+        if not await self._claim(session, fmt.format_id, dedup_key, 24 * 60 * 60,
+                                 _parse_dt(envelope.get("occurred_at"))):
+            log.debug("alert format %s suppressed by dedup (key=%s)", fmt.format_id, dedup_key)
+            return False
+
+        try:
+            priority = InstancePriority(fmt.priority or sop.priority).value
+        except ValueError:
+            priority = sop.priority
+        status = (InstanceStatus.ACTIVE.value if fmt.sop_mode == "automatic"
+                  else InstanceStatus.PENDING.value)
+        payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+        device_name = (
+            payload.get("device_name") or payload.get("camera_name")
+            or envelope.get("type") or envelope.get("event_type") or alert_code
+        )
+        instance = await build_incident_from_sop(
+            session, sop=sop, initial=initial, envelope=envelope, tenant_id=fmt.tenant_id,
+            priority=priority, status=status,
+            name=f"{fmt.name}: {device_name}", description=fmt.description,
+            source={"source": "correlation.alert_format", "alert_format_id": fmt.format_id,
+                    "alert_code": fmt.alert_code, "sop_mode": fmt.sop_mode},
+        )
+        await session.flush()
+
+        tid = str(fmt.tenant_id) if fmt.tenant_id else None
+        await self.bus.publish(subject(tid, "workflow", "incident.created"), {
+            "tenant_id": tid, "instance_id": instance.instance_id, "sop_id": sop.sop_id,
+            "sop_name": sop.name, "alert_format_id": fmt.format_id,
+            "priority": priority, "matched_event_type": envelope.get("type"),
+            "site_id": envelope.get("site_id"), "source": "alert_format",
+        })
+        log.info("alert-format incident created instance_id=%s format_id=%s code=%s",
+                 instance.instance_id, fmt.format_id, alert_code)
         return True
 
     @staticmethod

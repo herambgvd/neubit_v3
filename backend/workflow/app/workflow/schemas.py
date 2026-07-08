@@ -561,6 +561,131 @@ class InstanceListResponse(BaseModel):
     limit: int
 
 
+# ── Alert format (alert_code → SOP mapping) ────────────────────────────
+
+
+class CreateAlertFormatRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    alert_code: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+    category: str = "custom"  # security|performance|maintenance|system|custom
+    severity: str = "medium"
+    priority: str = "medium"
+    color_code: str = "#6B7280"
+    icon: Optional[str] = None
+    alert_sound: bool = False
+    sop_id: Optional[str] = None
+    sop_mode: str = "manual"  # automatic | manual
+    is_active: bool = True
+
+
+class UpdateAlertFormatRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    alert_code: Optional[str] = Field(default=None, max_length=128)
+    name: Optional[str] = Field(default=None, max_length=255)
+    description: Optional[str] = None
+    category: Optional[str] = None
+    severity: Optional[str] = None
+    priority: Optional[str] = None
+    color_code: Optional[str] = None
+    icon: Optional[str] = None
+    alert_sound: Optional[bool] = None
+    sop_id: Optional[str] = None
+    sop_mode: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AlertFormatPublic(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    format_id: str
+    alert_code: str
+    name: str
+    description: Optional[str] = None
+    category: str
+    severity: str
+    priority: str
+    color_code: str
+    icon: Optional[str] = None
+    alert_sound: bool
+    sop_id: Optional[str] = None
+    sop_mode: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, r) -> "AlertFormatPublic":
+        return cls(
+            format_id=r.format_id, alert_code=r.alert_code, name=r.name,
+            description=r.description, category=r.category, severity=r.severity,
+            priority=r.priority, color_code=r.color_code, icon=r.icon,
+            alert_sound=r.alert_sound, sop_id=r.sop_id, sop_mode=r.sop_mode,
+            is_active=r.is_active, created_at=r.created_at, updated_at=r.updated_at,
+        )
+
+
+class AlertFormatListResponse(BaseModel):
+    items: list[AlertFormatPublic]
+    total: int
+    skip: int
+    limit: int
+
+
+# ── Event simulator ────────────────────────────────────────────────────
+
+
+class SimulateEventRequest(BaseModel):
+    """A synthetic event injected into the matching pipeline.
+
+    VMS-independent — a generic event envelope. ``alert_code`` (or a code inside
+    ``payload``) drives AlertFormat matching; ``event_type`` + ``payload`` drive
+    trigger matching. ``dry_run`` (default true) reports what WOULD happen without
+    persisting; ``dry_run=false`` actually creates the incident(s).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    event_type: str = Field(min_length=1, max_length=255)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    site_id: Optional[str] = None
+    alert_code: Optional[str] = None
+    dry_run: bool = True
+
+
+class SimulateMatchedTrigger(BaseModel):
+    trigger_id: str
+    name: str
+    sop_id: str
+    would_create: bool
+
+
+class SimulateMatchedFormat(BaseModel):
+    format_id: str
+    alert_code: str
+    name: str
+    sop_id: Optional[str] = None
+    sop_mode: str
+    would_create: bool
+
+
+class SimulateSkipped(BaseModel):
+    trigger_id: Optional[str] = None
+    format_id: Optional[str] = None
+    reason: str
+
+
+class SimulateEventResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    dry_run: bool
+    event_type: str
+    alert_code: Optional[str] = None
+    matched_triggers: list[SimulateMatchedTrigger] = Field(default_factory=list)
+    matched_format: Optional[SimulateMatchedFormat] = None
+    skipped: list[SimulateSkipped] = Field(default_factory=list)
+    created_instance_id: Optional[str] = None
+    created_instance_ids: list[str] = Field(default_factory=list)
+
+
 class InstanceStatsResponse(BaseModel):
     """Incident counts for the stats strip.
 

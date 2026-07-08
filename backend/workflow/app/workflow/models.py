@@ -23,6 +23,7 @@ Tables:
     notifications            — the outbox (dispatched by the connector framework)
     threat_levels            — deployment/site threat-posture register
     correlation_dedup        — trigger-firing dedup slots (idempotency)
+    alert_formats            — alert_code → SOP mapping (category/severity/priority/icon)
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    Index,
     Integer,
     String,
     Uuid,
@@ -349,6 +351,47 @@ class ThreatLevel(Base, _TenantTimestamped):
     set_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     # [{from_level, to_level, reason, set_by, set_at}] — change history.
     history: Mapped[list | None] = mapped_column(JSON)
+
+
+# ── Alert format ───────────────────────────────────────────────────────
+
+
+class AlertFormat(Base, _TenantTimestamped):
+    """Maps an alert code (e.g. "TEST_ALERT", "unknown_card") → a SOP.
+
+    Ported from neubit_v2's ``module/workflow/format``. When an incoming event
+    carries an alert code that matches an active AlertFormat, the correlation
+    engine spins up an incident from the mapped SOP (in its initial state).
+    ``alert_code`` is unique PER TENANT. Simple String columns (not enums) for
+    category/severity/priority — matches v2 and dodges the asyncpg enum footgun.
+    """
+
+    __tablename__ = "alert_formats"
+
+    format_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    # Unique per tenant (enforced by a composite index below).
+    alert_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(String(2048))
+    # security | performance | maintenance | system | custom (free string, v2-parity).
+    category: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'custom'"))
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'medium'"))
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'medium'"))
+    color_code: Mapped[str] = mapped_column(String(16), server_default=text("'#6B7280'"))
+    icon: Mapped[str | None] = mapped_column(String(64))
+    alert_sound: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # The SOP this alert maps to (nullable — an unmapped format matches but can't fire).
+    sop_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    # automatic → new incident is ACTIVE; manual → PENDING (operator must activate).
+    sop_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'manual'"))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), index=True
+    )
+
+    # alert_code is unique PER TENANT (NULL tenant is the platform/system row).
+    __table_args__ = (
+        Index("uq_alert_formats_tenant_code", "tenant_id", "alert_code", unique=True),
+    )
 
 
 # ── Correlation dedup ──────────────────────────────────────────────────
