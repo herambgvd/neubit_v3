@@ -46,3 +46,44 @@ http:
           - forward-auth
           - sec-headers
           - rate-limit
+
+    # ── VMS media (P2-C) ───────────────────────────────────────────────────
+    # ForwardAuth that gates public HLS/WebRTC playback. vision validates the
+    # short-lived media token that the browser carries as ?token=<t> on every
+    # HLS segment / WHEP request. Traefik ForwardAuth does NOT forward the query
+    # string on the auth sub-request, so vision reads the token from the
+    # X-Forwarded-Uri header (which Traefik always sends, incl. ?token=). A 200
+    # lets the request proxy to MediaMTX; 401/403 blocks it. trustForwardHeader
+    # keeps the X-Forwarded-* chain intact so vision sees the original URI.
+    media-auth:
+      forwardAuth:
+        address: "http://vision:8000/api/v1/vms/media/verify"
+        trustForwardHeader: true
+
+    # Strip the /media/hls prefix so MediaMTX sees /<name>/index.m3u8. HLS
+    # playlists reference their segments by RELATIVE path, so the browser
+    # re-requests them under the SAME /media/hls prefix — which routes straight
+    # back here. Keep this prefix stable.
+    media-hls-strip:
+      stripPrefix:
+        prefixes:
+          - "/media/hls"
+
+    # Strip the /media/whep prefix so MediaMTX sees /<name>/whep.
+    media-whep-strip:
+      stripPrefix:
+        prefixes:
+          - "/media/whep"
+
+    # MediaMTX's HLS muxer bounces the FIRST playlist request (no `cookieCheck=1`
+    # query) with a 302 whose Location is ROOT-ABSOLUTE (`/<name>/index.m3u8?
+    # cookieCheck=1&token=...`) — it is NOT subpath-aware and ignores
+    # X-Forwarded-Prefix. A browser would follow that to `/<name>/...` (the SPA),
+    # dropping the /media/hls prefix + the token gate. This middleware catches the
+    # bounced request and re-prepends /media/hls so it re-enters the gated HLS
+    # route (where cookieCheck=1 is now present → MediaMTX serves 200, no 2nd
+    # bounce). It fires ONLY on the tightly-scoped bounce router below.
+    media-hls-rebounce:
+      redirectRegex:
+        regex: "^https?://[^/]+/(.*)$"
+        replacement: "/media/hls/${1}"

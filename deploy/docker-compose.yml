@@ -253,8 +253,12 @@ services:
       # DNS). The public base URLs are host-reachable (browser-facing) and are
       # returned to callers in ensure responses.
       VE_MEDIAMTX_API_URL: ${VE_MEDIAMTX_API_URL:-http://mediamtx:9997}
-      VE_MEDIAMTX_HLS_BASE: ${VE_MEDIAMTX_HLS_BASE:-http://localhost:8888}
-      VE_MEDIAMTX_WEBRTC_BASE: ${VE_MEDIAMTX_WEBRTC_BASE:-http://localhost:8889}
+      # Public browser-facing bases route through the Traefik GATEWAY (P2-C), so
+      # HLS/WHEP playback is token-gated by the media-auth ForwardAuth → vision
+      # /media/verify. These become the hls_url/webrtc_url returned to callers.
+      # (Gateway is on :80, so no port in the base.)
+      VE_MEDIA_PUBLIC_HLS_BASE: ${VE_MEDIA_PUBLIC_HLS_BASE:-http://localhost/media/hls}
+      VE_MEDIA_PUBLIC_WHEP_BASE: ${VE_MEDIA_PUBLIC_WHEP_BASE:-http://localhost/media/whep}
       VE_MEDIAMTX_RTSP_BASE: ${VE_MEDIAMTX_RTSP_BASE:-rtsp://localhost:8554}
       # The nvr's own MediaMTX node id (the supervisor registers this on boot).
       VE_MEDIA_NODE_ID: ${VE_MEDIA_NODE_ID:-mediamtx-0}

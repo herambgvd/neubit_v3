@@ -84,12 +84,22 @@ func main() {
 	// The supervisor owns the media-node registry + camera→node shards (own DB)
 	// and drives MediaMTX path provisioning. In P2 nvr registers its single local
 	// node from env; multi-node registration is the same call per node in P6.
+	// APIURL is the INTERNAL MediaMTX control API (nvr-only). The public HLS/WHEP
+	// bases are browser-facing and, from P2-C, point at the Traefik GATEWAY prefix
+	// (not MediaMTX :8888/:8889 direct) so playback is token-gated by the media-auth
+	// ForwardAuth. HLSURL/WHEPURL append `/<name>/index.m3u8` + `/<name>/whep`, so a
+	// base of `http://localhost/media/hls` yields `.../media/hls/<name>/index.m3u8`,
+	// which the gateway strips to `/<name>/index.m3u8` for MediaMTX. The legacy
+	// VE_MEDIAMTX_{HLS,WEBRTC}_BASE vars remain a fallback for direct (un-gated)
+	// access in tests. RTSP stays direct (service-to-service, not browser-facing).
 	localNode := mediamtx.Node{
-		ID:         env("VE_MEDIA_NODE_ID", "mediamtx-0"),
-		APIURL:     env("VE_MEDIAMTX_API_URL", "http://mediamtx:9997"),
-		HLSBase:    env("VE_MEDIAMTX_HLS_BASE", "http://localhost:8888"),
-		WebRTCBase: env("VE_MEDIAMTX_WEBRTC_BASE", "http://localhost:8889"),
-		RTSPBase:   env("VE_MEDIAMTX_RTSP_BASE", "rtsp://localhost:8554"),
+		ID:     env("VE_MEDIA_NODE_ID", "mediamtx-0"),
+		APIURL: env("VE_MEDIAMTX_API_URL", "http://mediamtx:9997"),
+		HLSBase: env("VE_MEDIA_PUBLIC_HLS_BASE",
+			env("VE_MEDIAMTX_HLS_BASE", "http://localhost/media/hls")),
+		WebRTCBase: env("VE_MEDIA_PUBLIC_WHEP_BASE",
+			env("VE_MEDIAMTX_WEBRTC_BASE", "http://localhost/media/whep")),
+		RTSPBase: env("VE_MEDIAMTX_RTSP_BASE", "rtsp://localhost:8554"),
 	}
 	idleTTL := time.Duration(envInt("VE_STREAM_IDLE_TTL_SEC", 300)) * time.Second
 	mtxClient := mediamtx.New()

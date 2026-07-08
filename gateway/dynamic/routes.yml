@@ -42,6 +42,41 @@ http:
       service: nvr
       entryPoints: [web]
       priority: 110
+    # ── VMS public media (P2-C) ────────────────────────────────────────────
+    # Browser-facing HLS + WebRTC/WHEP proxied to the MediaMTX node, token-gated
+    # by the media-auth ForwardAuth (→ vision /media/verify). Priority 110 so
+    # they win over the SPA catch-all (like the /api routes). The prefix is
+    # stripped so MediaMTX sees its native /<name>/index.m3u8 + /<name>/whep.
+    # The MediaMTX control API (:9997) is NOT routed here — it stays internal.
+    media-hls:
+      rule: "PathPrefix(`/media/hls`)"
+      service: mediamtx-hls
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media-hls-strip
+    media-whep:
+      rule: "PathPrefix(`/media/whep`)"
+      service: mediamtx-whep
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media-whep-strip
+    # Catches MediaMTX's root-absolute HLS cookieCheck bounce (see
+    # media-hls-rebounce) and 302s it back under /media/hls. Scoped as tightly as
+    # possible: a `.m3u8` path carrying `?cookieCheck=1`, and NOT already prefixed.
+    # Priority 105 so it beats the SPA catch-all but sits below the real media
+    # routes. `service` is required by Traefik even though the middleware always
+    # redirects before hitting it — point it at the HLS backend as a safe no-op.
+    media-hls-rebounce:
+      rule: "PathRegexp(`\\.m3u8$`) && Query(`cookieCheck`, `1`) && !PathPrefix(`/media/`)"
+      service: mediamtx-hls
+      entryPoints: [web]
+      priority: 105
+      middlewares:
+        - media-hls-rebounce
     core:
       # NOTE: `/api/` (trailing slash) — a bare `/api` prefix also swallows frontend
       # routes like `/api-keys`. Backend endpoints are all under `/api/v1/...`.
@@ -85,6 +120,15 @@ http:
       loadBalancer:
         servers:
           - url: "http://nvr:8000"
+    # MediaMTX public listeners (control API :9997 stays internal, never routed).
+    mediamtx-hls:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx:8888"
+    mediamtx-whep:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx:8889"
     frontend:
       loadBalancer:
         servers:
