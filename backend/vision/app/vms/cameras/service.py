@@ -1,17 +1,17 @@
-"""VMS camera-onboarding services — tenant-scoped CRUD + driver-backed ops.
+"""Camera-onboarding service — tenant-scoped CRUD + driver-backed ops.
 
 Mirrors the access service (``backend/access/app/access/service.py``): every read
 goes through ``kernel.auth.scoped``; every by-id fetch through ``assert_owned``;
 new rows are stamped with the caller's ``tenant_id``. ONVIF/RTSP credentials are
-stored REVERSIBLY encrypted (``vms.crypto``) — the plaintext is handed to a driver
-in-memory only, never persisted.
+stored REVERSIBLY encrypted (``vms.common.crypto``) — the plaintext is handed to a
+driver in-memory only, never persisted.
 
 Graceful-on-unreachable is the discipline throughout (no live devices in dev):
 probe/discover/channels/snapshot go through the driver, which returns empty/None
 on failure — the service never 500s. Only explicit operator actions (``ptz`` /
 ``configure`` writes) surface a ``DriverError`` as a clean 502.
 
-Onboarding publishes on the NATS spine (``app.vms.events``):
+Onboarding publishes on the NATS spine (``app.vms.common.events``):
   * create → ``device.camera.registered`` (Map/core) + ``vms.camera.status``.
   * update → ``device.camera.updated`` (+ ``vms.camera.status`` on status change).
   * delete → ``device.camera.deregistered``.
@@ -28,21 +28,19 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, assert_owned, scoped
-from kernel.errors import ConflictError, NotFoundError, ValidationError
+from kernel.errors import ConflictError, ValidationError
 
-from .crypto import decrypt_secret, encrypt_secret
-from .drivers import Credentials, DriverError, PtzCommand, get_driver
-from .events import emit_camera_lifecycle, emit_camera_status
-from .models import Camera, CameraACL, CameraGroup, MediaProfile
+from app.vms.common.crypto import decrypt_secret, encrypt_secret
+from app.vms.common.events import emit_camera_lifecycle, emit_camera_status
+from app.vms.drivers import Credentials, DriverError, PtzCommand, get_driver
+from app.vms.models import Camera, CameraACL, CameraGroup, MediaProfile
+
+from app.vms.groups.schemas import CameraACLPublic
 from .schemas import (
-    CameraACLPublic,
     CameraCreate,
-    CameraGroupCreate,
-    CameraGroupPublic,
     CameraListResponse,
     CameraPublic,
     CameraUpdate,
-    MediaProfilePublic,
 )
 
 log = logging.getLogger("vision.service")
@@ -672,72 +670,6 @@ class CameraService:
             row.tenant_id,
             {"camera_id": row.id, "status": row.status, "is_enabled": row.is_enabled},
         )
-
-
-class CameraGroupService:
-    """Thin tenant-scoped CRUD over ``camera_groups`` (LOCAL grouping catalog)."""
-
-    def __init__(self, db: AsyncSession, scope: Scope) -> None:
-        self.db = db
-        self.scope = scope
-
-    async def _row(self, group_id: str) -> CameraGroup:
-        row = await self.db.get(CameraGroup, group_id)
-        assert_owned(row, self.scope, message="Camera group not found")
-        return row
-
-    async def create(self, body: CameraGroupCreate, *, actor) -> CameraGroupPublic:
-        dup = await self.db.scalar(
-            scoped(select(CameraGroup), CameraGroup, self.scope).where(CameraGroup.name == body.name)
-        )
-        if dup is not None:
-            raise ConflictError("a camera group with this name already exists")
-        actor_id = _actor_id(actor)
-        row = CameraGroup(
-            tenant_id=self.scope.tenant_id,
-            name=body.name,
-            color=body.color,
-            description=body.description,
-            camera_ids=list(body.camera_ids or []),
-            created_by=actor_id,
-            updated_by=actor_id,
-        )
-        self.db.add(row)
-        await self.db.commit()
-        await self.db.refresh(row)
-        return CameraGroupPublic.from_row(row)
-
-    async def list_(self) -> list[CameraGroupPublic]:
-        stmt = scoped(select(CameraGroup), CameraGroup, self.scope).order_by(CameraGroup.name)
-        rows = (await self.db.execute(stmt)).scalars().all()
-        return [CameraGroupPublic.from_row(r) for r in rows]
-
-    async def update(self, group_id: str, body, *, actor) -> CameraGroupPublic:
-        row = await self._row(group_id)
-        data = body.model_dump(exclude_unset=True)
-        if "name" in data and data["name"] != row.name:
-            dup = await self.db.scalar(
-                scoped(select(CameraGroup), CameraGroup, self.scope).where(
-                    CameraGroup.name == data["name"], CameraGroup.id != row.id
-                )
-            )
-            if dup is not None:
-                raise ConflictError("a camera group with this name already exists")
-        for k in ("name", "color", "description", "camera_ids"):
-            if k in data and data[k] is not None:
-                setattr(row, k, data[k])
-        actor_id = _actor_id(actor)
-        if actor_id:
-            row.updated_by = actor_id
-        row.updated_at = _utcnow()
-        await self.db.commit()
-        await self.db.refresh(row)
-        return CameraGroupPublic.from_row(row)
-
-    async def delete(self, group_id: str) -> None:
-        row = await self._row(group_id)
-        await self.db.delete(row)
-        await self.db.commit()
 
 
 # ── DTO → dict adapters (driver dataclasses → JSON-safe dicts) ───────────

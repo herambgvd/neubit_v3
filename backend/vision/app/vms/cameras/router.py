@@ -1,4 +1,4 @@
-"""VMS camera-onboarding routers — permission-gated, tenant-scoped.
+"""Camera-onboarding router — permission-gated, tenant-scoped.
 
 Mounted under the service api_prefix (``/api/v1``) with a ``/vms`` domain prefix,
 so paths are ``/api/v1/vms/...``. Every endpoint is gated by a ``vms.*`` permission
@@ -7,18 +7,18 @@ via ``kernel.auth.require_permission`` and runs inside the caller's tenant scope
 added to core's catalog in P1-G; until then the tenant-admin ``*`` wildcard grants
 everything, so testing works.
 
-Camera side only (NVR onboarding = the next module, P1-E). Discovery / probe /
-snapshot degrade gracefully against unreachable hosts — they NEVER 500 (empty
-result / 502 on a snapshot with no frame). Explicit operator actions (ptz /
-imaging / io writes) surface a driver failure as a clean 502.
+Camera side only (NVR onboarding = the ``nvr`` package; groups + per-camera ACL =
+the ``groups`` package). Discovery / probe / snapshot degrade gracefully against
+unreachable hosts — they NEVER 500 (empty result / 502 on a snapshot with no frame).
+Explicit operator actions (ptz / imaging / io writes) surface a driver failure as a
+clean 502.
 
-Groups:
+Endpoints:
   * Cameras: ``GET/POST /cameras``, ``GET/PATCH/DELETE /cameras/{id}``,
     ``POST /cameras/bulk``, ``POST /cameras/reorder``.
   * Discovery: ``POST /cameras/onvif/{discover|probe|channels|bulk-add|snapshot}``.
   * Config: ``{id}/ptz``, ``{id}/imaging``, ``{id}/io``, ``{id}/motion-config``,
     ``{id}/privacy-masks``, ``{id}/onvif-events``, ``{id}/snapshot``.
-  * Groups + ACL: ``/camera-groups`` CRUD, ``{id}/acl``.
 """
 
 from __future__ import annotations
@@ -32,19 +32,12 @@ from kernel.auth import Principal, Scope, get_scope, require_permission
 
 from app.db import get_db
 
-from .drivers import DriverError, PtzCommand
+from app.vms.drivers import DriverError, PtzCommand
 from .schemas import (
     BulkAddBody,
     BulkResult,
-    CameraACLListResponse,
-    CameraACLPublic,
-    CameraACLPutBody,
     CameraBulkBody,
     CameraCreate,
-    CameraGroupCreate,
-    CameraGroupListResponse,
-    CameraGroupPublic,
-    CameraGroupUpdate,
     CameraListResponse,
     CameraPublic,
     CameraReorderBody,
@@ -65,7 +58,7 @@ from .schemas import (
     ReorderResult,
     SnapshotBody,
 )
-from .service import CameraGroupService, CameraService
+from .service import CameraService
 
 # Permission keys this service gates on (added to core's catalog in P1-G; the
 # tenant-admin "*" wildcard already grants them today).
@@ -77,18 +70,11 @@ PERM_PTZ = "vms.ptz.control"
 router = APIRouter(prefix="/vms", tags=["VMS Cameras"])
 
 
-async def _camera_service(
+async def get_camera_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
 ) -> CameraService:
     return CameraService(db, scope)
-
-
-async def _group_service(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-) -> CameraGroupService:
-    return CameraGroupService(db, scope)
 
 
 def _driver_err(exc: DriverError) -> HTTPException:
@@ -105,7 +91,7 @@ def _driver_err(exc: DriverError) -> HTTPException:
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_cameras(
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     status_: str | None = Query(None, alias="status", max_length=16),
@@ -127,7 +113,7 @@ async def list_cameras(
 )
 async def create_camera(
     body: CameraCreate,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> CameraPublic:
     return await svc.create(body, actor=actor)
@@ -140,7 +126,7 @@ async def create_camera(
 )
 async def get_camera(
     camera_id: str,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
 ) -> CameraPublic:
     return await svc.get(camera_id)
 
@@ -149,7 +135,7 @@ async def get_camera(
 async def update_camera(
     camera_id: str,
     body: CameraUpdate,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> CameraPublic:
     return await svc.update(camera_id, body, actor=actor)
@@ -158,7 +144,7 @@ async def update_camera(
 @router.delete("/cameras/{camera_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_camera(
     camera_id: str,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> Response:
     await svc.delete(camera_id, actor=actor)
@@ -171,7 +157,7 @@ async def delete_camera(
 @router.post("/cameras/bulk", response_model=BulkResult)
 async def bulk_cameras(
     body: CameraBulkBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> BulkResult:
     result = await svc.bulk(
@@ -184,7 +170,7 @@ async def bulk_cameras(
 @router.post("/cameras/reorder", response_model=ReorderResult)
 async def reorder_cameras(
     body: CameraReorderBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> ReorderResult:
     result = await svc.reorder(body.items)
@@ -197,7 +183,7 @@ async def reorder_cameras(
 @router.post("/cameras/onvif/discover", response_model=DiscoverResponse)
 async def discover_cameras(
     body: DiscoverBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> DiscoverResponse:
     items = await svc.discover(brand=body.brand, network=body.network)
@@ -207,7 +193,7 @@ async def discover_cameras(
 @router.post("/cameras/onvif/probe", response_model=ProbeResponse)
 async def probe_camera(
     body: ProbeBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> ProbeResponse:
     return ProbeResponse(
@@ -221,7 +207,7 @@ async def probe_camera(
 @router.post("/cameras/onvif/channels", response_model=ChannelsResponse)
 async def enumerate_channels(
     body: ChannelsBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> ChannelsResponse:
     items = await svc.enumerate_channels(
@@ -238,7 +224,7 @@ async def enumerate_channels(
 )
 async def bulk_add_cameras(
     body: BulkAddBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> CameraListResponse:
     return await svc.bulk_add(
@@ -250,7 +236,7 @@ async def bulk_add_cameras(
 @router.post("/cameras/onvif/snapshot")
 async def snapshot_host(
     body: SnapshotBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> Response:
     jpeg = await svc.snapshot(
@@ -267,7 +253,7 @@ async def snapshot_host(
 @router.get("/cameras/{camera_id}/snapshot")
 async def snapshot_camera(
     camera_id: str,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_READ)),
 ) -> Response:
     jpeg = await svc.snapshot_for(camera_id)
@@ -285,7 +271,7 @@ async def snapshot_camera(
 async def ptz_camera(
     camera_id: str,
     body: PtzBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_PTZ)),
 ) -> dict:
     cmd = PtzCommand(
@@ -304,7 +290,7 @@ async def ptz_camera(
 async def configure_imaging(
     camera_id: str,
     body: ImagingBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
     try:
@@ -317,7 +303,7 @@ async def configure_imaging(
 async def configure_io(
     camera_id: str,
     body: IoBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
     try:
@@ -333,7 +319,7 @@ async def configure_io(
 )
 async def get_motion_config(
     camera_id: str,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
 ) -> ConfigResult:
     return ConfigResult(**await svc.get_local_config(camera_id, "motion_config"))
 
@@ -342,7 +328,7 @@ async def get_motion_config(
 async def put_motion_config(
     camera_id: str,
     body: MotionConfigBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
     return ConfigResult(**await svc.put_local_config(camera_id, "motion_config", body.model_dump()))
@@ -355,7 +341,7 @@ async def put_motion_config(
 )
 async def get_privacy_masks(
     camera_id: str,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
 ) -> ConfigResult:
     return ConfigResult(**await svc.get_local_config(camera_id, "privacy_masks"))
 
@@ -364,7 +350,7 @@ async def get_privacy_masks(
 async def put_privacy_masks(
     camera_id: str,
     body: PrivacyMasksBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
     return ConfigResult(**await svc.put_local_config(camera_id, "privacy_masks", body.masks))
@@ -377,7 +363,7 @@ async def put_privacy_masks(
 )
 async def get_onvif_events(
     camera_id: str,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
 ) -> ConfigResult:
     return ConfigResult(**await svc.get_local_config(camera_id, "onvif_events"))
 
@@ -386,91 +372,9 @@ async def get_onvif_events(
 async def put_onvif_events(
     camera_id: str,
     body: OnvifEventsBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
+    svc: Annotated[CameraService, Depends(get_camera_service)],
     _actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
     return ConfigResult(
         **await svc.put_local_config(camera_id, "onvif_events", body.model_dump())
     )
-
-
-# ── Camera groups (thin CRUD) ──────────────────────────────────────────
-
-
-@router.get(
-    "/camera-groups",
-    response_model=CameraGroupListResponse,
-    dependencies=[Depends(require_permission(PERM_READ))],
-)
-async def list_groups(
-    svc: Annotated[CameraGroupService, Depends(_group_service)],
-) -> CameraGroupListResponse:
-    items = await svc.list_()
-    return CameraGroupListResponse(items=items, total=len(items))
-
-
-@router.post(
-    "/camera-groups",
-    response_model=CameraGroupPublic,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_group(
-    body: CameraGroupCreate,
-    svc: Annotated[CameraGroupService, Depends(_group_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
-) -> CameraGroupPublic:
-    return await svc.create(body, actor=actor)
-
-
-@router.patch("/camera-groups/{group_id}", response_model=CameraGroupPublic)
-async def update_group(
-    group_id: str,
-    body: CameraGroupUpdate,
-    svc: Annotated[CameraGroupService, Depends(_group_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
-) -> CameraGroupPublic:
-    return await svc.update(group_id, body, actor=actor)
-
-
-@router.delete("/camera-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_group(
-    group_id: str,
-    svc: Annotated[CameraGroupService, Depends(_group_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
-) -> Response:
-    await svc.delete(group_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-# ── Per-camera ACL (VMS-owned; keyed on core subject ids) ──────────────
-
-
-@router.get(
-    "/cameras/{camera_id}/acl",
-    response_model=CameraACLListResponse,
-    dependencies=[Depends(require_permission(PERM_READ))],
-)
-async def get_camera_acl(
-    camera_id: str,
-    svc: Annotated[CameraService, Depends(_camera_service)],
-) -> CameraACLListResponse:
-    items = await svc.get_acl(camera_id)
-    return CameraACLListResponse(items=items, total=len(items))
-
-
-@router.put("/cameras/{camera_id}/acl", response_model=CameraACLListResponse)
-async def put_camera_acl(
-    camera_id: str,
-    body: CameraACLPutBody,
-    svc: Annotated[CameraService, Depends(_camera_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
-) -> CameraACLListResponse:
-    items = await svc.put_acl(camera_id, body.entries, actor=actor)
-    return CameraACLListResponse(items=items, total=len(items))
-
-
-# Router list mounted by app.main (mirrors the access service's export). The NVR
-# onboarding router (P1-E) is appended here so app.main mounts it alongside cameras.
-from .nvr_router import nvr_routers  # noqa: E402
-
-routers = [router, *nvr_routers]

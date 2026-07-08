@@ -1,4 +1,4 @@
-"""VMS NVR-onboarding service — tenant-scoped CRUD + driver-backed estate ops.
+"""NVR-onboarding service — tenant-scoped CRUD + driver-backed estate ops.
 
 The NVR counterpart to ``CameraService`` (order-critical: the client owns mixed-brand
 NVRs/DVRs — connect, enumerate channels, monitor health; footage/playback extraction
@@ -6,8 +6,9 @@ is P4). Mirrors the camera service discipline exactly:
 
   * every read goes through ``kernel.auth.scoped``; every by-id fetch through
     ``assert_owned``; new rows are stamped with the caller's ``tenant_id``.
-  * NVR credentials are stored REVERSIBLY encrypted (``vms.crypto``) in ``enc_creds``
-    — decrypted only to build a driver ``Credentials`` in-memory, never persisted plain.
+  * NVR credentials are stored REVERSIBLY encrypted (``vms.common.crypto``) in
+    ``enc_creds`` — decrypted only to build a driver ``Credentials`` in-memory, never
+    persisted plain.
   * graceful-on-unreachable throughout (no live NVRs in dev): probe/discover/channels
     go through the driver, which returns empty/None on failure — the service NEVER 500s.
     A create against an unreachable host lands at ``status='connecting'``.
@@ -22,7 +23,7 @@ is skipped, not double-created.
 Delete ORPHANS the channel-cameras (their ``nvr_id`` is ``ON DELETE SET NULL`` in the
 model) rather than deleting them, then publishes ``device.nvr.deregistered``.
 
-Onboarding publishes on the NATS spine (``app.vms.events``):
+Onboarding publishes on the NATS spine (``app.vms.common.events``):
   * create → ``device.nvr.registered`` + ``vms.nvr.status``.
   * update → ``device.nvr.updated`` (+ ``vms.nvr.status`` on a status change).
   * refresh/status change → ``device.nvr.status`` + ``vms.nvr.status``.
@@ -40,12 +41,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError
 
-from .crypto import decrypt_secret, encrypt_secret
-from .drivers import Credentials, get_driver
-from .events import emit_nvr_lifecycle, emit_nvr_status
-from .models import NVR, Camera
+from app.vms.common.crypto import decrypt_secret, encrypt_secret
+from app.vms.common.events import emit_nvr_lifecycle, emit_nvr_status
+from app.vms.drivers import Credentials, get_driver
+from app.vms.models import NVR, Camera
+
+from app.vms.cameras.schemas import BulkAddChannel
+from app.vms.cameras.service import CameraService, _channel_dict, _discovered_dict
 from .schemas import (
-    BulkAddChannel,
     MapChannelsResult,
     NvrCreate,
     NvrHealthResponse,
@@ -53,7 +56,6 @@ from .schemas import (
     NvrPublic,
     NvrUpdate,
 )
-from .service import CameraService, _channel_dict, _discovered_dict
 
 log = logging.getLogger("vision.nvr_service")
 

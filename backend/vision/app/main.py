@@ -28,12 +28,12 @@ from kernel.errors import register_error_handlers
 from kernel.events import subject
 
 # The onboarding service publishes through the shared VMS event bus
-# (``app.vms.events``) — one process-wide bus that both startup announcements and
+# (``app.vms.common.events``) — one process-wide bus that both startup announcements and
 # camera lifecycle/status events ride. The VMS subject namespace is
 # ``tenant.<id>.vms.*`` (+ ``device.camera.*`` for the Map / core), shared with the
 # Go ``nvr`` service.
-from app.vms.events import bus
-from app.vms.router import routers as vms_routers
+from app.vms import routers as vms_routers
+from app.vms.common.events import bus
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vision")

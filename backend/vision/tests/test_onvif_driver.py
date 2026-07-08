@@ -19,6 +19,11 @@ from .fixtures import SINGLE_CAMERA_PROFILES, make_fake_onvif
 def _patch_onvif(monkeypatch, *, profiles=None, media2=True):
     monkeypatch.setattr(onvif_mod, "_HAS_ONVIF", True)
     monkeypatch.setattr(onvif_mod, "ONVIFCamera", make_fake_onvif(profiles=profiles, media2=media2))
+    # The driver TCP-pre-checks reachability before the (faked) SDK; with no real
+    # host in tests, force it True so the fabricated-SDK path runs.
+    async def _reachable(host, port, timeout=2.0):
+        return True
+    monkeypatch.setattr(onvif_mod, "_tcp_reachable", _reachable)
 
 
 CREDS = Credentials(username="admin", password="p@ss:word", port=80)

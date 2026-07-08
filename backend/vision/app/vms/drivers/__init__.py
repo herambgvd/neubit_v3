@@ -14,7 +14,7 @@ Brands:
 
 Drivers are STATELESS (every method takes ``host`` + ``Credentials``), degrade
 gracefully on unreachable hosts, and receive DECRYPTED creds in-memory only (the
-service decrypts via ``app.vms.crypto`` first — the driver never touches the DB or key).
+service decrypts via ``app.vms.common.crypto`` first — the driver never touches the DB or key).
 """
 
 from __future__ import annotations
