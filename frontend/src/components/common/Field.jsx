@@ -36,6 +36,10 @@ export function Field({
   ...control
 }) {
   const errCls = error ? "!border-red-500" : "";
+  // Keep controlled inputs controlled: if a `value` prop is passed but is
+  // null/undefined, coerce to "" so React never flips controlled↔uncontrolled
+  // (a defined→undefined value throws the "changing a controlled input" warning).
+  if ("value" in control && control.value == null) control.value = "";
   return (
     <div className={containerClassName}>
       {label && <FieldLabel required={required}>{label}</FieldLabel>}
