@@ -106,6 +106,18 @@ class CorePerm:
     TAGS_CREATE = "tags.create"
     TAGS_UPDATE = "tags.update"
     TAGS_DELETE = "tags.delete"
+    # --- VMS domain (video: cameras/NVR/live/recording/playback) -----------
+    # Owned by the `vms` (vision) service; registered here so roles can grant
+    # them in the core role editor + they ride in the JWT permissions claim.
+    VMS_CAMERA_READ = "vms.camera.read"
+    VMS_CAMERA_MANAGE = "vms.camera.manage"
+    VMS_NVR_MANAGE = "vms.nvr.manage"
+    VMS_LIVE_VIEW = "vms.live.view"
+    VMS_PLAYBACK_VIEW = "vms.playback.view"
+    VMS_RECORDING_CONTROL = "vms.recording.control"
+    VMS_EXPORT = "vms.export"
+    VMS_PTZ_CONTROL = "vms.ptz.control"
+    VMS_CONFIG_MANAGE = "vms.config.manage"
 
 
 PERMISSIONS.register(
@@ -143,4 +155,14 @@ PERMISSIONS.register(
     Permission(CorePerm.TAGS_CREATE, "Create tags", "Tags"),
     Permission(CorePerm.TAGS_UPDATE, "Edit / assign tags", "Tags"),
     Permission(CorePerm.TAGS_DELETE, "Delete tags", "Tags"),
+    # --- VMS domain (video) ------------------------------------------------
+    Permission(CorePerm.VMS_CAMERA_READ, "View cameras + live", "VMS"),
+    Permission(CorePerm.VMS_CAMERA_MANAGE, "Add / edit / delete cameras", "VMS"),
+    Permission(CorePerm.VMS_NVR_MANAGE, "Onboard / manage NVRs", "VMS"),
+    Permission(CorePerm.VMS_LIVE_VIEW, "View live video", "VMS"),
+    Permission(CorePerm.VMS_PLAYBACK_VIEW, "View recorded playback", "VMS"),
+    Permission(CorePerm.VMS_RECORDING_CONTROL, "Start / stop / configure recording", "VMS"),
+    Permission(CorePerm.VMS_EXPORT, "Export video / clips", "VMS"),
+    Permission(CorePerm.VMS_PTZ_CONTROL, "Control PTZ", "VMS"),
+    Permission(CorePerm.VMS_CONFIG_MANAGE, "Edit camera config", "VMS"),
 )
