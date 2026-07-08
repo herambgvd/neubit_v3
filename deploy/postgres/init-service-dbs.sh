@@ -12,7 +12,7 @@
 # The control DB (POSTGRES_DB, e.g. neubit_control) is created by the base image.
 set -euo pipefail
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     SELECT 'CREATE DATABASE neubit_ingest'
       WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neubit_ingest')\gexec
     SELECT 'CREATE DATABASE neubit_workflow'
