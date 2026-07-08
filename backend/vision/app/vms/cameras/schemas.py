@@ -524,36 +524,6 @@ class ReorderResult(BaseModel):
     reordered: int = 0
 
 
-# ── Camera health (per-camera telemetry; routed by the future health module) ──────
-
-
-class CameraHealthPublic(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    camera_id: str
-    status: str
-    bitrate_kbps: Optional[int] = None
-    fps_actual: Optional[float] = None
-    packet_loss: Optional[float] = None
-    latency_ms: Optional[int] = None
-    captured_at: datetime
-
-    @classmethod
-    def from_row(cls, row) -> "CameraHealthPublic":
-        return cls.model_validate(
-            {
-                "id": row.id,
-                "camera_id": row.camera_id,
-                "status": row.status,
-                "bitrate_kbps": row.bitrate_kbps,
-                "fps_actual": row.fps_actual,
-                "packet_loss": row.packet_loss,
-                "latency_ms": row.latency_ms,
-                "captured_at": row.captured_at,
-            }
-        )
-
-
-class CameraHealthListResponse(BaseModel):
-    items: list[CameraHealthPublic]
-    total: int
+# Camera-health shapes (CameraHealthPublic / CameraHealthListResponse) moved to the
+# dedicated ``app.vms.health.schemas`` domain package (reorg) — this domain no longer
+# owns them.

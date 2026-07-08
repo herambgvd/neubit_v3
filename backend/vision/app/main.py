@@ -32,8 +32,10 @@ from kernel.events import subject
 # camera lifecycle/status events ride. The VMS subject namespace is
 # ``tenant.<id>.vms.*`` (+ ``device.camera.*`` for the Map / core), shared with the
 # Go ``nvr`` service.
+from app.db import get_sessionmaker
 from app.vms import routers as vms_routers
 from app.vms.common.events import bus
+from app.vms.health import HealthSampler
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vision")
@@ -44,7 +46,14 @@ async def lifespan(app: FastAPI):
     await bus.connect()
     # Announce startup on the same spine the Python + Go services use.
     await bus.publish(subject(None, "vms", "startup"), {"service": "vision"})
+    # Background reachability sampler (all tenants): keeps camera/NVR status live +
+    # writes the CameraHealth time-series + auto-purges it. Its own DB session per
+    # cycle; bounded concurrency; graceful-on-unreachable (won't crash the app).
+    sampler = HealthSampler(get_sessionmaker())
+    await sampler.start()
+    app.state.health_sampler = sampler
     yield
+    await sampler.stop()
     await bus.close()
 
 

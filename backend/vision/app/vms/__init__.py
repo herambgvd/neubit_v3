@@ -7,6 +7,8 @@ Each domain package is self-contained (``schemas`` + ``service`` + ``router``):
   * ``nvr``     — NVR CRUD, discovery, channel enumeration + map-channels (reuses
     ``cameras.service.CameraService.bulk_add``), health/refresh.
   * ``groups``  — camera-group catalog + per-camera ACL.
+  * ``health``  — camera-health reads (latest/history/refresh) + the background
+    reachability sampler (``HealthSampler``, started in ``app.main`` lifespan).
 
 Shared building blocks live in ``common`` (``crypto``, ``events``, cross-domain
 ``schemas``). Centralised ORM stays in ``models`` (FK-heavy + single migration
@@ -21,10 +23,14 @@ from __future__ import annotations
 
 from app.vms.cameras.router import router as camera_router
 from app.vms.groups.router import router as group_router
+from app.vms.health.router import router as health_router
 from app.vms.nvr.router import router as nvr_router
 
-# Order preserves the pre-refactor mount order (cameras first, then nvr); groups was
-# formerly part of the camera router export, so it follows cameras here too.
-routers = [camera_router, group_router, nvr_router]
+# Health mounts FIRST: its literal ``/cameras/health`` + ``/cameras/{id}/health/*``
+# paths must be matched before the camera router's ``/cameras/{camera_id}`` catch-all
+# (FastAPI matches in registration order — otherwise ``/cameras/health`` resolves to
+# ``get_camera("health")`` → 404). Cameras then nvr preserve the pre-refactor order;
+# groups follows cameras (it was formerly part of the camera router export).
+routers = [health_router, camera_router, group_router, nvr_router]
 
 __all__ = ["routers"]
