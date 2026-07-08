@@ -87,5 +87,30 @@ async def subscribe(pattern: str, handler: Callable[[dict], Awaitable[None]]) ->
     await _nc.subscribe(pattern, cb=_cb)
 
 
+async def ephemeral_subscribe(
+    pattern: str, handler: Callable[[dict], Awaitable[None]]
+) -> Any:
+    """Create a NON-durable, per-caller core NATS subscription and RETURN it.
+
+    Unlike ``subscribe`` (fire-and-forget, process-lifetime), this hands the raw
+    ``nats.aio.subscription.Subscription`` back so the caller can ``await sub.unsubscribe()``
+    when it's done — the shape an SSE connection needs: one ephemeral subscription
+    per open stream, torn down the moment the client disconnects. At-most-once live
+    delivery (no JetStream, no history) which is exactly right for live UI fan-out.
+
+    Returns ``None`` if NATS is unavailable (client degrades to no-op).
+    """
+    if _nc is None:
+        return None
+
+    async def _cb(msg):
+        try:
+            await handler(json.loads(msg.data.decode()))
+        except Exception as e:  # noqa: BLE001 — never let a bad frame kill the sub
+            log.warning("ephemeral event handler error on %s: %s", pattern, e)
+
+    return await _nc.subscribe(pattern, cb=_cb)
+
+
 def is_connected() -> bool:
     return _nc is not None
