@@ -66,10 +66,8 @@ export default function CamerasPage() {
 
   const sitesQ = useQuery({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }), staleTime: 60_000 });
   const sites = asItems(sitesQ.data);
-  const floorsQ = useQuery({ queryKey: ["floors-list"], queryFn: () => sitesApi.floors.list({ limit: 500 }), staleTime: 60_000 });
-  const floors = asItems(floorsQ.data);
-  const zonesQ = useQuery({ queryKey: ["zones-list"], queryFn: () => sitesApi.zones.list({ limit: 500 }), staleTime: 60_000 });
-  const zones = asItems(zonesQ.data);
+  // Floors/zones are NOT fetched globally (they cap at 100 + don't scale) — the
+  // onboard/edit modals load them cascading per selected site/floor.
 
   const siteNames = useMemo(() => {
     const m = {};
@@ -267,8 +265,6 @@ export default function CamerasPage() {
       {onboardOpen && (
         <OnboardCameraModal
           sites={sites}
-          floors={floors}
-          zones={zones}
           onClose={() => setOnboardOpen(false)}
           onSuccess={() => { setOnboardOpen(false); invalidate(); }}
         />
@@ -284,8 +280,6 @@ export default function CamerasPage() {
         <EditCameraModal
           camera={editTarget}
           sites={sites}
-          floors={floors}
-          zones={zones}
           onClose={() => setEditTarget(null)}
           onSuccess={() => { setEditTarget(null); invalidate(); }}
         />

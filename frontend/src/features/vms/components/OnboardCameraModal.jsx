@@ -17,12 +17,15 @@ import { vms } from "../api";
 import { CONFIG_TABS, DEFAULT_CAMERA_FORM } from "../constants";
 import { toCreateBody, validateCamera } from "../formUtils";
 import CameraConfigForm from "./CameraConfigForm";
+import { usePlacementFloorsZones } from "../hooks/usePlacementFloorsZones";
 
-export default function OnboardCameraModal({ onClose, onSuccess, sites = [], floors = [], zones = [] }) {
+export default function OnboardCameraModal({ onClose, onSuccess, sites = [] }) {
   const [tab, setTab] = useState("live");
   const [form, setForm] = useState({ ...DEFAULT_CAMERA_FORM });
   const [errors, setErrors] = useState({});
   const [probe, setProbe] = useState(null); // last probe result
+  // Cascading placement: floors of the selected site, zones of the selected floor.
+  const { floors, zones } = usePlacementFloorsZones(form.site_id, form.floor_id);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
