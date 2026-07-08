@@ -37,6 +37,7 @@ def _tables():
         CameraHealth,
         MediaNode,
         MediaProfile,
+        PlaybackSession,
         StreamShard,
     )
 
@@ -50,6 +51,7 @@ def _tables():
         CameraACL.__table__,
         CameraHealth.__table__,
         StreamShard.__table__,
+        PlaybackSession.__table__,
     ]
 
 

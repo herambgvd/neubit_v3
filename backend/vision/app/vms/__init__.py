@@ -24,6 +24,7 @@ from __future__ import annotations
 from app.vms.cameras.router import router as camera_router
 from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
+from app.vms.live.router import router as live_router
 from app.vms.nvr.router import router as nvr_router
 
 # Health mounts FIRST: its literal ``/cameras/health`` + ``/cameras/{id}/health/*``
@@ -31,6 +32,9 @@ from app.vms.nvr.router import router as nvr_router
 # (FastAPI matches in registration order — otherwise ``/cameras/health`` resolves to
 # ``get_camera("health")`` → 404). Cameras then nvr preserve the pre-refactor order;
 # groups follows cameras (it was formerly part of the camera router export).
-routers = [health_router, camera_router, group_router, nvr_router]
+# Live mounts after health (its literal ``/media/verify`` + ``/cameras/{id}/live``
+# deeper paths are distinct from the camera catch-all, but keeping it high preserves
+# match clarity) and before cameras — the P2-B streaming control plane.
+routers = [health_router, live_router, camera_router, group_router, nvr_router]
 
 __all__ = ["routers"]

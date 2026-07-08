@@ -198,6 +198,10 @@ services:
     env_file: .env
     environment:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_vision
+      # P2-B live streaming: where vision reaches the Go nvr data-plane (internal
+      # docker DNS) + the media-token TTL (browser HLS/WHEP token; renewable).
+      VE_NVR_URL: ${VE_NVR_URL:-http://nvr:8000}
+      VE_MEDIA_TOKEN_TTL_SEC: ${VE_MEDIA_TOKEN_TTL_SEC:-300}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
