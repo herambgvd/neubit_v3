@@ -509,7 +509,7 @@ class LinkageEngine:
                 if executor is None:
                     results.append({"type": atype, "ok": False, "detail": "unknown action"})
                     continue
-                camera_bound = atype in {"start_recording", "ptz_preset", "trigger_output", "popup"}
+                camera_bound = atype in {"start_recording", "ptz_preset", "trigger_output", "popup", "wall_display"}
                 if not camera_bound and ran_cameraless:
                     continue  # notify runs once, not per camera
                 try:

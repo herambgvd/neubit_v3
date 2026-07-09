@@ -14,12 +14,22 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # The action types the engine knows how to execute.
+#
+# ``wall_display`` (VW-C) — spot-monitor: on an event, show a camera on a video-wall
+# monitor cell for ``hold_seconds`` then revert the cell to its prior content. Config:
+#   {wall_id, monitor_id, cell_index, camera_source, camera_id?, hold_seconds?}
+#   * wall_id / monitor_id / cell_index — the target wall / monitor / cell (required).
+#   * camera_source — "event" (default) resolves the event's camera (``ctx.camera_id``,
+#     mirrors ``popup``); "explicit" resolves the config's ``camera_id`` instead.
+#   * camera_id — the explicit camera when ``camera_source == "explicit"``.
+#   * hold_seconds — how long to hold before reverting (default 30; <=0 = no revert).
 ACTION_TYPES = {
     "start_recording",
     "notify",
     "ptz_preset",
     "trigger_output",
     "popup",
+    "wall_display",
 }
 
 

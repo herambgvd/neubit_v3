@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid as _uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -268,6 +269,126 @@ async def action_popup(ctx: ActionContext, config: dict) -> ActionResult:
         return ActionResult("popup", False, f"publish failed: {exc}")
 
 
+# ── wall_display (VW-C — alarm-driven auto-display / spot-monitor) ────────────────
+_DEFAULT_WALL_HOLD_SECONDS = 30
+
+
+def _tenant_scope(ctx: ActionContext) -> Scope | None:
+    """A tenant-scoped ``Scope`` for the wall service (never a platform superadmin —
+    the wall + monitor MUST belong to the event's tenant). ``None`` if no tenant."""
+    if not ctx.tenant_id:
+        return None
+    try:
+        return Scope(tenant_id=_uuid.UUID(str(ctx.tenant_id)), is_superadmin=False)
+    except (ValueError, TypeError):
+        return None
+
+
+def _wall_camera_source(ctx: ActionContext, config: dict) -> str | None:
+    """Resolve which camera to display, mirroring popup's convention: default takes the
+    event's camera (``ctx.camera_id``); ``camera_source == "explicit"`` takes the config's
+    ``camera_id`` instead. Returns ``None`` when nothing is resolvable (→ popup-like skip).
+    """
+    source = (config.get("camera_source") or "event").strip().lower()
+    if source == "explicit":
+        return config.get("camera_id") or None
+    return ctx.camera_id
+
+
+async def action_wall_display(ctx: ActionContext, config: dict) -> ActionResult:
+    """Spot-monitor: push a camera onto a video-wall monitor cell for ``hold_seconds``
+    then REVERT that cell to whatever it was showing before (restore prior camera, or
+    clear if it was empty).
+
+    Config: ``{wall_id, monitor_id, cell_index, camera_source, camera_id?, hold_seconds?}``
+    (documented in ``schemas.ACTION_TYPES``). The camera is resolved the same way ``popup``
+    does (event camera by default, explicit ``camera_id`` when ``camera_source=="explicit"``).
+
+    Graceful: a missing/foreign wall or monitor, or an unresolvable camera, returns
+    ``ok=False`` — never a crash. Tenant isolation: the wall service is built with a
+    tenant-scoped ``Scope`` off ``ctx.tenant_id``, so a foreign ``wall_id`` yields a clean
+    NotFound (→ ok=False), never a cross-tenant write.
+
+    The revert is a fire-and-forget ``asyncio`` task that opens a FRESH DB session (the
+    request session is closed by the time it runs) and best-effort restores prior state.
+    CAVEAT: a process restart during the hold window loses the pending revert, leaving the
+    spot camera latched on the cell — acceptable for spot-monitor (an operator can clear it).
+    """
+    wall_id = config.get("wall_id")
+    monitor_id = config.get("monitor_id")
+    if not wall_id or not monitor_id:
+        return ActionResult("wall_display", False, "wall_id and monitor_id are required")
+    try:
+        cell_index = int(config.get("cell_index") or 0)
+    except (TypeError, ValueError):
+        return ActionResult("wall_display", False, "cell_index must be an integer")
+
+    camera_id = _wall_camera_source(ctx, config)
+    if not camera_id:
+        return ActionResult("wall_display", False, "no camera to display")
+
+    scope = _tenant_scope(ctx)
+    if scope is None:
+        return ActionResult("wall_display", False, "no tenant scope for wall")
+
+    hold_seconds = config.get("hold_seconds")
+    hold_seconds = _DEFAULT_WALL_HOLD_SECONDS if hold_seconds is None else int(hold_seconds)
+
+    # Import here to avoid a heavy import at module load / a cycle through the engine.
+    from kernel.errors import NotFoundError
+    from app.vms.videowall.service import VideoWallService
+
+    # Capture the cell's PRIOR value + set the new camera, on one session.
+    try:
+        async with ctx.sessionmaker() as db:
+            svc = VideoWallService(db, scope)
+            try:
+                state = (await svc.get_state(wall_id)).state or {}
+            except NotFoundError:
+                return ActionResult("wall_display", False, "wall not found")
+            prior = (state.get(monitor_id) or {}).get(str(cell_index))  # None if empty
+            try:
+                await svc.push_cell(wall_id, monitor_id, cell_index, camera_id, actor=None)
+            except NotFoundError:
+                return ActionResult("wall_display", False, "wall/monitor not found")
+    except Exception as exc:  # noqa: BLE001 — never crash the engine.
+        log.warning("wall_display push failed (wall=%s mon=%s): %s", wall_id, monitor_id, exc)
+        return ActionResult("wall_display", False, f"error: {exc}")
+
+    # Schedule the revert (fire-and-forget). hold_seconds<=0 → latch (no revert).
+    if hold_seconds > 0:
+        async def _revert() -> None:
+            try:
+                await asyncio.sleep(hold_seconds)
+                # Fresh session — the request session above is closed by now.
+                async with ctx.sessionmaker() as db:
+                    rsvc = VideoWallService(db, scope)
+                    if prior:
+                        await rsvc.push_cell(wall_id, monitor_id, cell_index, prior, actor=None)
+                    else:
+                        await rsvc.clear_cell(wall_id, monitor_id, cell_index, actor=None)
+                log.info(
+                    "wall_display reverted cell (wall=%s mon=%s cell=%s → %s)",
+                    wall_id, monitor_id, cell_index, prior or "empty",
+                )
+            except Exception as exc:  # noqa: BLE001 — best-effort revert.
+                log.warning(
+                    "wall_display revert failed (wall=%s mon=%s cell=%s): %s",
+                    wall_id, monitor_id, cell_index, exc,
+                )
+
+        asyncio.create_task(_revert())
+        return ActionResult(
+            "wall_display",
+            True,
+            f"displayed {camera_id} on {monitor_id}[{cell_index}] (revert in {hold_seconds}s)",
+        )
+
+    return ActionResult(
+        "wall_display", True, f"displayed {camera_id} on {monitor_id}[{cell_index}] (latched)"
+    )
+
+
 # Dispatch table the engine walks.
 EXECUTORS = {
     "start_recording": action_start_recording,
@@ -275,4 +396,5 @@ EXECUTORS = {
     "ptz_preset": action_ptz_preset,
     "trigger_output": action_trigger_output,
     "popup": action_popup,
+    "wall_display": action_wall_display,
 }
