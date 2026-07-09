@@ -34,6 +34,14 @@ const PATTERNS = "/vms/patterns";
 const HEALTH = "/vms/cameras/health";
 const RECORDINGS = "/vms/recordings";
 const STORAGE = "/vms/storage";
+const EXPORT = "/vms/export";
+
+// The axios baseURL is "<host>/api/v1" — for endpoints the browser must hit
+// directly (an authed blob download triggered via a save-link), prefix the
+// full origin. Reuse the same host-derivation the api instance uses.
+const API_ROOT =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined" ? `http://${window.location.hostname}:8000` : "http://localhost:8000");
 
 const unwrap = (p) => p.then((r) => r.data);
 
@@ -194,6 +202,57 @@ export const vms = {
     unlock: (id) => unwrap(api.post(`${RECORDINGS}/${id}/unlock`, {})),
     // POST /recordings/{id}/verify — recompute the SHA-256 + return integrity_status.
     verify: (id) => unwrap(api.post(`${RECORDINGS}/${id}/verify`, {})),
+  },
+
+  // ── Recorded playback (P4-A) — timeline + a RECORDED PlaybackSession ─────
+  // The Go `nvr` builds a seekable playback URL from MediaMTX's playback server
+  // over a recorded window; `vision` mints a media token and returns a session.
+  // hls_url ALREADY carries "?token=" — the player consumes it verbatim.
+  // Seeking to a new timestamp = requesting a NEW session at that `from`.
+  playback: {
+    // POST /cameras/{id}/playback { from, to, profile? } →
+    //   { session_id, hls_url, token, from, to, ranges, expires_at }.
+    //   `from`/`to` are ISO strings; `ranges` are the covered [start,end] spans.
+    session: (cameraId, { from, to, profile = "main" } = {}) =>
+      unwrap(api.post(`${CAMERAS}/${cameraId}/playback`, { from, to, profile })),
+    // GET /cameras/{id}/timeline?day=YYYY-MM-DD (or ?from=&to=) →
+    //   { coverage:[{start,end}], gaps:[{start,end}], total_seconds }.
+    timeline: (cameraId, params = {}) =>
+      unwrap(api.get(`${CAMERAS}/${cameraId}/timeline${qs(params)}`)),
+  },
+
+  // ── Clip export (P4-B) — a job that concatenates the covered segments ────
+  export: {
+    // POST /cameras/{id}/export { from, to, format? } → { job_id, status }.
+    create: (cameraId, { from, to, format = "mp4" } = {}) =>
+      unwrap(api.post(`${CAMERAS}/${cameraId}/export`, { from, to, format })),
+    // GET /export/{job} → { job_id, status(queued|running|done|failed),
+    //   file_size?, error?, camera_id, from, to, format }.
+    status: (jobId) => unwrap(api.get(`${EXPORT}/${jobId}`)),
+    // GET /export/{job}/download — token-gated mp4. The download endpoint is
+    // JWT-authed (Bearer), so it can't be a plain <a href> (no header). Fetch
+    // as a blob and hand it to the caller to save.
+    downloadBlob: (jobId) =>
+      api.get(`${EXPORT}/${jobId}/download`, { responseType: "blob" }).then((r) => r.data),
+    // The absolute URL (for reference / opening in a new tab where the browser
+    // already holds the session) — note it still needs the Bearer header, so
+    // prefer downloadBlob for the in-app "Download" button.
+    downloadUrl: (jobId) => `${API_ROOT}/api/v1${EXPORT}/${jobId}/download`,
+  },
+
+  // ── NVR footage extraction (P4-B) — search + play an onboarded NVR's own
+  // recorded storage (ONVIF Profile G / Hik ISAPI / CP-Plus-Dahua / Lumina).
+  // A unified timeline/export across our recordings + client NVRs.
+  nvrFootage: {
+    // GET /nvrs/{id}/channels/{ch}/recordings?from=&to= →
+    //   { items:[{start,end,duration?,...}], total } (or bare array).
+    recordings: (nvrId, channel, { from, to } = {}) =>
+      unwrap(api.get(`${NVRS}/${nvrId}/channels/${channel}/recordings${qs({ from, to })}`)),
+    // POST /nvrs/{id}/channels/{ch}/playback { from, to } →
+    //   { session_id?, hls_url?, webrtc_url?, rtsp_url?, from, to } — plays
+    //   like a recorded/live session (hls_url carries "?token=").
+    playback: (nvrId, channel, { from, to } = {}) =>
+      unwrap(api.post(`${NVRS}/${nvrId}/channels/${channel}/playback`, { from, to })),
   },
 
   // ── Per-camera recording config (P3-A) ──────────────────────────────────

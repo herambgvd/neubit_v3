@@ -62,6 +62,7 @@ export const deviceTabs = [
   { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read" },
   { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read" },
   { title: "Recordings", icon: "heroicons:film", link: "/devices/recordings", perm: "neubit.read" },
+  { title: "Playback", icon: "heroicons-outline:play", link: "/devices/playback", perm: "neubit.read" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).

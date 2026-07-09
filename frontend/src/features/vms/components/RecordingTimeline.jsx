@@ -21,7 +21,7 @@ const BAR_COLOR = {
   manual: "bg-foreground/60",
 };
 
-export default function RecordingTimeline({ recordings = [], day }) {
+export default function RecordingTimeline({ recordings = [], day, onSeek }) {
   // The day window [00:00, 24:00) in epoch ms. `day` is a "YYYY-MM-DD" string;
   // when absent, use the first recording's date.
   const dayStart = useMemo(() => {
@@ -60,7 +60,22 @@ export default function RecordingTimeline({ recordings = [], day }) {
         <Icon icon="heroicons-outline:clock" className="text-sm" />
         Coverage
       </div>
-      <div className="relative h-7 w-full overflow-hidden rounded-md border border-card-border bg-hover/40">
+      <div
+        className={`relative h-7 w-full overflow-hidden rounded-md border border-card-border bg-hover/40 ${
+          onSeek ? "cursor-pointer" : ""
+        }`}
+        onClick={
+          onSeek
+            ? (e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (!rect.width) return;
+                const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                onSeek(dayStart + pct * DAY_MS);
+              }
+            : undefined
+        }
+        title={onSeek ? "Click to open playback here" : undefined}
+      >
         {/* Hour gridlines */}
         {TICKS.slice(1, -1).map((h) => (
           <div

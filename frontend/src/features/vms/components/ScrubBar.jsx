@@ -1,0 +1,186 @@
+"use client";
+
+// ScrubBar — the recorded-playback timeline. A 24-hour (or windowed) track that
+// paints coverage blocks (recorded spans) solid and leaves gaps dimmed, with a
+// draggable playhead. Click / drag anywhere → seek to that timestamp. Ported
+// from gvd_nvr's TimelinePlayer timeline, reskinned to v3 tokens.
+//
+//   coverage: [{ start, end }]  — ISO strings, the recorded spans
+//   windowStart / windowEnd     — epoch ms, the visible track range
+//   current                     — epoch ms, the playhead
+//   onSeek(ms)                  — click/drag to a timestamp
+import { useCallback, useMemo, useRef, useState } from "react";
+
+const HOUR_MS = 3_600_000;
+
+// Coverage-block color by trigger, falling back to the neutral accent.
+const BLOCK_COLOR = {
+  continuous: "bg-blue-500/70",
+  schedule: "bg-indigo-500/70",
+  motion: "bg-emerald-500/70",
+  event: "bg-amber-500/70",
+  manual: "bg-foreground/40",
+};
+
+function hhmmss(ms) {
+  const d = new Date(ms);
+  return d.toLocaleTimeString(undefined, { hour12: false });
+}
+
+export default function ScrubBar({
+  coverage = [],
+  windowStart,
+  windowEnd,
+  current,
+  onSeek,
+  disabled = false,
+}) {
+  const trackRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const [hover, setHover] = useState(null); // { pct, ms }
+
+  const span = Math.max(1, windowEnd - windowStart);
+
+  // How many hour gridlines fit — cap the labels so they don't crowd.
+  const hours = useMemo(() => {
+    const out = [];
+    const startHour = Math.ceil(windowStart / HOUR_MS) * HOUR_MS;
+    const step = span > 12 * HOUR_MS ? 3 * HOUR_MS : span > 4 * HOUR_MS ? 2 * HOUR_MS : HOUR_MS;
+    for (let t = startHour; t <= windowEnd; t += step) out.push(t);
+    return out;
+  }, [windowStart, windowEnd, span]);
+
+  const blocks = useMemo(() => {
+    const out = [];
+    for (const c of coverage) {
+      if (!c?.start) continue;
+      const s = new Date(c.start).getTime();
+      const e = c.end ? new Date(c.end).getTime() : s;
+      const left = Math.max(0, (s - windowStart) / span);
+      const right = Math.min(1, (e - windowStart) / span);
+      if (right <= 0 || left >= 1 || right <= left) continue;
+      out.push({
+        key: `${c.start}-${c.end}`,
+        leftPct: left * 100,
+        widthPct: Math.max(0.3, (right - left) * 100),
+        trigger: c.trigger || c.trigger_type || "continuous",
+      });
+    }
+    return out;
+  }, [coverage, windowStart, span]);
+
+  const posToMs = useCallback(
+    (clientX) => {
+      const rect = trackRef.current?.getBoundingClientRect();
+      if (!rect?.width) return null;
+      const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      return Math.round(windowStart + pct * span);
+    },
+    [windowStart, span],
+  );
+
+  const emit = useCallback(
+    (clientX) => {
+      if (disabled) return;
+      const ms = posToMs(clientX);
+      if (ms != null) onSeek?.(ms);
+    },
+    [disabled, posToMs, onSeek],
+  );
+
+  const onDown = (e) => {
+    if (disabled) return;
+    setDragging(true);
+    emit(e.clientX);
+    const move = (ev) => emit(ev.clientX);
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  const onMove = (e) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect?.width) return;
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    setHover({ pct, ms: windowStart + pct * span });
+  };
+
+  const currentPct =
+    current != null ? Math.max(0, Math.min(100, ((current - windowStart) / span) * 100)) : null;
+
+  return (
+    <div className="select-none">
+      <div
+        ref={trackRef}
+        onMouseDown={onDown}
+        onMouseMove={onMove}
+        onMouseLeave={() => setHover(null)}
+        className={`relative h-14 w-full overflow-hidden rounded-lg border border-card-border bg-hover/40 ${
+          disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+        }`}
+      >
+        {/* Hour gridlines */}
+        {hours.map((t) => (
+          <div
+            key={t}
+            className="absolute bottom-0 top-0 w-px bg-card-border/50"
+            style={{ left: `${((t - windowStart) / span) * 100}%` }}
+          >
+            <span className="absolute left-1 top-0.5 text-[9px] text-muted">
+              {new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}
+            </span>
+          </div>
+        ))}
+
+        {/* Coverage blocks */}
+        {blocks.map((b) => (
+          <div
+            key={b.key}
+            className={`absolute bottom-2 top-6 rounded-sm ${BLOCK_COLOR[b.trigger] || "bg-blue-500/70"}`}
+            style={{ left: `${b.leftPct}%`, width: `${b.widthPct}%` }}
+          />
+        ))}
+
+        {blocks.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted">
+            No coverage in this window
+          </div>
+        )}
+
+        {/* Hover indicator + time bubble */}
+        {hover && !dragging && (
+          <>
+            <div
+              className="pointer-events-none absolute bottom-0 top-5 w-px bg-foreground/40"
+              style={{ left: `${hover.pct * 100}%` }}
+            />
+            <div
+              className="pointer-events-none absolute -top-0.5 z-20 -translate-x-1/2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] text-white"
+              style={{ left: `${hover.pct * 100}%` }}
+            >
+              {hhmmss(hover.ms)}
+            </div>
+          </>
+        )}
+
+        {/* Playhead */}
+        {currentPct != null && (
+          <div
+            className="pointer-events-none absolute bottom-0 top-0 z-10 w-0.5 bg-red-500"
+            style={{ left: `${currentPct}%` }}
+          >
+            <div
+              className={`absolute -top-1 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-red-500 shadow ${
+                dragging ? "scale-125" : ""
+              }`}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -6,10 +6,12 @@
 // verify integrity). A per-camera coverage strip shows the recording timeline
 // for the selected day. Ported from gvd_nvr's Recordings page, reskinned to v3.
 //
-// Playback + download of recorded video is P4 — those row actions are present
-// but disabled ("P4"). Real recordings need cameras that are actively recording.
+// Play jumps to the Playback surface (P4-C); Export opens the clip-export dialog
+// for a recording's range. Real recordings need cameras that are actively
+// recording.
 import { useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -20,6 +22,7 @@ import { vms } from "./api";
 import { TRIGGER_PRESETS } from "./constants";
 import RecordingsTable from "./components/RecordingsTable";
 import RecordingTimeline from "./components/RecordingTimeline";
+import ExportDialog from "./components/ExportDialog";
 
 // Default the date range to "today".
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -31,11 +34,13 @@ const TRIGGER_OPTIONS = [
 
 export default function RecordingsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const [cameraId, setCameraId] = useState(""); // "" = all cameras (estate)
   const [trigger, setTrigger] = useState("");
   const [fromDate, setFromDate] = useState(todayStr());
   const [toDate, setToDate] = useState(todayStr());
   const [pendingId, setPendingId] = useState(null);
+  const [exportRec, setExportRec] = useState(null); // Recording being exported
 
   // ── Cameras (picker + name lookup) ─────────────────────────────────────
   const camerasQ = useQuery({
@@ -145,6 +150,11 @@ export default function RecordingsPage() {
     setToDate(todayStr());
   };
 
+  // Play → the Playback surface, deep-linked to this recording's camera.
+  const playRecording = (r) => router.push(`/devices/playback?camera=${r.camera_id}`);
+  // Export → the clip-export dialog, pre-filled with this recording's range.
+  const exportRecording = (r) => setExportRec(r);
+
   return (
     <div className="pb-8">
       <PageHeader
@@ -206,7 +216,11 @@ export default function RecordingsPage() {
       {/* Coverage strip — only when a single camera + single day are selected */}
       {cameraId && fromDate && fromDate === toDate && !isLoading && (
         <div className="mb-4 rounded-xl border border-card-border bg-card p-4">
-          <RecordingTimeline recordings={recordings} day={fromDate} />
+          <RecordingTimeline
+            recordings={recordings}
+            day={fromDate}
+            onSeek={() => router.push(`/devices/playback?camera=${cameraId}`)}
+          />
         </div>
       )}
 
@@ -236,8 +250,18 @@ export default function RecordingsPage() {
           onLock={withPending((r) => lock.mutateAsync(r))}
           onUnlock={withPending((r) => unlock.mutateAsync(r))}
           onVerify={withPending((r) => verify.mutateAsync(r))}
+          onPlay={playRecording}
+          onExport={exportRecording}
         />
       )}
+
+      <ExportDialog
+        open={!!exportRec}
+        onClose={() => setExportRec(null)}
+        cameraId={exportRec?.camera_id}
+        cameraName={exportRec ? cameraNames[exportRec.camera_id] : undefined}
+        range={exportRec ? { from: exportRec.start_time, to: exportRec.end_time } : null}
+      />
     </div>
   );
 }

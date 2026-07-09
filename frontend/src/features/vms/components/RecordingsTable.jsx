@@ -2,8 +2,9 @@
 
 // The recordings list table — one row per Recording with camera, time range,
 // duration, size, a trigger badge, an integrity dot, a lock state, and row
-// actions (lock/unlock, verify, play[P4], download[P4]). Presentational: the
-// parent owns data + wires the action callbacks.
+// actions (lock/unlock, verify, play, export). Presentational: the parent owns
+// data + wires the action callbacks. Play jumps to the Playback surface at the
+// recording's time; Export opens the clip-export dialog for its range (P4-C).
 import { Icon } from "@iconify/react";
 
 import { fmtBytes, fmtDuration, fmtDateTime } from "@/lib/format";
@@ -53,7 +54,7 @@ export default function RecordingsTable({
   onUnlock,
   onVerify,
   onPlay,
-  onDownload,
+  onExport,
   pendingId,
 }) {
   return (
@@ -115,15 +116,13 @@ export default function RecordingsTable({
                   <div className="flex items-center justify-end gap-1">
                     <IconBtn
                       icon="heroicons-outline:play"
-                      title="Play (P4)"
-                      disabled
+                      title="Play in Playback"
                       onClick={() => onPlay?.(r)}
                     />
                     <IconBtn
-                      icon="heroicons-outline:arrow-down-tray"
-                      title="Download (P4)"
-                      disabled
-                      onClick={() => onDownload?.(r)}
+                      icon="heroicons-outline:scissors"
+                      title="Export clip"
+                      onClick={() => onExport?.(r)}
                     />
                     <IconBtn
                       icon="heroicons-outline:shield-check"
