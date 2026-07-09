@@ -24,6 +24,28 @@ export function fmtRelative(ts) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+// Human byte size: 1536 → "1.5 KB". null/0 → "0 B".
+export function fmtBytes(bytes) {
+  const b = Number(bytes);
+  if (!b || b <= 0 || Number.isNaN(b)) return "0 B";
+  const k = 1024;
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  const i = Math.min(Math.floor(Math.log(b) / Math.log(k)), units.length - 1);
+  return `${(b / k ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+// Duration in seconds → "1h 5m 3s" / "5m 3s" / "3s". null → "—".
+export function fmtDuration(seconds) {
+  const s = Number(seconds);
+  if (!s || s <= 0 || Number.isNaN(s)) return "—";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
 // Fixed, unambiguous date-time (e.g. incident timestamps).
 export function fmtDateTime(ts) {
   if (!ts) return "—";

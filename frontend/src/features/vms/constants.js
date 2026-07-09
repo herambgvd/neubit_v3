@@ -22,7 +22,43 @@ export const RECORDING_MODES = [
   { value: "continuous", label: "Continuous", icon: "heroicons-outline:film" },
   { value: "schedule", label: "Schedule", icon: "heroicons-outline:calendar-days" },
   { value: "motion", label: "Motion", icon: "heroicons-outline:bolt" },
+  { value: "event", label: "Event", icon: "heroicons-outline:bell-alert" },
   { value: "manual", label: "Manual", icon: "heroicons-outline:hand-raised" },
+];
+
+// ── Recording trigger → pill preset (recording.trigger_type) ─────────────
+export const TRIGGER_PRESETS = {
+  continuous: { label: "Continuous", cls: "bg-blue-500/10 text-blue-500 border-blue-500/20", icon: "heroicons-outline:film" },
+  schedule: { label: "Schedule", cls: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20", icon: "heroicons-outline:calendar-days" },
+  motion: { label: "Motion", cls: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", icon: "heroicons-outline:bolt" },
+  event: { label: "Event", cls: "bg-amber-500/10 text-amber-500 border-amber-500/20", icon: "heroicons-outline:bell-alert" },
+  manual: { label: "Manual", cls: "bg-hover text-muted border-card-border", icon: "heroicons-outline:hand-raised" },
+};
+
+// ── Integrity status → dot color (recording.integrity_status) ────────────
+export const INTEGRITY_PRESETS = {
+  verified: { label: "Verified", dot: "bg-emerald-500", text: "text-emerald-500" },
+  ok: { label: "Verified", dot: "bg-emerald-500", text: "text-emerald-500" },
+  pending: { label: "Not verified", dot: "bg-muted", text: "text-muted" },
+  unverified: { label: "Not verified", dot: "bg-muted", text: "text-muted" },
+  failed: { label: "Corrupt", dot: "bg-red-500", text: "text-red-500" },
+  corrupt: { label: "Corrupt", dot: "bg-red-500", text: "text-red-500" },
+};
+
+// ── Recording-schedule grid modes (weekly day×hour painter) ──────────────
+// The schedule stores per-day 24-slot arrays; a slot value picks its cell color.
+export const SCHEDULE_MODES = {
+  record: { label: "Record", color: "bg-blue-500", swatch: "bg-blue-500" },
+  motion: { label: "Motion", color: "bg-emerald-500", swatch: "bg-emerald-500" },
+  off: { label: "Off", color: "bg-card-border", swatch: "bg-card-border" },
+};
+
+// ── Storage pool types (add-pool selector) ───────────────────────────────
+export const POOL_TYPES = [
+  { value: "local", label: "Local disk", icon: "heroicons-outline:server", hint: "A directory on the host filesystem" },
+  { value: "nfs", label: "NFS", icon: "heroicons-outline:server-stack", hint: "Network File System export" },
+  { value: "smb", label: "SMB / CIFS", icon: "heroicons-outline:server-stack", hint: "Windows / Samba share" },
+  { value: "s3", label: "S3 / MinIO", icon: "heroicons-outline:cloud", hint: "S3-compatible object storage (cold tier)" },
 ];
 
 // ── Status → pill preset (camera.status / nvr.status) ────────────────────
@@ -85,6 +121,7 @@ export const DEFAULT_CAMERA_FORM = {
   onvif_profile_token: "",
   // recording
   recording_mode: "continuous",
+  recording_schedule: null, // { Mon: [24 slots], … } — set when mode = schedule
   recording_fps: "",
   record_substream: false,
   retention_days: 30,

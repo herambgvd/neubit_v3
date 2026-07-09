@@ -24,6 +24,7 @@ export function toCreateBody(form) {
     },
     recording: {
       mode: form.recording_mode,
+      schedule: form.recording_schedule || undefined,
       fps: num(form.recording_fps),
       record_substream: !!form.record_substream,
       retention_days: num(form.retention_days) ?? 30,
@@ -82,6 +83,7 @@ export function fromCamera(cam) {
     has_password: !!onvif.has_password,
     onvif_profile_token: onvif.profile_token || "",
     recording_mode: rec.mode || "continuous",
+    recording_schedule: rec.schedule || null,
     recording_fps: rec.fps ?? "",
     record_substream: !!rec.record_substream,
     retention_days: rec.retention_days ?? 30,
@@ -92,6 +94,18 @@ export function fromCamera(cam) {
     site_id: place.site_id || "",
     floor_id: place.floor_id || "",
     zone_id: place.zone_id || "",
+  };
+}
+
+// Flat form → the dedicated `PUT /cameras/{id}/recording` body. The recording
+// config endpoint takes a flat shape (recording_mode / recording_schedule /
+// retention_days / record_substream), distinct from the nested CameraUpdate.
+export function toRecordingConfigBody(form) {
+  return {
+    recording_mode: form.recording_mode,
+    recording_schedule: form.recording_mode === "schedule" ? form.recording_schedule || null : null,
+    retention_days: num(form.retention_days) ?? 30,
+    record_substream: !!form.record_substream,
   };
 }
 

@@ -41,7 +41,7 @@ export const configTabs = [
   { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
   { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", disabled: true },
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", disabled: true },
-  { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", disabled: true },
+  { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", perm: "neubit.read" },
   { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read" },
   { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read" },
   { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
@@ -61,6 +61,7 @@ export const deviceTabs = [
   { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read" },
   { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read" },
   { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read" },
+  { title: "Recordings", icon: "heroicons:film", link: "/devices/recordings", perm: "neubit.read" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).

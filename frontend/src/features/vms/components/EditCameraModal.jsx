@@ -42,6 +42,19 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
     onError: (e) => toast.error(apiError(e, "Update failed")),
   });
 
+  // Manual recording controls (Recording tab) — toggle recording on the
+  // MediaMTX path immediately, independent of the mode/schedule save.
+  const startRec = useMutation({
+    mutationFn: () => vms.recordingConfig.start(camera.id),
+    onSuccess: () => toast.success("Recording started"),
+    onError: (e) => toast.error(apiError(e, "Could not start recording")),
+  });
+  const stopRec = useMutation({
+    mutationFn: () => vms.recordingConfig.stop(camera.id),
+    onSuccess: () => toast.success("Recording stopped"),
+    onError: (e) => toast.error(apiError(e, "Could not stop recording")),
+  });
+
   const submit = () => {
     const errs = validateCamera(form);
     setErrors(errs);
@@ -85,6 +98,9 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
             floors={floors}
             zones={zones}
             isEdit
+            onManualStart={() => startRec.mutate()}
+            onManualStop={() => stopRec.mutate()}
+            manualPending={startRec.isPending || stopRec.isPending}
           />
         )}
       </div>

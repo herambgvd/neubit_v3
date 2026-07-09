@@ -30,6 +30,8 @@ const CAMERAS = "/vms/cameras";
 const NVRS = "/vms/nvrs";
 const GROUPS = "/vms/camera-groups";
 const HEALTH = "/vms/cameras/health";
+const RECORDINGS = "/vms/recordings";
+const STORAGE = "/vms/storage";
 
 const unwrap = (p) => p.then((r) => r.data);
 
@@ -153,6 +155,64 @@ export const vms = {
     // DELETE /live/{session} → release the session (nvr path teardown + row).
     //   Call on unmount so idle MediaMTX paths get reaped.
     release: (sessionId) => unwrap(api.delete(`/vms/live/${sessionId}`)),
+  },
+
+  // ── Recordings (P3-A/B) — browse + integrity/lock ───────────────────────
+  // Recording rows are tracked from MediaMTX segments by the Go `nvr` and
+  // persisted by `vision`. Fields: id/camera_id/profile/path/start_time/
+  // end_time/duration/file_size/trigger_type/locked/checksum/integrity_status/
+  // storage_pool_id. No dedicated download endpoint yet (P4) — surface the path.
+  recordings: {
+    // GET /cameras/{id}/recordings?from=&to=&trigger=&skip=&limit= → { items, total }.
+    list: (cameraId, params = {}) =>
+      unwrap(api.get(`${CAMERAS}/${cameraId}/recordings${qs(params)}`)),
+    // GET /recordings/{id} → a single RecordingPublic.
+    get: (id) => unwrap(api.get(`${RECORDINGS}/${id}`)),
+    // POST /recordings/{id}/lock — protect from retention/tiering deletion.
+    lock: (id) => unwrap(api.post(`${RECORDINGS}/${id}/lock`, {})),
+    // POST /recordings/{id}/unlock — release the lock.
+    unlock: (id) => unwrap(api.post(`${RECORDINGS}/${id}/unlock`, {})),
+    // POST /recordings/{id}/verify — recompute the SHA-256 + return integrity_status.
+    verify: (id) => unwrap(api.post(`${RECORDINGS}/${id}/verify`, {})),
+  },
+
+  // ── Per-camera recording config (P3-A) ──────────────────────────────────
+  // Mode / weekly schedule / retention drive the recording-supervisor. Manual
+  // start/stop toggle recording on the MediaMTX path immediately.
+  recordingConfig: {
+    // PUT /cameras/{id}/recording { recording_mode, recording_schedule,
+    //   retention_days, record_substream }.
+    set: (cameraId, body) => unwrap(api.put(`${CAMERAS}/${cameraId}/recording`, body)),
+    // POST /cameras/{id}/recording/start — begin recording now (manual).
+    start: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/recording/start`, {})),
+    // POST /cameras/{id}/recording/stop — stop recording now.
+    stop: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/recording/stop`, {})),
+  },
+
+  // ── Storage (P3-B) — pools + tiering ────────────────────────────────────
+  // Pool: name, pool_type(local|nfs|smb|s3), path, priority, max_size_bytes,
+  //   is_default, is_active, nas_*(server/share/protocol/username/password/
+  //   domain), s3_*(endpoint/bucket/access_key/secret_key/region/use_ssl),
+  //   mount_state, reachable. Credentials are write-only.
+  storage: {
+    pools: {
+      // GET /storage/pools → { items, total } (or bare array).
+      list: (params = {}) => unwrap(api.get(`${STORAGE}/pools${qs(params)}`)),
+      get: (id) => unwrap(api.get(`${STORAGE}/pools/${id}`)),
+      create: (body) => unwrap(api.post(`${STORAGE}/pools`, body)),
+      update: (id, body) => unwrap(api.patch(`${STORAGE}/pools/${id}`, body)),
+      remove: (id) => unwrap(api.delete(`${STORAGE}/pools/${id}`)),
+      // GET /storage/pools/{id}/usage → { used_bytes, capacity_bytes,
+      //   recording_count, ... }.
+      usage: (id) => unwrap(api.get(`${STORAGE}/pools/${id}/usage`)),
+    },
+    tierRules: {
+      // GET /storage/tier-rules → { items, total }.
+      list: (params = {}) => unwrap(api.get(`${STORAGE}/tier-rules${qs(params)}`)),
+      create: (body) => unwrap(api.post(`${STORAGE}/tier-rules`, body)),
+      update: (id, body) => unwrap(api.patch(`${STORAGE}/tier-rules/${id}`, body)),
+      remove: (id) => unwrap(api.delete(`${STORAGE}/tier-rules/${id}`)),
+    },
   },
 };
 

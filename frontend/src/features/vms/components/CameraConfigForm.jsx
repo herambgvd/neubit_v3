@@ -11,8 +11,9 @@
 import { Icon } from "@iconify/react";
 
 import { Field } from "@/components/common";
-import { Toggle } from "@/components/ui/kit";
+import { Button, Toggle } from "@/components/ui/kit";
 import { CAMERA_BRANDS, CONNECTION_TYPES, RECORDING_MODES } from "../constants";
+import RecordingScheduleGrid from "./RecordingScheduleGrid";
 
 function ToggleRow({ label, hint, checked, onChange }) {
   return (
@@ -35,7 +36,19 @@ function InfoNote({ children }) {
   );
 }
 
-export default function CameraConfigForm({ tab, form, set, errors = {}, sites = [], floors = [], zones = [], isEdit = false }) {
+export default function CameraConfigForm({
+  tab,
+  form,
+  set,
+  errors = {},
+  sites = [],
+  floors = [],
+  zones = [],
+  isEdit = false,
+  onManualStart,
+  onManualStop,
+  manualPending = false,
+}) {
   if (tab === "live") {
     return (
       <div className="space-y-4">
@@ -147,7 +160,7 @@ export default function CameraConfigForm({ tab, form, set, errors = {}, sites = 
       <div className="space-y-4">
         <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Recording mode</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
             {RECORDING_MODES.map((m) => {
               const active = form.recording_mode === m.value;
               return (
@@ -166,6 +179,16 @@ export default function CameraConfigForm({ tab, form, set, errors = {}, sites = 
             })}
           </div>
         </div>
+
+        {/* Weekly schedule painter — only relevant when mode = schedule. */}
+        {form.recording_mode === "schedule" && (
+          <div className="rounded-lg border border-card-border bg-card p-3">
+            <RecordingScheduleGrid
+              value={form.recording_schedule}
+              onChange={(sched) => set({ recording_schedule: sched })}
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Field
@@ -214,6 +237,36 @@ export default function CameraConfigForm({ tab, form, set, errors = {}, sites = 
           checked={!!form.anr_enabled}
           onChange={(v) => set({ anr_enabled: v })}
         />
+
+        {/* Manual recording controls — only once the camera exists (edit view). */}
+        {isEdit && (onManualStart || onManualStop) && (
+          <div className="flex items-center justify-between rounded-lg border border-card-border bg-hover/40 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-sm text-foreground">Manual recording</p>
+              <p className="text-[11px] text-muted">Start or stop recording on this camera right now.</p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                variant="success"
+                icon="heroicons-outline:play"
+                className="!px-2.5 !py-1.5 !text-xs"
+                disabled={manualPending || !onManualStart}
+                onClick={() => onManualStart?.()}
+              >
+                Start
+              </Button>
+              <Button
+                variant="danger"
+                icon="heroicons-outline:stop"
+                className="!px-2.5 !py-1.5 !text-xs"
+                disabled={manualPending || !onManualStop}
+                onClick={() => onManualStop?.()}
+              >
+                Stop
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
