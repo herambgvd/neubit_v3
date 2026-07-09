@@ -9,6 +9,8 @@
 //   <Field label="Notes" as="textarea" rows={3} value={notes} onChange={...} />
 //   <Field label="Priority" as="select" value={p} onChange={...} options={[{value,label}]} />
 
+import SelectMenu from "./SelectMenu";
+
 // Base control classes (shared so raw inputs match Field visually).
 export const fieldClass =
   "mt-1 h-10 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted";
@@ -46,13 +48,16 @@ export function Field({
       {as === "textarea" ? (
         <textarea {...control} className={`${areaClass} ${errCls} ${className}`} />
       ) : as === "select" ? (
-        <select {...control} className={`${fieldClass} ${errCls} ${className}`}>
-          {options.map((o) => (
-            <option key={o.value} value={o.value} className="bg-card">
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          options={options}
+          value={control.value}
+          onChange={control.onChange}
+          disabled={control.disabled}
+          placeholder={control.placeholder}
+          id={control.id}
+          name={control.name}
+          className={`${errCls} ${className}`}
+        />
       ) : (
         <input {...control} className={`${fieldClass} ${errCls} ${className}`} />
       )}
