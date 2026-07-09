@@ -200,6 +200,19 @@ export const adminApi = {
     return data;
   },
 
+  // Database backup/restore (control DB). Export returns a downloadable Blob.
+  async exportDatabase() {
+    const resp = await api.get("/admin/infra/db/export", { responseType: "blob" });
+    return resp.data;
+  },
+  async importDatabase(file) {
+    const body = new FormData();
+    body.append("file", file);
+    // Restore can wait for a lock gap on the live DB — give it plenty of time.
+    const { data } = await api.post("/admin/infra/db/import", body, { timeout: 210000 });
+    return data;
+  },
+
   // Module catalog — platform features tenants inherit.
   async listModules() {
     const { data } = await api.get("/admin/modules");

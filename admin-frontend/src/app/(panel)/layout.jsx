@@ -8,6 +8,7 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  Database,
   LayoutDashboard,
   Lock,
   LogOut,
@@ -44,7 +45,13 @@ const GROUPS = [
       { href: "/audit", label: "Audit", icon: ScrollText },
     ],
   },
-  { label: "System", items: [{ href: "/infrastructure", label: "Infrastructure", icon: ServerCog }] },
+  {
+    label: "System",
+    items: [
+      { href: "/infrastructure", label: "Infrastructure", icon: ServerCog },
+      { href: "/database", label: "Database", icon: Database },
+    ],
+  },
 ];
 
 export default function PanelLayout({ children }) {

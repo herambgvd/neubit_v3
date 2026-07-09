@@ -86,3 +86,39 @@ class OpsAgentClient:
 
     async def host(self):
         return await self._request("GET", "/host")
+
+    async def db_export(self) -> bytes:
+        """Fetch a raw SQL dump of the control DB (bytes, not JSON)."""
+        url = f"{_base_url()}/db/export"
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                resp = await client.get(url, headers=self._headers())
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=503, detail=f"ops-agent unreachable: {exc}") from exc
+        if resp.status_code >= 400:
+            try:
+                detail = resp.json().get("detail", resp.text)
+            except (ValueError, AttributeError):
+                detail = resp.text
+            raise HTTPException(status_code=resp.status_code, detail=detail)
+        return resp.content
+
+    async def db_import(self, sql: bytes) -> dict:
+        """Restore the control DB from a raw SQL dump. Returns the psql outcome."""
+        url = f"{_base_url()}/db/import"
+        try:
+            async with httpx.AsyncClient(timeout=200.0) as client:
+                resp = await client.post(
+                    url,
+                    headers={**self._headers(), "Content-Type": "application/sql"},
+                    content=sql,
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=503, detail=f"ops-agent unreachable: {exc}") from exc
+        if resp.status_code >= 400:
+            try:
+                detail = resp.json().get("detail", resp.text)
+            except (ValueError, AttributeError):
+                detail = resp.text
+            raise HTTPException(status_code=resp.status_code, detail=detail)
+        return resp.json()

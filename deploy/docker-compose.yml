@@ -65,6 +65,7 @@ services:
   # docker socket into core.
   ops-agent:
     build: ../backend/ops-agent
+    env_file: .env
     environment:
       OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
       COMPOSE_PROJECT: neubit-v3

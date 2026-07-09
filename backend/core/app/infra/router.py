@@ -10,7 +10,7 @@ This module NEVER touches the Docker socket — only the ops-agent does.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -122,3 +122,58 @@ async def host_summary(
 ) -> dict:
     """Host/stack summary: container counts (+ host cpu/mem/disk if available)."""
     return await _agent().host()
+
+
+# --- database backup / restore ----------------------------------------------
+@router.get("/db/export")
+async def db_export(
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_superadmin),
+) -> Response:
+    """Download a plain-SQL backup of the control database. Audited."""
+    data = await _agent().db_export()
+    await audit_record(
+        db, actor=actor, action="infra.db.export",
+        target_type="database", target_id="neubit_control", meta={"bytes": len(data)},
+    )
+    return Response(
+        content=data,
+        media_type="application/sql",
+        headers={"Content-Disposition": 'attachment; filename="neubit_control.sql"'},
+    )
+
+
+@router.post("/db/import")
+async def db_import(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_superadmin),
+) -> dict:
+    """Restore the control database from an uploaded SQL backup. Audited.
+
+    Destructive: the dump uses DROP ... IF EXISTS + recreate, so this overwrites
+    current control-plane data. The UI gates it behind an explicit confirmation.
+    """
+    sql = await file.read()
+    actor_id = actor.id  # capture before we drop the session's identity map
+    # Critical: this very request holds an AccessShareLock on `users` (from the
+    # require_superadmin auth check) for the life of its DB transaction. The restore
+    # needs AccessExclusiveLock on `users` to rebuild it — so without releasing our
+    # own transaction first, the restore would block on *us* until it times out.
+    # Roll back to drop those locks before handing off to the restore.
+    await db.rollback()
+    result = await _agent().db_import(sql)
+    # Best-effort audit: the restore just rebuilt the audit/users tables on this
+    # connection, so re-fetch the actor fresh and never let an audit hiccup fail a
+    # restore that already succeeded.
+    try:
+        fresh_actor = await db.get(User, actor_id)
+        if fresh_actor is not None:
+            await audit_record(
+                db, actor=fresh_actor, action="infra.db.import",
+                target_type="database", target_id="neubit_control",
+                meta={"ok": result.get("ok"), "bytes": len(sql)},
+            )
+    except Exception:  # noqa: BLE001 — audit is best-effort post-restore
+        await db.rollback()
+    return result
