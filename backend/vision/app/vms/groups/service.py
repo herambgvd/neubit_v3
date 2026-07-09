@@ -14,11 +14,12 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError
 
-from app.vms.models import CameraGroup
+from app.vms.models import CameraGroup, CameraPattern
 
 from .schemas import CameraGroupCreate, CameraGroupPublic
 
@@ -58,6 +59,7 @@ class CameraGroupService:
             color=body.color,
             description=body.description,
             camera_ids=list(body.camera_ids or []),
+            layout=body.layout,
             created_by=actor_id,
             updated_by=actor_id,
         )
@@ -82,7 +84,7 @@ class CameraGroupService:
             )
             if dup is not None:
                 raise ConflictError("a camera group with this name already exists")
-        for k in ("name", "color", "description", "camera_ids"):
+        for k in ("name", "color", "description", "camera_ids", "layout"):
             if k in data and data[k] is not None:
                 setattr(row, k, data[k])
         actor_id = _actor_id(actor)
@@ -95,5 +97,22 @@ class CameraGroupService:
 
     async def delete(self, group_id: str) -> None:
         row = await self._row(group_id)
+        await self._detach_from_patterns(group_id)
         await self.db.delete(row)
         await self.db.commit()
+
+    async def _detach_from_patterns(self, group_id: str) -> None:
+        """Cascade cleanup: drop this group id from every pattern that references it.
+
+        A camera-group being deleted must not linger inside a video-wall pattern's
+        ``camera_group_ids`` (mirrors neubit_v2's ``$pull`` on group delete). JSON-list
+        membership isn't portably filterable in SQL, so we sweep the tenant's patterns
+        and mutate the in-Python list (``flag_modified`` marks the JSON column dirty).
+        """
+        stmt = scoped(select(CameraPattern), CameraPattern, self.scope)
+        patterns = (await self.db.execute(stmt)).scalars().all()
+        for pat in patterns:
+            ids = pat.camera_group_ids or []
+            if group_id in ids:
+                pat.camera_group_ids = [g for g in ids if g != group_id]
+                flag_modified(pat, "camera_group_ids")

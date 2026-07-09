@@ -20,8 +20,8 @@ from app.db import Base
 
 # Import all model modules so their tables register on Base.metadata.
 # vms domain: Camera + MediaProfile + NVR + CameraGroup + CameraACL + CameraHealth
-#             + MediaNode + StreamShard. The models package __init__ imports every
-#             submodule, so this single import registers all VMS tables.
+#             + MediaNode + StreamShard + CameraPattern. The models package __init__
+#             imports every submodule, so this single import registers all VMS tables.
 import app.vms.models  # noqa: E402,F401
 
 config = context.config

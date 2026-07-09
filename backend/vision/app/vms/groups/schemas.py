@@ -12,7 +12,12 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.vms.common.schemas import AclPrivilege, AclSubjectType, AclTargetType
+from app.vms.common.schemas import (
+    AclPrivilege,
+    AclSubjectType,
+    AclTargetType,
+    GridLayout,
+)
 
 # ── Camera group ──────────────────────────────────────────────────────────────────
 
@@ -23,6 +28,7 @@ class CameraGroupCreate(BaseModel):
     color: Optional[str] = Field(default=None, max_length=16)
     description: Optional[str] = Field(default=None, max_length=1024)
     camera_ids: list[str] = Field(default_factory=list)
+    layout: GridLayout = "2x2"
 
 
 class CameraGroupUpdate(BaseModel):
@@ -31,6 +37,7 @@ class CameraGroupUpdate(BaseModel):
     color: Optional[str] = Field(default=None, max_length=16)
     description: Optional[str] = Field(default=None, max_length=1024)
     camera_ids: Optional[list[str]] = None
+    layout: Optional[GridLayout] = None
 
 
 class CameraGroupPublic(BaseModel):
@@ -40,6 +47,7 @@ class CameraGroupPublic(BaseModel):
     color: Optional[str] = None
     description: Optional[str] = None
     camera_ids: list[str] = Field(default_factory=list)
+    layout: GridLayout = "2x2"
     created_at: datetime
     updated_at: datetime
 
@@ -52,6 +60,7 @@ class CameraGroupPublic(BaseModel):
                 "color": row.color,
                 "description": row.description,
                 "camera_ids": row.camera_ids or [],
+                "layout": row.layout or "2x2",
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }

@@ -20,6 +20,7 @@ Domain split:
   * ``live``       — PlaybackSession (live/recorded viewer sessions, P2)
   * ``recording``  — Recording (finalized recording-segment metadata, P3)
   * ``storage``    — StoragePool + TierRule (where segments live + tiering, P3-B)
+  * ``pattern``    — CameraPattern (video-wall rotating group sequences, P3-C)
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from .health import CameraHealth
 from .live import PlaybackSession
 from .media_node import MediaNode, StreamShard
 from .nvr import NVR
+from .pattern import CameraPattern
 from .recording import Recording
 from .storage import StoragePool, TierRule
 
@@ -46,4 +48,5 @@ __all__ = [
     "Recording",
     "StoragePool",
     "TierRule",
+    "CameraPattern",
 ]

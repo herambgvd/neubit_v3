@@ -48,6 +48,11 @@ class CameraGroup(Base):
     camera_ids: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, server_default=text("'[]'")
     )
+    # Video-wall grid layout key (1x1|2x2|3x3|4x3|4x4|6x4|6x5|6x6|8x8); plain
+    # string (no PG enum) — validated at the schema layer.
+    layout: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default=text("'2x2'")
+    )
 
     created_by: Mapped[str | None] = mapped_column(String(64))
     updated_by: Mapped[str | None] = mapped_column(String(64))

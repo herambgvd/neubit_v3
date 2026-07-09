@@ -26,6 +26,7 @@ from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
 from app.vms.live.router import router as live_router
 from app.vms.nvr.router import router as nvr_router
+from app.vms.patterns.router import router as pattern_router
 from app.vms.recording.router import router as recording_router
 from app.vms.storage import rec_router as storage_rec_router
 from app.vms.storage import router as storage_router
@@ -51,6 +52,7 @@ routers = [
     storage_rec_router,
     camera_router,
     group_router,
+    pattern_router,
     nvr_router,
 ]
 

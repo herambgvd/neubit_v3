@@ -21,3 +21,6 @@ NodeStatus = Literal["online", "offline", "draining", "error", "unknown"]
 AclSubjectType = Literal["role", "user", "group"]
 AclTargetType = Literal["camera", "group"]
 AclPrivilege = Literal["view_live", "playback", "export", "ptz", "config"]
+# Video-wall grid layout key (width x height of the live-view tile grid). Shared by
+# the camera-group ``layout`` column and the video-wall / patterns feature.
+GridLayout = Literal["1x1", "2x2", "3x3", "4x3", "4x4", "6x4", "6x5", "6x6", "8x8"]

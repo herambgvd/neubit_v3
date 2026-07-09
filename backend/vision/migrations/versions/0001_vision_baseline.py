@@ -35,6 +35,7 @@ def _tables():
         CameraACL,
         CameraGroup,
         CameraHealth,
+        CameraPattern,
         MediaNode,
         MediaProfile,
         PlaybackSession,
@@ -58,6 +59,7 @@ def _tables():
         Recording.__table__,
         StoragePool.__table__,
         TierRule.__table__,
+        CameraPattern.__table__,
     ]
 
 
