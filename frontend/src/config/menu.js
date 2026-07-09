@@ -19,8 +19,9 @@ export const menuItems = [
   // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
   // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
   { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices" },
-  // Streaming = the live video-wall surface (VMS P2-D). Reads the camera estate.
-  { title: "Streaming", icon: "heroicons:signal", link: "/streaming", perm: "neubit.read" },
+  // Streaming is a SECTION: the video surfaces — Video Wall (live), Recordings,
+  // Playback. (Devices stays a pure onboarding zone; viewing lives here.)
+  { title: "Streaming", icon: "heroicons:signal", section: "streaming" },
   // Events = the incident surface (SOP-driven incidents live here, like neubit_v2).
   // Workflow itself is NOT a top-nav item — its config lives under Config → Workflow.
   { title: "Events", icon: "heroicons:calendar-days", link: "/events", perm: "neubit.read" },
@@ -55,14 +56,11 @@ export const configTabs = [
   { title: "License", icon: "heroicons-outline:check-badge", link: "/license" },
 ];
 
-// ── Devices sub-tab bar (second horizontal bar for the Devices section) ──
-//   Access Control + Cameras + NVR ship now (VMS P1); Streaming stays "Soon" (P2).
+// ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──
 export const deviceTabs = [
   { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read" },
   { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read" },
   { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read" },
-  { title: "Recordings", icon: "heroicons:film", link: "/devices/recordings", perm: "neubit.read" },
-  { title: "Playback", icon: "heroicons-outline:play", link: "/devices/playback", perm: "neubit.read" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).
@@ -73,6 +71,25 @@ export const DEVICES_ENTRY = "/access-control";
 export function isDevicesRoute(pathname) {
   if (!pathname) return false;
   return deviceTabs.some(
+    (t) => !t.disabled && (pathname === t.link || pathname.startsWith(`${t.link}/`)),
+  );
+}
+
+// ── Streaming sub-tab bar — the video-viewing surfaces (VMS) ──────────────
+//   Video Wall (live), Recordings, Playback. Onboarding stays under Devices.
+export const streamTabs = [
+  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read" },
+  { title: "Recordings", icon: "heroicons:film", link: "/recordings", perm: "neubit.read" },
+  { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read" },
+];
+
+// The route the Streaming top-nav item jumps to (first enabled stream tab).
+export const STREAMING_ENTRY = "/streaming";
+
+// True when the current path belongs to the Streaming section.
+export function isStreamingRoute(pathname) {
+  if (!pathname) return false;
+  return streamTabs.some(
     (t) => !t.disabled && (pathname === t.link || pathname.startsWith(`${t.link}/`)),
   );
 }

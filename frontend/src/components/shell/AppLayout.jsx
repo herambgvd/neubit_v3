@@ -12,7 +12,14 @@ import Footer from "@/components/shell/Footer";
 import Header from "@/components/shell/Header";
 import SectionTabs from "@/components/shell/SectionTabs";
 import { useAuth } from "@/lib/auth";
-import { isConfigRoute, isDevicesRoute, configTabs, deviceTabs } from "@/config/menu";
+import {
+  isConfigRoute,
+  isDevicesRoute,
+  isStreamingRoute,
+  configTabs,
+  deviceTabs,
+  streamTabs,
+} from "@/config/menu";
 
 // A banner shown to every signed-in user when an admin sets an announcement.
 function AnnouncementBanner() {
@@ -54,6 +61,7 @@ export default function AppLayout({ children }) {
       <Header />
       {isConfigRoute(pathname) && <SectionTabs tabs={configTabs} />}
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
+      {isStreamingRoute(pathname) && <SectionTabs tabs={streamTabs} />}
       <AnnouncementBanner />
       <main className="flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6">{children}</main>
       <Footer />

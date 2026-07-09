@@ -151,7 +151,7 @@ export default function RecordingsPage() {
   };
 
   // Play → the Playback surface, deep-linked to this recording's camera.
-  const playRecording = (r) => router.push(`/devices/playback?camera=${r.camera_id}`);
+  const playRecording = (r) => router.push(`/playback?camera=${r.camera_id}`);
   // Export → the clip-export dialog, pre-filled with this recording's range.
   const exportRecording = (r) => setExportRec(r);
 
@@ -219,7 +219,7 @@ export default function RecordingsPage() {
           <RecordingTimeline
             recordings={recordings}
             day={fromDate}
-            onSeek={() => router.push(`/devices/playback?camera=${cameraId}`)}
+            onSeek={() => router.push(`/playback?camera=${cameraId}`)}
           />
         </div>
       )}

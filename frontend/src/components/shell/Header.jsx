@@ -9,7 +9,15 @@ import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
 import { Avatar } from "@/components/ui/kit";
-import { menuItems, CONFIG_ENTRY, isConfigRoute, DEVICES_ENTRY, isDevicesRoute } from "@/config/menu";
+import {
+  menuItems,
+  CONFIG_ENTRY,
+  isConfigRoute,
+  DEVICES_ENTRY,
+  isDevicesRoute,
+  STREAMING_ENTRY,
+  isStreamingRoute,
+} from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/components/theme";
 
@@ -181,6 +189,16 @@ function NavEntry({ item, pathname }) {
   if (item.section === "devices") {
     return (
       <Link href={DEVICES_ENTRY} className={pill(isDevicesRoute(pathname))}>
+        <Icon icon={item.icon} className="text-base shrink-0" />
+        {item.title}
+      </Link>
+    );
+  }
+
+  // Streaming section: link to the video wall; active across the whole section.
+  if (item.section === "streaming") {
+    return (
+      <Link href={STREAMING_ENTRY} className={pill(isStreamingRoute(pathname))}>
         <Icon icon={item.icon} className="text-base shrink-0" />
         {item.title}
       </Link>
