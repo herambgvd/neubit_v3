@@ -37,6 +37,9 @@ const LINKAGE = "/vms/linkage-rules";
 const RECORDINGS = "/vms/recordings";
 const STORAGE = "/vms/storage";
 const EXPORT = "/vms/export";
+const REPORTS = "/vms/reports";
+const REPORT_SCHEDULES = "/vms/report-schedules";
+const ONVIF_SERVER = "/vms/onvif-server";
 
 // The axios baseURL is "<host>/api/v1" — for endpoints the browser must hit
 // directly (an authed blob download triggered via a save-link), prefix the
@@ -262,9 +265,11 @@ export const vms = {
 
   // ── Clip export (P4-B) — a job that concatenates the covered segments ────
   export: {
-    // POST /cameras/{id}/export { from, to, format? } → { job_id, status }.
-    create: (cameraId, { from, to, format = "mp4" } = {}) =>
-      unwrap(api.post(`${CAMERAS}/${cameraId}/export`, { from, to, format })),
+    // POST /cameras/{id}/export { from, to, format?, watermark? } → the ExportJobPublic
+    //   (job_id, status, signed, checksum, watermark, …). `watermark` burns a visible
+    //   provenance stamp into the clip (re-encode; makes tampering visible).
+    create: (cameraId, { from, to, format = "mp4", watermark = false } = {}) =>
+      unwrap(api.post(`${CAMERAS}/${cameraId}/export`, { from, to, format, watermark })),
     // GET /export/{job} → { job_id, status(queued|running|done|failed),
     //   file_size?, error?, camera_id, from, to, format }.
     status: (jobId) => unwrap(api.get(`${EXPORT}/${jobId}`)),
@@ -277,6 +282,55 @@ export const vms = {
     // already holds the session) — note it still needs the Bearer header, so
     // prefer downloadBlob for the in-app "Download" button.
     downloadUrl: (jobId) => `${API_ROOT}/api/v1${EXPORT}/${jobId}/download`,
+    // ── Tamper-evidence (P6-B) ────────────────────────────────────────────
+    // POST /export/{job}/verify → { valid, reason, manifest } — re-hash the clip
+    //   + verify its Ed25519 signature server-side (valid:false/reason:"tampered"
+    //   if altered after signing).
+    verify: (jobId) => unwrap(api.post(`${EXPORT}/${jobId}/verify`, {})),
+    // GET /export/{job}/manifest → the tamper-evidence sidecar (file_hash,
+    //   signature, exported_by, exported_at, chain…) as a downloadable blob.
+    manifestBlob: (jobId) =>
+      api.get(`${EXPORT}/${jobId}/manifest`, { responseType: "blob" }).then((r) => r.data),
+    // GET /export/public-key → { algorithm, key_id, public_key(PEM) } for offline verify.
+    publicKey: () => unwrap(api.get(`${EXPORT}/public-key`)),
+  },
+
+  // ── Operational reports (P6-B) — uptime / coverage / storage / events ────
+  // Each report is computed over a [from, to] window (ISO). `kind` ∈
+  //   camera-uptime | recording-coverage | storage-usage | event-stats |
+  //   health-summary. JSON shape: { kind, window{from,to,seconds}, rows[],
+  //   totals{}, by_type?, by_severity?, status_counts? }. Reads gate on
+  //   vms.playback.view; schedule writes on vms.config.manage.
+  reports: {
+    // GET /vms/reports/{kind}?from=&to=&camera_id= → the JSON report.
+    get: (kind, params = {}) => unwrap(api.get(`${REPORTS}/${kind}${qs(params)}`)),
+    // GET /vms/reports/{kind}/export?format=csv|pdf&from=&to=&camera_id= → a
+    //   CSV/PDF download (fetched as a blob so the Bearer header is sent).
+    exportBlob: (kind, params = {}) =>
+      api
+        .get(`${REPORTS}/${kind}/export${qs(params)}`, { responseType: "blob" })
+        .then((r) => r.data),
+    schedules: {
+      // GET /vms/report-schedules → { items, total }.
+      list: (params = {}) => unwrap(api.get(`${REPORT_SCHEDULES}${qs(params)}`)),
+      create: (body) => unwrap(api.post(REPORT_SCHEDULES, body)),
+      update: (id, body) => unwrap(api.patch(`${REPORT_SCHEDULES}/${id}`, body)),
+      remove: (id) => unwrap(api.delete(`${REPORT_SCHEDULES}/${id}`)),
+    },
+  },
+
+  // ── ONVIF-server config (P6-C) — expose OUR cameras to a 3rd-party VMS ────
+  // Per-tenant interop: Milestone/Genetec/etc. pull our cameras over ONVIF.
+  // Public shape: { id, enabled, exposed_camera_ids[] ("*"=all), service_username,
+  //   password_set, device_name, advertised_host, advertised_http_port,
+  //   advertised_rtsp_port }. service_password is WRITE-ONLY. Gate: vms.config.manage.
+  onvifServer: {
+    // GET /vms/onvif-server/config → the config (or a transient default).
+    getConfig: () => unwrap(api.get(`${ONVIF_SERVER}/config`)),
+    // PUT /vms/onvif-server/config { enabled?, exposed_camera_ids?, service_username?,
+    //   service_password?, device_name?, advertised_host?, advertised_http_port?,
+    //   advertised_rtsp_port? } — PATCH semantics; omit unchanged secrets.
+    setConfig: (body) => unwrap(api.put(`${ONVIF_SERVER}/config`, body)),
   },
 
   // ── NVR footage extraction (P4-B) — search + play an onboarded NVR's own

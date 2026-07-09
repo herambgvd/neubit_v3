@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Modal, Select } from "@/components/ui/kit";
+import { Button, Modal, Select, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { fmtBytes, fmtDuration } from "@/lib/format";
 import { vms } from "../api";
@@ -38,9 +38,11 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [format, setFormat] = useState("mp4");
-  const [job, setJob] = useState(null); // { job_id, status, file_size?, error? }
+  const [job, setJob] = useState(null); // { job_id, status, file_size?, error?, signed?, checksum?, watermark? }
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [watermark, setWatermark] = useState(false);
+  const [verify, setVerify] = useState(null); // { valid, reason } | "loading"
   const pollRef = useRef(null);
 
   // Seed the range when (re)opened.
@@ -52,6 +54,8 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
     setJob(null);
     setSubmitting(false);
     setDownloading(false);
+    setWatermark(false);
+    setVerify(null);
   }, [open, range?.from, range?.to]);
 
   // Poll the job while it's in flight.
@@ -95,6 +99,7 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
         from: fromLocalInput(from),
         to: fromLocalInput(to),
         format,
+        watermark,
       });
       setJob({ job_id: res.job_id, status: res.status || "queued" });
     } catch (e) {
@@ -121,6 +126,37 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
       toast.error(apiError(e, "Download failed"));
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const runVerify = async () => {
+    if (!job?.job_id) return;
+    setVerify("loading");
+    try {
+      const res = await vms.export.verify(job.job_id);
+      setVerify(res);
+      if (res.valid) toast.success("Signature verified — clip is authentic");
+      else toast.error(`Verification failed: ${res.reason}`);
+    } catch (e) {
+      setVerify(null);
+      toast.error(apiError(e, "Verify failed"));
+    }
+  };
+
+  const downloadManifest = async () => {
+    if (!job?.job_id) return;
+    try {
+      const blob = await vms.export.manifestBlob(job.job_id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${cameraName || cameraId}-${job.job_id}.manifest.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(apiError(e, "Manifest download failed"));
     }
   };
 
@@ -195,9 +231,15 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
                 />
               </label>
             </div>
-            <div className="w-40">
-              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">Format</span>
-              <Select value={format} onChange={(e) => setFormat(e.target.value)} options={FORMATS} className="!h-9 !py-1.5" />
+            <div className="flex items-end gap-4">
+              <div className="w-40">
+                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">Format</span>
+                <Select value={format} onChange={(e) => setFormat(e.target.value)} options={FORMATS} className="!h-9 !py-1.5" />
+              </div>
+              <label className="flex items-center gap-2 pb-1.5">
+                <Toggle checked={watermark} onChange={setWatermark} />
+                <span className="text-xs text-muted">Burn provenance watermark</span>
+              </label>
             </div>
             <p className="text-xs text-muted">
               {rangeValid ? (
@@ -240,6 +282,58 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
             {inFlight && (
               <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-card-border">
                 <div className="h-full w-1/3 animate-pulse rounded-full bg-foreground/60" />
+              </div>
+            )}
+
+            {/* Tamper-evidence — signed badge + verify affordance (P6-B) */}
+            {status === "done" && (
+              <div className="mt-4 space-y-3 border-t border-card-border pt-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {job.signed ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-500">
+                      <Icon icon="heroicons-solid:shield-check" className="text-sm" /> Signed (Ed25519)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-hover px-2.5 py-1 text-xs text-muted">
+                      <Icon icon="heroicons-outline:shield-exclamation" className="text-sm" /> Not signed
+                    </span>
+                  )}
+                  {job.watermark && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-hover px-2.5 py-1 text-xs text-muted">
+                      <Icon icon="heroicons-outline:identification" className="text-sm" /> Watermarked
+                    </span>
+                  )}
+                  {verify && verify !== "loading" && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
+                        verify.valid ? "bg-emerald-500/15 text-emerald-500" : "bg-red-500/15 text-red-500"
+                      }`}
+                    >
+                      <Icon icon={verify.valid ? "heroicons-solid:check-badge" : "heroicons-solid:x-circle"} className="text-sm" />
+                      {verify.valid ? "Verified authentic" : `Tampered — ${verify.reason}`}
+                    </span>
+                  )}
+                </div>
+
+                {job.checksum && (
+                  <div className="text-[11px] text-muted">
+                    SHA-256 <code className="break-all text-foreground">{job.checksum}</code>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    icon="heroicons-outline:shield-check"
+                    disabled={verify === "loading"}
+                    onClick={runVerify}
+                  >
+                    {verify === "loading" ? "Verifying…" : "Verify signature"}
+                  </Button>
+                  <Button variant="ghost" icon="heroicons-outline:document-text" onClick={downloadManifest}>
+                    Manifest
+                  </Button>
+                </div>
               </div>
             )}
           </div>

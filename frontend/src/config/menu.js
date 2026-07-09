@@ -49,6 +49,9 @@ export const configTabs = [
   { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
   { title: "Activity", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
   { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
+  // VMS enterprise surfaces (P6-C/P6-D).
+  { title: "ONVIF Server", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage" },
+  { title: "Security", icon: "heroicons-outline:shield-exclamation", link: "/config/security", perm: "security.manage" },
   // neubit_v3-only admin pages (no neubit_v2 config equivalent) — kept so they stay reachable.
   { title: "API Keys", icon: "heroicons-outline:key", link: "/api-keys", perm: "apikey.manage" },
   { title: "Branding", icon: "heroicons-outline:swatch", link: "/branding", perm: "branding.manage" },
@@ -83,6 +86,7 @@ export const streamTabs = [
   { title: "Recordings", icon: "heroicons:film", link: "/recordings", perm: "neubit.read" },
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read" },
   { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read" },
+  { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view" },
 ];
 
 // The route the Streaming top-nav item jumps to (first enabled stream tab).
