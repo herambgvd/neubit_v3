@@ -20,12 +20,15 @@ Endpoints:
 
 from __future__ import annotations
 
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Principal, Scope, get_scope, require_permission
+from kernel.auth import _bearer
 
 from app.db import get_db
 
@@ -38,7 +41,10 @@ from .schemas import (
     NvrDiscoverBody,
     NvrHealthResponse,
     NvrListResponse,
+    NvrPlaybackBody,
+    NvrPlaybackSession,
     NvrPublic,
+    NvrRecordingsResponse,
     NvrUpdate,
 )
 from .service import NvrService
@@ -50,11 +56,18 @@ PERM_MANAGE = "vms.nvr.manage"
 router = APIRouter(prefix="/vms", tags=["VMS NVR"])
 
 
+def _bearer_token(
+    cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str | None:
+    return cred.credentials if cred else None
+
+
 async def get_nvr_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
+    bearer: Annotated[Optional[str], Depends(_bearer_token)] = None,
 ) -> NvrService:
-    return NvrService(db, scope)
+    return NvrService(db, scope, bearer=bearer)
 
 
 # ── NVR CRUD ───────────────────────────────────────────────────────────
@@ -202,3 +215,42 @@ async def refresh_nvr(
     actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> NvrPublic:
     return await svc.refresh(nvr_id, actor=actor)
+
+
+# ── Footage extraction (P4-B — search + playback on the NVR's own storage) ─────
+
+
+@router.get(
+    "/nvrs/{nvr_id}/channels/{channel}/recordings",
+    response_model=NvrRecordingsResponse,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def nvr_channel_recordings(
+    nvr_id: str,
+    channel: int,
+    svc: Annotated[NvrService, Depends(get_nvr_service)],
+    from_: datetime | None = Query(None, alias="from"),
+    to: datetime | None = Query(None),
+) -> NvrRecordingsResponse:
+    """Search a channel's recorded ranges on the NVR's OWN storage (via the brand
+    driver). Graceful empty on an unreachable NVR — never 500s."""
+    from_iso = from_.isoformat() if from_ else None
+    to_iso = to.isoformat() if to else None
+    return await svc.channel_recordings(nvr_id, channel, from_iso, to_iso)
+
+
+@router.post(
+    "/nvrs/{nvr_id}/channels/{channel}/playback",
+    response_model=NvrPlaybackSession,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def nvr_channel_playback(
+    nvr_id: str,
+    channel: int,
+    body: NvrPlaybackBody,
+    svc: Annotated[NvrService, Depends(get_nvr_service)],
+) -> NvrPlaybackSession:
+    """Play the NVR's recorded [from, to] stream for a channel — registers the NVR's
+    RTSP-with-time playback as a MediaMTX path (HLS/WebRTC + media token) or returns the
+    raw RTSP playback URI for a server-side proxy. Graceful when the NVR is down."""
+    return await svc.channel_playback(nvr_id, channel, body.from_, body.to)

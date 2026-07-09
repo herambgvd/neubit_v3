@@ -171,3 +171,60 @@ class NvrHealthResponse(BaseModel):
     capabilities: dict[str, Any] = Field(default_factory=dict)
     last_seen_at: Optional[datetime] = None
     last_error: Optional[str] = None
+
+
+# ── NVR footage extraction (P4-B — search + playback on the NVR's own storage) ────
+
+
+class NvrRecordingRange(BaseModel):
+    """One recorded time-range the NVR reports for a channel (from the brand driver).
+
+    ``start``/``end`` are the range bounds as the device reports them (ISO-8601 strings —
+    brand time forms are normalised by the driver); ``extra`` carries brand-specific bits
+    (``track_id`` / ``file_path`` / ``playback_uri``) for the UI / a direct-fetch path.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    channel: int
+    start: Optional[str] = None
+    end: Optional[str] = None
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class NvrRecordingsResponse(BaseModel):
+    """GET /nvrs/{id}/channels/{ch}/recordings — the NVR's own recorded ranges."""
+
+    model_config = ConfigDict(extra="ignore")
+    nvr_id: str
+    channel: int
+    items: list[NvrRecordingRange] = Field(default_factory=list)
+    total: int = 0
+    reachable: bool = True
+
+
+class NvrPlaybackBody(BaseModel):
+    """POST /nvrs/{id}/channels/{ch}/playback — play the NVR's recorded [from,to] stream."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    from_: datetime = Field(alias="from")
+    to: datetime
+
+
+class NvrPlaybackSession(BaseModel):
+    """The NVR-footage playback session — a token-gated HLS/WebRTC view of the NVR's
+    recorded stream (the NVR's playback RTSP registered as a MediaMTX path), OR the raw
+    RTSP playback URI when MediaMTX registration is unavailable (a P4-C server-side proxy
+    fallback). ``ready`` mirrors the live session shape."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+    nvr_id: str
+    channel: int
+    kind: str = "nvr_recorded"
+    from_: datetime = Field(serialization_alias="from")
+    to: datetime
+    hls_url: Optional[str] = None
+    webrtc_url: Optional[str] = None
+    rtsp_url: Optional[str] = None  # the NVR playback RTSP (server-side; no browser token)
+    token: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    ready: bool = False

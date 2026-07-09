@@ -72,6 +72,35 @@ def _rtsp_url(host: str, creds: Credentials, channel: int, stream: int) -> str:
     return f"rtsp://{auth}{host}:{creds.rtsp_port}/Streaming/Channels/{cid}"
 
 
+def _to_hik_time(iso: str | None) -> str | None:
+    """Normalise an ISO-8601 time to Hikvision's ISAPI form ``YYYY-MM-DDTHH:MM:SSZ``.
+
+    ISAPI CMSearch ``<startTime>``/``<endTime>`` want a UTC ISO string with a ``Z``. We
+    parse a variety of inputs (``…Z`` / ``…+00:00`` / naive) and re-emit the canonical
+    seconds-resolution UTC form. Returns None on unparseable input."""
+    if not iso:
+        return None
+    from datetime import datetime, timezone
+
+    try:
+        s = str(iso).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_rtsp_time(iso: str | None) -> str | None:
+    """Hik RTSP playback ``starttime``/``endtime`` use the basic form ``YYYYMMDDTHHMMSSZ``."""
+    hik = _to_hik_time(iso)
+    if not hik:
+        return None
+    # 2026-07-09T10:00:00Z → 20260709T100000Z
+    return hik.replace("-", "").replace(":", "")
+
+
 class HikvisionDriver(CameraDriver):
     """Hikvision ISAPI driver (HTTP Digest). Onboarding + config + PTZ implemented;
     NVR footage search is a documented P4 stub."""
@@ -377,7 +406,7 @@ class HikvisionDriver(CameraDriver):
             "audioexception": ("audio_alarm", "alarm", "Audio exception detected"),
         }
 
-    # ── NVR footage / playback (P4 — documented stub) ─────────────────────────
+    # ── NVR footage / playback (P4-B) ─────────────────────────────────────────
     async def search_recordings(
         self,
         host: str,
@@ -387,14 +416,98 @@ class HikvisionDriver(CameraDriver):
         start_time: str | None = None,
         end_time: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Hikvision NVR footage search via ISAPI ContentMgmt.
+        """Hikvision NVR footage search via ISAPI ``POST /ISAPI/ContentMgmt/search``.
 
-        # LIVE-VALIDATE: NOT implemented — P4 (footage extraction / playback). The real
-        # implementation POSTs a ``CMSearchDescription`` to
-        # ``/ISAPI/ContentMgmt/search`` (a ``<trackID>`` = channel*100+1, a
-        # ``<timeSpanList>`` window) and parses ``<matchList>`` → playbackURI
-        # (``rtsp://host/Streaming/tracks/<id>?starttime=...&endtime=...``). Requires a
-        # real Hik NVR to validate the search XML + track-id math. Returns [] for now.
+        POSTs a ``CMSearchDescription`` (a ``<trackID>`` = ``channel*100+1``, a
+        ``<timeSpanList>`` window) and parses the ``CMSearchResult`` → one dict per
+        ``searchMatchItem`` with its ``timeSpan`` (start/end) + ``playbackURI``. Never
+        raises — ``[]`` on unreachable / no matches.
+
+        # LIVE-VALIDATE: exact tag names (``searchMatchItem`` / ``timeSpan`` /
+        # ``playbackURI``) + the ``trackID`` math (main track = channel*100+1) follow
+        # Hikvision's published ISAPI spec but vary by firmware/model. Confirm the search
+        # XML shape + track-id against a real Hik NVR.
         """
-        log.info("Hikvision search_recordings is a P4 stub (ISAPI ContentMgmt/search) — returning []")
-        return []
+        ch = channel or 1
+        track_id = _rtsp_channel_id(ch, 1)  # main track = channel*100+1
+        s = _to_hik_time(start_time) or _to_hik_time("1970-01-01T00:00:00Z")
+        e = _to_hik_time(end_time) or _to_hik_time("2038-01-01T00:00:00Z")
+        # A CMSearchDescription for one track's time window (namespaced per ISAPI spec).
+        body = (
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<CMSearchDescription xmlns="http://www.hikvision.com/ver20/XMLSchema">'
+            "<searchID>vms-p4b-search</searchID>"
+            "<trackIDList>"
+            f"<trackID>{track_id}</trackID>"
+            "</trackIDList>"
+            "<timeSpanList><timeSpan>"
+            f"<startTime>{s}</startTime>"
+            f"<endTime>{e}</endTime>"
+            "</timeSpan></timeSpanList>"
+            "<maxResults>200</maxResults>"
+            "<searchResultPostion>0</searchResultPostion>"
+            "<metadataList><metadataDescriptor>//recordType.meta.std-cgi.com"
+            "</metadataDescriptor></metadataList>"
+            "</CMSearchDescription>"
+        )
+        xml = await _http.post_text(
+            f"{self._base(host, creds)}/ISAPI/ContentMgmt/search",
+            creds.username, creds.password,
+            content=body, headers={"Content-Type": "application/xml"},
+            verify_tls=creds.verify_tls,
+        )
+        if not xml:
+            return []
+        out: list[dict[str, Any]] = []
+        for item in _http.xml_findall(xml, "searchMatchItem"):
+            span_start = _http.el_text(item, "startTime")
+            span_end = _http.el_text(item, "endTime")
+            playback_uri = _http.el_text(item, "playbackURI")
+            out.append(
+                {
+                    "channel": ch,
+                    "track_id": track_id,
+                    "start_time": span_start,
+                    "end_time": span_end,
+                    "playback_uri": playback_uri,
+                }
+            )
+        return out
+
+    async def get_playback_uri(
+        self,
+        host: str,
+        creds: Credentials,
+        *,
+        channel: int | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        recording_token: str | None = None,
+    ) -> str | None:
+        """Build the Hik RTSP playback URI for a channel + [start, end] window.
+
+        Hikvision serves time-addressed playback on the *tracks* endpoint:
+        ``rtsp://host:554/Streaming/tracks/<trackID>?starttime=<t>&endtime=<t>`` where
+        ``<trackID>`` = ``channel*100+1`` (main track) and the times are the basic
+        ISO form ``YYYYMMDDTHHMMSSZ``. Creds are percent-encoded + injected. Returns
+        ``None`` when the window is missing. Never raises.
+
+        # LIVE-VALIDATE: the ``Streaming/tracks/<id>`` playback path + ``starttime``/
+        # ``endtime`` query params follow the ISAPI RTSP-playback spec; confirm the exact
+        # param names + whether the NVR wants ``&name=`` on the owner's Hik NVR.
+        """
+        from urllib.parse import quote
+
+        ch = channel or 1
+        track_id = _rtsp_channel_id(ch, 1)
+        st = _to_rtsp_time(start_time)
+        et = _to_rtsp_time(end_time)
+        if not st or not et:
+            return None
+        user = quote(creds.username or "", safe="")
+        pw = quote(creds.password or "", safe="")
+        auth = f"{user}:{pw}@" if creds.username else ""
+        return (
+            f"rtsp://{auth}{host}:{creds.rtsp_port}/Streaming/tracks/{track_id}"
+            f"?starttime={st}&endtime={et}"
+        )

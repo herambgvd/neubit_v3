@@ -22,6 +22,7 @@ the pre-refactor flat layout.
 from __future__ import annotations
 
 from app.vms.cameras.router import router as camera_router
+from app.vms.export.router import router as export_router
 from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
 from app.vms.live.router import router as live_router
@@ -49,11 +50,16 @@ from app.vms.storage import router as storage_router
 # ``/vms/cameras/{id}/timeline`` paths are deeper than the camera ``/cameras/{id}``
 # catch-all, and distinct from the recording router's paths. The P4-A recorded-
 # playback control plane (recorded PlaybackSession + scrub-bar timeline).
+# Export mounts alongside playback — its ``/vms/cameras/{id}/export`` (POST) +
+# ``/vms/export/{job}`` + ``/vms/export/{job}/download`` are deeper/distinct from the
+# camera ``/cameras/{id}`` catch-all. The P4-B clip-export control plane (queue a job;
+# the ExportWorker ffmpeg-concats the covered recorded segments → a downloadable mp4).
 routers = [
     health_router,
     live_router,
     recording_router,
     playback_router,
+    export_router,
     storage_router,
     storage_rec_router,
     camera_router,

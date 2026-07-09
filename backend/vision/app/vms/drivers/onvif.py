@@ -1183,10 +1183,36 @@ class OnvifDriver(CameraDriver):
         return await asyncio.to_thread(_search)
 
     async def get_playback_uri(
-        self, host: str, creds: Credentials, recording_token: str
+        self,
+        host: str,
+        creds: Credentials,
+        *,
+        channel: int | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        recording_token: str | None = None,
     ) -> str | None:
-        """ONVIF Profile G GetReplayUri. Ported from gvd_nvr ``get_replay_uri``. Never raises."""
+        """ONVIF Profile G GetReplayUri. Ported from gvd_nvr ``get_replay_uri``. Never raises.
+
+        Profile G replay is keyed by a ``RecordingToken``, not a channel+window: when no
+        explicit ``recording_token`` is given we first ``search_recordings`` (for the
+        channel/window) and replay the first match's token. The replay stream position is
+        then driven by the RTSP Range header (playback control), not the URI — so the URI
+        is the recording's replay endpoint. Returns ``None`` when nothing matches.
+        """
         if not _HAS_ONVIF:
+            return None
+
+        token = recording_token
+        if not token:
+            matches = await self.search_recordings(
+                host, creds, channel=channel, start_time=start_time, end_time=end_time
+            )
+            for m in matches:
+                if m.get("recording_token"):
+                    token = m["recording_token"]
+                    break
+        if not token:
             return None
 
         def _get() -> str | None:
@@ -1199,10 +1225,11 @@ class OnvifDriver(CameraDriver):
                 uri = replay.GetReplayUri(
                     {
                         "StreamSetup": {"Stream": "RTP_Unicast", "Transport": {"Protocol": "RTSP"}},
-                        "RecordingToken": recording_token,
+                        "RecordingToken": token,
                     }
                 )
-                return getattr(uri, "Uri", None)
+                url = getattr(uri, "Uri", None)
+                return _inject_creds(url, creds.username, creds.password) if url else None
             except Exception as exc:  # noqa: BLE001
                 log.warning("[%s] GetReplayUri failed: %s", host, exc)
                 return None

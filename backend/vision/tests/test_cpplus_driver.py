@@ -172,6 +172,9 @@ async def test_configure_imaging_read(monkeypatch):
     assert result["table.VideoInOptions[0].Brightness"] == "50"
 
 
-# ── NVR footage stub (P4) ────────────────────────────────────────────────────────
-async def test_search_recordings_is_stub():
+# ── NVR footage (P4-B) — graceful empty when unreachable (no monkeypatch) ─────────
+# The full mediaFileFind search + playback-URI construction are exercised in
+# ``test_nvr_footage.py`` with fabricated CGI fixtures; here we only assert the
+# unreachable-host path degrades to [] (the create call fails → no finder → []).
+async def test_search_recordings_unreachable_is_empty():
     assert await CpPlusDriver().search_recordings("10.0.0.7", CREDS) == []

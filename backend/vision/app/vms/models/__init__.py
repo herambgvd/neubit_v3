@@ -21,11 +21,13 @@ Domain split:
   * ``recording``  — Recording (finalized recording-segment metadata, P3)
   * ``storage``    — StoragePool + TierRule (where segments live + tiering, P3-B)
   * ``pattern``    — CameraPattern (video-wall rotating group sequences, P3-C)
+  * ``export``     — ExportJob (clip-export: concat recorded segments → mp4, P4-B)
 """
 
 from __future__ import annotations
 
 from .camera import Camera, MediaProfile
+from .export import ExportJob
 from .group import CameraACL, CameraGroup
 from .health import CameraHealth
 from .live import PlaybackSession
@@ -49,4 +51,5 @@ __all__ = [
     "StoragePool",
     "TierRule",
     "CameraPattern",
+    "ExportJob",
 ]

@@ -416,3 +416,49 @@ class LuminaDriver(CameraDriver):
             "motion": ("motion_detected", "alarm", "Motion detected"),
             "Motion Detection": ("motion_detected", "alarm", "Motion detected"),
         }
+
+    # ── NVR footage / playback (P4-B — delegate to ONVIF Profile G) ───────────
+    async def search_recordings(
+        self,
+        host: str,
+        creds: Credentials,
+        *,
+        channel: int | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Lumina footage search. v2's Lumina integration had NO recording-search API,
+        so we delegate to ONVIF Profile G (many Lumina devices also answer ONVIF).
+        Never raises — ``[]`` when ONVIF-G is unavailable.
+
+        # LIVE-VALIDATE: v2 had NO Lumina recording search — this uses the ONVIF-G path
+        # as a best-effort. Confirm whether the owner's Lumina NVR exposes ONVIF Profile G
+        # (recording search); if not, footage extraction needs a Lumina-native API port.
+        """
+        from .onvif import OnvifDriver
+
+        return await OnvifDriver().search_recordings(
+            host, creds, channel=channel, start_time=start_time, end_time=end_time
+        )
+
+    async def get_playback_uri(
+        self,
+        host: str,
+        creds: Credentials,
+        *,
+        channel: int | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        recording_token: str | None = None,
+    ) -> str | None:
+        """Lumina replay URI — delegate to ONVIF Profile G GetReplayUri (v2 had no
+        Lumina-native playback API). Never raises — ``None`` when unavailable.
+
+        # LIVE-VALIDATE: as above — confirm ONVIF-G replay on the owner's Lumina device.
+        """
+        from .onvif import OnvifDriver
+
+        return await OnvifDriver().get_playback_uri(
+            host, creds, channel=channel, start_time=start_time, end_time=end_time,
+            recording_token=recording_token,
+        )

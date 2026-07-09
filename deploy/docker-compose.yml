@@ -215,6 +215,12 @@ services:
       VE_RECORDINGS_DIR: ${VE_RECORDINGS_DIR:-/recordings}
       VE_RETENTION_TICK_SEC: ${VE_RETENTION_TICK_SEC:-300}
       VE_DEFAULT_RETENTION_DAYS: ${VE_DEFAULT_RETENTION_DAYS:-30}
+      # P4-B clip export: the export worker ffmpeg-concats recorded fmp4 segments into
+      # a single mp4 written under the downloads area (a subdir of the recordings
+      # volume by default → same mount). Tune the poll interval + concurrency.
+      VE_DOWNLOADS_DIR: ${VE_DOWNLOADS_DIR:-/recordings/downloads}
+      VE_EXPORT_TICK_SEC: ${VE_EXPORT_TICK_SEC:-5}
+      VE_EXPORT_CONCURRENCY: ${VE_EXPORT_CONCURRENCY:-2}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }

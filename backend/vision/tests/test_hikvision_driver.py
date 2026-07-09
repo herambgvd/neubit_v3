@@ -159,6 +159,9 @@ async def test_ptz_failure_raises_driver_error(monkeypatch):
         pass
 
 
-# ── NVR footage stub (P4) ────────────────────────────────────────────────────────
-async def test_search_recordings_is_stub():
+# ── NVR footage (P4-B) — graceful empty when unreachable (no monkeypatch) ─────────
+# The full ISAPI ContentMgmt/search + playback-URI construction are exercised in
+# ``test_nvr_footage.py`` with fabricated ISAPI fixtures; here we only assert the
+# unreachable-host path degrades to [] (the search POST fails → None → []).
+async def test_search_recordings_unreachable_is_empty():
     assert await HikvisionDriver().search_recordings("10.0.0.5", CREDS) == []

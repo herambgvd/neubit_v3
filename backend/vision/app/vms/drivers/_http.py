@@ -70,6 +70,33 @@ async def get_bytes(
         return None
 
 
+async def post_text(
+    url: str,
+    username: str,
+    password: str,
+    *,
+    content: str | bytes | None = None,
+    headers: dict[str, str] | None = None,
+    verify_tls: bool = False,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """POST → response text, or ``None`` on any failure (unreachable/4xx/5xx). Never raises.
+
+    The graceful counterpart to ``request_strict`` for READ-style POSTs (e.g. the
+    Hikvision ISAPI ``ContentMgmt/search`` footage query, which POSTs a search body but
+    is a read). Digest-authed like the GET helpers."""
+    try:
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_tls) as client:
+            r = await client.post(url, auth=_auth(username, password), content=content, headers=headers)
+        if r.status_code >= 400:
+            log.debug("POST %s → HTTP %s", url, r.status_code)
+            return None
+        return r.text
+    except Exception as exc:  # noqa: BLE001
+        log.debug("POST %s failed: %s", url, exc)
+        return None
+
+
 async def request_strict(
     method: str,
     url: str,

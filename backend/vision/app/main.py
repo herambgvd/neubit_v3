@@ -35,6 +35,7 @@ from kernel.events import subject
 from app.db import get_sessionmaker
 from app.vms import routers as vms_routers
 from app.vms.common.events import bus
+from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
 from app.vms.recording import RecordingConsumer, RecordingScheduler
 from app.vms.storage import RetentionTieringWorker
@@ -74,8 +75,17 @@ async def lifespan(app: FastAPI):
     await storage_worker.start()
     app.state.storage_worker = storage_worker
 
+    # P4-B clip export: drain queued ExportJobs → ffmpeg-concat the covered recorded
+    # fmp4 segments into a single downloadable mp4 (in the downloads area on the
+    # recordings volume). Own DB session per cycle; bounded concurrency; graceful
+    # (missing segments / ffmpeg fail → job status=failed, never crashes the loop).
+    export_worker = ExportWorker(get_sessionmaker())
+    await export_worker.start()
+    app.state.export_worker = export_worker
+
     yield
 
+    await export_worker.stop()
     await storage_worker.stop()
     await rec_scheduler.stop()
     await sampler.stop()

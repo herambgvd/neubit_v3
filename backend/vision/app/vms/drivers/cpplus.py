@@ -69,6 +69,67 @@ def _rtsp_url(host: str, creds: Credentials, channel: int, subtype: int) -> str:
     return f"rtsp://{auth}{host}:{creds.rtsp_port}/cam/realmonitor?channel={channel}&subtype={subtype}"
 
 
+def _to_dahua_time(iso: str | None) -> str | None:
+    """Normalise an ISO-8601 time to Dahua's ``YYYY-MM-DD HH:MM:SS`` (space-separated, UTC).
+
+    Dahua ``mediaFileFind`` conditions + the ``/cam/playback`` RTSP ``starttime``/
+    ``endtime`` both use this human form (URL-encoded on the RTSP query). Returns None on
+    unparseable input."""
+    if not iso:
+        return None
+    from datetime import datetime, timezone
+
+    try:
+        s = str(iso).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_dahua_rtsp_time(iso: str | None) -> str | None:
+    """Dahua RTSP playback ``starttime``/``endtime`` use ``YYYY_MM_DD_HH_MM_SS``."""
+    human = _to_dahua_time(iso)
+    if not human:
+        return None
+    # 2026-07-09 10:00:00 → 2026_07_09_10_00_00
+    return human.replace("-", "_").replace(" ", "_").replace(":", "_")
+
+
+def _parse_dahua_find_items(body: str, channel: int) -> list[dict[str, Any]]:
+    """Parse Dahua ``findNextFile`` ``key=value`` text → one dict per ``items[i]``.
+
+    Dahua returns ``items[0].StartTime=2026-07-09 10:00:00`` / ``items[0].EndTime=...`` /
+    ``items[0].FilePath=/mnt/...`` (one line per field). We group by the ``items[<i>]``
+    index and emit start/end/file_path per file. Namespace-agnostic + defensive.
+    """
+    kv = _http.parse_cgi_kv(body)
+    by_index: dict[int, dict[str, str]] = {}
+    for key, value in kv.items():
+        if not key.startswith("items["):
+            continue
+        try:
+            idx = int(key[len("items["):].split("]", 1)[0])
+        except (ValueError, IndexError):
+            continue
+        field = key.split(".", 1)[1] if "." in key else key
+        by_index.setdefault(idx, {})[field] = value
+    out: list[dict[str, Any]] = []
+    for idx in sorted(by_index):
+        fields = by_index[idx]
+        out.append(
+            {
+                "channel": channel,
+                "start_time": fields.get("StartTime"),
+                "end_time": fields.get("EndTime"),
+                "file_path": fields.get("FilePath"),
+            }
+        )
+    return out
+
+
 class CpPlusDriver(CameraDriver):
     """CP-Plus / Dahua HTTP-CGI driver (HTTP Digest). Onboarding + config + PTZ
     implemented; NVR footage search is a documented P4 stub."""
@@ -355,7 +416,7 @@ class CpPlusDriver(CameraDriver):
             "AudioAnomaly": ("audio_alarm", "alarm", "Audio anomaly detected"),
         }
 
-    # ── NVR footage / playback (P4 — documented stub) ─────────────────────────
+    # ── NVR footage / playback (P4-B) ─────────────────────────────────────────
     async def search_recordings(
         self,
         host: str,
@@ -365,14 +426,108 @@ class CpPlusDriver(CameraDriver):
         start_time: str | None = None,
         end_time: str | None = None,
     ) -> list[dict[str, Any]]:
-        """CP-Plus/Dahua NVR footage search.
+        """CP-Plus/Dahua NVR footage search via the ``mediaFileFind`` CGI lifecycle.
 
-        # LIVE-VALIDATE: NOT implemented — P4 (footage extraction / playback). The real
-        # implementation uses the Dahua ``mediaFileFind`` CGI/RPC lifecycle:
-        # ``factory.create`` → ``findFile`` (a ``condition`` with channel + time window)
-        # → repeated ``findNextFile`` → ``close``, then builds a playback RTSP URL
-        # (``rtsp://host/cam/playback?channel=<n>&starttime=...&endtime=...``). Requires
-        # a real CP-Plus NVR to validate the RPC object lifecycle. Returns [] for now.
+        Dahua CGI exposes a stateful find: ``factory.create`` → ``findFile`` (a
+        ``condition`` with the channel + time window) → repeated ``findNextFile`` → the
+        ``close``. Each ``findNextFile`` response is ``key=value`` text with
+        ``items[i].StartTime`` / ``items[i].EndTime`` / ``items[i].FilePath``. We create
+        one finder, page results, parse the items, and always close the finder. Never
+        raises — ``[]`` on unreachable / no matches.
+
+        # LIVE-VALIDATE: the ``mediaFileFind`` CGI object lifecycle + condition param
+        # names (``condition.Channel`` / ``condition.StartTime`` / ``condition.EndTime``)
+        # + item key layout (``items[0].StartTime``) follow the Dahua HTTP-API spec but
+        # vary by CP-Plus firmware. Confirm the full create→find→next→close flow against
+        # a real CP-Plus NVR.
         """
-        log.info("CP-Plus search_recordings is a P4 stub (Dahua mediaFileFind) — returning []")
-        return []
+        from urllib.parse import quote as _q
+
+        base = self._base(host, creds)
+        ch = channel or 1
+        s = _to_dahua_time(start_time) or _to_dahua_time("1970-01-01T00:00:00Z")
+        e = _to_dahua_time(end_time) or _to_dahua_time("2038-01-01T00:00:00Z")
+
+        # 1) create a finder object → ``result=<objectId>``.
+        create_body = await _http.get_text(
+            f"{base}/cgi-bin/mediaFileFind.cgi?action=factory.create",
+            creds.username, creds.password,
+        )
+        finder = _http.parse_cgi_kv(create_body or "").get("result")
+        if not finder:
+            return []
+
+        out: list[dict[str, Any]] = []
+        try:
+            # 2) start the find with the channel + time-window condition.
+            find_url = (
+                f"{base}/cgi-bin/mediaFileFind.cgi?action=findFile&object={finder}"
+                f"&condition.Channel={ch}"
+                f"&condition.StartTime={_q(s, safe='')}"
+                f"&condition.EndTime={_q(e, safe='')}"
+            )
+            started = await _http.get_text(find_url, creds.username, creds.password)
+            if started is None:
+                return []
+            # 3) page results (findNextFile count=100) until exhausted / a page is empty.
+            for _page in range(20):  # bound: 20 * 100 = 2000 files max
+                page_body = await _http.get_text(
+                    f"{base}/cgi-bin/mediaFileFind.cgi?action=findNextFile"
+                    f"&object={finder}&count=100",
+                    creds.username, creds.password,
+                )
+                items = _parse_dahua_find_items(page_body or "", ch)
+                out.extend(items)
+                found = _http.parse_cgi_kv(page_body or "").get("found")
+                try:
+                    if not items or (found is not None and int(found) < 100):
+                        break
+                except ValueError:
+                    break
+        finally:
+            # 4) always close the finder object (best-effort).
+            await _http.get_text(
+                f"{base}/cgi-bin/mediaFileFind.cgi?action=close&object={finder}",
+                creds.username, creds.password,
+            )
+            await _http.get_text(
+                f"{base}/cgi-bin/mediaFileFind.cgi?action=destroy&object={finder}",
+                creds.username, creds.password,
+            )
+        return out
+
+    async def get_playback_uri(
+        self,
+        host: str,
+        creds: Credentials,
+        *,
+        channel: int | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        recording_token: str | None = None,
+    ) -> str | None:
+        """Build the Dahua/CP-Plus RTSP playback URI for a channel + [start, end] window.
+
+        Dahua serves time-addressed playback at
+        ``rtsp://host:554/cam/playback?channel=<n>&starttime=<t>&endtime=<t>`` where the
+        times are URL-encoded ``YYYY_MM_DD_HH_MM_SS`` (Dahua's RTSP time form). Creds are
+        percent-encoded + injected. Returns ``None`` when the window is missing. Never raises.
+
+        # LIVE-VALIDATE: the ``/cam/playback`` path + ``starttime``/``endtime`` param
+        # names + the ``YYYY_MM_DD_HH_MM_SS`` time form follow the Dahua RTSP-playback
+        # spec; confirm against the owner's real CP-Plus NVR.
+        """
+        from urllib.parse import quote
+
+        ch = channel or 1
+        st = _to_dahua_rtsp_time(start_time)
+        et = _to_dahua_rtsp_time(end_time)
+        if not st or not et:
+            return None
+        user = quote(creds.username or "", safe="")
+        pw = quote(creds.password or "", safe="")
+        auth = f"{user}:{pw}@" if creds.username else ""
+        return (
+            f"rtsp://{auth}{host}:{creds.rtsp_port}/cam/playback"
+            f"?channel={ch}&starttime={st}&endtime={et}"
+        )

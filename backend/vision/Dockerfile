@@ -8,8 +8,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 
+# curl for the healthcheck; ffmpeg for P4-B clip export (concat/remux recorded fmp4
+# segments → mp4) + the ONVIF driver's RTSP-snapshot fallback.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl \
+ && apt-get install -y --no-install-recommends curl ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 # Shared kernel first (its own layer), then the service. Install both editable so

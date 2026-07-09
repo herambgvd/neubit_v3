@@ -36,6 +36,7 @@ def _tables():
         CameraGroup,
         CameraHealth,
         CameraPattern,
+        ExportJob,
         MediaNode,
         MediaProfile,
         PlaybackSession,
@@ -60,6 +61,7 @@ def _tables():
         StoragePool.__table__,
         TierRule.__table__,
         CameraPattern.__table__,
+        ExportJob.__table__,
     ]
 
 

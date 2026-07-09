@@ -310,7 +310,7 @@ class CameraDriver(abc.ABC):
         """Ask an active ``subscribe_events`` loop to stop (best-effort)."""
         return None
 
-    # ── NVR footage / playback extraction (P4 — documented stubs) ─────────────
+    # ── NVR footage / playback extraction (P4-B) ──────────────────────────────
     async def search_recordings(
         self,
         host: str,
@@ -320,17 +320,27 @@ class CameraDriver(abc.ABC):
         start_time: str | None = None,
         end_time: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Search on-device / NVR recordings for a time range. Returns
-        ``[{recording_token, start_time, end_time, ...}]``. P4 (footage extraction);
-        the ONVIF driver ports gvd_nvr's Profile G ``search_recordings``, brand
-        drivers leave a documented stub. MUST NOT raise — ``[]`` when unsupported."""
+        """Search on-device / NVR recordings for a channel + time range. Returns
+        ``[{start_time, end_time, ...}]`` (ISO-8601 strings; brand-specific extras like
+        ``recording_token`` / ``track_id`` / ``file_path`` may be included). P4-B
+        (footage extraction across onboarded NVRs). MUST NOT raise — ``[]`` when
+        unsupported / unreachable."""
         return []
 
     async def get_playback_uri(
-        self, host: str, creds: Credentials, recording_token: str
+        self,
+        host: str,
+        creds: Credentials,
+        *,
+        channel: int | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        recording_token: str | None = None,
     ) -> str | None:
-        """Get an RTSP replay URI for a recording token. P4. MUST NOT raise —
-        ``None`` when unsupported."""
+        """Build an RTSP replay URI for a channel + time-window (or an ONVIF Profile-G
+        ``recording_token``). Returns the RTSP-with-time URL the browser-facing plane
+        (MediaMTX path / server-side proxy) plays. P4-B. MUST NOT raise — ``None`` when
+        unsupported / unreachable."""
         return None
 
     async def aclose(self) -> None:

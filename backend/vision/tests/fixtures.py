@@ -285,3 +285,58 @@ table.VideoInOptions[0].Saturation=50"""
 CPPLUS_PTZ_PROTOCOL_CAPS = """caps.AbsolutePan=true
 caps.Preset=true
 caps.Tour=true"""
+
+
+# ── NVR footage-search fixtures (P4-B) ────────────────────────────────────────────
+
+# Hikvision ISAPI CMSearchResult (POST /ISAPI/ContentMgmt/search) — two matches, each
+# with a timeSpan + playbackURI. Namespaced per the ISAPI spec (the parser is
+# namespace-agnostic).
+HIK_CMSEARCH_RESULT = """<?xml version="1.0" encoding="UTF-8"?>
+<CMSearchResult xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <searchID>vms-p4b-search</searchID>
+  <responseStatus>true</responseStatus>
+  <responseStatusStrg>OK</responseStatusStrg>
+  <numOfMatches>2</numOfMatches>
+  <matchList>
+    <searchMatchItem>
+      <trackID>101</trackID>
+      <timeSpan>
+        <startTime>2026-07-09T10:00:00Z</startTime>
+        <endTime>2026-07-09T10:15:00Z</endTime>
+      </timeSpan>
+      <mediaSegmentDescriptor>
+        <contentType>video</contentType>
+        <playbackURI>rtsp://10.0.0.5:554/Streaming/tracks/101?starttime=20260709T100000Z&amp;endtime=20260709T101500Z</playbackURI>
+      </mediaSegmentDescriptor>
+    </searchMatchItem>
+    <searchMatchItem>
+      <trackID>101</trackID>
+      <timeSpan>
+        <startTime>2026-07-09T10:20:00Z</startTime>
+        <endTime>2026-07-09T10:35:00Z</endTime>
+      </timeSpan>
+      <mediaSegmentDescriptor>
+        <contentType>video</contentType>
+        <playbackURI>rtsp://10.0.0.5:554/Streaming/tracks/101?starttime=20260709T102000Z&amp;endtime=20260709T103500Z</playbackURI>
+      </mediaSegmentDescriptor>
+    </searchMatchItem>
+  </matchList>
+</CMSearchResult>"""
+
+# Dahua/CP-Plus mediaFileFind CGI lifecycle bodies.
+CPPLUS_FIND_CREATE = "result=8675309"
+CPPLUS_FIND_START = "OK"
+# findNextFile page: two items (key=value, one field per line). Second page empty ends it.
+CPPLUS_FIND_NEXT = """found=2
+items[0].Channel=1
+items[0].StartTime=2026-07-09 10:00:00
+items[0].EndTime=2026-07-09 10:15:00
+items[0].FilePath=/mnt/dvr/2026-07-09/dav/00.00.00-00.15.00[R][0@0][0].dav
+items[0].Type=dav
+items[1].Channel=1
+items[1].StartTime=2026-07-09 10:20:00
+items[1].EndTime=2026-07-09 10:35:00
+items[1].FilePath=/mnt/dvr/2026-07-09/dav/00.20.00-00.35.00[R][0@0][0].dav
+items[1].Type=dav"""
+CPPLUS_FIND_NEXT_EMPTY = "found=0"

@@ -43,7 +43,10 @@ from kernel.errors import ConflictError
 
 from app.vms.common.crypto import decrypt_secret, encrypt_secret
 from app.vms.common.events import emit_nvr_lifecycle, emit_nvr_status
+from app.vms.common.media_token import mint_media_token
+from app.vms.common.nvr_client import NvrClient, NvrUnavailable
 from app.vms.drivers import Credentials, get_driver
+from app.vms.live.service import _append_token
 from app.vms.models import NVR, Camera
 
 from app.vms.cameras.schemas import BulkAddChannel
@@ -53,7 +56,10 @@ from .schemas import (
     NvrCreate,
     NvrHealthResponse,
     NvrListResponse,
+    NvrPlaybackSession,
     NvrPublic,
+    NvrRecordingRange,
+    NvrRecordingsResponse,
     NvrUpdate,
 )
 
@@ -73,9 +79,10 @@ def _actor_id(actor) -> str | None:
 class NvrService:
     """Tenant-scoped CRUD + driver-backed onboarding over ``nvrs``."""
 
-    def __init__(self, db: AsyncSession, scope: Scope) -> None:
+    def __init__(self, db: AsyncSession, scope: Scope, *, bearer: str | None = None) -> None:
         self.db = db
         self.scope = scope
+        self.bearer = bearer
         # Reuse the camera service for the channel → camera creation path (map-channels).
         self.cameras = CameraService(db, scope)
 
@@ -414,6 +421,114 @@ class NvrService:
         if row.status != prev_status:
             await emit_nvr_status(row.tenant_id, _status_payload(row))
         return await self._public(row)
+
+    # ── footage extraction (P4-B — search + playback on the NVR's own storage) ─
+    async def channel_recordings(
+        self, nvr_id: str, channel: int, from_: str | None, to: str | None
+    ) -> NvrRecordingsResponse:
+        """Search a channel's recorded ranges on the NVR's OWN storage (via the driver).
+
+        Graceful: an unreachable NVR / a driver that can't search → an empty list with
+        ``reachable`` reflecting the probe. NEVER 500s.
+        """
+        row = await self._row(nvr_id)
+        driver = get_driver(row.brand)
+        creds = self._creds_for(row)
+        try:
+            matches = await driver.search_recordings(
+                row.host, creds, channel=channel, start_time=from_, end_time=to
+            )
+        except Exception as exc:  # noqa: BLE001 — search must never 500
+            log.info("NVR footage search failed (%s ch%s): %s", row.host, channel, exc)
+            matches = []
+        finally:
+            await driver.aclose()
+
+        items: list[NvrRecordingRange] = []
+        for m in matches:
+            items.append(
+                NvrRecordingRange(
+                    channel=int(m.get("channel") or channel),
+                    start=m.get("start_time"),
+                    end=m.get("end_time"),
+                    extra={
+                        k: v
+                        for k, v in m.items()
+                        if k not in ("channel", "start_time", "end_time") and v is not None
+                    },
+                )
+            )
+        return NvrRecordingsResponse(
+            nvr_id=row.id,
+            channel=channel,
+            items=items,
+            total=len(items),
+            reachable=(row.status == "online"),
+        )
+
+    async def channel_playback(
+        self, nvr_id: str, channel: int, from_, to
+    ) -> NvrPlaybackSession:
+        """Play the NVR's recorded [from, to] stream for a channel.
+
+        Builds the NVR's RTSP-with-time playback URI (via the driver), then PREFERS to
+        register it as a MediaMTX path through the Go ``nvr`` (``ensure_stream``) so the
+        browser plays HLS/WebRTC + a media token like a live/recorded session. When the
+        nvr data-plane is unavailable we fall back to returning the raw RTSP playback URI
+        (a P4-C server-side proxy consumes it). Graceful throughout — an unreachable NVR
+        (no URI derivable) yields a session with no URLs + ``ready=False``, never a 500.
+        """
+        from datetime import timezone
+
+        row = await self._row(nvr_id)
+        from_iso = from_.astimezone(timezone.utc).isoformat() if from_ else None
+        to_iso = to.astimezone(timezone.utc).isoformat() if to else None
+
+        driver = get_driver(row.brand)
+        creds = self._creds_for(row)
+        try:
+            rtsp_uri = await driver.get_playback_uri(
+                row.host, creds, channel=channel, start_time=from_iso, end_time=to_iso
+            )
+        except Exception as exc:  # noqa: BLE001 — must never 500
+            log.info("NVR playback-uri failed (%s ch%s): %s", row.host, channel, exc)
+            rtsp_uri = None
+        finally:
+            await driver.aclose()
+
+        base = NvrPlaybackSession(nvr_id=row.id, channel=channel, from_=from_, to=to)
+        if not rtsp_uri:
+            # NVR unreachable / no window → clean empty session (no URLs), not an error.
+            return base
+
+        # Prefer: register the NVR playback RTSP as a MediaMTX path → HLS/WebRTC + token.
+        # A synthetic camera key (``nvr:<id>:ch<n>:playback``) namespaces the path; the
+        # media token binds to it. If the nvr is down we return the raw RTSP (P4-C proxy).
+        pseudo_camera = f"nvr-{row.id}-ch{channel}-playback"
+        client = NvrClient(bearer=self.bearer)
+        try:
+            ensured = await client.ensure_stream(
+                camera_id=pseudo_camera, rtsp_url=rtsp_uri, profile="playback"
+            )
+        except NvrUnavailable as exc:
+            log.info("NVR playback ensure fell back to raw RTSP (%s): %s", nvr_id, exc)
+            base.rtsp_url = rtsp_uri
+            return base
+
+        tenant_str = str(self.scope.tenant_id) if self.scope.tenant_id else None
+        token, exp = mint_media_token(
+            tenant_id=tenant_str,
+            camera_id=pseudo_camera,
+            session_id=pseudo_camera,
+            mode="playback",
+        )
+        base.hls_url = _append_token(ensured.get("hls_url"), token)
+        base.webrtc_url = _append_token(ensured.get("webrtc_url"), token)
+        base.rtsp_url = ensured.get("rtsp_url")
+        base.token = token
+        base.expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+        base.ready = bool(ensured.get("ready"))
+        return base
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
