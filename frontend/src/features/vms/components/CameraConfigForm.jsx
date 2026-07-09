@@ -56,7 +56,7 @@ export default function CameraConfigForm({
           <Field
             label="Camera name"
             required
-            value={form.name}
+            value={form.name ?? ""}
             onChange={(e) => set({ name: e.target.value })}
             placeholder="e.g. Lobby North"
             error={errors.name}
@@ -64,7 +64,7 @@ export default function CameraConfigForm({
           <Field
             as="select"
             label="Brand"
-            value={form.brand}
+            value={form.brand ?? ""}
             onChange={(e) => set({ brand: e.target.value })}
             options={CAMERA_BRANDS.map((b) => ({ value: b.value, label: b.label }))}
           />
@@ -74,13 +74,13 @@ export default function CameraConfigForm({
           <Field
             as="select"
             label="Connection type"
-            value={form.connection_type}
+            value={form.connection_type ?? ""}
             onChange={(e) => set({ connection_type: e.target.value })}
             options={CONNECTION_TYPES}
           />
           <Field
             label="IP address"
-            value={form.ip}
+            value={form.ip ?? ""}
             onChange={(e) => set({ ip: e.target.value })}
             placeholder="192.168.1.64"
             error={errors.ip}
@@ -91,14 +91,14 @@ export default function CameraConfigForm({
           <Field
             label="HTTP port"
             type="number"
-            value={form.port}
+            value={form.port ?? ""}
             onChange={(e) => set({ port: e.target.value })}
             placeholder="80"
           />
           <Field
             label="RTSP port"
             type="number"
-            value={form.rtsp_port}
+            value={form.rtsp_port ?? ""}
             onChange={(e) => set({ rtsp_port: e.target.value })}
             placeholder="554"
           />
@@ -116,14 +116,14 @@ export default function CameraConfigForm({
           <Field
             as="select"
             label="Site"
-            value={form.site_id}
+            value={form.site_id ?? ""}
             onChange={(e) => set({ site_id: e.target.value, floor_id: "", zone_id: "" })}
             options={[{ value: "", label: "— Unassigned —" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]}
           />
           <Field
             as="select"
             label="Floor"
-            value={form.floor_id}
+            value={form.floor_id ?? ""}
             onChange={(e) => set({ floor_id: e.target.value, zone_id: "" })}
             options={[
               { value: "", label: "— None —" },
@@ -135,7 +135,7 @@ export default function CameraConfigForm({
           <Field
             as="select"
             label="Zone"
-            value={form.zone_id}
+            value={form.zone_id ?? ""}
             onChange={(e) => set({ zone_id: e.target.value })}
             options={[
               { value: "", label: "— None —" },
@@ -194,14 +194,14 @@ export default function CameraConfigForm({
           <Field
             label="Retention (days)"
             type="number"
-            value={form.retention_days}
+            value={form.retention_days ?? ""}
             onChange={(e) => set({ retention_days: e.target.value })}
             placeholder="30"
           />
           <Field
             label="Recording FPS"
             type="number"
-            value={form.recording_fps}
+            value={form.recording_fps ?? ""}
             onChange={(e) => set({ recording_fps: e.target.value })}
             placeholder="Camera default"
             hint="Blank = use the camera's native FPS"
@@ -212,14 +212,14 @@ export default function CameraConfigForm({
           <Field
             label="Pre-buffer (s)"
             type="number"
-            value={form.pre_buffer_seconds}
+            value={form.pre_buffer_seconds ?? ""}
             onChange={(e) => set({ pre_buffer_seconds: e.target.value })}
             placeholder="5"
           />
           <Field
             label="Post-buffer (s)"
             type="number"
-            value={form.post_buffer_seconds}
+            value={form.post_buffer_seconds ?? ""}
             onChange={(e) => set({ post_buffer_seconds: e.target.value })}
             placeholder="5"
           />
@@ -281,14 +281,14 @@ export default function CameraConfigForm({
         <div className="grid grid-cols-2 gap-3">
           <Field
             label="ONVIF host"
-            value={form.onvif_host}
+            value={form.onvif_host ?? ""}
             onChange={(e) => set({ onvif_host: e.target.value })}
             placeholder="Defaults to the IP above"
           />
           <Field
             label="ONVIF port"
             type="number"
-            value={form.onvif_port}
+            value={form.onvif_port ?? ""}
             onChange={(e) => set({ onvif_port: e.target.value })}
             placeholder="80"
           />
@@ -296,14 +296,14 @@ export default function CameraConfigForm({
         <div className="grid grid-cols-2 gap-3">
           <Field
             label="Username"
-            value={form.onvif_user}
+            value={form.onvif_user ?? ""}
             onChange={(e) => set({ onvif_user: e.target.value })}
             placeholder="admin"
           />
           <Field
             label="Password"
             type="password"
-            value={form.onvif_password}
+            value={form.onvif_password ?? ""}
             onChange={(e) => set({ onvif_password: e.target.value })}
             placeholder={isEdit && form.has_password ? "•••••• (unchanged)" : "••••••••"}
             hint={isEdit ? "Leave blank to keep the stored password." : undefined}
@@ -311,7 +311,7 @@ export default function CameraConfigForm({
         </div>
         <Field
           label="Profile token"
-          value={form.onvif_profile_token}
+          value={form.onvif_profile_token ?? ""}
           onChange={(e) => set({ onvif_profile_token: e.target.value })}
           placeholder="Optional — pin a specific media profile"
         />
