@@ -30,6 +30,7 @@ import (
 	"github.com/neubit/gokernel/httpx"
 
 	"github.com/neubit/nvr/internal/mediamtx"
+	"github.com/neubit/nvr/internal/playback"
 	"github.com/neubit/nvr/internal/recording"
 	"github.com/neubit/nvr/internal/streams"
 	"github.com/neubit/nvr/internal/supervisor"
@@ -101,6 +102,13 @@ func main() {
 		WebRTCBase: env("VE_MEDIA_PUBLIC_WHEP_BASE",
 			env("VE_MEDIAMTX_WEBRTC_BASE", "http://localhost/media/whep")),
 		RTSPBase: env("VE_MEDIAMTX_RTSP_BASE", "rtsp://localhost:8554"),
+		// Recorded playback (P4-A). PlaybackAPIURL is the INTERNAL MediaMTX
+		// playback server (nvr queries /list here). PlaybackBase is browser-facing
+		// and points at the Traefik GATEWAY prefix so recorded fmp4 is token-gated
+		// by the same media-auth ForwardAuth as live (never the raw :9996 port).
+		PlaybackAPIURL: env("VE_MEDIAMTX_PLAYBACK_API_URL", "http://mediamtx:9996"),
+		PlaybackBase: env("VE_MEDIA_PUBLIC_PLAYBACK_BASE",
+			env("VE_MEDIAMTX_PLAYBACK_BASE", "http://localhost/media/playback")),
 	}
 	idleTTL := time.Duration(envInt("VE_STREAM_IDLE_TTL_SEC", 300)) * time.Second
 	mtxClient := mediamtx.New()
@@ -175,6 +183,11 @@ func main() {
 		// Internal recording endpoints (service-to-service; called by vision in
 		// P3-A). start/stop drive MediaMTX record; status lists active recordings.
 		recording.Mount(api, recSup)
+
+		// Internal recorded-playback endpoint (service-to-service; called by vision
+		// in P4-A). Resolves the camera's node, lists recorded ranges from the
+		// MediaMTX playback server, and builds the gateway-routed /get URL.
+		playback.Mount(api, sup, mtxClient)
 	})
 
 	addr := ":" + strconv.Itoa(cfg.Port)

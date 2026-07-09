@@ -64,6 +64,20 @@ http:
       middlewares:
         - media-auth
         - media-whep-strip
+    # ── VMS recorded playback (P4-A) ───────────────────────────────────────
+    # Browser-facing recorded-fmp4 playback proxied to the MediaMTX PLAYBACK
+    # server (:9996), token-gated by the SAME media-auth ForwardAuth as live. The
+    # /media/playback prefix is stripped so MediaMTX sees its native /get?path=…
+    # (and /list). The playback server serves a single seekable fmp4 stream (no
+    # relative-segment playlist), so a plain stripPrefix suffices — no rebounce.
+    media-playback:
+      rule: "PathPrefix(`/media/playback`)"
+      service: mediamtx-playback
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media-playback-strip
     # Catches MediaMTX's root-absolute HLS cookieCheck bounce (see
     # media-hls-rebounce) and 302s it back under /media/hls. Scoped as tightly as
     # possible: a `.m3u8` path carrying `?cookieCheck=1`, and NOT already prefixed.
@@ -129,6 +143,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://mediamtx:8889"
+    # MediaMTX recorded-playback server (P4-A). Internal :9996, routed only through
+    # the gateway under /media/playback (token-gated); never published to the host.
+    mediamtx-playback:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx:9996"
     frontend:
       loadBalancer:
         servers:

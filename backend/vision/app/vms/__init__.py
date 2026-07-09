@@ -27,6 +27,7 @@ from app.vms.health.router import router as health_router
 from app.vms.live.router import router as live_router
 from app.vms.nvr.router import router as nvr_router
 from app.vms.patterns.router import router as pattern_router
+from app.vms.playback.router import router as playback_router
 from app.vms.recording.router import router as recording_router
 from app.vms.storage import rec_router as storage_rec_router
 from app.vms.storage import router as storage_router
@@ -44,10 +45,15 @@ from app.vms.storage import router as storage_router
 # Storage mounts alongside recording — its ``/vms/storage/*`` prefix is distinct, and
 # its ``/vms/recordings/{id}/lock|unlock|verify`` (POST) don't collide with the
 # recording router's ``/vms/recordings/{id}`` (GET). The P3-B storage control plane.
+# Playback mounts alongside live/recording — its ``/vms/cameras/{id}/playback`` +
+# ``/vms/cameras/{id}/timeline`` paths are deeper than the camera ``/cameras/{id}``
+# catch-all, and distinct from the recording router's paths. The P4-A recorded-
+# playback control plane (recorded PlaybackSession + scrub-bar timeline).
 routers = [
     health_router,
     live_router,
     recording_router,
+    playback_router,
     storage_router,
     storage_rec_router,
     camera_router,

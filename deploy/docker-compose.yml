@@ -273,8 +273,10 @@ services:
       - "8889:8889"     # WebRTC HTTP signaling (WHEP)
       - "8189:8189/udp" # WebRTC ICE (UDP)
       - "8189:8189/tcp" # WebRTC ICE (TCP)
-      # NOTE: 9997 (control API) is deliberately NOT published to the host — it is
-      # reachable only on the internal `neubit` network by nvr.
+      # NOTE: 9997 (control API) + 9996 (P4-A playback server) are deliberately NOT
+      # published to the host — they are reachable only on the internal `neubit`
+      # network (9997 by nvr; 9996 by nvr for /list + by the gateway for /get, which
+      # routes it token-gated under /media/playback). Never routed publicly directly.
     networks: [neubit]
 
   # ── nvr — VMS data-plane (Go / gokernel) ────────────────────────
@@ -304,6 +306,12 @@ services:
       VE_MEDIA_PUBLIC_HLS_BASE: ${VE_MEDIA_PUBLIC_HLS_BASE:-http://localhost/media/hls}
       VE_MEDIA_PUBLIC_WHEP_BASE: ${VE_MEDIA_PUBLIC_WHEP_BASE:-http://localhost/media/whep}
       VE_MEDIAMTX_RTSP_BASE: ${VE_MEDIAMTX_RTSP_BASE:-rtsp://localhost:8554}
+      # P4-A recorded playback. VE_MEDIAMTX_PLAYBACK_API_URL is the INTERNAL MediaMTX
+      # playback server (nvr queries /list here). VE_MEDIA_PUBLIC_PLAYBACK_BASE is the
+      # browser-facing base the /get URL is built from — the Traefik GATEWAY prefix,
+      # so recorded fmp4 playback is token-gated by the media-auth ForwardAuth.
+      VE_MEDIAMTX_PLAYBACK_API_URL: ${VE_MEDIAMTX_PLAYBACK_API_URL:-http://mediamtx:9996}
+      VE_MEDIA_PUBLIC_PLAYBACK_BASE: ${VE_MEDIA_PUBLIC_PLAYBACK_BASE:-http://localhost/media/playback}
       # The nvr's own MediaMTX node id (the supervisor registers this on boot).
       VE_MEDIA_NODE_ID: ${VE_MEDIA_NODE_ID:-mediamtx-0}
       # Idle-path reaper: delete paths with 0 readers idle for this many seconds.

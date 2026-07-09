@@ -75,6 +75,15 @@ http:
         prefixes:
           - "/media/whep"
 
+    # Strip the /media/playback prefix so the MediaMTX playback server (:9996) sees
+    # its native /get?path=… (+ /list). The playback /get serves ONE seekable fmp4
+    # stream — no relative-segment playlist — so a plain stripPrefix is enough (no
+    # cookieCheck rebounce like HLS needs). Token-gated by media-auth (P4-A).
+    media-playback-strip:
+      stripPrefix:
+        prefixes:
+          - "/media/playback"
+
     # MediaMTX's HLS muxer bounces the FIRST playlist request (no `cookieCheck=1`
     # query) with a 302 whose Location is ROOT-ABSOLUTE (`/<name>/index.m3u8?
     # cookieCheck=1&token=...`) — it is NOT subpath-aware and ignores

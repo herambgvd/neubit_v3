@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -34,6 +36,15 @@ type Node struct {
 	HLSBase    string // browser-facing, e.g. http://localhost:8888
 	WebRTCBase string // browser-facing, e.g. http://localhost:8889
 	RTSPBase   string // browser-facing, e.g. rtsp://localhost:8554
+
+	// PlaybackAPIURL is the INTERNAL MediaMTX playback server (P4-A, default
+	// http://mediamtx:9996) — the nvr queries /list?path= here to enumerate
+	// recorded ranges. PlaybackBase is the BROWSER-facing base the /get URL is
+	// built from: it points at the Traefik gateway prefix (/media/playback) so
+	// recorded-fmp4 playback is token-gated by the same media-auth ForwardAuth as
+	// live (P2-C), never the raw playback port.
+	PlaybackAPIURL string // internal, e.g. http://mediamtx:9996
+	PlaybackBase   string // browser-facing, e.g. http://localhost/media/playback
 }
 
 // Client talks to MediaMTX control APIs over HTTP. It is node-agnostic — every
@@ -220,6 +231,106 @@ func (c *Client) ListRecordings(ctx context.Context, node Node) ([]RecordingEntr
 		return nil, fmt.Errorf("mediamtx list recordings: decode: %w", err)
 	}
 	return out.Items, nil
+}
+
+// ── Playback server (P4-A) ──────────────────────────────────────────────────
+//
+// MediaMTX ships a SEPARATE playback server (enabled with `playback: yes`, its own
+// port, default :9996) that serves the recorded fmp4 segments of a path as a
+// seekable stream:
+//
+//	GET /list?path=<name>                              → [{start, duration, url}]
+//	GET /get?path=<name>&start=<ISO>&duration=<sec>&format=fmp4 → the recorded stream
+//
+// The nvr queries /list on the INTERNAL playback port to enumerate recorded ranges
+// for a camera+window, and builds the browser-facing /get URL through the Traefik
+// GATEWAY prefix (PlaybackBase → /media/playback) so playback is token-gated by the
+// same media-auth ForwardAuth as live. It never re-implements a segment player.
+
+// PlaybackRange is one contiguous recorded time-range MediaMTX reports for a path
+// via /list: its Start (RFC3339) and Duration (seconds). A gap between recordings
+// starts a new range, so the ranges are the recorded COVERAGE of the path.
+type PlaybackRange struct {
+	Start    string  `json:"start"`
+	Duration float64 `json:"duration"`
+}
+
+// PlaybackList queries the MediaMTX playback server's /list?path=<name> for the
+// recorded ranges of a path, optionally filtered to overlap [from,to] (zero-value
+// bounds disable that side of the filter). Graceful: an unreachable playback server
+// / a path with no recordings yields (nil, err) or an empty slice, never a panic —
+// the caller surfaces an empty timeline / a clean 502.
+func (c *Client) PlaybackList(ctx context.Context, node Node, name string, from, to time.Time) ([]PlaybackRange, error) {
+	base := strings.TrimRight(node.PlaybackAPIURL, "/")
+	if base == "" {
+		return nil, fmt.Errorf("mediamtx playback: no playback API url on node %q", node.ID)
+	}
+	target := base + "/list?path=" + url.QueryEscape(name)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mediamtx playback list %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// No recordings for this path yet — an empty timeline, not an error.
+		return []PlaybackRange{}, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mediamtx playback list %q: status %d", name, resp.StatusCode)
+	}
+	buf := new(bytes.Buffer)
+	_, _ = buf.ReadFrom(resp.Body)
+	var ranges []PlaybackRange
+	if err := json.Unmarshal(buf.Bytes(), &ranges); err != nil {
+		return nil, fmt.Errorf("mediamtx playback list %q: decode: %w", name, err)
+	}
+	if from.IsZero() && to.IsZero() {
+		return ranges, nil
+	}
+	return filterRanges(ranges, from, to), nil
+}
+
+// filterRanges keeps ranges that OVERLAP [from,to] (either bound may be zero to
+// disable that side). A range [rs, rs+dur) overlaps when rs < to and rs+dur > from.
+func filterRanges(ranges []PlaybackRange, from, to time.Time) []PlaybackRange {
+	out := make([]PlaybackRange, 0, len(ranges))
+	for _, r := range ranges {
+		rs, err := time.Parse(time.RFC3339Nano, r.Start)
+		if err != nil {
+			rs, err = time.Parse(time.RFC3339, r.Start)
+			if err != nil {
+				continue // unparseable start — drop it rather than mis-filter
+			}
+		}
+		re := rs.Add(time.Duration(r.Duration * float64(time.Second)))
+		if !to.IsZero() && !rs.Before(to) {
+			continue // range starts at/after the window end
+		}
+		if !from.IsZero() && !re.After(from) {
+			continue // range ends at/before the window start
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// PlaybackURL builds the BROWSER-facing recorded-playback /get URL through the
+// gateway prefix (node.PlaybackBase → /media/playback), so the recorded fmp4 is
+// served token-gated by the media-auth ForwardAuth. startISO is the RFC3339 window
+// start; durationSec its length. The token is appended by the caller (vision) — the
+// same ?token= pattern live uses.
+func PlaybackURL(node Node, name, startISO string, durationSec float64) string {
+	base := strings.TrimRight(node.PlaybackBase, "/")
+	q := url.Values{}
+	q.Set("path", name)
+	q.Set("start", startISO)
+	q.Set("duration", strconv.FormatFloat(durationSec, 'f', -1, 64))
+	q.Set("format", "fmp4")
+	return base + "/get?" + q.Encode()
 }
 
 // DeletePath removes a path — the Go port of v2 remove_path. A 404 (already

@@ -120,6 +120,43 @@ class NvrClient:
             log.info("nvr stop-recording best-effort failed (%s): %s", url, exc)
             return False
 
+    # ── playback (P4-A) ─────────────────────────────────────────────────
+    async def playback_list(
+        self,
+        *,
+        camera_id: str,
+        profile: str,
+        from_: str | None = None,
+        to: str | None = None,
+    ) -> dict:
+        """GET /playback/{camera_id}/{profile}?from=&to= → recorded ranges + URL.
+
+        Returns ``{ranges: [{start, duration}], playback_url, node, name}``. The Go
+        nvr resolves the camera's MediaMTX node, lists the recorded ranges from the
+        MediaMTX playback server, and builds the gateway-routed ``/get`` URL (WITHOUT
+        a token — vision appends the media token). Raises ``NvrUnavailable`` on an
+        unreachable nvr / MediaMTX playback upstream error (→ 502)."""
+        url = f"{self._base}/api/v1/nvr/playback/{camera_id}/{profile}"
+        params: dict[str, str] = {}
+        if from_:
+            params["from"] = from_
+        if to:
+            params["to"] = to
+        try:
+            async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
+                resp = await client.get(url, params=params, headers=self._headers)
+        except httpx.HTTPError as exc:
+            log.info("nvr playback-list unreachable (%s): %s", url, exc)
+            raise NvrUnavailable(f"nvr data-plane unreachable: {exc}") from exc
+        if resp.status_code >= 400:
+            detail = _err_detail(resp)
+            log.info("nvr playback-list %s → %s: %s", camera_id, resp.status_code, detail)
+            raise NvrUnavailable(f"nvr could not list playback: {detail}")
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise NvrUnavailable("nvr returned a non-JSON playback response") from exc
+
 
 def _err_detail(resp: httpx.Response) -> str:
     try:

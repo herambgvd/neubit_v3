@@ -55,11 +55,17 @@ def mint_media_token(
     camera_id: str,
     session_id: str,
     ttl_seconds: int | None = None,
+    mode: str = "live",
 ) -> tuple[str, int]:
     """Mint a media token → ``(token, exp_epoch_seconds)``.
 
     ``tenant_id`` is stringified (or the reserved ``"platform"`` for a NULL-tenant /
     super-admin session) so the verify path can compare it to the camera's tenant.
+
+    ``mode`` (``"live"`` default, ``"playback"`` for P4-A recorded playback) is
+    carried as a claim so a token can be audited/scoped by what it gates. It does NOT
+    change the signature/type — a ``mode:playback`` token is a normal media token and
+    ``verify_media_token`` accepts it identically (it gates the same MediaMTX proxy).
     """
     ttl = ttl_seconds if (ttl_seconds and ttl_seconds > 0) else media_token_ttl()
     now = int(time.time())
@@ -69,6 +75,7 @@ def mint_media_token(
         "tenant_id": tenant_id if tenant_id is not None else "platform",
         "camera_id": camera_id,
         "session_id": session_id,
+        "mode": mode or "live",
         "iat": now,
         "exp": exp,
     }

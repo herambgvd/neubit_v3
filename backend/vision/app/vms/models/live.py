@@ -73,6 +73,12 @@ class PlaybackSession(Base):
     webrtc_url: Mapped[str | None] = mapped_column(String(1024))
     rtsp_url: Mapped[str | None] = mapped_column(String(1024))
 
+    # Recorded-playback window (P4-A): the [from, to] time-range a recorded session
+    # plays back. NULL for live sessions. Stored so a recorded session can be
+    # re-minted / re-resolved against the same window (and audited).
+    window_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    window_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     # SHA-256 hash of the current media token (never the raw token at rest). The
     # token is stateless (JWT) so verification does not need this — it's kept for
     # audit / optional session-table cross-check on the hot path.

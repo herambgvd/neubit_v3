@@ -29,6 +29,16 @@ authInternalUsers:
 api: yes
 apiAddress: :9997
 
+# ── Playback server (P4-A — recorded fmp4 playback) ──
+# A SEPARATE server that serves the recorded segments of a path as a seekable
+# stream: GET /list?path=<name> (recorded ranges) + GET /get?path=&start=&duration=
+# &format=fmp4 (the recorded stream). The Go `nvr` queries /list on this INTERNAL
+# port to enumerate ranges; the browser-facing /get is routed through the Traefik
+# gateway under /media/playback, token-gated by the SAME media-auth ForwardAuth as
+# live (P2-C). This port (:9996) is NOT published to the host — internal-only.
+playback: yes
+playbackAddress: :9996
+
 # ── Timeouts / buffers ──
 readTimeout: 30s
 writeTimeout: 30s
