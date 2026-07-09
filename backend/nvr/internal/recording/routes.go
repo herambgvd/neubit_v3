@@ -51,6 +51,9 @@ type handler struct {
 type startRequest struct {
 	RTSPURL string `json:"rtsp_url"`
 	Trigger string `json:"trigger"`
+	// Redundant enables failover recording (P6-A): record on a primary + secondary
+	// node so a single node loss keeps footage. Optional; defaults false.
+	Redundant bool `json:"redundant"`
 	// EventClip + buffers wire the P5 motion/event entry point (optional).
 	EventClip bool `json:"event_clip"`
 	PreSec    int  `json:"pre_seconds"`
@@ -86,7 +89,7 @@ func (h *handler) start(w http.ResponseWriter, r *http.Request) {
 		)
 	} else {
 		act, err = h.sup.StartRecording(
-			r.Context(), tenant, cameraID, profile, req.RTSPURL, req.Trigger,
+			r.Context(), tenant, cameraID, profile, req.RTSPURL, req.Trigger, req.Redundant,
 		)
 	}
 	if err != nil {

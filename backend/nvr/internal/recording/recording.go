@@ -18,7 +18,7 @@
 //     the mounted recordings dir; when a segment file is finalized (a NEWER segment
 //     for the same path exists, or the file has been size-stable across a tick) it
 //     derives {camera, profile, start, end, size, duration} from the path template
-//     + file mtimes and emits the NATS event ONCE (deduped via recording_segments).
+//   - file mtimes and emits the NATS event ONCE (deduped via recording_segments).
 //   - motion/event: StartEventClip is the entry point P5 fires (pre/post buffer) —
 //     wired here but the actual trigger is a P5 event. It records a short window.
 //
@@ -55,14 +55,14 @@ type Publisher interface {
 // reconcile + segment-tracker loop. It shares the stream-supervisor's node
 // registry (to ensure the live path + resolve the node) and the MediaMTX client.
 type Supervisor struct {
-	db    *pgxpool.Pool
-	mtx   *mediamtx.Client
-	sup   *supervisor.Supervisor
-	bus   Publisher
-	src   string // service name / event source
-	dir   string // mounted recordings dir (nvr side of the volume)
-	segT  string // MediaMTX record segment duration (e.g. "60s")
-	tick  time.Duration
+	db   *pgxpool.Pool
+	mtx  *mediamtx.Client
+	sup  *supervisor.Supervisor
+	bus  Publisher
+	src  string // service name / event source
+	dir  string // mounted recordings dir (nvr side of the volume)
+	segT string // MediaMTX record segment duration (e.g. "60s")
+	tick time.Duration
 
 	mu sync.Mutex
 	// sizeSeen tracks (path→size) across ticks so a segment is treated as
@@ -121,6 +121,12 @@ type Active struct {
 	PathName    string `json:"path_name"`
 	TriggerType string `json:"trigger_type"`
 	Recording   bool   `json:"recording"`
+	// Redundant + SecondaryNode surface failover recording (P6-A): when Redundant
+	// is set, record is driven on BOTH Node (primary) and SecondaryNode. An empty
+	// SecondaryNode with Redundant=true means no second node was available yet
+	// (single-node dev) — the reconcile tick re-attempts the secondary on node join.
+	Redundant     bool   `json:"redundant"`
+	SecondaryNode string `json:"secondary_node,omitempty"`
 }
 
 // StartRecording turns recording ON for (tenant, camera, profile): it ensures the
@@ -130,7 +136,7 @@ type Active struct {
 //
 // Graceful: a down MediaMTX / bad RTSP returns an error the handler maps to a 502
 // — never a crash.
-func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, profile, rtspURL, trigger string) (Active, error) {
+func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, profile, rtspURL, trigger string, redundant bool) (Active, error) {
 	if profile == "" {
 		profile = "main"
 	}
@@ -156,26 +162,104 @@ func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, pro
 		return Active{}, fmt.Errorf("enable record: %w", err)
 	}
 
+	// Redundant / failover recording (P6-A): also drive record on a SECONDARY
+	// node so a single node loss does not lose footage. The secondary records the
+	// SAME path (cameras/<tenant>/<cam>/<profile>) on its own MediaMTX + its own
+	// recordings mount; on primary-node loss the rebalance repoints live to it and
+	// its copy already covers the outage. Best-effort: no second node yet (single-
+	// node dev) leaves secondaryID empty and the reconcile re-attempts on node join.
+	var secondaryID string
+	if redundant {
+		if sec, ok := s.sup.SecondaryNode(ctx, node.ID); ok {
+			if err := s.mtx.EnsurePath(ctx, sec, name, rtspURL, nil); err != nil {
+				log.Printf("redundant: ensure secondary path %s on %s: %v", name, sec.ID, err)
+			} else if err := s.mtx.SetRecord(ctx, sec, name, true, mediamtx.RecordOpts{
+				RecordPath:      recPath,
+				SegmentDuration: s.segT,
+			}); err != nil {
+				log.Printf("redundant: enable secondary record %s on %s: %v", name, sec.ID, err)
+			} else {
+				secondaryID = sec.ID
+				log.Printf("redundant recording: %s primary=%s secondary=%s", name, node.ID, sec.ID)
+			}
+		} else {
+			log.Printf("redundant recording requested for %s but no secondary node available — single copy for now", name)
+		}
+		// Mark the shard redundant too so live-failover intent travels with it.
+		if _, err := s.db.Exec(ctx,
+			`UPDATE stream_shards SET redundant = true WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3`,
+			tenantID, cameraID, profile); err != nil {
+			log.Printf("redundant: flag shard %s: %v", name, err)
+		}
+	}
+
 	if _, err := s.db.Exec(ctx, `
 		INSERT INTO recording_targets
-			(tenant_id, camera_id, profile, node_id, path_name, record_path, active, trigger_type)
-		VALUES ($1,$2,$3,$4,$5,$6,true,$7)
+			(tenant_id, camera_id, profile, node_id, path_name, record_path, active, trigger_type, redundant, secondary_node_id)
+		VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9)
 		ON CONFLICT (tenant_id, camera_id, profile) DO UPDATE SET
 			node_id = EXCLUDED.node_id,
 			path_name = EXCLUDED.path_name,
 			record_path = EXCLUDED.record_path,
 			active = true,
 			trigger_type = EXCLUDED.trigger_type,
+			redundant = EXCLUDED.redundant,
+			secondary_node_id = EXCLUDED.secondary_node_id,
 			updated_at = now()`,
-		tenantID, cameraID, profile, node.ID, name, recPath, trigger); err != nil {
+		tenantID, cameraID, profile, node.ID, name, recPath, trigger, redundant, nullStr(secondaryID)); err != nil {
 		return Active{}, fmt.Errorf("persist recording target: %w", err)
 	}
-	log.Printf("recording started: %s (node=%s, trigger=%s)", name, node.ID, trigger)
+	log.Printf("recording started: %s (node=%s, trigger=%s, redundant=%v)", name, node.ID, trigger, redundant)
 	_ = st // stream URLs unused here — recording only needs the path up
 	return Active{
 		CameraID: cameraID, Profile: profile, Node: node.ID,
 		PathName: name, TriggerType: trigger, Recording: true,
+		Redundant: redundant, SecondaryNode: secondaryID,
 	}, nil
+}
+
+// RebindRecording implements supervisor.RecordRebinder: after a rebalance moved a
+// camera's shard to a new node, re-assert record on that node so recording resumes
+// without a control-plane round-trip. A no-op if the camera has no ACTIVE recording
+// target. Best-effort — a down MediaMTX is logged, not fatal (satisfies the
+// interface's graceful contract during a node-loss sweep).
+func (s *Supervisor) RebindRecording(ctx context.Context, tenantID, cameraID, profile string) {
+	if profile == "" {
+		profile = "main"
+	}
+	var recPath string
+	err := s.db.QueryRow(ctx,
+		`SELECT record_path FROM recording_targets
+		 WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3 AND active = true`,
+		tenantID, cameraID, profile).Scan(&recPath)
+	if err != nil {
+		return // not recording (or no such target) — nothing to rebind
+	}
+	node, err := s.sup.Assign(ctx, tenantID, cameraID, profile)
+	if err != nil {
+		return
+	}
+	name := mediamtx.PathName(tenantID, cameraID, profile)
+	if recPath == "" {
+		recPath = recordPathTemplate(s.dir)
+	}
+	if err := s.mtx.SetRecord(ctx, node, name, true, mediamtx.RecordOpts{
+		RecordPath:      recPath,
+		SegmentDuration: s.segT,
+	}); err != nil {
+		log.Printf("rebind recording %s on %s: %v", name, node.ID, err)
+		return
+	}
+	log.Printf("recording rebound after rebalance: %s → node %s", name, node.ID)
+}
+
+// nullStr converts an empty string to nil so a NULL is stored (rather than ”),
+// keeping secondary_node_id honest for "no secondary yet".
+func nullStr(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // StopRecording turns recording OFF for (tenant, camera, profile): flips record
@@ -221,7 +305,9 @@ func (s *Supervisor) StartEventClip(ctx context.Context, tenantID, cameraID, pro
 	if trigger == "" {
 		trigger = "event"
 	}
-	act, err := s.StartRecording(ctx, tenantID, cameraID, profile, rtspURL, trigger)
+	// Event clips are short single-copy recordings — redundancy is for continuous
+	// footage, not motion bursts, so redundant=false here.
+	act, err := s.StartRecording(ctx, tenantID, cameraID, profile, rtspURL, trigger, false)
 	if err != nil {
 		return Active{}, err
 	}
@@ -250,7 +336,8 @@ func (s *Supervisor) StartEventClip(ctx context.Context, tenantID, cameraID, pro
 // ListActive returns every active recording target (status endpoint).
 func (s *Supervisor) ListActive(ctx context.Context) ([]Active, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT camera_id, profile, coalesce(node_id,''), path_name, trigger_type, active
+		`SELECT camera_id, profile, coalesce(node_id,''), path_name, trigger_type, active,
+		        redundant, coalesce(secondary_node_id,'')
 		 FROM recording_targets WHERE active = true ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list recording targets: %w", err)
@@ -259,7 +346,8 @@ func (s *Supervisor) ListActive(ctx context.Context) ([]Active, error) {
 	out := []Active{}
 	for rows.Next() {
 		var a Active
-		if err := rows.Scan(&a.CameraID, &a.Profile, &a.Node, &a.PathName, &a.TriggerType, &a.Recording); err != nil {
+		if err := rows.Scan(&a.CameraID, &a.Profile, &a.Node, &a.PathName, &a.TriggerType, &a.Recording,
+			&a.Redundant, &a.SecondaryNode); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -291,17 +379,22 @@ func (s *Supervisor) Start(ctx context.Context) {
 // not stop the sweep.
 func (s *Supervisor) reconcile(ctx context.Context) {
 	rows, err := s.db.Query(ctx,
-		`SELECT tenant_id, camera_id, profile, coalesce(node_id,''), path_name, record_path
+		`SELECT tenant_id, camera_id, profile, coalesce(node_id,''), path_name, record_path,
+		        redundant, coalesce(secondary_node_id,'')
 		 FROM recording_targets WHERE active = true`)
 	if err != nil {
 		log.Printf("recording reconcile: list targets: %v", err)
 		return
 	}
-	type tgt struct{ tenant, cam, profile, node, name, recPath string }
+	type tgt struct {
+		tenant, cam, profile, node, name, recPath, secondary string
+		redundant                                            bool
+	}
 	var targets []tgt
 	for rows.Next() {
 		var t tgt
-		if err := rows.Scan(&t.tenant, &t.cam, &t.profile, &t.node, &t.name, &t.recPath); err == nil {
+		if err := rows.Scan(&t.tenant, &t.cam, &t.profile, &t.node, &t.name, &t.recPath,
+			&t.redundant, &t.secondary); err == nil {
 			targets = append(targets, t)
 		}
 	}
@@ -319,6 +412,50 @@ func (s *Supervisor) reconcile(ctx context.Context) {
 			SegmentDuration: s.segT,
 		}); err != nil {
 			log.Printf("recording reconcile %s: %v", t.name, err)
+		}
+		// Redundant targets: keep the secondary copy alive too. If a secondary was
+		// never assigned (single-node dev when it started) OR the recorded node
+		// changed after a rebalance, (re)pick + (re)drive one now.
+		if t.redundant {
+			s.reconcileSecondary(ctx, node.ID, t.tenant, t.cam, t.profile, t.name, t.recPath, t.secondary)
+		}
+	}
+}
+
+// reconcileSecondary keeps a redundant target's second copy healthy: it ensures a
+// secondary node is chosen (least-loaded that is NOT the primary) and re-asserts
+// record on it. Idempotent + best-effort. Persists a newly-chosen secondary so
+// ListActive/rebalance can see it. Single-node dev (no secondary available) is a
+// clean no-op that retries on the next node join.
+func (s *Supervisor) reconcileSecondary(ctx context.Context, primaryID, tenant, cam, profile, name, recPath, current string) {
+	sec, ok := s.sup.SecondaryNode(ctx, primaryID)
+	if !ok {
+		return // no second node yet
+	}
+	// Re-provision the secondary path from the shard's RTSP source (the secondary
+	// pulls the SAME camera independently). A missing shard row → skip this tick.
+	var rtsp string
+	if err := s.db.QueryRow(ctx,
+		`SELECT rtsp_url FROM stream_shards WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3`,
+		tenant, cam, profile).Scan(&rtsp); err != nil || rtsp == "" {
+		return
+	}
+	if err := s.mtx.EnsurePath(ctx, sec, name, rtsp, nil); err != nil {
+		log.Printf("reconcile secondary ensure %s on %s: %v", name, sec.ID, err)
+	}
+	if err := s.mtx.SetRecord(ctx, sec, name, true, mediamtx.RecordOpts{
+		RecordPath:      recPath,
+		SegmentDuration: s.segT,
+	}); err != nil {
+		log.Printf("reconcile secondary record %s on %s: %v", name, sec.ID, err)
+		return
+	}
+	if sec.ID != current {
+		if _, err := s.db.Exec(ctx,
+			`UPDATE recording_targets SET secondary_node_id=$1, updated_at=now()
+			 WHERE tenant_id=$2 AND camera_id=$3 AND profile=$4`,
+			sec.ID, tenant, cam, profile); err != nil {
+			log.Printf("reconcile secondary persist %s: %v", name, err)
 		}
 	}
 }

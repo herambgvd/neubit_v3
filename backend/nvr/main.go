@@ -29,6 +29,7 @@ import (
 	"github.com/neubit/gokernel/events"
 	"github.com/neubit/gokernel/httpx"
 
+	"github.com/neubit/nvr/internal/anr"
 	"github.com/neubit/nvr/internal/mediamtx"
 	"github.com/neubit/nvr/internal/playback"
 	"github.com/neubit/nvr/internal/recording"
@@ -131,6 +132,36 @@ func main() {
 	})
 	recSup.Start(runCtx)
 
+	// --- Recording resilience (P6-A) --------------------------------------------
+	// 1. Node heartbeat monitor + rebalance-on-node-loss: the stream-supervisor
+	//    probes each media node's control API (refreshing live heartbeats) and marks
+	//    a node dead after VE_NODE_DEAD_SEC of silence, reassigning its shards +
+	//    re-enabling record on the survivor. The recording-supervisor registers its
+	//    rebind hook so recording resumes on the new node without a control-plane call.
+	sup.SetRecordRebinder(recSup)
+	sup.StartHealthMonitor(runCtx,
+		time.Duration(envInt("VE_NODE_HEARTBEAT_SEC", 15))*time.Second,
+		time.Duration(envInt("VE_NODE_DEAD_SEC", 45))*time.Second,
+	)
+
+	// 2. ANR (edge-recording backfill): detect a recording gap for a reconnected,
+	//    continuously-recording camera → open an ANRJob → publish an anr.request a
+	//    vision worker fulfils from the edge (it holds the device creds + P4-B footage
+	//    search); the pulled segments land on the shared recordings volume + flow
+	//    through the segment tracker → Recording rows. vision's anr.result closes the
+	//    job. (See internal/anr for the nvr↔vision split rationale.)
+	anrEngine := anr.New(pool, bus, serviceName, anr.Config{
+		MinGap: time.Duration(envInt("VE_ANR_MIN_GAP_SEC", 120)) * time.Second,
+		MaxGap: time.Duration(envInt("VE_ANR_MAX_GAP_HOURS", 24)) * time.Hour,
+		Tick:   time.Duration(envInt("VE_ANR_TICK_SEC", 30)) * time.Second,
+	})
+	anrEngine.Start(runCtx)
+	// Close jobs on the vision fulfiller's result. Durable so a redelivery after an
+	// nvr restart still lands (CloseJob is idempotent). No-op when NATS is disabled.
+	if err := bus.Subscribe("tenant.*.vms.anr.result", anrEngine.HandleResult, "nvr-anr-results"); err != nil {
+		log.Printf("anr result subscribe note: %v", err)
+	}
+
 	// --- HTTP: chi + shared middleware; /health public, /api/v1/nvr JWT-gated --
 	verifier := auth.NewVerifier(cfg.JWTSecret)
 	r := httpx.NewRouter(cfg)
@@ -167,12 +198,14 @@ func main() {
 		api.With(httpx.RequirePermission("vms.camera.read")).
 			Get("/status", func(w http.ResponseWriter, _ *http.Request) {
 				httpx.JSON(w, http.StatusOK, map[string]any{
-					"service":   serviceName,
-					"plane":     "data",
-					"phase":     "P2-A-streaming",
-					"nats":      bus.IsConnected(),
-					"streaming": true,
-					"node":      localNode.ID,
+					"service":    serviceName,
+					"plane":      "data",
+					"phase":      "P6-A-resilience",
+					"nats":       bus.IsConnected(),
+					"streaming":  true,
+					"recording":  true,
+					"resilience": true, // heartbeat/rebalance + redundant record + ANR
+					"node":       localNode.ID,
 				})
 			})
 
@@ -188,6 +221,11 @@ func main() {
 		// in P4-A). Resolves the camera's node, lists recorded ranges from the
 		// MediaMTX playback server, and builds the gateway-routed /get URL.
 		playback.Mount(api, sup, mtxClient)
+
+		// Internal ANR endpoints (P6-A): list backfill jobs + force gap-detection
+		// for a reconnected camera. The actual edge pull is fulfilled by a vision
+		// worker over the anr.request/anr.result NATS pair.
+		anr.Mount(api, anrEngine)
 	})
 
 	addr := ":" + strconv.Itoa(cfg.Port)

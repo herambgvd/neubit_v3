@@ -47,6 +47,10 @@ type Supervisor struct {
 	// idleSince tracks the first time a path was observed with 0 readers, so the
 	// reaper only tears down paths idle for longer than idleT.
 	idleSince map[string]time.Time
+
+	// recordRebinder (P6-A) is the recording-supervisor's hook to re-enable record
+	// on a shard's NEW node after a rebalance. Optional; guarded by mu.
+	recordRebinder RecordRebinder
 }
 
 // Stream is the caller-facing result of an ensure — the URLs a browser plays.
@@ -80,15 +84,17 @@ func New(db *pgxpool.Pool, mtx *mediamtx.Client, idleTTL time.Duration, source s
 // is the same call per node in P6.
 func (s *Supervisor) EnsureNode(ctx context.Context, node mediamtx.Node) error {
 	_, err := s.db.Exec(ctx, `
-		INSERT INTO media_nodes (id, api_url, hls_base, webrtc_base, rtsp_base, healthy, last_seen_at)
-		VALUES ($1, $2, $3, $4, $5, true, now())
+		INSERT INTO media_nodes (id, api_url, hls_base, webrtc_base, rtsp_base, healthy, last_seen_at, last_heartbeat)
+		VALUES ($1, $2, $3, $4, $5, true, now(), now())
 		ON CONFLICT (id) DO UPDATE SET
 			api_url = EXCLUDED.api_url,
 			hls_base = EXCLUDED.hls_base,
 			webrtc_base = EXCLUDED.webrtc_base,
 			rtsp_base = EXCLUDED.rtsp_base,
 			healthy = true,
-			last_seen_at = now()`,
+			last_seen_at = now(),
+			last_heartbeat = now(),
+			dead_since = NULL`,
 		node.ID, node.APIURL, node.HLSBase, node.WebRTCBase, node.RTSPBase)
 	if err != nil {
 		return fmt.Errorf("register media node %q: %w", node.ID, err)
