@@ -78,8 +78,13 @@ export function Select({ label, options = [], value, onChange, disabled, placeho
       if (btnRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
       setOpen(false);
     }
-    // Fixed-positioned panel can't follow scroll, so close on any scroll/resize.
-    function onScroll() {
+    // Fixed-positioned panel can't follow ancestor scroll, so close on page/
+    // container scroll — but NOT when the scroll happens INSIDE the panel itself
+    // (the options list is `overflow-auto`; capture-phase would otherwise catch
+    // the panel's own scroll and close it, making a long list impossible to
+    // scroll through).
+    function onScroll(e) {
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
