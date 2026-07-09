@@ -48,8 +48,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from kernel.auth import Scope, assert_owned, scoped
 
-from app.vms.common.events import emit_camera_status, emit_nvr_status
-from app.vms.models import NVR, Camera, CameraHealth
+from app.vms.common.events import emit_camera_event, emit_camera_status, emit_nvr_status
+from app.vms.events.normalize import dedup_key, event_payload
+from app.vms.models import NVR, Camera, CameraHealth, VmsEvent
 
 from .schemas import (
     CameraHealthHistoryResponse,
@@ -277,7 +278,53 @@ async def sample_one(db: AsyncSession, camera: Camera, *, timeout: float | None 
             camera.tenant_id,
             {"camera_id": camera.id, "status": new_status, "is_enabled": camera.is_enabled},
         )
+        # P5-A system event: an online↔offline transition is a camera_online /
+        # camera_offline VmsEvent, published on the SAME ``tenant.<id>.vms.camera.<type>``
+        # stream the workflow correlation engine consumes (a "camera offline" SOP can
+        # fire off it). The row rides the caller's transaction (the sampler batches a
+        # whole tenant + commits once); publish is best-effort here.
+        await _emit_camera_status_event(db, camera, new_status)
     return sample
+
+
+async def _emit_camera_status_event(db: AsyncSession, camera: Camera, new_status: str) -> None:
+    """Add a camera_online/camera_offline VmsEvent to ``db`` + publish (best-effort).
+
+    Does NOT commit — the row rides the sampler's (or refresh's) transaction. Deduped
+    by the same (camera+type+bucket) grain as device events, so a flapping camera
+    within one window collapses to a single row. Never raises out of the sampler."""
+    event_type = "camera_online" if new_status == "online" else "camera_offline"
+    now = camera.updated_at or _utcnow()
+    key = dedup_key(camera.id, event_type, now)
+    # Skip if an identical status event already exists in this window (idempotent).
+    try:
+        existing = (
+            await db.execute(select(VmsEvent.id).where(VmsEvent.dedup_key == key))
+        ).scalar_one_or_none()
+        if existing:
+            return
+    except Exception:  # noqa: BLE001
+        return
+    row = VmsEvent(
+        tenant_id=camera.tenant_id,
+        camera_id=camera.id,
+        event_type=event_type,
+        severity="info" if new_status == "online" else "warning",
+        source="system",
+        title=f"Camera {new_status}",
+        description=f"{camera.name} is {new_status}",
+        raw={"status": new_status, "reason": "health-sampler reachability transition"},
+        dedup_key=key,
+        occurred_at=now,
+        published=False,
+    )
+    db.add(row)
+    try:
+        await db.flush()  # assign id without committing (caller owns the commit)
+        await emit_camera_event(camera.tenant_id, event_type, event_payload(row))
+        row.published = True
+    except Exception as exc:  # noqa: BLE001 — publish/flush best-effort; never break sampling
+        log.debug("camera status event emit failed for %s: %s", camera.id, exc)
 
 
 class HealthSampler:

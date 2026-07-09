@@ -44,6 +44,7 @@ def _tables():
         StoragePool,
         StreamShard,
         TierRule,
+        VmsEvent,
     )
 
     # Order matters for FKs: parents (nvrs, media_nodes, cameras) before children.
@@ -62,6 +63,7 @@ def _tables():
         TierRule.__table__,
         CameraPattern.__table__,
         ExportJob.__table__,
+        VmsEvent.__table__,
     ]
 
 

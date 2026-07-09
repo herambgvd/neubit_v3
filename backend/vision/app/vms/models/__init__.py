@@ -22,11 +22,13 @@ Domain split:
   * ``storage``    — StoragePool + TierRule (where segments live + tiering, P3-B)
   * ``pattern``    — CameraPattern (video-wall rotating group sequences, P3-C)
   * ``export``     — ExportJob (clip-export: concat recorded segments → mp4, P4-B)
+  * ``event``      — VmsEvent (normalized camera device / system events, P5-A)
 """
 
 from __future__ import annotations
 
 from .camera import Camera, MediaProfile
+from .event import VmsEvent
 from .export import ExportJob
 from .group import CameraACL, CameraGroup
 from .health import CameraHealth
@@ -52,4 +54,5 @@ __all__ = [
     "TierRule",
     "CameraPattern",
     "ExportJob",
+    "VmsEvent",
 ]

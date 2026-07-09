@@ -27,6 +27,7 @@ from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
 from app.vms.live.router import router as live_router
 from app.vms.nvr.router import router as nvr_router
+from app.vms.events.router import router as event_router
 from app.vms.patterns.router import router as pattern_router
 from app.vms.playback.router import router as playback_router
 from app.vms.recording.router import router as recording_router
@@ -54,12 +55,17 @@ from app.vms.storage import router as storage_router
 # ``/vms/export/{job}`` + ``/vms/export/{job}/download`` are deeper/distinct from the
 # camera ``/cameras/{id}`` catch-all. The P4-B clip-export control plane (queue a job;
 # the ExportWorker ffmpeg-concats the covered recorded segments → a downloadable mp4).
+# Events mounts alongside export — its ``/vms/events`` + ``/vms/cameras/{id}/events``
+# (GET) + ``/vms/events/{id}/ack`` (POST) are deeper/distinct from the camera
+# ``/cameras/{id}`` catch-all. The P5-A camera device-events feed (the event-supervisor
+# ingests device/system events → NATS → workflow correlation → incidents).
 routers = [
     health_router,
     live_router,
     recording_router,
     playback_router,
     export_router,
+    event_router,
     storage_router,
     storage_rec_router,
     camera_router,

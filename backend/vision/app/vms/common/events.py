@@ -63,6 +63,27 @@ async def emit_camera_status(
     return subj
 
 
+async def emit_camera_event(
+    tenant_id: uuid.UUID | str | None,
+    event_type: str,
+    payload: dict,
+    *,
+    _bus: EventBus | None = None,
+) -> str:
+    """Publish ``tenant.<id>.vms.camera.<event_type>`` (P5-A device-event stream).
+
+    This is the camera DEVICE-EVENT stream the workflow correlation engine consumes
+    (``tenant.*.vms.>`` → SOP triggers → incidents). The bus wraps ``payload`` in the
+    canonical envelope where ``type`` = ``vms.camera.<event_type>`` (derived from the
+    subject) — the value correlation matches against ``Trigger.event_type``. Returns the
+    targeted subject for logging. Best-effort — never raises.
+    """
+    tid = _tid(tenant_id)
+    subj = subject(tid, "vms", f"camera.{event_type}")
+    await (_bus or bus).publish(subj, {"tenant_id": tid, **payload})
+    return subj
+
+
 async def emit_nvr_lifecycle(
     tenant_id: uuid.UUID | str | None,
     event: str,

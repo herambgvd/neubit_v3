@@ -81,6 +81,17 @@ class Camera(Base):
     onvif_capabilities: Mapped[dict] = mapped_column(
         JSON, nullable=False, server_default=text("'{}'")
     )
+    # --- Device-event ingestion (P5-A). ---
+    # When true, the event-supervisor opens an ONVIF PullPoint / brand-alarm
+    # subscription for this camera and normalizes → persists → publishes each event.
+    onvif_events_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), index=True
+    )
+    # Optional allow-list of NORMALIZED event_types to keep (e.g. ["motion","tamper"]).
+    # Empty = accept every mapped type the device reports. UI/logic in P5-C.
+    onvif_event_topics: Mapped[list] = mapped_column(
+        JSON, nullable=False, server_default=text("'[]'")
+    )
 
     # --- Recording config (mode/schedule/fps/substream/retention/buffers/ANR). ---
     # mode: continuous | schedule | motion | manual (plain string, no PG enum).

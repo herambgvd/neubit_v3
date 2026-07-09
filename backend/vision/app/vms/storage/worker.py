@@ -248,6 +248,25 @@ class RetentionTieringWorker:
             used = await self._pool_bytes(db, pool.id)
             if used <= cap:
                 continue
+            # P5-A system event: a pool over its cap is a ``storage_low`` VmsEvent
+            # (published on ``tenant.<id>.vms.storage.>``… no — on the camera-event
+            # stream ``tenant.<id>.vms.camera.storage_low``, which workflow correlation
+            # consumes via ``tenant.*.vms.>``). Best-effort; deduped per window so a
+            # persistently-full pool emits once per bucket, not every tick.
+            try:
+                from app.vms.events.service import emit_system_event
+
+                await emit_system_event(
+                    self._sessionmaker,
+                    tenant_id=pool.tenant_id,
+                    event_type="storage_low",
+                    title=f"Storage pool over capacity: {pool.name}",
+                    severity="warning",
+                    raw={"pool_id": pool.id, "used_bytes": int(used), "cap_bytes": int(cap)},
+                    description=f"Pool '{pool.name}' is over its {cap}-byte cap ({used} used)",
+                )
+            except Exception as exc:  # noqa: BLE001 — event emit must not break retention
+                log.debug("storage_low event emit failed for pool %s: %s", pool.id, exc)
             # Oldest-first, unlocked only — delete until under cap (bounded per cycle).
             stmt = (
                 select(Recording)

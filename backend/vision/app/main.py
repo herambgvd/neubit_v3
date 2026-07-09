@@ -35,6 +35,7 @@ from kernel.events import subject
 from app.db import get_sessionmaker
 from app.vms import routers as vms_routers
 from app.vms.common.events import bus
+from app.vms.events import EventSupervisor
 from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
 from app.vms.recording import RecordingConsumer, RecordingScheduler
@@ -83,8 +84,20 @@ async def lifespan(app: FastAPI):
     await export_worker.start()
     app.state.export_worker = export_worker
 
+    # P5-A camera device-events: the event-supervisor opens one ONVIF/brand
+    # subscription per active ``onvif_events_enabled`` camera (re-scanned on a tick,
+    # like the health sampler discovers cameras), normalizes → dedupes → persists a
+    # VmsEvent → publishes ``tenant.<id>.vms.camera.<event_type>`` — the exact subject
+    # the workflow correlation engine consumes (``tenant.*.vms.>`` → SOP incidents).
+    # Bounded concurrency; reconnect/backoff; graceful (a dead camera never stalls
+    # others; SDK-missing/unreachable → just no events). Own DB session per event.
+    event_supervisor = EventSupervisor(get_sessionmaker())
+    await event_supervisor.start()
+    app.state.event_supervisor = event_supervisor
+
     yield
 
+    await event_supervisor.stop()
     await export_worker.stop()
     await storage_worker.stop()
     await rec_scheduler.stop()
