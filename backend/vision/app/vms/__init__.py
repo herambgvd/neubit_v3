@@ -28,6 +28,7 @@ from app.vms.health.router import router as health_router
 from app.vms.linkage.router import router as linkage_router
 from app.vms.live.router import router as live_router
 from app.vms.nvr.router import router as nvr_router
+from app.vms.onvif_server.router import config_router as onvif_server_router
 from app.vms.events.router import router as event_router
 from app.vms.patterns.router import router as pattern_router
 from app.vms.playback.router import router as playback_router
@@ -84,6 +85,10 @@ routers = [
     group_router,
     pattern_router,
     nvr_router,
+    # ONVIF-server config CRUD (P6-C) — /vms/onvif-server/config. Distinct prefix (no
+    # collision with the camera catch-all). The SOAP endpoints (/onvif/*) mount at the
+    # app root separately in app.main (WS-Security, not JWT).
+    onvif_server_router,
 ]
 
 __all__ = ["routers"]

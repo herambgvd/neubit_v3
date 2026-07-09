@@ -41,6 +41,7 @@ def _tables():
         LinkageRule,
         MediaNode,
         MediaProfile,
+        OnvifServerConfig,
         PlaybackSession,
         Recording,
         ReportSchedule,
@@ -70,6 +71,7 @@ def _tables():
         LinkageRule.__table__,
         LinkageFire.__table__,
         ReportSchedule.__table__,
+        OnvifServerConfig.__table__,
     ]
 
 

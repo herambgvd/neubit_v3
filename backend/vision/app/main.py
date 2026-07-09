@@ -40,6 +40,8 @@ from app.vms.events import EventSupervisor
 from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
 from app.vms.linkage import LinkageConsumer
+from app.vms.onvif_server import advertiser as onvif_advertiser
+from app.vms.onvif_server import soap_router as onvif_soap_router
 from app.vms.recording import RecordingConsumer, RecordingScheduler
 from app.vms.reports import ReportScheduler
 from app.vms.storage import RetentionTieringWorker
@@ -131,8 +133,16 @@ async def lifespan(app: FastAPI):
     await anr_consumer.start()
     app.state.anr_consumer = anr_consumer
 
+    # P6-C ONVIF server: advertise OUR VMS as an ONVIF device via WS-Discovery so
+    # external VMS/recorders (Milestone/Genetec/NVRs) auto-find us on the LAN and pull
+    # our camera streams + recordings over the /onvif/* SOAP endpoints. GRACEFUL:
+    # multicast is often unavailable in a bridged Docker network → the advertiser logs
+    # + disables itself (SOAP still works; clients add us by URL); never crashes.
+    await onvif_advertiser.start()
+
     yield
 
+    await onvif_advertiser.stop()
     await report_scheduler.stop()
     await event_supervisor.stop()
     await export_worker.stop()
@@ -183,6 +193,12 @@ def create_app() -> FastAPI:
     # onboarding mounts alongside in P1-E.
     for r in vms_routers:
         app.include_router(r, prefix=settings.api_prefix)
+
+    # P6-C ONVIF SOAP server — mounted at the app ROOT (NOT under api_prefix): external
+    # ONVIF clients hit ``http://<host>/onvif/device_service`` etc. Auth is WS-Security
+    # UsernameToken (resolves the tenant), NOT the kernel JWT — the gateway routes
+    # ``/onvif`` here (see gateway/dynamic/routes.yml).
+    app.include_router(onvif_soap_router)
 
     return app
 

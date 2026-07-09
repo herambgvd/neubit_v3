@@ -37,6 +37,7 @@ from .linkage import LinkageFire, LinkageRule
 from .live import PlaybackSession
 from .media_node import MediaNode, StreamShard
 from .nvr import NVR
+from .onvif_server import OnvifServerConfig
 from .pattern import CameraPattern
 from .recording import Recording
 from .report import ReportSchedule
@@ -61,4 +62,5 @@ __all__ = [
     "LinkageRule",
     "LinkageFire",
     "ReportSchedule",
+    "OnvifServerConfig",
 ]

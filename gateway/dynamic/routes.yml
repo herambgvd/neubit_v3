@@ -42,6 +42,16 @@ http:
       service: nvr
       entryPoints: [web]
       priority: 110
+    onvif-server:
+      # P6-C ONVIF server — OUR VMS answering as an ONVIF device so external
+      # VMS/recorders (Milestone/Genetec/NVRs) discover + pull our streams/recordings.
+      # The SOAP endpoints live at the vision service ROOT (/onvif/*), authenticated by
+      # WS-Security UsernameToken (NOT the kernel JWT). Priority 110 so it peels off
+      # /onvif before the SPA catch-all.
+      rule: "PathPrefix(`/onvif`)"
+      service: vision
+      entryPoints: [web]
+      priority: 110
     # ── VMS public media (P2-C) ────────────────────────────────────────────
     # Browser-facing HLS + WebRTC/WHEP proxied to the MediaMTX node, token-gated
     # by the media-auth ForwardAuth (→ vision /media/verify). Priority 110 so

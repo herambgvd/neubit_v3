@@ -24,6 +24,11 @@ dependencies = [
     # "not installed" — this was the P1-D gap.
     "onvif-zeep>=0.2.12",
     "WSDiscovery>=2.0.0",
+    # P6-C ONVIF server — OUR VMS answering ONVIF SOAP requests as a device. The SOAP
+    # handlers build/parse envelopes with lxml (same as gvd_nvr's onvif_device). lxml
+    # already arrives transitively via onvif-zeep/zeep, but pin it explicitly since the
+    # onvif_server domain imports it directly.
+    "lxml>=5.0",
     # P3-B storage tiering — S3/MinIO put/head/delete for the cold tier. Imported
     # LAZILY in app.vms.common.storage_backend so the service degrades gracefully if
     # the wheel is absent, but pinned as a runtime dep so tiering works in the image.
