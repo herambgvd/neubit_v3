@@ -321,6 +321,8 @@ function ReportView({ report }) {
           rows={rows}
           nameKey="camera_name"
           valueKey="uptime_pct"
+          nameLabel="Camera"
+          valueLabel="Uptime"
           suffix="%"
           max={100}
           columns={[
@@ -346,6 +348,8 @@ function ReportView({ report }) {
           rows={rows}
           nameKey="camera_name"
           valueKey="coverage_pct"
+          nameLabel="Camera"
+          valueLabel="Coverage"
           suffix="%"
           max={100}
           columns={[
@@ -372,6 +376,8 @@ function ReportView({ report }) {
           rows={rows}
           nameKey="pool_name"
           valueKey="bytes"
+          nameLabel="Pool"
+          valueLabel="Usage"
           valueFmt={fmtBytes}
           max={maxBytes}
           columns={[
@@ -396,6 +402,8 @@ function ReportView({ report }) {
             rows={rows}
             nameKey="camera_name"
             valueKey="events"
+            nameLabel="Camera"
+            valueLabel="Events"
             title="By camera"
             max={Math.max(1, ...rows.map((r) => r.events || 0))}
           />
@@ -434,15 +442,28 @@ function SummaryRow({ tiles }) {
 
 function SummaryTile({ label, value }) {
   return (
-    <div className="rounded-xl border border-card-border bg-card px-4 py-3">
-      <div className="text-lg font-semibold text-foreground">{value}</div>
-      <div className="text-[11px] capitalize text-muted">{label}</div>
+    <div className="relative overflow-hidden rounded-xl border border-card-border bg-card px-4 py-3.5">
+      <span className="absolute inset-y-0 left-0 w-1 bg-blue-500/70" />
+      <div className="text-2xl font-semibold tracking-tight text-foreground tabular-nums">{value}</div>
+      <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wide capitalize text-muted">{label}</div>
     </div>
   );
 }
 
 // A rows table where each row gets a horizontal bar for its primary metric.
-function BarTable({ rows, nameKey, valueKey, suffix = "", valueFmt, max = 100, columns = [], title }) {
+// Renders a proper column-header row so numeric columns are always labelled.
+function BarTable({
+  rows,
+  nameKey,
+  valueKey,
+  nameLabel = "Name",
+  valueLabel = "Value",
+  suffix = "",
+  valueFmt,
+  max = 100,
+  columns = [],
+  title,
+}) {
   if (!rows || rows.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-card-border bg-card py-12 text-center text-sm text-muted">
@@ -450,16 +471,35 @@ function BarTable({ rows, nameKey, valueKey, suffix = "", valueFmt, max = 100, c
       </div>
     );
   }
+  const th = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted";
   return (
     <div className="overflow-hidden rounded-xl border border-card-border bg-card">
-      {title && <div className="border-b border-card-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">{title}</div>}
+      {title && (
+        <div className="border-b border-card-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">
+          {title}
+        </div>
+      )}
       <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-card-border bg-hover/40 text-left">
+            <th className={`${th} w-48`}>{nameLabel}</th>
+            <th className={th}>{valueLabel}</th>
+            {columns.map((c) => (
+              <th key={c.key} className={`${th} text-right`}>
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
         <tbody>
           {rows.map((r, i) => {
             const v = r[valueKey] || 0;
             const pct = Math.min(100, (v / max) * 100);
             return (
-              <tr key={r[nameKey] || i} className="border-b border-card-border/50 last:border-0">
+              <tr
+                key={r[nameKey] || i}
+                className="border-b border-card-border/50 transition last:border-0 hover:bg-hover/40"
+              >
                 <td className="w-48 px-4 py-2.5 font-medium text-foreground">{r[nameKey]}</td>
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-3">
@@ -469,13 +509,13 @@ function BarTable({ rows, nameKey, valueKey, suffix = "", valueFmt, max = 100, c
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                    <span className="w-24 text-right text-xs tabular-nums text-foreground">
+                    <span className="w-24 text-right text-xs font-semibold tabular-nums text-foreground">
                       {valueFmt ? valueFmt(v) : `${v}${suffix}`}
                     </span>
                   </div>
                 </td>
                 {columns.map((c) => (
-                  <td key={c.key} className="whitespace-nowrap px-4 py-2.5 text-right text-xs text-muted">
+                  <td key={c.key} className="whitespace-nowrap px-4 py-2.5 text-right text-xs tabular-nums text-muted">
                     {c.fmt ? c.fmt(r[c.key]) : r[c.key] ?? "—"}
                   </td>
                 ))}
