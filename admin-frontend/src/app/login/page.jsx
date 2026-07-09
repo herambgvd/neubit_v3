@@ -1,15 +1,43 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 
 import { adminApi, apiError, tokens } from "@/lib/api";
 import AuthShell, { AuthInput, AuthLabel, AuthSubmit, AuthError } from "@/components/AuthShell";
 
 export default function AdminLoginPage() {
   const router = useRouter();
+
+  // If an already-signed-in super-admin lands on /login, send them straight to
+  // the dashboard instead of showing the form again. We verify the token via
+  // /auth/me (not just its presence) so a stale/invalid token still shows login.
+  //
+  // IMPORTANT: never branch the render on client-only state (localStorage) during
+  // hydration — server would render the form, the client the spinner, causing a
+  // hydration mismatch that regenerates the whole tree. So gate everything behind
+  // `mounted`: the server and first client paint are identical, and the session
+  // check only runs after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const hasToken = mounted && !!tokens.access;
+  const { data: me, isLoading: meLoading } = useQuery({
+    queryKey: ["me"],
+    queryFn: adminApi.me,
+    enabled: hasToken,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const alreadyIn = hasToken && !!me?.is_superadmin;
+
+  useEffect(() => {
+    if (alreadyIn) router.replace("/dashboard");
+  }, [alreadyIn, router]);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -64,6 +92,19 @@ export default function AdminLoginPage() {
       toast.error(msg);
       setBusy(false);
     }
+  }
+
+  // Rendered identically on the server and the first client paint (mounted=false
+  // → spinner), so there is no hydration branch. Once mounted we either redirect
+  // (session confirmed) or fall through to the sign-in form below.
+  if (!mounted || alreadyIn || (hasToken && meLoading)) {
+    return (
+      <AuthShell productName="Neubit" eyebrow="Super-admin" title="Neubit Admin">
+        <div className="flex items-center justify-center py-8 text-muted">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      </AuthShell>
+    );
   }
 
   if (mfaToken) {
