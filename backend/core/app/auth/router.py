@@ -125,6 +125,16 @@ async def login(
     # First factor passed. If 2FA is on, don't issue tokens yet — challenge for it.
     if user.totp_enabled:
         return LoginResult(mfa_required=True, mfa_token=svc.issue_mfa_challenge(user))
+    # Per-tenant 2FA ENFORCEMENT (P6-D): if a security policy mandates 2FA for this
+    # user but they haven't enrolled, block token issuance and signal enrollment.
+    # The client uses the short-lived challenge token to authorize the enroll flow
+    # (POST /auth/2fa/enroll/*), then logs in again with the new second factor.
+    from ..security.service import SecurityService
+
+    if await SecurityService(db).user_must_enroll_2fa(user):
+        return LoginResult(
+            enrollment_required=True, mfa_token=svc.issue_mfa_challenge(user)
+        )
     access, refresh = await svc.issue_tokens(
         user, user_agent=request.headers.get("user-agent"), ip=_client_ip(request)
     )
@@ -335,6 +345,59 @@ async def two_factor_recovery_codes(
     """Regenerate recovery codes (invalidates the old set)."""
     codes = await AuthService(db).regenerate_recovery_codes(user, data.code)
     return RecoveryCodesOut(recovery_codes=codes)
+
+
+# --- 2FA enrollment during enforced login (no access token yet) --------------
+async def _user_from_mfa_token(mfa_token: str, db: AsyncSession) -> User:
+    """Resolve the user behind a short-lived 'mfa' challenge token (raises 401)."""
+    import jwt as _jwt
+
+    from .security import decode_token
+
+    try:
+        payload = decode_token(mfa_token)
+    except _jwt.PyJWTError:
+        raise UnauthorizedError("invalid or expired 2FA session")
+    if payload.get("type") != "mfa":
+        raise UnauthorizedError("not a 2FA enrollment token")
+    user = await db.get(User, uuid.UUID(payload["sub"]))
+    if user is None or not user.is_active:
+        raise UnauthorizedError("2FA session is no longer valid")
+    return user
+
+
+@router.post("/2fa/enroll/begin", response_model=TotpSetupOut)
+async def enroll_begin(
+    data: MfaLoginIn,  # reuse: carries mfa_token (code unused here)
+    db: AsyncSession = Depends(get_db),
+) -> TotpSetupOut:
+    """When 2FA is ENFORCED and the user has none, begin enrolment using the login
+    challenge token (no access token exists yet). Returns the secret + otpauth URI."""
+    user = await _user_from_mfa_token(data.mfa_token, db)
+    secret, uri = await AuthService(db).begin_totp_setup(user)
+    return TotpSetupOut(secret=secret, otpauth_uri=uri)
+
+
+@router.post("/2fa/enroll/confirm", response_model=TokenOut)
+async def enroll_confirm(
+    data: MfaLoginIn,  # carries mfa_token + the first TOTP code
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> TokenOut:
+    """Confirm enrolment (verify the first code), enable 2FA, and sign the user in.
+
+    Completes the enforced-2FA login: the user now has a second factor, so real
+    access + refresh tokens are issued directly."""
+    svc = AuthService(db)
+    user = await _user_from_mfa_token(data.mfa_token, db)
+    await svc.confirm_totp_setup(user, data.code)
+    access, refresh = await svc.issue_tokens(
+        user, user_agent=request.headers.get("user-agent"), ip=_client_ip(request)
+    )
+    await audit_record(
+        db, actor=user, action="auth.2fa_enroll", target_type="user", target_id=str(user.id),
+    )
+    return TokenOut(access_token=access, refresh_token=refresh)
 
 
 @router.post("/forgot-password")

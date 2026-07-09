@@ -78,6 +78,7 @@ class CorePerm:
     ROLE_MANAGE = "role.manage"
     APIKEY_MANAGE = "apikey.manage"
     AUDIT_READ = "audit.read"
+    AUDIT_WRITE = "audit.write"
     BRANDING_MANAGE = "branding.manage"
     SETTINGS_MANAGE = "settings.manage"
     SYSTEM_READ = "system.read"
@@ -118,6 +119,14 @@ class CorePerm:
     VMS_EXPORT = "vms.export"
     VMS_PTZ_CONTROL = "vms.ptz.control"
     VMS_CONFIG_MANAGE = "vms.config.manage"
+    # --- Enterprise security (P6-D) ---------------------------------------
+    # Manage the security surface: 2FA-enforcement policy, LDAP/AD directory,
+    # OIDC SSO. Held by a tenant's security admin.
+    SECURITY_MANAGE = "security.manage"
+    # Approve/deny a four-eyes (dual-authorization) request raised by someone
+    # else. Deliberately SEPARATE from security.manage so the approver is a
+    # distinct privileged role, not just whoever configures security.
+    DUALAUTH_APPROVE = "dualauth.approve"
 
 
 PERMISSIONS.register(
@@ -127,6 +136,7 @@ PERMISSIONS.register(
     Permission(CorePerm.ROLE_MANAGE, "Create / edit roles & permissions", "Roles"),
     Permission(CorePerm.APIKEY_MANAGE, "Manage API keys", "API keys"),
     Permission(CorePerm.AUDIT_READ, "View audit log", "Audit"),
+    Permission(CorePerm.AUDIT_WRITE, "Ingest audit events (service-to-service)", "Audit"),
     Permission(CorePerm.BRANDING_MANAGE, "Edit branding / white-label", "Branding"),
     Permission(CorePerm.SETTINGS_MANAGE, "Edit integration settings", "Settings"),
     Permission(CorePerm.SYSTEM_READ, "View system resources", "System"),
@@ -165,4 +175,7 @@ PERMISSIONS.register(
     Permission(CorePerm.VMS_EXPORT, "Export video / clips", "VMS"),
     Permission(CorePerm.VMS_PTZ_CONTROL, "Control PTZ", "VMS"),
     Permission(CorePerm.VMS_CONFIG_MANAGE, "Edit camera config", "VMS"),
+    # --- Enterprise security ----------------------------------------------
+    Permission(CorePerm.SECURITY_MANAGE, "Manage 2FA policy / LDAP / SSO", "Security"),
+    Permission(CorePerm.DUALAUTH_APPROVE, "Approve four-eyes requests", "Security"),
 )

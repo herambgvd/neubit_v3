@@ -41,6 +41,9 @@ system    = ["psutil>=5.9"]
 # DXF→SVG needs ezdxf + matplotlib. All imported LAZILY so the core boots without
 # them — install this extra only where floor-plan upload is used.
 sites     = ["pdf2image>=1.17", "ezdxf>=1.1", "matplotlib>=3.8", "Pillow>=10.0"]
+# Live LDAP/AD directory sync + bind (security module). Imported lazily so core
+# boots without it; install where directory login/sync is used. LIVE-VALIDATE.
+directory = ["ldap3>=2.9"]
 dev       = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "aiosqlite>=0.20"]
 
 [tool.setuptools.packages.find]

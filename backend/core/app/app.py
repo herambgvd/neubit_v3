@@ -41,6 +41,7 @@ def base_routers() -> list[APIRouter]:
     from .platform_admin import router as platform_admin_router
     from .reports import router as reports_router
     from .search import router as search_router
+    from .security import routers as security_routers
     from .settings import router as settings_router
     from .sites import routers as sites_routers
     from .system import system_router
@@ -68,6 +69,7 @@ def base_routers() -> list[APIRouter]:
         realtime_vms_router,
         *sites_routers,
         *tags_routers,
+        *security_routers,
     ]
 
 
