@@ -39,7 +39,9 @@ def _tables():
         MediaProfile,
         PlaybackSession,
         Recording,
+        StoragePool,
         StreamShard,
+        TierRule,
     )
 
     # Order matters for FKs: parents (nvrs, media_nodes, cameras) before children.
@@ -54,6 +56,8 @@ def _tables():
         StreamShard.__table__,
         PlaybackSession.__table__,
         Recording.__table__,
+        StoragePool.__table__,
+        TierRule.__table__,
     ]
 
 

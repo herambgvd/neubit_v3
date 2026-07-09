@@ -27,6 +27,8 @@ from app.vms.health.router import router as health_router
 from app.vms.live.router import router as live_router
 from app.vms.nvr.router import router as nvr_router
 from app.vms.recording.router import router as recording_router
+from app.vms.storage import rec_router as storage_rec_router
+from app.vms.storage import router as storage_router
 
 # Health mounts FIRST: its literal ``/cameras/health`` + ``/cameras/{id}/health/*``
 # paths must be matched before the camera router's ``/cameras/{camera_id}`` catch-all
@@ -38,10 +40,15 @@ from app.vms.recording.router import router as recording_router
 # match clarity) and before cameras — the P2-B streaming control plane. Recording
 # mounts alongside live (its ``/cameras/{id}/recording*`` + ``/recordings/{id}`` are
 # deeper/distinct from the camera catch-all) — the P3-A recording control plane.
+# Storage mounts alongside recording — its ``/vms/storage/*`` prefix is distinct, and
+# its ``/vms/recordings/{id}/lock|unlock|verify`` (POST) don't collide with the
+# recording router's ``/vms/recordings/{id}`` (GET). The P3-B storage control plane.
 routers = [
     health_router,
     live_router,
     recording_router,
+    storage_router,
+    storage_rec_router,
     camera_router,
     group_router,
     nvr_router,

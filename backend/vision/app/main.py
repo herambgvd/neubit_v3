@@ -37,6 +37,7 @@ from app.vms import routers as vms_routers
 from app.vms.common.events import bus
 from app.vms.health import HealthSampler
 from app.vms.recording import RecordingConsumer, RecordingScheduler
+from app.vms.storage import RetentionTieringWorker
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vision")
@@ -65,8 +66,17 @@ async def lifespan(app: FastAPI):
     await rec_scheduler.start()
     app.state.recording_scheduler = rec_scheduler
 
+    # P3-B storage: retention + tiering sweep. Deletes recordings past their camera's
+    # retention window / over a pool's capacity (NEVER touching locked ones) and moves
+    # aged recordings hot→cold per TierRule (local→S3/MinIO). Own DB session per cycle;
+    # graceful (unreachable pool / missing file → log + skip).
+    storage_worker = RetentionTieringWorker(get_sessionmaker())
+    await storage_worker.start()
+    app.state.storage_worker = storage_worker
+
     yield
 
+    await storage_worker.stop()
     await rec_scheduler.stop()
     await sampler.stop()
     await bus.close()

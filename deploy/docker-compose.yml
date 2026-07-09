@@ -15,6 +15,8 @@ volumes:
   # /recordings so the on-disk path (cameras/<tenant>/<cam>/<profile>/<seg>.mp4) is
   # identical on both sides.
   recordings:
+  # P3-B: MinIO object data (the dev S3 cold tier the tiering worker writes to).
+  miniodata:
 
 services:
 
@@ -207,12 +209,46 @@ services:
       # docker DNS) + the media-token TTL (browser HLS/WHEP token; renewable).
       VE_NVR_URL: ${VE_NVR_URL:-http://nvr:8000}
       VE_MEDIA_TOKEN_TTL_SEC: ${VE_MEDIA_TOKEN_TTL_SEC:-300}
+      # P3-B storage — where the recording segments are mounted (same volume MediaMTX
+      # writes to + nvr scans), the retention/tiering sweep interval, and the global
+      # retention fallback used when a camera has no explicit retention_days.
+      VE_RECORDINGS_DIR: ${VE_RECORDINGS_DIR:-/recordings}
+      VE_RETENTION_TICK_SEC: ${VE_RETENTION_TICK_SEC:-300}
+      VE_DEFAULT_RETENTION_DAYS: ${VE_DEFAULT_RETENTION_DAYS:-30}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
+    volumes:
+      # P3-B: mount the shared recordings volume so vision can CHECKSUM segments
+      # (read) and the retention/tiering worker can DELETE + COPY them (write) — same
+      # /recordings path as mediamtx + nvr so the on-disk paths match.
+      - recordings:/recordings
     command: >
       bash -c "alembic upgrade head &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks: [neubit]
+
+  # ── minio — dev S3 cold tier (P3-B) ─────────────────────────────
+  # An S3-compatible object store so the S3 storage pool + local→cold tiering are
+  # testable in dev. Create an S3 pool in vision pointing at http://minio:9000 with
+  # these credentials; vision ensure_bucket()s the bucket on pool create. Console on
+  # :9001, S3 API on :9000 (both host-published for local inspection).
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     networks: [neubit]
 
   # ── mediamtx — VMS media node (P2-A) ────────────────────────────

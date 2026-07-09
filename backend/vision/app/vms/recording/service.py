@@ -274,7 +274,33 @@ class RecordingService:
             await self.db.rollback()
             log.info("segment persist race for %s: %s", path, exc)
             return None
+
+        # P3-B: assign the tenant's default storage pool + compute the SHA-256 on
+        # finalize. All best-effort — a not-yet-readable file / failure leaves the row
+        # ``unchecked`` for the worker to backfill; never fails the persist.
+        try:
+            await self._finalize_integrity(row, tid)
+        except Exception as exc:  # noqa: BLE001 — integrity is best-effort at finalize
+            await self.db.rollback()
+            log.info("segment integrity finalize deferred for %s: %s", path, exc)
         return row.id
+
+    async def _finalize_integrity(self, row: Recording, tid) -> None:
+        """Assign default pool + checksum a freshly-persisted segment (P3-B).
+
+        Runs under a per-tenant scope (so the default pool is the recording's OWN
+        tenant's), not the consumer's platform writer scope. Commits its own delta.
+        """
+        from app.vms.storage.service import StorageService, compute_integrity
+
+        pool_scope = Scope(tenant_id=tid, is_superadmin=(tid is None))
+        storage = StorageService(self.db, pool_scope)
+        pool = await storage.ensure_default_pool()
+        if pool is not None and row.storage_pool_id is None:
+            row.storage_pool_id = pool.id
+        # Compute + store the checksum (missing file → ``unchecked`` for the worker).
+        await compute_integrity(self.db, pool_scope, row, missing_as_unchecked=True)
+        await self.db.commit()
 
     # ── helpers ─────────────────────────────────────────────────────────
     def _config_public(self, camera: Camera, recording_now: bool):
