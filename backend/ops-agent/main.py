@@ -305,6 +305,7 @@ async def host_summary() -> dict:
         import psutil
 
         out["cpu_pct"] = psutil.cpu_percent(interval=None)
+        out["cpu_count"] = psutil.cpu_count(logical=True)
         vm = psutil.virtual_memory()
         out["mem_used_mb"] = round(vm.used / (1024 * 1024), 1)
         out["mem_total_mb"] = round(vm.total / (1024 * 1024), 1)

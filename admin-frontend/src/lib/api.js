@@ -60,8 +60,55 @@ export const adminApi = {
     const { data } = await api.post("/auth/login", { email, password });
     return data;
   },
+  async loginMfa(mfaToken, code) {
+    const { data } = await api.post("/auth/login/mfa", { mfa_token: mfaToken, code });
+    return data;
+  },
   async me() {
     const { data } = await api.get("/auth/me");
+    return data;
+  },
+
+  // --- Account security (self-service, for the signed-in super-admin) ---------
+  async changePassword(current_password, new_password) {
+    const { data } = await api.post("/auth/change-password", { current_password, new_password });
+    return data;
+  },
+  // Two-factor auth. Status → { enabled, recovery_codes_remaining }.
+  async twoFactorStatus() {
+    const { data } = await api.get("/auth/me/2fa");
+    return data;
+  },
+  // Begin enrolment → { secret, otpauth_uri } (not active until confirmed).
+  async twoFactorSetup() {
+    const { data } = await api.post("/auth/me/2fa/setup");
+    return data;
+  },
+  // Confirm the first code, enabling 2FA → { recovery_codes }.
+  async twoFactorConfirm(code) {
+    const { data } = await api.post("/auth/me/2fa/confirm", { code });
+    return data;
+  },
+  async twoFactorDisable(code) {
+    const { data } = await api.post("/auth/me/2fa/disable", { code });
+    return data;
+  },
+  // Regenerate recovery codes (invalidates the old set) → { recovery_codes }.
+  async twoFactorRecoveryCodes(code) {
+    const { data } = await api.post("/auth/me/2fa/recovery-codes", { code });
+    return data;
+  },
+  // Live sessions. Each { id, user_agent, ip, created_at, last_used_at, current }.
+  async listSessions() {
+    const { data } = await api.get("/auth/me/sessions");
+    return data;
+  },
+  async revokeSession(sessionId) {
+    const { data } = await api.delete(`/auth/me/sessions/${sessionId}`);
+    return data;
+  },
+  async revokeOtherSessions() {
+    const { data } = await api.post("/auth/me/sessions/revoke-others");
     return data;
   },
   // Tenants — paginated { items, total, page, page_size } (also tolerates a bare array).

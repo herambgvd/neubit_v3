@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { adminApi, apiError, tokens } from "@/lib/api";
@@ -16,6 +16,19 @@ export default function AdminLoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // Second-factor challenge state.
+  const [mfaToken, setMfaToken] = useState("");
+  const [code, setCode] = useState("");
+
+  function finish(data) {
+    if (!data?.access_token) {
+      throw new Error("This account cannot access the admin console.");
+    }
+    tokens.set(data.access_token);
+    toast.success("Signed in");
+    router.push("/dashboard");
+  }
+
   async function onSubmit(e) {
     e.preventDefault();
     if (busy) return;
@@ -23,20 +36,75 @@ export default function AdminLoginPage() {
     setBusy(true);
     try {
       const data = await adminApi.login(email.trim(), password);
-      // MFA is ignored for the admin console v1 — we only need the access token.
-      if (!data?.access_token) {
-        throw new Error("This account cannot access the admin console.");
+      if (data?.mfa_required) {
+        // First factor OK — switch to the code step.
+        setMfaToken(data.mfa_token);
+        setBusy(false);
+        return;
       }
-      tokens.set(data.access_token);
-      toast.success("Signed in");
-      router.push("/tenants");
+      finish(data);
     } catch (err) {
       const msg = apiError(err, "Login failed");
       setError(msg);
       toast.error(msg);
-    } finally {
       setBusy(false);
     }
+  }
+
+  async function onSubmitMfa(e) {
+    e.preventDefault();
+    if (busy) return;
+    setError("");
+    setBusy(true);
+    try {
+      finish(await adminApi.loginMfa(mfaToken, code.trim()));
+    } catch (err) {
+      const msg = apiError(err, "Invalid code");
+      setError(msg);
+      toast.error(msg);
+      setBusy(false);
+    }
+  }
+
+  if (mfaToken) {
+    return (
+      <AuthShell
+        productName="Neubit"
+        eyebrow="Two-factor authentication"
+        title="Enter your code"
+        subtitle="Open your authenticator app and enter the 6-digit code, or use a recovery code."
+      >
+        <form onSubmit={onSubmitMfa} className="space-y-5" noValidate>
+          <div className="space-y-1.5">
+            <AuthLabel htmlFor="code">Authentication code</AuthLabel>
+            <AuthInput
+              id="code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="123456"
+              autoFocus
+              required
+              className="text-center text-lg tracking-[0.4em]"
+            />
+          </div>
+          <AuthError>{error}</AuthError>
+          <AuthSubmit loading={busy}>Verify &amp; sign in</AuthSubmit>
+          <button
+            type="button"
+            onClick={() => {
+              setMfaToken("");
+              setCode("");
+              setError("");
+            }}
+            className="w-full text-center text-xs text-muted transition hover:text-foreground"
+          >
+            ← Back to sign in
+          </button>
+        </form>
+      </AuthShell>
+    );
   }
 
   return (
@@ -55,7 +123,7 @@ export default function AdminLoginPage() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="admin@yourcompany.com"
+            placeholder="Enter your email"
             autoFocus
             required
           />
@@ -70,7 +138,7 @@ export default function AdminLoginPage() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="Enter your password"
               required
               className="pr-11"
             />
@@ -87,6 +155,10 @@ export default function AdminLoginPage() {
 
         <AuthError>{error}</AuthError>
         <AuthSubmit loading={busy}>Sign in to console</AuthSubmit>
+        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted">
+          <ShieldCheck className="h-3.5 w-3.5" />
+          Protected by two-factor authentication when enabled.
+        </p>
       </form>
     </AuthShell>
   );

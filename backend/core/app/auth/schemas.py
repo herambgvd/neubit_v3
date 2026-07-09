@@ -47,6 +47,9 @@ class UserOut(BaseModel):
     preferences: dict = {}
     # Whether the user has an active TOTP second factor.
     totp_enabled: bool = False
+    # Platform super-admin flag (tenant_id NULL + is_superadmin True). The admin
+    # console reads this to gate access to the cross-tenant panel.
+    is_superadmin: bool = False
 
 
 class LoginIn(BaseModel):

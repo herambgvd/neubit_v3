@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   ExternalLink,
   KeyRound,
-  Loader2,
   Pause,
   Play,
   Plus,
@@ -19,23 +18,29 @@ import {
 import { toast } from "sonner";
 
 import { adminApi, apiError } from "@/lib/api";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  Field,
+  Input,
+  Skeleton,
+  Textarea,
+} from "@/components/ui";
 
 // The operator console origin (where impersonation opens). Same host, gateway :80.
 const OPERATOR_ORIGIN =
   (process.env.NEXT_PUBLIC_OPERATOR_URL || "http://localhost").replace(/\/$/, "");
 
-const cardCls = "rounded-2xl border border-card-border bg-card p-5";
-const inputCls =
-  "h-10 w-full rounded-lg border border-card-border bg-card px-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20";
-
 function LicensePill({ state }) {
   const map = {
-    active: ["border-emerald-400/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300", "Licensed"],
-    grace: ["border-amber-400/20 bg-amber-500/10 text-amber-600 dark:text-amber-300", "Grace period"],
-    expired: ["border-red-400/20 bg-red-500/10 text-red-600 dark:text-red-300", "Expired"],
+    active: ["success", "Licensed"],
+    grace: ["warning", "Grace period"],
+    expired: ["danger", "Expired"],
   };
-  const [cls, label] = map[state] || map.active;
-  return <span className={"rounded-full border px-2.5 py-0.5 text-xs font-medium " + cls}>{label}</span>;
+  const [tone, label] = map[state] || map.active;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 // yyyy-MM-ddTHH:mm for <input type="datetime-local"> (local tz) from an ISO string.
@@ -51,6 +56,8 @@ export default function TenantDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const qc = useQueryClient();
+  const [confirmImpersonate, setConfirmImpersonate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const tenantQ = useQuery({ queryKey: ["tenant", id], queryFn: () => adminApi.getTenant(id) });
   const usageQ = useQuery({ queryKey: ["tenant", id, "usage"], queryFn: () => adminApi.tenantUsage(id) });
@@ -84,6 +91,7 @@ export default function TenantDetailPage() {
   const impersonate = useMutation({
     mutationFn: () => adminApi.impersonate(id),
     onSuccess: (data) => {
+      setConfirmImpersonate(false);
       const url = `${OPERATOR_ORIGIN}/impersonate#access=${encodeURIComponent(data.access_token)}`;
       window.open(url, "_blank", "noopener");
       toast.success(`Opening console as ${data.user_email}`);
@@ -92,16 +100,18 @@ export default function TenantDetailPage() {
   });
 
   if (tenantQ.isLoading) {
-    return <div className="h-40 animate-pulse rounded-2xl border border-card-border bg-card" />;
+    return <Skeleton className="h-40 rounded-2xl" />;
   }
   if (tenantQ.isError) {
     return (
-      <div className="rounded-2xl border border-red-400/20 bg-red-500/5 p-5 text-sm text-red-600 dark:text-red-300">
+      <Card className="border-danger/20 bg-danger/5 p-5 text-sm text-danger">
         {apiError(tenantQ.error, "Tenant not found")}
         <div className="mt-3">
-          <Link href="/tenants" className="text-cyan-600 dark:text-cyan-300 hover:underline">← Back to tenants</Link>
+          <Link href="/tenants" className="text-accent hover:underline">
+            ← Back to tenants
+          </Link>
         </div>
-      </div>
+      </Card>
     );
   }
 
@@ -109,7 +119,7 @@ export default function TenantDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/tenants" className="inline-flex items-center gap-2 text-sm text-muted hover:text-foreground">
+      <Link href="/tenants" className="inline-flex items-center gap-2 text-sm text-muted transition hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> Tenants
       </Link>
 
@@ -119,41 +129,22 @@ export default function TenantDetailPage() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">{t.name}</h1>
             <LicensePill state={t.license_state} />
-            {suspended && (
-              <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-300">
-                Suspended
-              </span>
-            )}
+            {suspended && <Badge tone="warning">Suspended</Badge>}
           </div>
           <div className="mt-1 font-mono text-xs text-muted">{t.slug}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => impersonate.mutate()}
-            disabled={impersonate.isPending}
-            className="inline-flex items-center gap-2 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-700 dark:text-cyan-200 transition hover:bg-cyan-500/20 disabled:opacity-50"
-          >
-            {impersonate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+          <Button variant="accent" onClick={() => setConfirmImpersonate(true)}>
+            <ExternalLink className="h-4 w-4" />
             Open console
-          </button>
-          <button
-            onClick={() => setStatus.mutate(!suspended)}
-            disabled={setStatus.isPending}
-            className="inline-flex items-center gap-2 rounded-lg border border-card-border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:border-muted hover:text-foreground disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="outline" loading={setStatus.isPending} onClick={() => setStatus.mutate(!suspended)}>
             {suspended ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
             {suspended ? "Reactivate" : "Suspend"}
-          </button>
-          <button
-            onClick={() => {
-              if (window.confirm(`Delete tenant "${t.name}" and all its users? This cannot be undone.`))
-                remove.mutate();
-            }}
-            disabled={remove.isPending}
-            className="inline-flex items-center gap-2 rounded-lg border border-red-400/20 bg-red-500/5 px-3 py-2 text-sm font-medium text-red-600 dark:text-red-300 transition hover:border-red-400/40 hover:bg-red-500/10 disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="danger-outline" onClick={() => setConfirmDelete(true)}>
             <Trash2 className="h-4 w-4" /> Delete
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -171,6 +162,26 @@ export default function TenantDetailPage() {
           qc.invalidateQueries({ queryKey: ["tenant", id, "usage"] });
           qc.invalidateQueries({ queryKey: ["tenant", id] });
         }}
+      />
+
+      <ConfirmDialog
+        open={confirmImpersonate}
+        onOpenChange={setConfirmImpersonate}
+        title={`Open ${t.name}'s console?`}
+        description="You will sign in to the operator console as a tenant admin. This impersonation is recorded in the audit log."
+        confirmLabel="Open console"
+        variant="accent"
+        loading={impersonate.isPending}
+        onConfirm={() => impersonate.mutate()}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${t.name}?`}
+        description="This permanently removes the tenant and all its users. This cannot be undone."
+        confirmLabel="Delete tenant"
+        loading={remove.isPending}
+        onConfirm={() => remove.mutate()}
       />
     </div>
   );
@@ -209,52 +220,36 @@ function LicenseCard({ tenant, onSaved }) {
   });
 
   return (
-    <div className={cardCls}>
+    <Card className="p-5">
       <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
-        <KeyRound className="h-4 w-4 text-cyan-600 dark:text-cyan-300" /> License &amp; entitlements
+        <KeyRound className="h-4 w-4 text-accent" /> License &amp; entitlements
       </div>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <L label="Plan / tier">
-            <input value={plan} onChange={(e) => setPlan(e.target.value)} placeholder="pro" className={inputCls} />
-          </L>
-          <L label="Grace days (after expiry)">
-            <input type="number" min={0} value={grace} onChange={(e) => setGrace(e.target.value)} className={inputCls} />
-          </L>
+          <Field label="Plan / tier">
+            <Input value={plan} onChange={(e) => setPlan(e.target.value)} placeholder="pro" />
+          </Field>
+          <Field label="Grace days (after expiry)">
+            <Input type="number" min={0} value={grace} onChange={(e) => setGrace(e.target.value)} />
+          </Field>
         </div>
-        <L label="License expires (blank = perpetual)">
-          <input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} className={inputCls} />
-        </L>
-        <L label="Features (JSON)">
-          <textarea
-            value={features}
-            onChange={(e) => setFeatures(e.target.value)}
-            rows={4}
-            spellCheck={false}
-            className={inputCls + " h-auto py-2 font-mono text-xs"}
-          />
-        </L>
-        <L label="Limits / quotas (JSON, e.g. {&quot;max_users&quot;: 50})">
-          <textarea
-            value={limits}
-            onChange={(e) => setLimits(e.target.value)}
-            rows={4}
-            spellCheck={false}
-            className={inputCls + " h-auto py-2 font-mono text-xs"}
-          />
-        </L>
+        <Field label="License expires (blank = perpetual)">
+          <Input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} />
+        </Field>
+        <Field label="Features (JSON)">
+          <Textarea value={features} onChange={(e) => setFeatures(e.target.value)} rows={4} spellCheck={false} className="font-mono text-xs" />
+        </Field>
+        <Field label='Limits / quotas (JSON, e.g. {"max_users": 50})'>
+          <Textarea value={limits} onChange={(e) => setLimits(e.target.value)} rows={4} spellCheck={false} className="font-mono text-xs" />
+        </Field>
         <div className="flex justify-end">
-          <button
-            onClick={() => save.mutate()}
-            disabled={save.isPending}
-            className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
-          >
-            {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          <Button loading={save.isPending} onClick={() => save.mutate()}>
+            {!save.isPending && <Save className="h-4 w-4" />}
             Save license
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -264,10 +259,10 @@ function UsageCard({ usage, loading }) {
   const hasLimit = typeof max === "number" && max >= 0;
   const pct = hasLimit && max > 0 ? Math.min(100, Math.round((users / max) * 100)) : 0;
   return (
-    <div className={cardCls}>
+    <Card className="p-5">
       <div className="mb-4 text-sm font-semibold text-foreground">Usage</div>
       {loading ? (
-        <div className="h-16 animate-pulse rounded-lg bg-hover" />
+        <Skeleton className="h-16 rounded-lg" />
       ) : (
         <div className="space-y-2">
           <div className="flex items-baseline justify-between">
@@ -280,10 +275,7 @@ function UsageCard({ usage, loading }) {
           {hasLimit ? (
             <div className="h-2 w-full overflow-hidden rounded-full bg-hover">
               <div
-                className={
-                  "h-full rounded-full " +
-                  (pct >= 90 ? "bg-red-400" : pct >= 70 ? "bg-amber-400" : "bg-emerald-400")
-                }
+                className={"h-full rounded-full " + (pct >= 90 ? "bg-danger" : pct >= 70 ? "bg-warning" : "bg-success")}
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -292,38 +284,37 @@ function UsageCard({ usage, loading }) {
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
 function AdminsCard({ tenantId, admins, loading, onChange }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [removing, setRemoving] = useState(null);
 
   const del = useMutation({
     mutationFn: (userId) => adminApi.deleteTenantAdmin(tenantId, userId),
     onSuccess: () => {
       toast.success("User removed");
+      setRemoving(null);
       onChange();
     },
     onError: (e) => toast.error(apiError(e)),
   });
 
   return (
-    <div className={cardCls}>
+    <Card className="p-5">
       <div className="mb-4 flex items-center justify-between">
         <div className="text-sm font-semibold text-foreground">Tenant users</div>
-        <button
-          onClick={() => setShowAdd((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground transition hover:border-muted hover:text-foreground"
-        >
+        <Button variant="outline" size="sm" onClick={() => setShowAdd((v) => !v)}>
           <UserPlus className="h-3.5 w-3.5" /> Add user
-        </button>
+        </Button>
       </div>
 
       {showAdd && <AddAdminForm tenantId={tenantId} onDone={() => { setShowAdd(false); onChange(); }} />}
 
       {loading ? (
-        <div className="h-10 animate-pulse rounded-lg bg-hover" />
+        <Skeleton className="h-10 rounded-lg" />
       ) : admins.length === 0 ? (
         <p className="text-sm text-muted">No users.</p>
       ) : (
@@ -334,21 +325,29 @@ function AdminsCard({ tenantId, admins, loading, onChange }) {
                 <div className="text-sm text-foreground">{u.full_name || u.email}</div>
                 <div className="text-xs text-muted">{u.email}</div>
               </div>
-              <button
-                onClick={() => {
-                  if (window.confirm(`Remove ${u.email}?`)) del.mutate(u.id);
-                }}
-                disabled={del.isPending}
-                className="rounded-lg border border-red-400/20 bg-red-500/5 p-1.5 text-red-600 dark:text-red-300 transition hover:border-red-400/40 hover:bg-red-500/10 disabled:opacity-50"
+              <Button
+                variant="danger-outline"
+                size="icon"
+                onClick={() => setRemoving(u)}
                 aria-label="Remove user"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
       )}
-    </div>
+
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title="Remove user?"
+        description={removing ? `${removing.email} will lose access to this tenant.` : ""}
+        confirmLabel="Remove"
+        loading={del.isPending}
+        onConfirm={() => removing && del.mutate(removing.id)}
+      />
+    </Card>
   );
 }
 
@@ -380,27 +379,14 @@ function AddAdminForm({ tenantId, onDone }) {
       }}
       className="mb-4 grid gap-3 rounded-xl border border-card-border bg-card p-4 sm:grid-cols-3"
     >
-      <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name (optional)" className={inputCls} />
-      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@org.com" required className={inputCls} />
+      <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name (optional)" />
+      <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@org.com" required />
       <div className="flex gap-2">
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required className={inputCls} />
-        <button
-          type="submit"
-          disabled={create.isPending}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-foreground px-3 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
-        >
-          {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        </button>
+        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required />
+        <Button type="submit" size="icon" loading={create.isPending} aria-label="Add user">
+          {!create.isPending && <Plus className="h-4 w-4" />}
+        </Button>
       </div>
     </form>
-  );
-}
-
-function L({ label, children }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-medium text-muted">{label}</label>
-      {children}
-    </div>
   );
 }

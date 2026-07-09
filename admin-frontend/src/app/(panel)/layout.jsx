@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
+  Lock,
   LogOut,
   Moon,
   ScrollText,
@@ -21,6 +22,8 @@ import {
 
 import { tokens } from "@/lib/api";
 import { useTheme } from "@/components/theme";
+import { useRequireSuperadmin } from "@/lib/useRequireSuperadmin";
+import { ConfirmDialog } from "@/components/ui";
 
 // Grouped nav — a proper admin sidebar instead of a crowded top bar.
 const GROUPS = [
@@ -41,17 +44,13 @@ export default function PanelLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const { theme, toggle: toggleTheme } = useTheme();
-  const [ready, setReady] = useState(false);
+  const { status } = useRequireSuperadmin();
   const [collapsed, setCollapsed] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   useEffect(() => {
-    if (!tokens.access) {
-      router.replace("/login");
-      return;
-    }
     setCollapsed(localStorage.getItem("neubit.admin.sidebar") === "1");
-    setReady(true);
-  }, [router]);
+  }, []);
 
   function toggle() {
     setCollapsed((c) => {
@@ -65,7 +64,7 @@ export default function PanelLayout({ children }) {
     router.replace("/login");
   }
 
-  if (!ready) {
+  if (status !== "ready") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-muted">
         Loading…
@@ -108,7 +107,7 @@ export default function PanelLayout({ children }) {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-6 w-auto shrink-0 brightness-0 dark:invert dark:brightness-0" />
             {!collapsed && (
-              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-card-border bg-hover px-2 py-0.5 text-[11px] font-medium text-cyan-500 dark:text-cyan-300">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
                 <ShieldCheck className="h-3 w-3" />
                 Super-admin
               </span>
@@ -135,6 +134,7 @@ export default function PanelLayout({ children }) {
         {/* Footer: account + theme + collapse */}
         <div className="space-y-0.5 border-t border-card-border p-2">
           {navLink("/profile", "Profile", UserCircle)}
+          {navLink("/security", "Security", Lock)}
           <button
             onClick={toggleTheme}
             title={collapsed ? (theme === "dark" ? "Light mode" : "Dark mode") : undefined}
@@ -151,7 +151,7 @@ export default function PanelLayout({ children }) {
             {!collapsed && (theme === "dark" ? "Light mode" : "Dark mode")}
           </button>
           <button
-            onClick={logout}
+            onClick={() => setConfirmLogout(true)}
             title={collapsed ? "Log out" : undefined}
             className={
               "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-muted transition hover:bg-hover hover:text-foreground " +
@@ -185,6 +185,19 @@ export default function PanelLayout({ children }) {
       <main className="min-w-0 flex-1">
         <div className="px-8 py-8">{children}</div>
       </main>
+
+      <ConfirmDialog
+        open={confirmLogout}
+        onOpenChange={setConfirmLogout}
+        title="Log out?"
+        description="You'll need to sign in again to access the super-admin console."
+        confirmLabel="Log out"
+        variant="primary"
+        onConfirm={() => {
+          setConfirmLogout(false);
+          logout();
+        }}
+      />
     </div>
   );
 }

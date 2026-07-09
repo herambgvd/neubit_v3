@@ -6,20 +6,15 @@ import { ImageUp, Loader2, Map as MapIcon, Palette, SlidersHorizontal } from "lu
 import { toast } from "sonner";
 
 import { adminApi, apiError } from "@/lib/api";
-
-const inputCls =
-  "h-11 w-full rounded-lg border border-card-border bg-card px-3.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-muted";
+import { Button, Card, Field, Input, PageHeader, Skeleton, Switch, Textarea } from "@/components/ui";
 
 export default function PlatformSettingsPage() {
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Platform</h1>
-        <p className="mt-1 text-sm text-muted">
-          Platform-wide defaults every tenant inherits. Individual tenants can override these in their own settings.
-        </p>
-      </div>
-
+      <PageHeader
+        title="Platform"
+        description="Platform-wide defaults every tenant inherits. Individual tenants can override these in their own settings."
+      />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <SettingsCard />
         <BrandingCard />
@@ -29,11 +24,11 @@ export default function PlatformSettingsPage() {
   );
 }
 
-function Card({ icon: Icon, title, subtitle, children }) {
+function SettingsSection({ icon: Icon, title, subtitle, children }) {
   return (
-    <div className="animate-fade-in rounded-2xl border border-card-border bg-card p-6">
+    <Card className="animate-fade-in p-6">
       <div className="mb-5 flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-card-border bg-card text-cyan-600 dark:text-cyan-300">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-card-border bg-card text-accent">
           <Icon className="h-4 w-4" />
         </div>
         <div>
@@ -42,16 +37,7 @@ function Card({ icon: Icon, title, subtitle, children }) {
         </div>
       </div>
       {children}
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-sm font-medium text-foreground">{label}</label>
-      {children}
-    </div>
+    </Card>
   );
 }
 
@@ -62,21 +48,8 @@ function Toggle({ label, description, checked, onChange }) {
         <div className="text-sm font-medium text-foreground">{label}</div>
         {description && <div className="text-xs text-muted">{description}</div>}
       </div>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-cyan-400" />
+      <Switch checked={checked} onCheckedChange={onChange} />
     </label>
-  );
-}
-
-function SaveButton({ pending }) {
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
-    >
-      {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-      Save
-    </button>
   );
 }
 
@@ -84,7 +57,7 @@ function CardSkeleton() {
   return (
     <div className="space-y-4">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="h-11 animate-pulse rounded-lg bg-card" />
+        <Skeleton key={i} className="h-11 rounded-lg" />
       ))}
     </div>
   );
@@ -106,7 +79,6 @@ function SettingsCard() {
 
   useEffect(() => {
     if (data) {
-      // GET /admin/platform/settings returns { catalog, values } — read from values.
       const v = data?.values ?? data;
       setForm({
         announcement: v.announcement ?? "",
@@ -118,7 +90,6 @@ function SettingsCard() {
   }, [data]);
 
   const save = useMutation({
-    // PATCH expects { values: { key: val } }.
     mutationFn: () =>
       adminApi.updatePlatformSettings({
         values: {
@@ -143,29 +114,27 @@ function SettingsCard() {
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <Card icon={SlidersHorizontal} title="Platform settings" subtitle="Defaults applied across all tenants.">
+    <SettingsSection icon={SlidersHorizontal} title="Platform settings" subtitle="Defaults applied across all tenants.">
       {isLoading ? (
         <CardSkeleton />
       ) : isError ? (
-        <p className="text-sm text-red-600 dark:text-red-300">{apiError(error, "Failed to load settings")}</p>
+        <p className="text-sm text-danger">{apiError(error, "Failed to load settings")}</p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="Announcement">
-            <textarea
+            <Textarea
               value={form.announcement}
               onChange={(e) => set("announcement")(e.target.value)}
               placeholder="Shown as a platform-wide banner…"
               rows={3}
-              className="w-full rounded-lg border border-card-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-muted"
             />
           </Field>
           <Field label="Support email">
-            <input
+            <Input
               type="email"
               value={form.support_email}
               onChange={(e) => set("support_email")(e.target.value)}
               placeholder="support@platform.com"
-              className={inputCls}
             />
           </Field>
           <Toggle
@@ -181,11 +150,13 @@ function SettingsCard() {
             onChange={set("allow_signups")}
           />
           <div className="flex justify-end pt-1">
-            <SaveButton pending={save.isPending} />
+            <Button type="submit" loading={save.isPending}>
+              Save
+            </Button>
           </div>
         </form>
       )}
-    </Card>
+    </SettingsSection>
   );
 }
 
@@ -204,7 +175,6 @@ function MapsCard() {
     queryFn: () => adminApi.getPlatformSettings(),
   });
 
-  // The endpoint returns { catalog, values }; read the effective values map.
   useEffect(() => {
     const v = data?.values ?? data;
     if (v) {
@@ -244,11 +214,11 @@ function MapsCard() {
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <Card icon={MapIcon} title="Google Maps" subtitle="API key + default map centre for the Sites Map.">
+    <SettingsSection icon={MapIcon} title="Google Maps" subtitle="API key + default map centre for the Sites Map.">
       {isLoading ? (
         <CardSkeleton />
       ) : isError ? (
-        <p className="text-sm text-red-600 dark:text-red-300">{apiError(error, "Failed to load settings")}</p>
+        <p className="text-sm text-danger">{apiError(error, "Failed to load settings")}</p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
           <Toggle
@@ -257,56 +227,34 @@ function MapsCard() {
             checked={form.google_maps_enabled}
             onChange={set("google_maps_enabled")}
           />
-          <Field label="Maps API key">
-            <input
+          <Field label="Maps API key" hint="Restrict the key by HTTP referrer in Google Cloud Console.">
+            <Input
               type="password"
               autoComplete="off"
               value={form.google_maps_api_key}
               onChange={(e) => set("google_maps_api_key")(e.target.value)}
               placeholder="AIza…"
-              className={inputCls}
             />
-            <p className="text-xs text-muted">Restrict the key by HTTP referrer in Google Cloud Console.</p>
           </Field>
           <div className="grid grid-cols-3 gap-3">
             <Field label="Default lat">
-              <input
-                type="number"
-                step="any"
-                value={form.google_maps_default_lat}
-                onChange={(e) => set("google_maps_default_lat")(e.target.value)}
-                placeholder="22.9734"
-                className={inputCls}
-              />
+              <Input type="number" step="any" value={form.google_maps_default_lat} onChange={(e) => set("google_maps_default_lat")(e.target.value)} placeholder="22.9734" />
             </Field>
             <Field label="Default lng">
-              <input
-                type="number"
-                step="any"
-                value={form.google_maps_default_lng}
-                onChange={(e) => set("google_maps_default_lng")(e.target.value)}
-                placeholder="78.6569"
-                className={inputCls}
-              />
+              <Input type="number" step="any" value={form.google_maps_default_lng} onChange={(e) => set("google_maps_default_lng")(e.target.value)} placeholder="78.6569" />
             </Field>
             <Field label="Default zoom">
-              <input
-                type="number"
-                min="1"
-                max="22"
-                value={form.google_maps_default_zoom}
-                onChange={(e) => set("google_maps_default_zoom")(e.target.value)}
-                placeholder="5"
-                className={inputCls}
-              />
+              <Input type="number" min="1" max="22" value={form.google_maps_default_zoom} onChange={(e) => set("google_maps_default_zoom")(e.target.value)} placeholder="5" />
             </Field>
           </div>
           <div className="flex justify-end pt-1">
-            <SaveButton pending={save.isPending} />
+            <Button type="submit" loading={save.isPending}>
+              Save
+            </Button>
           </div>
         </form>
       )}
-    </Card>
+    </SettingsSection>
   );
 }
 
@@ -330,8 +278,6 @@ function BrandingCard() {
     }
   }, [data]);
 
-  // The logo is stored server-side by key and set only via POST /branding/logo —
-  // the branding PATCH has no logo field. So uploading persists the logo on its own.
   const uploadLogo = useMutation({
     mutationFn: (file) => adminApi.uploadPlatformLogo(file),
     onSuccess: (res) => {
@@ -342,7 +288,6 @@ function BrandingCard() {
     onError: (err) => toast.error(apiError(err, "Could not upload logo")),
   });
 
-  // Name + header flag are saved via PATCH; the logo is already persisted on upload.
   const save = useMutation({
     mutationFn: () =>
       adminApi.updatePlatformBranding({
@@ -363,7 +308,7 @@ function BrandingCard() {
 
   function onPickFile(e) {
     const file = e.target.files?.[0];
-    e.target.value = ""; // reset so re-selecting the same file fires onChange again
+    e.target.value = "";
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       toast.error("Please choose an image file (SVG, PNG, …)");
@@ -379,38 +324,22 @@ function BrandingCard() {
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <Card icon={Palette} title="Branding" subtitle="Default look tenants inherit.">
+    <SettingsSection icon={Palette} title="Branding" subtitle="Default look tenants inherit.">
       {isLoading ? (
         <CardSkeleton />
       ) : isError ? (
-        <p className="text-sm text-red-600 dark:text-red-300">{apiError(error, "Failed to load branding")}</p>
+        <p className="text-sm text-danger">{apiError(error, "Failed to load branding")}</p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="App name">
-            <input
-              type="text"
-              value={form.app_name}
-              onChange={(e) => set("app_name")(e.target.value)}
-              placeholder="Neubit"
-              className={inputCls}
-            />
+            <Input value={form.app_name} onChange={(e) => set("app_name")(e.target.value)} placeholder="Neubit" />
           </Field>
           <Field label="Logo">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              onChange={onPickFile}
-              className="hidden"
-            />
+            <input ref={fileRef} type="file" accept="image/*" onChange={onPickFile} className="hidden" />
             <div className="flex items-center gap-3 rounded-lg border border-card-border bg-card px-3.5 py-3">
               {form.logo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={form.logo_url}
-                  alt="Logo preview"
-                  className="h-9 w-auto max-w-[140px] shrink-0 object-contain"
-                />
+                <img src={form.logo_url} alt="Logo preview" className="h-9 w-auto max-w-[140px] shrink-0 object-contain" />
               ) : (
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-card-border bg-hover text-muted">
                   <ImageUp className="h-4 w-4" />
@@ -422,19 +351,15 @@ function BrandingCard() {
                 </div>
                 <div className="text-xs text-muted">SVG, PNG or JPG · up to 2 MB</div>
               </div>
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => fileRef.current?.click()}
-                disabled={uploadLogo.isPending}
-                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-card-border bg-hover px-3 py-2 text-sm font-medium text-foreground transition hover:border-muted disabled:opacity-60"
+                loading={uploadLogo.isPending}
               >
-                {uploadLogo.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ImageUp className="h-4 w-4" />
-                )}
+                {!uploadLogo.isPending && <ImageUp className="h-4 w-4" />}
                 {form.logo_url ? "Replace" : "Upload"}
-              </button>
+              </Button>
             </div>
           </Field>
           <Toggle
@@ -444,10 +369,12 @@ function BrandingCard() {
             onChange={set("name_in_header")}
           />
           <div className="flex justify-end pt-1">
-            <SaveButton pending={save.isPending} />
+            <Button type="submit" loading={save.isPending}>
+              Save
+            </Button>
           </div>
         </form>
       )}
-    </Card>
+    </SettingsSection>
   );
 }
