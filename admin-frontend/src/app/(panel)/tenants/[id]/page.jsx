@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   Blocks,
   Clock,
+  CreditCard,
   ExternalLink,
   Gauge,
   KeyRound,
@@ -21,6 +22,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Receipt,
   Save,
   Trash2,
   UserCog,
@@ -35,9 +37,18 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
   EmptyState,
   Field,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Skeleton,
   Switch,
   Tabs,
@@ -181,6 +192,8 @@ export default function TenantDetailPage() {
             <UsageCard usage={usageQ.data} loading={usageQ.isLoading} />
           </div>
 
+          <SubscriptionCard tenantId={id} onEntitlementsChanged={refetchAll} />
+
           <AdminsCard
             tenantId={id}
             admins={adminsQ.data || []}
@@ -228,6 +241,29 @@ function humanizeKey(key) {
     .replace(/\b\w/g, (c) => c.toUpperCase())
     .trim();
 }
+
+function money(cents, currency = "USD") {
+  const n = (Number(cents) || 0) / 100;
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n);
+  } catch {
+    return `$${n.toFixed(2)}`;
+  }
+}
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+}
+
+const INVOICE_TONE = {
+  draft: "neutral",
+  issued: "accent",
+  paid: "success",
+  overdue: "danger",
+  void: "neutral",
+};
 
 function LicenseCard({ tenant, onSaved }) {
   const [plan, setPlan] = useState(tenant.plan || "");
@@ -468,6 +504,247 @@ function UsageCard({ usage, loading }) {
         </div>
       )}
     </Card>
+  );
+}
+
+// --- Subscription & billing (per tenant) -------------------------------------
+const SUB_TONE = {
+  active: "success",
+  trialing: "accent",
+  past_due: "warning",
+  canceled: "neutral",
+};
+
+function SubscriptionCard({ tenantId, onEntitlementsChanged }) {
+  const qc = useQueryClient();
+  const [plan, setPlan] = useState("");
+  const [applyEnt, setApplyEnt] = useState(true);
+  const [showInvoice, setShowInvoice] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [voiding, setVoiding] = useState(null);
+
+  const subQ = useQuery({
+    queryKey: ["tenant", tenantId, "subscription"],
+    queryFn: () => adminApi.getSubscription(tenantId),
+  });
+  const plansQ = useQuery({ queryKey: ["billing", "plans"], queryFn: () => adminApi.listPlans() });
+  const invoicesQ = useQuery({
+    queryKey: ["tenant", tenantId, "invoices"],
+    queryFn: () => adminApi.listInvoices({ tenantId, pageSize: 50 }),
+  });
+
+  const sub = subQ.data;
+  const plans = plansQ.data || [];
+  const invoices = invoicesQ.data?.items || [];
+  const selected = plan || sub?.plan_key || "";
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["tenant", tenantId, "subscription"] });
+    qc.invalidateQueries({ queryKey: ["tenant", tenantId, "invoices"] });
+    qc.invalidateQueries({ queryKey: ["billing"] });
+  };
+
+  const save = useMutation({
+    mutationFn: () =>
+      adminApi.subscribe(tenantId, { plan_key: selected, status: "active", apply_entitlements: applyEnt }),
+    onSuccess: () => {
+      toast.success("Subscription updated");
+      invalidate();
+      if (applyEnt) onEntitlementsChanged?.();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const cancel = useMutation({
+    mutationFn: () => adminApi.cancelSubscription(tenantId),
+    onSuccess: () => { toast.success("Subscription canceled"); setCancelOpen(false); invalidate(); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const markPaid = useMutation({
+    mutationFn: (id) => adminApi.markInvoicePaid(id),
+    onSuccess: () => { toast.success("Invoice marked paid"); invalidate(); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const voidInv = useMutation({
+    mutationFn: (id) => adminApi.voidInvoice(id),
+    onSuccess: () => { toast.success("Invoice voided"); setVoiding(null); invalidate(); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const activePlan = plans.find((p) => p.key === (sub?.plan_key || ""));
+
+  return (
+    <Card className="p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <CreditCard className="h-4 w-4 text-accent" /> Subscription &amp; billing
+        </div>
+        {sub && <Badge tone={SUB_TONE[sub.status] || "neutral"}>{sub.status}</Badge>}
+      </div>
+
+      {subQ.isLoading || plansQ.isLoading ? (
+        <Skeleton className="h-16 rounded-lg" />
+      ) : (
+        <div className="space-y-5">
+          {/* Current plan + change */}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[200px] flex-1">
+              <div className="mb-1.5 text-xs font-medium text-muted">Plan</div>
+              {plans.length === 0 ? (
+                <p className="text-xs text-muted">No plans in the catalog — create one on the Billing page first.</p>
+              ) : (
+                <Select value={selected || undefined} onValueChange={setPlan}>
+                  <SelectTrigger><SelectValue placeholder="Choose a plan" /></SelectTrigger>
+                  <SelectContent>
+                    {plans.map((p) => (
+                      <SelectItem key={p.key} value={p.key}>
+                        {p.name} · {money(p.price_cents, p.currency)}/{p.interval === "yearly" ? "yr" : "mo"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <label className="flex items-center gap-2 pb-2 text-xs text-muted">
+              <Switch checked={applyEnt} onCheckedChange={setApplyEnt} />
+              Apply plan entitlements
+            </label>
+            <Button
+              loading={save.isPending}
+              disabled={!selected || selected === sub?.plan_key && sub?.status === "active"}
+              onClick={() => save.mutate()}
+            >
+              {sub ? "Change plan" : "Subscribe"}
+            </Button>
+            {sub && sub.status !== "canceled" && (
+              <Button variant="outline" onClick={() => setCancelOpen(true)}>Cancel</Button>
+            )}
+          </div>
+
+          {activePlan && (
+            <p className="text-xs text-muted">
+              Current: <span className="text-foreground">{activePlan.name}</span> — applying its entitlements sets this
+              tenant&apos;s plan, features and quotas to match.
+            </p>
+          )}
+
+          {/* Invoices */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted">
+                <Receipt className="h-3.5 w-3.5" /> Invoices
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setShowInvoice(true)}>
+                <Plus className="h-3.5 w-3.5" /> New invoice
+              </Button>
+            </div>
+            {invoicesQ.isLoading ? (
+              <Skeleton className="h-12 rounded-lg" />
+            ) : invoices.length === 0 ? (
+              <p className="text-xs text-muted">No invoices for this tenant yet.</p>
+            ) : (
+              <div className="divide-y divide-card-border rounded-lg border border-card-border">
+                {invoices.map((inv) => (
+                  <div key={inv.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                    <span className="font-mono text-xs text-foreground">{inv.number}</span>
+                    <Badge tone={INVOICE_TONE[inv.status] || "neutral"}>{inv.status}</Badge>
+                    <span className="font-medium text-foreground">{money(inv.amount_cents, inv.currency)}</span>
+                    <span className="text-xs text-muted">Due {fmtDate(inv.due_at)}</span>
+                    <div className="ml-auto flex gap-1.5">
+                      {inv.status !== "paid" && inv.status !== "void" && (
+                        <Button variant="ghost" size="sm" onClick={() => markPaid.mutate(inv.id)}>Mark paid</Button>
+                      )}
+                      {inv.status !== "void" && (
+                        <Button variant="ghost" size="sm" onClick={() => setVoiding(inv)}>Void</Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showInvoice && (
+        <NewInvoiceDialog
+          tenantId={tenantId}
+          currency={activePlan?.currency || "USD"}
+          suggestedCents={activePlan?.price_cents || 0}
+          onClose={() => setShowInvoice(false)}
+          onSaved={() => { setShowInvoice(false); invalidate(); }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel subscription?"
+        description="The tenant keeps its current entitlements until you change them. Billing status becomes canceled."
+        confirmLabel="Cancel subscription"
+        loading={cancel.isPending}
+        onConfirm={() => cancel.mutate()}
+      />
+      <ConfirmDialog
+        open={!!voiding}
+        onOpenChange={(o) => !o && setVoiding(null)}
+        title={voiding ? `Void ${voiding.number}?` : ""}
+        description="A voided invoice is excluded from outstanding balances. This cannot be undone."
+        confirmLabel="Void invoice"
+        loading={voidInv.isPending}
+        onConfirm={() => voiding && voidInv.mutate(voiding.id)}
+      />
+    </Card>
+  );
+}
+
+function NewInvoiceDialog({ tenantId, currency, suggestedCents, onClose, onSaved }) {
+  const [amount, setAmount] = useState(suggestedCents ? String(suggestedCents / 100) : "");
+  const [due, setDue] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const create = useMutation({
+    mutationFn: () =>
+      adminApi.createInvoice(tenantId, {
+        amount_cents: Math.round((parseFloat(amount) || 0) * 100),
+        currency,
+        status: "issued",
+        due_at: due ? new Date(due).toISOString() : null,
+        notes: notes.trim() || null,
+      }),
+    onSuccess: () => { toast.success("Invoice created"); onSaved(); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader title="New invoice" description="Issue an invoice to this tenant." />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!amount || parseFloat(amount) < 0) return toast.error("Enter a valid amount");
+            create.mutate();
+          }}
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={`Amount (${currency})`}>
+              <Input type="number" min={0} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+            </Field>
+            <Field label="Due date">
+              <Input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Notes (optional)">
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Q3 subscription" />
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={create.isPending}>Create invoice</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

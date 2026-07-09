@@ -3,15 +3,19 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import {
+  Bell,
   Blocks,
   Building2,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   Database,
   LayoutDashboard,
   Lock,
   LogOut,
+  Megaphone,
   Menu,
   Moon,
   Search,
@@ -24,7 +28,7 @@ import {
   Users,
 } from "lucide-react";
 
-import { tokens } from "@/lib/api";
+import { adminApi, tokens } from "@/lib/api";
 import { useTheme } from "@/components/theme";
 import { useRequireSuperadmin } from "@/lib/useRequireSuperadmin";
 import { ConfirmDialog } from "@/components/ui";
@@ -32,7 +36,13 @@ import { CommandPalette } from "@/components/command-palette";
 
 // Grouped nav — a proper admin sidebar instead of a crowded top bar.
 const GROUPS = [
-  { label: "Overview", items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
+  {
+    label: "Overview",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/alerts", label: "Alerts", icon: Bell },
+    ],
+  },
   {
     label: "Tenancy",
     items: [
@@ -44,9 +54,14 @@ const GROUPS = [
     label: "Platform",
     items: [
       { href: "/modules", label: "Modules", icon: Blocks },
+      { href: "/broadcasts", label: "Broadcasts", icon: Megaphone },
       { href: "/platform-settings", label: "Platform Settings", icon: SlidersHorizontal },
       { href: "/audit", label: "Audit", icon: ScrollText },
     ],
+  },
+  {
+    label: "Commercial",
+    items: [{ href: "/billing", label: "Billing", icon: CreditCard }],
   },
   {
     label: "System",
@@ -74,6 +89,16 @@ export default function PanelLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+
+  // Unread alert count for the sidebar/topbar badge (polls in the background).
+  const { data: alertData } = useQuery({
+    queryKey: ["alerts"],
+    queryFn: () => adminApi.listAlerts(),
+    enabled: status === "ready",
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const unreadAlerts = alertData?.unread ?? 0;
 
   useEffect(() => {
     setCollapsed(localStorage.getItem("neubit.admin.sidebar") === "1");
@@ -141,6 +166,7 @@ export default function PanelLayout({ children }) {
 
   const navLink = (href, label, Icon) => {
     const active = pathname === href || pathname.startsWith(`${href}/`);
+    const badge = href === "/alerts" && unreadAlerts > 0 ? unreadAlerts : 0;
     return (
       <Link
         key={href}
@@ -155,8 +181,18 @@ export default function PanelLayout({ children }) {
             : "text-muted hover:bg-hover hover:text-foreground")
         }
       >
-        <Icon className="h-[18px] w-[18px] shrink-0" />
+        <span className="relative shrink-0">
+          <Icon className="h-[18px] w-[18px]" />
+          {badge > 0 && c && (
+            <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-danger ring-2 ring-background" />
+          )}
+        </span>
         {!c && <span className="truncate">{label}</span>}
+        {!c && badge > 0 && (
+          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-semibold text-white">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
       </Link>
     );
   };
@@ -295,6 +331,16 @@ export default function PanelLayout({ children }) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-5 w-auto brightness-0 dark:invert dark:brightness-0" />
           <div className="flex-1" />
+          <Link
+            href="/alerts"
+            aria-label="Alerts"
+            className="relative rounded-lg p-1.5 text-muted transition hover:bg-hover hover:text-foreground"
+          >
+            <Bell className="h-5 w-5" />
+            {unreadAlerts > 0 && (
+              <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-danger ring-2 ring-background" />
+            )}
+          </Link>
           <button
             onClick={() => setPaletteOpen(true)}
             aria-label="Search"

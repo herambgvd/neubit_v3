@@ -281,4 +281,95 @@ export const adminApi = {
     const { data } = await api.get("/admin/audit", { params });
     return data;
   },
+
+  // --- Billing: plans, subscriptions, invoices (internal records) -------------
+  async billingSummary() {
+    const { data } = await api.get("/admin/billing/summary");
+    return data;
+  },
+  async listPlans() {
+    const { data } = await api.get("/admin/billing/plans");
+    return data;
+  },
+  async createPlan(body) {
+    const { data } = await api.post("/admin/billing/plans", body);
+    return data;
+  },
+  async updatePlan(key, body) {
+    const { data } = await api.patch(`/admin/billing/plans/${key}`, body);
+    return data;
+  },
+  async deletePlan(key) {
+    const { data } = await api.delete(`/admin/billing/plans/${key}`);
+    return data;
+  },
+  async getSubscription(tenantId) {
+    const { data } = await api.get(`/admin/billing/tenants/${tenantId}/subscription`);
+    return data;
+  },
+  async subscribe(tenantId, body) {
+    const { data } = await api.put(`/admin/billing/tenants/${tenantId}/subscription`, body);
+    return data;
+  },
+  async cancelSubscription(tenantId) {
+    const { data } = await api.post(`/admin/billing/tenants/${tenantId}/subscription/cancel`);
+    return data;
+  },
+  // Invoices — paginated { items, total, page, page_size }.
+  async listInvoices({ page = 1, pageSize = 20, tenantId = "", status = "", q = "" } = {}) {
+    const params = { page, page_size: pageSize };
+    if (tenantId) params.tenant_id = tenantId;
+    if (status) params.status = status;
+    if (q) params.q = q;
+    const { data } = await api.get("/admin/billing/invoices", { params });
+    return data;
+  },
+  async createInvoice(tenantId, body) {
+    const { data } = await api.post(`/admin/billing/tenants/${tenantId}/invoices`, body);
+    return data;
+  },
+  async markInvoicePaid(invoiceId) {
+    const { data } = await api.post(`/admin/billing/invoices/${invoiceId}/mark-paid`);
+    return data;
+  },
+  async voidInvoice(invoiceId) {
+    const { data } = await api.post(`/admin/billing/invoices/${invoiceId}/void`);
+    return data;
+  },
+
+  // --- Alerts inbox (derived platform alerts + per-admin read state) ----------
+  async listAlerts() {
+    const { data } = await api.get("/admin/alerts");
+    return data;
+  },
+  async markAlertRead(key) {
+    const { data } = await api.post("/admin/alerts/read", { key });
+    return data;
+  },
+  async dismissAlert(key) {
+    const { data } = await api.post("/admin/alerts/dismiss", { key });
+    return data;
+  },
+  async markAllAlertsRead() {
+    const { data } = await api.post("/admin/alerts/read-all");
+    return data;
+  },
+
+  // --- Broadcasts (platform announcements) ------------------------------------
+  async listBroadcasts() {
+    const { data } = await api.get("/admin/broadcasts");
+    return data;
+  },
+  async createBroadcast(body) {
+    const { data } = await api.post("/admin/broadcasts", body);
+    return data;
+  },
+  async updateBroadcast(id, body) {
+    const { data } = await api.patch(`/admin/broadcasts/${id}`, body);
+    return data;
+  },
+  async deleteBroadcast(id) {
+    const { data } = await api.delete(`/admin/broadcasts/${id}`);
+    return data;
+  },
 };
