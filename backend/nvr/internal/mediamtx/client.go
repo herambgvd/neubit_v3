@@ -76,13 +76,36 @@ func RTSPURL(node Node, name string) string {
 }
 
 // pathConfig is the MediaMTX path config body. sourceOnDemand pulls RTSP lazily
-// on the first reader; record wiring lands in P3.
+// on the first reader; the record* fields (P3-A) drive MediaMTX native recording.
 type pathConfig struct {
 	Source                     string `json:"source"`
 	SourceOnDemand             bool   `json:"sourceOnDemand"`
 	SourceOnDemandStartTimeout string `json:"sourceOnDemandStartTimeout,omitempty"`
 	SourceOnDemandCloseAfter   string `json:"sourceOnDemandCloseAfter,omitempty"`
 	RTSPTransport              string `json:"rtspTransport,omitempty"`
+}
+
+// recordConfig is the MediaMTX record patch body (P3-A). When record is on, a
+// path with a live source writes fmp4 segments to recordPath. recordDeleteAfter
+// is pinned to "0s" (never auto-delete) — the nvr owns retention (P3-B), not
+// MediaMTX. Recording a source-on-demand path also needs the source pulling, so
+// SetRecord flips sourceOnDemand OFF while recording (MediaMTX then keeps the
+// source connected continuously, which is what continuous recording requires).
+type recordConfig struct {
+	Record                bool   `json:"record"`
+	RecordPath            string `json:"recordPath,omitempty"`
+	RecordFormat          string `json:"recordFormat,omitempty"`
+	RecordSegmentDuration string `json:"recordSegmentDuration,omitempty"`
+	RecordDeleteAfter     string `json:"recordDeleteAfter,omitempty"`
+	SourceOnDemand        bool   `json:"sourceOnDemand"`
+}
+
+// RecordOpts tunes SetRecord. RecordPath is the MediaMTX record template (with
+// %path/%Y-%m-%d_%H-%M-%S-%f placeholders); SegmentDuration is e.g. "60s". Empty
+// fields fall back to the defaults below.
+type RecordOpts struct {
+	RecordPath      string
+	SegmentDuration string
 }
 
 // EnsurePath idempotently provisions a path whose `source` is the camera RTSP
@@ -122,6 +145,81 @@ func (c *Client) EnsurePath(ctx context.Context, node Node, name, source string,
 		return nil
 	}
 	return fmt.Errorf("mediamtx add path %q: unexpected status %d", name, status)
+}
+
+// SetRecord toggles MediaMTX native recording on an EXISTING path (P3-A). It
+// PATCHes the path's record flag (+ recordPath/format/segment on enable) via the
+// control API. The path must already exist (the recording supervisor ensures the
+// live path first). recordDeleteAfter is pinned to "0s" so MediaMTX never prunes
+// segments — the nvr owns retention (P3-B).
+//
+// Enabling recording flips sourceOnDemand OFF: a continuous recording needs the
+// source connected even with no live viewer, whereas on-demand only pulls for a
+// reader. Disabling restores sourceOnDemand so an unwatched path idles again.
+//
+// Graceful: an unreachable MediaMTX returns an error the caller surfaces cleanly.
+func (c *Client) SetRecord(ctx context.Context, node Node, name string, on bool, opts RecordOpts) error {
+	cfg := recordConfig{
+		Record:         on,
+		SourceOnDemand: !on, // record ⇒ keep source hot; stop ⇒ back to on-demand
+	}
+	if on {
+		cfg.RecordPath = opts.RecordPath
+		if cfg.RecordPath == "" {
+			cfg.RecordPath = "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f"
+		}
+		cfg.RecordFormat = "fmp4"
+		cfg.RecordSegmentDuration = opts.SegmentDuration
+		if cfg.RecordSegmentDuration == "" {
+			cfg.RecordSegmentDuration = "60s"
+		}
+		cfg.RecordDeleteAfter = "0s" // nvr owns retention, not MediaMTX
+	}
+	body, _ := json.Marshal(cfg)
+	status, rbody, err := c.do(ctx, node, http.MethodPatch, "/v3/config/paths/patch/"+name, body)
+	if err != nil {
+		return fmt.Errorf("mediamtx set record %q: %w", name, err)
+	}
+	if status != http.StatusOK && status != http.StatusCreated {
+		return fmt.Errorf("mediamtx set record %q: status %d: %s", name, status, string(rbody))
+	}
+	return nil
+}
+
+// RecordingSegment is one finalized recording segment as reported by MediaMTX's
+// /v3/recordings/get/<name> API. `Start` is the segment's start time (RFC3339);
+// MediaMTX does not report end/size in this API, so the segment tracker derives
+// those from the filesystem/next-segment boundary.
+type RecordingSegment struct {
+	Start string `json:"start"`
+}
+
+// RecordingEntry is one path's recording listing (name + its segments).
+type RecordingEntry struct {
+	Name     string             `json:"name"`
+	Segments []RecordingSegment `json:"segments"`
+}
+
+type recordingsListResponse struct {
+	Items []RecordingEntry `json:"items"`
+}
+
+// ListRecordings returns every path's recorded-segment index on the node via
+// /v3/recordings/list. A node without the recordings API (or unreachable) yields
+// an error the caller treats as "nothing new this tick" (graceful).
+func (c *Client) ListRecordings(ctx context.Context, node Node) ([]RecordingEntry, error) {
+	status, body, err := c.do(ctx, node, http.MethodGet, "/v3/recordings/list", nil)
+	if err != nil {
+		return nil, fmt.Errorf("mediamtx list recordings: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("mediamtx list recordings: status %d", status)
+	}
+	var out recordingsListResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("mediamtx list recordings: decode: %w", err)
+	}
+	return out.Items, nil
 }
 
 // DeletePath removes a path — the Go port of v2 remove_path. A 404 (already

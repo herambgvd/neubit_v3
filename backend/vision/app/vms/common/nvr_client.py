@@ -79,6 +79,47 @@ class NvrClient:
             log.info("nvr drop best-effort failed (%s): %s", url, exc)
             return False
 
+    # ── recording (P3-A) ────────────────────────────────────────────────
+    async def start_recording(
+        self,
+        *,
+        camera_id: str,
+        profile: str,
+        rtsp_url: str,
+        trigger: str = "continuous",
+    ) -> dict:
+        """POST /recording/{camera_id}/{profile}/start → the active-target view.
+
+        The nvr ensures the MediaMTX live path then flips record on. Raises
+        ``NvrUnavailable`` on an unreachable nvr / MediaMTX upstream error (→ 502)."""
+        url = f"{self._base}/api/v1/nvr/recording/{camera_id}/{profile}/start"
+        payload = {"rtsp_url": rtsp_url, "trigger": trigger}
+        try:
+            async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
+                resp = await client.post(url, json=payload, headers=self._headers)
+        except httpx.HTTPError as exc:
+            log.info("nvr start-recording unreachable (%s): %s", url, exc)
+            raise NvrUnavailable(f"nvr data-plane unreachable: {exc}") from exc
+        if resp.status_code >= 400:
+            detail = _err_detail(resp)
+            log.info("nvr start-recording %s → %s: %s", camera_id, resp.status_code, detail)
+            raise NvrUnavailable(f"nvr could not start recording: {detail}")
+        try:
+            return resp.json()
+        except ValueError:
+            return {}
+
+    async def stop_recording(self, *, camera_id: str, profile: str) -> bool:
+        """POST /recording/{camera_id}/{profile}/stop. Best-effort — never raises."""
+        url = f"{self._base}/api/v1/nvr/recording/{camera_id}/{profile}/stop"
+        try:
+            async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
+                resp = await client.post(url, headers=self._headers)
+            return resp.status_code < 400
+        except httpx.HTTPError as exc:
+            log.info("nvr stop-recording best-effort failed (%s): %s", url, exc)
+            return False
+
 
 def _err_detail(resp: httpx.Response) -> str:
     try:

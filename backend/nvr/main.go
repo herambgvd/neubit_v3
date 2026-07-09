@@ -30,6 +30,7 @@ import (
 	"github.com/neubit/gokernel/httpx"
 
 	"github.com/neubit/nvr/internal/mediamtx"
+	"github.com/neubit/nvr/internal/recording"
 	"github.com/neubit/nvr/internal/streams"
 	"github.com/neubit/nvr/internal/supervisor"
 )
@@ -110,6 +111,18 @@ func main() {
 	}
 	sup.Start(runCtx) // idle-path reaper (stops when runCtx is cancelled)
 
+	// --- Recording engine (P3-A): recording-supervisor + segment-tracker --------
+	// Drives MediaMTX native recording (record=yes on the path → fmp4 segments to
+	// the mounted `recordings` volume), reconciles desired-vs-actual on a tick, and
+	// emits tenant.<id>.vms.recording.segment as segments finalize → vision persists
+	// Recording rows. Shares the stream-supervisor's node registry + MediaMTX client.
+	recSup := recording.New(pool, mtxClient, sup, bus, serviceName, recording.Config{
+		Dir:             env("VE_RECORDINGS_DIR", "/recordings"),
+		SegmentDuration: env("VE_RECORD_SEGMENT_DURATION", "60s"),
+		Tick:            time.Duration(envInt("VE_RECORD_TICK_SEC", 15)) * time.Second,
+	})
+	recSup.Start(runCtx)
+
 	// --- HTTP: chi + shared middleware; /health public, /api/v1/nvr JWT-gated --
 	verifier := auth.NewVerifier(cfg.JWTSecret)
 	r := httpx.NewRouter(cfg)
@@ -158,6 +171,10 @@ func main() {
 		// Internal stream-orchestration endpoints (service-to-service; called by
 		// the Python vision control-plane in P2-B). JWT-gated + vms.* permissions.
 		streams.Mount(api, sup)
+
+		// Internal recording endpoints (service-to-service; called by vision in
+		// P3-A). start/stop drive MediaMTX record; status lists active recordings.
+		recording.Mount(api, recSup)
 	})
 
 	addr := ":" + strconv.Itoa(cfg.Port)

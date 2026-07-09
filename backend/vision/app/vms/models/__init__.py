@@ -18,6 +18,7 @@ Domain split:
   * ``health``     — CameraHealth
   * ``media_node`` — MediaNode + StreamShard
   * ``live``       — PlaybackSession (live/recorded viewer sessions, P2)
+  * ``recording``  — Recording (finalized recording-segment metadata, P3)
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from .health import CameraHealth
 from .live import PlaybackSession
 from .media_node import MediaNode, StreamShard
 from .nvr import NVR
+from .recording import Recording
 
 __all__ = [
     "Camera",
@@ -39,4 +41,5 @@ __all__ = [
     "MediaNode",
     "StreamShard",
     "PlaybackSession",
+    "Recording",
 ]

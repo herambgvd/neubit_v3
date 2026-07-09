@@ -26,6 +26,7 @@ from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
 from app.vms.live.router import router as live_router
 from app.vms.nvr.router import router as nvr_router
+from app.vms.recording.router import router as recording_router
 
 # Health mounts FIRST: its literal ``/cameras/health`` + ``/cameras/{id}/health/*``
 # paths must be matched before the camera router's ``/cameras/{camera_id}`` catch-all
@@ -34,7 +35,16 @@ from app.vms.nvr.router import router as nvr_router
 # groups follows cameras (it was formerly part of the camera router export).
 # Live mounts after health (its literal ``/media/verify`` + ``/cameras/{id}/live``
 # deeper paths are distinct from the camera catch-all, but keeping it high preserves
-# match clarity) and before cameras — the P2-B streaming control plane.
-routers = [health_router, live_router, camera_router, group_router, nvr_router]
+# match clarity) and before cameras — the P2-B streaming control plane. Recording
+# mounts alongside live (its ``/cameras/{id}/recording*`` + ``/recordings/{id}`` are
+# deeper/distinct from the camera catch-all) — the P3-A recording control plane.
+routers = [
+    health_router,
+    live_router,
+    recording_router,
+    camera_router,
+    group_router,
+    nvr_router,
+]
 
 __all__ = ["routers"]

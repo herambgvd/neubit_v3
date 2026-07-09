@@ -36,6 +36,7 @@ from app.db import get_sessionmaker
 from app.vms import routers as vms_routers
 from app.vms.common.events import bus
 from app.vms.health import HealthSampler
+from app.vms.recording import RecordingConsumer, RecordingScheduler
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vision")
@@ -52,7 +53,21 @@ async def lifespan(app: FastAPI):
     sampler = HealthSampler(get_sessionmaker())
     await sampler.start()
     app.state.health_sampler = sampler
+
+    # P3-A recording: consume the Go nvr's segment events → persist Recording rows,
+    # and drive schedule-mode cameras' record windows (start/stop the nvr). Both own
+    # their own DB session per message/cycle; graceful when NATS is disabled.
+    rec_consumer = RecordingConsumer(bus, get_sessionmaker())
+    await rec_consumer.start()
+    app.state.recording_consumer = rec_consumer
+
+    rec_scheduler = RecordingScheduler(get_sessionmaker())
+    await rec_scheduler.start()
+    app.state.recording_scheduler = rec_scheduler
+
     yield
+
+    await rec_scheduler.stop()
     await sampler.stop()
     await bus.close()
 

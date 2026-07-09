@@ -10,6 +10,11 @@ networks:
 
 volumes:
   pgdata:
+  # Shared recording store (P3-A): MediaMTX writes fmp4 segments here; the Go nvr
+  # scans it (segment tracker) + owns retention. Both containers mount it at
+  # /recordings so the on-disk path (cameras/<tenant>/<cam>/<profile>/<seg>.mp4) is
+  # identical on both sides.
+  recordings:
 
 services:
 
@@ -222,6 +227,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+      # P3-A: MediaMTX native recording writes fmp4 segments here (record=yes on a
+      # path → /recordings/<path>/<timestamp>.mp4). The nvr mounts the same volume.
+      - recordings:/recordings
     ports:
       - "8554:8554"     # RTSP
       - "1935:1935"     # RTMP (ingest for synthetic test sources)
@@ -264,6 +272,15 @@ services:
       VE_MEDIA_NODE_ID: ${VE_MEDIA_NODE_ID:-mediamtx-0}
       # Idle-path reaper: delete paths with 0 readers idle for this many seconds.
       VE_STREAM_IDLE_TTL_SEC: ${VE_STREAM_IDLE_TTL_SEC:-300}
+      # P3-A recording: the mounted recordings dir the segment-tracker scans (same
+      # volume MediaMTX writes to), the MediaMTX record segment length, and the
+      # reconcile + segment-scan tick.
+      VE_RECORDINGS_DIR: ${VE_RECORDINGS_DIR:-/recordings}
+      VE_RECORD_SEGMENT_DURATION: ${VE_RECORD_SEGMENT_DURATION:-60s}
+      VE_RECORD_TICK_SEC: ${VE_RECORD_TICK_SEC:-15}
+    volumes:
+      # Same recordings volume as MediaMTX (read the segments it writes).
+      - recordings:/recordings
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
