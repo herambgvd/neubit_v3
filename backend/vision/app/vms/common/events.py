@@ -122,6 +122,30 @@ async def emit_notify_request(
     return subj
 
 
+async def emit_wall_state(
+    tenant_id: uuid.UUID | str | None,
+    wall_id: str,
+    payload: dict,
+    *,
+    _bus: EventBus | None = None,
+) -> str:
+    """Publish ``tenant.<id>.vms.wall.<wall_id>.state`` (VW-A shared-wall stream).
+
+    Every video-wall state mutation (push a camera to a monitor cell, clear, apply/save
+    a preset, start/stop a tour) emits the NEW FULL wall state on this per-wall subject.
+    The core SSE bridge (``realtime_wall.py``) subscribes ``tenant.<id>.vms.wall.>`` and
+    fans this out to every operator UI + display-client, which just REPLACE their local
+    state with ``payload['state']`` — so all clients stay in lock-step without polling.
+
+    Payload carries ``{wall_id, state, rows?, cols?, action?, actor_id?}``. Best-effort —
+    never raises (a no-op when NATS is disabled). Returns the targeted subject for logging.
+    """
+    tid = _tid(tenant_id)
+    subj = subject(tid, "vms", f"wall.{wall_id}.state")
+    await (_bus or bus).publish(subj, {"tenant_id": tid, "wall_id": wall_id, **payload})
+    return subj
+
+
 async def emit_nvr_lifecycle(
     tenant_id: uuid.UUID | str | None,
     event: str,

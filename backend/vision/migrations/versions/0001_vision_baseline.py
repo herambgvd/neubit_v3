@@ -48,7 +48,11 @@ def _tables():
         StoragePool,
         StreamShard,
         TierRule,
+        VideoWall,
         VmsEvent,
+        WallMonitor,
+        WallPreset,
+        WallTour,
     )
 
     # Order matters for FKs: parents (nvrs, media_nodes, cameras) before children.
@@ -72,6 +76,10 @@ def _tables():
         LinkageFire.__table__,
         ReportSchedule.__table__,
         OnvifServerConfig.__table__,
+        VideoWall.__table__,
+        WallMonitor.__table__,
+        WallPreset.__table__,
+        WallTour.__table__,
     ]
 
 

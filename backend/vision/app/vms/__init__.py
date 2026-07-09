@@ -36,6 +36,7 @@ from app.vms.recording.router import router as recording_router
 from app.vms.reports.router import router as reports_router
 from app.vms.storage import rec_router as storage_rec_router
 from app.vms.storage import router as storage_router
+from app.vms.videowall.router import router as videowall_router
 
 # Health mounts FIRST: its literal ``/cameras/health`` + ``/cameras/{id}/health/*``
 # paths must be matched before the camera router's ``/cameras/{camera_id}`` catch-all
@@ -89,6 +90,11 @@ routers = [
     # collision with the camera catch-all). The SOAP endpoints (/onvif/*) mount at the
     # app root separately in app.main (WS-Security, not JWT).
     onvif_server_router,
+    # Video Wall (VW-A) — /vms/walls/*. Distinct prefix (no collision with the camera
+    # ``/cameras/{id}`` catch-all). Shared control-room display wall: wall/monitor CRUD +
+    # live shared-state (push camera to cell / clear / apply-save preset / start-stop
+    # tour). Every state mutation → NATS tenant.<id>.vms.wall.<id>.state → core SSE.
+    videowall_router,
 ]
 
 __all__ = ["routers"]

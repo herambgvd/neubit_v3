@@ -24,6 +24,8 @@ Domain split:
   * ``export``     — ExportJob (clip-export: concat recorded segments → mp4, P4-B)
   * ``event``      — VmsEvent (normalized camera device / system events, P5-A)
   * ``linkage``    — LinkageRule + LinkageFire (event→action rules + fire-audit, P5-B)
+  * ``videowall``  — VideoWall + WallMonitor + WallPreset + WallTour (shared control-room
+                     display wall + live shared-state + presets/tours, VW-A)
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from .pattern import CameraPattern
 from .recording import Recording
 from .report import ReportSchedule
 from .storage import StoragePool, TierRule
+from .videowall import VideoWall, WallMonitor, WallPreset, WallTour
 
 __all__ = [
     "Camera",
@@ -63,4 +66,8 @@ __all__ = [
     "LinkageFire",
     "ReportSchedule",
     "OnvifServerConfig",
+    "VideoWall",
+    "WallMonitor",
+    "WallPreset",
+    "WallTour",
 ]

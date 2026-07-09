@@ -119,6 +119,13 @@ class CorePerm:
     VMS_EXPORT = "vms.export"
     VMS_PTZ_CONTROL = "vms.ptz.control"
     VMS_CONFIG_MANAGE = "vms.config.manage"
+    # Video Wall (VW-A) — shared control-room display wall. VIEW = read walls /
+    # monitors / live state / presets / tours; CONTROL = drive the live shared state
+    # (push a camera to a cell, clear, apply/save preset, start/stop tour); MANAGE =
+    # wall / monitor / preset / tour CRUD (+ decoder registration in VW-B).
+    VMS_WALL_VIEW = "vms.wall.view"
+    VMS_WALL_CONTROL = "vms.wall.control"
+    VMS_WALL_MANAGE = "vms.wall.manage"
     # --- Enterprise security (P6-D) ---------------------------------------
     # Manage the security surface: 2FA-enforcement policy, LDAP/AD directory,
     # OIDC SSO. Held by a tenant's security admin.
@@ -175,6 +182,9 @@ PERMISSIONS.register(
     Permission(CorePerm.VMS_EXPORT, "Export video / clips", "VMS"),
     Permission(CorePerm.VMS_PTZ_CONTROL, "Control PTZ", "VMS"),
     Permission(CorePerm.VMS_CONFIG_MANAGE, "Edit camera config", "VMS"),
+    Permission(CorePerm.VMS_WALL_VIEW, "View video walls + live state", "VMS"),
+    Permission(CorePerm.VMS_WALL_CONTROL, "Drive video-wall live state (push / presets / tours)", "VMS"),
+    Permission(CorePerm.VMS_WALL_MANAGE, "Create / edit video walls, monitors, presets, tours", "VMS"),
     # --- Enterprise security ----------------------------------------------
     Permission(CorePerm.SECURITY_MANAGE, "Manage 2FA policy / LDAP / SSO", "Security"),
     Permission(CorePerm.DUALAUTH_APPROVE, "Approve four-eyes requests", "Security"),
