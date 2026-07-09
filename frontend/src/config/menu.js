@@ -41,7 +41,7 @@ export const configTabs = [
   { title: "Roles", icon: "heroicons-outline:shield-check", link: "/roles", perm: "role.read" },
   { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
   { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", perm: "neubit.read" },
-  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", disabled: true },
+  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage" },
   { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", perm: "neubit.read" },
   { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read" },
   { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read" },
@@ -83,6 +83,10 @@ export function isDevicesRoute(pathname) {
 //   Video Wall (live), Recordings, Playback, Camera events. Onboarding stays under Devices.
 export const streamTabs = [
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read" },
+  // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
+  // shared state across every operator + display client. Distinct from the
+  // single-operator "Video Wall" live-grid above.
+  { title: "Wall Console", icon: "heroicons:tv", link: "/wall", perm: "vms.wall.view" },
   { title: "Recordings", icon: "heroicons:film", link: "/recordings", perm: "neubit.read" },
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read" },
   { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read" },
