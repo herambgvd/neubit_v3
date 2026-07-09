@@ -32,6 +32,7 @@ from app.vms.events.router import router as event_router
 from app.vms.patterns.router import router as pattern_router
 from app.vms.playback.router import router as playback_router
 from app.vms.recording.router import router as recording_router
+from app.vms.reports.router import router as reports_router
 from app.vms.storage import rec_router as storage_rec_router
 from app.vms.storage import router as storage_router
 
@@ -64,12 +65,17 @@ from app.vms.storage import router as storage_router
 # ``/vms/linkage-fires`` are distinct prefixes (no collision with the camera catch-all).
 # The P5-B event-linkage control plane (event→action rules + the fire-audit; the linkage
 # consumer, wired in app.main, runs the rules on camera + access events).
+# Reports mounts alongside export — its ``/vms/reports/{kind}`` + ``/vms/report-schedules``
+# are distinct prefixes (no collision with the camera ``/cameras/{id}`` catch-all). The
+# P6-B operational-reporting control plane (uptime/coverage/storage/event reports + the
+# ReportScheduler that fires recurring reports via the notify path).
 routers = [
     health_router,
     live_router,
     recording_router,
     playback_router,
     export_router,
+    reports_router,
     event_router,
     linkage_router,
     storage_router,

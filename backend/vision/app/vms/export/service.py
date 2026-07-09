@@ -133,12 +133,19 @@ class ExportService:
 
     # ── create (queue) ──────────────────────────────────────────────────
     async def create(
-        self, camera_id: str, from_: datetime, to: datetime, fmt: str, *, actor
+        self,
+        camera_id: str,
+        from_: datetime,
+        to: datetime,
+        fmt: str,
+        *,
+        actor,
+        watermark: bool = False,
     ) -> ExportJob:
         """Verify camera + covered recordings → persist a QUEUED ExportJob (no ffmpeg).
 
         Returns the persisted row; the router maps it to ``ExportJobPublic``. The
-        worker performs the concat asynchronously.
+        worker performs the concat (+ optional watermark + signing) asynchronously.
         """
         if to <= from_:
             raise ExportNotFound("empty export window (to must be after from)")
@@ -154,6 +161,7 @@ class ExportService:
             to_time=to,
             format=(fmt or "mp4").lower(),
             status="queued",
+            watermark=bool(watermark),
             requested_by=_actor_id(actor),
         )
         self.db.add(row)
@@ -176,3 +184,38 @@ class ExportService:
         if not os.path.exists(job.file_path):
             raise ExportNotFound("export file no longer available")
         return job, job.file_path
+
+    async def resolve_manifest(self, job_id: str) -> tuple[ExportJob, str]:
+        """Return ``(job, manifest_path)`` for a DONE job whose sidecar exists (else 404)."""
+        import os
+
+        job = await self._job(job_id)
+        if job.status != "done" or not job.manifest_path:
+            raise ExportNotFound("export manifest not ready")
+        if not os.path.exists(job.manifest_path):
+            raise ExportNotFound("export manifest no longer available")
+        return job, job.manifest_path
+
+    async def verify(self, job_id: str) -> dict:
+        """Re-hash the produced clip + verify its Ed25519 signature (tenant-scoped).
+
+        Loads the job's sidecar manifest, re-hashes the clip on disk, and re-verifies the
+        signature → ``{valid, reason, manifest}``. A file altered after signing → ``valid:
+        false, reason:"tampered"``; a bad/absent signature → its own reason. 404 if the
+        job / clip / manifest is gone.
+        """
+        import json
+        import os
+
+        from .signing import verify_sidecar
+
+        job = await self._job(job_id)
+        if job.status != "done" or not job.file_path or not job.manifest_path:
+            raise ExportNotFound("export not ready to verify")
+        if not os.path.exists(job.file_path):
+            raise ExportNotFound("export file no longer available")
+        if not os.path.exists(job.manifest_path):
+            raise ExportNotFound("export manifest no longer available")
+        with open(job.manifest_path, encoding="utf-8") as fh:
+            sidecar = json.load(fh)
+        return verify_sidecar(sidecar, file_path=job.file_path)

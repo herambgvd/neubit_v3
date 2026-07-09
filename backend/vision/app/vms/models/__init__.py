@@ -39,6 +39,7 @@ from .media_node import MediaNode, StreamShard
 from .nvr import NVR
 from .pattern import CameraPattern
 from .recording import Recording
+from .report import ReportSchedule
 from .storage import StoragePool, TierRule
 
 __all__ = [
@@ -59,4 +60,5 @@ __all__ = [
     "VmsEvent",
     "LinkageRule",
     "LinkageFire",
+    "ReportSchedule",
 ]

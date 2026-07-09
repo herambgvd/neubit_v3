@@ -40,6 +40,7 @@ from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
 from app.vms.linkage import LinkageConsumer
 from app.vms.recording import RecordingConsumer, RecordingScheduler
+from app.vms.reports import ReportScheduler
 from app.vms.storage import RetentionTieringWorker
 
 logging.basicConfig(level=logging.INFO)
@@ -108,8 +109,18 @@ async def lifespan(app: FastAPI):
     await linkage_consumer.start()
     app.state.linkage_consumer = linkage_consumer
 
+    # P6-B operational reporting: the report scheduler fires each ENABLED ReportSchedule
+    # on its cadence — computes the report (uptime/coverage/storage/event-stats) in that
+    # schedule's tenant scope, renders it (CSV/PDF/JSON), and publishes
+    # ``tenant.<id>.notify.request`` for the workflow/notifier connector to fan out. Own
+    # DB session per cycle; graceful (a bad schedule records last_error + advances).
+    report_scheduler = ReportScheduler(get_sessionmaker())
+    await report_scheduler.start()
+    app.state.report_scheduler = report_scheduler
+
     yield
 
+    await report_scheduler.stop()
     await event_supervisor.stop()
     await export_worker.stop()
     await storage_worker.stop()

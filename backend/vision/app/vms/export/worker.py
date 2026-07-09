@@ -30,10 +30,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from kernel.auth import Scope
 
 from app.vms.common.storage_backend import LocalBackend
-from app.vms.models import ExportJob, Recording
+from app.vms.models import Camera, ExportJob, Recording
 
 from .ffmpeg import ExportFfmpegError, concat_segments
 from .service import build_concat_plan
+from .signing import build_manifest, sha256_file, sign_manifest, write_sidecar
 
 log = logging.getLogger("vision.export_worker")
 
@@ -170,13 +171,22 @@ class ExportWorker:
                 await self._fail(job_id, f"internal error: {exc}")
 
     async def _run_job(self, job_id: str) -> None:
-        """Resolve segments → ffmpeg concat → mark done/failed. Own DB session."""
+        """Resolve segments → ffmpeg concat (+ watermark) → sign → mark done/failed.
+
+        Own DB session. Captures the job's window/tenant/camera + watermark flag up front
+        so the signing manifest can be assembled after the concat without re-reading.
+        """
         async with self._sessionmaker() as db:
             job = await db.get(ExportJob, job_id)
             if job is None or job.status != "running":
                 return
             from_ = _aware(job.from_time)
             to = _aware(job.to_time)
+            want_watermark = bool(getattr(job, "watermark", False))
+            fmt = job.format or "mp4"
+            tenant_id = job.tenant_id
+            camera_id = job.camera_id
+            requested_by = job.requested_by
 
             recs = (
                 await db.execute(
@@ -187,6 +197,13 @@ class ExportWorker:
                     .order_by(Recording.start_time.asc())
                 )
             ).scalars().all()
+
+            # Camera name for the watermark overlay (best-effort; falls back to the id).
+            camera_name = camera_id
+            if want_watermark:
+                cam = await db.get(Camera, camera_id)
+                if cam is not None and cam.name:
+                    camera_name = cam.name
 
         if not recs:
             await self._fail(job_id, "no recordings cover the requested window")
@@ -210,12 +227,14 @@ class ExportWorker:
             return
 
         out_path = self._out_path(job_id)
+        watermark_text = f"{camera_name}" if want_watermark else None
         try:
             await concat_segments(
                 present,
                 out_path,
                 head_offset_sec=plan.head_offset_sec,
                 duration_sec=plan.duration_sec,
+                watermark_text=watermark_text,
             )
         except ExportFfmpegError as exc:
             await self._fail(job_id, str(exc))
@@ -225,13 +244,59 @@ class ExportWorker:
             size = os.path.getsize(out_path)
         except OSError:
             size = None
-        await self._complete(job_id, out_path, size)
+
+        # ── Tamper-evident signing: SHA-256 the clip + Ed25519-sign a provenance
+        # manifest + write the ``<job>.manifest.json`` sidecar. Never fatal — a signing
+        # gap still yields a usable clip (unsigned manifest) rather than a failed job.
+        checksum = None
+        signature = None
+        manifest_path = self._manifest_path(job_id)
+        try:
+            checksum = sha256_file(out_path)
+            manifest = build_manifest(
+                file_name=os.path.basename(out_path),
+                file_hash=checksum,
+                camera_id=camera_id,
+                tenant_id=str(tenant_id) if tenant_id else None,
+                from_=from_,
+                to=to,
+                duration_sec=plan.duration_sec,
+                fmt=fmt,
+                watermark=want_watermark,
+                exported_by=requested_by,
+                exported_at=_utcnow(),
+                job_id=job_id,
+            )
+            sidecar = sign_manifest(manifest)
+            signature = sidecar.get("signature")
+            write_sidecar(sidecar, manifest_path)
+        except Exception as exc:  # noqa: BLE001 — signing must not fail the export
+            log.warning("export %s: signing failed (%s) — clip is usable but unsigned", job_id, exc)
+            manifest_path = manifest_path if os.path.exists(manifest_path) else None
+
+        await self._complete(
+            job_id, out_path, size,
+            checksum=checksum, signature=signature, manifest_path=manifest_path,
+        )
 
     def _out_path(self, job_id: str) -> str:
         """Downloads path for a job's clip: ``<downloads>/<job_id>.mp4`` (flat, unique)."""
         return os.path.join(downloads_dir(), f"{job_id}.mp4")
 
-    async def _complete(self, job_id: str, path: str, size: int | None) -> None:
+    def _manifest_path(self, job_id: str) -> str:
+        """Sidecar path for a job: ``<downloads>/<job_id>.manifest.json`` (next to the mp4)."""
+        return os.path.join(downloads_dir(), f"{job_id}.manifest.json")
+
+    async def _complete(
+        self,
+        job_id: str,
+        path: str,
+        size: int | None,
+        *,
+        checksum: str | None = None,
+        signature: str | None = None,
+        manifest_path: str | None = None,
+    ) -> None:
         async with self._sessionmaker() as db:
             job = await db.get(ExportJob, job_id)
             if job is None:
@@ -239,10 +304,16 @@ class ExportWorker:
             job.status = "done"
             job.file_path = path
             job.file_size = size
+            job.checksum = checksum
+            job.signature = signature
+            job.manifest_path = manifest_path
             job.error = None
             job.finished_at = _utcnow()
             await db.commit()
-        log.info("export job done: %s (%s bytes) → %s", job_id, size, path)
+        log.info(
+            "export job done: %s (%s bytes, signed=%s) → %s",
+            job_id, size, bool(signature), path,
+        )
 
     async def _fail(self, job_id: str, reason: str) -> None:
         async with self._sessionmaker() as db:

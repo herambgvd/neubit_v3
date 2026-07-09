@@ -23,6 +23,9 @@ class ExportStartBody(BaseModel):
     to: datetime
     # mp4 is the only container in P4-B; kept as a field for forward-compat.
     format: str = Field(default="mp4", max_length=8)
+    # Burn a visible drawtext watermark (site/camera/time) into the clip — this forces a
+    # re-encode (slower) but makes the export provenance-stamped + tamper-visible (P6-B).
+    watermark: bool = False
 
 
 class ExportJobPublic(BaseModel):
@@ -37,6 +40,10 @@ class ExportJobPublic(BaseModel):
     to: datetime
     file_size: Optional[int] = None
     error: Optional[str] = None
+    # --- Tamper-evident signing (P6-B) — surfaced so the UI can show a verified badge. ---
+    checksum: Optional[str] = None  # SHA-256 hex of the produced clip
+    signed: bool = False  # whether an Ed25519 signature was produced
+    watermark: bool = False  # whether a visible watermark was burned in
     created_at: datetime
     finished_at: Optional[datetime] = None
 
@@ -52,7 +59,19 @@ class ExportJobPublic(BaseModel):
                 "to": row.to_time,
                 "file_size": row.file_size,
                 "error": row.error,
+                "checksum": row.checksum,
+                "signed": bool(row.signature),
+                "watermark": bool(getattr(row, "watermark", False)),
                 "created_at": row.created_at,
                 "finished_at": row.finished_at,
             }
         )
+
+
+class ExportVerifyResult(BaseModel):
+    """Result of verifying an export's signature + hash (POST /export/{job}/verify)."""
+
+    model_config = ConfigDict(extra="ignore")
+    valid: bool
+    reason: str
+    manifest: Optional[dict] = None

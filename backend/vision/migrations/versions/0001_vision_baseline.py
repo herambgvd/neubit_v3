@@ -43,6 +43,7 @@ def _tables():
         MediaProfile,
         PlaybackSession,
         Recording,
+        ReportSchedule,
         StoragePool,
         StreamShard,
         TierRule,
@@ -68,6 +69,7 @@ def _tables():
         VmsEvent.__table__,
         LinkageRule.__table__,
         LinkageFire.__table__,
+        ReportSchedule.__table__,
     ]
 
 

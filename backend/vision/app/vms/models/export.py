@@ -24,6 +24,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -77,6 +78,18 @@ class ExportJob(Base):
     file_path: Mapped[str | None] = mapped_column(String(1024))
     file_size: Mapped[int | None] = mapped_column(BigInteger)  # bytes
     error: Mapped[str | None] = mapped_column(String(2048))
+
+    # --- Tamper-evident signing (P6-B; nullable — filled by the worker on success). ---
+    # SHA-256 (hex) of the produced clip; the Ed25519 signature over the manifest
+    # (base64); and the absolute path of the ``<job>.manifest.json`` sidecar. Together
+    # they make the export court-admissible: re-hash + verify proves no tampering.
+    checksum: Mapped[str | None] = mapped_column(String(64))  # SHA-256 hex
+    signature: Mapped[str | None] = mapped_column(String(128))  # base64 Ed25519 sig
+    manifest_path: Mapped[str | None] = mapped_column(String(1024))
+    # Whether the clip was re-encoded with a visible drawtext watermark (site/cam/time).
+    watermark: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
     requested_by: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(

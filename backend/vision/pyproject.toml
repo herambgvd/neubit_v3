@@ -28,6 +28,15 @@ dependencies = [
     # LAZILY in app.vms.common.storage_backend so the service degrades gracefully if
     # the wheel is absent, but pinned as a runtime dep so tiering works in the image.
     "boto3>=1.34",
+    # P6-B tamper-proof signed export — Ed25519 keypair to sign the export manifest
+    # (SHA-256 + signature sidecar). Same primitive core uses for licensing (EdDSA).
+    # Imported LAZILY in app.vms.export.signing so an absent wheel degrades to unsigned
+    # manifests rather than crashing the export worker.
+    "cryptography>=42.0",
+    # P6-B operational reporting — PDF report export (camera-uptime / coverage / storage
+    # / event-stats). Imported LAZILY in app.vms.reports.render so CSV/JSON still work if
+    # the wheel is absent (PDF then 503s gracefully). Same dep core/workflow use.
+    "reportlab>=4.0",
 ]
 
 [project.optional-dependencies]

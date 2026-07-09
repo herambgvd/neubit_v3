@@ -27,7 +27,7 @@ from kernel.auth import Principal, Scope, get_scope, require_permission
 
 from app.db import get_db
 
-from .schemas import ExportJobPublic, ExportStartBody
+from .schemas import ExportJobPublic, ExportStartBody, ExportVerifyResult
 from .service import ExportService
 
 PERM_EXPORT = "vms.export"
@@ -53,8 +53,25 @@ async def start_export(
     svc: Annotated[ExportService, Depends(get_export_service)],
     actor: Principal = Depends(require_permission(PERM_EXPORT)),
 ) -> ExportJobPublic:
-    row = await svc.create(camera_id, body.from_, body.to, body.format, actor=actor)
+    row = await svc.create(
+        camera_id, body.from_, body.to, body.format, actor=actor, watermark=body.watermark
+    )
     return ExportJobPublic.from_row(row)
+
+
+@router.get(
+    "/export/public-key",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def export_public_key() -> dict:
+    """The Ed25519 PUBLIC key (PEM) + key id used to sign exports — for offline verify.
+
+    Registered BEFORE ``/export/{job_id}`` so the literal path isn't swallowed by the
+    ``{job_id}`` catch-all (FastAPI matches in registration order).
+    """
+    from .signing import signer_key_id, signer_public_pem
+
+    return {"algorithm": "Ed25519", "key_id": signer_key_id(), "public_key": signer_public_pem()}
 
 
 @router.get(
@@ -86,3 +103,41 @@ async def download_export(
         media_type=media_type,
         filename=os.path.basename(filename),
     )
+
+
+@router.get(
+    "/export/{job_id}/manifest",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def download_manifest(
+    job_id: str,
+    svc: Annotated[ExportService, Depends(get_export_service)],
+) -> FileResponse:
+    """Download the tamper-evidence sidecar (``<job>.manifest.json``): hash + signature.
+
+    A verifier downloads this alongside the mp4 and can re-hash + verify the Ed25519
+    signature offline against the embedded public key. 404 until done / if gone.
+    """
+    job, path = await svc.resolve_manifest(job_id)
+    return FileResponse(
+        path,
+        media_type="application/json",
+        filename=f"export-{job.id}.manifest.json",
+    )
+
+
+@router.post(
+    "/export/{job_id}/verify",
+    response_model=ExportVerifyResult,
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def verify_export(
+    job_id: str,
+    svc: Annotated[ExportService, Depends(get_export_service)],
+) -> ExportVerifyResult:
+    """Re-hash the produced clip + verify its Ed25519 signature → ``{valid, reason}``.
+
+    A clip altered after signing verifies as ``valid:false, reason:"tampered"``.
+    """
+    result = await svc.verify(job_id)
+    return ExportVerifyResult(**result)

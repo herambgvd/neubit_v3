@@ -60,19 +60,52 @@ def _write_concat_list(segment_paths: list[str]) -> str:
     return list_path
 
 
+def _drawtext_escape(s: str) -> str:
+    """Escape a string for ffmpeg's ``drawtext`` text= value (``:``, ``'``, ``\\``, ``%``)."""
+    return (
+        s.replace("\\", "\\\\")
+        .replace(":", "\\:")
+        .replace("'", "\\'")
+        .replace("%", "\\%")
+    )
+
+
+def build_watermark_filter(text: str) -> str:
+    """A ``drawtext`` filter drawing ``text`` bottom-left with a translucent box + a
+    live wall-clock timestamp appended (``%{localtime}``) — the site/camera/time overlay.
+
+    White text on a semi-opaque black box, small padding, anchored 12px from the
+    bottom-left. Uses ffmpeg's builtin ``%{localtime}`` so the burned-in time reflects
+    render time (documented; a per-frame recorded-time overlay is a later refinement).
+    """
+    label = _drawtext_escape(text)
+    return (
+        f"drawtext=text='{label} %{{localtime}}':"
+        "x=12:y=h-th-12:fontsize=18:fontcolor=white:"
+        "box=1:boxcolor=black@0.5:boxborderw=6"
+    )
+
+
 async def concat_segments(
     segment_paths: list[str],
     out_path: str,
     *,
     head_offset_sec: float = 0.0,
     duration_sec: float | None = None,
+    watermark_text: str | None = None,
 ) -> None:
-    """Concat + trim ``segment_paths`` → ``out_path`` (mp4), stream-copy fast path.
+    """Concat + trim ``segment_paths`` → ``out_path`` (mp4).
 
     ``head_offset_sec`` trims the front of the concatenated timeline (the requested
     ``from`` may fall inside the first segment); ``duration_sec`` caps the total length
     (the requested ``to`` may fall inside the last segment). Both are optional — omit
     to keep the whole concatenated span.
+
+    FAST PATH (``watermark_text is None``): stream-copy (``-c copy``) — near-instant,
+    lossless. RE-ENCODE PATH (``watermark_text`` given): a visible ``drawtext`` overlay
+    (site/camera/time) is burned in, which requires decoding + re-encoding the video
+    (H.264, ``-preset veryfast``); audio is stream-copied. Watermarking trades speed for
+    a tamper-visible, provenance-stamped clip.
 
     Raises ``ExportFfmpegError`` on a missing binary, a non-zero exit, or an empty
     output. The output dir is created if absent.
@@ -83,17 +116,26 @@ async def concat_segments(
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     list_path = _write_concat_list(segment_paths)
 
-    # ffmpeg concat demuxer + stream-copy. ``-ss`` before ``-i`` on a concat list seeks
-    # on the (concatenated) input timeline; with ``-c copy`` this is a keyframe-accurate
-    # copy-trim, which is the correct, fast behaviour for fmp4 segments. ``-t`` caps
-    # duration. ``+faststart`` moves moov to the front for progressive playback.
+    # ffmpeg concat demuxer. ``-ss`` before ``-i`` on a concat list seeks on the
+    # (concatenated) input timeline; ``-t`` caps duration. ``+faststart`` moves moov to
+    # the front for progressive playback.
     args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
     if head_offset_sec and head_offset_sec > 0:
         args += ["-ss", f"{head_offset_sec:.3f}"]
     args += ["-f", "concat", "-safe", "0", "-i", list_path]
     if duration_sec and duration_sec > 0:
         args += ["-t", f"{duration_sec:.3f}"]
-    args += ["-c", "copy", "-movflags", "+faststart", out_path]
+    if watermark_text:
+        # RE-ENCODE: burn in the drawtext overlay (video re-encoded; audio copied).
+        args += [
+            "-vf", build_watermark_filter(watermark_text),
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-c:a", "copy",
+        ]
+    else:
+        # FAST PATH: stream-copy (keyframe-accurate copy-trim of the fmp4 segments).
+        args += ["-c", "copy"]
+    args += ["-movflags", "+faststart", out_path]
 
     try:
         try:
