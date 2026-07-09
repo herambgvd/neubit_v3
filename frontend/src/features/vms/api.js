@@ -32,6 +32,8 @@ const NVRS = "/vms/nvrs";
 const GROUPS = "/vms/camera-groups";
 const PATTERNS = "/vms/patterns";
 const HEALTH = "/vms/cameras/health";
+const EVENTS = "/vms/events";
+const LINKAGE = "/vms/linkage-rules";
 const RECORDINGS = "/vms/recordings";
 const STORAGE = "/vms/storage";
 const EXPORT = "/vms/export";
@@ -160,6 +162,43 @@ export const vms = {
       unwrap(api.get(`${CAMERAS}/${cameraId}/health/history${qs(params)}`)),
     // POST /cameras/{id}/health/refresh → a fresh sample.
     refresh: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/health/refresh`, {})),
+  },
+
+  // ── Camera device-events (P5-A) — the normalized event feed ─────────────
+  // ONVIF/brand device notifications (motion|tamper|video_loss|io_input|
+  // line_crossing|zone_intrusion|audio|…) + system events (camera_online/offline,
+  // recording_error, storage_low), normalized + deduped. Live updates arrive over
+  // the core realtime SSE bridge (useVmsEventStream); this is the INITIAL history +
+  // the ack action. Public shape: { id, camera_id, event_type, severity, source,
+  // title, description, raw, occurred_at, acknowledged, acknowledged_by/_at,
+  // snapshot_path, recording_id, created_at }.
+  events: {
+    // GET /vms/events?camera_id=&event_type=&severity=&acknowledged=&from=&to=&skip=&limit=
+    //   → { items, total, skip, limit } (newest first).
+    list: (params = {}) => unwrap(api.get(`${EVENTS}${qs(params)}`)),
+    // GET /vms/cameras/{id}/events?… → one camera's events.
+    listForCamera: (cameraId, params = {}) =>
+      unwrap(api.get(`${CAMERAS}/${cameraId}/events${qs(params)}`)),
+    // POST /vms/events/{id}/ack → the acknowledged VmsEventPublic (idempotent).
+    ack: (id) => unwrap(api.post(`${EVENTS}/${id}/ack`, {})),
+  },
+
+  // ── Linkage / action rules (P5-B) — event → action automation ───────────
+  // A rule fires actions when a matching camera event arrives: start_recording
+  // (event-clip w/ pre/post buffer), notify (channel), ptz_preset, trigger_output
+  // (relay), popup (operator UI). Public shape: { id, name, description, is_active,
+  // trigger_event_type, trigger_filter{}, camera_scope{scope,camera_ids?,group_ids?},
+  // actions[{type,config}], cooldown_seconds, schedule{}, created_by, created_at,
+  // updated_at }. Writes gate on vms.config.manage; the fire-audit is read-only.
+  linkage: {
+    // GET /vms/linkage-rules?trigger_event_type=&is_active=&skip=&limit= → { items, total }.
+    list: (params = {}) => unwrap(api.get(`${LINKAGE}${qs(params)}`)),
+    get: (id) => unwrap(api.get(`${LINKAGE}/${id}`)),
+    create: (body) => unwrap(api.post(LINKAGE, body)),
+    update: (id, body) => unwrap(api.patch(`${LINKAGE}/${id}`, body)),
+    remove: (id) => unwrap(api.delete(`${LINKAGE}/${id}`)),
+    // GET /vms/linkage-fires?rule_id=&camera_id=&skip=&limit= → the fire-audit log.
+    fires: (params = {}) => unwrap(api.get(`/vms/linkage-fires${qs(params)}`)),
   },
 
   // ── Live streaming (P2-D) — PlaybackSession issue / renew / release ──────

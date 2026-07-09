@@ -29,18 +29,22 @@ export default function PlaybackPage() {
   const [tab, setTab] = useState("single");
   const [cameraId, setCameraId] = useState("");
   const [exportRange, setExportRange] = useState(null); // { from, to } or null
+  const [seekTo, setSeekTo] = useState(null); // ISO string from ?t= (jump-to-recording)
 
-  // Deep-link ?camera=<id> → open Single-camera on that camera. Read from
-  // window.location to sidestep the useSearchParams Suspense rule (same pattern
-  // as Streaming). Handled once on mount.
+  // Deep-link ?camera=<id>[&t=<iso>] → open Single-camera on that camera, and (with
+  // ?t=) seek the scrub bar to that instant. Read from window.location to sidestep
+  // the useSearchParams Suspense rule (same pattern as Streaming). Handled once on mount.
   const deepLinkHandled = useRef(false);
   useEffect(() => {
     if (deepLinkHandled.current || typeof window === "undefined") return;
     deepLinkHandled.current = true;
-    const camera = new URLSearchParams(window.location.search).get("camera");
+    const params = new URLSearchParams(window.location.search);
+    const camera = params.get("camera");
+    const t = params.get("t");
     if (camera) {
       setCameraId(camera);
       setTab("single");
+      if (t) setSeekTo(t);
     }
   }, []);
 
@@ -76,7 +80,10 @@ export default function PlaybackPage() {
               <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">Camera</label>
               <Select
                 value={cameraId}
-                onChange={(e) => setCameraId(e.target.value)}
+                onChange={(e) => {
+                  setCameraId(e.target.value);
+                  setSeekTo(null); // manual camera switch drops the deep-link seek
+                }}
                 options={cameraOptions}
                 className="!h-9 !py-1.5"
               />
@@ -88,6 +95,7 @@ export default function PlaybackPage() {
               key={cameraId}
               cameraId={cameraId}
               cameraName={cameraName}
+              initialSeek={seekTo}
               onExportRange={(range) => setExportRange(range)}
             />
           ) : (

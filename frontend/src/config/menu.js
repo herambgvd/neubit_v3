@@ -43,6 +43,7 @@ export const configTabs = [
   { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", perm: "neubit.read" },
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", disabled: true },
   { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", perm: "neubit.read" },
+  { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read" },
   { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read" },
   { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read" },
   { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
@@ -76,11 +77,12 @@ export function isDevicesRoute(pathname) {
 }
 
 // ── Streaming sub-tab bar — the video-viewing surfaces (VMS) ──────────────
-//   Video Wall (live), Recordings, Playback. Onboarding stays under Devices.
+//   Video Wall (live), Recordings, Playback, Camera events. Onboarding stays under Devices.
 export const streamTabs = [
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read" },
   { title: "Recordings", icon: "heroicons:film", link: "/recordings", perm: "neubit.read" },
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read" },
+  { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read" },
 ];
 
 // The route the Streaming top-nav item jumps to (first enabled stream tab).

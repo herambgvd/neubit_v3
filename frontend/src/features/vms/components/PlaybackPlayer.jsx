@@ -47,6 +47,9 @@ export default function PlaybackPlayer({
   // from `timelineFn` and the session from `sourceFn`.
   sourceFn = null,
   timelineFn = null,
+  // Deep-link seek (jump-to-recording from a camera event): an ISO timestamp to
+  // open the player on that day + seek the scrub bar to that instant once ready.
+  initialSeek = null,
   // Controlled (slaved) mode — for synchronized multi-cam. The parent owns the
   // clock; this cell just follows it.
   controlled = false,
@@ -59,7 +62,17 @@ export default function PlaybackPlayer({
   onExportRange, // ({ from, to }) => void — open the export dialog for this window
   className = "",
 }) {
-  const [day, setDay] = useState(todayStr());
+  // When opened via a deep-link seek, start on that instant's day so its window
+  // (and coverage) load; else today.
+  const initialDay = useMemo(() => {
+    if (initialSeek) {
+      const d = new Date(initialSeek);
+      if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+    return todayStr();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [day, setDay] = useState(initialDay);
   const [localPlaying, setLocalPlaying] = useState(false);
   const [localSpeed, setLocalSpeed] = useState(1);
   const [current, setCurrent] = useState(null); // epoch ms of the playhead
@@ -87,6 +100,14 @@ export default function PlaybackPlayer({
     if (!d) return [];
     // Accept {coverage:[...]} or a bare array of {start,end}.
     return Array.isArray(d) ? d : d.coverage || [];
+  }, [timelineQ.data]);
+
+  // Event markers (P5-B/C) — VmsEvent ticks the ScrubBar plots (color by severity).
+  // { t, event_type, severity, event_id } from the timeline response.
+  const markers = useMemo(() => {
+    const d = timelineQ.data;
+    if (!d || Array.isArray(d)) return [];
+    return d.markers || [];
   }, [timelineQ.data]);
 
   // Coverage passed down in controlled mode via props isn't needed; the parent
@@ -239,6 +260,30 @@ export default function PlaybackPlayer({
     if (!controlled || seekMs == null) return;
     seekToMs(seekMs);
   }, [controlled, seekMs, seekToMs]);
+
+  // Deep-link seek (jump-to-recording): once the HLS session for the target day
+  // is attached, seek to the requested instant. Fires once per initialSeek value.
+  const seekedInitialRef = useRef(false);
+  useEffect(() => {
+    if (controlled || !initialSeek || seekedInitialRef.current) return;
+    if (!hlsUrl) return; // wait for the session/manifest
+    const ms = new Date(initialSeek).getTime();
+    if (Number.isNaN(ms) || ms < windowStart || ms > windowEnd) return;
+    seekedInitialRef.current = true;
+    // The <video> needs metadata before currentTime sticks; retry briefly.
+    const v = videoRef.current;
+    const trySeek = () => {
+      if (!videoRef.current) return;
+      if (Number.isFinite(videoRef.current.duration)) {
+        seekToMs(ms);
+      } else {
+        setCurrent(ms);
+        setTimeout(trySeek, 250);
+      }
+    };
+    if (v) v.addEventListener("loadedmetadata", trySeek, { once: true });
+    trySeek();
+  }, [controlled, initialSeek, hlsUrl, windowStart, windowEnd, seekToMs]);
 
   // Track the playhead from the video, mapping offset → absolute time.
   useEffect(() => {
@@ -411,6 +456,7 @@ export default function PlaybackPlayer({
       <div className="px-3 pb-3 pt-1">
         <ScrubBar
           coverage={coverage}
+          markers={markers}
           windowStart={windowStart}
           windowEnd={windowEnd}
           current={current}

@@ -28,6 +28,29 @@ export const incAssigneeName = (it) =>
   it.assignment?.assigned_to ||
   null;
 
+// A best-effort camera id an incident is associated with. VMS camera events
+// publish the camera under the trigger envelope's payload.camera_id (see vision
+// events.normalize.event_payload); we also honour a few flatter shapes in case a
+// future backend surfaces one. Used to add live camera media to the alarm card
+// (P5-C). Returns null when the incident has no camera source.
+export const incCameraId = (it) =>
+  it.camera_id ??
+  it.trigger_data?.payload?.camera_id ??
+  it.trigger_data?.camera_id ??
+  it.trigger_data?.payload?.data?.camera_id ??
+  it.event?.camera_id ??
+  it.event_data?.camera_id ??
+  null;
+
+// A best-effort occurred-at ISO for an incident's source event — used to deep-link
+// "View recording" to the event instant (falls back to the incident created_at).
+export const incEventTime = (it) =>
+  it.trigger_data?.payload?.occurred_at ||
+  it.trigger_data?.occurred_at ||
+  it.event?.occurred_at ||
+  it.created_at ||
+  null;
+
 // A best-effort zone *name* an incident is associated with. Seeded incidents
 // carry it under trigger_data.payload.data.zone (e.g. "north"); we also honour a
 // flat zone_name / zone if a future backend sets one. Used only for map hinting.

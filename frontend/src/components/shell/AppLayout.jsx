@@ -11,6 +11,7 @@ import { FullPageLoader } from "@/components/ui/kit";
 import Footer from "@/components/shell/Footer";
 import Header from "@/components/shell/Header";
 import SectionTabs from "@/components/shell/SectionTabs";
+import VmsPopupHost from "@/features/vms/components/VmsPopupHost";
 import { useAuth } from "@/lib/auth";
 import {
   isConfigRoute,
@@ -66,6 +67,8 @@ export default function AppLayout({ children }) {
       <main className="flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6">{children}</main>
       <Footer />
       <CommandPalette />
+      {/* App-wide operator popups (VMS linkage `popup` action → floating live camera). */}
+      <VmsPopupHost />
     </div>
   );
 }

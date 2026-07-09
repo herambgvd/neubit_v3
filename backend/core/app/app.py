@@ -31,6 +31,7 @@ def base_routers() -> list[APIRouter]:
     from .core.realtime import realtime_router
     from .core.realtime_access import realtime_access_router
     from .core.realtime_incidents import realtime_incidents_router
+    from .core.realtime_vms import realtime_vms_router
     from .core.storage import files_router
     from .device_brands import router as device_brands_router
     from .infra import router as infra_router
@@ -64,6 +65,7 @@ def base_routers() -> list[APIRouter]:
         realtime_router,
         realtime_incidents_router,
         realtime_access_router,
+        realtime_vms_router,
         *sites_routers,
         *tags_routers,
     ]

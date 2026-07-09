@@ -6,10 +6,14 @@
 // from gvd_nvr's TimelinePlayer timeline, reskinned to v3 tokens.
 //
 //   coverage: [{ start, end }]  — ISO strings, the recorded spans
+//   markers:  [{ t, event_type, severity, event_id }] — VmsEvent ticks (P5-C)
 //   windowStart / windowEnd     — epoch ms, the visible track range
 //   current                     — epoch ms, the playhead
-//   onSeek(ms)                  — click/drag to a timestamp
+//   onSeek(ms)                  — click/drag (or click a marker) to a timestamp
 import { useCallback, useMemo, useRef, useState } from "react";
+
+import { SEVERITY_PRESETS } from "../constants";
+import { eventTypeLabel } from "../eventLib";
 
 const HOUR_MS = 3_600_000;
 
@@ -22,6 +26,13 @@ const BLOCK_COLOR = {
   manual: "bg-foreground/40",
 };
 
+// Marker tick color by severity (falls back to info blue).
+const MARKER_FILL = {
+  critical: SEVERITY_PRESETS.critical.fill,
+  warning: SEVERITY_PRESETS.warning.fill,
+  info: SEVERITY_PRESETS.info.fill,
+};
+
 function hhmmss(ms) {
   const d = new Date(ms);
   return d.toLocaleTimeString(undefined, { hour12: false });
@@ -29,6 +40,7 @@ function hhmmss(ms) {
 
 export default function ScrubBar({
   coverage = [],
+  markers = [],
   windowStart,
   windowEnd,
   current,
@@ -38,6 +50,7 @@ export default function ScrubBar({
   const trackRef = useRef(null);
   const [dragging, setDragging] = useState(false);
   const [hover, setHover] = useState(null); // { pct, ms }
+  const [markerHover, setMarkerHover] = useState(null); // { leftPct, label, time }
 
   const span = Math.max(1, windowEnd - windowStart);
 
@@ -68,6 +81,26 @@ export default function ScrubBar({
     }
     return out;
   }, [coverage, windowStart, span]);
+
+  // Event markers → ticks positioned by time, colored by severity.
+  const markerTicks = useMemo(() => {
+    const out = [];
+    for (const m of markers) {
+      const t = m?.t ? new Date(m.t).getTime() : null;
+      if (t == null || Number.isNaN(t)) continue;
+      const pos = (t - windowStart) / span;
+      if (pos < 0 || pos > 1) continue;
+      out.push({
+        key: m.event_id || `${m.t}-${m.event_type}`,
+        leftPct: pos * 100,
+        ms: t,
+        fill: MARKER_FILL[m.severity] || MARKER_FILL.info,
+        label: eventTypeLabel(m.event_type),
+        severity: m.severity,
+      });
+    }
+    return out;
+  }, [markers, windowStart, span]);
 
   const posToMs = useCallback(
     (clientX) => {
@@ -148,6 +181,47 @@ export default function ScrubBar({
         {blocks.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted">
             No coverage in this window
+          </div>
+        )}
+
+        {/* Event markers — a tick per VmsEvent, colored by severity. Click seeks. */}
+        {markerTicks.map((m) => (
+          <div
+            key={m.key}
+            role="button"
+            tabIndex={-1}
+            title={`${m.label} · ${hhmmss(m.ms)}`}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              if (!disabled) onSeek?.(m.ms);
+            }}
+            onMouseEnter={() =>
+              setMarkerHover({ leftPct: m.leftPct, label: m.label, time: hhmmss(m.ms) })
+            }
+            onMouseLeave={() => setMarkerHover(null)}
+            className="absolute top-1 z-[15] -translate-x-1/2 cursor-pointer"
+            style={{ left: `${m.leftPct}%` }}
+          >
+            {/* Diamond tick */}
+            <span
+              className="block h-2.5 w-2.5 rotate-45 rounded-[2px] ring-1 ring-black/30"
+              style={{ backgroundColor: m.fill }}
+            />
+            {/* Thin stem down into the track */}
+            <span
+              className="absolute left-1/2 top-2 h-8 w-px -translate-x-1/2 opacity-50"
+              style={{ backgroundColor: m.fill }}
+            />
+          </div>
+        ))}
+
+        {/* Marker hover tooltip (event type + time) */}
+        {markerHover && (
+          <div
+            className="pointer-events-none absolute -top-6 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-black/85 px-1.5 py-0.5 text-[10px] text-white"
+            style={{ left: `${markerHover.leftPct}%` }}
+          >
+            {markerHover.label} · {markerHover.time}
           </div>
         )}
 

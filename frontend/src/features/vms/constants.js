@@ -135,3 +135,61 @@ export const DEFAULT_CAMERA_FORM = {
   floor_id: "",
   zone_id: "",
 };
+
+// ── VMS camera device-event types (P5-A/C) ───────────────────────────────
+// The normalized, brand-neutral vocabulary the whole platform speaks (see
+// vision events.normalize.NORMALIZED_TYPES). Each carries a heroicon + a v3
+// theme preset (chip class) so the Events feed / timeline markers / linkage
+// editor all render a type identically.
+export const EVENT_TYPE_PRESETS = {
+  motion: { label: "Motion", icon: "heroicons-outline:bolt", cls: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
+  tamper: { label: "Tamper", icon: "heroicons-outline:hand-raised", cls: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
+  video_loss: { label: "Video loss", icon: "heroicons-outline:video-camera-slash", cls: "bg-red-500/10 text-red-500 border-red-500/20" },
+  camera_online: { label: "Camera online", icon: "heroicons-outline:check-circle", cls: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
+  camera_offline: { label: "Camera offline", icon: "heroicons-outline:x-circle", cls: "bg-red-500/10 text-red-500 border-red-500/20" },
+  io_input: { label: "I/O input", icon: "heroicons-outline:arrows-right-left", cls: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+  line_crossing: { label: "Line crossing", icon: "heroicons-outline:arrow-trending-up", cls: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" },
+  zone_intrusion: { label: "Zone intrusion", icon: "heroicons-outline:shield-exclamation", cls: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
+  audio: { label: "Audio alarm", icon: "heroicons-outline:speaker-wave", cls: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
+  recording_error: { label: "Recording error", icon: "heroicons-outline:exclamation-triangle", cls: "bg-red-500/10 text-red-500 border-red-500/20" },
+  storage_low: { label: "Storage low", icon: "heroicons-outline:circle-stack", cls: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
+  system: { label: "System", icon: "heroicons-outline:cog-6-tooth", cls: "bg-hover text-muted border-card-border" },
+};
+
+// A stable ORDER for selectors (feed filter + linkage trigger picker).
+export const EVENT_TYPES = [
+  "motion", "tamper", "video_loss", "camera_online", "camera_offline",
+  "io_input", "line_crossing", "zone_intrusion", "audio",
+  "recording_error", "storage_low", "system",
+];
+
+// Type-filter option list for the events feed ("" = all).
+export const EVENT_TYPE_FILTERS = [
+  { value: "", label: "All types" },
+  ...EVENT_TYPES.map((t) => ({ value: t, label: EVENT_TYPE_PRESETS[t]?.label || t })),
+];
+
+// ── Event severity → v3 theme preset (P5-A/C) ────────────────────────────
+// The driver/system severity (info|warning|critical) drives the row band, the
+// scrub-bar marker color, and the severity filter.
+export const SEVERITY_PRESETS = {
+  critical: { label: "Critical", dot: "bg-red-500", text: "text-red-500", band: "bg-red-500", cls: "bg-red-500/10 text-red-500", fill: "#ef4444", rank: 3 },
+  warning: { label: "Warning", dot: "bg-amber-500", text: "text-amber-500", band: "bg-amber-500", cls: "bg-amber-500/10 text-amber-500", fill: "#f59e0b", rank: 2 },
+  info: { label: "Info", dot: "bg-blue-500", text: "text-blue-500", band: "bg-blue-500", cls: "bg-blue-500/10 text-blue-500", fill: "#3b82f6", rank: 1 },
+};
+
+export const SEVERITY_FILTERS = [
+  { value: "", label: "All severities" },
+  { value: "critical", label: "Critical" },
+  { value: "warning", label: "Warning" },
+  { value: "info", label: "Info" },
+];
+
+// The action types the linkage editor offers (mirrors vision linkage ACTION_TYPES).
+export const LINKAGE_ACTION_TYPES = [
+  { value: "start_recording", label: "Start recording", icon: "heroicons-outline:film", hint: "Cut an event-clip with pre/post buffer" },
+  { value: "notify", label: "Notify", icon: "heroicons-outline:bell-alert", hint: "Send on a channel (email / webhook / push)" },
+  { value: "ptz_preset", label: "PTZ preset", icon: "heroicons-outline:viewfinder-circle", hint: "Move a PTZ camera to a preset" },
+  { value: "trigger_output", label: "Trigger output", icon: "heroicons-outline:arrows-right-left", hint: "Pulse a camera relay / digital output" },
+  { value: "popup", label: "Operator popup", icon: "heroicons-outline:window", hint: "Pop the camera live for the operator" },
+];
