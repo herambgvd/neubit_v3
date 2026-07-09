@@ -25,7 +25,7 @@ from kernel.errors import NotFoundError
 from app.db import Base
 from app.vms.common import media_token
 from app.vms.common.nvr_client import NvrUnavailable
-from app.vms.models import Camera, Recording
+from app.vms.models import Camera, Recording, VmsEvent
 from app.vms.playback.service import (
     PlaybackNotFound,
     PlaybackService,
@@ -265,3 +265,49 @@ async def test_timeline_open_segment_runs_to_window_end(db, camera):
 def test_day_window():
     start, end = day_window(datetime(2026, 7, 9))
     assert start == _dt(0, 0) and end == datetime(2026, 7, 10, tzinfo=timezone.utc)
+
+
+# ── timeline event markers (P5-B) ───────────────────────────────────────────
+
+
+async def _add_event(db, camera_id, occurred, *, event_type="motion", severity="alarm",
+                     tenant=TENANT):
+    ev = VmsEvent(
+        tenant_id=tenant,
+        camera_id=camera_id,
+        event_type=event_type,
+        severity=severity,
+        source="onvif",
+        title=f"{event_type} event",
+        dedup_key=uuid.uuid4().hex,
+        occurred_at=occurred,
+        published=True,
+    )
+    db.add(ev)
+    await db.commit()
+    return ev
+
+
+async def test_timeline_includes_event_markers_in_window(db, camera):
+    # Two in-window events + one outside → only the in-window two are markers.
+    await _add_event(db, camera.id, _dt(10, 15), event_type="motion", severity="alarm")
+    await _add_event(db, camera.id, _dt(10, 45), event_type="tamper", severity="critical")
+    await _add_event(db, camera.id, _dt(12, 0), event_type="motion")  # outside [10,11]
+
+    tl = await _svc(db, _StubNvr()).timeline(camera.id, _dt(10, 0), _dt(11, 0))
+
+    assert len(tl.markers) == 2
+    # Ordered by time; carry type/severity/event_id for the scrub bar.
+    assert tl.markers[0].t == _dt(10, 15)
+    assert tl.markers[0].event_type == "motion" and tl.markers[0].severity == "alarm"
+    assert tl.markers[0].event_id
+    assert tl.markers[1].event_type == "tamper" and tl.markers[1].severity == "critical"
+    # Coverage/gaps are unaffected by markers (kept as-is).
+    assert tl.coverage == []
+
+
+async def test_timeline_markers_tenant_scoped(db, camera):
+    # A marker owned by another tenant is not surfaced to this tenant.
+    await _add_event(db, camera.id, _dt(10, 15), tenant=OTHER_TENANT)
+    tl = await _svc(db, _StubNvr()).timeline(camera.id, _dt(10, 0), _dt(11, 0))
+    assert tl.markers == []

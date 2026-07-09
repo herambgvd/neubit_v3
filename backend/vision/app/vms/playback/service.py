@@ -31,7 +31,7 @@ from kernel.errors import AppError, NotFoundError
 from app.vms.common.media_token import mint_media_token, token_hash
 from app.vms.common.nvr_client import NvrClient, NvrUnavailable
 from app.vms.live.service import _append_token
-from app.vms.models import Camera, PlaybackSession, Recording
+from app.vms.models import Camera, PlaybackSession, Recording, VmsEvent
 
 log = logging.getLogger("vision.playback_service")
 
@@ -184,15 +184,17 @@ class PlaybackService:
     async def timeline(
         self, camera_id: str, from_: datetime, to: datetime, profile: str | None = None
     ):
-        """Coverage blocks + gaps for the scrub bar, computed from Recording rows.
+        """Coverage blocks + gaps + event markers for the scrub bar.
 
         Recording [start, end] intervals are clamped to [from, to], merged into
         contiguous coverage blocks (touching/overlapping segments coalesce), and the
-        holes between them within the window become gaps. Motion/event markers are
-        left for P5.
+        holes between them within the window become gaps. Event MARKERS (P5-B) are the
+        VmsEvent rows whose ``occurred_at`` falls in [from, to] — a tick per device/system
+        event so the scrub bar shows motion/tamper/… where they happened.
         """
         camera = await self._camera(camera_id)
         recs = await self._recordings_in_window(camera.id, from_, to, profile)
+        markers = await self._event_markers(camera.id, from_, to)
 
         # Build clamped [start, end] intervals (skip zero/negative after clamping).
         intervals: list[tuple[datetime, datetime]] = []
@@ -227,7 +229,7 @@ class PlaybackService:
 
         total = sum((e - s).total_seconds() for s, e in coverage)
 
-        from .schemas import TimelineResponse, TimelineSegment
+        from .schemas import TimelineMarker, TimelineResponse, TimelineSegment
 
         return TimelineResponse(
             camera_id=camera.id,
@@ -235,8 +237,35 @@ class PlaybackService:
             to=to,
             coverage=[TimelineSegment(start=s, end=e) for s, e in coverage],
             gaps=[TimelineSegment(start=s, end=e) for s, e in gaps],
+            markers=[
+                TimelineMarker(
+                    t=_aware(m.occurred_at),
+                    event_type=m.event_type,
+                    severity=m.severity,
+                    event_id=m.id,
+                    camera_id=m.camera_id,
+                )
+                for m in markers
+            ],
             total_seconds=total,
         )
+
+    async def _event_markers(
+        self, camera_id: str, from_: datetime, to: datetime
+    ) -> list[VmsEvent]:
+        """VmsEvent rows for the camera whose ``occurred_at`` is within [from, to].
+
+        Tenant-scoped (``scoped``) — a marker is only surfaced to the owning tenant, the
+        same isolation the events feed enforces. Ordered by time for a stable scrub bar.
+        """
+        stmt = (
+            scoped(select(VmsEvent), VmsEvent, self.scope)
+            .where(VmsEvent.camera_id == camera_id)
+            .where(VmsEvent.occurred_at >= from_)
+            .where(VmsEvent.occurred_at <= to)
+            .order_by(VmsEvent.occurred_at.asc())
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
 
 
 def day_window(day: datetime) -> tuple[datetime, datetime]:

@@ -58,12 +58,28 @@ class TimelineSegment(BaseModel):
     end: datetime
 
 
+class TimelineMarker(BaseModel):
+    """One event marker plotted on the scrub bar (P5-B).
+
+    Sourced from ``VmsEvent`` rows whose ``occurred_at`` falls in the window — the P5-C
+    scrub bar renders a tick per marker (colour by severity) and jumps playback to ``t``
+    on click. ``event_id`` links back to the event feed / a start-recording clip.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    t: datetime
+    event_type: str
+    severity: str
+    event_id: str
+    camera_id: Optional[str] = None
+
+
 class TimelineResponse(BaseModel):
-    """Recording coverage + gaps for the scrub bar over the requested window.
+    """Recording coverage + gaps (+ event markers) for the scrub bar over the window.
 
     ``coverage`` are the merged recorded blocks; ``gaps`` the holes between them
-    within [from, to]; ``total_seconds`` the summed recorded duration. Motion/event
-    markers are left for P5.
+    within [from, to]; ``total_seconds`` the summed recorded duration; ``markers`` the
+    VmsEvent ticks at their ``occurred_at`` (P5-B).
     """
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
@@ -72,4 +88,5 @@ class TimelineResponse(BaseModel):
     to: datetime
     coverage: List[TimelineSegment] = Field(default_factory=list)
     gaps: List[TimelineSegment] = Field(default_factory=list)
+    markers: List[TimelineMarker] = Field(default_factory=list)
     total_seconds: float = 0.0

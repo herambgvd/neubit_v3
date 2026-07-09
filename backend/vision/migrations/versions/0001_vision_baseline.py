@@ -37,6 +37,8 @@ def _tables():
         CameraHealth,
         CameraPattern,
         ExportJob,
+        LinkageFire,
+        LinkageRule,
         MediaNode,
         MediaProfile,
         PlaybackSession,
@@ -64,6 +66,8 @@ def _tables():
         CameraPattern.__table__,
         ExportJob.__table__,
         VmsEvent.__table__,
+        LinkageRule.__table__,
+        LinkageFire.__table__,
     ]
 
 

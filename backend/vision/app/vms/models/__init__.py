@@ -23,6 +23,7 @@ Domain split:
   * ``pattern``    — CameraPattern (video-wall rotating group sequences, P3-C)
   * ``export``     — ExportJob (clip-export: concat recorded segments → mp4, P4-B)
   * ``event``      — VmsEvent (normalized camera device / system events, P5-A)
+  * ``linkage``    — LinkageRule + LinkageFire (event→action rules + fire-audit, P5-B)
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from .event import VmsEvent
 from .export import ExportJob
 from .group import CameraACL, CameraGroup
 from .health import CameraHealth
+from .linkage import LinkageFire, LinkageRule
 from .live import PlaybackSession
 from .media_node import MediaNode, StreamShard
 from .nvr import NVR
@@ -55,4 +57,6 @@ __all__ = [
     "CameraPattern",
     "ExportJob",
     "VmsEvent",
+    "LinkageRule",
+    "LinkageFire",
 ]

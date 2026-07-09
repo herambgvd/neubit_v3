@@ -38,6 +38,7 @@ from app.vms.common.events import bus
 from app.vms.events import EventSupervisor
 from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
+from app.vms.linkage import LinkageConsumer
 from app.vms.recording import RecordingConsumer, RecordingScheduler
 from app.vms.storage import RetentionTieringWorker
 
@@ -94,6 +95,18 @@ async def lifespan(app: FastAPI):
     event_supervisor = EventSupervisor(get_sessionmaker())
     await event_supervisor.start()
     app.state.event_supervisor = event_supervisor
+
+    # P5-B event-linkage: subscribe to camera events (``tenant.*.vms.>``) AND access
+    # events (``tenant.*.access.>``) → match enabled LinkageRules (event_type + filter +
+    # camera scope + schedule + cooldown) → execute actions (start_recording via the Go
+    # nvr event-clip, notify via the connector framework, ptz_preset, trigger_output,
+    # popup) → write a LinkageFire audit row. An access door event resolves the camera(s)
+    # at that door (explicit map or core-placement proximity) for access↔video
+    # verification. Durable JetStream consumers; own DB session per event; every action
+    # is graceful (a down camera/nvr logs + continues, never crashes the consumer).
+    linkage_consumer = LinkageConsumer(bus, get_sessionmaker())
+    await linkage_consumer.start()
+    app.state.linkage_consumer = linkage_consumer
 
     yield
 

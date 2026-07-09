@@ -84,6 +84,44 @@ async def emit_camera_event(
     return subj
 
 
+async def emit_popup(
+    tenant_id: uuid.UUID | str | None,
+    payload: dict,
+    *,
+    _bus: EventBus | None = None,
+) -> str:
+    """Publish ``tenant.<id>.vms.popup`` (P5-B linkage ``popup`` action).
+
+    The operator UI (P5-C) consumes this over SSE (via the core realtime bridge on
+    ``tenant.*.vms.>``) to pop the camera live + surface the reason. Payload carries
+    ``{camera_id, reason, event_id, event_type?, severity?}``. Best-effort — never raises.
+    """
+    tid = _tid(tenant_id)
+    subj = subject(tid, "vms", "popup")
+    await (_bus or bus).publish(subj, {"tenant_id": tid, **payload})
+    return subj
+
+
+async def emit_notify_request(
+    tenant_id: uuid.UUID | str | None,
+    payload: dict,
+    *,
+    _bus: EventBus | None = None,
+) -> str:
+    """Publish ``tenant.<id>.notify.request`` (P5-B linkage ``notify`` action).
+
+    vision has no notification transport of its own, so the linkage ``notify`` action
+    publishes a channel-agnostic request on the NATS spine for the workflow / notifier
+    connector framework to fan out (email / webhook / push). Payload carries
+    ``{channel, target?, subject?, body?, event_id, camera_id?, event_type?, severity?,
+    config}``. Best-effort — never raises.
+    """
+    tid = _tid(tenant_id)
+    subj = subject(tid, "notify", "request")
+    await (_bus or bus).publish(subj, {"tenant_id": tid, **payload})
+    return subj
+
+
 async def emit_nvr_lifecycle(
     tenant_id: uuid.UUID | str | None,
     event: str,

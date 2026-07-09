@@ -25,6 +25,7 @@ from app.vms.cameras.router import router as camera_router
 from app.vms.export.router import router as export_router
 from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
+from app.vms.linkage.router import router as linkage_router
 from app.vms.live.router import router as live_router
 from app.vms.nvr.router import router as nvr_router
 from app.vms.events.router import router as event_router
@@ -59,6 +60,10 @@ from app.vms.storage import router as storage_router
 # (GET) + ``/vms/events/{id}/ack`` (POST) are deeper/distinct from the camera
 # ``/cameras/{id}`` catch-all. The P5-A camera device-events feed (the event-supervisor
 # ingests device/system events → NATS → workflow correlation → incidents).
+# Linkage mounts alongside events — its ``/vms/linkage-rules`` (+ ``/{id}``) +
+# ``/vms/linkage-fires`` are distinct prefixes (no collision with the camera catch-all).
+# The P5-B event-linkage control plane (event→action rules + the fire-audit; the linkage
+# consumer, wired in app.main, runs the rules on camera + access events).
 routers = [
     health_router,
     live_router,
@@ -66,6 +71,7 @@ routers = [
     playback_router,
     export_router,
     event_router,
+    linkage_router,
     storage_router,
     storage_rec_router,
     camera_router,
