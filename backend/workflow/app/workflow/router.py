@@ -25,6 +25,7 @@ from app.db import get_db
 from . import schemas as S
 from .service import (
     AlertFormatService,
+    DeviceTokenService,
     FormService,
     InstanceService,
     NotificationService,
@@ -77,6 +78,10 @@ async def _format_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope
 
 async def _sim_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
     return SimulatorService(db, scope)
+
+
+async def _device_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+    return DeviceTokenService(db, scope)
 
 
 # ── SOP router ─────────────────────────────────────────────────────────
@@ -379,6 +384,43 @@ async def update_channel(channel_id: str, body: S.UpdateChannelRequest,
                             dependencies=[Depends(require_permission("workflow.notification.delete"))])
 async def delete_channel(channel_id: str, svc: Annotated[NotificationService, Depends(_notif_svc)]):
     await svc.delete_channel(channel_id)
+
+
+# -- device tokens (mobile push registration; the current user's own devices) --
+#
+# Reuses the notification-domain permissions: any user who can read notifications
+# may register/list/unregister THEIR OWN push device tokens. Registration is
+# self-service (the row is stamped with the caller's user_id + tenant), so these
+# are the right gate — no new permission catalog entry (that lives in core).
+
+
+@notification_router.get("/devices", response_model=list[S.DeviceTokenPublic],
+                         dependencies=[Depends(require_permission("workflow.notification.read"))])
+async def list_device_tokens(svc: Annotated[DeviceTokenService, Depends(_device_svc)],
+                             actor: Principal = Depends(require_permission("workflow.notification.read"))):
+    return [S.DeviceTokenPublic.from_row(r) for r in await svc.list_mine(actor=actor)]
+
+
+@notification_router.post("/devices", response_model=S.DeviceTokenPublic,
+                          status_code=status.HTTP_201_CREATED)
+async def register_device_token(body: S.RegisterDeviceTokenRequest,
+                                svc: Annotated[DeviceTokenService, Depends(_device_svc)],
+                                actor: Principal = Depends(require_permission("workflow.notification.read"))):
+    return S.DeviceTokenPublic.from_row(await svc.register(body, actor=actor))
+
+
+@notification_router.delete("/devices", status_code=status.HTTP_204_NO_CONTENT)
+async def unregister_device_token_by_token(body: S.UnregisterDeviceTokenRequest,
+                                           svc: Annotated[DeviceTokenService, Depends(_device_svc)],
+                                           actor: Principal = Depends(require_permission("workflow.notification.read"))):
+    await svc.unregister_by_token(body.platform, body.token, actor=actor)
+
+
+@notification_router.delete("/devices/{device_token_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unregister_device_token(device_token_id: str,
+                                  svc: Annotated[DeviceTokenService, Depends(_device_svc)],
+                                  actor: Principal = Depends(require_permission("workflow.notification.read"))):
+    await svc.unregister(device_token_id, actor=actor)
 
 
 # ── Threat level router ────────────────────────────────────────────────

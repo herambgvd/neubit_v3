@@ -30,23 +30,35 @@ from app.workflow.router import routers as workflow_routers
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("workflow")
 
-# The correlation consumer, when hosted in-process (opt-in). Held so lifespan
-# shutdown can close it cleanly.
+# The correlation + notify consumers, when hosted in-process (opt-in). Held so
+# lifespan shutdown can close them cleanly.
 _correlation = None
+_notify = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _correlation
+    global _correlation, _notify
     await bus.connect()
     await bus.publish(subject(None, "workflow", "startup"), {"service": "workflow"})
-    if os.getenv("VE_WORKFLOW_INLINE_CORRELATION", "").lower() in ("1", "true", "yes"):
+    inline = os.getenv("VE_WORKFLOW_INLINE_CORRELATION", "").lower() in ("1", "true", "yes")
+    if inline:
         from app.workflow.correlation import CorrelationEngine
 
         _correlation = CorrelationEngine()
         await _correlation.start()
         log.info("inline correlation consumer started")
+    # The notify-request/vms.popup → outbox consumer rides the same inline flag (it
+    # feeds the same connector framework). Separate opt-out via VE_WORKFLOW_INLINE_NOTIFY=0.
+    if inline and os.getenv("VE_WORKFLOW_INLINE_NOTIFY", "1").lower() in ("1", "true", "yes"):
+        from app.workflow.notify_consumer import NotifyConsumer
+
+        _notify = NotifyConsumer()
+        await _notify.start()
+        log.info("inline notify consumer started")
     yield
+    if _notify is not None:
+        await _notify.close()
     if _correlation is not None:
         await _correlation.close()
     await bus.close()

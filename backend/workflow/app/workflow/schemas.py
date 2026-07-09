@@ -441,6 +441,47 @@ class ChannelPublic(BaseModel):
         )
 
 
+# ── Device tokens (mobile push registration) ───────────────────────────
+
+
+class RegisterDeviceTokenRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    platform: str = Field(pattern="^(fcm|apns)$")  # fcm (Android/web) | apns (iOS)
+    token: str = Field(min_length=1, max_length=512)
+    label: Optional[str] = Field(default=None, max_length=255)
+
+
+class UnregisterDeviceTokenRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    platform: str = Field(pattern="^(fcm|apns)$")
+    token: str = Field(min_length=1, max_length=512)
+
+
+class DeviceTokenPublic(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    device_token_id: str
+    user_id: str
+    platform: str
+    # The raw provider token is masked in responses (only the tail is shown) so it
+    # is never re-exposed once registered.
+    token_masked: str
+    label: Optional[str] = None
+    is_active: bool
+    last_used_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, r) -> "DeviceTokenPublic":
+        tok = r.token or ""
+        masked = ("…" + tok[-6:]) if len(tok) > 6 else "…"
+        return cls(
+            device_token_id=r.device_token_id, user_id=r.user_id, platform=r.platform,
+            token_masked=masked, label=r.label, is_active=r.is_active,
+            last_used_at=r.last_used_at, created_at=r.created_at, updated_at=r.updated_at,
+        )
+
+
 # ── Threat level ───────────────────────────────────────────────────────
 
 

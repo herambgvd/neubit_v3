@@ -22,6 +22,7 @@ from kernel.errors import ConflictError, ValidationError
 from .events import emit
 from .models import (
     AlertFormat,
+    DeviceToken,
     Form,
     Notification,
     NotificationChannel,
@@ -532,6 +533,100 @@ class NotificationService:
         row = await self._channel(channel_id)
         await self.db.delete(row)
         await self.db.commit()
+
+
+# ── Device tokens (mobile push registration) ───────────────────────────
+
+
+class DeviceTokenService:
+    """Register/unregister a user's mobile push tokens (FCM/APNs).
+
+    Scoped to the caller: a user registers tokens for THEMSELVES within their own
+    tenant. Re-registering the same ``(tenant, platform, token)`` upserts (updates
+    the label + re-enables) rather than duplicating.
+    """
+
+    def __init__(self, db: AsyncSession, scope: Scope) -> None:
+        self.db = db
+        self.scope = scope
+
+    async def _row(self, device_token_id: str) -> DeviceToken:
+        row = await self.db.get(DeviceToken, device_token_id)
+        assert_owned(row, self.scope, message="Device token not found")
+        return row
+
+    async def register(self, body, *, actor) -> DeviceToken:
+        user_id = _actor_id(actor)
+        if not user_id:
+            raise ValidationError("cannot register a device token without a user")
+        # Upsert on (tenant, platform, token) — a device re-registering keeps one row.
+        stmt = scoped(
+            select(DeviceToken).where(
+                DeviceToken.platform == body.platform,
+                DeviceToken.token == body.token,
+            ),
+            DeviceToken, self.scope,
+        )
+        existing = (await self.db.execute(stmt)).scalars().first()
+        if existing is not None:
+            existing.user_id = user_id
+            existing.label = body.label if body.label is not None else existing.label
+            existing.is_active = True
+            existing.updated_by = user_id
+            existing.updated_at = utcnow()
+            await self.db.commit()
+            await self.db.refresh(existing)
+            return existing
+        row = DeviceToken(
+            tenant_id=self.scope.tenant_id,
+            user_id=user_id,
+            platform=body.platform,
+            token=body.token,
+            label=body.label,
+            is_active=True,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        self.db.add(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return row
+
+    async def list_mine(self, *, actor) -> list[DeviceToken]:
+        """The caller's registered device tokens (own user only)."""
+        user_id = _actor_id(actor)
+        if not user_id:
+            return []
+        stmt = scoped(
+            select(DeviceToken).where(DeviceToken.user_id == user_id),
+            DeviceToken, self.scope,
+        ).order_by(DeviceToken.created_at.desc())
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def unregister(self, device_token_id: str, *, actor) -> None:
+        row = await self._row(device_token_id)
+        # A user may only unregister their own device token.
+        if row.user_id != _actor_id(actor) and not self.scope.is_superadmin:
+            raise ValidationError("cannot unregister another user's device token")
+        await self.db.delete(row)
+        await self.db.commit()
+
+    async def unregister_by_token(self, platform: str, token: str, *, actor) -> bool:
+        """Delete the caller's row for a given (platform, token). True if removed."""
+        user_id = _actor_id(actor)
+        stmt = scoped(
+            select(DeviceToken).where(
+                DeviceToken.platform == platform,
+                DeviceToken.token == token,
+            ),
+            DeviceToken, self.scope,
+        )
+        row = (await self.db.execute(stmt)).scalars().first()
+        if row is None or (row.user_id != user_id and not self.scope.is_superadmin):
+            return False
+        await self.db.delete(row)
+        await self.db.commit()
+        return True
 
 
 # ── Threat level ───────────────────────────────────────────────────────

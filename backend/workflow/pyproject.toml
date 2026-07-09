@@ -25,6 +25,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+# Mobile-push (PushConnector) provider SDKs — LAZY-imported in connectors/push.py so
+# the worker boots + degrades gracefully when absent. Install the `push` extra to
+# enable real delivery:
+#   * google-auth  — mint the FCM HTTP v1 OAuth2 bearer from the service account.
+#   * pyjwt + cryptography — sign the APNs ES256 auth JWT from the .p8 key.
+#   * httpx[http2] (h2) — APNs requires HTTP/2 (already have httpx for FCM/webhook).
+push = ["google-auth>=2.28", "pyjwt>=2.8", "cryptography>=42.0", "httpx[http2]>=0.27"]
 
 [tool.uv.sources]
 kernel = { path = "/opt/kernel", editable = true }
