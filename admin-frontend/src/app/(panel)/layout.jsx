@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Sun,
   UserCircle,
+  Users,
 } from "lucide-react";
 
 import { tokens } from "@/lib/api";
@@ -28,7 +29,13 @@ import { ConfirmDialog } from "@/components/ui";
 // Grouped nav — a proper admin sidebar instead of a crowded top bar.
 const GROUPS = [
   { label: "Overview", items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
-  { label: "Tenancy", items: [{ href: "/tenants", label: "Tenants", icon: Building2 }] },
+  {
+    label: "Tenancy",
+    items: [
+      { href: "/tenants", label: "Tenants", icon: Building2 },
+      { href: "/users", label: "Users", icon: Users },
+    ],
+  },
   {
     label: "Platform",
     items: [

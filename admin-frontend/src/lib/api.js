@@ -247,6 +247,20 @@ export const adminApi = {
     return data;
   },
 
+  // Cross-tenant user directory — paginated { items, total, page, page_size }.
+  async listUsers({ page = 1, pageSize = 20, q = "", status = "", tenantId = "" } = {}) {
+    const params = { page, page_size: pageSize };
+    if (q) params.q = q;
+    if (status) params.status = status;
+    if (tenantId) params.tenant_id = tenantId;
+    const { data } = await api.get("/admin/users", { params });
+    return data;
+  },
+  async setUserActive(userId, isActive) {
+    const { data } = await api.post(`/admin/users/${userId}/set-active`, { is_active: isActive });
+    return data;
+  },
+
   // Cross-tenant audit log — paginated { items, total, page, page_size }.
   async listAudit({ tenantId = "", page = 1 } = {}) {
     const params = { page };

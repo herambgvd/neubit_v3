@@ -10,20 +10,25 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import User
 from ..auth.security import create_access_token
 from ..core.audit import record as audit_record
+from ..core.errors import NotFoundError, ValidationError
 from ..db.base import get_db
 from ..tenancy.deps import require_superadmin
-from ..tenancy.models import effective_license_state
+from ..tenancy.models import Tenant, effective_license_state
 from ..tenancy.service import TenantService
 from .schemas import (
+    AdminUserOut,
     CreateTenantIn,
     ImpersonateOut,
     LicenseIn,
     PagedTenantsOut,
+    PagedUsersOut,
+    SetActiveIn,
     TenantAdminIn,
     TenantAdminOut,
     TenantOut,
@@ -253,3 +258,75 @@ async def delete_tenant(
         db, actor=actor, action="tenant.delete", target_type="tenant",
         target_id=str(tenant_id), meta={"name": tenant.name},
     )
+
+
+# --- cross-tenant user directory ---------------------------------------------
+def _user_row(user: User, tenant: Tenant | None) -> AdminUserOut:
+    """Serialize a user with its tenant (name/slug) and role name."""
+    out = AdminUserOut.model_validate(user)
+    out.role_name = user.role.name if getattr(user, "role", None) else None
+    out.tenant_name = tenant.name if tenant else None
+    out.tenant_slug = tenant.slug if tenant else None
+    return out
+
+
+@router.get("/users", response_model=PagedUsersOut)
+async def list_users(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_superadmin),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    q: str | None = Query(None),
+    status: str | None = Query(None),  # 'active' | 'inactive'
+    tenant_id: uuid.UUID | None = Query(None),
+    include_platform: bool = Query(True),  # include platform super-admins (no tenant)
+) -> PagedUsersOut:
+    """Cross-tenant user directory: search (email/name), status + tenant filters,
+    pagination. Platform super-admins (tenant_id NULL) are included by default."""
+    conds = []
+    if tenant_id is not None:
+        conds.append(User.tenant_id == tenant_id)
+    elif not include_platform:
+        conds.append(User.tenant_id.is_not(None))
+    if status == "active":
+        conds.append(User.is_active.is_(True))
+    elif status == "inactive":
+        conds.append(User.is_active.is_(False))
+    if q:
+        like = f"%{q.strip().lower()}%"
+        conds.append(or_(func.lower(User.email).like(like), func.lower(User.full_name).like(like)))
+
+    count_stmt = select(func.count()).select_from(User)
+    list_stmt = select(User, Tenant).join(Tenant, User.tenant_id == Tenant.id, isouter=True)
+    if conds:
+        count_stmt = count_stmt.where(*conds)
+        list_stmt = list_stmt.where(*conds)
+    total = (await db.execute(count_stmt)).scalar_one()
+    list_stmt = list_stmt.order_by(User.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    rows = (await db.execute(list_stmt)).all()
+    items = [_user_row(user, tenant) for user, tenant in rows]
+    return PagedUsersOut(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.post("/users/{user_id}/set-active", response_model=AdminUserOut)
+async def set_user_active(
+    user_id: uuid.UUID,
+    data: SetActiveIn,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_superadmin),
+) -> AdminUserOut:
+    """Enable or disable a user account (cross-tenant)."""
+    user = await db.get(User, user_id)
+    if user is None:
+        raise NotFoundError("user not found")
+    if user.is_superadmin and not data.is_active:
+        raise ValidationError("Platform super-admins cannot be disabled here.")
+    user.is_active = data.is_active
+    await db.commit()
+    await db.refresh(user)
+    tenant = await db.get(Tenant, user.tenant_id) if user.tenant_id else None
+    await audit_record(
+        db, actor=actor, action="user.set_active", target_type="user",
+        target_id=str(user.id), meta={"is_active": data.is_active, "email": user.email},
+    )
+    return _user_row(user, tenant)

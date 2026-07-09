@@ -94,3 +94,32 @@ class PagedTenantsOut(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class AdminUserOut(BaseModel):
+    """A user in the cross-tenant directory: user fields + its tenant + role name."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    email: str
+    full_name: str | None = None
+    is_active: bool = True
+    email_verified: bool = False
+    is_superadmin: bool = False
+    role_name: str | None = None
+    tenant_id: uuid.UUID | None = None
+    tenant_name: str | None = None
+    tenant_slug: str | None = None
+    last_login_at: dt.datetime | None = None
+    created_at: dt.datetime
+
+
+class PagedUsersOut(BaseModel):
+    items: list[AdminUserOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class SetActiveIn(BaseModel):
+    is_active: bool
