@@ -171,16 +171,6 @@ export const adminApi = {
     return data;
   },
 
-  // Device brands — supported camera/device integrations.
-  async listDeviceBrands() {
-    const { data } = await api.get("/admin/device-brands");
-    return data;
-  },
-  async getDeviceBrand(id) {
-    const { data } = await api.get(`/admin/device-brands/${id}`);
-    return data;
-  },
-
   // Platform-wide defaults tenants inherit.
   async getPlatformSettings() {
     const { data } = await api.get("/admin/platform/settings");
@@ -196,6 +186,17 @@ export const adminApi = {
   },
   async updatePlatformBranding(body) {
     const { data } = await api.patch("/admin/platform/branding", body);
+    return data;
+  },
+  // Upload the platform-default logo. As a super-admin (tenant_id NULL) this
+  // targets the platform-default branding row. Returns BrandingOut with the
+  // resolved, fetchable logo_url. Logo is stored server-side by key — there is
+  // no logo_url field on the branding PATCH, so uploading is the only way to set it.
+  async uploadPlatformLogo(file) {
+    const body = new FormData();
+    body.append("file", file);
+    // Let axios/the browser set the multipart Content-Type (with boundary) itself.
+    const { data } = await api.post("/branding/logo", body);
     return data;
   },
 

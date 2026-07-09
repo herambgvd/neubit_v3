@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Map as MapIcon, Palette, SlidersHorizontal } from "lucide-react";
+import { ImageUp, Loader2, Map as MapIcon, Palette, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 import { adminApi, apiError } from "@/lib/api";
@@ -312,6 +312,7 @@ function MapsCard() {
 
 function BrandingCard() {
   const qc = useQueryClient();
+  const fileRef = useRef(null);
   const [form, setForm] = useState({ app_name: "", logo_url: "", name_in_header: false });
 
   const { data, isLoading, isError, error } = useQuery({
@@ -329,11 +330,23 @@ function BrandingCard() {
     }
   }, [data]);
 
+  // The logo is stored server-side by key and set only via POST /branding/logo —
+  // the branding PATCH has no logo field. So uploading persists the logo on its own.
+  const uploadLogo = useMutation({
+    mutationFn: (file) => adminApi.uploadPlatformLogo(file),
+    onSuccess: (res) => {
+      setForm((f) => ({ ...f, logo_url: res?.logo_url ?? f.logo_url }));
+      toast.success("Logo uploaded");
+      qc.invalidateQueries({ queryKey: ["platform", "branding"] });
+    },
+    onError: (err) => toast.error(apiError(err, "Could not upload logo")),
+  });
+
+  // Name + header flag are saved via PATCH; the logo is already persisted on upload.
   const save = useMutation({
     mutationFn: () =>
       adminApi.updatePlatformBranding({
         app_name: form.app_name.trim(),
-        logo_url: form.logo_url.trim(),
         name_in_header: form.name_in_header,
       }),
     onSuccess: () => {
@@ -346,6 +359,21 @@ function BrandingCard() {
   function onSubmit(e) {
     e.preventDefault();
     if (!save.isPending) save.mutate();
+  }
+
+  function onPickFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset so re-selecting the same file fires onChange again
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file (SVG, PNG, …)");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo must be under 2 MB");
+      return;
+    }
+    uploadLogo.mutate(file);
   }
 
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
@@ -367,22 +395,48 @@ function BrandingCard() {
               className={inputCls}
             />
           </Field>
-          <Field label="Logo URL">
+          <Field label="Logo">
             <input
-              type="url"
-              value={form.logo_url}
-              onChange={(e) => set("logo_url")(e.target.value)}
-              placeholder="https://…/logo.svg"
-              className={inputCls}
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              onChange={onPickFile}
+              className="hidden"
             />
-          </Field>
-          {form.logo_url ? (
             <div className="flex items-center gap-3 rounded-lg border border-card-border bg-card px-3.5 py-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={form.logo_url} alt="Logo preview" className="h-8 w-auto max-w-[140px] object-contain" />
-              <span className="text-xs text-muted">Logo preview</span>
+              {form.logo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={form.logo_url}
+                  alt="Logo preview"
+                  className="h-9 w-auto max-w-[140px] shrink-0 object-contain"
+                />
+              ) : (
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-card-border bg-hover text-muted">
+                  <ImageUp className="h-4 w-4" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-foreground">
+                  {form.logo_url ? "Current logo" : "No logo uploaded"}
+                </div>
+                <div className="text-xs text-muted">SVG, PNG or JPG · up to 2 MB</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploadLogo.isPending}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-card-border bg-hover px-3 py-2 text-sm font-medium text-foreground transition hover:border-muted disabled:opacity-60"
+              >
+                {uploadLogo.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ImageUp className="h-4 w-4" />
+                )}
+                {form.logo_url ? "Replace" : "Upload"}
+              </button>
             </div>
-          ) : null}
+          </Field>
           <Toggle
             label="Show name in header"
             description="Display the app name alongside the logo."

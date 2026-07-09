@@ -8,7 +8,6 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  Cpu,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -31,7 +30,6 @@ const GROUPS = [
     label: "Platform",
     items: [
       { href: "/modules", label: "Modules", icon: Blocks },
-      { href: "/device-brands", label: "Device Brands", icon: Cpu },
       { href: "/platform-settings", label: "Platform Settings", icon: SlidersHorizontal },
       { href: "/audit", label: "Audit", icon: ScrollText },
     ],
