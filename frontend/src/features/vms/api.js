@@ -18,6 +18,7 @@
 //              POST /nvrs/discover · GET /nvrs/{id}/channels · POST /nvrs/channels
 //              POST /nvrs/{id}/map-channels · GET /nvrs/{id}/health · POST /nvrs/{id}/refresh
 //   Groups:    GET/POST /camera-groups · PATCH/DELETE /camera-groups/{id}
+//   Patterns:  GET/POST /patterns · GET/PATCH/DELETE /patterns/{id}
 //   ACL:       GET/PUT /cameras/{id}/acl
 //   Health:    GET /cameras/health · GET /cameras/{id}/health/history
 //              POST /cameras/{id}/health/refresh
@@ -29,6 +30,7 @@ import { api } from "@/lib/api";
 const CAMERAS = "/vms/cameras";
 const NVRS = "/vms/nvrs";
 const GROUPS = "/vms/camera-groups";
+const PATTERNS = "/vms/patterns";
 const HEALTH = "/vms/cameras/health";
 const RECORDINGS = "/vms/recordings";
 const STORAGE = "/vms/storage";
@@ -110,11 +112,29 @@ export const vms = {
     refresh: (id) => unwrap(api.post(`${NVRS}/${id}/refresh`, {})),
   },
 
+  // Camera groups — a named set of cameras shown in a grid `layout`
+  // ("1x1|2x2|3x3|4x3|4x4|6x4|6x5|6x6|8x8"). Groups are the unit a Pattern
+  // rotates through on the video wall. Public shape: { id, name, description,
+  // camera_ids[], layout, is_active, color }.
   groups: {
-    list: () => unwrap(api.get(GROUPS)),
+    list: (params = {}) => unwrap(api.get(`${GROUPS}${qs(params)}`)),
+    get: (id) => unwrap(api.get(`${GROUPS}/${id}`)),
     create: (body) => unwrap(api.post(GROUPS, body)),
     update: (id, body) => unwrap(api.patch(`${GROUPS}/${id}`, body)),
     remove: (id) => unwrap(api.delete(`${GROUPS}/${id}`)),
+  },
+
+  // Patterns — a named ROTATING sequence of camera groups. On the wall a pattern
+  // cycles through its groups every `seconds` (dwell), each group filling the
+  // wall with its cameras in its layout. Public shape: { id, name, description,
+  // camera_group_ids[], seconds, is_active }.
+  patterns: {
+    // GET /patterns?is_active= → { items, total } (or bare array).
+    list: (params = {}) => unwrap(api.get(`${PATTERNS}${qs(params)}`)),
+    get: (id) => unwrap(api.get(`${PATTERNS}/${id}`)),
+    create: (body) => unwrap(api.post(PATTERNS, body)),
+    update: (id, body) => unwrap(api.patch(`${PATTERNS}/${id}`, body)),
+    remove: (id) => unwrap(api.delete(`${PATTERNS}/${id}`)),
   },
 
   acl: {

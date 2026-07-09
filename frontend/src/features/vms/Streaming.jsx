@@ -10,10 +10,15 @@
 // ── Wall state model (pattern-ready) ─────────────────────────────────────────
 // The wall is fully described by { layoutKey, cells:[{cameraId|null}] }. A saved
 // "pattern" restores that in one call via `applyWallPreset({layout, tiles})`
-// (see videoWall.buildPreset for the {layout, tiles} shape). The saved-layout
-// menu below is the localStorage seed of that feature — the real pattern CRUD
-// (named, server-persisted, shareable) plugs straight into applyWallPreset. See
-// the TODO(patterns) marker.
+// (see videoWall.buildPreset for the {layout, tiles} shape).
+//
+// Two features ride on that seam:
+//   • Saved layouts (localStorage) — a single static grid, recalled in one click.
+//   • Patterns (server) — a NAMED ROTATING sequence of camera GROUPS, authored in
+//     Config → Patterns. The PatternPickerMenu starts rotation; usePatternRotation
+//     resolves each group → cameras + layout and paints the wall via
+//     applyWallPreset on a dwell interval. Deep-linkable via
+//     ?pattern_id=<id>&autoplay=1. PatternHud gives on-wall prev/pause/next/exit.
 //
 // ── Session lifecycle ────────────────────────────────────────────────────────
 // Only tiles with a cameraId mount a LivePlayer; the player releases its session
@@ -45,6 +50,9 @@ import WallTile from "./components/WallTile";
 import WallToolbar from "./components/WallToolbar";
 import SpotlightOverlay from "./components/SpotlightOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
+import PatternPickerMenu from "./components/PatternPickerMenu";
+import PatternHud from "./components/PatternHud";
+import { usePatternRotation } from "./hooks/usePatternRotation";
 
 const LS_LAYOUT = "neubit.vms.wall.layout";
 const LS_CELLS = "neubit.vms.wall.cells";
@@ -149,6 +157,10 @@ export default function Streaming() {
   const liveCount = mountedIds.size;
   const onlineCount = cameras.filter((c) => c.status === "online").length;
 
+  // Set of camera ids that still EXIST — the rotation engine uses it to skip
+  // groups whose cameras were deleted (robustness).
+  const cameraIdSet = useMemo(() => new Set(cameras.map((c) => c.id)), [cameras]);
+
   // ── layout / assignment ────────────────────────────────────────────────
   const changeLayout = useCallback((key) => {
     const next = getLayout(key);
@@ -241,12 +253,87 @@ export default function Streaming() {
     setTour((t) => ({ ...t, active: false }));
   }, []);
 
+  // ── server patterns + camera-groups (the real pattern feature) ───────────
+  // Replaces the TODO(patterns) localStorage seed with server-persisted patterns:
+  // a pattern rotates through camera GROUPS, each painting the wall via
+  // applyWallPreset. Camera groups carry their own grid layout.
+  const patternsQ = useQuery({
+    queryKey: ["vms-patterns"],
+    queryFn: () => vms.patterns.list({ is_active: true }),
+    staleTime: 30_000,
+  });
+  const groupsQ = useQuery({
+    queryKey: ["vms-camera-groups"],
+    queryFn: () => vms.groups.list(),
+    staleTime: 30_000,
+  });
+  const patterns = useMemo(() => asItems(patternsQ.data), [patternsQ.data]);
+  const groups = useMemo(() => asItems(groupsQ.data), [groupsQ.data]);
+  const groupById = useMemo(() => {
+    const m = new Map();
+    groups.forEach((g) => m.set(g.id, g));
+    return m;
+  }, [groups]);
+
+  const [activePattern, setActivePattern] = useState(null);
+  const rotation = usePatternRotation({
+    pattern: activePattern,
+    groupById,
+    cameraIdSet,
+    applyWallPreset,
+  });
+
+  const startPattern = useCallback(
+    (pattern, { fullscreen = false } = {}) => {
+      if (!pattern) return;
+      setActivePattern(pattern);
+      setSpotlight(null);
+      setTour((t) => ({ ...t, active: false }));
+      rotation.start();
+      if (fullscreen) {
+        // Defer to next frame so the wall element exists before requesting FS.
+        requestAnimationFrame(() => wallRef.current?.requestFullscreen?.());
+      }
+    },
+    [rotation],
+  );
+
+  const exitPattern = useCallback(() => {
+    rotation.stop();
+    setActivePattern(null);
+  }, [rotation]);
+
+  // Deep-link: ?pattern_id=<id>&autoplay=1 → load + start (optionally FS). Read
+  // from window.location to sidestep the useSearchParams Suspense rule. Waits for
+  // the pattern list so the referenced pattern resolves.
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const pid = params.get("pattern_id");
+    if (!pid) return;
+    if (patternsQ.isLoading) return; // wait for the list
+    deepLinkHandled.current = true;
+    const found = patterns.find((p) => p.id === pid);
+    if (found) {
+      const autoplay = params.get("autoplay") === "1";
+      startPattern(found, { fullscreen: autoplay });
+    } else {
+      toast.error("Pattern not found.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patternsQ.isLoading, patterns]);
+
+  // If the user manually edits the wall (assign/clear/tour) while a pattern is
+  // running, the pattern picker still reflects the active pattern; explicit exit
+  // (HUD ✕ / picker Stop) tears it down. No implicit exit — keeps it predictable.
+
   // ── saved layouts (localStorage seed of the pattern feature) ─────────────
   const saveCurrent = () => {
     const name = saveName.trim();
     if (!name) return;
-    // TODO(patterns): swap this localStorage write for a POST to the wall-pattern
-    // API. The stored shape is already the applyWallPreset preset + a name/id.
+    // Saved layouts remain a fast, browser-local recall of a single static grid
+    // (complementary to server Patterns, which rotate through camera groups).
     const preset = buildPreset(layoutKey, cells);
     const entry = { id: `${Date.now()}`, name, ...preset };
     setSavedLayouts((prev) => [entry, ...prev.filter((s) => s.name !== name)]);
@@ -383,6 +470,15 @@ export default function Streaming() {
         onStartTour={startTour}
         onStopTour={stopTour}
         onTourInterval={setTourInterval}
+        patternControl={
+          <PatternPickerMenu
+            patterns={patterns}
+            loading={patternsQ.isLoading}
+            activeId={rotation.active ? activePattern?.id : null}
+            onPlay={(p) => startPattern(p)}
+            onStop={exitPattern}
+          />
+        }
         savedControl={
           <SavedLayoutsMenu layouts={savedLayouts} onApply={applySaved} onDelete={deleteSaved} onSave={() => setSaveOpen(true)} canSave={liveCount > 0} />
         }
@@ -433,6 +529,20 @@ export default function Streaming() {
                 onPrev={() => stepSpotlight(-1)}
                 onNext={() => stepSpotlight(1)}
                 onExit={() => setSpotlight(null)}
+              />
+            )}
+            {rotation.active && !isSpotlightActive && (
+              <PatternHud
+                patternName={activePattern?.name || "Pattern"}
+                groupName={rotation.current?.name}
+                index={rotation.index}
+                total={rotation.total}
+                paused={rotation.paused}
+                seconds={rotation.seconds}
+                onPrev={rotation.prev}
+                onNext={rotation.next}
+                onTogglePause={rotation.togglePause}
+                onExit={exitPattern}
               />
             )}
           </div>

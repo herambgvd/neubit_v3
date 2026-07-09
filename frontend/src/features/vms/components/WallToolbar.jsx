@@ -40,7 +40,8 @@ export default function WallToolbar({
   onStartTour,
   onStopTour,
   onTourInterval,
-  savedControl, // <SavedLayoutsMenu/> element (pattern-ready hook lives there)
+  patternControl, // <PatternPickerMenu/> element (server-persisted rotations)
+  savedControl, // <SavedLayoutsMenu/> element (localStorage static layouts)
   allMuted,
   onToggleMuteAll,
   onFullscreen,
@@ -80,6 +81,7 @@ export default function WallToolbar({
 
         <TourControl tour={tour} onStart={onStartTour} onStop={onStopTour} onInterval={onTourInterval} />
 
+        {patternControl}
         {savedControl}
 
         <div className="mx-0.5 h-6 w-px bg-card-border" />

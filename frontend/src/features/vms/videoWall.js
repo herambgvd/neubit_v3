@@ -140,3 +140,65 @@ export function presetTilesForCapacity(tiles = [], capacity = 4) {
   });
   return out;
 }
+
+// ── Camera-group layouts (config side) ──────────────────────────────────────
+// Camera groups are authored in the Patterns config with the backend's grid enum
+// ("1x1|2x2|3x3|4x3|4x4|6x4|6x5|6x6|8x8"). That vocabulary is INDEPENDENT of the
+// wall's own layout keys (which include spotlight grids the config doesn't offer),
+// so we keep an explicit list + a mapping into wall layout keys used at rotation.
+export const GROUP_LAYOUTS = [
+  { key: "1x1", label: "1×1", cols: 1, rows: 1, capacity: 1 },
+  { key: "2x2", label: "2×2", cols: 2, rows: 2, capacity: 4 },
+  { key: "3x3", label: "3×3", cols: 3, rows: 3, capacity: 9 },
+  { key: "4x3", label: "4×3", cols: 4, rows: 3, capacity: 12 },
+  { key: "4x4", label: "4×4", cols: 4, rows: 4, capacity: 16 },
+  { key: "6x4", label: "6×4", cols: 6, rows: 4, capacity: 24 },
+  { key: "6x5", label: "6×5", cols: 6, rows: 5, capacity: 30 },
+  { key: "6x6", label: "6×6", cols: 6, rows: 6, capacity: 36 },
+  { key: "8x8", label: "8×8", cols: 8, rows: 8, capacity: 64 },
+];
+
+export const DEFAULT_GROUP_LAYOUT = "2x2";
+
+export function getGroupLayout(key) {
+  return GROUP_LAYOUTS.find((l) => l.key === key) || GROUP_LAYOUTS[1];
+}
+
+// CSS grid-template for a group builder/preview cell of `cols × rows`.
+export function groupGridStyle(layout) {
+  const l = getGroupLayout(layout?.key || layout);
+  return {
+    gridTemplateColumns: `repeat(${l.cols}, minmax(0, 1fr))`,
+    gridTemplateRows: `repeat(${l.rows}, minmax(0, 1fr))`,
+  };
+}
+
+// Map a group layout enum → the wall's own layoutKey so `applyWallPreset` can
+// render it. The wall already supports 1x1/2x2/3x3/4x4; the wider group grids
+// (4x3/6x4/6x5/6x6/8x8) don't have a dedicated wall grid, so they're injected
+// into LAYOUTS on demand via `ensureWallLayout` below. This function returns the
+// layoutKey the wall should use for a given group (identical key — same cols×rows
+// semantics), after ensuring the wall knows about it.
+export function mapGroupLayout(groupLayoutKey) {
+  const g = getGroupLayout(groupLayoutKey);
+  ensureWallLayout(g);
+  return g.key;
+}
+
+// Register a symmetric wall layout for a group grid the wall doesn't ship out of
+// the box (e.g. 4x3, 6x4). Idempotent — skips keys already in LAYOUTS. Keeps the
+// wall's math (gridStyle/capacity/tourPages) working for pattern rotation without
+// duplicating the layout registry.
+export function ensureWallLayout(groupLayout) {
+  const g = typeof groupLayout === "string" ? getGroupLayout(groupLayout) : groupLayout;
+  if (!g) return;
+  if (LAYOUTS.some((l) => l.key === g.key)) return;
+  LAYOUTS.push({
+    key: g.key,
+    label: g.label,
+    cols: g.cols,
+    rows: g.rows,
+    capacity: g.capacity,
+    icon: "grid",
+  });
+}
