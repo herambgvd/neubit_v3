@@ -48,6 +48,7 @@ def _tables():
         StoragePool,
         StreamShard,
         TierRule,
+        VideoDecoder,
         VideoWall,
         VmsEvent,
         WallMonitor,
@@ -80,6 +81,7 @@ def _tables():
         WallMonitor.__table__,
         WallPreset.__table__,
         WallTour.__table__,
+        VideoDecoder.__table__,
     ]
 
 

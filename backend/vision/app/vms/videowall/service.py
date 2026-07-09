@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,8 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError, NotFoundError, ValidationError
 
+from app.vms.common.crypto import decrypt_secret
 from app.vms.common.events import emit_wall_state
-from app.vms.models import VideoWall, WallMonitor, WallPreset, WallTour
+from app.vms.models import Camera, MediaProfile, VideoWall, WallMonitor, WallPreset, WallTour
+
+from .decoder_service import VideoDecoderService
 
 from .schemas import (
     MonitorCreate,
@@ -61,12 +65,28 @@ def _actor_id(actor) -> str | None:
     return str(getattr(actor, "user_id", "")) or None
 
 
+def _inject_rtsp_creds(url: str, username: str, password: str) -> str:
+    """Inject percent-encoded rtsp creds into a URL authority (idempotent) — ported from
+    the live service. Skips URLs whose authority already carries an ``@``."""
+    if not username or "://" not in url:
+        return url
+    proto, rest = url.split("://", 1)
+    authority = rest.split("/", 1)[0]
+    if "@" in authority:
+        return url
+    user = quote(username, safe="")
+    pwd = quote(password or "", safe="")
+    return f"{proto}://{user}:{pwd}@{rest}"
+
+
 class VideoWallService:
     """Tenant-scoped video-wall CRUD + shared live-state broadcast."""
 
     def __init__(self, db: AsyncSession, scope: Scope) -> None:
         self.db = db
         self.scope = scope
+        # VW-B decoder push — lazily used for kind='decoder' monitors (shares the DB+scope).
+        self._decoders = VideoDecoderService(db, scope)
 
     # ── row fetch helpers (ownership-checked) ───────────────────────────
     async def _wall(self, wall_id: str) -> VideoWall:
@@ -225,7 +245,7 @@ class VideoWallService:
     async def push_cell(self, wall_id: str, monitor_id: str, cell_index: int, camera_id: str, *, actor) -> WallStateResponse:
         wall = await self._wall(wall_id)
         # Monitor must belong to this wall (ownership-checked).
-        await self._monitor(wall_id, monitor_id)
+        monitor = await self._monitor(wall_id, monitor_id)
         state = dict(wall.state or {})
         mon = dict(state.get(monitor_id) or {})
         mon[str(cell_index)] = camera_id
@@ -235,11 +255,14 @@ class VideoWallService:
         await self.db.commit()
         await self.db.refresh(wall)
         await self._broadcast(wall, action="push", actor=actor)
+        # VW-B: also push to the physical decoder if this monitor is a decoder (best-effort;
+        # runs AFTER the state write+broadcast so a decoder failure can't break the wall).
+        await self._push_to_decoder(monitor, cell_index, camera_id)
         return WallStateResponse(wall_id=wall.id, state=wall.state or {})
 
     async def clear_cell(self, wall_id: str, monitor_id: str, cell_index: int | None, *, actor) -> WallStateResponse:
         wall = await self._wall(wall_id)
-        await self._monitor(wall_id, monitor_id)
+        monitor = await self._monitor(wall_id, monitor_id)
         state = dict(wall.state or {})
         if cell_index is None:
             # Clear the whole monitor.
@@ -256,6 +279,8 @@ class VideoWallService:
         await self.db.commit()
         await self.db.refresh(wall)
         await self._broadcast(wall, action="clear", actor=actor)
+        # VW-B: clear the physical decoder cell/output too (best-effort, post-broadcast).
+        await self._clear_on_decoder(monitor, cell_index)
         return WallStateResponse(wall_id=wall.id, state=wall.state or {})
 
     async def apply_preset(self, wall_id: str, preset_id: str, *, actor) -> WallStateResponse:
@@ -266,6 +291,8 @@ class VideoWallService:
         await self.db.commit()
         await self.db.refresh(wall)
         await self._broadcast(wall, action="apply_preset", actor=actor, extra={"preset_id": preset_id})
+        # VW-B: re-push the whole new state to every decoder monitor (best-effort).
+        await self._reconcile_decoders(wall, wall.state or {})
         return WallStateResponse(wall_id=wall.id, state=wall.state or {})
 
     # ── presets ─────────────────────────────────────────────────────────
@@ -419,6 +446,141 @@ class VideoWallService:
         missing = [pid for pid in preset_ids if pid not in owned]
         if missing:
             raise ValidationError(f"unknown preset ids for this wall: {missing}")
+
+    # ── decoder push (VW-B) ─────────────────────────────────────────────
+    #
+    # When a monitor's ``kind == 'decoder'`` the wall must also push the camera's RTSP to
+    # the physical decoder output cell over the brand SDK, so a hardware control-room wall
+    # (not just browser kiosks) shows the cameras. Browser monitors render client-side and
+    # are unaffected.
+    #
+    # DISCIPLINE: decoder push is BEST-EFFORT. Every hook is wrapped so a missing decoder /
+    # bad credential / dead appliance is LOGGED and swallowed — it must NEVER break the
+    # wall-state write or the SSE broadcast (those already committed before the push runs).
+
+    async def _rtsp_for_camera(self, camera_id: str) -> str | None:
+        """Build the RTSP URL a hardware decoder pulls for ``camera_id`` (creds injected).
+
+        A physical decoder pulls RTSP directly from the camera, so this mirrors the live
+        service's ``_rtsp_source_for`` derivation: a stored ``MediaProfile.rtsp_path``
+        (prefer main for a wall display → sub → any) → a constructed Hik-style fallback
+        from the camera host + rtsp_port. Credentials are decrypted in-memory and injected.
+        Returns ``None`` when nothing is derivable (→ the push is skipped). Ownership: the
+        camera is fetched tenant-scoped, so a foreign camera_id yields None."""
+        camera = await self.db.scalar(
+            scoped(select(Camera), Camera, self.scope).where(Camera.id == camera_id)
+        )
+        if camera is None:
+            return None
+        profiles = {
+            p.name: p
+            for p in (
+                await self.db.execute(
+                    select(MediaProfile).where(MediaProfile.camera_id == camera.id)
+                )
+            ).scalars().all()
+        }
+        chosen = None
+        for name in ("main", "sub"):  # prefer main-stream quality for a wall display.
+            mp = profiles.get(name)
+            if mp and mp.rtsp_path:
+                chosen = mp.rtsp_path
+                break
+        if chosen is None:
+            for mp in profiles.values():
+                if mp.rtsp_path:
+                    chosen = mp.rtsp_path
+                    break
+
+        username = camera.onvif_user or ""
+        password = decrypt_secret(camera.onvif_enc_pass) or ""
+        use_creds = bool(username and password)
+
+        if chosen:
+            return _inject_rtsp_creds(chosen, username, password) if use_creds else chosen
+
+        # Fallback: construct a Hik-style RTSP from host + rtsp_port (main stream).
+        host = camera.onvif_host or (camera.network_info or {}).get("ip")
+        if not host:
+            return None
+        rtsp_port = (camera.network_info or {}).get("rtsp_port") or 554
+        channel = camera.nvr_channel_number or 1
+        base = f"rtsp://{host}:{rtsp_port}/Streaming/Channels/{channel:d}01"
+        return _inject_rtsp_creds(base, username, password) if use_creds else base
+
+    async def _push_to_decoder(
+        self, monitor: WallMonitor, cell_index: int, camera_id: str
+    ) -> None:
+        """Push ``camera_id``'s RTSP onto ``monitor``'s decoder output cell — best-effort.
+
+        No-op unless the monitor is a wired decoder (kind='decoder' + decoder_id set)."""
+        if monitor.kind != "decoder" or not monitor.decoder_id:
+            return
+        try:
+            resolved = await self._decoders.resolve_driver(monitor.decoder_id)
+            if resolved is None:
+                log.info(
+                    "wall decoder push skipped: decoder %s missing/disabled/unsupported",
+                    monitor.decoder_id,
+                )
+                return
+            driver, dec, creds = resolved
+            rtsp = await self._rtsp_for_camera(camera_id)
+            if not rtsp:
+                log.info("wall decoder push skipped: no RTSP for camera %s", camera_id)
+                return
+            channel = monitor.decoder_channel if monitor.decoder_channel is not None else 1
+            result = await driver.display(dec.host, creds, channel, cell_index, rtsp)
+            if not result.ok:
+                log.info(
+                    "wall decoder display failed (decoder=%s ch=%s cell=%s): %s",
+                    dec.id, channel, cell_index, result.error,
+                )
+        except Exception as exc:  # noqa: BLE001 — best-effort; never break wall state.
+            log.warning("wall decoder push errored (monitor=%s): %s", monitor.id, exc)
+
+    async def _clear_on_decoder(self, monitor: WallMonitor, cell_index: int | None) -> None:
+        """Clear ``monitor``'s decoder output cell (or whole output) — best-effort."""
+        if monitor.kind != "decoder" or not monitor.decoder_id:
+            return
+        try:
+            resolved = await self._decoders.resolve_driver(monitor.decoder_id)
+            if resolved is None:
+                return
+            driver, dec, creds = resolved
+            channel = monitor.decoder_channel if monitor.decoder_channel is not None else 1
+            result = await driver.clear(dec.host, creds, channel, cell_index)
+            if not result.ok:
+                log.info(
+                    "wall decoder clear failed (decoder=%s ch=%s cell=%s): %s",
+                    dec.id, channel, cell_index, result.error,
+                )
+        except Exception as exc:  # noqa: BLE001 — best-effort; never break wall state.
+            log.warning("wall decoder clear errored (monitor=%s): %s", monitor.id, exc)
+
+    async def _reconcile_decoders(self, wall: VideoWall, state: dict) -> None:
+        """Re-push the WHOLE state to every decoder monitor of ``wall`` — used after
+        ``apply_preset`` (which replaces the entire wall state). Best-effort per cell."""
+        monitors = (
+            await self.db.execute(
+                select(WallMonitor).where(
+                    WallMonitor.wall_id == wall.id, WallMonitor.kind == "decoder"
+                )
+            )
+        ).scalars().all()
+        for mon in monitors:
+            if not mon.decoder_id:
+                continue
+            mon_state = state.get(mon.id) or {}
+            if not mon_state:
+                await self._clear_on_decoder(mon, None)
+                continue
+            for cell_str, camera_id in mon_state.items():
+                try:
+                    cell = int(cell_str)
+                except (TypeError, ValueError):
+                    continue
+                await self._push_to_decoder(mon, cell, camera_id)
 
     # ── broadcast ───────────────────────────────────────────────────────
     async def _broadcast(self, wall: VideoWall, *, action: str, actor, extra: dict | None = None) -> None:

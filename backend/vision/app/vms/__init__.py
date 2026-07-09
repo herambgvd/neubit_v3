@@ -36,6 +36,7 @@ from app.vms.recording.router import router as recording_router
 from app.vms.reports.router import router as reports_router
 from app.vms.storage import rec_router as storage_rec_router
 from app.vms.storage import router as storage_router
+from app.vms.videowall.decoder_router import router as decoder_router
 from app.vms.videowall.router import router as videowall_router
 
 # Health mounts FIRST: its literal ``/cameras/health`` + ``/cameras/{id}/health/*``
@@ -95,6 +96,10 @@ routers = [
     # live shared-state (push camera to cell / clear / apply-save preset / start-stop
     # tour). Every state mutation → NATS tenant.<id>.vms.wall.<id>.state → core SSE.
     videowall_router,
+    # Video-decoder CRUD (VW-B) — /vms/decoders/*. Distinct prefix (no collision with the
+    # camera catch-all). Hardware video-decoder appliances (Hik/Dahua-CP-Plus) the wall
+    # pushes camera RTSP to; register/list/update/delete/test (probe). vms.wall.manage.
+    decoder_router,
 ]
 
 __all__ = ["routers"]

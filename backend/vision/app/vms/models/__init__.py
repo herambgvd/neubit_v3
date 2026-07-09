@@ -26,11 +26,14 @@ Domain split:
   * ``linkage``    — LinkageRule + LinkageFire (event→action rules + fire-audit, P5-B)
   * ``videowall``  — VideoWall + WallMonitor + WallPreset + WallTour (shared control-room
                      display wall + live shared-state + presets/tours, VW-A)
+  * ``decoder``    — VideoDecoder (hardware video-decoder appliance the wall pushes camera
+                     RTSP to over the brand SDK, VW-B)
 """
 
 from __future__ import annotations
 
 from .camera import Camera, MediaProfile
+from .decoder import VideoDecoder
 from .event import VmsEvent
 from .export import ExportJob
 from .group import CameraACL, CameraGroup
@@ -70,4 +73,5 @@ __all__ = [
     "WallMonitor",
     "WallPreset",
     "WallTour",
+    "VideoDecoder",
 ]
