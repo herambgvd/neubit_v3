@@ -1,9 +1,10 @@
 "use client";
 
-// VMS → Cameras. The operator-facing camera estate: table/grid toggle, status +
-// brand + site filters, search, onboard (manual + ONVIF discovery bulk-add), bulk
-// actions, drag-reorder, per-row snapshot/edit/delete. Ported from gvd_nvr's
-// Cameras page UX, rethemed to v3's dark tokens + the shared kit/common layer.
+// VMS → Cameras. The operator-facing camera estate: a compact action toolbar
+// (view toggle + ONVIF discovery + Add camera), a filter bar (search + brand +
+// site + status), and a sortable/selectable TanStack DataTable (or grid view),
+// with onboard (manual + ONVIF bulk-add), bulk actions, per-row snapshot/edit/
+// delete. Rethemed to v3's dark tokens + the shared kit/common layer.
 //
 // Live video (P2-D): grid tiles + the row "Go live" action open a LivePlayer
 // modal (WebRTC + HLS fallback); playback (recorded) is P3/P4.
@@ -12,8 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, EmptyState, PageHeader, Select } from "@/components/ui/kit";
-import { StatsStrip } from "@/components/common";
+import { Button, ConfirmDialog, EmptyState, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -84,15 +84,6 @@ export default function CamerasPage() {
     return m;
   }, [sites]);
 
-  // ── Derived ──────────────────────────────────────────────────────────
-  const statusCounts = useMemo(() => {
-    const c = { "": cameras.length, online: 0, offline: 0, connecting: 0, error: 0 };
-    for (const cam of cameras) if (c[cam.status] != null) c[cam.status] += 1;
-    return c;
-  }, [cameras]);
-
-  const stats = STATUS_FILTERS.map((s) => ({ key: s.key, label: s.label, color: s.color, count: statusCounts[s.key] ?? 0 }));
-
   // ── Mutations ────────────────────────────────────────────────────────
   const invalidate = () => qc.invalidateQueries({ queryKey: ["vms-cameras"] });
 
@@ -111,12 +102,6 @@ export default function CamerasPage() {
       invalidate();
     },
     onError: (e) => toast.error(apiError(e, "Bulk action failed")),
-  });
-
-  const reorder = useMutation({
-    mutationFn: (ids) => vms.cameras.reorder(ids.map((id, i) => ({ id, display_order: i }))),
-    onSuccess: () => invalidate(),
-    onError: (e) => toast.error(apiError(e, "Reorder failed")),
   });
 
   // ── Bulk device fleet ops (G7) — reboot / ntp / password across selection ──
@@ -207,25 +192,19 @@ export default function CamerasPage() {
 
   return (
     <div className="pb-8">
-      <PageHeader
-        title="Cameras"
-        subtitle="Onboard, configure and monitor IP cameras across the estate."
-        actions={
-          <div className="flex items-center gap-2">
-            {viewToggle}
-            <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
-              ONVIF discovery
-            </Button>
-            <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
-              Add camera
-            </Button>
-          </div>
-        }
-      />
+      {/* Compact toolbar — actions only (no title/subtitle; the "Cameras" sub-tab
+          above already labels the page). */}
+      <div className="mb-4 flex items-center justify-end gap-2">
+        {viewToggle}
+        <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
+          ONVIF discovery
+        </Button>
+        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
+          Add camera
+        </Button>
+      </div>
 
-      <StatsStrip stats={stats} active={status} onSelect={setStatus} className="mb-4" />
-
-      {/* Filters */}
+      {/* Filters — search / brand / site / status / refresh */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label className="relative block w-64 max-w-full">
           <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-muted" />
@@ -242,6 +221,12 @@ export default function CamerasPage() {
           onChange={(e) => setSiteFilter(e.target.value)}
           options={[{ value: "", label: "All sites" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]}
           className="!h-9 !py-1.5 w-44"
+        />
+        <Select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          options={STATUS_FILTERS.map((s) => ({ value: s.key, label: s.key === "" ? "All statuses" : s.label }))}
+          className="!h-9 !py-1.5 w-40"
         />
         <button
           onClick={() => { invalidate(); healthQ.refetch(); }}
@@ -293,7 +278,6 @@ export default function CamerasPage() {
           onEdit={(c) => { setEditTab("view"); setEditTarget(c); }}
           onDevice={(c) => { setEditTab("device"); setEditTarget(c); }}
           onDelete={askDelete}
-          onReorder={(ids) => reorder.mutate(ids)}
         />
       ) : (
         <CameraGrid

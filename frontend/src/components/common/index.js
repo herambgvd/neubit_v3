@@ -6,3 +6,4 @@ export { Field, FieldLabel, fieldClass, areaClass } from "./Field";
 export { TabBar } from "./TabBar";
 export { MasterDetail, ListPanel, EmptyDetail } from "./MasterDetail";
 export { StatsStrip } from "./StatsStrip";
+export { default as DataTable } from "./DataTable";

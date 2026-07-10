@@ -1,15 +1,20 @@
 "use client";
 
-// Dense camera table with selection, drag-reorder and per-row actions. Ported from
-// gvd_nvr's Cameras table (sortable/reorderable/bulk) → v3 tokens + the shared kit.
-// Columns: [drag] · [select] · name+ip · status dot · brand · health · site ·
-// recording indicator · actions (snapshot/edit/delete).
-import { useRef, useState } from "react";
+// Dense camera table — now on the shared TanStack DataTable (@tanstack/react-table
+// v8). Columns: [select] · name+ip · status badge · brand · IP · site · health ·
+// recording · actions-menu (go-live/snapshot/edit/device/delete). Sorting on
+// name/status/brand/ip. Ported from gvd_nvr's Cameras table → v3 tokens + kit.
+//
+// Selection: the page owns a Set<id> (`selectedIds`) wired to BulkActionBar. We
+// bridge that to TanStack's controlled rowSelection map here — the DataTable
+// stays generic while the page keeps its Set-based state + bulk handlers.
+import { useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
+import { DataTable } from "@/components/common";
 import { titleize } from "@/lib/format";
 import { STATUS_PRESETS, RECORDING_MODES } from "../constants";
-import { StatusDot } from "./StatusBadge";
+import StatusBadge, { StatusDot } from "./StatusBadge";
 
 const HEALTH_TONE = {
   online: "text-emerald-500",
@@ -107,6 +112,8 @@ function RowMenu({ camera, onLive, onSnapshot, onEdit, onDevice, onDelete }) {
   );
 }
 
+const cameraIp = (c) => c.network_info?.ip || c.onvif?.host || "";
+
 export default function CameraTable({
   cameras = [],
   healthById = {},
@@ -120,95 +127,158 @@ export default function CameraTable({
   onEdit,
   onDevice,
   onDelete,
-  onReorder,
 }) {
-  const dragId = useRef(null);
-  const [overId, setOverId] = useState(null);
+  // Bridge the page's Set<id> ↔ TanStack's rowSelection map.
+  const rowSelection = useMemo(() => {
+    const m = {};
+    for (const id of selectedIds) m[id] = true;
+    return m;
+  }, [selectedIds]);
 
-  const allSelected = cameras.length > 0 && cameras.every((c) => selectedIds.has(c.id));
-
-  const handleDrop = (targetId) => {
-    const from = dragId.current;
-    setOverId(null);
-    dragId.current = null;
-    if (!from || from === targetId) return;
-    const ids = cameras.map((c) => c.id);
-    const fromIdx = ids.indexOf(from);
-    const toIdx = ids.indexOf(targetId);
-    if (fromIdx < 0 || toIdx < 0) return;
-    ids.splice(toIdx, 0, ids.splice(fromIdx, 1)[0]);
-    onReorder?.(ids);
+  // TanStack calls this with either a new map or an updater. We diff against the
+  // current Set and translate into the page's toggle helpers (which own state).
+  const onRowSelectionChange = (updater) => {
+    const next = typeof updater === "function" ? updater(rowSelection) : updater;
+    const nextKeys = Object.keys(next).filter((k) => next[k]);
+    const nextSet = new Set(nextKeys);
+    // Select-all / clear-all shortcuts.
+    if (nextSet.size === 0 && selectedIds.size > 0) { onToggleAll?.(false); return; }
+    if (nextSet.size === cameras.length && cameras.every((c) => nextSet.has(c.id))) {
+      onToggleAll?.(true);
+      return;
+    }
+    // Otherwise flip the single id that changed.
+    for (const c of cameras) {
+      const was = selectedIds.has(c.id);
+      const now = nextSet.has(c.id);
+      if (was !== now) onToggleSelect?.(c.id);
+    }
   };
 
+  const columns = useMemo(
+    () => [
+      {
+        id: "select",
+        enableSorting: false,
+        meta: { width: "2rem", headClassName: "px-2 py-2.5", cellClassName: "px-2 py-2.5" },
+        header: ({ table }) => (
+          <input
+            type="checkbox"
+            checked={table.getIsAllRowsSelected()}
+            ref={(el) => { if (el) el.indeterminate = table.getIsSomeRowsSelected() && !table.getIsAllRowsSelected(); }}
+            onChange={table.getToggleAllRowsSelectedHandler()}
+            onClick={(e) => e.stopPropagation()}
+            className="accent-foreground"
+          />
+        ),
+        cell: ({ row }) => (
+          <input
+            type="checkbox"
+            checked={row.getIsSelected()}
+            onChange={row.getToggleSelectedHandler()}
+            onClick={(e) => e.stopPropagation()}
+            className="accent-foreground"
+          />
+        ),
+      },
+      {
+        id: "name",
+        header: "Camera",
+        accessorFn: (c) => c.name || "",
+        meta: { cellClassName: "px-4 py-2.5" },
+        cell: ({ row }) => {
+          const c = row.original;
+          return (
+            <div className="flex items-center gap-2">
+              <StatusDot status={c.status} />
+              <div className="min-w-0">
+                <p className="truncate font-medium text-foreground">{c.name}</p>
+                <p className="truncate font-mono text-[11px] text-muted">
+                  {cameraIp(c) || "—"}
+                  {c.nvr_id ? " · NVR channel" : ""}
+                  {!c.is_enabled ? " · disabled" : ""}
+                </p>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (c) => c.status || "",
+        meta: { cellClassName: "px-4 py-2.5" },
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      },
+      {
+        id: "brand",
+        header: "Brand",
+        accessorFn: (c) => titleize(c.brand) || "",
+        meta: { cellClassName: "px-4 py-2.5 text-muted" },
+        cell: ({ getValue }) => getValue() || "—",
+      },
+      {
+        id: "ip",
+        header: "IP",
+        accessorFn: (c) => cameraIp(c),
+        meta: { cellClassName: "px-4 py-2.5" },
+        cell: ({ getValue }) => (
+          <span className="font-mono text-[11px] text-muted">{getValue() || "—"}</span>
+        ),
+      },
+      {
+        id: "site",
+        header: "Site",
+        enableSorting: false,
+        meta: { cellClassName: "px-4 py-2.5 text-muted" },
+        cell: ({ row }) => siteNames[row.original.placement?.site_id] || "—",
+      },
+      {
+        id: "health",
+        header: "Health",
+        enableSorting: false,
+        meta: { cellClassName: "px-4 py-2.5" },
+        cell: ({ row }) => <HealthCell health={healthById[row.original.id]} />,
+      },
+      {
+        id: "recording",
+        header: "Recording",
+        enableSorting: false,
+        meta: { cellClassName: "px-4 py-2.5" },
+        cell: ({ row }) => <RecordingCell camera={row.original} />,
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        meta: { width: "2.5rem", headClassName: "px-2 py-2.5", cellClassName: "px-2 py-2.5" },
+        cell: ({ row }) => (
+          <div onClick={(e) => e.stopPropagation()}>
+            <RowMenu
+              camera={row.original}
+              onLive={onLive}
+              onSnapshot={onSnapshot}
+              onEdit={onEdit}
+              onDevice={onDevice}
+              onDelete={onDelete}
+            />
+          </div>
+        ),
+      },
+    ],
+    [healthById, siteNames, onLive, onSnapshot, onEdit, onDevice, onDelete]
+  );
+
   return (
-    <div className="overflow-x-auto rounded-xl border border-card-border bg-card">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-card-border bg-hover/40 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
-            <th className="w-8 px-2 py-2.5" />
-            <th className="w-8 px-2 py-2.5">
-              <input type="checkbox" checked={allSelected} onChange={(e) => onToggleAll?.(e.target.checked)} className="accent-foreground" />
-            </th>
-            <th className="px-3 py-2.5">Camera</th>
-            <th className="px-3 py-2.5">Brand</th>
-            <th className="px-3 py-2.5">Health</th>
-            <th className="px-3 py-2.5">Site</th>
-            <th className="px-3 py-2.5">Recording</th>
-            <th className="w-10 px-2 py-2.5" />
-          </tr>
-        </thead>
-        <tbody>
-          {cameras.map((c) => (
-            <tr
-              key={c.id}
-              onClick={() => onOpen?.(c)}
-              onDragOver={(e) => { e.preventDefault(); setOverId(c.id); }}
-              onDrop={() => handleDrop(c.id)}
-              className={`cursor-pointer border-b border-card-border/60 transition last:border-0 hover:bg-hover/50 ${
-                overId === c.id ? "bg-hover" : ""
-              } ${selectedIds.has(c.id) ? "bg-hover/60" : ""}`}
-            >
-              <td
-                className="px-2 py-2.5 text-muted"
-                draggable
-                onDragStart={() => { dragId.current = c.id; }}
-                onDragEnd={() => { dragId.current = null; setOverId(null); }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Icon icon="heroicons-outline:bars-3" className="cursor-grab text-sm active:cursor-grabbing" />
-              </td>
-              <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(c.id)}
-                  onChange={() => onToggleSelect?.(c.id)}
-                  className="accent-foreground"
-                />
-              </td>
-              <td className="px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  <StatusDot status={c.status} />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">{c.name}</p>
-                    <p className="truncate font-mono text-[11px] text-muted">
-                      {c.network_info?.ip || c.onvif?.host || "—"}
-                      {c.nvr_id ? " · NVR channel" : ""}
-                      {!c.is_enabled ? " · disabled" : ""}
-                    </p>
-                  </div>
-                </div>
-              </td>
-              <td className="px-3 py-2.5 text-muted">{titleize(c.brand)}</td>
-              <td className="px-3 py-2.5"><HealthCell health={healthById[c.id]} /></td>
-              <td className="px-3 py-2.5 text-muted">{siteNames[c.placement?.site_id] || "—"}</td>
-              <td className="px-3 py-2.5"><RecordingCell camera={c} /></td>
-              <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
-                <RowMenu camera={c} onLive={onLive} onSnapshot={onSnapshot} onEdit={onEdit} onDevice={onDevice} onDelete={onDelete} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      columns={columns}
+      data={cameras}
+      getRowId={(c) => c.id}
+      onRowClick={(c) => onOpen?.(c)}
+      enableRowSelection
+      rowSelection={rowSelection}
+      onRowSelectionChange={onRowSelectionChange}
+      initialSorting={[{ id: "name", desc: false }]}
+    />
   );
 }
