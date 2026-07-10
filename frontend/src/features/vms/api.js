@@ -500,6 +500,44 @@ export const vms = {
       }),
   },
 
+  // ── Device / fleet management (G7) — brand driver maintenance ops ─────────
+  // Per-camera + bulk maintenance over the camera's brand driver. Every op is
+  // BEST-EFFORT — the response carries { ok, supported, detail } so the UI can say
+  // "applied" / "not supported on this brand" / "failed". device-info reads gate on
+  // vms.camera.read; all WRITES (reboot/ntp/password/config-backup/restore) gate on
+  // vms.config.manage. Tenant-scoped; the gateway routes /vms/cameras/* → vision.
+  deviceMgmt: {
+    // GET /vms/cameras/{id}/device-info → { manufacturer?, model?, firmware?,
+    //   serial?, hardware_id?, ... } (brand-dependent; sparse on unsupported brands).
+    info: (id) => unwrap(api.get(`${CAMERAS}/${id}/device-info`)),
+    // POST /vms/cameras/{id}/reboot → { ok, supported, detail }.
+    reboot: (id) => unwrap(api.post(`${CAMERAS}/${id}/reboot`, {})),
+    // POST /vms/cameras/{id}/ntp { server } → { ok, supported, detail }.
+    ntp: (id, server) => unwrap(api.post(`${CAMERAS}/${id}/ntp`, { server })),
+    // POST /vms/cameras/{id}/password { user?, new_password } → { ok, supported, detail }.
+    password: (id, { user, new_password } = {}) =>
+      unwrap(api.post(`${CAMERAS}/${id}/password`, { user, new_password })),
+    // POST /vms/cameras/{id}/config-backup → the device config as a binary blob
+    //   (fetched as a blob so the Bearer header is sent, then saved by the caller).
+    configBackup: (id) =>
+      api.post(`${CAMERAS}/${id}/config-backup`, {}, { responseType: "blob" }).then((r) => r.data),
+    // POST /vms/cameras/{id}/config-restore { data } (base64) → { ok, supported, detail }.
+    configRestore: (id, data) =>
+      unwrap(api.post(`${CAMERAS}/${id}/config-restore`, { data })),
+    // ── Bulk (multi-select) ──────────────────────────────────────────────
+    // POST /vms/cameras/bulk/{reboot|ntp|password} { camera_ids, server?, user?,
+    //   new_password? } → { action, total, succeeded, items:[{ camera_id,
+    //   camera_name, ok, supported, detail }] }.
+    bulk: {
+      reboot: (camera_ids) =>
+        unwrap(api.post(`${CAMERAS}/bulk/reboot`, { camera_ids })),
+      ntp: (camera_ids, server) =>
+        unwrap(api.post(`${CAMERAS}/bulk/ntp`, { camera_ids, server })),
+      password: (camera_ids, { user, new_password } = {}) =>
+        unwrap(api.post(`${CAMERAS}/bulk/password`, { camera_ids, user, new_password })),
+    },
+  },
+
   // ── ONVIF-server config (P6-C) — expose OUR cameras to a 3rd-party VMS ────
   // Per-tenant interop: Milestone/Genetec/etc. pull our cameras over ONVIF.
   // Public shape: { id, enabled, exposed_camera_ids[] ("*"=all), service_username,

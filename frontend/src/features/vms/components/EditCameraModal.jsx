@@ -16,17 +16,20 @@ import { vms } from "../api";
 import { CONFIG_TABS } from "../constants";
 import { fromCamera, toUpdateBody, validateCamera } from "../formUtils";
 import CameraConfigForm from "./CameraConfigForm";
+import DeviceMaintenance from "./DeviceMaintenance";
 import LivePlayer from "./LivePlayer";
 import { usePlacementFloorsZones } from "../hooks/usePlacementFloorsZones";
 
 // A "View" (live video) tab prepended to the config tabs — the camera detail's
 // live surface (P2-D). The config tabs' own "live" key is the network/placement
-// config; this is the actual video.
+// config; this is the actual video. A "Maintenance" tab (G7) — device/firmware
+// info + reboot/NTP/password/config backup+restore — is appended at the end.
 const VIEW_TAB = { key: "view", label: "View", icon: "heroicons-outline:play-circle" };
-const DETAIL_TABS = [VIEW_TAB, ...CONFIG_TABS];
+const DEVICE_TAB = { key: "device", label: "Maintenance", icon: "heroicons-outline:wrench-screwdriver" };
+const DETAIL_TABS = [VIEW_TAB, ...CONFIG_TABS, DEVICE_TAB];
 
-export default function EditCameraModal({ camera, onClose, onSuccess, sites = [] }) {
-  const [tab, setTab] = useState("view");
+export default function EditCameraModal({ camera, onClose, onSuccess, sites = [], initialTab = "view" }) {
+  const [tab, setTab] = useState(initialTab);
   const [form, setForm] = useState(() => fromCamera(camera));
   const [errors, setErrors] = useState({});
   const { can } = useAuth();
@@ -96,6 +99,8 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
               className="h-full"
             />
           </div>
+        ) : tab === "device" ? (
+          <DeviceMaintenance cameraId={camera.id} cameraName={camera.name} />
         ) : (
           <CameraConfigForm
             tab={tab}

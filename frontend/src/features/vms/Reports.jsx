@@ -27,6 +27,9 @@ const REPORT_KINDS = [
   { value: "storage-usage", label: "Storage usage", icon: "heroicons:circle-stack", desc: "Bytes per pool" },
   { value: "event-stats", label: "Events & alarms", icon: "heroicons:bell-alert", desc: "Counts by type/severity" },
   { value: "health-summary", label: "Health summary", icon: "heroicons:heart", desc: "Estate roll-up" },
+  // G8 — operator activity (from core Activity/audit) + alarm response (from workflow).
+  { value: "operator-activity", label: "Operator activity", icon: "heroicons:user-group", desc: "Actions per operator" },
+  { value: "alarm-response", label: "Alarm response", icon: "heroicons:clock", desc: "Ack-rate & time-to-ack" },
 ];
 
 // Default the window to the last 7 days.
@@ -422,11 +425,105 @@ function ReportView({ report }) {
     );
   }
 
+  // ── G8: Operator activity — per-operator action rollup (core Activity/audit) ──
+  if (report.kind === "operator-activity") {
+    const totalActions = totals.total_actions ?? totals.actions ?? rows.reduce((s, r) => s + (r.actions || r.count || 0), 0);
+    return (
+      <div className="space-y-4">
+        <SummaryRow
+          tiles={[
+            { label: "Operators", value: totals.operators ?? rows.length },
+            { label: "Total actions", value: totalActions },
+          ]}
+        />
+        <BarTable
+          rows={rows}
+          nameKey={rows[0]?.operator_name != null ? "operator_name" : "operator"}
+          valueKey={rows[0]?.actions != null ? "actions" : "count"}
+          nameLabel="Operator"
+          valueLabel="Actions"
+          title="By operator"
+          max={Math.max(1, ...rows.map((r) => r.actions || r.count || 0))}
+        />
+        {report.by_action && Object.keys(report.by_action).length > 0 && (
+          <BreakdownCard title="By action" data={report.by_action} />
+        )}
+        <SourceNote note={report.source_note} />
+      </div>
+    );
+  }
+
+  // ── G8: Alarm response — ack-rate + time-to-ack per camera/severity (workflow) ──
+  if (report.kind === "alarm-response") {
+    const ackRate = totals.ack_rate_pct ?? totals.ack_rate ?? 0;
+    const avgTtaSec = totals.avg_time_to_ack_seconds ?? totals.avg_ack_seconds ?? totals.avg_tta_seconds;
+    return (
+      <div className="space-y-4">
+        <SummaryRow
+          tiles={[
+            { label: "Alarms", value: totals.total_alarms ?? totals.alarms ?? rows.length },
+            { label: "Acknowledged", value: totals.acknowledged ?? totals.acked ?? "—" },
+            { label: "Ack rate", value: `${ackRate}%` },
+            { label: "Avg time-to-ack", value: fmtDuration(avgTtaSec) },
+          ]}
+        />
+        {report.by_severity && Object.keys(report.by_severity).length > 0 && (
+          <BreakdownCard title="By severity" data={report.by_severity} />
+        )}
+        {rows.length > 0 && (
+          <BarTable
+            rows={rows}
+            nameKey={rows[0]?.camera_name != null ? "camera_name" : "name"}
+            valueKey={rows[0]?.ack_rate_pct != null ? "ack_rate_pct" : "ack_rate"}
+            nameLabel="Camera"
+            valueLabel="Ack rate"
+            suffix="%"
+            max={100}
+            title="By camera"
+            columns={[
+              { key: "alarms", label: "Alarms" },
+              {
+                key: rows[0]?.avg_time_to_ack_seconds != null ? "avg_time_to_ack_seconds" : "avg_ack_seconds",
+                label: "Avg TTA",
+                fmt: fmtDuration,
+              },
+            ]}
+          />
+        )}
+        <SourceNote note={report.source_note} />
+      </div>
+    );
+  }
+
   // Fallback — raw JSON so unknown kinds still render.
   return (
     <pre className="overflow-auto rounded-xl border border-card-border bg-card p-4 text-xs text-muted">
       {JSON.stringify(report, null, 2)}
     </pre>
+  );
+}
+
+// Format a duration in seconds → "1m 20s" / "45s" / "1h 5m". null → "—".
+function fmtDuration(sec) {
+  if (sec == null || Number.isNaN(Number(sec))) return "—";
+  const s = Math.round(Number(sec));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return rs ? `${m}m ${rs}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? `${h}h ${rm}m` : `${h}h`;
+}
+
+// Small caption explaining where the report's full data lives (core Activity / workflow).
+function SourceNote({ note }) {
+  if (!note) return null;
+  return (
+    <p className="flex items-start gap-1.5 px-1 text-[11px] text-muted">
+      <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0 text-sm" />
+      <span>{note}</span>
+    </p>
   );
 }
 

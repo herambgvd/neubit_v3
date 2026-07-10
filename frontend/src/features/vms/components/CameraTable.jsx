@@ -47,7 +47,7 @@ function RecordingCell({ camera }) {
   );
 }
 
-function RowMenu({ camera, onLive, onSnapshot, onEdit, onDelete }) {
+function RowMenu({ camera, onLive, onSnapshot, onEdit, onDevice, onDelete }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   return (
@@ -89,6 +89,13 @@ function RowMenu({ camera, onLive, onSnapshot, onEdit, onDelete }) {
           </button>
           <button
             type="button"
+            onClick={(e) => { e.stopPropagation(); onDevice?.(camera); }}
+            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-muted hover:bg-hover hover:text-foreground"
+          >
+            <Icon icon="heroicons-outline:wrench-screwdriver" className="text-xs" /> Device
+          </button>
+          <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); onDelete?.(camera); }}
             className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-red-500 hover:bg-red-500/10"
           >
@@ -111,6 +118,7 @@ export default function CameraTable({
   onLive,
   onSnapshot,
   onEdit,
+  onDevice,
   onDelete,
   onReorder,
 }) {
@@ -195,7 +203,7 @@ export default function CameraTable({
               <td className="px-3 py-2.5 text-muted">{siteNames[c.placement?.site_id] || "—"}</td>
               <td className="px-3 py-2.5"><RecordingCell camera={c} /></td>
               <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
-                <RowMenu camera={c} onLive={onLive} onSnapshot={onSnapshot} onEdit={onEdit} onDelete={onDelete} />
+                <RowMenu camera={c} onLive={onLive} onSnapshot={onSnapshot} onEdit={onEdit} onDevice={onDevice} onDelete={onDelete} />
               </td>
             </tr>
           ))}

@@ -16,6 +16,7 @@ import { Button, ConfirmDialog, PageHeader, Select } from "@/components/ui/kit";
 import { StatsStrip } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { vms } from "./api";
 import { BRAND_FILTERS, STATUS_FILTERS } from "./constants";
@@ -24,12 +25,15 @@ import CameraGrid from "./components/CameraGrid";
 import BulkActionBar from "./components/BulkActionBar";
 import OnboardCameraModal from "./components/OnboardCameraModal";
 import EditCameraModal from "./components/EditCameraModal";
+import BulkDeviceResultModal from "./components/BulkDeviceResultModal";
 import OnvifDiscoveryModal from "./components/OnvifDiscoveryModal";
 import SnapshotModal from "./components/SnapshotModal";
 import LivePlayerModal from "./components/LivePlayerModal";
 
 export default function CamerasPage() {
   const qc = useQueryClient();
+  const { can } = useAuth();
+  const canManageDevices = can("vms.config.manage");
   const [view, setView] = useState("table"); // table | grid
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -40,9 +44,11 @@ export default function CamerasPage() {
   const [onboardOpen, setOnboardOpen] = useState(false);
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
+  const [editTab, setEditTab] = useState("view"); // initial tab for the edit modal
   const [snapTarget, setSnapTarget] = useState(null);
   const [liveTarget, setLiveTarget] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [deviceResult, setDeviceResult] = useState(null); // bulk device-op result summary
 
   // ── Data ─────────────────────────────────────────────────────────────
   const camerasQ = useQuery({
@@ -112,6 +118,43 @@ export default function CamerasPage() {
     onSuccess: () => invalidate(),
     onError: (e) => toast.error(apiError(e, "Reorder failed")),
   });
+
+  // ── Bulk device fleet ops (G7) — reboot / ntp / password across selection ──
+  const bulkDevice = useMutation({
+    mutationFn: ({ action, server, user, new_password }) => {
+      const ids = Array.from(selectedIds);
+      if (action === "reboot") return vms.deviceMgmt.bulk.reboot(ids);
+      if (action === "ntp") return vms.deviceMgmt.bulk.ntp(ids, server);
+      if (action === "password") return vms.deviceMgmt.bulk.password(ids, { user, new_password });
+      return Promise.reject(new Error("Unknown device action"));
+    },
+    onSuccess: (res) => {
+      setDeviceResult(res); // show the per-camera results summary
+      setSelectedIds(new Set());
+    },
+    onError: (e) => toast.error(apiError(e, "Bulk device action failed")),
+  });
+
+  const runBulkDevice = (payload) => {
+    if (payload.action === "reboot") {
+      setConfirm({
+        title: "Reboot cameras",
+        message: `Reboot ${selectedIds.size} selected camera(s)? Each will be offline for ~30–60s.`,
+        confirmLabel: "Reboot",
+        onConfirm: () => { bulkDevice.mutate(payload); setConfirm(null); },
+      });
+    } else if (payload.action === "password") {
+      setConfirm({
+        title: "Change device passwords",
+        message: `Change the ${payload.user || "current"} account password on ${selectedIds.size} camera(s)? Ensure the stored ONVIF credentials still match afterwards, or cameras may go unreachable.`,
+        confirmLabel: "Change password",
+        danger: false,
+        onConfirm: () => { bulkDevice.mutate(payload); setConfirm(null); },
+      });
+    } else {
+      bulkDevice.mutate(payload);
+    }
+  };
 
   // ── Selection helpers ────────────────────────────────────────────────
   const toggleSelect = (id) =>
@@ -236,10 +279,11 @@ export default function CamerasPage() {
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleAll={toggleAll}
-          onOpen={(c) => setEditTarget(c)}
+          onOpen={(c) => { setEditTab("view"); setEditTarget(c); }}
           onLive={(c) => setLiveTarget(c)}
           onSnapshot={(c) => setSnapTarget(c)}
-          onEdit={(c) => setEditTarget(c)}
+          onEdit={(c) => { setEditTab("view"); setEditTarget(c); }}
+          onDevice={(c) => { setEditTab("device"); setEditTarget(c); }}
           onDelete={askDelete}
           onReorder={(ids) => reorder.mutate(ids)}
         />
@@ -252,7 +296,7 @@ export default function CamerasPage() {
           onToggleSelect={toggleSelect}
           onLive={(c) => setLiveTarget(c)}
           onSnapshot={(c) => setSnapTarget(c)}
-          onEdit={(c) => setEditTarget(c)}
+          onEdit={(c) => { setEditTab("view"); setEditTarget(c); }}
           onDelete={askDelete}
         />
       )}
@@ -261,8 +305,10 @@ export default function CamerasPage() {
         count={selectedIds.size}
         groups={groups}
         onAction={runBulk}
+        onDeviceAction={runBulkDevice}
+        canManageDevices={canManageDevices}
         onClear={() => setSelectedIds(new Set())}
-        pending={bulk.isPending}
+        pending={bulk.isPending || bulkDevice.isPending}
       />
 
       {/* Modals */}
@@ -284,14 +330,22 @@ export default function CamerasPage() {
         <EditCameraModal
           camera={editTarget}
           sites={sites}
+          initialTab={editTab}
           onClose={() => setEditTarget(null)}
           onSuccess={() => { setEditTarget(null); invalidate(); }}
         />
       )}
       {snapTarget && <SnapshotModal camera={snapTarget} onClose={() => setSnapTarget(null)} />}
       {liveTarget && <LivePlayerModal camera={liveTarget} onClose={() => setLiveTarget(null)} />}
+      {deviceResult && (
+        <BulkDeviceResultModal result={deviceResult} onClose={() => setDeviceResult(null)} />
+      )}
 
-      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending || bulk.isPending} />
+      <ConfirmDialog
+        state={confirm}
+        onClose={() => setConfirm(null)}
+        pending={remove.isPending || bulk.isPending || bulkDevice.isPending}
+      />
     </div>
   );
 }
