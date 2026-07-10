@@ -165,6 +165,15 @@ class Camera(Base):
     storage_pool_id: Mapped[str | None] = mapped_column(String(36), index=True)
     media_node_id: Mapped[str | None] = mapped_column(String(36), index=True)
 
+    # --- Stream codec policy (G8 — zero-transcode live view). ---
+    # Last-known SUB (web-viewing) stream codec, from a device probe (H264 | H265 | ...).
+    # Surfaced on the camera read so the frontend can badge "H.264 web ✓" (plays direct)
+    # vs "H.265 (transcoded)". NULL = not yet probed / unknown.
+    sub_stream_codec: Mapped[str | None] = mapped_column(String(16))
+    # When the "force H.264 web (sub) stream" policy last successfully applied to this
+    # camera (NULL = never applied / not applicable). Records the auto-enforce/apply.
+    web_codec_enforced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     display_order: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0"), index=True
     )

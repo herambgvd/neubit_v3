@@ -19,6 +19,7 @@ Onboarding publishes on the NATS spine (``app.vms.common.events``):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -32,6 +33,11 @@ from kernel.errors import ConflictError, ValidationError
 
 from app.vms.common.crypto import decrypt_secret, encrypt_secret
 from app.vms.common.events import emit_camera_lifecycle, emit_camera_status
+from app.vms.common.stream_policy import (
+    WEB_STREAM_ROLE,
+    enforce_h264_web,
+    needs_web_codec_enforcement,
+)
 from app.vms.drivers import Credentials, DriverError, PtzCommand, get_driver
 from app.vms.models import Camera, CameraACL, CameraGroup, MediaProfile
 
@@ -58,6 +64,10 @@ def _actor_id(actor) -> str | None:
 
 class CameraService:
     """Tenant-scoped CRUD + driver-backed onboarding over ``cameras``."""
+
+    #: Strong refs to detached background tasks (web-codec auto-enforce) so the event
+    #: loop doesn't GC them mid-flight. Class-level → survives the request-scoped service.
+    _bg_tasks: set = set()
 
     def __init__(self, db: AsyncSession, scope: Scope) -> None:
         self.db = db
@@ -120,6 +130,9 @@ class CameraService:
                     ch.main.profile_token if ch.main else None
                 )
                 await self._persist_channel_profiles(row.id, row.tenant_id, ch)
+                # Record the last-known SUB (web) codec for the badge + policy gate.
+                if ch.sub is not None and ch.sub.codec:
+                    row.sub_stream_codec = ch.sub.codec.upper()
         except Exception as exc:  # noqa: BLE001 — probe must never break create
             log.info("probe-on-create failed for camera %s (%s): %s", row.id, host, exc)
             row.last_error = str(exc)
@@ -222,6 +235,8 @@ class CameraService:
 
         await self._publish_lifecycle(row, "registered")
         await self._publish_status(row)
+        # Non-blocking: force the web (sub) stream to H.264 if policy on + sub is H.265.
+        self._schedule_web_codec_enforcement(row.id)
         return await self._public(row)
 
     async def list_(
@@ -559,6 +574,8 @@ class CameraService:
             await self.db.flush()
             if probe_ch is not None:
                 await self._persist_channel_profiles(row.id, row.tenant_id, probe_ch)
+                if probe_ch.sub is not None and probe_ch.sub.codec:
+                    row.sub_stream_codec = probe_ch.sub.codec.upper()
             created.append(row)
 
         await self.db.commit()
@@ -566,6 +583,8 @@ class CameraService:
             await self.db.refresh(row)
             await self._publish_lifecycle(row, "registered")
             await self._publish_status(row)
+            # Non-blocking web-codec enforcement per created channel (policy-gated).
+            self._schedule_web_codec_enforcement(row.id)
 
         items = [await self._public(r) for r in created]
         return CameraListResponse(items=items, total=len(items), skip=0, limit=len(items))
@@ -672,6 +691,130 @@ class CameraService:
             return False, str(exc)
         finally:
             await driver.aclose()
+
+    # ── stream codec policy (G8 — zero-transcode live view) ──────────────
+    #
+    # Force the SUB (web-viewing) stream to H.264 at the device so browsers play live with
+    # zero transcode (main stays H.265 for storage-efficient recording). The H.265→H.264
+    # transcode fallback (mediamtx /h264 + LivePlayer) STAYS as a safety net for devices
+    # that can't be reconfigured — this only avoids the transcode where the device CAN.
+
+    async def _apply_stream_policy_row(self, row: Camera, *, force: bool = False) -> dict:
+        """Probe the sub codec + push it to H.264 via the driver, persisting the outcome.
+
+        Returns a JSON-safe result dict {ok, supported, status, sub_codec, detail}. Never
+        raises — driver failures degrade to ``ok=False``. ``force=True`` pushes even if the
+        last-known sub codec is already H.264 (re-assert); default skips an H.264 sub.
+
+        Statuses: ``applied`` (pushed to H.264), ``already_h264`` (skipped — no churn),
+        ``unsupported`` (brand/NVR can't set the codec), ``unreachable`` (no host / down),
+        ``failed`` (op ran, device rejected).
+        """
+        host = row.onvif_host or (row.network_info or {}).get("ip")
+        if not host:
+            return {"ok": False, "supported": True, "status": "unreachable",
+                    "sub_codec": row.sub_stream_codec, "detail": "camera has no reachable host configured"}
+        driver = get_driver(row.brand)
+        creds = self._creds_for(row)
+        try:
+            # 1) Probe the current per-stream codecs (refreshes the badge + gates the push).
+            sub_codec = row.sub_stream_codec
+            try:
+                codecs = await driver.get_stream_codecs(host, creds)
+                for c in codecs:
+                    if c.role == WEB_STREAM_ROLE and c.codec:
+                        sub_codec = c.codec.upper()
+                        break
+            except Exception as exc:  # noqa: BLE001 — probe must not break the apply
+                log.info("stream-codec probe failed for camera %s: %s", row.id, exc)
+            if sub_codec:
+                row.sub_stream_codec = sub_codec
+
+            # 2) Skip when already H.264 (unless forced) — zero-churn on compliant devices.
+            if not force and sub_codec and sub_codec.upper() == "H264":
+                await self.db.commit()
+                return {"ok": True, "supported": True, "status": "already_h264",
+                        "sub_codec": sub_codec, "detail": "sub stream already H.264 (no transcode)"}
+
+            # 3) Push sub → H.264 at the device (best-effort, graceful per brand).
+            res = await driver.set_stream_codec(host, creds, profile=WEB_STREAM_ROLE, codec="h264")
+            if res.ok:
+                row.sub_stream_codec = "H264"
+                row.web_codec_enforced_at = _utcnow()
+                status = "already_h264" if (res.data or {}).get("already") else "applied"
+            elif not res.supported:
+                status = "unsupported"
+            else:
+                status = "failed"
+            await self.db.commit()
+            return {"ok": res.ok, "supported": res.supported, "status": status,
+                    "sub_codec": row.sub_stream_codec, "detail": res.detail}
+        except Exception as exc:  # noqa: BLE001 — never raise from the policy apply
+            log.info("apply_stream_policy errored for camera %s: %s", row.id, exc)
+            return {"ok": False, "supported": True, "status": "failed",
+                    "sub_codec": row.sub_stream_codec, "detail": str(exc)}
+        finally:
+            await driver.aclose()
+
+    async def apply_stream_policy(self, camera_id: str, *, force: bool = False) -> dict:
+        """Manual apply (existing camera): push sub → H.264. Tenant-scoped + owned."""
+        row = await self._row(camera_id)
+        out = await self._apply_stream_policy_row(row, force=force)
+        return {"camera_id": row.id, "camera_name": row.name, **out}
+
+    async def bulk_apply_stream_policy(self, camera_ids: list[str], *, force: bool = False) -> dict:
+        """Bulk apply — mirror the G7 fleet bulk contract (per-camera results, tenant
+        isolation via scoped id-filter, one failure never aborts the batch)."""
+        stmt = scoped(select(Camera), Camera, self.scope).where(Camera.id.in_(camera_ids))
+        rows = {r.id: r for r in (await self.db.execute(stmt)).scalars().all()}
+        ordered = [rows[cid] for cid in camera_ids if cid in rows]
+        items: list[dict] = []
+        succeeded = 0
+        for row in ordered:
+            res = await self._apply_stream_policy_row(row, force=force)
+            if res["ok"]:
+                succeeded += 1
+            items.append({"camera_id": row.id, "camera_name": row.name, **res})
+        return {"action": "apply-stream-policy", "total": len(items), "succeeded": succeeded, "items": items}
+
+    async def _maybe_enforce_web_codec(self, camera_id: str) -> None:
+        """Onboard auto-enforce hook — runs in a DETACHED task with a FRESH DB session so
+        it NEVER blocks or fails the onboard. Gated by the policy flag + skips a sub
+        already on H.264. Best-effort + logged; the camera row is already committed."""
+        if not enforce_h264_web():
+            return
+        from app.db import get_sessionmaker
+
+        try:
+            async with get_sessionmaker()() as session:
+                svc = CameraService(session, self.scope)
+                row = await session.get(Camera, camera_id)
+                if row is None:
+                    return
+                # Only push when the probed sub codec is known-not-H.264 (no churn / no
+                # blind push against an unknown device).
+                if not needs_web_codec_enforcement(row.sub_stream_codec):
+                    return
+                res = await svc._apply_stream_policy_row(row)
+                log.info(
+                    "auto-enforce H.264 web on camera %s: status=%s detail=%s",
+                    camera_id, res.get("status"), res.get("detail"),
+                )
+        except Exception as exc:  # noqa: BLE001 — the hook must never surface
+            log.info("auto-enforce web codec errored for camera %s: %s", camera_id, exc)
+
+    def _schedule_web_codec_enforcement(self, camera_id: str) -> None:
+        """Spawn the non-blocking onboard auto-enforce task (fire-and-forget)."""
+        if not enforce_h264_web():
+            return
+        try:
+            task = asyncio.create_task(self._maybe_enforce_web_codec(camera_id))
+            # Keep a ref so the task isn't GC'd mid-flight; drop it on completion.
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
+        except RuntimeError:
+            # No running loop (shouldn't happen under FastAPI) — skip silently.
+            log.debug("no event loop for web-codec enforcement of camera %s", camera_id)
 
     # ── per-camera ACL (VMS-owned, keyed on core subject ids) ────────────
     async def get_acl(self, camera_id: str) -> list[CameraACLPublic]:

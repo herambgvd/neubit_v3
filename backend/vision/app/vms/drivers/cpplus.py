@@ -42,9 +42,28 @@ from .base import (
     DriverError,
     FleetOpResult,
     PtzCommand,
+    StreamCodecProfile,
     StreamInfo,
     StreamUris,
 )
+
+
+def _norm_codec(raw: str | None) -> str | None:
+    """Normalize a Dahua codec token → ``H264`` | ``H265`` | ``MJPEG`` | ..."""
+    if not raw:
+        return None
+    s = str(raw).upper().replace("-", "").replace(".", "")
+    if "265" in s or "HEVC" in s:
+        return "H265"
+    if "264" in s or s == "AVC":
+        return "H264"
+    if "JPEG" in s or "MJPEG" in s:
+        return "MJPEG"
+    return s or None
+
+
+# Dahua Encode config compression value per normalized codec.
+_DAHUA_CODEC_VALUE = {"H264": "H.264", "H265": "H.265", "MJPEG": "MJPEG"}
 
 log = logging.getLogger("vision.drivers.cpplus")
 
@@ -644,6 +663,73 @@ class CpPlusDriver(CameraDriver):
             return FleetOpResult(ok=True, detail="config restore requested")
         except _http.BrandHTTPError as exc:
             return FleetOpResult(ok=False, detail=f"restore_config failed: {exc}")
+
+    # ── stream codec policy (G8) — Dahua Encode MainFormat/ExtraFormat ─────────
+    #
+    # Dahua/CP-Plus keep per-stream codec in the ``Encode`` config: main stream =
+    # ``Encode[ch].MainFormat[0].Video.Compression``, sub stream =
+    # ``Encode[ch].ExtraFormat[0].Video.Compression`` (values ``H.264`` / ``H.265`` /
+    # ``MJPEG``). ``ch`` is 0-based here (Dahua config indexing). To force the sub (web)
+    # stream to H.264 we ``setConfig`` the ExtraFormat compression. # LIVE-VALIDATE: the
+    # exact Encode key path + 0-based channel indexing vary by CP-Plus firmware.
+
+    async def get_stream_codecs(self, host: str, creds: Credentials) -> list[StreamCodecProfile]:
+        """Read Encode[0].MainFormat[0]/ExtraFormat[0].Video.Compression for channel 0.
+        Never raises — ``[]`` on unreachable."""
+        base = self._base(host, creds)
+        body = await _http.get_text(
+            f"{base}/cgi-bin/configManager.cgi?action=getConfig&name=Encode",
+            creds.username, creds.password,
+        )
+        if not body:
+            return []
+        kv = _http.parse_cgi_kv(body)
+        out: list[StreamCodecProfile] = []
+        for role, fmt in (("main", "MainFormat"), ("sub", "ExtraFormat")):
+            key = f"table.Encode[0].{fmt}[0].Video.Compression"
+            if key in kv:
+                out.append(
+                    StreamCodecProfile(role=role, codec=_norm_codec(kv[key]), token=f"{fmt}[0]")
+                )
+        return out
+
+    async def set_stream_codec(
+        self, host: str, creds: Credentials, *, profile: str = "sub", codec: str = "h264"
+    ) -> FleetOpResult:
+        """setConfig Encode[0].ExtraFormat[0].Video.Compression=H.264 (sub) via configManager.
+        Graceful. # LIVE-VALIDATE: setConfig key path + channel indexing on a real device."""
+        target = _norm_codec(codec) or "H264"
+        dahua_value = _DAHUA_CODEC_VALUE.get(target, "H.264")
+        fmt = {"main": "MainFormat", "sub": "ExtraFormat", "third": "ExtraFormat"}.get(profile, "ExtraFormat")
+        # third stream = ExtraFormat[1]; main/sub = [0].
+        fmt_idx = 1 if profile == "third" else 0
+        base = self._base(host, creds)
+
+        # Skip when already on the target codec.
+        current = None
+        read = await _http.get_text(
+            f"{base}/cgi-bin/configManager.cgi?action=getConfig&name=Encode",
+            creds.username, creds.password,
+        )
+        if read:
+            current = _norm_codec(
+                _http.parse_cgi_kv(read).get(f"table.Encode[0].{fmt}[{fmt_idx}].Video.Compression")
+            )
+        if current == target:
+            return FleetOpResult(
+                ok=True, detail=f"{profile} stream already {target}", data={"already": True, "codec": target}
+            )
+        url = (
+            f"{base}/cgi-bin/configManager.cgi?action=setConfig"
+            f"&Encode[0].{fmt}[{fmt_idx}].Video.Compression={dahua_value}"
+        )
+        try:
+            await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, supported=True, detail=f"device rejected codec change: {exc}")
+        return FleetOpResult(
+            ok=True, detail=f"{profile} stream set to {target}", data={"codec": target, "format": fmt}
+        )
 
     # ── event topic map ───────────────────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

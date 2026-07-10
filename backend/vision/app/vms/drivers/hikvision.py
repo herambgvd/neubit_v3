@@ -40,9 +40,28 @@ from .base import (
     DriverError,
     FleetOpResult,
     PtzCommand,
+    StreamCodecProfile,
     StreamInfo,
     StreamUris,
 )
+
+
+def _norm_codec(raw: str | None) -> str | None:
+    """Normalize a brand codec token → ``H264`` | ``H265`` | ``MJPEG`` | ..."""
+    if not raw:
+        return None
+    s = str(raw).upper().replace("-", "").replace(".", "")
+    if "265" in s or "HEVC" in s:
+        return "H265"
+    if "264" in s or s == "AVC":
+        return "H264"
+    if "JPEG" in s or "MJPEG" in s:
+        return "MJPEG"
+    return s or None
+
+
+# Codec role → normalized token → the value the brand expects in its config write.
+_HIK_CODEC_VALUE = {"H264": "H.264", "H265": "H.265", "MJPEG": "MJPEG"}
 
 log = logging.getLogger("vision.drivers.hikvision")
 
@@ -670,6 +689,86 @@ class HikvisionDriver(CameraDriver):
             return FleetOpResult(ok=True, detail="config restore requested (device will reboot)")
         except _http.BrandHTTPError as exc:
             return FleetOpResult(ok=False, detail=f"restore_config failed: {exc}")
+
+    # ── stream codec policy (G8) — ISAPI per-channel videoCodecType ────────────
+    #
+    # Hik streams live at ``/ISAPI/Streaming/channels/<id>`` where ``<id>`` = ``ch*100+1``
+    # (main) / ``ch*100+2`` (sub). The stream's ``<videoCodecType>`` carries the codec
+    # (``H.264`` | ``H.265`` | ``MJPEG``). To force the sub (web) stream to H.264 we GET
+    # the sub channel's config, rewrite ``videoCodecType`` → ``H.264``, and PUT it back.
+    # # LIVE-VALIDATE: the exact StreamingChannel XML + whether an NVR proxies the sub
+    # channel's codec vary by firmware — confirm on a real Hik device/NVR.
+
+    async def get_stream_codecs(self, host: str, creds: Credentials) -> list[StreamCodecProfile]:
+        """Read the main (id ``<ch>01``) + sub (id ``<ch>02``) videoCodecType for channel 1.
+        Never raises — ``[]`` on unreachable."""
+        base = self._base(host, creds)
+        out: list[StreamCodecProfile] = []
+        for role, stream in (("main", 1), ("sub", 2)):
+            cid = _rtsp_channel_id(1, stream)
+            body = await _http.get_text(
+                f"{base}/ISAPI/Streaming/channels/{cid}", creds.username, creds.password
+            )
+            if not body:
+                continue
+            out.append(
+                StreamCodecProfile(
+                    role=role,
+                    codec=_norm_codec(_http.xml_text(body, "videoCodecType")),
+                    token=str(cid),
+                )
+            )
+        return out
+
+    async def set_stream_codec(
+        self, host: str, creds: Credentials, *, profile: str = "sub", codec: str = "h264"
+    ) -> FleetOpResult:
+        """Rewrite the ``profile`` (sub/main) channel's ``videoCodecType`` via ISAPI.
+
+        GET ``/ISAPI/Streaming/channels/<id>`` → replace the ``<videoCodecType>`` value →
+        PUT it back. Graceful. # LIVE-VALIDATE: a real Hik camera/NVR may require a
+        reboot or reject a codec change on a proxied NVR channel."""
+        target = _norm_codec(codec) or "H264"
+        hik_value = _HIK_CODEC_VALUE.get(target, "H.264")
+        stream = {"main": 1, "sub": 2, "third": 3}.get(profile, 2)
+        cid = _rtsp_channel_id(1, stream)
+        base = self._base(host, creds)
+        url = f"{base}/ISAPI/Streaming/channels/{cid}"
+
+        body = await _http.get_text(url, creds.username, creds.password)
+        if not body:
+            return FleetOpResult(
+                ok=False, detail=f"could not read stream channel {cid} (unreachable or no such stream)"
+            )
+        current = _norm_codec(_http.xml_text(body, "videoCodecType"))
+        if current == target:
+            return FleetOpResult(
+                ok=True, detail=f"{profile} stream already {target}", data={"already": True, "codec": target}
+            )
+        import re as _re
+
+        new_body, n = _re.subn(
+            r"(<videoCodecType>)(.*?)(</videoCodecType>)",
+            lambda m: f"{m.group(1)}{hik_value}{m.group(3)}",
+            body,
+            count=1,
+        )
+        if n == 0:
+            return FleetOpResult(
+                ok=False, supported=True,
+                detail=f"stream channel {cid} config exposes no videoCodecType to rewrite",
+            )
+        try:
+            await _http.request_strict(
+                "PUT", url, creds.username, creds.password,
+                content=new_body, headers={"Content-Type": "application/xml"},
+                verify_tls=creds.verify_tls,
+            )
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, supported=True, detail=f"device rejected codec change: {exc}")
+        return FleetOpResult(
+            ok=True, detail=f"{profile} stream set to {target}", data={"codec": target, "channel_id": cid}
+        )
 
     # ── event topic map ───────────────────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

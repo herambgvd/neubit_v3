@@ -196,6 +196,25 @@ class FleetOpResult:
 
 
 @dataclass
+class StreamCodecProfile:
+    """One media profile's current video codec — result of ``get_stream_codecs`` (G8).
+
+    Reports what the device is CURRENTLY encoding a given stream in, so the policy can
+    decide whether a sub-stream needs pushing to H.264 (skip if already H.264). ``role``
+    is the driver's best-effort classification (``main`` | ``sub`` | ``third``) so the
+    caller can target the web (sub) stream without knowing the brand's channel math.
+    ``codec`` is UPPER-CASE normalized (``H264`` | ``H265`` | ``MJPEG`` | ...); ``None``
+    when the device didn't report one. ``token`` is the brand handle used to set the
+    codec (ONVIF VideoEncoderConfiguration token / Hik stream id / Dahua channel index)."""
+
+    role: str  # main | sub | third
+    codec: str | None = None
+    token: str | None = None
+    resolution: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ConfigBackup:
     """Result of ``backup_config`` (G7) — a device configuration blob for archival/restore.
 
@@ -498,6 +517,39 @@ class CameraDriver(abc.ABC):
         ``PUT /ISAPI/System/configurationData`` / Dahua ``configFileImport`` / ONVIF
         ``RestoreSystem``). MUST NOT raise. # LIVE-VALIDATE: restore reboots the device."""
         return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: config restore not supported")
+
+    # ── stream codec policy (G8 — zero-transcode live view) ───────────────────
+    #
+    # Browsers (Chrome WebRTC) can't decode H.265, so an H.265 sub-stream forces a
+    # CPU-heavy transcode. Cameras/NVRs support per-stream codecs — the fix is to force
+    # the SUB (web-viewing) stream to H.264 AT THE DEVICE so live plays with zero
+    # transcode, while the MAIN stream stays H.265 (recording, storage-efficient). These
+    # two methods are the driver seam for that policy; concrete drivers build the real
+    # brand request (ONVIF SetVideoEncoderConfiguration / Hik ISAPI videoCodecType /
+    # Dahua ExtraFormat Compression). Graceful per brand + the on-device effect is
+    # ``# LIVE-VALIDATE`` (many NVRs reject per-channel codec changes over ONVIF and need
+    # their own web UI / brand API — reported honestly by the driver).
+
+    async def get_stream_codecs(self, host: str, creds: Credentials) -> list[StreamCodecProfile]:
+        """Probe each media profile's CURRENT video codec (main/sub/…) so the policy can
+        show H.264-web ✓ vs H.265 and SKIP a device already on H.264. MUST NOT raise —
+        ``[]`` on unreachable / unsupported. Default = ``[]`` (a driver with no probe
+        surface). The ONVIF/Hik/Dahua drivers override with a real read."""
+        return []
+
+    async def set_stream_codec(
+        self, host: str, creds: Credentials, *, profile: str = "sub", codec: str = "h264"
+    ) -> FleetOpResult:
+        """Force the ``profile`` stream ("sub" = web-viewing) to ``codec`` ("h264") at the
+        device — the zero-transcode-live-view enforcement. ``profile`` is a role key
+        (``main`` | ``sub`` | ``third``); the driver resolves it to the brand's stream
+        handle. Graceful (``FleetOpResult`` {ok, supported, detail}) — ``supported=False``
+        when the brand has no codec-set surface, ``ok=False, supported=True`` when the op
+        ran but the device rejected it (common on NVRs — # LIVE-VALIDATE). Default =
+        unsupported; ONVIF/Hik/Dahua override."""
+        return FleetOpResult(
+            ok=False, supported=False, detail=f"{self.brand}: set_stream_codec not supported"
+        )
 
     async def aclose(self) -> None:
         """Release any held resources (HTTP client). Best-effort."""

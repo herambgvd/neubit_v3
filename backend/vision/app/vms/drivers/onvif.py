@@ -50,6 +50,7 @@ from .base import (
     EventCallback,
     FleetOpResult,
     PtzCommand,
+    StreamCodecProfile,
     StreamInfo,
     StreamUris,
 )
@@ -1258,6 +1259,198 @@ class OnvifDriver(CameraDriver):
             return FleetOpResult(ok=True, detail="config restore requested (device will reboot)")
         except Exception as exc:  # noqa: BLE001
             return FleetOpResult(ok=False, detail=f"restore_config failed: {exc}")
+
+    # ── stream codec policy (G8) — ONVIF Set/GetVideoEncoderConfiguration ──────
+    #
+    # Force the SUB profile's video encoder to H.264 so browsers play live with zero
+    # transcode (main stays H.265 for storage-efficient recording). We prefer Media2
+    # (Profile T) since it is the H.265-capable service; fall back to Media (Profile S).
+    # The profiles are sorted by width → the SMALLEST is the sub (matches
+    # ``enumerate_channels``' main/sub-by-resolution convention). # LIVE-VALIDATE: many
+    # NVRs reject SetVideoEncoderConfiguration for proxied channels (need their own web
+    # UI) — reported honestly (ok=False, supported=True).
+
+    @staticmethod
+    def _norm_codec(raw: Any) -> str | None:
+        """Normalize an ONVIF encoding value → ``H264`` | ``H265`` | ``MJPEG`` | ..."""
+        if not raw:
+            return None
+        s = str(raw).upper().replace("-", "").replace(".", "")
+        if "265" in s or "HEVC" in s:
+            return "H265"
+        if "264" in s or s == "AVC":
+            return "H264"
+        if "JPEG" in s or "MJPEG" in s:
+            return "MJPEG"
+        return s or None
+
+    async def get_stream_codecs(self, host: str, creds: Credentials) -> list[StreamCodecProfile]:
+        """Read each profile's current VideoEncoderConfiguration.Encoding (main/sub).
+        Media2 first, then Media. Never raises — ``[]`` on unreachable/unsupported."""
+        if not _HAS_ONVIF:
+            return []
+        if not await _tcp_reachable(host, creds.port):
+            return []
+        return await asyncio.to_thread(self._get_stream_codecs_sync, host, creds)
+
+    def _get_stream_codecs_sync(self, host: str, creds: Credentials) -> list[StreamCodecProfile]:
+        try:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("get_stream_codecs: connect failed for %s: %s", host, exc)
+            return []
+
+        # Prefer Media2 (Profile T) when the device advertises it.
+        media2 = self._media2_service(cam)
+        service = media2 or self._media1_service(cam)
+        if service is None:
+            return []
+        try:
+            profiles = self._list_profiles(service, media2 is not None)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("get_stream_codecs: GetProfiles failed for %s: %s", host, exc)
+            return []
+        if not profiles:
+            return []
+
+        def _width(p: Any) -> int:
+            try:
+                return int(self._enc_of(p).Resolution.Width)
+            except Exception:  # noqa: BLE001
+                return 0
+
+        ordered = sorted(profiles, key=_width, reverse=True)  # main first, sub last
+        out: list[StreamCodecProfile] = []
+        for idx, prof in enumerate(ordered):
+            role = "main" if idx == 0 else ("sub" if idx == 1 else "third")
+            enc = self._enc_of(prof)
+            codec = self._norm_codec(getattr(enc, "Encoding", None)) if enc is not None else None
+            try:
+                res = f"{enc.Resolution.Width}x{enc.Resolution.Height}" if enc is not None else None
+            except Exception:  # noqa: BLE001
+                res = None
+            out.append(
+                StreamCodecProfile(
+                    role=role,
+                    codec=codec,
+                    token=str(getattr(prof, "token", "") or "") or None,
+                    resolution=res,
+                    extra={"enc_token": str(getattr(enc, "token", "") or "") if enc is not None else ""},
+                )
+            )
+        return out
+
+    async def set_stream_codec(
+        self, host: str, creds: Credentials, *, profile: str = "sub", codec: str = "h264"
+    ) -> FleetOpResult:
+        """Set the ``profile`` (role: main/sub/third) VideoEncoderConfiguration.Encoding
+        to ``codec``. ONVIF ``SetVideoEncoderConfiguration`` (Media / Media2). Graceful."""
+        if not _HAS_ONVIF:
+            return FleetOpResult(ok=False, supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return FleetOpResult(ok=False, detail="device unreachable")
+        target = self._norm_codec(codec) or "H264"
+        return await asyncio.to_thread(self._set_stream_codec_sync, host, creds, profile, target)
+
+    def _set_stream_codec_sync(
+        self, host: str, creds: Credentials, role: str, target: str
+    ) -> FleetOpResult:
+        try:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+        except Exception as exc:  # noqa: BLE001
+            return FleetOpResult(ok=False, detail=f"connect failed: {exc}")
+
+        media2 = self._media2_service(cam)
+        service = media2 or self._media1_service(cam)
+        if service is None:
+            return FleetOpResult(ok=False, supported=False, detail="device has no ONVIF media service")
+        try:
+            profiles = self._list_profiles(service, media2 is not None)
+        except Exception as exc:  # noqa: BLE001
+            return FleetOpResult(ok=False, detail=f"GetProfiles failed: {exc}")
+        if not profiles:
+            return FleetOpResult(ok=False, supported=False, detail="device exposes no media profiles")
+
+        def _width(p: Any) -> int:
+            try:
+                return int(self._enc_of(p).Resolution.Width)
+            except Exception:  # noqa: BLE001
+                return 0
+
+        ordered = sorted(profiles, key=_width, reverse=True)
+        want_idx = {"main": 0, "sub": 1, "third": 2}.get(role, 1)
+        if want_idx >= len(ordered):
+            return FleetOpResult(
+                ok=False, supported=True,
+                detail=f"device has no '{role}' stream (only {len(ordered)} profile(s))",
+            )
+        prof = ordered[want_idx]
+        enc = self._enc_of(prof)
+        if enc is None:
+            return FleetOpResult(ok=False, supported=True, detail="profile has no VideoEncoderConfiguration")
+
+        current = self._norm_codec(getattr(enc, "Encoding", None))
+        if current == target:
+            return FleetOpResult(
+                ok=True, detail=f"{role} stream already {target}", data={"already": True, "codec": target}
+            )
+        try:
+            self._apply_encoding(service, enc, target, media2 is not None)
+        except Exception as exc:  # noqa: BLE001 — device rejected (common on NVRs)
+            return FleetOpResult(ok=False, supported=True, detail=f"device rejected codec change: {exc}")
+        return FleetOpResult(
+            ok=True, detail=f"{role} stream set to {target}", data={"codec": target, "role": role}
+        )
+
+    # -- media-service resolution helpers (Media2 preferred) ---------------------
+    @staticmethod
+    def _media2_service(cam: Any) -> Any | None:
+        try:
+            for svc in cam.devicemgmt.GetServices({"IncludeCapability": False}):
+                if _is_media2_ns(str(getattr(svc, "Namespace", ""))):
+                    return cam.create_media2_service()
+        except Exception:  # noqa: BLE001
+            return None
+        return None
+
+    @staticmethod
+    def _media1_service(cam: Any) -> Any | None:
+        try:
+            return cam.create_media_service()
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _list_profiles(service: Any, is_media2: bool) -> list[Any]:
+        if is_media2:
+            return list(service.GetProfiles({"Type": ["All"]}) or [])
+        return list(service.GetProfiles() or [])
+
+    @staticmethod
+    def _enc_of(profile: Any) -> Any | None:
+        """The VideoEncoderConfiguration of a profile (Media2 nests it in a list)."""
+        enc = getattr(profile, "VideoEncoderConfiguration", None)
+        if enc is None:
+            # Media2 profiles carry ``Configurations.VideoEncoder``.
+            cfgs = getattr(profile, "Configurations", None)
+            enc = getattr(cfgs, "VideoEncoder", None) if cfgs is not None else None
+        if isinstance(enc, list):
+            enc = enc[0] if enc else None
+        return enc
+
+    def _apply_encoding(self, service: Any, enc: Any, target: str, is_media2: bool) -> None:
+        """Mutate the encoder config's Encoding + call SetVideoEncoderConfiguration.
+
+        Media1 encoding is the enum ``H264``/``H265``/``JPEG``; Media2 uses the same
+        short forms on ``VideoEncoder2Configuration.Encoding``. We set the field on the
+        fetched config object (preserving all other fields) and persist it."""
+        setattr(enc, "Encoding", target)
+        if is_media2:
+            service.SetVideoEncoderConfiguration({"Configuration": enc})
+        else:
+            service.SetVideoEncoderConfiguration(
+                {"Configuration": enc, "ForcePersistence": True}
+            )
 
     # ── event topic map (control-side) ────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

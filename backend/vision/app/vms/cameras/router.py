@@ -58,6 +58,7 @@ from .schemas import (
     PtzBody,
     ReorderResult,
     SnapshotBody,
+    StreamPolicyResult,
 )
 from .service import CameraService
 
@@ -285,6 +286,20 @@ async def ptz_camera(
     except DriverError as exc:
         raise _driver_err(exc)
     return {"result": result}
+
+
+@router.post("/cameras/{camera_id}/apply-stream-policy", response_model=StreamPolicyResult)
+async def apply_stream_policy(
+    camera_id: str,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    force: bool = Query(False, description="Re-assert H.264 even if the sub stream is already H.264"),
+) -> StreamPolicyResult:
+    """Push the SUB (web-viewing) stream to H.264 at the device so live view plays with
+    zero transcode. Graceful per brand (never 502) — the result envelope carries the
+    outcome (applied / already_h264 / unsupported / unreachable / failed). The H.265→H.264
+    transcode fallback stays as a safety net for devices that can't be reconfigured."""
+    return StreamPolicyResult(**await svc.apply_stream_policy(camera_id, force=force))
 
 
 @router.patch("/cameras/{camera_id}/imaging", response_model=ConfigResult)

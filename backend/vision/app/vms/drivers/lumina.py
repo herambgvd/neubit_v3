@@ -53,6 +53,7 @@ from .base import (
     Discovered,
     DriverError,
     PtzCommand,
+    StreamCodecProfile,
     StreamInfo,
     StreamUris,
 )
@@ -437,6 +438,24 @@ class LuminaDriver(CameraDriver):
             raise
         except Exception as exc:  # noqa: BLE001
             raise DriverError(f"Lumina configure({section}) failed for {host}: {exc}") from None
+
+    # ── stream codec policy (G8) — read-only probe; no set surface in v2 ───────
+    async def get_stream_codecs(self, host: str, creds: Credentials) -> list[StreamCodecProfile]:
+        """Report each Lumina media profile's codec (from ``/api/v1/media/profiles``) so
+        the policy can badge H.264-web vs H.265. Never raises — ``[]`` on unreachable.
+
+        ``set_stream_codec`` is NOT implemented (inherits the base graceful unsupported):
+        v2's Lumina integration exposed NO codec-set endpoint. # LIVE-VALIDATE: whether
+        the ``/API/ChannelConfig/*`` control surface can set per-stream compression."""
+        env = await self._fetch_capabilities(host, creds)
+        out: list[StreamCodecProfile] = []
+        for p in env.get("media_profiles", []):
+            role = str(p.get("stream_type") or "main").lower()
+            role = role if role in ("main", "sub", "third") else "main"
+            codec = str(p.get("codec") or "").upper()
+            codec = codec.replace("HEVC", "H265") or None
+            out.append(StreamCodecProfile(role=role, codec=codec, token=p.get("token")))
+        return out
 
     # ── event topic map (device-level motion only; AI formats out of scope) ───
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

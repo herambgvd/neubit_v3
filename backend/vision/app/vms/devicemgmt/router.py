@@ -50,6 +50,9 @@ from .schemas import (
 )
 from .service import DeviceMgmtService, device_info_dict, fleet_op_dict
 
+from app.vms.cameras.schemas import StreamPolicyBulkBody, StreamPolicyBulkResult
+from app.vms.cameras.service import CameraService
+
 PERM_READ = "vms.camera.read"
 PERM_MANAGE = "vms.config.manage"
 
@@ -61,6 +64,29 @@ async def get_devicemgmt_service(
     scope: Annotated[Scope, Depends(get_scope)],
 ) -> DeviceMgmtService:
     return DeviceMgmtService(db, scope)
+
+
+async def get_camera_service_dm(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> CameraService:
+    return CameraService(db, scope)
+
+
+# ── bulk stream-codec policy (G8) — registered BEFORE ``/cameras/bulk/{action}`` so the
+# literal ``/cameras/bulk/apply-stream-policy`` matches here rather than being captured as
+# ``action="apply-stream-policy"`` (which isn't a fleet BULK_ACTION). Mirrors the G7 bulk
+# contract (per-camera results, tenant isolation, one failure never aborts the batch).
+@router.post("/cameras/bulk/apply-stream-policy", response_model=StreamPolicyBulkResult)
+async def bulk_apply_stream_policy(
+    body: StreamPolicyBulkBody,
+    svc: Annotated[CameraService, Depends(get_camera_service_dm)],
+    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> StreamPolicyBulkResult:
+    """Fan out the force-H.264-web policy across ``camera_ids`` (best-effort). Push each
+    camera's SUB stream to H.264 so browsers play live with zero transcode; per-camera
+    result envelope (never aborts the batch, foreign-tenant ids drop out)."""
+    return StreamPolicyBulkResult(**await svc.bulk_apply_stream_policy(body.camera_ids, force=body.force))
 
 
 # ── bulk fan-out (registered BEFORE the {camera_id} paths so /bulk/{action} wins) ──

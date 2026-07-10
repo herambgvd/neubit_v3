@@ -240,6 +240,12 @@ class CameraPublic(BaseModel):
     # frontend shows a push-to-talk control + hits ``POST /cameras/{id}/talk/session``.
     # Derived from ``onvif_capabilities.backchannel`` (driver-detected at probe time).
     talk_capable: bool = False
+    # G8 stream codec policy: the last-known SUB (web-viewing) stream codec (H264 | H265 |
+    # ...) — the frontend badges "H.264 web ✓" (plays direct, no transcode) vs "H.265
+    # (transcoded)". ``web_codec_enforced`` is true once the force-H.264-web policy has
+    # successfully applied to this camera.
+    sub_stream_codec: Optional[str] = None
+    web_codec_enforced: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -303,6 +309,8 @@ class CameraPublic(BaseModel):
                 "thumbnail_path": row.thumbnail_path,
                 "last_seen_at": row.last_seen_at,
                 "talk_capable": bool(caps.get("backchannel")),
+                "sub_stream_codec": row.sub_stream_codec,
+                "web_codec_enforced": row.web_codec_enforced_at is not None,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }
@@ -550,6 +558,42 @@ class BulkResult(BaseModel):
 
 class ReorderResult(BaseModel):
     reordered: int = 0
+
+
+# ── Stream codec policy (G8 — zero-transcode live view) ────────────────────────────
+
+
+class StreamPolicyResult(BaseModel):
+    """Result of applying the force-H.264-web policy to ONE camera.
+
+    ``status`` ∈ {applied, already_h264, unsupported, unreachable, failed}. ``sub_codec``
+    is the (refreshed) SUB-stream codec after the op — the frontend badges "H.264 web ✓"
+    (plays direct, no transcode) vs "H.265 (transcoded)". ``supported=False`` = the brand
+    / NVR can't set the per-channel codec (needs its own web UI)."""
+
+    model_config = ConfigDict(extra="ignore")
+    camera_id: str
+    camera_name: Optional[str] = None
+    ok: bool = False
+    supported: bool = True
+    status: str = "failed"
+    sub_codec: Optional[str] = None
+    detail: Optional[str] = None
+
+
+class StreamPolicyBulkBody(BaseModel):
+    """POST /vms/cameras/bulk/apply-stream-policy — targets + optional force re-assert."""
+
+    model_config = ConfigDict(extra="forbid")
+    camera_ids: list[str] = Field(min_length=1, max_length=1000)
+    force: bool = False
+
+
+class StreamPolicyBulkResult(BaseModel):
+    action: str = "apply-stream-policy"
+    total: int = 0
+    succeeded: int = 0
+    items: list[StreamPolicyResult] = Field(default_factory=list)
 
 
 # Camera-health shapes (CameraHealthPublic / CameraHealthListResponse) moved to the

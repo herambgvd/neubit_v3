@@ -221,6 +221,11 @@ services:
       VE_DOWNLOADS_DIR: ${VE_DOWNLOADS_DIR:-/recordings/downloads}
       VE_EXPORT_TICK_SEC: ${VE_EXPORT_TICK_SEC:-5}
       VE_EXPORT_CONCURRENCY: ${VE_EXPORT_CONCURRENCY:-2}
+      # G8 stream codec policy (zero-transcode live view): when on (default), onboarding a
+      # camera whose SUB (web) stream is H.265 best-effort pushes it to H.264 at the device
+      # so browsers play live with no transcode (main stays H.265 for recording). The
+      # H.265→H.264 transcode fallback stays as a safety net for non-reconfigurable devices.
+      VE_ENFORCE_H264_WEB: ${VE_ENFORCE_H264_WEB:-true}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
