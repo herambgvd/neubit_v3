@@ -77,7 +77,7 @@ export default function DataTable({
           {table.getHeaderGroups().map((hg) => (
             <tr
               key={hg.id}
-              className="border-b border-card-border bg-hover/40 text-left text-[11px] font-semibold uppercase tracking-wide text-muted"
+              className="border-b border-card-border bg-hover text-left text-[11px] font-semibold uppercase tracking-wide text-muted"
             >
               {hg.headers.map((header) => {
                 const canSort = header.column.getCanSort();
@@ -121,9 +121,9 @@ export default function DataTable({
               <tr
                 key={row.id}
                 onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-                className={`border-b border-card-border/60 transition last:border-0 hover:bg-hover/50 ${
+                className={`border-b border-card-border transition last:border-0 hover:bg-hover ${
                   onRowClick ? "cursor-pointer" : ""
-                } ${row.getIsSelected() ? "bg-hover/60" : ""}`}
+                } ${row.getIsSelected() ? "bg-hover" : ""}`}
               >
                 {row.getVisibleCells().map((cell) => {
                   const align = cell.column.columnDef.meta?.align;

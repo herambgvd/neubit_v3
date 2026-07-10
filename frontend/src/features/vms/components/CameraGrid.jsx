@@ -4,28 +4,76 @@
 // the LivePlayer modal via onLive — P2-D), with status, name, brand and a hover
 // action bar (live/snapshot/edit/delete). Selection via the corner checkbox.
 import { Icon } from "@iconify/react";
+import { useEffect, useState } from "react";
 
+import { api } from "@/lib/api";
 import { titleize } from "@/lib/format";
+import { vms } from "../api";
 import { RECORDING_MODES } from "../constants";
 import StatusBadge, { StatusDot } from "./StatusBadge";
 
+// Fetches the camera's snapshot as an authed blob → object URL (same pattern as
+// SnapshotModal/MotionSearchModal — a plain <img src> wouldn't carry the bearer
+// token). Only attempts online cameras; any failure/500 falls back to null so the
+// tile shows the play-button placeholder. Revokes the object URL on unmount.
+function useSnapshotThumb(camera) {
+  const [url, setUrl] = useState(null);
+  const online = camera.status === "online";
+  useEffect(() => {
+    if (!online) {
+      setUrl(null);
+      return undefined;
+    }
+    let objectUrl = null;
+    let cancelled = false;
+    api
+      .get(vms.cameras.snapshotUrl(camera.id), { responseType: "blob" })
+      .then((r) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(r.data);
+        setUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(null);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [camera.id, online]);
+  return url;
+}
+
 function Tile({ camera, health, siteName, selected, onToggleSelect, onLive, onSnapshot, onEdit, onDelete }) {
   const rec = RECORDING_MODES.find((m) => m.value === camera.recording?.mode);
+  const thumb = useSnapshotThumb(camera);
   return (
     <div
       className={`group relative overflow-hidden rounded-xl border bg-card transition hover:border-muted ${
         selected ? "border-foreground" : "border-card-border"
       }`}
     >
-      {/* Click-to-go-live thumbnail (opens the LivePlayer modal). */}
+      {/* Click-to-go-live thumbnail: the camera snapshot when available, with the
+          play overlay on top (always visible when no snapshot, dimmed→bright on
+          hover when a snapshot is showing). Falls back to the gradient placeholder. */}
       <button
         type="button"
         onClick={() => onLive?.(camera)}
         title="Go live"
-        className="relative flex aspect-video w-full items-center justify-center bg-gradient-to-br from-hover to-background"
+        className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-gradient-to-br from-hover to-background"
       >
-        <div className="flex flex-col items-center gap-1 text-muted transition group-hover:text-foreground">
-          <Icon icon="heroicons-solid:play" className="text-3xl opacity-70 transition group-hover:scale-110" />
+        {thumb && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumb} alt={`${camera.name} snapshot`} className="absolute inset-0 h-full w-full object-cover" />
+        )}
+        <div
+          className={`relative z-10 flex flex-col items-center gap-1 transition ${
+            thumb
+              ? "text-white opacity-0 group-hover:opacity-100 [text-shadow:0_1px_3px_rgba(0,0,0,0.6)]"
+              : "text-muted group-hover:text-foreground"
+          }`}
+        >
+          <Icon icon="heroicons-solid:play" className="text-3xl opacity-80 transition group-hover:scale-110" />
           <span className="text-[10px] uppercase tracking-wide">Live</span>
         </div>
         <div className="absolute left-2 top-2">
