@@ -42,6 +42,7 @@ from app.vms.drivers import Credentials, DriverError, PtzCommand, get_driver
 from app.vms.models import Camera, CameraACL, CameraGroup, MediaProfile
 
 from app.vms.groups.schemas import CameraACLPublic
+from . import snapshot_frame
 from .schemas import (
     CameraCreate,
     CameraListResponse,
@@ -69,9 +70,12 @@ class CameraService:
     #: loop doesn't GC them mid-flight. Class-level → survives the request-scoped service.
     _bg_tasks: set = set()
 
-    def __init__(self, db: AsyncSession, scope: Scope) -> None:
+    def __init__(self, db: AsyncSession, scope: Scope, *, bearer: str | None = None) -> None:
         self.db = db
         self.scope = scope
+        # The caller's JWT — forwarded to the Go nvr when the snapshot fallback needs to
+        # bring the MediaMTX on-demand path up (same shared-JWT contract as live view).
+        self.bearer = bearer
 
     # ── row + credential helpers ────────────────────────────────────────
     async def _row(self, camera_id: str) -> Camera:
@@ -490,18 +494,87 @@ class CameraService:
             await driver.aclose()
 
     async def snapshot_for(self, camera_id: str) -> bytes | None:
+        """A JPEG snapshot for a camera — cached ~30s, with a live-stream fallback.
+
+        Order:
+          1. Serve a fresh cached frame if we have one (bounds ffmpeg spawns + the
+             MediaMTX on-demand activation the grid would otherwise trigger 16×).
+          2. Try the driver's ONVIF ``GetSnapshotUri`` → HTTP JPEG (fast when it
+             works — direct cameras).
+          3. Fall back to grabbing ONE frame off the live MediaMTX path with ffmpeg
+             (``cameras/<tenant>/<cam>/sub``) — codec-agnostic, so it works for the
+             NVR-channel H.265/H.264 cameras where ONVIF snapshot fails.
+
+        Returns ``None`` when neither source yields a frame (→ the router 502s and the
+        frontend shows its placeholder). Never raises.
+        """
         row = await self._row(camera_id)
+
+        # 1) cache — serve the last frame from EITHER source if still fresh.
+        cached = snapshot_frame.cache_get(camera_id, "sub")
+        if cached is not None:
+            return cached
+
+        # 2) driver ONVIF snapshot (fast path — works for direct cameras).
         host = row.onvif_host or (row.network_info or {}).get("ip")
-        if not host:
-            return None
-        driver = get_driver(row.brand)
+        if host:
+            driver = get_driver(row.brand)
+            try:
+                jpeg = await driver.get_snapshot(
+                    host, self._creds_for(row), profile=row.onvif_profile_token
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.info("snapshot(camera=%s) ONVIF failed: %s", camera_id, exc)
+                jpeg = None
+            finally:
+                await driver.aclose()
+            if jpeg:
+                snapshot_frame.cache_put(camera_id, "sub", jpeg)
+                return jpeg
+
+        # 3) fallback — grab a frame off the live MediaMTX stream (sub profile).
+        #
+        # The MediaMTX path is on-demand: it only exists once the Go nvr has been asked
+        # to "ensure" it (which configures the source = the camera's RTSP URL). A raw
+        # read of an un-provisioned path is a 400. So we mirror the live-view control
+        # flow — build the RTSP source (LiveService, decrypts creds) → nvr ensure → then
+        # pull one frame from the now-live MediaMTX path. All best-effort: any failure
+        # degrades to None. The path is left up (its idle-close timer reaps it).
+        jpeg = await self._snapshot_from_mediamtx(row)
+        if jpeg:
+            snapshot_frame.cache_put(camera_id, "sub", jpeg)
+            return jpeg
+        return None
+
+    async def _snapshot_from_mediamtx(self, row: Camera) -> bytes | None:
+        """Ensure the camera's ``sub`` MediaMTX path is up, then grab one JPEG frame.
+
+        Reuses ``LiveService`` (RTSP-source derivation + nvr ensure) so the snapshot
+        pulls from exactly the same on-demand path live view uses — codec-agnostic
+        (H.264/H.265). Never raises; returns ``None`` on any failure.
+        """
+        from app.vms.live.service import LiveService, LiveUpstreamError
+
+        profile = "sub"
+        live = LiveService(self.db, self.scope, bearer=self.bearer)
+        # Bring the on-demand path up (idempotent on the nvr/MediaMTX side).
         try:
-            return await driver.get_snapshot(host, self._creds_for(row), profile=row.onvif_profile_token)
-        except Exception as exc:  # noqa: BLE001
-            log.info("snapshot(camera=%s) failed: %s", camera_id, exc)
+            rtsp_source = await live._rtsp_source_for(row, profile)  # noqa: SLF001
+            if not rtsp_source:
+                log.info("snapshot(camera=%s): no RTSP source derivable", row.id)
+                return None
+            await live.nvr.ensure_stream(
+                camera_id=row.id, rtsp_url=rtsp_source, profile=profile
+            )
+        except (LiveUpstreamError, Exception) as exc:  # noqa: BLE001
+            # nvr unreachable / MediaMTX upstream error — degrade to None (502 upstream).
+            log.info("snapshot(camera=%s): ensure-stream failed: %s", row.id, exc)
             return None
-        finally:
-            await driver.aclose()
+
+        # Now read one frame from the (freshly ensured) MediaMTX path.
+        path = snapshot_frame.mediamtx_path(row.tenant_id, row.id, profile)
+        rtsp_url = f"{snapshot_frame.rtsp_base()}/{path}"
+        return await snapshot_frame.grab_frame(rtsp_url)
 
     async def bulk_add(
         self, *, host, port, username, password, brand, channels, actor

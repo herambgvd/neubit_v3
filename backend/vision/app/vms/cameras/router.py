@@ -23,12 +23,14 @@ Endpoints:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Principal, Scope, get_scope, require_permission
+from kernel.auth import _bearer  # raw bearer credentials (forwarded to nvr for snapshot ensure)
 
 from app.db import get_db
 
@@ -72,11 +74,18 @@ PERM_PTZ = "vms.ptz.control"
 router = APIRouter(prefix="/vms", tags=["VMS Cameras"])
 
 
+def _bearer_token(
+    cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> Optional[str]:
+    return cred.credentials if cred else None
+
+
 async def get_camera_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
+    bearer: Annotated[Optional[str], Depends(_bearer_token)],
 ) -> CameraService:
-    return CameraService(db, scope)
+    return CameraService(db, scope, bearer=bearer)
 
 
 def _driver_err(exc: DriverError) -> HTTPException:
