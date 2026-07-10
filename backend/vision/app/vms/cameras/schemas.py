@@ -126,6 +126,10 @@ class RecordingConfig(BaseModel):
     pre_buffer_seconds: int = Field(default=5, ge=0, le=300)
     post_buffer_seconds: int = Field(default=5, ge=0, le=300)
     anr_enabled: bool = False
+    # G6: retain the audio track in the recording when the source carries one
+    # (false = record video only). Wired to the nvr via the recording-config
+    # contract's ``audio`` field.
+    audio_enabled: bool = False
 
 
 class AdvancedConfig(BaseModel):
@@ -232,11 +236,16 @@ class CameraPublic(BaseModel):
     display_order: int = 0
     thumbnail_path: Optional[str] = None
     last_seen_at: Optional[datetime] = None
+    # G6 two-way audio: whether the device has a detected backchannel (speaker) — the
+    # frontend shows a push-to-talk control + hits ``POST /cameras/{id}/talk/session``.
+    # Derived from ``onvif_capabilities.backchannel`` (driver-detected at probe time).
+    talk_capable: bool = False
     created_at: datetime
     updated_at: datetime
 
     @classmethod
     def from_row(cls, row, profiles: Optional[list] = None) -> "CameraPublic":
+        caps = row.onvif_capabilities or {}
         return cls.model_validate(
             {
                 "id": row.id,
@@ -264,6 +273,7 @@ class CameraPublic(BaseModel):
                     "pre_buffer_seconds": row.pre_buffer_seconds,
                     "post_buffer_seconds": row.post_buffer_seconds,
                     "anr_enabled": row.anr_enabled,
+                    "audio_enabled": row.audio_enabled,
                 },
                 "advanced": {
                     "privacy_masks": row.privacy_masks or [],
@@ -292,6 +302,7 @@ class CameraPublic(BaseModel):
                 "display_order": row.display_order,
                 "thumbnail_path": row.thumbnail_path,
                 "last_seen_at": row.last_seen_at,
+                "talk_capable": bool(caps.get("backchannel")),
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }

@@ -96,6 +96,7 @@ class RecordingService:
         camera.recording_schedule = body.schedule or {}
         camera.retention_days = body.retention_days
         camera.record_substream = body.record_substream
+        camera.audio_enabled = body.audio_enabled
         actor_id = _actor_id(actor)
         if actor_id:
             camera.updated_by = actor_id
@@ -161,7 +162,8 @@ class RecordingService:
             raise RecordingUpstreamError("camera has no reachable RTSP stream to record")
         try:
             return await self.nvr.start_recording(
-                camera_id=camera.id, profile=profile, rtsp_url=rtsp_url, trigger=trigger
+                camera_id=camera.id, profile=profile, rtsp_url=rtsp_url,
+                trigger=trigger, audio=bool(camera.audio_enabled),
             )
         except NvrUnavailable as exc:
             raise RecordingUpstreamError(exc.message) from exc
@@ -312,6 +314,7 @@ class RecordingService:
             schedule=camera.recording_schedule or {},
             retention_days=camera.retention_days,
             record_substream=camera.record_substream,
+            audio_enabled=bool(camera.audio_enabled),
             recording_now=recording_now,
         )
 

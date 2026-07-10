@@ -118,6 +118,15 @@ class Camera(Base):
     anr_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # --- Audio recording (G6). When true, the audio track (if the RTSP source
+    # carries one) is retained in the recording; false = record video only. The Go
+    # ``nvr`` receives this via the recording-config contract (``audio`` on the
+    # start-recording call) — MediaMTX records ALL tracks the source publishes, so
+    # ``audio_enabled=false`` is honoured by the nvr sourcing a video-only variant /
+    # audio-drop where the brand supports it (# LIVE-VALIDATE). Default false. ---
+    audio_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
     # --- Advanced config (JSON blobs; UI + logic in later phases). ---
     # Both are lists of NORMALIZED (0..1) shapes drawn over the camera image by the

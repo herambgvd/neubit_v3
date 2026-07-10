@@ -15,6 +15,7 @@ package recording
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -58,6 +59,14 @@ type startRequest struct {
 	EventClip bool `json:"event_clip"`
 	PreSec    int  `json:"pre_seconds"`
 	PostSec   int  `json:"post_seconds"`
+	// Audio (G6) — the control-plane's intent to RETAIN the audio track in the
+	// recording (the camera has an audio track AND the operator enabled it). MediaMTX
+	// native recording records EVERY track the source publishes, so audio=true is the
+	// no-op "keep whatever the source has" path; audio=false would require sourcing a
+	// video-only stream variant / an ffmpeg audio-drop — # LIVE-VALIDATE per brand.
+	// Accepted here so the contract is explicit; carried as recording intent (no schema
+	// change). Optional; defaults false.
+	Audio bool `json:"audio"`
 }
 
 // start turns recording on for (camera, profile). Graceful: a bad/unreachable
@@ -77,6 +86,13 @@ func (h *handler) start(w http.ResponseWriter, r *http.Request) {
 	if req.RTSPURL == "" {
 		kerr.Write(w, kerr.Validation("rtsp_url is required to start recording"))
 		return
+	}
+
+	// G6 audio intent: MediaMTX records all source tracks, so audio=true is the
+	// keep-as-is path. audio=false (video-only) needs a source variant / audio-drop —
+	// logged as intent here (# LIVE-VALIDATE per brand); does not change the record flag.
+	if !req.Audio {
+		log.Printf("recording %s/%s: audio track NOT requested (video-only intent; MediaMTX records source tracks as-is — audio-drop is LIVE-VALIDATE)", cameraID, profile)
 	}
 
 	var (

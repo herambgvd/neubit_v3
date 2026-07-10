@@ -29,6 +29,7 @@ import jwt
 
 _ALG = "HS256"
 _SUB_TYPE = "media"
+_TALK_SUB_TYPE = "talk"
 _DEFAULT_TTL = 300
 
 
@@ -84,6 +85,58 @@ def mint_media_token(
     if isinstance(token, bytes):  # pragma: no cover - pyjwt>=2 returns str
         token = token.decode("utf-8")
     return token, exp
+
+
+def mint_talk_token(
+    *,
+    tenant_id: str | None,
+    camera_id: str,
+    session_id: str,
+    ttl_seconds: int | None = None,
+) -> tuple[str, int]:
+    """Mint a TWO-WAY-AUDIO (talk) token → ``(token, exp_epoch_seconds)`` (G6).
+
+    A distinct ``sub_type="talk"`` short-lived HS256 JWT (same kernel secret) the
+    frontend carries when it opens a talk stream (WHIP-into-MediaMTX / backchannel).
+    Distinguished from a media token so it can NEVER be used to READ a stream — it
+    authorizes only the UPLINK (browser mic → media-plane → camera speaker).
+
+    Claims: ``{sub_type:"talk", tenant_id, camera_id, session_id, dir:"uplink",
+    iat, exp}``. TTL defaults to ``media_token_ttl`` (renewable via a fresh session).
+    """
+    ttl = ttl_seconds if (ttl_seconds and ttl_seconds > 0) else media_token_ttl()
+    now = int(time.time())
+    exp = now + ttl
+    claims = {
+        "sub_type": _TALK_SUB_TYPE,
+        "tenant_id": tenant_id if tenant_id is not None else "platform",
+        "camera_id": camera_id,
+        "session_id": session_id,
+        "dir": "uplink",
+        "iat": now,
+        "exp": exp,
+    }
+    token = jwt.encode(claims, _secret(), algorithm=_ALG)
+    if isinstance(token, bytes):  # pragma: no cover - pyjwt>=2 returns str
+        token = token.decode("utf-8")
+    return token, exp
+
+
+def verify_talk_token(token: str) -> dict:
+    """Decode + verify a talk token → its claims dict (G6).
+
+    Raises ``jwt.PyJWTError`` / ``ValueError`` on any signature/expiry/type problem.
+    Rejects a media/access token (wrong ``sub_type``) so a read credential can't be
+    replayed as an uplink grant.
+    """
+    if not token:
+        raise ValueError("missing talk token")
+    payload = jwt.decode(token, _secret(), algorithms=[_ALG])
+    if payload.get("sub_type") != _TALK_SUB_TYPE:
+        raise ValueError("not a talk token")
+    if not payload.get("camera_id") or not payload.get("session_id"):
+        raise ValueError("talk token missing camera/session")
+    return payload
 
 
 def verify_media_token(token: str) -> dict:

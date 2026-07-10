@@ -21,6 +21,7 @@ the pre-refactor flat layout.
 
 from __future__ import annotations
 
+from app.vms.audio.router import router as audio_router
 from app.vms.bookmarks.router import router as bookmark_router
 from app.vms.cameras.router import router as camera_router
 from app.vms.dashboard.router import router as dashboard_router
@@ -84,6 +85,10 @@ routers = [
     dashboard_router,
     health_router,
     live_router,
+    # Two-way audio (G6) — POST /vms/cameras/{id}/talk/session. Mounts alongside live
+    # (its ``/cameras/{id}/talk/session`` path is deeper than the camera catch-all).
+    # The talk-session issuer (push-to-talk creds for a backchannel-capable camera).
+    audio_router,
     recording_router,
     playback_router,
     export_router,

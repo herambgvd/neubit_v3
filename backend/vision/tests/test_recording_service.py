@@ -39,11 +39,13 @@ class _Actor:
 class _Body:
     """Minimal RecordingConfigBody-shaped object for set_config."""
 
-    def __init__(self, mode="continuous", schedule=None, retention_days=30, record_substream=False):
+    def __init__(self, mode="continuous", schedule=None, retention_days=30,
+                 record_substream=False, audio_enabled=False):
         self.mode = mode
         self.schedule = schedule or {}
         self.retention_days = retention_days
         self.record_substream = record_substream
+        self.audio_enabled = audio_enabled
 
 
 class _StubNvr:
@@ -54,9 +56,10 @@ class _StubNvr:
         self.started: list[dict] = []
         self.stopped: list[tuple[str, str]] = []
 
-    async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous"):
+    async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous", audio=False):
         self.started.append(
-            {"camera_id": camera_id, "profile": profile, "rtsp_url": rtsp_url, "trigger": trigger}
+            {"camera_id": camera_id, "profile": profile, "rtsp_url": rtsp_url,
+             "trigger": trigger, "audio": audio}
         )
         if self.fail_start:
             raise NvrUnavailable("nvr data-plane unreachable: boom")
@@ -291,7 +294,7 @@ async def test_scheduler_toggles_on_window_boundary(db, camera, monkeypatch):
         def __init__(self, *, bearer=None):
             pass
 
-        async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous"):
+        async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous", audio=False):
             calls["start"].append((camera_id, trigger))
             return {}
 

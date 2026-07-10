@@ -34,6 +34,9 @@ class RecordingConfigBody(BaseModel):
     schedule: dict[str, Any] = Field(default_factory=dict)
     retention_days: int = Field(default=30, ge=0, le=3650)
     record_substream: bool = False
+    # G6: retain the audio track in the recording when the source carries one
+    # (false = record video only). Passed to the nvr on start-recording.
+    audio_enabled: bool = False
 
 
 class RecordingConfigPublic(BaseModel):
@@ -44,6 +47,7 @@ class RecordingConfigPublic(BaseModel):
     schedule: dict[str, Any]
     retention_days: int
     record_substream: bool
+    audio_enabled: bool = False
     # Whether the nvr is recording this camera right now (best-effort; may be
     # stale if the nvr is unreachable — the field is advisory).
     recording_now: bool = False

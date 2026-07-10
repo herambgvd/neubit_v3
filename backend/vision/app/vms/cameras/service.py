@@ -175,6 +175,7 @@ class CameraService:
             pre_buffer_seconds=body.recording.pre_buffer_seconds,
             post_buffer_seconds=body.recording.post_buffer_seconds,
             anr_enabled=body.recording.anr_enabled,
+            audio_enabled=body.recording.audio_enabled,
             privacy_masks=body.advanced.privacy_masks,
             motion_zones=body.advanced.motion_zones,
             motion_config=body.advanced.motion_config,
@@ -325,6 +326,7 @@ class CameraService:
             row.pre_buffer_seconds = r.pre_buffer_seconds
             row.post_buffer_seconds = r.post_buffer_seconds
             row.anr_enabled = r.anr_enabled
+            row.audio_enabled = r.audio_enabled
         if body.advanced is not None:
             a = body.advanced
             row.privacy_masks = a.privacy_masks

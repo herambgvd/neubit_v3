@@ -32,6 +32,7 @@ from .base import (
     PtzCommand,
     StreamInfo,
     StreamUris,
+    TalkTarget,
 )
 from .cpplus import CpPlusDriver
 from .factory import get_driver, supported_brands
@@ -48,6 +49,7 @@ __all__ = [
     "Channel",
     "StreamInfo",
     "StreamUris",
+    "TalkTarget",
     "Capabilities",
     "PtzCommand",
     "DeviceEvent",

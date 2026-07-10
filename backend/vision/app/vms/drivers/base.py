@@ -149,6 +149,35 @@ class StreamUris:
 
 
 @dataclass
+class TalkTarget:
+    """Two-way-audio (backchannel) target the frontend needs to start talking (G6).
+
+    ONVIF two-way audio is a BACKCHANNEL: the client sends an audio track TO the
+    camera's RTSP endpoint (a ``SETUP`` with ``Require: www.onvif.org/ver20/backchannel``
+    + ``PLAY`` that reverses the media direction, or the brand's own push endpoint).
+    Realistically the browser can't speak raw RTSP, so the practical flow is
+    WHIP-into-MediaMTX (the browser publishes mic audio to a MediaMTX path that the
+    media-plane forwards to the camera backchannel) — but the on-wire push to a real
+    speaker is brand-specific and unverified (# LIVE-VALIDATE).
+
+    This DTO is what the driver resolves for the talk-session issuer:
+      * ``supported`` — the device has a detected backchannel (speaker).
+      * ``kind``      — ``rtsp_backchannel`` (ONVIF), ``http_push`` (brand REST), or
+                        ``whip`` (browser→MediaMTX→camera). Advises the frontend.
+      * ``url``       — the backchannel RTSP / brand push URL (creds injected) when
+                        the driver can build one; None when it's a WHIP-to-media flow.
+      * ``codec``     — the audio codec the device expects (e.g. ``PCMU``/``AAC``);
+                        the frontend/media-plane transcodes the mic to it.
+    """
+
+    supported: bool = False
+    kind: str = "rtsp_backchannel"
+    url: str | None = None
+    codec: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class Capabilities:
     """Detected capability matrix — persisted to ``Camera.onvif_capabilities`` /
     ``NVR.capabilities``. Brand-neutral booleans + a verbatim ``raw`` blob."""
@@ -312,6 +341,37 @@ class CameraDriver(abc.ABC):
     async def stop_events(self) -> None:
         """Ask an active ``subscribe_events`` loop to stop (best-effort)."""
         return None
+
+    # ── two-way audio / backchannel talk target (G6) ──────────────────────────
+    async def talk_target(
+        self, host: str, creds: Credentials, *, profile: str | None = None
+    ) -> TalkTarget:
+        """Resolve the two-way-audio (backchannel) target for this device.
+
+        Returns a ``TalkTarget`` describing how the caller opens a talk stream to the
+        camera's speaker. The DEFAULT builds the ONVIF backchannel RTSP URL from the
+        camera's main stream URI (same RTSP path with the backchannel Require header
+        applied by the media-plane) IF the driver's ``get_capabilities`` reported
+        ``backchannel``; a driver with a brand push API overrides this.
+
+        MUST NOT raise — return ``TalkTarget(supported=False)`` when the device has no
+        backchannel / is unreachable. The actual on-wire push to a real speaker is
+        # LIVE-VALIDATE (brand-specific). This is the control-side capability + target
+        resolver; the media-plane / browser does the real bidirectional push."""
+        try:
+            caps = await self.get_capabilities(host, creds)
+        except Exception:  # noqa: BLE001 — graceful: unknown → unsupported
+            return TalkTarget(supported=False)
+        if not caps.backchannel:
+            return TalkTarget(supported=False)
+        uris = await self.get_stream_uris(host, creds, profile=profile)
+        return TalkTarget(
+            supported=True,
+            kind="rtsp_backchannel",
+            url=uris.main or uris.sub,
+            codec=None,  # device-specific; resolved on the wire (# LIVE-VALIDATE)
+            extra={"require": "www.onvif.org/ver20/backchannel"},
+        )
 
     # ── NVR footage / playback extraction (P4-B) ──────────────────────────────
     async def search_recordings(

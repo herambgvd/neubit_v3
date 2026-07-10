@@ -111,13 +111,19 @@ class NvrClient:
         profile: str,
         rtsp_url: str,
         trigger: str = "continuous",
+        audio: bool = False,
     ) -> dict:
         """POST /recording/{camera_id}/{profile}/start → the active-target view.
 
-        The nvr ensures the MediaMTX live path then flips record on. Raises
-        ``NvrUnavailable`` on an unreachable nvr / MediaMTX upstream error (→ 502)."""
+        The nvr ensures the MediaMTX live path then flips record on. ``audio`` (G6)
+        tells the nvr whether to retain the audio track in the recording — MediaMTX
+        records every track the source publishes, so ``audio=false`` is honoured by the
+        nvr sourcing a video-only variant / audio-drop where the brand supports it
+        (# LIVE-VALIDATE); the flag travels here via the existing contract so no Go
+        change is required for the control-plane wiring. Raises ``NvrUnavailable`` on
+        an unreachable nvr / MediaMTX upstream error (→ 502)."""
         url = f"{self._base}/api/v1/nvr/recording/{camera_id}/{profile}/start"
-        payload = {"rtsp_url": rtsp_url, "trigger": trigger}
+        payload = {"rtsp_url": rtsp_url, "trigger": trigger, "audio": audio}
         try:
             async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
                 resp = await client.post(url, json=payload, headers=self._headers)
