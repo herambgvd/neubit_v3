@@ -19,13 +19,20 @@
 // A `sourceFn` override lets this same player render NVR-footage sessions, which
 // return the same session shape from a different endpoint.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
+import { toast } from "sonner";
 
 import { Select } from "@/components/ui/kit";
+import { apiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { asItems } from "@/lib/format";
 import { vms } from "../api";
 import { usePlaybackSession } from "../hooks/usePlaybackSession";
 import ScrubBar from "./ScrubBar";
+import BookmarkModal from "./BookmarkModal";
+import EvidenceLockModal from "./EvidenceLockModal";
+import BookmarksPanel from "./BookmarksPanel";
 
 const SPEEDS = [0.5, 1, 2, 4];
 const DAY_MS = 86_400_000;
@@ -112,6 +119,67 @@ export default function PlaybackPlayer({
 
   // Coverage passed down in controlled mode via props isn't needed; the parent
   // renders the shared scrub bar.
+
+  // ── Bookmarks + evidence holds (G3) — standalone only ───────────────────
+  const qc = useQueryClient();
+  const { can } = useAuth();
+  const canLock = can("vms.recording.control");
+  const [bookmarkSeed, setBookmarkSeed] = useState(null); // { start, end? } | null → open create
+  const [editBookmark, setEditBookmark] = useState(null); // bookmark row | null → open edit
+  const [lockSeed, setLockSeed] = useState(null); // { start, end } | null → open lock modal
+  const [activeBookmark, setActiveBookmark] = useState(null); // popover after clicking a flag
+
+  // Query bookmarks + active holds for this camera over the loaded window.
+  const bookmarksQ = useQuery({
+    queryKey: ["vms-bookmarks", cameraId, iso(windowStart), iso(windowEnd)],
+    queryFn: () =>
+      vms.bookmarks.list({ camera_id: cameraId, from: iso(windowStart), to: iso(windowEnd), limit: 500 }),
+    enabled: !controlled && !sourceFn && !!cameraId,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
+  const bookmarks = useMemo(() => asItems(bookmarksQ.data), [bookmarksQ.data]);
+
+  const locksQ = useQuery({
+    queryKey: ["vms-evidence", cameraId],
+    queryFn: () => vms.evidence.list({ camera_id: cameraId, active_only: true, limit: 500 }),
+    enabled: !controlled && !sourceFn && !!cameraId,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
+  const locks = useMemo(() => asItems(locksQ.data), [locksQ.data]);
+
+  const invalidateBookmarks = () => qc.invalidateQueries({ queryKey: ["vms-bookmarks", cameraId] });
+  const invalidateLocks = () => qc.invalidateQueries({ queryKey: ["vms-evidence", cameraId] });
+
+  const deleteBookmark = async (b) => {
+    try {
+      await vms.bookmarks.remove(b.id);
+      if (activeBookmark?.id === b.id) setActiveBookmark(null);
+      toast.success("Bookmark deleted");
+      invalidateBookmarks();
+    } catch (e) {
+      toast.error(apiError(e, "Delete failed"));
+    }
+  };
+  const releaseLock = async (l) => {
+    try {
+      await vms.evidence.release(l.id);
+      toast.success("Evidence hold released");
+      invalidateLocks();
+    } catch (e) {
+      toast.error(apiError(e, "Release failed"));
+    }
+  };
+  const deleteLock = async (l) => {
+    try {
+      await vms.evidence.remove(l.id);
+      toast.success("Evidence hold deleted");
+      invalidateLocks();
+    } catch (e) {
+      toast.error(apiError(e, "Delete failed"));
+    }
+  };
 
   // First recorded timestamp in the window → a sensible default playhead.
   const firstCoverageMs = useMemo(() => {
@@ -441,6 +509,24 @@ export default function PlaybackPlayer({
             className="h-8 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted"
           />
           <CtrlBtn icon="heroicons-outline:camera" title="Snapshot" onClick={snapshot} disabled={!hlsUrl} plain />
+          <CtrlBtn
+            icon="heroicons-outline:bookmark"
+            title="Bookmark this moment"
+            onClick={() => {
+              setActiveBookmark(null);
+              setEditBookmark(null);
+              setBookmarkSeed({ start: iso(current ?? windowStart) });
+            }}
+            plain
+          />
+          {canLock && (
+            <CtrlBtn
+              icon="heroicons-outline:lock-closed"
+              title="Lock this window as evidence"
+              onClick={() => setLockSeed({ start: iso(windowStart), end: iso(windowEnd) })}
+              plain
+            />
+          )}
           {onExportRange && (
             <CtrlBtn
               icon="heroicons-outline:scissors"
@@ -453,14 +539,17 @@ export default function PlaybackPlayer({
       </div>
 
       {/* Scrub bar */}
-      <div className="px-3 pb-3 pt-1">
+      <div className="relative px-3 pb-3 pt-1">
         <ScrubBar
           coverage={coverage}
           markers={markers}
+          bookmarks={bookmarks}
+          locks={locks}
           windowStart={windowStart}
           windowEnd={windowEnd}
           current={current}
           onSeek={onScrubSeek}
+          onBookmarkClick={(bm) => setActiveBookmark(bm)}
           disabled={!hlsUrl && !timelineQ.isLoading && coverage.length === 0}
         />
         <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted">
@@ -473,7 +562,97 @@ export default function PlaybackPlayer({
                 : "No coverage"}
           </span>
         </div>
+
+        {/* Bookmark popover — appears after clicking a flag on the scrub bar */}
+        {activeBookmark && (
+          <div className="mt-2 flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2">
+            <Icon icon="heroicons-solid:bookmark" className="mt-0.5 shrink-0 text-sky-400" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">{activeBookmark.title}</p>
+              <p className="text-[11px] text-muted">
+                {readout(new Date(activeBookmark.start_ts).getTime())}
+                {activeBookmark.end_ts
+                  ? ` – ${readout(new Date(activeBookmark.end_ts).getTime())}`
+                  : ""}
+              </p>
+              {activeBookmark.note && <p className="mt-0.5 text-[11px] text-muted">{activeBookmark.note}</p>}
+              {activeBookmark.tags?.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {activeBookmark.tags.map((t) => (
+                    <span key={t} className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-muted">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <CtrlBtn
+                icon="heroicons-outline:pencil-square"
+                title="Edit bookmark"
+                onClick={() => {
+                  setBookmarkSeed(null);
+                  setEditBookmark(activeBookmark);
+                }}
+                plain
+              />
+              <CtrlBtn
+                icon="heroicons-outline:trash"
+                title="Delete bookmark"
+                onClick={() => deleteBookmark(activeBookmark)}
+                plain
+              />
+              <CtrlBtn
+                icon="heroicons-outline:x-mark"
+                title="Close"
+                onClick={() => setActiveBookmark(null)}
+                plain
+              />
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Bookmarks + evidence-holds side rail */}
+      <div className="border-t border-card-border p-3">
+        <BookmarksPanel
+          bookmarks={bookmarks}
+          locks={locks}
+          loading={bookmarksQ.isLoading || locksQ.isLoading}
+          canLock={canLock}
+          onSeek={(ms) => onScrubSeek(ms)}
+          onEditBookmark={(b) => {
+            setActiveBookmark(null);
+            setBookmarkSeed(null);
+            setEditBookmark(b);
+          }}
+          onDeleteBookmark={deleteBookmark}
+          onReleaseLock={releaseLock}
+          onDeleteLock={deleteLock}
+        />
+      </div>
+
+      {/* Modals */}
+      <BookmarkModal
+        open={!!bookmarkSeed || !!editBookmark}
+        onClose={() => {
+          setBookmarkSeed(null);
+          setEditBookmark(null);
+        }}
+        cameraId={cameraId}
+        cameraName={cameraName}
+        seed={bookmarkSeed}
+        bookmark={editBookmark}
+        onSaved={() => invalidateBookmarks()}
+      />
+      <EvidenceLockModal
+        open={!!lockSeed}
+        onClose={() => setLockSeed(null)}
+        cameraId={cameraId}
+        cameraName={cameraName}
+        seed={lockSeed}
+        onSaved={() => invalidateLocks()}
+      />
     </div>
   );
 }

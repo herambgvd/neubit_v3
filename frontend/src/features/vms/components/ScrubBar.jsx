@@ -7,9 +7,12 @@
 //
 //   coverage: [{ start, end }]  — ISO strings, the recorded spans
 //   markers:  [{ t, event_type, severity, event_id }] — VmsEvent ticks (P5-C)
+//   bookmarks:[{ id, start_ts, end_ts?, title, note?, tags[] }] — G3 bookmarks
+//   locks:    [{ id, start_ts, end_ts, reason?, case_ref?, is_active }] — G3 evidence
 //   windowStart / windowEnd     — epoch ms, the visible track range
 //   current                     — epoch ms, the playhead
 //   onSeek(ms)                  — click/drag (or click a marker) to a timestamp
+//   onBookmarkClick(bm)         — click a bookmark flag → seek + open its popover
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { SEVERITY_PRESETS } from "../constants";
@@ -41,16 +44,20 @@ function hhmmss(ms) {
 export default function ScrubBar({
   coverage = [],
   markers = [],
+  bookmarks = [],
+  locks = [],
   windowStart,
   windowEnd,
   current,
   onSeek,
+  onBookmarkClick,
   disabled = false,
 }) {
   const trackRef = useRef(null);
   const [dragging, setDragging] = useState(false);
   const [hover, setHover] = useState(null); // { pct, ms }
   const [markerHover, setMarkerHover] = useState(null); // { leftPct, label, time }
+  const [bmHover, setBmHover] = useState(null); // { leftPct, title, time }
 
   const span = Math.max(1, windowEnd - windowStart);
 
@@ -101,6 +108,49 @@ export default function ScrubBar({
     }
     return out;
   }, [markers, windowStart, span]);
+
+  // Evidence-lock bands — a shaded amber span per active hold overlapping window.
+  const lockBands = useMemo(() => {
+    const out = [];
+    for (const l of locks) {
+      const s = l?.start_ts ? new Date(l.start_ts).getTime() : null;
+      const e = l?.end_ts ? new Date(l.end_ts).getTime() : null;
+      if (s == null || e == null) continue;
+      const left = Math.max(0, (s - windowStart) / span);
+      const right = Math.min(1, (e - windowStart) / span);
+      if (right <= 0 || left >= 1 || right <= left) continue;
+      out.push({
+        key: l.id || `${l.start_ts}-${l.end_ts}`,
+        leftPct: left * 100,
+        widthPct: Math.max(0.4, (right - left) * 100),
+        label: l.case_ref ? `Evidence · ${l.case_ref}` : "Evidence hold",
+      });
+    }
+    return out;
+  }, [locks, windowStart, span]);
+
+  // Bookmark flags — a pin at start_ts (point) plus a faint underline for ranges.
+  const bookmarkFlags = useMemo(() => {
+    const out = [];
+    for (const b of bookmarks) {
+      const s = b?.start_ts ? new Date(b.start_ts).getTime() : null;
+      if (s == null || Number.isNaN(s)) continue;
+      const pos = (s - windowStart) / span;
+      if (pos < 0 || pos > 1) continue;
+      const e = b.end_ts ? new Date(b.end_ts).getTime() : null;
+      const rightPct =
+        e != null ? Math.min(1, (e - windowStart) / span) * 100 : null;
+      out.push({
+        key: b.id || `${b.start_ts}-${b.title}`,
+        bm: b,
+        leftPct: pos * 100,
+        widthPct: rightPct != null ? Math.max(0.4, rightPct - pos * 100) : 0,
+        ms: s,
+        title: b.title,
+      });
+    }
+    return out;
+  }, [bookmarks, windowStart, span]);
 
   const posToMs = useCallback(
     (clientX) => {
@@ -169,6 +219,26 @@ export default function ScrubBar({
           </div>
         ))}
 
+        {/* Evidence-lock bands — a shaded amber legal-hold span behind coverage */}
+        {lockBands.map((l) => (
+          <div
+            key={l.key}
+            title={l.label}
+            className="absolute bottom-0 top-0 z-[5] border-x border-amber-500/50 bg-amber-500/15"
+            style={{ left: `${l.leftPct}%`, width: `${l.widthPct}%` }}
+          >
+            <span className="absolute right-0.5 top-0.5 text-amber-400/90">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
+                <path
+                  fillRule="evenodd"
+                  d="M10 1a4 4 0 00-4 4v2H5a2 2 0 00-2 2v7a2 2 0 002 2h10a2 2 0 002-2v-7a2 2 0 00-2-2h-1V5a4 4 0 00-4-4zm2 6V5a2 2 0 10-4 0v2h4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </span>
+          </div>
+        ))}
+
         {/* Coverage blocks */}
         {blocks.map((b) => (
           <div
@@ -214,6 +284,48 @@ export default function ScrubBar({
             />
           </div>
         ))}
+
+        {/* Bookmark flags — a sky-blue pin at start_ts; a range gets a thin bar. */}
+        {bookmarkFlags.map((f) => (
+          <div key={f.key}>
+            {f.widthPct > 0 && (
+              <div
+                className="pointer-events-none absolute bottom-1.5 z-[14] h-1 rounded-sm bg-sky-400/60"
+                style={{ left: `${f.leftPct}%`, width: `${f.widthPct}%` }}
+              />
+            )}
+            <button
+              type="button"
+              title={`${f.title} · ${hhmmss(f.ms)}`}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                if (disabled) return;
+                onSeek?.(f.ms);
+                onBookmarkClick?.(f.bm);
+              }}
+              onMouseEnter={() =>
+                setBmHover({ leftPct: f.leftPct, title: f.title, time: hhmmss(f.ms) })
+              }
+              onMouseLeave={() => setBmHover(null)}
+              className="absolute -bottom-0.5 z-[16] -translate-x-1/2 cursor-pointer text-sky-400 hover:text-sky-300"
+              style={{ left: `${f.leftPct}%` }}
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 drop-shadow">
+                <path d="M5 2a1 1 0 00-1 1v14a1 1 0 002 0v-4.586l1.293 1.293a1 1 0 001.414 0l1.586-1.586a1 1 0 011.414 0L14 13.414A1 1 0 0016 12.7V4.3a1 1 0 00-.553-.894L14 2.7V3a1 1 0 01-1.447.894l-1.106-.553a1 1 0 00-.894 0L9.447 3.894A1 1 0 018 3V2H5z" />
+              </svg>
+            </button>
+          </div>
+        ))}
+
+        {/* Bookmark hover tooltip (title + time) */}
+        {bmHover && (
+          <div
+            className="pointer-events-none absolute -bottom-6 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-sky-900/90 px-1.5 py-0.5 text-[10px] text-sky-100"
+            style={{ left: `${bmHover.leftPct}%` }}
+          >
+            {bmHover.title} · {bmHover.time}
+          </div>
+        )}
 
         {/* Marker hover tooltip (event type + time) */}
         {markerHover && (

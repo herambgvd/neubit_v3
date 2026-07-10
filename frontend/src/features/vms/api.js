@@ -40,6 +40,8 @@ const EXPORT = "/vms/export";
 const REPORTS = "/vms/reports";
 const REPORT_SCHEDULES = "/vms/report-schedules";
 const ONVIF_SERVER = "/vms/onvif-server";
+const BOOKMARKS = "/vms/bookmarks";
+const EVIDENCE = "/vms/evidence";
 
 // The axios baseURL is "<host>/api/v1" — for endpoints the browser must hit
 // directly (an authed blob download triggered via a save-link), prefix the
@@ -373,6 +375,44 @@ export const vms = {
       update: (id, body) => unwrap(api.patch(`${REPORT_SCHEDULES}/${id}`, body)),
       remove: (id) => unwrap(api.delete(`${REPORT_SCHEDULES}/${id}`)),
     },
+  },
+
+  // ── Bookmarks (G3) — mark moments / ranges on a camera timeline ──────────
+  // An operator flags an instant (point) or a span (range) in recorded footage
+  // with a title + optional note + tags. Rendered as clickable markers on the
+  // playback ScrubBar and listed in a side panel. Both reads and writes gate on
+  // vms.playback.view — a bookmark is part of the investigation surface. Public
+  // shape: { id, camera_id, start_ts, end_ts?, title, note?, tags[], created_by,
+  // created_at, updated_at }. end_ts null = a point bookmark.
+  bookmarks: {
+    // GET /vms/bookmarks?camera_id=&from=&to=&skip=&limit= → { items, total }.
+    list: (params = {}) => unwrap(api.get(`${BOOKMARKS}${qs(params)}`)),
+    // POST /vms/bookmarks { camera_id, start_ts, end_ts?, title, note?, tags? }.
+    create: (body) => unwrap(api.post(BOOKMARKS, body)),
+    // PATCH /vms/bookmarks/{id} { start_ts?, end_ts?, title?, note?, tags? }.
+    update: (id, body) => unwrap(api.patch(`${BOOKMARKS}/${id}`, body)),
+    // DELETE /vms/bookmarks/{id} → 204.
+    remove: (id) => unwrap(api.delete(`${BOOKMARKS}/${id}`)),
+  },
+
+  // ── Evidence lock / legal hold (G3) — protect a camera+range from deletion
+  // An active lock keeps EVERY recording overlapping [start_ts,end_ts] safe from
+  // the retention/tiering worker until released. Rendered as a shaded band on the
+  // playback timeline and a "Protected" badge on recordings. Writes (create/
+  // release/delete) gate on vms.recording.control; reads (list/check) on
+  // vms.playback.view. Public shape: { id, camera_id, start_ts, end_ts, reason?,
+  // case_ref?, is_active, created_by, created_at, released_by?, released_at? }.
+  evidence: {
+    // GET /vms/evidence?camera_id=&active_only=&skip=&limit= → { items, total }.
+    list: (params = {}) => unwrap(api.get(`${EVIDENCE}${qs(params)}`)),
+    // POST /vms/evidence { camera_id, start_ts, end_ts, reason?, case_ref? }.
+    create: (body) => unwrap(api.post(EVIDENCE, body)),
+    // POST /vms/evidence/{id}/release → the released lock (is_active:false).
+    release: (id) => unwrap(api.post(`${EVIDENCE}/${id}/release`, {})),
+    // DELETE /vms/evidence/{id} → 204 (hard delete; prefer release for the trail).
+    remove: (id) => unwrap(api.delete(`${EVIDENCE}/${id}`)),
+    // GET /vms/evidence/check?camera_id=&ts= (or &from=&to=) → { camera_id, locked }.
+    check: (params = {}) => unwrap(api.get(`${EVIDENCE}/check${qs(params)}`)),
   },
 
   // ── ONVIF-server config (P6-C) — expose OUR cameras to a 3rd-party VMS ────

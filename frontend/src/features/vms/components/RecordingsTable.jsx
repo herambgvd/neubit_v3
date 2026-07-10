@@ -30,6 +30,20 @@ function IntegrityDot({ status }) {
   );
 }
 
+// "Protected" badge — the recording is under a lock / evidence hold, so the
+// retention & tiering workers will never auto-delete it (G3).
+function ProtectedBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500"
+      title="Protected from retention & tiering deletion"
+    >
+      <Icon icon="heroicons-solid:shield-check" className="text-xs" />
+      Protected
+    </span>
+  );
+}
+
 function IconBtn({ icon, title, onClick, disabled, danger, className = "" }) {
   return (
     <button
@@ -110,7 +124,10 @@ export default function RecordingsTable({
                   <TriggerBadge trigger={r.trigger_type} />
                 </td>
                 <td className="px-4 py-3">
-                  <IntegrityDot status={r.integrity_status} />
+                  <div className="flex flex-col items-start gap-1">
+                    <IntegrityDot status={r.integrity_status} />
+                    {r.locked && <ProtectedBadge />}
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">
