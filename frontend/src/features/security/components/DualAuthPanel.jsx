@@ -9,7 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/kit";
+import { Button, EmptyState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems, fmtDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -111,10 +111,11 @@ export default function DualAuthPanel() {
           {apiError(q.error, "Failed to load requests")}
         </div>
       ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-card-border py-12 text-center">
-          <Icon icon="heroicons-outline:check-circle" className="mb-2 text-3xl text-muted opacity-50" />
-          <p className="text-sm font-medium text-foreground">No {status || ""} requests</p>
-        </div>
+        <EmptyState
+          icon="heroicons-outline:check-circle"
+          title={`No ${status || ""} requests`.replace(/\s+/g, " ").trim()}
+          subtitle="Sensitive actions that require a second approver will appear here."
+        />
       ) : (
         <div className="space-y-2">
           {items.map((r) => (

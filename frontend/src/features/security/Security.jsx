@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 
-import { PageHeader } from "@/components/ui/kit";
+import { EmptyState, PageHeader } from "@/components/ui/kit";
 import { useAuth } from "@/lib/auth";
 import PolicyCard from "./components/PolicyCard";
 import DirectoryCard from "./components/DirectoryCard";
@@ -22,11 +22,11 @@ export default function SecurityPage() {
   // No visibility at all → a clean gate (the nav tab is also perm-hidden).
   if (!canManage && !canApprove) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <Icon icon="heroicons-outline:lock-closed" className="mb-3 text-4xl text-muted opacity-50" />
-        <p className="font-medium text-foreground">Security settings are restricted</p>
-        <p className="mt-1 text-sm text-muted">You need the security.manage or dualauth.approve permission.</p>
-      </div>
+      <EmptyState
+        icon="heroicons-outline:lock-closed"
+        title="Security settings are restricted"
+        subtitle="You need the security.manage or dualauth.approve permission."
+      />
     );
   }
 

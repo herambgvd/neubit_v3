@@ -14,7 +14,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
-import { PageHeader, Button, Badge } from "@/components/ui/kit";
+import { PageHeader, Button, Badge, MetricRow } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { fmtBytes, fmtRelative, titleize } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -98,68 +98,55 @@ function DashboardBody({ d }) {
   return (
     <div className="space-y-6">
       {/* ── KPI cards ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <KpiCard
-          icon="heroicons:video-camera"
-          accent="blue"
-          label="Cameras online"
-          value={`${cams.online ?? 0}/${cams.total ?? 0}`}
-          sub={
-            (cams.offline || 0) + (cams.degraded || 0) > 0
-              ? `${cams.offline || 0} offline · ${cams.degraded || 0} degraded`
-              : "all reachable"
-          }
-          tone={cams.offline ? "warn" : "ok"}
-        />
-        <KpiCard
-          icon="heroicons:film"
-          accent="emerald"
-          label="Recording"
-          value={rec.recording ?? 0}
-          sub={
-            rec.failed
-              ? `${rec.failed} failed · ${rec.idle ?? 0} idle`
-              : `${rec.idle ?? 0} idle`
-          }
-          tone={rec.failed ? "bad" : "ok"}
-        />
-        <KpiCard
-          icon="heroicons:circle-stack"
-          accent="amber"
-          label="Storage used"
-          value={storage.used_pct != null ? `${Math.round(storage.used_pct)}%` : "—"}
-          sub={`${fmtBytes(storage.total_used_bytes || 0)} of ${
-            storage.total_capacity_bytes ? fmtBytes(storage.total_capacity_bytes) : "∞"
-          }`}
-          tone={
-            storage.used_pct != null && storage.used_pct >= 90
-              ? "bad"
-              : storage.used_pct != null && storage.used_pct >= 75
-                ? "warn"
-                : "ok"
-          }
-        />
-        <KpiCard
-          icon="heroicons:bell-alert"
-          accent="rose"
-          label="Alarms (24h)"
-          value={alarms.total ?? 0}
-          sub={
-            alarms.unacknowledged
-              ? `${alarms.unacknowledged} unacknowledged`
-              : "all acknowledged"
-          }
-          tone={alarms.unacknowledged ? "warn" : "ok"}
-        />
-        <KpiCard
-          icon="heroicons:server-stack"
-          accent="indigo"
-          label="NVRs healthy"
-          value={`${nvrs.healthy ?? 0}/${nvrs.total ?? 0}`}
-          sub={nvrs.unhealthy ? `${nvrs.unhealthy} unhealthy` : "all healthy"}
-          tone={nvrs.unhealthy ? "bad" : "ok"}
-        />
-      </div>
+      <MetricRow
+        items={[
+          {
+            icon: "heroicons:video-camera",
+            label: "Cameras online",
+            value: `${cams.online ?? 0}/${cams.total ?? 0}`,
+            hint:
+              (cams.offline || 0) + (cams.degraded || 0) > 0
+                ? `${cams.offline || 0} offline · ${cams.degraded || 0} degraded`
+                : "all reachable",
+            tone: cams.offline ? "warn" : "ok",
+          },
+          {
+            icon: "heroicons:film",
+            label: "Recording",
+            value: rec.recording ?? 0,
+            hint: rec.failed ? `${rec.failed} failed · ${rec.idle ?? 0} idle` : `${rec.idle ?? 0} idle`,
+            tone: rec.failed ? "bad" : "ok",
+          },
+          {
+            icon: "heroicons:circle-stack",
+            label: "Storage used",
+            value: storage.used_pct != null ? `${Math.round(storage.used_pct)}%` : "—",
+            hint: `${fmtBytes(storage.total_used_bytes || 0)} of ${
+              storage.total_capacity_bytes ? fmtBytes(storage.total_capacity_bytes) : "∞"
+            }`,
+            tone:
+              storage.used_pct != null && storage.used_pct >= 90
+                ? "bad"
+                : storage.used_pct != null && storage.used_pct >= 75
+                  ? "warn"
+                  : "ok",
+          },
+          {
+            icon: "heroicons:bell-alert",
+            label: "Alarms (24h)",
+            value: alarms.total ?? 0,
+            hint: alarms.unacknowledged ? `${alarms.unacknowledged} unacknowledged` : "all acknowledged",
+            tone: alarms.unacknowledged ? "warn" : "ok",
+          },
+          {
+            icon: "heroicons:server-stack",
+            label: "NVRs healthy",
+            value: `${nvrs.healthy ?? 0}/${nvrs.total ?? 0}`,
+            hint: nvrs.unhealthy ? `${nvrs.unhealthy} unhealthy` : "all healthy",
+            tone: nvrs.unhealthy ? "bad" : "ok",
+          },
+        ]}
+      />
 
       {/* ── Camera health + Recording throughput ─────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -175,32 +162,6 @@ function DashboardBody({ d }) {
         <NodesCard nodes={nodes} />
         <RecentAlarmsCard alarms={alarms} />
       </div>
-    </div>
-  );
-}
-
-// ── KPI card ─────────────────────────────────────────────────────────────────
-const ACCENTS = {
-  blue: "text-blue-500 bg-blue-500/10",
-  emerald: "text-emerald-500 bg-emerald-500/10",
-  amber: "text-amber-500 bg-amber-500/10",
-  rose: "text-rose-500 bg-rose-500/10",
-  indigo: "text-indigo-500 bg-indigo-500/10",
-};
-const TONE_DOT = { ok: "bg-emerald-500", warn: "bg-amber-500", bad: "bg-red-500" };
-
-function KpiCard({ icon, accent = "blue", label, value, sub, tone = "ok" }) {
-  return (
-    <div className="relative overflow-hidden rounded-xl border border-card-border bg-card p-4">
-      <div className="flex items-start justify-between">
-        <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${ACCENTS[accent] || ACCENTS.blue}`}>
-          <Icon icon={icon} className="text-lg" />
-        </div>
-        <span className={`mt-1 h-2 w-2 rounded-full ${TONE_DOT[tone] || TONE_DOT.ok}`} title={tone} />
-      </div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight text-foreground tabular-nums">{value}</div>
-      <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>
-      {sub && <div className="mt-1.5 truncate text-xs text-muted" title={sub}>{sub}</div>}
     </div>
   );
 }

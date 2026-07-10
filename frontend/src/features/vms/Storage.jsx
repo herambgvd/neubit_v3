@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, PageHeader } from "@/components/ui/kit";
+import { Button, ConfirmDialog, EmptyState, MetricRow, PageHeader } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, fmtBytes } from "@/lib/format";
@@ -144,7 +144,7 @@ function PoolsTab({ pools, query, onAdd, onEdit, onDelete }) {
   if (query.isError) return <ErrorBox error={query.error} fallback="Failed to load pools" />;
   if (pools.length === 0)
     return (
-      <Empty
+      <EmptyState
         icon="heroicons-outline:circle-stack"
         title="No storage pools"
         subtitle="Add a local, NAS or S3 pool to start recording."
@@ -154,11 +154,14 @@ function PoolsTab({ pools, query, onAdd, onEdit, onDelete }) {
 
   return (
     <>
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <SummaryTile label="Pools" value={pools.length} />
-        <SummaryTile label="Declared capacity" value={totalCap ? fmtBytes(totalCap) : "Unlimited"} />
-        <SummaryTile label="Default pool" value={defaultPool?.name || "None set"} />
-      </div>
+      <MetricRow
+        className="mb-4"
+        items={[
+          { label: "Pools", value: pools.length, icon: "heroicons-outline:circle-stack", tone: "info" },
+          { label: "Declared capacity", value: totalCap ? fmtBytes(totalCap) : "Unlimited", icon: "heroicons-outline:server-stack", tone: "neutral" },
+          { label: "Default pool", value: defaultPool?.name || "None set", icon: "heroicons-outline:star", tone: defaultPool ? "ok" : "warn" },
+        ]}
+      />
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {pools.map((pool) => (
           <StoragePoolCard key={pool.id} pool={pool} onEdit={() => onEdit(pool)} onDelete={() => onDelete(pool)} />
@@ -174,7 +177,7 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
   if (query.isError) return <ErrorBox error={query.error} fallback="Failed to load rules" />;
   if (rules.length === 0)
     return (
-      <Empty
+      <EmptyState
         icon="heroicons-outline:arrows-right-left"
         title="No tier rules"
         subtitle="Rules move recordings between pools as they age (hot → cold)."
@@ -188,17 +191,17 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
     <div className="overflow-x-auto rounded-xl border border-card-border bg-card">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-card-border text-left text-muted">
-            <th className="px-4 py-3 font-medium">Name</th>
-            <th className="px-4 py-3 font-medium">Flow</th>
-            <th className="px-4 py-3 font-medium">Move after</th>
-            <th className="px-4 py-3 font-medium">Status</th>
-            <th className="px-4 py-3 text-right font-medium">Actions</th>
+          <tr className="border-b border-card-border bg-hover/40">
+            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">Name</th>
+            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">Flow</th>
+            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-muted">Move after</th>
+            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">Status</th>
+            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-muted">Actions</th>
           </tr>
         </thead>
         <tbody>
           {rules.map((rule) => (
-            <tr key={rule.id} className="border-b border-card-border last:border-0 hover:bg-hover/50">
+            <tr key={rule.id} className="border-b border-card-border/60 last:border-0 hover:bg-hover/50">
               <td className="px-4 py-3 font-medium text-foreground">{rule.name}</td>
               <td className="px-4 py-3 text-muted">
                 <span className="inline-flex items-center gap-1.5">
@@ -207,7 +210,7 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
                   {poolNames[rule.target_pool_id] || "—"}
                 </span>
               </td>
-              <td className="px-4 py-3 text-muted">{fmtAge(rule.after_age_hours || 0)}</td>
+              <td className="px-4 py-3 text-right tabular-nums text-muted">{fmtAge(rule.after_age_hours || 0)}</td>
               <td className="px-4 py-3">
                 {rule.enabled ? (
                   <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-500">
@@ -248,15 +251,6 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
 }
 
 // ── Small shared bits ──────────────────────────────────────────────────────
-function SummaryTile({ label, value }) {
-  return (
-    <div className="rounded-xl border border-card-border bg-card px-4 py-3">
-      <div className="truncate text-lg font-semibold text-foreground">{value}</div>
-      <div className="text-[11px] text-muted">{label}</div>
-    </div>
-  );
-}
-
 function Loading({ label }) {
   return (
     <div className="flex items-center justify-center gap-2 rounded-xl border border-card-border bg-card py-20 text-sm text-muted">
@@ -269,17 +263,6 @@ function ErrorBox({ error, fallback }) {
   return (
     <div className="rounded-xl border border-red-500/20 bg-red-500/10 py-10 text-center text-sm text-red-500">
       {apiError(error, fallback)}
-    </div>
-  );
-}
-
-function Empty({ icon, title, subtitle, action }) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-card-border bg-card py-20 text-center">
-      <Icon icon={icon} className="mb-3 text-4xl text-muted opacity-50" />
-      <p className="font-medium text-foreground">{title}</p>
-      <p className="mt-1 text-sm text-muted">{subtitle}</p>
-      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

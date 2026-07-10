@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, PageHeader, Toggle } from "@/components/ui/kit";
+import { Button, ConfirmDialog, EmptyState, MetricRow, PageHeader, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
@@ -98,18 +98,26 @@ export default function LinkageRulesPage() {
           </div>
         </div>
       ) : rules.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-card-border bg-card py-20 text-center">
-          <Icon icon="heroicons-outline:bolt" className="mb-2 text-3xl text-muted" />
-          <p className="font-medium text-foreground">No linkage rules yet</p>
-          <p className="mb-4 max-w-sm text-sm text-muted">
-            Create a rule to react to camera events — e.g. start a clip on motion, or pop the camera when a zone is breached.
-          </p>
-          <Button icon="heroicons-outline:plus" onClick={openNew}>
-            New rule
-          </Button>
-        </div>
+        <EmptyState
+          icon="heroicons-outline:bolt"
+          title="No linkage rules yet"
+          subtitle="Create a rule to react to camera events — e.g. start a clip on motion, or pop the camera when a zone is breached."
+          action={
+            <Button icon="heroicons-outline:plus" onClick={openNew}>
+              New rule
+            </Button>
+          }
+        />
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-4">
+          <MetricRow
+            items={[
+              { label: "Rules", value: rules.length, icon: "heroicons-outline:bolt", tone: "info" },
+              { label: "Active", value: rules.filter((r) => r.is_active).length, icon: "heroicons-outline:play", tone: "ok" },
+              { label: "Inactive", value: rules.filter((r) => !r.is_active).length, icon: "heroicons-outline:pause", tone: "neutral" },
+            ]}
+          />
+          <div className="space-y-2">
           {rules.map((rule) => {
             const tp = EVENT_TYPE_PRESETS[rule.trigger_event_type] || EVENT_TYPE_PRESETS.system;
             return (
@@ -176,6 +184,7 @@ export default function LinkageRulesPage() {
               </div>
             );
           })}
+          </div>
         </div>
       )}
 

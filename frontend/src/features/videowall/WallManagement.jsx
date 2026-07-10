@@ -569,10 +569,18 @@ function TabList({ loading, items, emptyIcon, emptyText, addLabel, canManage, on
           <Spinner /> Loading…
         </div>
       ) : items.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-10 text-center">
-          <Icon icon={emptyIcon} className="text-2xl text-muted" />
-          <p className="max-w-sm text-xs text-muted">{emptyText}</p>
-        </div>
+        <EmptyState
+          icon={emptyIcon}
+          title="Nothing here yet"
+          subtitle={emptyText}
+          action={
+            canManage && onAdd ? (
+              <Button variant="secondary" icon="heroicons-mini:plus" onClick={onAdd}>
+                {addLabel}
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <ul className="space-y-1.5">
           {items.map((it) => (
