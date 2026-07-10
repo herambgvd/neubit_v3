@@ -331,6 +331,17 @@ class CpPlusDriver(CameraDriver):
                 url = f"{base}/cgi-bin/ptz.cgi?action=stop&channel={channel}&code=Up&arg1=0&arg2=0&arg3=0"
                 await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
                 return None
+            if cmd.action == "zoom":
+                # Zoom-only: pick ZoomTele (in) / ZoomWide (out) by sign of cmd.zoom.
+                code = _PTZ_CONTINUOUS_CODES.get(("zoom", 1 if cmd.zoom >= 0 else -1))
+                if not code:
+                    return None
+                url = (
+                    f"{base}/cgi-bin/ptz.cgi?action=start&channel={channel}"
+                    f"&code={code}&arg1=0&arg2={speed}&arg3=0"
+                )
+                await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
+                return None
             if cmd.action == "goto_preset":
                 url = (
                     f"{base}/cgi-bin/ptz.cgi?action=start&channel={channel}"
@@ -339,12 +350,29 @@ class CpPlusDriver(CameraDriver):
                 await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
                 return None
             if cmd.action == "set_preset":
+                # Dahua preset ids are numeric slots (arg2). The caller supplies the slot in
+                # ``preset_token``; if omitted, pick the next free slot from getPtzPresetInfo.
+                pid = cmd.preset_token or str(await self._next_preset_id(base, channel, creds))
                 url = (
                     f"{base}/cgi-bin/ptz.cgi?action=start&channel={channel}"
-                    f"&code=SetPreset&arg1=0&arg2={cmd.preset_token or ''}&arg3=0"
+                    f"&code=SetPreset&arg1=0&arg2={pid}&arg3=0"
+                )
+                await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
+                return str(pid)
+            if cmd.action == "delete_preset":
+                url = (
+                    f"{base}/cgi-bin/ptz.cgi?action=start&channel={channel}"
+                    f"&code=ClearPreset&arg1=0&arg2={cmd.preset_token}&arg3=0"
                 )
                 await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
                 return None
+            if cmd.action == "get_presets":
+                # configManager getPtzPresetInfo → parse ``preset[N].Name=...`` kv lines.
+                body = await _http.get_text(
+                    f"{base}/cgi-bin/ptz.cgi?action=getPresets&channel={channel}",
+                    creds.username, creds.password,
+                )
+                return self._parse_presets(body or "")
             raise DriverError(f"CP-Plus PTZ action not implemented: {cmd.action}")
         except _http.BrandHTTPError as exc:
             raise DriverError(f"CP-Plus PTZ {cmd.action} failed for {host}: {exc}") from None
@@ -357,6 +385,54 @@ class CpPlusDriver(CameraDriver):
         if value == 0:
             return None
         return _PTZ_CONTINUOUS_CODES.get((axis, 1 if value > 0 else -1))
+
+    @staticmethod
+    def _parse_presets(body: str) -> list[dict]:
+        """Parse Dahua getPresets kv output (``presets[N].Index=..`` / ``.Name=..``).
+
+        # LIVE-VALIDATE: the exact kv keys vary by model/firmware; parsed defensively.
+        """
+        by_idx: dict[str, dict] = {}
+        for line in body.splitlines():
+            line = line.strip()
+            if "=" not in line or "[" not in line:
+                continue
+            key, _, val = line.partition("=")
+            # e.g. presets[0].Index / presets[0].Name
+            try:
+                idx = key[key.index("[") + 1 : key.index("]")]
+            except ValueError:
+                continue
+            entry = by_idx.setdefault(idx, {})
+            if key.endswith(".Index"):
+                entry["token"] = val.strip()
+            elif key.endswith(".Name"):
+                entry["name"] = val.strip()
+        out = []
+        for idx, entry in sorted(by_idx.items(), key=lambda kv: kv[0]):
+            token = entry.get("token") or idx
+            out.append({"token": str(token), "name": entry.get("name") or f"preset {token}"})
+        return out
+
+    async def _next_preset_id(self, base: str, channel: int, creds: Credentials) -> int:
+        """Pick the next free Dahua preset slot (1..255) from the current preset list."""
+        try:
+            body = await _http.get_text(
+                f"{base}/cgi-bin/ptz.cgi?action=getPresets&channel={channel}",
+                creds.username, creds.password,
+            )
+            used = set()
+            for p in self._parse_presets(body or ""):
+                try:
+                    used.add(int(p["token"]))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            for candidate in range(1, 256):
+                if candidate not in used:
+                    return candidate
+        except Exception:  # noqa: BLE001
+            pass
+        return 1
 
     # ── configuration (operator action) ──────────────────────────────────────
     async def configure(

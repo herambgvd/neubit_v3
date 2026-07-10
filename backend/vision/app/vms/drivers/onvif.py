@@ -834,6 +834,24 @@ class OnvifDriver(CameraDriver):
                     req.Position = {"PanTilt": {"x": cmd.pan, "y": cmd.tilt}, "Zoom": {"x": cmd.zoom}}
                     ptz.AbsoluteMove(req)
                     return None
+                if cmd.action == "zoom":
+                    # Zoom-only continuous move (pan/tilt velocity held at 0).
+                    req = ptz.create_type("ContinuousMove")
+                    req.ProfileToken = token
+                    req.Velocity = {"Zoom": {"x": cmd.zoom * cmd.speed}}
+                    ptz.ContinuousMove(req)
+                    return None
+                if cmd.action == "focus":
+                    # Focus is an Imaging-service continuous move (not PTZ). ``zoom`` field
+                    # carries the focus velocity (-1..1); requires the ImagingService.
+                    imaging = cam.create_imaging_service()
+                    media_svc = cam.create_media_service()
+                    vs_token = media_svc.GetVideoSources()[0].token
+                    move = imaging.create_type("Move")
+                    move.VideoSourceToken = vs_token
+                    move.Focus = {"Continuous": {"Speed": cmd.zoom}}
+                    imaging.Move(move)
+                    return None
                 if cmd.action == "stop":
                     ptz.Stop({"ProfileToken": token, "PanTilt": True, "Zoom": True})
                     return None

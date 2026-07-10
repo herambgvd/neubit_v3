@@ -45,6 +45,16 @@ from .base import (
 log = logging.getLogger("vision.drivers.hikvision")
 
 
+def _xml_escape(value: str) -> str:
+    """Minimal XML text escaping for user-supplied preset names in ISAPI bodies."""
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def _fps_from_isapi(max_frame_rate: str | None) -> int | None:
     """ISAPI ``maxFrameRate`` is in centi-fps (e.g. 2500 = 25 fps). Convert to fps."""
     if not max_frame_rate:
@@ -329,6 +339,15 @@ class HikvisionDriver(CameraDriver):
                     creds.username, creds.password, content=xml, headers=headers, verify_tls=creds.verify_tls,
                 )
                 return None
+            if cmd.action == "zoom":
+                # Zoom-only continuous move (pan/tilt held at 0). Direction/speed from cmd.zoom.
+                zoom = int(max(-100, min(100, cmd.zoom * 100)))
+                xml = f"<PTZData><pan>0</pan><tilt>0</tilt><zoom>{zoom}</zoom></PTZData>"
+                await _http.request_strict(
+                    "PUT", f"{base}/ISAPI/PTZCtrl/channels/{channel}/continuous",
+                    creds.username, creds.password, content=xml, headers=headers, verify_tls=creds.verify_tls,
+                )
+                return None
             if cmd.action == "goto_preset":
                 await _http.request_strict(
                     "PUT", f"{base}/ISAPI/PTZCtrl/channels/{channel}/presets/{cmd.preset_token}/goto",
@@ -343,9 +362,51 @@ class HikvisionDriver(CameraDriver):
                 for el in _http.xml_findall(body or "", "PTZPreset"):
                     presets.append({"token": _http.el_text(el, "id"), "name": _http.el_text(el, "presetName", "name")})
                 return presets
+            if cmd.action == "set_preset":
+                # ISAPI stores a preset by id. The caller supplies the target id in
+                # ``preset_token`` (the driver picks the next free id if omitted); the current
+                # position is captured by the device. Returns the id used as the token.
+                pid = cmd.preset_token or await self._next_preset_id(base, channel, creds)
+                name = cmd.preset_name or f"preset {pid}"
+                xml = (
+                    f"<PTZPreset><id>{pid}</id><presetName>{_xml_escape(name)}</presetName></PTZPreset>"
+                )
+                await _http.request_strict(
+                    "PUT", f"{base}/ISAPI/PTZCtrl/channels/{channel}/presets/{pid}",
+                    creds.username, creds.password, content=xml, headers=headers, verify_tls=creds.verify_tls,
+                )
+                return str(pid)
+            if cmd.action == "delete_preset":
+                await _http.request_strict(
+                    "DELETE", f"{base}/ISAPI/PTZCtrl/channels/{channel}/presets/{cmd.preset_token}",
+                    creds.username, creds.password, content="", headers=headers, verify_tls=creds.verify_tls,
+                )
+                return None
             raise DriverError(f"Hikvision PTZ action not implemented: {cmd.action}")
         except _http.BrandHTTPError as exc:
             raise DriverError(f"Hikvision PTZ {cmd.action} failed for {host}: {exc}") from None
+
+    async def _next_preset_id(self, base: str, channel: int, creds: Credentials) -> int:
+        """Pick the next free preset id (1..255) by reading the current preset list.
+
+        # LIVE-VALIDATE: Hik preset id space + PUT-to-create semantics vary by firmware.
+        """
+        try:
+            body = await _http.get_text(
+                f"{base}/ISAPI/PTZCtrl/channels/{channel}/presets", creds.username, creds.password
+            )
+            used = set()
+            for el in _http.xml_findall(body or "", "PTZPreset"):
+                try:
+                    used.add(int(_http.el_text(el, "id") or 0))
+                except (TypeError, ValueError):
+                    continue
+            for candidate in range(1, 256):
+                if candidate not in used:
+                    return candidate
+        except Exception:  # noqa: BLE001 — best-effort; fall back to id 1
+            pass
+        return 1
 
     # ── configuration (operator action) ──────────────────────────────────────
     async def configure(

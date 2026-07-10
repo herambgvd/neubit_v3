@@ -39,6 +39,7 @@ from app.vms.common.events import bus
 from app.vms.events import EventSupervisor
 from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
+from app.vms.ptz import get_cycler
 from app.vms.linkage import LinkageConsumer
 from app.vms.onvif_server import advertiser as onvif_advertiser
 from app.vms.onvif_server import soap_router as onvif_soap_router
@@ -133,6 +134,15 @@ async def lifespan(app: FastAPI):
     await anr_consumer.start()
     app.state.anr_consumer = anr_consumer
 
+    # G1 PTZ patrols: bind the process-local patrol cycler to the app sessionmaker and
+    # re-arm any patrol whose ``is_running`` flag survived a restart (goto-preset in order
+    # on dwell). Cycler tasks are process-local — a restart drops running tours; this
+    # re-arm resumes them from the persisted intent. Graceful (no cameras → no-op).
+    patrol_cycler = get_cycler()
+    patrol_cycler.bind(get_sessionmaker())
+    await patrol_cycler.rearm_running()
+    app.state.patrol_cycler = patrol_cycler
+
     # P6-C ONVIF server: advertise OUR VMS as an ONVIF device via WS-Discovery so
     # external VMS/recorders (Milestone/Genetec/NVRs) auto-find us on the LAN and pull
     # our camera streams + recordings over the /onvif/* SOAP endpoints. GRACEFUL:
@@ -143,6 +153,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await onvif_advertiser.stop()
+    await patrol_cycler.stop_all()
     await report_scheduler.stop()
     await event_supervisor.stop()
     await export_worker.stop()

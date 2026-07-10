@@ -173,6 +173,9 @@ class PtzCommand:
 
     ``action`` is one of:
       * ``continuous`` — pan/tilt/zoom velocity move (use ``pan``/``tilt``/``zoom``/``speed``).
+      * ``zoom``       — zoom-only velocity move (``zoom`` = direction/speed; in > 0, out < 0).
+      * ``focus``      — focus continuous move (Imaging service; ``zoom`` = focus velocity).
+        Graceful ``DriverError`` on brands without a focus surface.
       * ``stop``       — halt motion.
       * ``relative``   — relative move (``pan``/``tilt``/``zoom`` = deltas).
       * ``absolute``   — absolute move (``pan``/``tilt``/``zoom`` = target positions).

@@ -32,6 +32,7 @@ from app.vms.onvif_server.router import config_router as onvif_server_router
 from app.vms.events.router import router as event_router
 from app.vms.patterns.router import router as pattern_router
 from app.vms.playback.router import router as playback_router
+from app.vms.ptz.router import router as ptz_router
 from app.vms.recording.router import router as recording_router
 from app.vms.reports.router import router as reports_router
 from app.vms.storage import rec_router as storage_rec_router
@@ -83,6 +84,12 @@ routers = [
     linkage_router,
     storage_router,
     storage_rec_router,
+    # PTZ operator control (G1) — /vms/cameras/{id}/ptz/{move|stop|zoom|focus|presets|patrols}.
+    # Mounts BEFORE the camera router: its deeper ``/cameras/{id}/ptz/...`` paths must match
+    # before the camera ``/cameras/{camera_id}`` catch-all (FastAPI matches in registration
+    # order). Distinct from the camera router's ``POST /cameras/{id}/ptz`` single-command
+    # endpoint (kept for compatibility). vms.ptz.control (writes) / vms.live.view (reads).
+    ptz_router,
     camera_router,
     group_router,
     pattern_router,

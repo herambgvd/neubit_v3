@@ -317,29 +317,72 @@ class LuminaDriver(CameraDriver):
         # left/right/preset`` on ``/API/ChannelConfig/PTZ/Set``). Confirm which the
         # owner's device speaks.
         """
+        channel = int(cmd.profile_token) if (cmd.profile_token or "").isdigit() else 1
+
+        # get_presets is a GET (list), not a control POST — handle separately.
+        if cmd.action == "get_presets":
+            try:
+                async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT, verify=creds.verify_tls) as c:
+                    r = await c.get(
+                        f"{_base(host, creds)}/api/v1/ptz/presets",
+                        params={"channel": channel}, auth=_auth(creds),
+                    )
+                if r.status_code >= 400:
+                    raise DriverError(f"Lumina get_presets HTTP {r.status_code}: {r.text[:200]}")
+                data = r.json()
+                items = data.get("presets", data) if isinstance(data, dict) else data
+                out = []
+                for p in items or []:
+                    out.append({
+                        "token": str(p.get("token") or p.get("id") or ""),
+                        "name": str(p.get("name") or p.get("presetName") or ""),
+                    })
+                return out
+            except DriverError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                raise DriverError(f"Lumina get_presets failed for {host}: {exc}") from None
+
         action_map = {
             "continuous": "continuous_move",
             "relative": "continuous_move",
             "absolute": "absolute_move",
+            "zoom": "continuous_move",
             "stop": "stop",
             "goto_preset": "preset_goto",
+            "set_preset": "preset_set",
+            "delete_preset": "preset_remove",
         }
         v2_action = action_map.get(cmd.action)
         if not v2_action:
             raise DriverError(f"Lumina PTZ action not supported: {cmd.action}")
 
-        channel = int(cmd.profile_token) if (cmd.profile_token or "").isdigit() else 1
         body: dict[str, Any] = {"channel": channel, "action": v2_action}
         if v2_action in ("absolute_move", "continuous_move"):
-            body.update({"pan": cmd.pan, "tilt": cmd.tilt, "zoom": cmd.zoom, "speed": cmd.speed})
+            zoom = cmd.zoom if cmd.action == "zoom" else cmd.zoom
+            pan = 0.0 if cmd.action == "zoom" else cmd.pan
+            tilt = 0.0 if cmd.action == "zoom" else cmd.tilt
+            body.update({"pan": pan, "tilt": tilt, "zoom": zoom, "speed": cmd.speed})
         elif v2_action == "preset_goto":
             body.update({"preset_token": cmd.preset_token, "speed": cmd.speed})
+        elif v2_action == "preset_set":
+            body.update({"preset_token": cmd.preset_token, "name": cmd.preset_name})
+        elif v2_action == "preset_remove":
+            body.update({"preset_token": cmd.preset_token})
 
         try:
             async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT, verify=creds.verify_tls) as c:
                 r = await c.post(f"{_base(host, creds)}/api/v1/ptz/control", json=body, auth=_auth(creds))
             if r.status_code >= 400:
                 raise DriverError(f"Lumina PTZ {cmd.action} HTTP {r.status_code}: {r.text[:200]}")
+            if cmd.action == "set_preset":
+                # Return the device-assigned token if the API echoes one, else the supplied token.
+                try:
+                    data = r.json()
+                    tok = (data.get("preset_token") or data.get("token")) if isinstance(data, dict) else None
+                except Exception:  # noqa: BLE001
+                    tok = None
+                return str(tok) if tok else (cmd.preset_token or None)
             return None
         except DriverError:
             raise

@@ -28,6 +28,8 @@ Domain split:
                      display wall + live shared-state + presets/tours, VW-A)
   * ``decoder``    — VideoDecoder (hardware video-decoder appliance the wall pushes camera
                      RTSP to over the brand SDK, VW-B)
+  * ``ptz``        — PtzPreset + PtzPatrol (named saved viewpoints + ordered guard-tours the
+                     server-side patrol cycler goto-presets on dwell, G1)
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from .media_node import MediaNode, StreamShard
 from .nvr import NVR
 from .onvif_server import OnvifServerConfig
 from .pattern import CameraPattern
+from .ptz import PtzPatrol, PtzPreset
 from .recording import Recording
 from .report import ReportSchedule
 from .storage import StoragePool, TierRule
@@ -74,4 +77,6 @@ __all__ = [
     "WallPreset",
     "WallTour",
     "VideoDecoder",
+    "PtzPreset",
+    "PtzPatrol",
 ]

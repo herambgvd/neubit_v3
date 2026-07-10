@@ -43,6 +43,8 @@ def _tables():
         MediaProfile,
         OnvifServerConfig,
         PlaybackSession,
+        PtzPatrol,
+        PtzPreset,
         Recording,
         ReportSchedule,
         StoragePool,
@@ -82,6 +84,8 @@ def _tables():
         WallPreset.__table__,
         WallTour.__table__,
         VideoDecoder.__table__,
+        PtzPreset.__table__,
+        PtzPatrol.__table__,
     ]
 
 
