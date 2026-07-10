@@ -34,9 +34,11 @@ Domain split:
 
 from __future__ import annotations
 
+from .bookmark import Bookmark
 from .camera import Camera, MediaProfile
 from .decoder import VideoDecoder
 from .event import VmsEvent
+from .evidence import EvidenceLock
 from .export import ExportJob
 from .group import CameraACL, CameraGroup
 from .health import CameraHealth
@@ -79,4 +81,6 @@ __all__ = [
     "VideoDecoder",
     "PtzPreset",
     "PtzPatrol",
+    "Bookmark",
+    "EvidenceLock",
 ]

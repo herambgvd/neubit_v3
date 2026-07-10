@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from kernel.auth import Scope
 
 from app.vms.common.storage_backend import LocalBackend, S3Backend, S3Unavailable
+from app.vms.evidence.service import recording_is_locked
 from app.vms.models import Camera, Recording, StoragePool, TierRule
 
 from .service import S3_PATH_PREFIX, _s3_key_from_path
@@ -204,7 +205,14 @@ class RetentionTieringWorker:
 
     # ── age-based retention ─────────────────────────────────────────────
     async def _run_age_retention(self, db: AsyncSession) -> int:
-        """Delete recordings past their camera's retention window. Skips locked."""
+        """Delete recordings past their camera's retention window. Skips locked.
+
+        A recording is protected from deletion if EITHER its per-recording ``locked``
+        boolean is set (P3-B) OR an ACTIVE ``EvidenceLock`` (legal hold, G3) covers its
+        camera + time-range. The boolean flag is excluded in SQL as a fast path; the
+        evidence-lock (range) check runs per candidate via ``recording_is_locked`` — a
+        range lock can cover a recording that never had its boolean flag set.
+        """
         # Join to the owning camera to read its retention_days; fall back to global.
         stmt = (
             select(Recording, Camera.retention_days)
@@ -225,6 +233,13 @@ class RetentionTieringWorker:
             if start.tzinfo is None:
                 start = start.replace(tzinfo=timezone.utc)
             if start > age_cutoff:
+                continue
+            # Legal hold: an active EvidenceLock covering this camera+range → SKIP.
+            if await recording_is_locked(db, rec):
+                log.info(
+                    "retention skip (evidence hold): recording=%s camera=%s start=%s",
+                    rec.id, rec.camera_id, start.isoformat(),
+                )
                 continue
             if await self._delete_recording(db, rec):
                 deleted += 1
@@ -281,6 +296,14 @@ class RetentionTieringWorker:
             for rec in rows:
                 if used <= cap:
                     break
+                # Legal hold (G3): an active EvidenceLock covering this camera+range
+                # protects the recording from capacity-eviction too — SKIP it.
+                if await recording_is_locked(db, rec):
+                    log.info(
+                        "capacity skip (evidence hold): recording=%s camera=%s",
+                        rec.id, rec.camera_id,
+                    )
+                    continue
                 size = rec.file_size or 0
                 if await self._delete_recording(db, rec):
                     used -= size

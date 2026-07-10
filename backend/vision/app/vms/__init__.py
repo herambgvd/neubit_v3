@@ -21,8 +21,10 @@ the pre-refactor flat layout.
 
 from __future__ import annotations
 
+from app.vms.bookmarks.router import router as bookmark_router
 from app.vms.cameras.router import router as camera_router
 from app.vms.dashboard.router import router as dashboard_router
+from app.vms.evidence.router import router as evidence_router
 from app.vms.export.router import router as export_router
 from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
@@ -89,6 +91,16 @@ routers = [
     linkage_router,
     storage_router,
     storage_rec_router,
+    # Bookmarks (G3) — /vms/bookmarks (+ /{id}). Operator-marked moments/ranges in
+    # recorded footage (title/note/tags). Distinct literal prefix (no collision with the
+    # camera ``/cameras/{id}`` catch-all). vms.playback.view (read + write).
+    bookmark_router,
+    # Evidence Lock / Legal Hold (G3) — /vms/evidence (+ /{id}, /{id}/release, /check).
+    # A legal hold protecting a camera+time-range from the retention sweep; the retention
+    # worker calls app.vms.evidence.service.recording_is_locked to SKIP covered segments.
+    # Distinct literal prefix (no camera catch-all collision). Writes vms.recording.control
+    # / reads vms.playback.view.
+    evidence_router,
     # PTZ operator control (G1) — /vms/cameras/{id}/ptz/{move|stop|zoom|focus|presets|patrols}.
     # Mounts BEFORE the camera router: its deeper ``/cameras/{id}/ptz/...`` paths must match
     # before the camera ``/cameras/{camera_id}`` catch-all (FastAPI matches in registration

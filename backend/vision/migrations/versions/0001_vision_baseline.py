@@ -31,11 +31,13 @@ def _tables():
     # Import here so the models register on Base.metadata at migration time.
     from app.vms.models import (
         NVR,
+        Bookmark,
         Camera,
         CameraACL,
         CameraGroup,
         CameraHealth,
         CameraPattern,
+        EvidenceLock,
         ExportJob,
         LinkageFire,
         LinkageRule,
@@ -86,6 +88,8 @@ def _tables():
         VideoDecoder.__table__,
         PtzPreset.__table__,
         PtzPatrol.__table__,
+        Bookmark.__table__,
+        EvidenceLock.__table__,
     ]
 
 
