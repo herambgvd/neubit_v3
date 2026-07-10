@@ -285,19 +285,21 @@ export default function Header() {
       <div className="w-full px-6 lg:px-8">
         {/* Single row — logo + inline nav + account (neubit_v2 arrangement). */}
         <div className="h-14 flex items-center gap-4">
-          <div className="shrink-0">
+          {/* Left / centre / right thirds so the nav sits dead-centre of the header:
+              logo and account take equal flex, the nav is centred between them. */}
+          <div className="flex flex-1 min-w-0 items-center">
             <Brand />
           </div>
 
-          {/* Main nav sits right after the logo; scrolls with a slim themed bar if it
-              can't fit. The Config section opens the sub-tab bar below the header. */}
-          <nav className="nav-scroll flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
+          {/* Main nav — centred; scrolls with a slim themed bar if it can't fit.
+              The Config section opens the sub-tab bar below the header. */}
+          <nav className="nav-scroll flex items-center justify-center gap-1 min-w-0 overflow-x-auto">
             {items.map((m) => (
               <NavEntry key={m.title} item={m} pathname={pathname} />
             ))}
           </nav>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex flex-1 items-center justify-end gap-1">
             <button
               onClick={() => window.dispatchEvent(new Event("palette:open"))}
               className="hidden sm:flex items-center gap-2 rounded-md border border-card-border text-muted hover:text-foreground hover:bg-hover transition px-2.5 py-1.5 mr-1"
