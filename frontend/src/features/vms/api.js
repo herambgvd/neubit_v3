@@ -61,6 +61,15 @@ function qs(params = {}) {
 }
 
 export const vms = {
+  // ── Operations / Health dashboard (G2) — one live rollup ────────────────
+  // GET /vms/dashboard/summary → { cameras, recording, storage, nodes, alarms,
+  //   nvrs, generated_at }. Read-only aggregation over existing camera/recording/
+  //   storage/node/event/nvr data. Gated on vms.camera.read; tenant-scoped. The
+  //   node section degrades to data_plane:"unknown" if the Go nvr is unreachable.
+  dashboard: {
+    summary: () => unwrap(api.get("/vms/dashboard/summary")),
+  },
+
   cameras: {
     // GET /cameras → { items, total, skip, limit }. Filters: status, brand,
     // site_id, group_id, q + skip/limit.

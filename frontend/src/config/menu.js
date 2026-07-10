@@ -15,7 +15,7 @@
 // ── Top horizontal nav (domain surfaces) ─────────────────────────────
 export const menuItems = [
   { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "neubit.read" },
-  { title: "Dashboard", icon: "heroicons-outline:chart-bar", link: "/dashboard", disabled: true },
+  { title: "Dashboard", icon: "heroicons-outline:chart-bar", link: "/dashboard", perm: "vms.camera.read" },
   // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
   // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
   { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices" },
