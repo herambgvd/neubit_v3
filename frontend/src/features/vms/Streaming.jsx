@@ -223,6 +223,23 @@ export default function Streaming() {
     [assignToCell],
   );
 
+  // ── Stable, INDEX-BASED tile handlers (video-wall render-perf) ────────────
+  // One handler instance shared by every tile — each tile passes its OWN stable
+  // `index` when invoking. This replaces the per-render `(x) => fn(i, x)` closures
+  // that captured `i` and broke WallTile's React.memo (a fresh function prop each
+  // render forced ALL tiles + LivePlayers to re-render on any parent render).
+  const handleAssign = useCallback(
+    (cameraId, index) => assignToCell(index, cameraId),
+    [assignToCell],
+  );
+  const handleSwap = useCallback((from, index) => swapCells(from, index), [swapCells]);
+  const handleClose = useCallback((index) => closeCell(index), [closeCell]);
+  const handleSpotlight = useCallback((index) => setSpotlight(index), []);
+  const handlePickHere = useCallback(
+    (index) => setPicker({ open: true, tileIndex: index }),
+    [],
+  );
+
   const clearWall = () =>
     setConfirm({
       title: "Clear wall",
@@ -431,6 +448,18 @@ export default function Streaming() {
   };
 
   const hero = heroIndex(layout);
+
+  // Per-tile grid-area styles, memoised so each tile gets a REFERENTIALLY STABLE
+  // `style` prop (tileStyle() builds a fresh {gridArea} object for spotlight
+  // layouts each call — that alone would defeat WallTile's memo). Symmetric
+  // layouts yield undefined (already stable). Rebuilds only when the layout
+  // changes. tileStyleFor(i) reads from this frozen array.
+  const tileStyles = useMemo(
+    () => Array.from({ length: layout.capacity }, (_, i) => tileStyle(layout, i)),
+    [layout],
+  );
+  const tileStyleFor = useCallback((i) => tileStyles[i], [tileStyles]);
+
   const isSpotlightActive = spotlight != null && !!cells[spotlight]?.cameraId;
   const spotlightCam = spotlight != null ? cameraById.get(cells[spotlight]?.cameraId) : null;
 
@@ -449,12 +478,12 @@ export default function Streaming() {
       isHero={isHero || spotlightMode}
       spotlight={spotlightMode}
       railDragging={railDragging}
-      style={spotlightMode ? undefined : tileStyle(layout, i)}
-      onAssign={(camId) => assignToCell(i, camId)}
-      onSwap={(from) => swapCells(from, i)}
-      onClose={() => closeCell(i)}
-      onSpotlight={() => setSpotlight(i)}
-      onPickHere={(idx) => setPicker({ open: true, tileIndex: idx })}
+      style={spotlightMode ? undefined : tileStyleFor(i)}
+      onAssign={handleAssign}
+      onSwap={handleSwap}
+      onClose={handleClose}
+      onSpotlight={handleSpotlight}
+      onPickHere={handlePickHere}
     />
   );
 

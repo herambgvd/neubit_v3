@@ -18,7 +18,18 @@
 //   3. native HLS (Safari)
 //
 // Chrome (unless `minimal`): LIVE badge, snapshot, mute, fullscreen, retry.
-import { useCallback, useEffect, useRef, useState } from "react";
+//
+// ── Memo boundary (video-wall render-perf) ──────────────────────────────────
+// LivePlayer is wrapped in React.memo so an unrelated parent re-render (SSE wall
+// tick, a sibling tile's loading/error state, mute toggle, drag state) does NOT
+// re-render this player — and therefore does NOT risk re-running the WebRTC/WHEP
+// attach effect. That effect's deps are stable primitives derived from the
+// session (`hlsUrl`/`webrtcUrl` are strings off `useLiveSession`'s session, plus
+// the internal `attach` counter), so the stream identity (cameraId + profile +
+// session url) is what drives a real attach — never an unrelated parent render.
+// Props MUST stay referentially stable for the memo to hold: callers pass stable
+// primitives + useCallback'd handlers (WallTile / Streaming do this).
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { useLiveSession } from "../hooks/useLiveSession";
@@ -48,7 +59,7 @@ function toTranscodedWhepUrl(url) {
   }
 }
 
-export default function LivePlayer({
+function LivePlayer({
   cameraId,
   cameraName,
   profile = "sub",
@@ -567,6 +578,11 @@ export default function LivePlayer({
     </div>
   );
 }
+
+// Memoised: only re-render when THIS player's props change (camera/session/urls,
+// flags, or a stabilised callback). Unrelated parent renders are skipped, so the
+// attach effect never re-runs off a sibling tile's state change.
+export default memo(LivePlayer);
 
 function ChromeBtn({ icon, title, onClick }) {
   return (

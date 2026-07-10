@@ -17,7 +17,17 @@
 // paging a tour, or shrinking the layout tears the session down automatically.
 // A tile promoted to spotlight KEEPS its cameraId (same LivePlayer key) so the
 // session is reused, not restarted.
-import { useRef, useState } from "react";
+//
+// ── Memo boundary (video-wall render-perf) ──────────────────────────────────
+// WallTile is wrapped in React.memo so a re-render of the Streaming shell (SSE
+// wall tick, a sibling tile's state, mute-all, drag) only re-renders the tiles
+// whose OWN props changed. For the memo to hold, the parent must pass stable
+// props: the callbacks are INDEX-BASED (`onSwap(fromIndex, index)`,
+// `onSpotlight(index)`, `onClose(index)`, `onAssign(cameraId, index)`,
+// `onPickHere(index)`) so a single useCallback'd handler is shared by every tile
+// instead of a fresh per-render closure that captures `i`. The tile supplies its
+// own stable `index` when invoking them.
+import { memo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { useAuth } from "@/lib/auth";
@@ -34,7 +44,7 @@ const EDGE = {
   unknown: "bg-amber-500",
 };
 
-export default function WallTile({
+function WallTile({
   index,
   cameraId,
   camera,
@@ -42,11 +52,11 @@ export default function WallTile({
   isHero = false,
   spotlight = false, // fills the whole wall → room for the PTZ overlay
   railDragging = false,
-  onAssign, // (cameraId) — from rail drag / picker
-  onSwap, // (fromIndex) — from tile→tile drag
-  onClose,
-  onSpotlight, // promote this tile to fill the wall
-  onPickHere, // open quick camera picker for an empty tile
+  onAssign, // (cameraId, index) — from rail drag / picker
+  onSwap, // (fromIndex, index) — from tile→tile drag
+  onClose, // (index)
+  onSpotlight, // (index) — promote this tile to fill the wall
+  onPickHere, // (index) — open quick camera picker for an empty tile
   style,
 }) {
   const rootRef = useRef(null);
@@ -67,11 +77,11 @@ export default function WallTile({
     setDropActive(false);
     const tileIdx = e.dataTransfer.getData("text/tile-index");
     if (tileIdx !== "" && tileIdx != null && String(tileIdx) !== String(index)) {
-      onSwap?.(Number(tileIdx));
+      onSwap?.(Number(tileIdx), index);
       return;
     }
     const id = e.dataTransfer.getData("text/camera-id");
-    if (id) onAssign?.(id);
+    if (id) onAssign?.(id, index);
   };
 
   // ── Empty cell ───────────────────────────────────────────────────────────
@@ -185,12 +195,18 @@ export default function WallTile({
           icon="heroicons-outline:x-mark"
           title="Remove from wall"
           danger
-          onClick={() => onClose?.()}
+          onClick={() => onClose?.(index)}
         />
       </div>
     </div>
   );
 }
+
+// Memoised: a tile re-renders only when its OWN props change (its camera object,
+// cameraId, flags, or the shared stable handlers) — not on every Streaming-shell
+// render. This is what keeps a sibling tile's state change from cascading a
+// render (and the WHEP re-attach risk) into every other tile's LivePlayer.
+export default memo(WallTile);
 
 function TileBtn({ icon, title, onClick, danger = false }) {
   return (
