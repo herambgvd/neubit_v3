@@ -38,10 +38,14 @@ export function Field({
   ...control
 }) {
   const errCls = error ? "!border-red-500" : "";
-  // Keep controlled inputs controlled: if a `value` prop is passed but is
-  // null/undefined, coerce to "" so React never flips controlled↔uncontrolled
-  // (a defined→undefined value throws the "changing a controlled input" warning).
-  if ("value" in control && control.value == null) control.value = "";
+  // Keep controlled inputs controlled: ANY field with an onChange handler (or an
+  // explicit value prop) is controlled — guarantee it always has a defined value
+  // ("") so React never flips controlled↔uncontrolled, even if a caller passes
+  // value={undefined} or omits value on some renders. (A defined→undefined value
+  // throws the "changing a controlled input to be uncontrolled" warning.)
+  if ((control.onChange !== undefined || "value" in control) && control.value == null) {
+    control.value = "";
+  }
   return (
     <div className={containerClassName}>
       {label && <FieldLabel required={required}>{label}</FieldLabel>}
