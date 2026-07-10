@@ -256,6 +256,55 @@ export function EmptyState({ icon = "heroicons-outline:inbox", title, subtitle, 
   );
 }
 
+// ── Metric / KPI cards ────────────────────────────────────────────────────────
+// The enterprise stat tile used across dashboards & report headers: an icon chip
+// (tone-coloured) + a large tabular value + an uppercase label, with a matching
+// accent bar. Use <MetricRow> to lay out a set that always fills the row width.
+const _METRIC_TONE = {
+  ok: "text-emerald-500 bg-emerald-500/10",
+  warn: "text-amber-500 bg-amber-500/10",
+  bad: "text-red-500 bg-red-500/10",
+  info: "text-blue-500 bg-blue-500/10",
+  neutral: "text-muted bg-hover",
+};
+const _METRIC_BAR = {
+  ok: "bg-emerald-500/70",
+  warn: "bg-amber-500/70",
+  bad: "bg-red-500/70",
+  info: "bg-blue-500/70",
+  neutral: "bg-card-border",
+};
+export function MetricCard({ label, value, icon, tone = "info", hint, className = "" }) {
+  return (
+    <div
+      className={`relative flex items-center gap-3 overflow-hidden rounded-xl border border-card-border bg-card px-4 py-3.5 ${className}`}
+    >
+      <span className={`absolute inset-y-0 left-0 w-1 ${_METRIC_BAR[tone] || _METRIC_BAR.info}`} />
+      {icon && (
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${_METRIC_TONE[tone] || _METRIC_TONE.info}`}>
+          <Icon icon={icon} className="text-lg" />
+        </span>
+      )}
+      <div className="min-w-0">
+        <div className="text-2xl font-semibold leading-tight tracking-tight text-foreground tabular-nums">{value}</div>
+        <div className="mt-0.5 truncate text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>
+        {hint && <div className="truncate text-[11px] text-muted/70">{hint}</div>}
+      </div>
+    </div>
+  );
+}
+const _METRIC_COLS = { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5", 6: "sm:grid-cols-6" };
+export function MetricRow({ items = [], className = "" }) {
+  const cols = _METRIC_COLS[Math.min(items.length, 6)] || "sm:grid-cols-4";
+  return (
+    <div className={`grid grid-cols-2 gap-2.5 ${cols} ${className}`}>
+      {items.map((m, i) => (
+        <MetricCard key={m.label || i} {...m} />
+      ))}
+    </div>
+  );
+}
+
 export function Toggle({ checked, onChange, disabled }) {
   return (
     <button
@@ -375,15 +424,20 @@ export function ConfirmDialog({ state, onClose, pending }) {
   );
 }
 
+// columns: [{ key, label, render?, align? ("right"|"center"), className? }]
 export function Table({ columns, rows, empty }) {
   if (!rows?.length) return empty || <EmptyState title="Nothing here yet" />;
+  const alignCls = (a) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-muted border-b border-card-border">
+          <tr className="border-b border-card-border bg-hover/40">
             {columns.map((c) => (
-              <th key={c.key} className="font-medium px-4 py-3">
+              <th
+                key={c.key}
+                className={`px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted ${alignCls(c.align)}`}
+              >
                 {c.label}
               </th>
             ))}
@@ -393,10 +447,13 @@ export function Table({ columns, rows, empty }) {
           {rows.map((row, i) => (
             <tr
               key={row.id || i}
-              className="border-b border-card-border hover:bg-hover transition"
+              className="border-b border-card-border/60 transition last:border-0 hover:bg-hover/50"
             >
               {columns.map((c) => (
-                <td key={c.key} className="px-4 py-3 text-foreground">
+                <td
+                  key={c.key}
+                  className={`px-4 py-3 text-foreground ${alignCls(c.align)} ${c.align === "right" ? "tabular-nums" : ""} ${c.className || ""}`}
+                >
                   {c.render ? c.render(row) : row[c.key]}
                 </td>
               ))}
