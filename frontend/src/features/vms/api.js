@@ -415,6 +415,59 @@ export const vms = {
     check: (params = {}) => unwrap(api.get(`${EVIDENCE}/check${qs(params)}`)),
   },
 
+  // ── Smart / forensic motion search (G4) — VMD over recorded footage ──────
+  // Find motion inside drawn region(s) over a time window in a camera's recorded
+  // segments (ffmpeg motion/scene energy on the cropped region — NOT AI). An async
+  // job: start → poll → hit intervals. Regions are NORMALIZED 0..1 ({x,y}=top-left,
+  // {w,h}=size); an empty regions[] = whole frame. Both start + poll gate on
+  // vms.playback.view; tenant-scoped. Hit timestamps are ISO-8601 UTC.
+  motionSearch: {
+    // POST /vms/cameras/{id}/motion-search
+    //   { from, to, regions:[{x,y,w,h}], sensitivity?=0.5, sample_fps?=4.0 }
+    //   → 201 { job_id, status:"queued", ... }.
+    start: (cameraId, body) =>
+      unwrap(api.post(`${CAMERAS}/${cameraId}/motion-search`, body)),
+    // GET /vms/motion-search/{job_id} → { status:"queued"|"running"|"done"|
+    //   "failed", progress, hits:[{start,end,score}], note, error }.
+    get: (jobId) => unwrap(api.get(`/vms/motion-search/${jobId}`)),
+    // Poll `get(jobId)` every `intervalMs` until the job reaches a terminal state
+    // (done|failed) or `signal` aborts. `onTick(job)` fires each poll so the caller
+    // can render progress. Resolves with the terminal job (or rejects on abort).
+    poll: (jobId, { intervalMs = 1500, onTick, signal } = {}) =>
+      new Promise((resolve, reject) => {
+        let stopped = false;
+        const stop = () => {
+          stopped = true;
+        };
+        if (signal) {
+          if (signal.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal.addEventListener("abort", () => {
+            stop();
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }
+        const tick = async () => {
+          if (stopped) return;
+          try {
+            const job = await vms.motionSearch.get(jobId);
+            if (stopped) return;
+            onTick?.(job);
+            if (job?.status === "done" || job?.status === "failed") {
+              resolve(job);
+              return;
+            }
+            setTimeout(tick, intervalMs);
+          } catch (e) {
+            if (!stopped) reject(e);
+          }
+        };
+        tick();
+      }),
+  },
+
   // ── ONVIF-server config (P6-C) — expose OUR cameras to a 3rd-party VMS ────
   // Per-tenant interop: Milestone/Genetec/etc. pull our cameras over ONVIF.
   // Public shape: { id, enabled, exposed_camera_ids[] ("*"=all), service_username,

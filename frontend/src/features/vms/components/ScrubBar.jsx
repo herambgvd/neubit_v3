@@ -9,6 +9,7 @@
 //   markers:  [{ t, event_type, severity, event_id }] — VmsEvent ticks (P5-C)
 //   bookmarks:[{ id, start_ts, end_ts?, title, note?, tags[] }] — G3 bookmarks
 //   locks:    [{ id, start_ts, end_ts, reason?, case_ref?, is_active }] — G3 evidence
+//   motionHits:[{ start, end?, score? }] — G4 forensic-motion-search hit intervals
 //   windowStart / windowEnd     — epoch ms, the visible track range
 //   current                     — epoch ms, the playhead
 //   onSeek(ms)                  — click/drag (or click a marker) to a timestamp
@@ -46,6 +47,7 @@ export default function ScrubBar({
   markers = [],
   bookmarks = [],
   locks = [],
+  motionHits = [],
   windowStart,
   windowEnd,
   current,
@@ -58,6 +60,7 @@ export default function ScrubBar({
   const [hover, setHover] = useState(null); // { pct, ms }
   const [markerHover, setMarkerHover] = useState(null); // { leftPct, label, time }
   const [bmHover, setBmHover] = useState(null); // { leftPct, title, time }
+  const [hitHover, setHitHover] = useState(null); // { leftPct, label } — G4 motion hit
 
   const span = Math.max(1, windowEnd - windowStart);
 
@@ -151,6 +154,29 @@ export default function ScrubBar({
     }
     return out;
   }, [bookmarks, windowStart, span]);
+
+  // G4 forensic motion-search hits — fuchsia intervals plotted along the track,
+  // distinct from coverage/bookmarks/locks. A point hit (no end) gets a min width.
+  const motionBands = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < motionHits.length; i += 1) {
+      const h = motionHits[i];
+      const s = h?.start ? new Date(h.start).getTime() : null;
+      if (s == null || Number.isNaN(s)) continue;
+      const e = h.end ? new Date(h.end).getTime() : s;
+      const left = Math.max(0, (s - windowStart) / span);
+      const right = Math.min(1, (Math.max(e, s) - windowStart) / span);
+      if (right <= 0 || left >= 1) continue;
+      out.push({
+        key: `${h.start}-${i}`,
+        ms: s,
+        leftPct: left * 100,
+        widthPct: Math.max(0.5, (right - left) * 100),
+        label: typeof h.score === "number" ? `Motion · ${(h.score * 100).toFixed(0)}%` : "Motion hit",
+      });
+    }
+    return out;
+  }, [motionHits, windowStart, span]);
 
   const posToMs = useCallback(
     (clientX) => {
@@ -251,6 +277,34 @@ export default function ScrubBar({
         {blocks.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted">
             No coverage in this window
+          </div>
+        )}
+
+        {/* G4 forensic motion-search hits — fuchsia intervals; click seeks. */}
+        {motionBands.map((h) => (
+          <div
+            key={h.key}
+            role="button"
+            tabIndex={-1}
+            title={`${h.label} · ${hhmmss(h.ms)}`}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              if (!disabled) onSeek?.(h.ms);
+            }}
+            onMouseEnter={() => setHitHover({ leftPct: h.leftPct, label: `${h.label} · ${hhmmss(h.ms)}` })}
+            onMouseLeave={() => setHitHover(null)}
+            className="absolute bottom-0.5 top-0.5 z-[13] cursor-pointer rounded-sm border border-fuchsia-400/70 bg-fuchsia-500/40 ring-1 ring-fuchsia-400/40 hover:bg-fuchsia-500/60"
+            style={{ left: `${h.leftPct}%`, width: `${h.widthPct}%` }}
+          />
+        ))}
+
+        {/* Motion-hit hover tooltip */}
+        {hitHover && (
+          <div
+            className="pointer-events-none absolute -top-6 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-fuchsia-900/90 px-1.5 py-0.5 text-[10px] text-fuchsia-100"
+            style={{ left: `${hitHover.leftPct}%` }}
+          >
+            {hitHover.label}
           </div>
         )}
 

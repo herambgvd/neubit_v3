@@ -33,6 +33,7 @@ import ScrubBar from "./ScrubBar";
 import BookmarkModal from "./BookmarkModal";
 import EvidenceLockModal from "./EvidenceLockModal";
 import BookmarksPanel from "./BookmarksPanel";
+import MotionSearchModal from "./MotionSearchModal";
 
 const SPEEDS = [0.5, 1, 2, 4];
 const DAY_MS = 86_400_000;
@@ -124,6 +125,10 @@ export default function PlaybackPlayer({
   const qc = useQueryClient();
   const { can } = useAuth();
   const canLock = can("vms.recording.control");
+  const canSearch = can("vms.playback.view");
+  // ── Smart / forensic motion search (G4) — standalone only ───────────────
+  const [motionSearchOpen, setMotionSearchOpen] = useState(false);
+  const [motionHits, setMotionHits] = useState([]); // [{ start, end?, score? }]
   const [bookmarkSeed, setBookmarkSeed] = useState(null); // { start, end? } | null → open create
   const [editBookmark, setEditBookmark] = useState(null); // bookmark row | null → open edit
   const [lockSeed, setLockSeed] = useState(null); // { start, end } | null → open lock modal
@@ -519,6 +524,14 @@ export default function PlaybackPlayer({
             }}
             plain
           />
+          {canSearch && (
+            <CtrlBtn
+              icon="heroicons-outline:magnifying-glass-circle"
+              title="Smart motion search"
+              onClick={() => setMotionSearchOpen(true)}
+              plain
+            />
+          )}
           {canLock && (
             <CtrlBtn
               icon="heroicons-outline:lock-closed"
@@ -545,6 +558,7 @@ export default function PlaybackPlayer({
           markers={markers}
           bookmarks={bookmarks}
           locks={locks}
+          motionHits={motionHits}
           windowStart={windowStart}
           windowEnd={windowEnd}
           current={current}
@@ -562,6 +576,30 @@ export default function PlaybackPlayer({
                 : "No coverage"}
           </span>
         </div>
+
+        {/* G4 — motion-search hits plotted on the timeline (fuchsia). */}
+        {motionHits.length > 0 && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1.5 text-[11px]">
+            <span className="inline-block h-2 w-3 rounded-sm bg-fuchsia-500/60" />
+            <span className="text-foreground">
+              {motionHits.length} motion hit{motionHits.length === 1 ? "" : "s"} on the timeline
+            </span>
+            <button
+              type="button"
+              onClick={() => setMotionSearchOpen(true)}
+              className="ml-auto text-muted hover:text-foreground"
+            >
+              Refine
+            </button>
+            <button
+              type="button"
+              onClick={() => setMotionHits([])}
+              className="text-muted hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         {/* Bookmark popover — appears after clicking a flag on the scrub bar */}
         {activeBookmark && (
@@ -653,6 +691,22 @@ export default function PlaybackPlayer({
         seed={lockSeed}
         onSaved={() => invalidateLocks()}
       />
+      {canSearch && (
+        <MotionSearchModal
+          open={motionSearchOpen}
+          onClose={() => setMotionSearchOpen(false)}
+          cameraId={cameraId}
+          cameraName={cameraName}
+          seedFrom={iso(windowStart)}
+          seedTo={iso(current ?? windowEnd)}
+          onResults={({ hits }) => setMotionHits(hits || [])}
+          onSeekHit={(isoTs) => {
+            const ms = new Date(isoTs).getTime();
+            if (!Number.isNaN(ms)) onScrubSeek(ms);
+            setMotionSearchOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
