@@ -192,19 +192,8 @@ export default function CamerasPage() {
 
   return (
     <div className="pb-8">
-      {/* Compact toolbar — actions only (no title/subtitle; the "Cameras" sub-tab
-          above already labels the page). */}
-      <div className="mb-4 flex items-center justify-end gap-2">
-        {viewToggle}
-        <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
-          ONVIF discovery
-        </Button>
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
-          Add camera
-        </Button>
-      </div>
-
-      {/* Filters — search / brand / site / status / refresh */}
+      {/* Single toolbar row — filters on the left, actions on the right.
+          (No title/subtitle; the "Cameras" sub-tab above already labels the page.) */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label className="relative block w-64 max-w-full">
           <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-muted" />
@@ -235,6 +224,17 @@ export default function CamerasPage() {
         >
           <Icon icon="heroicons-outline:arrow-path" className="text-base" />
         </button>
+
+        {/* Actions pushed to the right */}
+        <div className="ml-auto flex items-center gap-2">
+          {viewToggle}
+          <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
+            Discovery
+          </Button>
+          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
+            Add camera
+          </Button>
+        </div>
       </div>
 
       {/* Body */}
