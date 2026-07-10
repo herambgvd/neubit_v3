@@ -43,6 +43,7 @@ def _tables():
         LinkageRule,
         MediaNode,
         MediaProfile,
+        MotionSearchJob,
         OnvifServerConfig,
         PlaybackSession,
         PtzPatrol,
@@ -90,6 +91,7 @@ def _tables():
         PtzPatrol.__table__,
         Bookmark.__table__,
         EvidenceLock.__table__,
+        MotionSearchJob.__table__,
     ]
 
 

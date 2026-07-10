@@ -30,6 +30,8 @@ Domain split:
                      RTSP to over the brand SDK, VW-B)
   * ``ptz``        — PtzPreset + PtzPatrol (named saved viewpoints + ordered guard-tours the
                      server-side patrol cycler goto-presets on dwell, G1)
+  * ``motion_search`` — MotionSearchJob (forensic non-AI VMD search: ffmpeg scene/motion
+                     over a drawn region of recorded segments → hit intervals, G4)
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ from .health import CameraHealth
 from .linkage import LinkageFire, LinkageRule
 from .live import PlaybackSession
 from .media_node import MediaNode, StreamShard
+from .motion_search import MotionSearchJob
 from .nvr import NVR
 from .onvif_server import OnvifServerConfig
 from .pattern import CameraPattern
@@ -83,4 +86,5 @@ __all__ = [
     "PtzPatrol",
     "Bookmark",
     "EvidenceLock",
+    "MotionSearchJob",
 ]

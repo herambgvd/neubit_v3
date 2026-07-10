@@ -30,6 +30,7 @@ from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
 from app.vms.linkage.router import router as linkage_router
 from app.vms.live.router import router as live_router
+from app.vms.motion_search.router import router as motion_search_router
 from app.vms.nvr.router import router as nvr_router
 from app.vms.onvif_server.router import config_router as onvif_server_router
 from app.vms.events.router import router as event_router
@@ -101,6 +102,12 @@ routers = [
     # Distinct literal prefix (no camera catch-all collision). Writes vms.recording.control
     # / reads vms.playback.view.
     evidence_router,
+    # Forensic Motion Search (G4) — POST /vms/cameras/{id}/motion-search (queue) +
+    # GET /vms/motion-search/{job}. Non-AI ffmpeg VMD over recorded segments in drawn
+    # region(s) → hit intervals. The MotionSearchWorker (app.main lifespan) does the
+    # ffmpeg analysis. POST path is deeper than the camera /cameras/{id} catch-all and
+    # /motion-search/{job} is a distinct prefix. vms.playback.view (read + write).
+    motion_search_router,
     # PTZ operator control (G1) — /vms/cameras/{id}/ptz/{move|stop|zoom|focus|presets|patrols}.
     # Mounts BEFORE the camera router: its deeper ``/cameras/{id}/ptz/...`` paths must match
     # before the camera ``/cameras/{camera_id}`` catch-all (FastAPI matches in registration

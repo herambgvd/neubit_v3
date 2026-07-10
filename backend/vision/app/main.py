@@ -39,6 +39,7 @@ from app.vms.common.events import bus
 from app.vms.events import EventSupervisor
 from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
+from app.vms.motion_search import MotionSearchWorker
 from app.vms.ptz import get_cycler
 from app.vms.linkage import LinkageConsumer
 from app.vms.onvif_server import advertiser as onvif_advertiser
@@ -89,6 +90,15 @@ async def lifespan(app: FastAPI):
     export_worker = ExportWorker(get_sessionmaker())
     await export_worker.start()
     app.state.export_worker = export_worker
+
+    # G4 forensic motion search: drain queued MotionSearchJobs → non-AI ffmpeg VMD over
+    # the covered recorded fmp4 segments in the drawn region(s) → threshold the per-frame
+    # scene-change scores into hit intervals → store them. Own DB session per cycle;
+    # bounded concurrency; graceful (missing/tiered segment or ffmpeg fail → partial hits
+    # + a note, only a fully-unanalyzable job fails; never crashes the loop).
+    motion_search_worker = MotionSearchWorker(get_sessionmaker())
+    await motion_search_worker.start()
+    app.state.motion_search_worker = motion_search_worker
 
     # P5-A camera device-events: the event-supervisor opens one ONVIF/brand
     # subscription per active ``onvif_events_enabled`` camera (re-scanned on a tick,
@@ -156,6 +166,7 @@ async def lifespan(app: FastAPI):
     await patrol_cycler.stop_all()
     await report_scheduler.stop()
     await event_supervisor.stop()
+    await motion_search_worker.stop()
     await export_worker.stop()
     await storage_worker.stop()
     await rec_scheduler.stop()
