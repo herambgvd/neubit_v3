@@ -12,12 +12,13 @@ import os
 import secrets
 import uuid
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.audit import record as audit_record
+from ..core.config import get_settings
 from ..core.errors import UnauthorizedError, ValidationError
 from ..core.logging import get_logger
 from ..core.pagination import Page, PageParams, page_params, paginate
@@ -25,6 +26,7 @@ from ..core.ratelimit import login_rate_limit
 from ..core.storage import get_storage
 from ..db.base import get_db
 from ..tenancy.scope import scope_of
+from .cookies import clear_refresh_cookie, set_refresh_cookie
 from .deps import get_current_sid, get_current_user, require_permission
 from .models import User
 from .permissions import PERMISSIONS, CorePerm
@@ -94,6 +96,7 @@ async def setup_status(db: AsyncSession = Depends(get_db)) -> dict:
 async def setup(
     data: SetupIn,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> TokenOut:
     """PUBLIC, one-time — create the first administrator and sign them in.
@@ -107,6 +110,7 @@ async def setup(
     access, refresh = await svc.issue_tokens(
         admin, user_agent=request.headers.get("user-agent"), ip=_client_ip(request)
     )
+    set_refresh_cookie(response, refresh)
     await audit_record(
         db, actor=admin, action="auth.setup", target_type="user", target_id=str(admin.id),
     )
@@ -117,6 +121,7 @@ async def setup(
 async def login(
     data: LoginIn,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     _rl: None = Depends(login_rate_limit),
 ) -> LoginResult:
@@ -128,6 +133,7 @@ async def login(
     access, refresh = await svc.issue_tokens(
         user, user_agent=request.headers.get("user-agent"), ip=_client_ip(request)
     )
+    set_refresh_cookie(response, refresh)
     await audit_record(
         db, actor=user, action="auth.login", target_type="user", target_id=str(user.id),
     )
@@ -138,6 +144,7 @@ async def login(
 async def login_mfa(
     data: MfaLoginIn,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     _rl: None = Depends(login_rate_limit),
 ) -> TokenOut:
@@ -148,6 +155,7 @@ async def login_mfa(
     access, refresh = await svc.issue_tokens(
         user, user_agent=request.headers.get("user-agent"), ip=_client_ip(request)
     )
+    set_refresh_cookie(response, refresh)
     await audit_record(
         db, actor=user, action="auth.login_mfa", target_type="user", target_id=str(user.id),
     )
@@ -155,8 +163,34 @@ async def login_mfa(
 
 
 @router.post("/refresh", response_model=AccessOut)
-async def refresh(data: RefreshIn, db: AsyncSession = Depends(get_db)) -> AccessOut:
-    return AccessOut(access_token=await AuthService(db).refresh_access(data.refresh_token))
+async def refresh(request: Request, db: AsyncSession = Depends(get_db)) -> AccessOut:
+    """Mint a new access token from the refresh token — a session probe.
+
+    The refresh token is read from the httpOnly cookie (browser path), falling back
+    to a JSON body ``{"refresh_token": ...}`` for non-browser / legacy callers.
+
+    When there is no cookie/body token, or it is invalid/expired/revoked, this
+    returns **200 with a null access_token** rather than a 4xx — so the SPA can
+    bootstrap its session without generating console/network errors when the user
+    is simply signed out. A genuinely present-but-valid token yields a new access
+    token as usual.
+    """
+    token = request.cookies.get(get_settings().refresh_cookie_name)
+    if not token:
+        # Legacy/non-browser fallback: read {"refresh_token": ...} if a body exists.
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                token = body.get("refresh_token")
+        except Exception:  # noqa: BLE001 — no/invalid body is fine, treat as no token
+            token = None
+    if not token:
+        return AccessOut(access_token=None)
+    try:
+        return AccessOut(access_token=await AuthService(db).refresh_access(token))
+    except (UnauthorizedError, ValueError):
+        # Invalid / expired / revoked — no session, not an error for the probe.
+        return AccessOut(access_token=None)
 
 
 @router.get("/me", response_model=UserOut)
@@ -263,11 +297,19 @@ async def revoke_my_other_sessions(
 
 @router.post("/logout", status_code=204)
 async def logout(
-    data: LogoutIn,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
+    data: LogoutIn | None = Body(default=None),
 ) -> None:
-    await AuthService(db).logout(data.refresh_token)
+    """Revoke the caller's refresh token (from cookie or body) and clear the cookie."""
+    token = (data.refresh_token if data else None) or request.cookies.get(
+        get_settings().refresh_cookie_name
+    )
+    if token:
+        await AuthService(db).logout(token)
+    clear_refresh_cookie(response)
 
 
 @router.post("/change-password", status_code=204)

@@ -47,6 +47,9 @@ class UserOut(BaseModel):
     preferences: dict = {}
     # Whether the user has an active TOTP second factor.
     totp_enabled: bool = False
+    # Platform super-admin flag (tenant_id NULL + is_superadmin True). The admin
+    # console reads this to gate access to the cross-tenant panel.
+    is_superadmin: bool = False
 
 
 class LoginIn(BaseModel):
@@ -118,7 +121,10 @@ class ResetPasswordIn(BaseModel):
 
 
 class AccessOut(BaseModel):
-    access_token: str
+    # None when there is no valid session — /auth/refresh answers 200 with a null
+    # token (a session probe) rather than erroring, so the SPA bootstrap makes no
+    # failing requests.
+    access_token: str | None = None
     token_type: str = "bearer"
 
 

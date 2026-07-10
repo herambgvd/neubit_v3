@@ -2,23 +2,31 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Blocks, Loader2, Lock, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Blocks, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import * as yup from "yup";
 
 import { adminApi, apiError } from "@/lib/api";
+import { useAdminForm } from "@/lib/useAdminForm";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  DataTable,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  Field,
+  Input,
+  PageHeader,
+  Switch,
+  Textarea,
+} from "@/components/ui";
 
 function normalize(res) {
   const rows = res?.items ?? res;
   return Array.isArray(rows) ? rows : [];
-}
-
-function CategoryBadge({ category }) {
-  if (!category) return <span className="text-slate-500">—</span>;
-  return (
-    <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-xs font-medium capitalize text-slate-300">
-      {category}
-    </span>
-  );
 }
 
 export default function ModulesPage() {
@@ -26,6 +34,7 @@ export default function ModulesPage() {
   const [q, setQ] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
 
   const { data, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ["modules"],
@@ -50,311 +59,249 @@ export default function ModulesPage() {
     mutationFn: (key) => adminApi.deleteModule(key),
     onSuccess: () => {
       toast.success("Module deleted");
+      setDeleting(null);
       invalidate();
     },
     onError: (err) => toast.error(apiError(err, "Could not delete module")),
   });
 
+  const columns = useMemo(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Module",
+        cell: ({ row }) => {
+          const m = row.original;
+          return (
+            <div>
+              <div className="font-medium text-foreground">{m.name || m.key}</div>
+              <div className="font-mono text-xs text-muted">{m.key}</div>
+              {m.description && <div className="mt-0.5 max-w-md text-xs text-muted">{m.description}</div>}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "category",
+        header: "Category",
+        cell: ({ row }) =>
+          row.original.category ? (
+            <Badge tone="foreground" className="capitalize">
+              {row.original.category}
+            </Badge>
+          ) : (
+            <span className="text-muted">—</span>
+          ),
+      },
+      {
+        accessorKey: "default_enabled",
+        header: "Default",
+        cell: ({ row }) =>
+          row.original.default_enabled ? (
+            <Badge tone="success" dot>
+              On
+            </Badge>
+          ) : (
+            <Badge tone="neutral" dot>
+              Off
+            </Badge>
+          ),
+      },
+      {
+        accessorKey: "is_system",
+        header: "Type",
+        cell: ({ row }) =>
+          row.original.is_system ? (
+            <Badge tone="accent">
+              <Lock className="h-3 w-3" />
+              System
+            </Badge>
+          ) : (
+            <Badge tone="neutral">Custom</Badge>
+          ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const m = row.original;
+          return (
+            <div className="flex items-center justify-end gap-1.5">
+              <Button variant="outline" size="icon" title="Edit" aria-label="Edit" onClick={() => setEditing(m)}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                title={m.is_system ? "System modules can't be deleted" : "Delete"}
+                aria-label="Delete"
+                disabled={m.is_system}
+                onClick={() => setDeleting(m)}
+                className="hover:border-danger/40 hover:text-danger"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    []
+  );
+
+  const toolbar = (
+    <div className="relative min-w-[220px] flex-1">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search key, name or category…" className="pl-9" />
+    </div>
+  );
+
   return (
     <div>
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-white">Modules</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            The feature catalog every tenant inherits. Toggle defaults or add new capabilities.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
-        >
-          <Plus className="h-4 w-4" />
-          Add module
-        </button>
-      </div>
+      <PageHeader
+        title="Modules"
+        description="The feature catalog every tenant inherits. Toggle defaults or add new capabilities."
+        actions={
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4" />
+            Add module
+          </Button>
+        }
+      />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search key, name or category…"
-            className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20"
-          />
-        </div>
-      </div>
+      <DataTable
+        columns={columns}
+        data={filtered}
+        loading={isLoading}
+        error={isError ? apiError(error, "Failed to load modules") : null}
+        toolbar={toolbar}
+        empty={{
+          icon: Blocks,
+          title: q ? "No matching modules" : "No modules yet",
+          description: q ? "Try a different search." : "Add your first module.",
+        }}
+      />
 
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-5 py-3 font-medium">Module</th>
-              <th className="px-5 py-3 font-medium">Category</th>
-              <th className="px-5 py-3 font-medium">Default</th>
-              <th className="px-5 py-3 font-medium">Type</th>
-              <th className="px-5 py-3 text-right font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <SkeletonRows />}
-
-            {isError && (
-              <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-sm text-red-300">
-                  {apiError(error, "Failed to load modules")}
-                </td>
-              </tr>
-            )}
-
-            {!isLoading && !isError && filtered.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-5 py-16 text-center">
-                  <div className="mx-auto flex max-w-xs flex-col items-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-cyan-300">
-                      <Blocks className="h-5 w-5" />
-                    </div>
-                    <p className="mt-4 text-sm font-medium text-slate-200">
-                      {q ? "No matching modules" : "No modules yet"}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {q ? "Try a different search." : "Add your first module."}
-                    </p>
-                  </div>
-                </td>
-              </tr>
-            )}
-
-            {!isLoading &&
-              !isError &&
-              filtered.map((m) => (
-                <tr key={m.key} className="border-b border-white/5 last:border-0 transition hover:bg-white/[0.03]">
-                  <td className="px-5 py-3.5">
-                    <div className="font-medium text-white">{m.name || m.key}</div>
-                    <div className="font-mono text-xs text-slate-500">{m.key}</div>
-                    {m.description && (
-                      <div className="mt-0.5 max-w-md text-xs text-slate-500">{m.description}</div>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <CategoryBadge category={m.category} />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    {m.default_enabled ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                        On
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-xs font-medium text-slate-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-                        Off
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    {m.is_system ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-0.5 text-xs font-medium text-cyan-300">
-                        <Lock className="h-3 w-3" />
-                        System
-                      </span>
-                    ) : (
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-xs font-medium text-slate-400">
-                        Custom
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        title="Edit"
-                        aria-label="Edit"
-                        onClick={() => setEditing(m)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400 transition hover:border-cyan-400/40 hover:text-cyan-300"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        title={m.is_system ? "System modules can't be deleted" : "Delete"}
-                        aria-label="Delete"
-                        disabled={m.is_system || del.isPending}
-                        onClick={() => {
-                          if (window.confirm(`Delete module "${m.name || m.key}"?`)) del.mutate(m.key);
-                        }}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400 transition hover:border-red-400/40 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:text-slate-400"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-4 text-xs text-slate-500">
+      <div className="mt-4 text-xs text-muted">
         {modules.length} module{modules.length === 1 ? "" : "s"}
         {isFetching ? " · updating…" : ""}
       </div>
 
-      {showCreate && (
-        <ModuleModal
-          onClose={() => setShowCreate(false)}
-          onSaved={() => {
-            setShowCreate(false);
-            invalidate();
-          }}
-        />
-      )}
-      {editing && (
-        <ModuleModal
-          module={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            invalidate();
-          }}
-        />
-      )}
+      <ModuleModal
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        onSaved={() => {
+          setShowCreate(false);
+          invalidate();
+        }}
+      />
+      <ModuleModal
+        key={editing?.key || "edit"}
+        module={editing}
+        open={!!editing}
+        onOpenChange={(o) => !o && setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          invalidate();
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title="Delete module?"
+        description={deleting ? `“${deleting.name || deleting.key}” will be removed from the catalog.` : ""}
+        confirmLabel="Delete"
+        loading={del.isPending}
+        onConfirm={() => deleting && del.mutate(deleting.key)}
+      />
     </div>
   );
 }
 
-function SkeletonRows() {
-  return Array.from({ length: 5 }).map((_, i) => (
-    <tr key={i} className="border-b border-white/5 last:border-0">
-      {Array.from({ length: 5 }).map((__, j) => (
-        <td key={j} className="px-5 py-4">
-          <div className="h-3.5 w-full max-w-[120px] animate-pulse rounded bg-white/10" />
-        </td>
-      ))}
-    </tr>
-  ));
-}
+const moduleSchema = yup.object({
+  key: yup.string().trim().required("Key is required"),
+  name: yup.string().trim().required("Name is required"),
+  category: yup.string().trim(),
+  description: yup.string().trim(),
+});
 
-function ModuleModal({ module, onClose, onSaved }) {
+function ModuleModal({ module, open, onOpenChange, onSaved }) {
   const isEdit = !!module;
-  const [key, setKey] = useState(module?.key || "");
-  const [name, setName] = useState(module?.name || "");
-  const [description, setDescription] = useState(module?.description || "");
-  const [category, setCategory] = useState(module?.category || "");
+  const form = useAdminForm(moduleSchema, {
+    key: module?.key || "",
+    name: module?.name || "",
+    category: module?.category || "",
+    description: module?.description || "",
+  });
+  const { errors } = form.formState;
   const [defaultEnabled, setDefaultEnabled] = useState(module?.default_enabled ?? true);
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: (values) => {
       const body = {
-        name: name.trim(),
-        description: description.trim(),
-        category: category.trim(),
+        name: values.name.trim(),
+        description: values.description?.trim() || "",
+        category: values.category?.trim() || "",
         default_enabled: defaultEnabled,
       };
       if (isEdit) return adminApi.updateModule(module.key, body);
-      return adminApi.createModule({ key: key.trim(), ...body });
+      return adminApi.createModule({ key: values.key.trim(), ...body });
     },
     onSuccess: () => {
       toast.success(isEdit ? "Module updated" : "Module created");
+      form.reset();
       onSaved();
     },
     onError: (err) => toast.error(apiError(err, "Could not save module")),
   });
 
-  function onSubmit(e) {
-    e.preventDefault();
-    if (save.isPending) return;
-    if (!isEdit && !key.trim()) {
-      toast.error("Key is required");
-      return;
-    }
-    if (!name.trim()) {
-      toast.error("Name is required");
-      return;
-    }
-    save.mutate();
-  }
-
-  const inputCls =
-    "h-11 w-full rounded-lg border border-white/10 bg-white/[0.04] px-3.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-white/20";
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 animate-fade-in bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="animate-modal-in relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0a] p-6 shadow-2xl shadow-black/50">
-        <div className="mb-5 flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-white">
-              {isEdit ? "Edit module" : "Add module"}
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">
-              {isEdit ? "Update this platform feature." : "Register a new platform feature."}
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-300" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <form onSubmit={onSubmit} className="space-y-4" noValidate>
-          <Field label="Key">
-            <input
-              type="text"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
+    <Dialog open={open} onOpenChange={(o) => { if (!o) form.reset(); onOpenChange(o); }}>
+      <DialogContent>
+        <DialogHeader
+          title={isEdit ? "Edit module" : "Add module"}
+          description={isEdit ? "Update this platform feature." : "Register a new platform feature."}
+        />
+        <form onSubmit={form.handleSubmit((v) => save.mutate(v))} className="space-y-4" noValidate>
+          <Field label="Key" required error={errors.key?.message}>
+            <Input
               placeholder="video_analytics"
               autoFocus={!isEdit}
               disabled={isEdit}
-              required
-              className={inputCls + (isEdit ? " opacity-60" : "")}
+              invalid={!!errors.key}
+              className={isEdit ? "opacity-60" : ""}
+              {...form.register("key")}
             />
           </Field>
-          <Field label="Name">
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Video Analytics" autoFocus={isEdit} required className={inputCls} />
+          <Field label="Name" required error={errors.name?.message}>
+            <Input placeholder="Video Analytics" autoFocus={isEdit} invalid={!!errors.name} {...form.register("name")} />
           </Field>
-          <Field label="Category">
-            <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="analytics" className={inputCls} />
+          <Field label="Category" error={errors.category?.message}>
+            <Input placeholder="analytics" {...form.register("category")} />
           </Field>
-          <Field label="Description">
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What this module does…"
-              rows={3}
-              className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20 hover:border-white/20"
-            />
+          <Field label="Description" error={errors.description?.message}>
+            <Textarea placeholder="What this module does…" rows={3} {...form.register("description")} />
           </Field>
-          <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-3">
+          <label className="flex cursor-pointer items-center justify-between rounded-lg border border-card-border bg-card px-3.5 py-3">
             <div>
-              <div className="text-sm font-medium text-slate-200">Enabled by default</div>
-              <div className="text-xs text-slate-500">New tenants inherit this state.</div>
+              <div className="text-sm font-medium text-foreground">Enabled by default</div>
+              <div className="text-xs text-muted">New tenants inherit this state.</div>
             </div>
-            <input
-              type="checkbox"
-              checked={defaultEnabled}
-              onChange={(e) => setDefaultEnabled(e.target.checked)}
-              className="h-4 w-4 accent-cyan-400"
-            />
+            <Switch checked={defaultEnabled} onCheckedChange={setDefaultEnabled} />
           </label>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-white/20 hover:text-white">
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
-            </button>
-            <button type="submit" disabled={save.isPending} className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:opacity-60">
-              {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            </Button>
+            <Button type="submit" loading={save.isPending}>
               {isEdit ? "Save changes" : "Add module"}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-sm font-medium text-slate-300">{label}</label>
-      {children}
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -21,11 +21,14 @@ WHY THIS EXISTS
 
 from __future__ import annotations
 
+import io
 import os
+import re
+import tarfile
 
 import docker
 from docker.errors import APIError, NotFound
-from fastapi import Depends, FastAPI, Header, HTTPException, Path
+from fastapi import Depends, FastAPI, Header, HTTPException, Path, Request, Response
 from pydantic import BaseModel
 
 # --- Configuration -----------------------------------------------------------
@@ -40,6 +43,13 @@ OPS_AGENT_TOKEN = os.getenv("OPS_AGENT_TOKEN", "")
 COMPOSE_PROJECT = os.getenv("COMPOSE_PROJECT", "neubit-v3")
 _COMPOSE_LABEL = "com.docker.compose.project"
 _COMPOSE_SERVICE_LABEL = "com.docker.compose.service"
+
+# Database backup/restore config. The agent execs pg_dump/psql *inside* the
+# postgres container (no pg client needed in this image), scoped to the control DB.
+DB_SERVICE = os.getenv("DB_SERVICE", "postgres")
+DB_USER = os.getenv("POSTGRES_USER", "neubit")
+DB_NAME = os.getenv("POSTGRES_DB", "neubit_control")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 
 app = FastAPI(title="neubit-ops-agent", docs_url=None, redoc_url=None)
 
@@ -108,6 +118,14 @@ def _project_containers(client: docker.DockerClient):
     # Belt-and-suspenders: re-filter through _in_project in case the daemon
     # returned something unexpected.
     return [c for c in containers if _in_project(c)]
+
+
+def _service_container(client: docker.DockerClient, service: str):
+    """The in-project container for a compose service name (e.g. 'postgres')."""
+    for c in _project_containers(client):
+        if (c.labels or {}).get(_COMPOSE_SERVICE_LABEL) == service:
+            return c
+    raise HTTPException(status_code=404, detail=f"service {service!r} not found")
 
 
 # --- Stats helpers -----------------------------------------------------------
@@ -305,6 +323,7 @@ async def host_summary() -> dict:
         import psutil
 
         out["cpu_pct"] = psutil.cpu_percent(interval=None)
+        out["cpu_count"] = psutil.cpu_count(logical=True)
         vm = psutil.virtual_memory()
         out["mem_used_mb"] = round(vm.used / (1024 * 1024), 1)
         out["mem_total_mb"] = round(vm.total / (1024 * 1024), 1)
@@ -314,3 +333,113 @@ async def host_summary() -> dict:
     except Exception:  # noqa: BLE001 — host stats are best-effort, never fatal
         pass
     return out
+
+
+# --- database backup / restore ----------------------------------------------
+def _pg_env() -> dict[str, str]:
+    return {"PGPASSWORD": DB_PASSWORD} if DB_PASSWORD else {}
+
+
+# Lines a pg_dump of the control DB emits that break a restore into the *live*
+# database and must be rewritten/removed before replay:
+#   * timescaledb extension DDL — the extension is already installed (and cannot
+#     be dropped while in use); re-applying it mid-restore errors.
+#   * SET (lock|statement)_timeout = 0 — pg_dump disables the timeouts we rely on,
+#     which would let a DROP hang forever if the app holds a lock. We give them
+#     finite, generous values so the restore waits for a lock gap but never hangs.
+_TS_EXT_RE = re.compile(r"^\s*(DROP|CREATE)\s+EXTENSION.*timescaledb", re.IGNORECASE)
+_TS_COMMENT_RE = re.compile(r"^\s*COMMENT\s+ON\s+EXTENSION\s+timescaledb", re.IGNORECASE)
+_RESTRICT_RE = re.compile(r"^\s*\\(restrict|unrestrict)\b", re.IGNORECASE)
+
+
+def _sanitize_dump(sql: bytes) -> bytes:
+    """Make a plain pg_dump safe to replay into the live control database."""
+    text = sql.decode("utf-8", "replace")
+    out: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if _TS_EXT_RE.match(line) or _TS_COMMENT_RE.match(line) or _RESTRICT_RE.match(line):
+            continue  # drop timescaledb ext DDL + psql \restrict meta-commands
+        stripped = line.strip()
+        if stripped == "SET lock_timeout = 0;":
+            out.append("SET lock_timeout = '120s';\n")
+        elif stripped == "SET statement_timeout = 0;":
+            out.append("SET statement_timeout = '300s';\n")
+        elif stripped.startswith("SET transaction_timeout"):
+            continue  # unsupported on some server versions
+        else:
+            out.append(line)
+    return "".join(out).encode("utf-8")
+
+
+@app.get("/db/export", dependencies=[Depends(require_token)])
+def db_export() -> Response:
+    """Stream a plain-SQL dump of the control database (pg_dump inside postgres)."""
+    client = get_docker()
+    container = _service_container(client, DB_SERVICE)
+    cmd = [
+        "pg_dump", "-U", DB_USER, "-d", DB_NAME,
+        "--clean", "--if-exists", "--no-owner", "--no-privileges",
+    ]
+    try:
+        exit_code, streams = container.exec_run(cmd, environment=_pg_env(), demux=True)
+    except APIError as exc:
+        raise HTTPException(status_code=502, detail=f"docker error: {exc}") from exc
+    stdout, stderr = streams if isinstance(streams, tuple) else (streams, b"")
+    if exit_code != 0:
+        msg = (stderr or b"").decode("utf-8", "replace")[:500]
+        raise HTTPException(status_code=502, detail=f"pg_dump failed: {msg}")
+    return Response(content=stdout or b"", media_type="application/sql")
+
+
+@app.post("/db/import", dependencies=[Depends(require_token)])
+async def db_import(request: Request) -> dict:
+    """Restore the control database from a plain-SQL dump (psql inside postgres).
+
+    The SQL is written into the container and applied with ON_ERROR_STOP so a bad
+    statement aborts the whole restore instead of leaving a half-applied DB.
+    """
+    sql = await request.body()
+    if not sql:
+        raise HTTPException(status_code=400, detail="empty SQL body")
+
+    sql = _sanitize_dump(sql)
+
+    client = get_docker()
+    container = _service_container(client, DB_SERVICE)
+
+    # Ship the dump into /tmp inside the postgres container as a tar archive.
+    path = "/tmp/neubit_restore.sql"
+    tar_buf = io.BytesIO()
+    with tarfile.open(fileobj=tar_buf, mode="w") as tar:
+        info = tarfile.TarInfo(name="neubit_restore.sql")
+        info.size = len(sql)
+        tar.addfile(info, io.BytesIO(sql))
+    tar_buf.seek(0)
+    try:
+        if not container.put_archive("/tmp", tar_buf.getvalue()):
+            raise HTTPException(status_code=502, detail="failed to stage SQL in container")
+
+        # Apply the dump atomically: --single-transaction means any failure rolls
+        # back the WHOLE restore, so a partial/interrupted run can never leave the
+        # DB half-dropped. lock_timeout/statement_timeout fail fast instead of
+        # hanging forever if a lock can't be acquired (e.g. the live app is busy).
+        # We deliberately do NOT terminate other connections — doing so would kill
+        # core's own pool mid-request. Idle connections don't hold table locks, so
+        # the restore usually proceeds; under contention it fails cleanly.
+        # --single-transaction: the whole restore is atomic, so any failure (or the
+        # lock_timeout baked into the sanitized dump firing) rolls everything back —
+        # the DB is never left half-restored. The dump's own SET lock_timeout='120s'
+        # makes DROPs wait for a lock gap instead of failing instantly.
+        exit_code, streams = container.exec_run(
+            [
+                "psql", "-U", DB_USER, "-d", DB_NAME, "-X",
+                "--single-transaction", "-v", "ON_ERROR_STOP=1", "-f", path,
+            ],
+            environment=_pg_env(),
+            demux=True,
+        )
+    except APIError as exc:
+        raise HTTPException(status_code=502, detail=f"docker error: {exc}") from exc
+    stdout, stderr = streams if isinstance(streams, tuple) else (streams, b"")
+    tail = ((stderr or b"") + (stdout or b""))[-2000:].decode("utf-8", "replace")
+    return {"ok": exit_code == 0, "exit_code": exit_code, "output": tail}

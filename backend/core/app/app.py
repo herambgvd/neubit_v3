@@ -25,8 +25,12 @@ from .core import ModuleRegistry, create_app
 def base_routers() -> list[APIRouter]:
     """Every always-on platform router. Imported lazily to keep import order clean."""
     from .admin import router as admin_router
+    from .alerts import router as alerts_router
     from .auth import router as auth_router
+    from .billing import router as billing_router
     from .branding import router as branding_router
+    from .broadcasts import public_router as broadcasts_public_router
+    from .broadcasts import router as broadcasts_router
     from .core.audit import audit_router
     from .core.realtime import realtime_router
     from .core.realtime_access import realtime_access_router
@@ -48,6 +52,10 @@ def base_routers() -> list[APIRouter]:
     return [
         auth_router,
         admin_router,
+        billing_router,
+        alerts_router,
+        broadcasts_router,
+        broadcasts_public_router,
         infra_router,
         platform_admin_router,
         module_catalog_router,

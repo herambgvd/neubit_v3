@@ -65,6 +65,7 @@ services:
   # docker socket into core.
   ops-agent:
     build: ../backend/ops-agent
+    env_file: .env
     environment:
       OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
       COMPOSE_PROJECT: neubit-v3
@@ -209,7 +210,10 @@ services:
   admin-frontend:
     build: ../admin-frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost
+      # Same origin as the admin UI itself (admin.localhost) so the httpOnly
+      # refresh cookie is first-party and SameSite=Lax works. Traefik's core
+      # router matches /api on any host, so this still reaches the backend.
+      NEXT_PUBLIC_API_URL: http://admin.localhost
     depends_on: [core]
     volumes:
       - ../admin-frontend:/app
