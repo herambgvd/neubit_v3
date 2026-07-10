@@ -130,7 +130,11 @@ class RecordingConfig(BaseModel):
 
 class AdvancedConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    # privacy_masks / motion_zones: lists of NORMALIZED (0..1) shapes drawn by the G5
+    # draw tool — rects {x,y,w,h} and/or polygons {points:[[x,y],...]}. motion_zones may
+    # carry an optional per-zone {sensitivity, threshold}.
     privacy_masks: list[dict[str, Any]] = Field(default_factory=list)
+    motion_zones: list[dict[str, Any]] = Field(default_factory=list)
     motion_config: dict[str, Any] = Field(default_factory=dict)
     pos_overlay: dict[str, Any] = Field(default_factory=dict)
     dewarp: dict[str, Any] = Field(default_factory=dict)
@@ -263,6 +267,7 @@ class CameraPublic(BaseModel):
                 },
                 "advanced": {
                     "privacy_masks": row.privacy_masks or [],
+                    "motion_zones": row.motion_zones or [],
                     "motion_config": row.motion_config or {},
                     "pos_overlay": row.pos_overlay or {},
                     "dewarp": row.dewarp or {},
@@ -497,6 +502,18 @@ class MotionConfigBody(BaseModel):
 class PrivacyMasksBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     masks: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class MotionZonesBody(BaseModel):
+    """PUT /cameras/{id}/motion-zones — replace the motion-detection regions.
+
+    ``zones`` is a list of NORMALIZED (0..1) shapes: rects ``{x,y,w,h}`` and/or
+    polygons ``{points:[[x,y],...]}`` with an optional per-zone ``sensitivity`` /
+    ``threshold``. Persisted locally + best-effort pushed to the device.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    zones: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class OnvifEventsBody(BaseModel):

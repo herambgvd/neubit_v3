@@ -120,7 +120,14 @@ class Camera(Base):
     )
 
     # --- Advanced config (JSON blobs; UI + logic in later phases). ---
+    # Both are lists of NORMALIZED (0..1) shapes drawn over the camera image by the
+    # G5 draw tool: rects {x,y,w,h} and/or polygons {points:[[x,y],...]}. See the
+    # ``configure(section=...)`` seam for how each is pushed to the device where the
+    # brand supports region config; graceful store-only otherwise.
     privacy_masks: Mapped[list] = mapped_column(JSON, nullable=False, server_default=text("'[]'"))
+    # Motion-detection regions (sensitivity/threshold optional per-zone) — sibling of
+    # privacy_masks; pushed to the brand's motion-detection region config where supported.
+    motion_zones: Mapped[list] = mapped_column(JSON, nullable=False, server_default=text("'[]'"))
     motion_config: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
     pos_overlay: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
     dewarp: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))

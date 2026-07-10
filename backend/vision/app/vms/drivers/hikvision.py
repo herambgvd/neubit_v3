@@ -71,6 +71,49 @@ def _rtsp_channel_id(channel: int, stream: int) -> int:
     return channel * 100 + stream
 
 
+# Hik privacy/motion regions ride a normalized 0..1000 grid in ISAPI XML.
+_HIK_GRID = 1000
+
+
+def _region_shapes(payload: dict[str, Any] | None, key: str) -> list[dict[str, Any]]:
+    """Extract the normalized (0..1) shape list from a ``{key: [...]}`` config payload."""
+    if not payload:
+        return []
+    shapes = payload.get(key)
+    if shapes is None and isinstance(payload, list):
+        shapes = payload
+    return list(shapes or [])
+
+
+def _shape_points_1k(shape: dict[str, Any]) -> list[tuple[int, int]]:
+    """Normalized (0..1) shape → integer points on Hik's 0..1000 grid.
+
+    Rect ``{x,y,w,h}`` → 4 corners; polygon ``{points:[[x,y],...]}`` preserved.
+    """
+    def _p(px: float, py: float) -> tuple[int, int]:
+        return (
+            max(0, min(_HIK_GRID, round(float(px) * _HIK_GRID))),
+            max(0, min(_HIK_GRID, round(float(py) * _HIK_GRID))),
+        )
+
+    pts = shape.get("points")
+    if pts:
+        return [_p(p[0], p[1]) for p in pts]
+    x, y = float(shape.get("x", 0.0)), float(shape.get("y", 0.0))
+    w, h = float(shape.get("w", 0.0)), float(shape.get("h", 0.0))
+    return [_p(x, y), _p(x + w, y), _p(x + w, y + h), _p(x, y + h)]
+
+
+def _hik_region_xml(idx: int, shape: dict[str, Any], *, tag: str = "PrivacyMaskRegion") -> str:
+    """Build one Hik region XML element from a normalized shape (0..1000 grid)."""
+    pts = _shape_points_1k(shape)
+    coords = "".join(f"<RegionCoordinates><positionX>{px}</positionX><positionY>{py}</positionY></RegionCoordinates>" for px, py in pts)
+    return (
+        f"<{tag}><id>{idx}</id><enabled>true</enabled>"
+        f"<RegionCoordinatesList>{coords}</RegionCoordinatesList></{tag}>"
+    )
+
+
 def _rtsp_url(host: str, creds: Credentials, channel: int, stream: int) -> str:
     """Build a Hikvision RTSP URL with creds injected. stream: 1 = main, 2 = sub."""
     from urllib.parse import quote
@@ -439,7 +482,93 @@ class HikvisionDriver(CameraDriver):
             inputs = await _http.get_text(f"{base}/ISAPI/System/IO/inputs", creds.username, creds.password)
             outputs = await _http.get_text(f"{base}/ISAPI/System/IO/outputs", creds.username, creds.password)
             return {"inputs_xml": inputs, "outputs_xml": outputs}
+        if section == "privacy_masks":
+            return await self._configure_privacy_masks(base, creds, payload)
+        if section == "motion_zones":
+            return await self._configure_motion_zones(base, creds, payload)
         raise DriverError(f"unsupported Hikvision config section: {section}")
+
+    # ── privacy / motion region push (ISAPI) ──────────────────────────────────
+    async def _configure_privacy_masks(
+        self, base: str, creds: Credentials, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Push privacy masks via ISAPI ``/ISAPI/System/Video/inputs/channels/1/privacyMask``.
+
+        Hik privacy masks are AXIS-ALIGNED rectangles on a normalized 704x576 grid.
+        Normalized (0..1) rects map directly; polygons collapse to their bounding box
+        (Hik privacy mask has no polygon surface). Read (empty payload) returns raw XML.
+
+        # LIVE-VALIDATE: the privacyMask/regionList XML schema + whether the grid is
+        # 704x576 or the channel resolution vary by firmware — confirm on a real device.
+        """
+        ch = int((payload or {}).get("channel", 1))
+        url = f"{base}/ISAPI/System/Video/inputs/channels/{ch}/privacyMask"
+        region_url = f"{url}/regions"
+        shapes = _region_shapes(payload, "privacy_masks")
+        if shapes:
+            regions = "".join(
+                _hik_region_xml(i, s) for i, s in enumerate(shapes, start=1)
+            )
+            body = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<PrivacyMaskRegionList xmlns="http://www.hikvision.com/ver20/XMLSchema">'
+                f"{regions}</PrivacyMaskRegionList>"
+            )
+            try:
+                await _http.request_strict(
+                    "PUT", region_url, creds.username, creds.password,
+                    content=body, headers={"Content-Type": "application/xml"}, verify_tls=creds.verify_tls,
+                )
+                # Ensure masking is enabled on the channel.
+                await _http.request_strict(
+                    "PUT", url, creds.username, creds.password,
+                    content='<?xml version="1.0" encoding="UTF-8"?>'
+                    '<PrivacyMask xmlns="http://www.hikvision.com/ver20/XMLSchema">'
+                    "<enabled>true</enabled></PrivacyMask>",
+                    headers={"Content-Type": "application/xml"}, verify_tls=creds.verify_tls,
+                )
+            except _http.BrandHTTPError as exc:
+                raise DriverError(f"Hikvision privacy-mask write failed: {exc}") from None
+        current = await _http.get_text(region_url, creds.username, creds.password)
+        return {"applied": bool(shapes), "count": len(shapes), "raw_xml": current}
+
+    async def _configure_motion_zones(
+        self, base: str, creds: Credentials, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Push motion regions via ISAPI ``/ISAPI/System/Video/inputs/channels/1/motionDetection``.
+
+        Hik motion detection uses a grid-region model (``MotionDetectionRegionList`` with
+        a 22x18 or 32x18 cell grid) OR a normalized regionList on newer firmware. We send
+        the normalized ``RegionCoordinatesList`` form (704x576 grid) — polygons preserved,
+        rects expanded to 4 corners. Read (empty payload) returns raw XML.
+
+        # LIVE-VALIDATE: grid-cell vs regionList model + the exact motionDetection XML
+        # schema vary widely by firmware — confirm on a real Hik device.
+        """
+        ch = int((payload or {}).get("channel", 1))
+        url = f"{base}/ISAPI/System/Video/inputs/channels/{ch}/motionDetection"
+        shapes = _region_shapes(payload, "motion_zones")
+        if shapes:
+            regions = "".join(
+                _hik_region_xml(i, s, tag="MotionDetectionRegion") for i, s in enumerate(shapes, start=1)
+            )
+            body = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<MotionDetection xmlns="http://www.hikvision.com/ver20/XMLSchema">'
+                "<enabled>true</enabled>"
+                '<MotionDetectionLayout><targetType>region</targetType>'
+                f"<MotionDetectionRegionList>{regions}</MotionDetectionRegionList>"
+                "</MotionDetectionLayout></MotionDetection>"
+            )
+            try:
+                await _http.request_strict(
+                    "PUT", url, creds.username, creds.password,
+                    content=body, headers={"Content-Type": "application/xml"}, verify_tls=creds.verify_tls,
+                )
+            except _http.BrandHTTPError as exc:
+                raise DriverError(f"Hikvision motion-region write failed: {exc}") from None
+        current = await _http.get_text(url, creds.username, creds.password)
+        return {"applied": bool(shapes), "count": len(shapes), "raw_xml": current}
 
     # ── event topic map ───────────────────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

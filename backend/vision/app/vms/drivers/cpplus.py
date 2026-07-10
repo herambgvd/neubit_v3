@@ -59,6 +59,41 @@ _PTZ_CONTINUOUS_CODES = {
 }
 
 
+# Dahua privacy/motion regions ride an 8192x8192 normalized grid in configManager.
+_DAHUA_GRID = 8192
+
+
+def _region_shapes(payload: dict[str, Any] | None, key: str) -> list[dict[str, Any]]:
+    """Extract the normalized (0..1) shape list from a ``{key: [...]}`` config payload."""
+    if not payload:
+        return []
+    shapes = payload.get(key)
+    if shapes is None and isinstance(payload, list):
+        shapes = payload
+    return list(shapes or [])
+
+
+def _shape_bbox_grid(shape: dict[str, Any], grid: int) -> tuple[int, int, int, int]:
+    """Normalized (0..1) shape → integer bounding box ``(x0,y0,x1,y1)`` on a grid.
+
+    Rect ``{x,y,w,h}`` maps directly; polygon ``{points:[...]}`` collapses to its
+    axis-aligned bounding box (Dahua covers/windows are rectangular).
+    """
+    pts = shape.get("points")
+    if pts:
+        xs = [float(p[0]) for p in pts]
+        ys = [float(p[1]) for p in pts]
+        x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    else:
+        x0, y0 = float(shape.get("x", 0.0)), float(shape.get("y", 0.0))
+        x1, y1 = x0 + float(shape.get("w", 0.0)), y0 + float(shape.get("h", 0.0))
+
+    def _g(v: float) -> int:
+        return max(0, min(grid, round(v * grid)))
+
+    return _g(x0), _g(y0), _g(x1), _g(y1)
+
+
 def _rtsp_url(host: str, creds: Credentials, channel: int, subtype: int) -> str:
     """Dahua/CP-Plus RTSP: ``/cam/realmonitor?channel=<n>&subtype=<0 main|1 sub>``."""
     from urllib.parse import quote
@@ -467,7 +502,72 @@ class CpPlusDriver(CameraDriver):
                 f"{base}/cgi-bin/configManager.cgi?action=getConfig&name=Alarm", creds.username, creds.password
             )
             return _http.parse_cgi_kv(body or "")
+        if section == "privacy_masks":
+            return await self._configure_privacy_masks(base, creds, payload)
+        if section == "motion_zones":
+            return await self._configure_motion_zones(base, creds, payload)
         raise DriverError(f"unsupported CP-Plus config section: {section}")
+
+    # ── privacy / motion region push (Dahua configManager CGI) ────────────────
+    async def _configure_privacy_masks(
+        self, base: str, creds: Credentials, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Push privacy masks (Dahua "covers") via ``configManager.cgi?name=VideoWidget``.
+
+        Dahua covers are axis-aligned rectangles on an 8192x8192 grid. Normalized rects
+        map directly; polygons collapse to their bounding box. Read = getConfig.
+
+        # LIVE-VALIDATE: the exact Covers[ch][n] key path (VideoWidget vs Privacy) + the
+        # 8192 grid vary by model/firmware — confirm on a real CP-Plus/Dahua device.
+        """
+        ch = int((payload or {}).get("channel", 0))
+        shapes = _region_shapes(payload, "privacy_masks")
+        if shapes:
+            params = [f"VideoWidget[{ch}].Covers.Enable=true"]
+            for i, s in enumerate(shapes):
+                x0, y0, x1, y1 = _shape_bbox_grid(s, _DAHUA_GRID)
+                p = f"VideoWidget[{ch}].Covers[{i}]"
+                params += [f"{p}.EncodeBlend=true", f"{p}.Rect[0]={x0}", f"{p}.Rect[1]={y0}", f"{p}.Rect[2]={x1}", f"{p}.Rect[3]={y1}"]
+            url = f"{base}/cgi-bin/configManager.cgi?action=setConfig&" + "&".join(params)
+            try:
+                await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
+            except _http.BrandHTTPError as exc:
+                raise DriverError(f"CP-Plus privacy-mask write failed: {exc}") from None
+        body = await _http.get_text(
+            f"{base}/cgi-bin/configManager.cgi?action=getConfig&name=VideoWidget", creds.username, creds.password
+        )
+        return {"applied": bool(shapes), "count": len(shapes), **_http.parse_cgi_kv(body or "")}
+
+    async def _configure_motion_zones(
+        self, base: str, creds: Credentials, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Push motion regions via ``configManager.cgi?name=MotionDetect``.
+
+        Dahua motion detection uses a per-region cell bitmask (``Region[i]`` = a row of
+        column-bits over a 22x18 / 32x24 grid). We enable detection + set the region's
+        bounding window as a best-effort; full per-cell bitmask packing is deferred.
+
+        # LIVE-VALIDATE: MotionDetect[ch].Region bitmask packing (row-major hex per row)
+        # vs the window form + grid dimensions vary by model — confirm on a real device.
+        """
+        ch = int((payload or {}).get("channel", 0))
+        shapes = _region_shapes(payload, "motion_zones")
+        if shapes:
+            params = [f"MotionDetect[{ch}].Enable=true", f"MotionDetect[{ch}].DetectVersion=V3.0"]
+            for i, s in enumerate(shapes):
+                x0, y0, x1, y1 = _shape_bbox_grid(s, _DAHUA_GRID)
+                p = f"MotionDetect[{ch}].Window[{i}]"
+                params += [f"{p}.Id={i}", f"{p}.Name=Zone{i}", f"{p}.Threshold=5", f"{p}.Sensitive=3",
+                           f"{p}.Rect[0]={x0}", f"{p}.Rect[1]={y0}", f"{p}.Rect[2]={x1}", f"{p}.Rect[3]={y1}"]
+            url = f"{base}/cgi-bin/configManager.cgi?action=setConfig&" + "&".join(params)
+            try:
+                await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
+            except _http.BrandHTTPError as exc:
+                raise DriverError(f"CP-Plus motion-region write failed: {exc}") from None
+        body = await _http.get_text(
+            f"{base}/cgi-bin/configManager.cgi?action=getConfig&name=MotionDetect", creds.username, creds.password
+        )
+        return {"applied": bool(shapes), "count": len(shapes), **_http.parse_cgi_kv(body or "")}
 
     # ── event topic map ───────────────────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

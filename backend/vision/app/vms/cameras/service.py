@@ -176,6 +176,7 @@ class CameraService:
             post_buffer_seconds=body.recording.post_buffer_seconds,
             anr_enabled=body.recording.anr_enabled,
             privacy_masks=body.advanced.privacy_masks,
+            motion_zones=body.advanced.motion_zones,
             motion_config=body.advanced.motion_config,
             pos_overlay=body.advanced.pos_overlay,
             dewarp=body.advanced.dewarp,
@@ -327,6 +328,7 @@ class CameraService:
         if body.advanced is not None:
             a = body.advanced
             row.privacy_masks = a.privacy_masks
+            row.motion_zones = a.motion_zones
             row.motion_config = a.motion_config
             row.pos_overlay = a.pos_overlay
             row.dewarp = a.dewarp
@@ -600,19 +602,34 @@ class CameraService:
             return {"motion_config": row.motion_config or {}}
         if section == "privacy_masks":
             return {"privacy_masks": row.privacy_masks or []}
+        if section == "motion_zones":
+            return {"motion_zones": row.motion_zones or []}
         if section == "onvif_events":
             return {"onvif_events": (row.onvif_capabilities or {}).get("_events_config", {})}
         raise ValidationError(f"unknown local config section: {section}")
 
     async def put_local_config(self, camera_id: str, section: str, value) -> dict:
-        """Persist a config section locally (event ingestion at scale = Go nvr P5)."""
+        """Persist a config section locally (event ingestion at scale = Go nvr P5).
+
+        ``privacy_masks`` / ``motion_zones`` are ALWAYS stored locally (the local
+        catalog is source-of-truth for the G5 draw tool), then best-effort pushed to
+        the device via the driver ``configure`` seam. The push NEVER blocks or fails
+        the save — the echo carries ``pushed`` (True | False) + ``push_error`` so the
+        UI can surface store-only vs applied-on-device per brand.
+        """
         row = await self._row(camera_id)
+        push_section: str | None = None
         if section == "motion_config":
             row.motion_config = value or {}
             out = {"motion_config": row.motion_config}
         elif section == "privacy_masks":
             row.privacy_masks = value or []
             out = {"privacy_masks": row.privacy_masks}
+            push_section = "privacy_masks"
+        elif section == "motion_zones":
+            row.motion_zones = value or []
+            out = {"motion_zones": row.motion_zones}
+            push_section = "motion_zones"
         elif section == "onvif_events":
             caps = dict(row.onvif_capabilities or {})
             caps["_events_config"] = value or {}
@@ -622,7 +639,37 @@ class CameraService:
             raise ValidationError(f"unknown local config section: {section}")
         row.updated_at = _utcnow()
         await self.db.commit()
+
+        # Best-effort device push for the drawn regions (graceful — never raises).
+        if push_section is not None:
+            pushed, push_error = await self._push_regions(row, push_section, value or [])
+            out["pushed"] = pushed
+            if push_error:
+                out["push_error"] = push_error
         return out
+
+    async def _push_regions(self, row: Camera, section: str, value) -> tuple[bool, str | None]:
+        """Push privacy_masks / motion_zones to the device via ``driver.configure``.
+
+        Graceful: returns ``(False, error)`` when no host / driver missing / device
+        unreachable / brand doesn't support the region config — the local save already
+        succeeded. Returns ``(True, None)`` when the driver reports the write applied.
+        """
+        host = row.onvif_host or (row.network_info or {}).get("ip")
+        if not host:
+            return False, "camera has no reachable host configured"
+        driver = get_driver(row.brand)
+        try:
+            result = await driver.configure(host, self._creds_for(row), section, {section: value})
+            return bool((result or {}).get("applied", True)), None
+        except DriverError as exc:
+            log.info("region push (%s) failed for camera %s: %s", section, row.id, exc)
+            return False, str(exc)
+        except Exception as exc:  # noqa: BLE001 — push must never break the local save
+            log.info("region push (%s) errored for camera %s: %s", section, row.id, exc)
+            return False, str(exc)
+        finally:
+            await driver.aclose()
 
     # ── per-camera ACL (VMS-owned, keyed on core subject ids) ────────────
     async def get_acl(self, camera_id: str) -> list[CameraACLPublic]:

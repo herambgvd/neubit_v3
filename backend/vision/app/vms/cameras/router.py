@@ -18,7 +18,7 @@ Endpoints:
     ``POST /cameras/bulk``, ``POST /cameras/reorder``.
   * Discovery: ``POST /cameras/onvif/{discover|probe|channels|bulk-add|snapshot}``.
   * Config: ``{id}/ptz``, ``{id}/imaging``, ``{id}/io``, ``{id}/motion-config``,
-    ``{id}/privacy-masks``, ``{id}/onvif-events``, ``{id}/snapshot``.
+    ``{id}/privacy-masks``, ``{id}/motion-zones``, ``{id}/onvif-events``, ``{id}/snapshot``.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ from .schemas import (
     ImagingBody,
     IoBody,
     MotionConfigBody,
+    MotionZonesBody,
     OnvifEventsBody,
     PrivacyMasksBody,
     ProbeBody,
@@ -354,6 +355,28 @@ async def put_privacy_masks(
     _actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
     return ConfigResult(**await svc.put_local_config(camera_id, "privacy_masks", body.masks))
+
+
+@router.get(
+    "/cameras/{camera_id}/motion-zones",
+    response_model=ConfigResult,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def get_motion_zones(
+    camera_id: str,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+) -> ConfigResult:
+    return ConfigResult(**await svc.get_local_config(camera_id, "motion_zones"))
+
+
+@router.put("/cameras/{camera_id}/motion-zones", response_model=ConfigResult)
+async def put_motion_zones(
+    camera_id: str,
+    body: MotionZonesBody,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+) -> ConfigResult:
+    return ConfigResult(**await svc.put_local_config(camera_id, "motion_zones", body.zones))
 
 
 @router.get(

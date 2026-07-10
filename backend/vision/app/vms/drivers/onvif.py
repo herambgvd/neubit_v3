@@ -888,6 +888,12 @@ class OnvifDriver(CameraDriver):
           * ``imaging`` — GetImagingSettings (read) / SetImagingSettings (write patch).
           * ``io``      — GetRelayOutputs + GetDigitalInputs (read) / SetRelayOutputState (write).
           * ``ntp``     — GetSystemDateAndTime (read) / SetSystemDateAndTime sync (write).
+          * ``privacy_masks`` — Media2 SetMask/CreateMask (Profile T). Normalized (0..1)
+            rect/polygon shapes → ONVIF ``Polygon`` points. Store-only fallback when the
+            device lacks Media2 masking (raises DriverError → service records ``pushed=False``).
+          * ``motion_zones`` — SetVideoAnalyticsConfiguration ``MotionRegionDetector`` /
+            ``CellMotionDetector`` region. Same normalized shape. Store-only fallback when
+            the device lacks a motion analytics config.
         """
         if not _HAS_ONVIF:
             raise DriverError("python-onvif-zeep not installed — configure unavailable")
@@ -902,6 +908,10 @@ class OnvifDriver(CameraDriver):
                 return self._configure_io(cam, payload, write)
             if section == "ntp":
                 return self._configure_ntp(cam, payload, write)
+            if section == "privacy_masks":
+                return self._configure_privacy_masks(cam, payload)
+            if section == "motion_zones":
+                return self._configure_motion_zones(cam, payload)
             raise DriverError(f"unsupported ONVIF config section: {section}")
 
         try:
@@ -990,6 +1000,131 @@ class OnvifDriver(CameraDriver):
             "ntp_enabled": getattr(dt, "NTP", None),
             "datetime_type": str(getattr(dt, "DateTimeType", "")),
         }
+
+    @staticmethod
+    def _norm_shapes(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
+        """Extract the normalized (0..1) shape list from a ``{key: [...]}`` payload."""
+        shapes = payload.get(key)
+        if shapes is None and isinstance(payload, list):  # tolerate a bare list
+            shapes = payload
+        return list(shapes or [])
+
+    @staticmethod
+    def _shape_to_polygon(shape: dict[str, Any]) -> list[tuple[float, float]]:
+        """Convert one normalized shape → ONVIF polygon points ([-1..1] space).
+
+        Accepts a rect ``{x,y,w,h}`` or a polygon ``{points:[[x,y],...]}`` in the
+        top-left-origin 0..1 image space and maps to the ONVIF analytics/geometry
+        coordinate frame (x∈[-1,1], y∈[-1,1], origin centre, y up).
+        """
+        def _map(px: float, py: float) -> tuple[float, float]:
+            return (2.0 * float(px) - 1.0, 1.0 - 2.0 * float(py))
+
+        pts = shape.get("points")
+        if pts:
+            return [_map(p[0], p[1]) for p in pts]
+        x, y = float(shape.get("x", 0.0)), float(shape.get("y", 0.0))
+        w, h = float(shape.get("w", 0.0)), float(shape.get("h", 0.0))
+        return [_map(x, y), _map(x + w, y), _map(x + w, y + h), _map(x, y + h)]
+
+    def _configure_privacy_masks(self, cam: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        """Push privacy masks via ONVIF Media2 masking (Profile T).
+
+        Best-effort: replaces existing masks with the supplied normalized shapes. Raises
+        ``DriverError`` when the device has no Media2 masking surface — the service then
+        records the save as store-only (``pushed=False``). Read (empty payload) returns
+        the current device masks where available.
+
+        # LIVE-VALIDATE: Media2 GetMasks/CreateMask/DeleteMask availability + the exact
+        # Mask/PolygonConfiguration shape vary by vendor — confirm on a Profile-T device.
+        """
+        shapes = self._norm_shapes(payload, "privacy_masks")
+        try:
+            media2 = cam.create_media2_service()
+        except Exception as exc:  # noqa: BLE001 — no Media2 → store-only
+            raise DriverError(f"device has no Media2 masking surface: {exc}") from None
+        try:
+            vs_token = cam.create_media_service().GetVideoSources()[0].token
+        except Exception as exc:  # noqa: BLE001
+            raise DriverError(f"could not resolve video source token: {exc}") from None
+
+        applied = False
+        try:
+            # Clear existing masks for this source, then create one per shape.
+            existing = []
+            try:
+                existing = media2.GetMasks({"ConfigurationToken": vs_token}) or []
+            except Exception:  # noqa: BLE001 — GetMasks optional
+                existing = []
+            for m in existing:
+                try:
+                    media2.DeleteMask({"Token": m.token})
+                except Exception:  # noqa: BLE001
+                    pass
+            for shape in shapes:
+                poly = self._shape_to_polygon(shape)
+                req = {
+                    "Mask": {
+                        "ConfigurationToken": vs_token,
+                        "Polygon": {"Point": [{"x": px, "y": py} for px, py in poly]},
+                        "Type": "Color",
+                        "Enabled": True,
+                    }
+                }
+                media2.CreateMask(req)
+                applied = True
+        except Exception as exc:  # noqa: BLE001
+            raise DriverError(f"privacy-mask write failed: {exc}") from None
+        return {"applied": applied or not shapes, "count": len(shapes), "video_source_token": str(vs_token)}
+
+    def _configure_motion_zones(self, cam: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        """Push motion-detection regions via ONVIF VideoAnalytics (Motion/CellMotion).
+
+        Best-effort: locates the VideoAnalyticsConfiguration's motion detector and
+        rewrites its region polygon from the supplied normalized shapes. Raises
+        ``DriverError`` when the device exposes no analytics/motion config — the service
+        records the save as store-only (``pushed=False``).
+
+        # LIVE-VALIDATE: the analytics module name (``tt:MotionRegionDetector`` vs
+        # ``tt:CellMotionDetector``) + the ``SetVideoAnalyticsConfiguration`` region
+        # SimpleItem/ElementItem shape are vendor-specific — confirm on a real device.
+        """
+        shapes = self._norm_shapes(payload, "motion_zones")
+        try:
+            analytics = cam.create_analytics_service()
+        except Exception as exc:  # noqa: BLE001 — no analytics → store-only
+            raise DriverError(f"device has no VideoAnalytics surface: {exc}") from None
+        try:
+            configs = analytics.GetVideoAnalyticsConfigurations() or []
+        except Exception as exc:  # noqa: BLE001
+            raise DriverError(f"could not read analytics configurations: {exc}") from None
+        if not configs:
+            raise DriverError("device exposes no VideoAnalytics configuration")
+
+        cfg = configs[0]
+        try:
+            # Rewrite the motion detector's region polygon(s). Vendors differ on whether
+            # the region rides in the AnalyticsEngineConfiguration or RuleEngine; we set
+            # the polygon on the first motion-detector module we find.
+            polygons = [
+                {"Point": [{"x": px, "y": py} for px, py in self._shape_to_polygon(s)]}
+                for s in shapes
+            ]
+            modules = getattr(getattr(cfg, "AnalyticsEngineConfiguration", None), "AnalyticsModule", []) or []
+            touched = False
+            for mod in modules:
+                if "Motion" in str(getattr(mod, "Type", "")):
+                    for param in getattr(getattr(mod, "Parameters", None), "ElementItem", []) or []:
+                        if str(getattr(param, "Name", "")) in ("Region", "Field"):
+                            param.Value = {"PolygonConfiguration": polygons}
+                            touched = True
+            analytics.SetVideoAnalyticsConfiguration(
+                {"Configuration": cfg, "ForcePersistence": True}
+            )
+            applied = touched
+        except Exception as exc:  # noqa: BLE001
+            raise DriverError(f"motion-zone write failed: {exc}") from None
+        return {"applied": applied or not shapes, "count": len(shapes), "config_token": str(getattr(cfg, "token", ""))}
 
     # ── event topic map (control-side) ────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:
