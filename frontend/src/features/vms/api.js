@@ -91,8 +91,28 @@ export const vms = {
     setIo: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/io`, body)),
     getMotionConfig: (id) => unwrap(api.get(`${CAMERAS}/${id}/motion-config`)),
     setMotionConfig: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/motion-config`, body)),
-    getPrivacyMasks: (id) => unwrap(api.get(`${CAMERAS}/${id}/privacy-masks`)),
-    setPrivacyMasks: (id, masks) => unwrap(api.put(`${CAMERAS}/${id}/privacy-masks`, { masks })),
+
+    // ── Drawn regions (G5) — privacy masks + motion-detection zones ──────
+    // Both are lists of NORMALIZED (0..1) shapes, top-left origin: a rect
+    // { x, y, w, h } or a polygon { points:[[x,y],...] }. motion-zone shapes may
+    // also carry an optional `sensitivity` / `threshold`. The catalog is stored
+    // LOCALLY (source of truth for the draw tool) then best-effort pushed to the
+    // device — the PUT echo carries `pushed` (bool) + `push_error` (str) so the UI
+    // shows "applied on camera" vs "stored locally — not applied on device".
+    //   GET  /cameras/{id}/privacy-masks → { privacy_masks:[...] }
+    //   PUT  /cameras/{id}/privacy-masks { masks:[...] } → { privacy_masks, pushed, push_error? }
+    //   GET  /cameras/{id}/motion-zones  → { motion_zones:[...] }
+    //   PUT  /cameras/{id}/motion-zones  { zones:[...] }  → { motion_zones, pushed, push_error? }
+    // Reads gate on vms.camera.read; writes on vms.config.manage.
+    privacyMasks: {
+      get: (id) => unwrap(api.get(`${CAMERAS}/${id}/privacy-masks`)),
+      put: (id, masks) => unwrap(api.put(`${CAMERAS}/${id}/privacy-masks`, { masks })),
+    },
+    motionZones: {
+      get: (id) => unwrap(api.get(`${CAMERAS}/${id}/motion-zones`)),
+      put: (id, zones) => unwrap(api.put(`${CAMERAS}/${id}/motion-zones`, { zones })),
+    },
+
     getOnvifEvents: (id) => unwrap(api.get(`${CAMERAS}/${id}/onvif-events`)),
     setOnvifEvents: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/onvif-events`, body)),
 

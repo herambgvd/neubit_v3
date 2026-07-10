@@ -98,6 +98,8 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
             floors={floors}
             zones={zones}
             isEdit
+            cameraId={camera.id}
+            cameraName={camera.name}
             onManualStart={() => startRec.mutate()}
             onManualStop={() => stopRec.mutate()}
             manualPending={startRec.isPending || stopRec.isPending}

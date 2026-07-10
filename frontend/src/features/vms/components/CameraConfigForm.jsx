@@ -8,12 +8,15 @@
 // Live/Recording/ONVIF drive real CameraCreate fields; Imaging/IO/Advanced are
 // P1-informational (the ONVIF-backed imaging/io/motion/privacy config endpoints are
 // wired in the detail view once a camera exists — see CameraConfigTabs there).
+import { useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { Field } from "@/components/common";
 import { Button, Toggle } from "@/components/ui/kit";
+import { useAuth } from "@/lib/auth";
 import { CAMERA_BRANDS, CONNECTION_TYPES, RECORDING_MODES } from "../constants";
 import RecordingScheduleGrid from "./RecordingScheduleGrid";
+import RegionDrawModal from "./RegionDrawModal";
 
 function ToggleRow({ label, hint, checked, onChange }) {
   return (
@@ -45,10 +48,16 @@ export default function CameraConfigForm({
   floors = [],
   zones = [],
   isEdit = false,
+  cameraId = null,
+  cameraName = null,
   onManualStart,
   onManualStop,
   manualPending = false,
 }) {
+  const { can } = useAuth();
+  const canManageRegions = can("vms.config.manage");
+  // Which region draw tool is open: null | "privacy" | "motion".
+  const [regionTool, setRegionTool] = useState(null);
   if (tab === "live") {
     return (
       <div className="space-y-4">
@@ -361,17 +370,81 @@ export default function CameraConfigForm({
         checked={!!form.ptz_capable}
         onChange={(v) => set({ ptz_capable: v })}
       />
-      <InfoNote>
-        Privacy masks, motion zones, POS overlay and dewarp are drawn on the live view in
-        P2. They persist against this camera's advanced config.
-      </InfoNote>
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
-        {["Privacy masks", "Motion zones", "POS overlay", "Dewarp"].map((f) => (
-          <div key={f} className="flex items-center gap-2 rounded-lg border border-card-border px-3 py-2 text-muted">
-            <Icon icon="heroicons-outline:clock" className="text-sm" /> {f} — P2
+
+      {/* Region draw tools — privacy masks + motion zones. Drawn over a snapshot;
+          only meaningful once the camera exists (isEdit). */}
+      <div>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Region tools</p>
+        {isEdit ? (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <RegionEntry
+              icon="heroicons-outline:eye-slash"
+              label="Privacy masks"
+              hint="Black out areas in live, recordings & exports."
+              onClick={() => setRegionTool("privacy")}
+              canManage={canManageRegions}
+            />
+            <RegionEntry
+              icon="heroicons-outline:viewfinder-circle"
+              label="Motion zones"
+              hint="Limit motion detection to drawn regions + sensitivity."
+              onClick={() => setRegionTool("motion")}
+              canManage={canManageRegions}
+            />
           </div>
-        ))}
+        ) : (
+          <InfoNote>
+            Privacy masks and motion zones are drawn over a camera snapshot — available once
+            this camera is onboarded.
+          </InfoNote>
+        )}
       </div>
+
+      <div>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Coming soon</p>
+        <div className="grid grid-cols-2 gap-2 text-[11px]">
+          {["POS overlay", "Dewarp"].map((f) => (
+            <div key={f} className="flex items-center gap-2 rounded-lg border border-card-border px-3 py-2 text-muted">
+              <Icon icon="heroicons-outline:clock" className="text-sm" /> {f} — soon
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {isEdit && regionTool && (
+        <RegionDrawModal
+          open
+          variant={regionTool}
+          cameraId={cameraId}
+          cameraName={cameraName || form.name}
+          canManage={canManageRegions}
+          onClose={() => setRegionTool(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// A clickable card that opens a region draw tool. Disabled (view-only) when the
+// operator lacks vms.config.manage — but still opens read-only so they can see it.
+function RegionEntry({ icon, label, hint, onClick, canManage }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-lg border border-card-border bg-hover/40 px-3 py-2.5 text-left transition hover:bg-hover"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-card-border/50 text-foreground">
+        <Icon icon={icon} className="text-base" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-sm text-foreground">
+          {label}
+          {!canManage && <Icon icon="heroicons-outline:lock-closed" className="h-3 w-3 text-muted" />}
+        </span>
+        <span className="block text-[11px] text-muted">{hint}</span>
+      </span>
+      <Icon icon="heroicons-outline:pencil-square" className="shrink-0 text-muted" />
+    </button>
   );
 }
