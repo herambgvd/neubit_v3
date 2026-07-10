@@ -79,6 +79,30 @@ class NvrClient:
             log.info("nvr drop best-effort failed (%s): %s", url, exc)
             return False
 
+    # ── data-plane status (G2 dashboard) ────────────────────────────────
+    async def status(self, *, timeout: float | None = None) -> dict:
+        """GET /status → the nvr data-plane self-report (node id + resilience flags).
+
+        Used by the G2 operations dashboard to surface media-node / failover health.
+        FAILS FAST (short timeout, default 3s) and raises ``NvrUnavailable`` on any
+        error so the dashboard can degrade the node section to ``unknown`` rather than
+        block. Returns the raw ``{service, plane, nats, streaming, recording,
+        resilience, node}`` dict on success."""
+        url = f"{self._base}/api/v1/nvr/status"
+        t = timeout if timeout is not None else 3.0
+        try:
+            async with httpx.AsyncClient(timeout=t) as client:
+                resp = await client.get(url, headers=self._headers)
+        except httpx.HTTPError as exc:
+            log.info("nvr status unreachable (%s): %s", url, exc)
+            raise NvrUnavailable(f"nvr data-plane unreachable: {exc}") from exc
+        if resp.status_code >= 400:
+            raise NvrUnavailable(f"nvr status {resp.status_code}: {_err_detail(resp)}")
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise NvrUnavailable("nvr returned a non-JSON status response") from exc
+
     # ── recording (P3-A) ────────────────────────────────────────────────
     async def start_recording(
         self,

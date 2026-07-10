@@ -22,6 +22,7 @@ the pre-refactor flat layout.
 from __future__ import annotations
 
 from app.vms.cameras.router import router as camera_router
+from app.vms.dashboard.router import router as dashboard_router
 from app.vms.export.router import router as export_router
 from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
@@ -74,6 +75,10 @@ from app.vms.videowall.router import router as videowall_router
 # P6-B operational-reporting control plane (uptime/coverage/storage/event reports + the
 # ReportScheduler that fires recurring reports via the notify path).
 routers = [
+    # Operations / Health dashboard (G2) — /vms/dashboard/summary. Read-only aggregation
+    # over existing health/recording/storage/event/nvr data + best-effort nvr /status for
+    # node/failover. Distinct literal prefix (no collision with the camera catch-all).
+    dashboard_router,
     health_router,
     live_router,
     recording_router,
