@@ -89,6 +89,53 @@ export const vms = {
     snapshotUrl: (id) => `${CAMERAS}/${id}/snapshot`,
   },
 
+  // ── PTZ operator control (G1) — live pan/tilt/zoom/focus + presets + patrols
+  // Only meaningful for a `ptz_capable` camera. Moves/preset-writes/patrol-writes
+  // gate on `vms.ptz.control`; reads (list presets/patrols) on `vms.live.view`.
+  //
+  //   Move:    POST /cameras/{id}/ptz/move { mode:"continuous"|"relative"|
+  //              "absolute", pan, tilt, zoom, speed } — for continuous, send ONE
+  //              move on press then ONE stop on release (don't stream calls).
+  //            POST /cameras/{id}/ptz/stop
+  //            POST /cameras/{id}/ptz/zoom  { direction:"in"|"out", speed }
+  //            POST /cameras/{id}/ptz/focus { direction:"near"|"far", speed }
+  //   Presets: GET  /cameras/{id}/ptz/presets → { items } (or bare array)
+  //            POST /cameras/{id}/ptz/presets { name } (stores CURRENT position)
+  //            POST /cameras/{id}/ptz/presets/{pid}/goto
+  //            DELETE /cameras/{id}/ptz/presets/{pid}
+  //   Patrols: GET  /cameras/{id}/ptz/patrols → { items }
+  //            POST /cameras/{id}/ptz/patrols { name, stops:[{preset_id,
+  //              dwell_seconds}], speed }
+  //            PATCH/DELETE /cameras/{id}/ptz/patrols/{pid}
+  //            POST /cameras/{id}/ptz/patrols/{pid}/start | /stop
+  ptz: {
+    // Continuous move: pan/tilt/zoom velocities in [-1,1], speed in (0,1].
+    // On release call stop (or send mode:"continuous" with 0 velocities via stop).
+    move: (id, body) => unwrap(api.post(`${CAMERAS}/${id}/ptz/move`, body)),
+    stop: (id) => unwrap(api.post(`${CAMERAS}/${id}/ptz/stop`, {})),
+    zoom: (id, { direction, speed = 0.5 } = {}) =>
+      unwrap(api.post(`${CAMERAS}/${id}/ptz/zoom`, { direction, speed })),
+    focus: (id, { direction, speed = 0.5 } = {}) =>
+      unwrap(api.post(`${CAMERAS}/${id}/ptz/focus`, { direction, speed })),
+    presets: {
+      list: (id) => unwrap(api.get(`${CAMERAS}/${id}/ptz/presets`)),
+      // Stores the camera's CURRENT position under `name`.
+      create: (id, name) => unwrap(api.post(`${CAMERAS}/${id}/ptz/presets`, { name })),
+      goto: (id, presetId) => unwrap(api.post(`${CAMERAS}/${id}/ptz/presets/${presetId}/goto`, {})),
+      remove: (id, presetId) => unwrap(api.delete(`${CAMERAS}/${id}/ptz/presets/${presetId}`)),
+    },
+    patrols: {
+      list: (id) => unwrap(api.get(`${CAMERAS}/${id}/ptz/patrols`)),
+      // { name, stops:[{ preset_id, dwell_seconds }], speed }.
+      create: (id, body) => unwrap(api.post(`${CAMERAS}/${id}/ptz/patrols`, body)),
+      update: (id, patrolId, body) =>
+        unwrap(api.patch(`${CAMERAS}/${id}/ptz/patrols/${patrolId}`, body)),
+      remove: (id, patrolId) => unwrap(api.delete(`${CAMERAS}/${id}/ptz/patrols/${patrolId}`)),
+      start: (id, patrolId) => unwrap(api.post(`${CAMERAS}/${id}/ptz/patrols/${patrolId}/start`, {})),
+      stop: (id, patrolId) => unwrap(api.post(`${CAMERAS}/${id}/ptz/patrols/${patrolId}/stop`, {})),
+    },
+  },
+
   // ONVIF discovery / onboarding (unsaved-device flows) ──────────────────
   discovery: {
     // POST /cameras/onvif/discover { network?, brand? } → { items, total }.

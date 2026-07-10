@@ -447,6 +447,7 @@ export default function Streaming() {
       // restarted. The spotlight hero simply gets a bigger surface, same stream.
       profile={tileProfile(layout.capacity, isHero)}
       isHero={isHero || spotlightMode}
+      spotlight={spotlightMode}
       railDragging={railDragging}
       style={spotlightMode ? undefined : tileStyle(layout, i)}
       onAssign={(camId) => assignToCell(i, camId)}

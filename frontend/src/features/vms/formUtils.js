@@ -10,6 +10,13 @@ const num = (v) => {
   return Number.isNaN(n) ? undefined : n;
 };
 
+// True when a camera advertises PTZ. Handles both the nested CameraPublic shape
+// ({ ptz: { capable } }) and the flat edit-form shape ({ ptz_capable }).
+export function isPtzCapable(cam) {
+  if (!cam) return false;
+  return !!(cam.ptz_capable || (cam.ptz && cam.ptz.capable));
+}
+
 // Flat form → CameraCreate body (nested). Drops empty optional fields.
 export function toCreateBody(form) {
   const body = {

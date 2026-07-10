@@ -20,8 +20,11 @@
 import { useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
+import { useAuth } from "@/lib/auth";
 import LivePlayer from "./LivePlayer";
+import PtzOverlay from "./PtzOverlay";
 import { STATUS_PRESETS } from "../constants";
+import { isPtzCapable } from "../formUtils";
 
 const EDGE = {
   online: "bg-emerald-500",
@@ -37,6 +40,7 @@ export default function WallTile({
   camera,
   profile = "sub",
   isHero = false,
+  spotlight = false, // fills the whole wall → room for the PTZ overlay
   railDragging = false,
   onAssign, // (cameraId) — from rail drag / picker
   onSwap, // (fromIndex) — from tile→tile drag
@@ -47,6 +51,7 @@ export default function WallTile({
 }) {
   const rootRef = useRef(null);
   const [dropActive, setDropActive] = useState(false);
+  const { can } = useAuth();
 
   const onDragOver = (e) => {
     // Accept both a rail camera and another tile being dragged over.
@@ -154,6 +159,20 @@ export default function WallTile({
           <span className="shrink-0 truncate text-[10px] text-white/45">{camera.site_name}</span>
         )}
       </div>
+
+      {/* PTZ overlay — only when this tile fills the wall (spotlight) and the
+          camera is PTZ-capable. Kept off dense grid tiles to avoid clutter.
+          Stop drag/double-click from bubbling to the tile while operating it. */}
+      {spotlight && isPtzCapable(camera) && (
+        <div
+          className="absolute bottom-3 left-3 z-30 max-w-[min(28rem,calc(100%-1.5rem))]"
+          draggable={false}
+          onDragStart={(e) => e.preventDefault()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <PtzOverlay cameraId={cameraId} canControl={can("vms.ptz.control")} />
+        </div>
+      )}
 
       {/* Hover toolbar (top-right) */}
       <div className="absolute right-1.5 top-2 z-20 flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">

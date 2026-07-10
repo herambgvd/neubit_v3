@@ -8,7 +8,10 @@
 import { useState } from "react";
 
 import { Button, Modal, Select } from "@/components/ui/kit";
+import { useAuth } from "@/lib/auth";
 import LivePlayer from "./LivePlayer";
+import PtzOverlay from "./PtzOverlay";
+import { isPtzCapable } from "../formUtils";
 
 const PROFILE_OPTIONS = [
   { value: "sub", label: "Sub-stream (low latency)" },
@@ -17,6 +20,8 @@ const PROFILE_OPTIONS = [
 
 export default function LivePlayerModal({ camera, onClose }) {
   const [profile, setProfile] = useState("sub");
+  const { can } = useAuth();
+  const ptz = isPtzCapable(camera);
 
   return (
     <Modal
@@ -35,7 +40,7 @@ export default function LivePlayerModal({ camera, onClose }) {
         </>
       }
     >
-      <div className="aspect-video w-full overflow-hidden rounded-lg border border-card-border bg-black">
+      <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-card-border bg-black">
         <LivePlayer
           key={`${camera.id}:${profile}`}
           cameraId={camera.id}
@@ -43,6 +48,11 @@ export default function LivePlayerModal({ camera, onClose }) {
           profile={profile}
           className="h-full"
         />
+        {ptz && (
+          <div className="absolute bottom-3 left-3 z-30 max-w-[min(28rem,calc(100%-1.5rem))]">
+            <PtzOverlay cameraId={camera.id} canControl={can("vms.ptz.control")} />
+          </div>
+        )}
       </div>
     </Modal>
   );
