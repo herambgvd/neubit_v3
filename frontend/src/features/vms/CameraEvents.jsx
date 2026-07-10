@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { PageHeader, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
+import { workflow as wfApi } from "@/features/workflow/api";
 import { vms } from "./api";
 import { EVENT_TYPE_FILTERS, SEVERITY_FILTERS } from "./constants";
 import { normalizeVmsEvent, eventKey } from "./eventLib";
@@ -91,6 +92,27 @@ export default function CameraEventsPage() {
     },
     onError: (e) => toast.error(apiError(e, "Failed to acknowledge")),
   });
+
+  // Cross-link → Incidents. A camera event that fired an SOP created a workflow
+  // Incident carrying that event's id in trigger_data.payload.event_id (surfaced as
+  // `source_event_id`). Rather than N per-row calls, fetch recent camera-origin
+  // incidents ONCE and match client-side by the camera-event id. `retry:false` so a
+  // workflow outage just hides the badge instead of erroring the events feed.
+  const linkedIncidentsQ = useQuery({
+    queryKey: ["wf-incidents-by-camera-event"],
+    queryFn: () => wfApi.instances.list({ source: "vision", limit: 500 }),
+    retry: false,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  const incidentByEventId = useMemo(() => {
+    const m = new Map();
+    for (const inc of asItems(linkedIncidentsQ.data)) {
+      const key = inc.source_event_id;
+      if (key && !m.has(key)) m.set(key, inc.instance_id ?? inc.id);
+    }
+    return m;
+  }, [linkedIncidentsQ.data]);
 
   // Merge live frames (newest-first) ahead of the fetched history, de-dupe by id,
   // and re-apply the active filters against the live-merged list so a live frame
@@ -232,6 +254,7 @@ export default function CameraEventsPage() {
                 key={eventKey(e, idx)}
                 event={e}
                 cameraName={cameraName(e.camera_id)}
+                incidentId={incidentByEventId.get(e.event_id || e.id) || null}
                 onAck={(ev) => ackMut.mutate(ev.id)}
                 ackPending={ackMut.isPending && ackMut.variables === e.id}
               />

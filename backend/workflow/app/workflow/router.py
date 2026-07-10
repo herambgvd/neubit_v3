@@ -451,9 +451,21 @@ async def list_instances(svc: Annotated[InstanceService, Depends(_inst_svc)],
                          skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
                          status: Optional[str] = Query(None), priority: Optional[str] = Query(None),
                          site_id: Optional[str] = Query(None), sop_id: Optional[str] = Query(None),
-                         assigned_to: Optional[str] = Query(None), q: Optional[str] = Query(None)):
+                         assigned_to: Optional[str] = Query(None), q: Optional[str] = Query(None),
+                         event_id: Optional[str] = Query(
+                             None,
+                             description="Cross-link: incidents spawned by this originating event id "
+                                         "(matches the envelope id OR trigger_data.payload.event_id — "
+                                         "so a camera-event id finds the incident it raised).",
+                         ),
+                         source: Optional[str] = Query(
+                             None,
+                             description="Originating domain source: 'vision' (camera events), 'access', "
+                                         "'ingest', … or 'manual' for operator-raised incidents.",
+                         )):
     items, total = await svc.list_(skip=skip, limit=limit, status=status, priority=priority,
-                                   site_id=site_id, sop_id=sop_id, assigned_to=assigned_to, q=q)
+                                   site_id=site_id, sop_id=sop_id, assigned_to=assigned_to, q=q,
+                                   event_id=event_id, source=source)
     return S.InstanceListResponse(items=[S.InstancePublic.from_row(r) for r in items],
                                   total=total, skip=skip, limit=limit)
 

@@ -728,7 +728,7 @@ class InstanceService:
         return row
 
     async def list_(self, *, skip=0, limit=50, status=None, priority=None, site_id=None,
-                    sop_id=None, assigned_to=None, q=None):
+                    sop_id=None, assigned_to=None, q=None, event_id=None, source=None):
         stmt = scoped(select(WorkflowInstance), WorkflowInstance, self.scope)
         count = scoped(select(func.count()).select_from(WorkflowInstance), WorkflowInstance, self.scope)
         for col, val in [
@@ -741,6 +741,39 @@ class InstanceService:
             if val is not None:
                 stmt = stmt.where(col == val)
                 count = count.where(col == val)
+        # event_id — the CROSS-LINK key from a camera event. A camera event's own id
+        # (VmsEvent.id) rides in the envelope PAYLOAD (trigger_data.payload.event_id),
+        # while WorkflowInstance.event_id holds the bus envelope UUID (a different id).
+        # So match EITHER identifier so a lookup by a camera-event id finds the
+        # incident it spawned, and a lookup by the envelope id also works.
+        if event_id is not None:
+            link = or_(
+                WorkflowInstance.event_id == event_id,
+                WorkflowInstance.trigger_data["payload"]["event_id"].as_string() == event_id,
+            )
+            stmt = stmt.where(link)
+            count = count.where(link)
+        # source — the ORIGINATING domain (the EventBus source tag stored on the
+        # envelope): "vision" (camera events), "access", "ingest", … The UI groups
+        # camera-ish sources under "Camera". "manual" matches operator-raised
+        # incidents (created via POST /instances → extra.source == "manual", no
+        # trigger envelope).
+        if source is not None:
+            if source == "manual":
+                # Operator-raised incidents have no originating-event envelope, so no
+                # domain source tag. A JSON column set to Python None stores JSON
+                # 'null' (not SQL NULL), so extracting .source yields NULL — that's
+                # the portable "no envelope source" test (also matches an envelope
+                # that carries no source). extra.source == 'manual' is the explicit
+                # opt-in if a create ever stamps it.
+                src = or_(
+                    WorkflowInstance.trigger_data["source"].as_string().is_(None),
+                    WorkflowInstance.extra["source"].as_string() == "manual",
+                )
+            else:
+                src = WorkflowInstance.trigger_data["source"].as_string() == source
+            stmt = stmt.where(src)
+            count = count.where(src)
         # Full-text-ish search over the incident name + its SOP name (v2 parity).
         if q:
             like = f"%{q.strip()}%"

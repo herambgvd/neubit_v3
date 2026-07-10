@@ -22,9 +22,11 @@ export const menuItems = [
   // Streaming is a SECTION: the video surfaces — Video Wall (live), Recordings,
   // Playback. (Devices stays a pure onboarding zone; viewing lives here.)
   { title: "Streaming", icon: "heroicons:signal", section: "streaming" },
-  // Events = the incident surface (SOP-driven incidents live here, like neubit_v2).
-  // Workflow itself is NOT a top-nav item — its config lives under Config → Workflow.
-  { title: "Events", icon: "heroicons:calendar-days", link: "/events", perm: "neubit.read" },
+  // "Incidents" = the PSIM alarm/incident surface (SOP-driven, cross-domain incidents
+  // live here, like neubit_v2). Named distinctly from Streaming → "Camera events" (the
+  // raw device-level event feed) to remove the "Events vs Camera events" confusion.
+  // Route stays /events. Workflow config lives under Config → Workflow.
+  { title: "Incidents", icon: "heroicons:calendar-days", link: "/events", perm: "neubit.read" },
   { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true },
   { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true },
   // Config is a SECTION: clicking it enters the Config sub-tab bar (first enabled tab).

@@ -5,7 +5,7 @@
 // controlled: parent owns the values and the setters.
 import { Icon } from "@iconify/react";
 import { titleize } from "@/lib/format";
-import { INCIDENT_STATUSES, PRIORITIES } from "../../constants";
+import { INCIDENT_STATUSES, PRIORITIES, INCIDENT_SOURCES } from "../../constants";
 
 const selCls =
   "h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted";
@@ -17,16 +17,18 @@ export default function IncidentFilters({
   priority,
   siteId,
   sopId,
+  source,
   onStatus,
   onPriority,
   onSite,
   onSop,
+  onSource,
   onClear,
   sites = [],
   sops = [],
   total,
 }) {
-  const hasFilter = qInput || status || priority || siteId || sopId;
+  const hasFilter = qInput || status || priority || siteId || sopId || source;
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <label className="relative min-w-[220px] flex-1">
@@ -74,6 +76,16 @@ export default function IncidentFilters({
         <option value="" className="bg-card">All SOPs</option>
         {sops.map((s) => (
           <option key={s.id ?? s.sop_id} value={s.id ?? s.sop_id} className="bg-card">{s.name}</option>
+        ))}
+      </select>
+      <select
+        value={source}
+        onChange={(e) => onSource(e.target.value)}
+        className={selCls}
+        title="Originating source of the incident"
+      >
+        {INCIDENT_SOURCES.map((s) => (
+          <option key={s.value} value={s.value} className="bg-card">{s.label}</option>
         ))}
       </select>
       {hasFilter && (

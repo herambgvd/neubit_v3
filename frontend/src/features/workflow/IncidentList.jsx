@@ -59,13 +59,14 @@ export default function WorkflowPage() {
   const [priority, setPriority] = useState("");
   const [siteId, setSiteId] = useState("");
   const [sopId, setSopId] = useState("");
+  const [source, setSource] = useState("");
   const [page, setPage] = useState(0);
   const [view, setView] = useState("board");
 
   // Any filter change resets to the first page.
   useEffect(() => {
     setPage(0);
-  }, [q, status, priority, siteId, sopId]);
+  }, [q, status, priority, siteId, sopId, source]);
 
   const sopsQ = useQuery({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
   const sitesQ = useQuery({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }) });
@@ -73,7 +74,7 @@ export default function WorkflowPage() {
   const sitesList = asItems(sitesQ.data);
 
   const instancesQ = useQuery({
-    queryKey: ["wf-instances", { q, status, priority, siteId, sopId, page }],
+    queryKey: ["wf-instances", { q, status, priority, siteId, sopId, source, page }],
     queryFn: () =>
       wfApi.instances.list({
         q: q || undefined,
@@ -81,6 +82,7 @@ export default function WorkflowPage() {
         priority: priority || undefined,
         site_id: siteId || undefined,
         sop_id: sopId || undefined,
+        source: source || undefined,
         skip: page * PAGE_SIZE,
         limit: PAGE_SIZE,
       }),
@@ -246,6 +248,7 @@ export default function WorkflowPage() {
     setPriority("");
     setSiteId("");
     setSopId("");
+    setSource("");
   };
 
   return (
@@ -253,7 +256,7 @@ export default function WorkflowPage() {
       <PageHeader
         title={
           <span className="inline-flex items-center gap-2.5">
-            Events
+            Incidents
             <span
               className="inline-flex items-center gap-1.5 rounded-full border border-card-border px-2 py-0.5 text-[11px] font-normal text-muted"
               title={connected ? "Live stream connected" : "Live stream connecting…"}
@@ -307,10 +310,12 @@ export default function WorkflowPage() {
         priority={priority}
         siteId={siteId}
         sopId={sopId}
+        source={source}
         onStatus={setStatus}
         onPriority={setPriority}
         onSite={setSiteId}
         onSop={setSopId}
+        onSource={setSource}
         onClear={clearFilters}
         sites={sitesList}
         sops={sops}
@@ -335,7 +340,7 @@ export default function WorkflowPage() {
         <AlarmBoard
           rows={instances}
           loading={instancesQ.isLoading}
-          hasFilters={!!(q || status || priority || siteId || sopId)}
+          hasFilters={!!(q || status || priority || siteId || sopId || source)}
           selected={selected}
           onToggle={toggle}
           allSelected={allSelected}

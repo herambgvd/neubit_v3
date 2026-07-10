@@ -12,7 +12,7 @@ import { Icon } from "@iconify/react";
 
 import { typePreset, sevPreset, eventTypeLabel, fmtTime, fmtDate } from "../eventLib";
 
-export default function CameraEventRow({ event, cameraName, onAck, ackPending = false }) {
+export default function CameraEventRow({ event, cameraName, incidentId = null, onAck, ackPending = false }) {
   const [open, setOpen] = useState(false);
   const tp = typePreset(event.event_type);
   const sp = sevPreset(event.severity);
@@ -56,6 +56,17 @@ export default function CameraEventRow({ event, cameraName, onAck, ackPending = 
                   <Icon icon="heroicons-outline:check" className="text-[10px]" />
                   Acked
                 </span>
+              )}
+              {incidentId && (
+                <Link
+                  href={`/events/${encodeURIComponent(incidentId)}`}
+                  title="This event raised an incident — open it"
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500 hover:bg-amber-500/20"
+                >
+                  <Icon icon="heroicons-outline:bell-alert" className="text-[10px]" />
+                  Incident
+                  <Icon icon="heroicons-outline:arrow-top-right-on-square" className="text-[9px]" />
+                </Link>
               )}
               {raw && (
                 <button
