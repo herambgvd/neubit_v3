@@ -116,6 +116,18 @@ export const vms = {
     getOnvifEvents: (id) => unwrap(api.get(`${CAMERAS}/${id}/onvif-events`)),
     setOnvifEvents: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/onvif-events`, body)),
 
+    // ── Two-way audio / push-to-talk (G6) ────────────────────────────────
+    // Only meaningful for a `talk_capable` camera (backchannel / two-way). Gates
+    // on vms.live.view. POST /cameras/{id}/talk/session → issues a short-lived
+    // uplink session for browser-mic → camera-speaker audio:
+    //   { session_id, kind:"whip"|"rtsp_backchannel"|"http_push", target_url,
+    //     whip_url (may carry ?token=), codec, token, expires_at, live_validate }
+    // For kind "whip" the frontend POSTs a mic-only SDP offer to `whip_url`
+    // (WHIP publish) and plays back the answer. 409 TALK_UNSUPPORTED for a
+    // non-capable camera. Real backchannel push = # LIVE-VALIDATE (needs a
+    // camera speaker).
+    talkSession: (id) => unwrap(api.post(`${CAMERAS}/${id}/talk/session`, {})),
+
     // Snapshot URL for a saved camera (rendered via <img>, not fetched here).
     snapshotUrl: (id) => `${CAMERAS}/${id}/snapshot`,
   },

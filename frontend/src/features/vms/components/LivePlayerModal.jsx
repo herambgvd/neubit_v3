@@ -22,6 +22,10 @@ export default function LivePlayerModal({ camera, onClose }) {
   const [profile, setProfile] = useState("sub");
   const { can } = useAuth();
   const ptz = isPtzCapable(camera);
+  // G6 — push-to-talk: only for a backchannel/two-way capable camera. Listen
+  // (unmute) is baked into LivePlayer and always available.
+  const talkCapable = !!camera.talk_capable;
+  const canTalk = can("vms.live.view");
 
   return (
     <Modal
@@ -46,6 +50,8 @@ export default function LivePlayerModal({ camera, onClose }) {
           cameraId={camera.id}
           cameraName={camera.name}
           profile={profile}
+          talkCapable={talkCapable}
+          canTalk={canTalk}
           className="h-full"
         />
         {ptz && (

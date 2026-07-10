@@ -10,6 +10,7 @@ import { toast } from "sonner";
 
 import { Button, Modal } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
+import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
 import { CONFIG_TABS } from "../constants";
@@ -28,6 +29,7 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
   const [tab, setTab] = useState("view");
   const [form, setForm] = useState(() => fromCamera(camera));
   const [errors, setErrors] = useState({});
+  const { can } = useAuth();
   // Cascading placement: floors of the selected site, zones of the selected floor.
   const { floors, zones } = usePlacementFloorsZones(form.site_id, form.floor_id);
 
@@ -86,7 +88,13 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
         <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="mb-4" />
         {tab === "view" ? (
           <div className="aspect-video w-full overflow-hidden rounded-lg border border-card-border bg-black">
-            <LivePlayer cameraId={camera.id} cameraName={camera.name} className="h-full" />
+            <LivePlayer
+              cameraId={camera.id}
+              cameraName={camera.name}
+              talkCapable={!!camera.talk_capable}
+              canTalk={can("vms.live.view")}
+              className="h-full"
+            />
           </div>
         ) : (
           <CameraConfigForm

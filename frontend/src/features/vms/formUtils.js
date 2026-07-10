@@ -38,6 +38,9 @@ export function toCreateBody(form) {
       pre_buffer_seconds: num(form.pre_buffer_seconds) ?? 5,
       post_buffer_seconds: num(form.post_buffer_seconds) ?? 5,
       anr_enabled: !!form.anr_enabled,
+      // G6 — include the audio track in the recording (MediaMTX/ffmpeg carries
+      // it when the source stream has audio).
+      audio_enabled: !!form.audio_enabled,
     },
     ptz: { capable: !!form.ptz_capable },
     placement: {
@@ -97,6 +100,7 @@ export function fromCamera(cam) {
     pre_buffer_seconds: rec.pre_buffer_seconds ?? 5,
     post_buffer_seconds: rec.post_buffer_seconds ?? 5,
     anr_enabled: !!rec.anr_enabled,
+    audio_enabled: !!rec.audio_enabled,
     ptz_capable: !!(cam.ptz && cam.ptz.capable),
     site_id: place.site_id || "",
     floor_id: place.floor_id || "",

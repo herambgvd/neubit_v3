@@ -128,6 +128,7 @@ export const DEFAULT_CAMERA_FORM = {
   pre_buffer_seconds: 5,
   post_buffer_seconds: 5,
   anr_enabled: false,
+  audio_enabled: false,
   // ptz
   ptz_capable: false,
   // placement

@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { useLiveSession } from "../hooks/useLiveSession";
+import TalkButton from "./TalkButton";
 
 const WHEP_MAX_ATTEMPTS = 8;
 const WHEP_RETRY_MS = 2_000;
@@ -35,6 +36,11 @@ export default function LivePlayer({
   muted = true,
   preferWebrtc = true,
   minimal = false, // hide chrome (used for dense wall tiles / thumbnails)
+  // G6 — push-to-talk: show the Talk button when the camera is backchannel/
+  // two-way capable AND the operator holds vms.live.view. Listen (unmute) is
+  // always available regardless of these.
+  talkCapable = false,
+  canTalk = false,
   className = "",
   onReady,
   onSnapshot,
@@ -486,7 +492,16 @@ export default function LivePlayer({
             )}
           </span>
           <div className="pointer-events-auto flex items-center gap-0.5">
-            <ChromeBtn icon={isMuted ? "heroicons-outline:speaker-x-mark" : "heroicons-outline:speaker-wave"} title={isMuted ? "Unmute" : "Mute"} onClick={() => setIsMuted((m) => !m)} />
+            {/* Push-to-talk (G6) — only for a talk-capable camera + vms.live.view. */}
+            {talkCapable && canTalk && <TalkButton cameraId={cameraId} />}
+            {/* Listen (audio) — the media element starts muted for autoplay; this
+                unmutes so the operator hears the camera. Always shown; if the
+                stream carries no audio track it just does nothing audible. */}
+            <ChromeBtn
+              icon={isMuted ? "heroicons-outline:speaker-x-mark" : "heroicons-outline:speaker-wave"}
+              title={isMuted ? "Listen (unmute audio)" : "Mute audio"}
+              onClick={() => setIsMuted((m) => !m)}
+            />
             <ChromeBtn icon="heroicons-outline:camera" title="Snapshot" onClick={snapshot} />
             <ChromeBtn icon={isFullscreen ? "heroicons-outline:arrows-pointing-in" : "heroicons-outline:arrows-pointing-out"} title="Fullscreen" onClick={toggleFullscreen} />
           </div>

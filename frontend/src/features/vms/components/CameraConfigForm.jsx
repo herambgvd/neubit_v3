@@ -246,6 +246,13 @@ export default function CameraConfigForm({
           checked={!!form.anr_enabled}
           onChange={(v) => set({ anr_enabled: v })}
         />
+        {/* G6 — audio recording: include the audio track when the source carries one. */}
+        <ToggleRow
+          label="Record audio"
+          hint="Store the audio track alongside the video (only if the stream carries audio)."
+          checked={!!form.audio_enabled}
+          onChange={(v) => set({ audio_enabled: v })}
+        />
 
         {/* Manual recording controls — only once the camera exists (edit view). */}
         {isEdit && (onManualStart || onManualStop) && (
