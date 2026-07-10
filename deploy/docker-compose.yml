@@ -265,7 +265,10 @@ services:
   # network by nvr, NEVER routed through the public Traefik gateway. Public
   # HLS/WebRTC token-auth is added at the Traefik ForwardAuth layer in P2-C.
   mediamtx:
-    image: bluenviron/mediamtx:latest
+    # -ffmpeg variant bundles ffmpeg (the plain image is scratch-based, no ffmpeg).
+    # Required for the on-demand H265→H264 live-view transcode path in mediamtx.yml
+    # (browsers can't WebRTC-decode HEVC → we republish an H264 variant on demand).
+    image: bluenviron/mediamtx:latest-ffmpeg
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro

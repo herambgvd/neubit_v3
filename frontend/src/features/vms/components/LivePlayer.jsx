@@ -28,6 +28,26 @@ const WHEP_MAX_ATTEMPTS = 8;
 const WHEP_RETRY_MS = 2_000;
 const HLS_COLD_RETRIES = 8;
 
+// H265→H264 transcode fallback. Chrome's WebRTC can't decode HEVC, so a direct
+// WHEP POST for an H265 camera fails to negotiate (MediaMTX returns 400). We then
+// retry ONCE against the transcoded variant — the same WHEP URL with "/h264"
+// inserted before the trailing "/whep" segment. MediaMTX runs ffmpeg on demand to
+// republish an H264 stream at that path (see deploy/mediamtx.yml). The "?token="
+// is preserved (same camera → the media token is valid for the /h264 sub-path).
+// Returns null when the URL isn't a WHEP endpoint or already targets /h264.
+function toTranscodedWhepUrl(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url, window.location.origin);
+    // Path ends in ".../whep" → insert "/h264" before it. Already transcoded → skip.
+    if (!/\/whep$/.test(u.pathname) || /\/h264\/whep$/.test(u.pathname)) return null;
+    u.pathname = u.pathname.replace(/\/whep$/, "/h264/whep");
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 export default function LivePlayer({
   cameraId,
   cameraName,
@@ -78,6 +98,10 @@ export default function LivePlayer({
     let nativeLoaded = null;
     let nativeError = null;
     let coldRetries = 0;
+    // Set once the WebRTC ladder (direct WHEP + the one /h264 transcode retry)
+    // has fully given up. Stops the HLS error handlers from bouncing back to
+    // WebRTC — otherwise HLS(HEVC)→WebRTC→transcode-fail→HLS would loop forever.
+    let webrtcExhausted = false;
 
     setLoading(true);
     setError(null);
@@ -108,12 +132,40 @@ export default function LivePlayer({
     };
 
     // ── WebRTC / WHEP ────────────────────────────────────────────────────
-    const startWebRTC = async () => {
-      if (!webrtcUrl) {
+    // `url` defaults to the direct WHEP endpoint. On an H265 camera the direct
+    // POST fails to negotiate (400 — Chrome can't decode HEVC); we then re-enter
+    // this with the transcoded /h264 variant. `transcoded` guards against looping
+    // the fallback (only one transcode attempt).
+    const startWebRTC = async (url = webrtcUrl, transcoded = false) => {
+      if (!url) {
         startHLS();
         return;
       }
       setMode("webrtc");
+
+      // What to do when WHEP on `url` can't be established: try the transcoded
+      // /h264 variant once, else HLS, else error. Kept in one place so every
+      // give-up branch below routes through the same fallback ladder.
+      const fallback = () => {
+        if (disposed) return;
+        const h264 = transcoded ? null : toTranscodedWhepUrl(url);
+        if (h264) {
+          // Give-up on the direct (H265) stream → transcode. Show "Starting
+          // stream…" while ffmpeg spins up the H264 republish.
+          setLoading(true);
+          setError(null);
+          startWebRTC(h264, true);
+          return;
+        }
+        // No transcode option left → WebRTC (direct + transcode) is done. Mark
+        // it so HLS won't bounce back here, then hand off to HLS / error.
+        webrtcExhausted = true;
+        if (hlsUrl) startHLS();
+        else {
+          setError("Stream is unavailable right now.");
+          setLoading(false);
+        }
+      };
 
       const sendOffer = async (attempt) => {
         if (disposed) return;
@@ -147,12 +199,8 @@ export default function LivePlayer({
               pc.close();
             } catch {}
             pcRef.current = null;
-            // Fall back to HLS rather than erroring outright.
-            if (hlsUrl) startHLS();
-            else {
-              setError("Stream is unavailable right now.");
-              setLoading(false);
-            }
+            // ICE failed — route through the fallback ladder (transcode → HLS).
+            fallback();
           }
         };
 
@@ -172,22 +220,33 @@ export default function LivePlayer({
             setTimeout(resolve, 3_000);
           });
 
-          // webrtcUrl is the full WHEP endpoint + already carries "?token=".
+          // `url` is the full WHEP endpoint + already carries "?token=".
           // MediaMTX WHEP CORS only allows Authorization/Content-Type/If-Match
           // — never add extra headers here.
-          const res = await fetch(webrtcUrl, {
+          const res = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/sdp" },
             body: pc.localDescription.sdp,
           });
 
-          // 404 = MediaMTX has the path but the RTSP source isn't ready yet.
+          // 404 = MediaMTX has the path but the RTSP source isn't ready yet
+          // (also the transcode ffmpeg spinning up) → keep retrying same url.
           if (res.status === 404 && attempt < WHEP_MAX_ATTEMPTS && !disposed) {
             try {
               pc.close();
             } catch {}
             await new Promise((r) => setTimeout(r, WHEP_RETRY_MS));
             if (!disposed) sendOffer(attempt + 1);
+            return;
+          }
+          // 400 = negotiation failed — the browser can't decode this codec (H265
+          // on Chrome). Retrying the SAME url won't help → go straight to the
+          // transcode fallback, don't burn the retry budget.
+          if (res.status === 400) {
+            try {
+              pc.close();
+            } catch {}
+            fallback();
             return;
           }
           if (!res.ok) throw new Error(`WHEP ${res.status}`);
@@ -204,12 +263,8 @@ export default function LivePlayer({
             if (!disposed) sendOffer(attempt + 1);
             return;
           }
-          // Exhausted WebRTC — try HLS before giving up.
-          if (hlsUrl) startHLS();
-          else {
-            setError("Stream is unavailable right now.");
-            setLoading(false);
-          }
+          // Exhausted WebRTC on this url — transcode fallback, then HLS.
+          fallback();
         }
       };
 
@@ -309,8 +364,9 @@ export default function LivePlayer({
               }, 1_500);
               return;
             }
-            // HLS won't come up — try WebRTC (delivers HEVC where HLS can't).
-            if (webrtcUrl) {
+            // HLS won't come up — try WebRTC (delivers HEVC where HLS can't),
+            // unless the WebRTC+transcode ladder already gave up.
+            if (webrtcUrl && !webrtcExhausted) {
               startWebRTC();
               return;
             }
@@ -327,8 +383,9 @@ export default function LivePlayer({
                 } catch {}
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
-                // HEVC trips MEDIA_ERROR in Chromium — hop to WebRTC.
-                if (webrtcUrl) {
+                // HEVC trips MEDIA_ERROR in Chromium — hop to WebRTC (which can
+                // transcode), unless the WebRTC+transcode ladder already gave up.
+                if (webrtcUrl && !webrtcExhausted) {
                   try {
                     hls.destroy();
                   } catch {}
@@ -344,7 +401,7 @@ export default function LivePlayer({
                 }
                 break;
               default:
-                if (webrtcUrl) {
+                if (webrtcUrl && !webrtcExhausted) {
                   try {
                     hls.destroy();
                   } catch {}

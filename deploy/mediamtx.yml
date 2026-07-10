@@ -83,3 +83,36 @@ pathDefaults:
   sourceOnDemandCloseAfter: 120s
   rtspTransport: tcp
   record: no
+
+# ── H265→H264 live-view transcode (on demand) ──
+# Chrome/Chromium WebRTC cannot decode H265/HEVC, so a WHEP POST for an HEVC
+# camera returns 400 and live view is blank. This regex path transcodes ANY
+# "<basepath>/h264" request to H264 on demand: when a browser reads
+# cameras/<tenant>/<cam>/<profile>/h264, MediaMTX runs ffmpeg which READS the
+# camera's real (H265) base path — cameras/<tenant>/<cam>/<profile>, itself an
+# on-demand path whose RTSP source activates — and REPUBLISHES an H264 baseline
+# stream to the /h264 path. H264 cameras never hit this (the frontend only falls
+# back to /h264 after a direct WHEP fails), so they stay zero-cost.
+#
+# Variables (verified against MediaMTX v1.19.2 reference config):
+#   $G1       = first regex group  → the base path (cameras/<t>/<c>/<profile>)
+#   $MTX_PATH = full matched path  → cameras/<t>/<c>/<profile>/h264
+# Audio is dropped (-an): G711 doesn't WebRTC-negotiate cleanly; opus can come later.
+paths:
+  "~^(.+)/h264$":
+    # ffmpeg publishes INTO this path, so the source is "publisher" (not an RTSP
+    # pull). Override the pathDefaults sourceOnDemand (invalid on a publisher path
+    # → MediaMTX refuses to boot otherwise).
+    source: publisher
+    sourceOnDemand: no
+    runOnDemand: >
+      ffmpeg -nostdin -loglevel warning -rtsp_transport tcp
+      -i rtsp://127.0.0.1:8554/$G1
+      -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -level 3.1 -pix_fmt yuv420p -g 30 -an
+      -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/$MTX_PATH
+    # NOT restart:yes — with restart, MediaMTX immediately respawns ffmpeg after the
+    # idle-close, so a transcode with 0 readers never actually reaps (orphaned CPU).
+    # If ffmpeg exits/crashes the browser's next WHEP retry re-triggers on demand.
+    runOnDemandRestart: no
+    runOnDemandStartTimeout: 15s
+    runOnDemandCloseAfter: 15s
