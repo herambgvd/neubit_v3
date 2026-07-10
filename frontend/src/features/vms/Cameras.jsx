@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, PageHeader, Select } from "@/components/ui/kit";
+import { Button, ConfirmDialog, EmptyState, PageHeader, Select } from "@/components/ui/kit";
 import { StatsStrip } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
@@ -262,14 +262,22 @@ export default function CamerasPage() {
           {apiError(camerasQ.error, "Failed to load cameras")}
         </div>
       ) : cameras.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-card-border bg-card py-20 text-center">
-          <Icon icon="heroicons-outline:video-camera" className="mb-3 text-4xl text-muted opacity-50" />
-          <p className="font-medium text-foreground">No cameras yet</p>
-          <p className="mt-1 text-sm text-muted">Add one manually or run an ONVIF discovery scan.</p>
-          <div className="mt-4 flex gap-2">
-            <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>Discover</Button>
-            <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>Add camera</Button>
-          </div>
+        <div className="rounded-xl border border-dashed border-card-border bg-card">
+          <EmptyState
+            icon="heroicons-outline:video-camera"
+            title={search || status || brand || siteFilter ? "No cameras match" : "No cameras yet"}
+            subtitle={
+              search || status || brand || siteFilter
+                ? "Adjust the search or filters above."
+                : "Add one manually or run an ONVIF discovery scan."
+            }
+            action={
+              <div className="flex gap-2">
+                <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>Discover</Button>
+                <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>Add camera</Button>
+              </div>
+            }
+          />
         </div>
       ) : view === "table" ? (
         <CameraTable

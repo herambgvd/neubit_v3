@@ -112,11 +112,11 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
           <div className="overflow-hidden rounded-lg border border-card-border">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-card-border text-left text-[11px] uppercase tracking-wide text-muted">
-                  <th className="px-3 py-2 font-medium">Ch</th>
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Site</th>
+                <tr className="border-b border-card-border bg-hover/40 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  <th className="px-3 py-2 text-right">Ch</th>
+                  <th className="px-3 py-2">Name</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Site</th>
                 </tr>
               </thead>
               <tbody>
@@ -124,8 +124,8 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
                   .slice()
                   .sort((a, b) => (a.nvr_channel_number ?? 0) - (b.nvr_channel_number ?? 0))
                   .map((c) => (
-                    <tr key={c.id} className="border-b border-card-border last:border-0">
-                      <td className="px-3 py-2 text-muted">{c.nvr_channel_number ?? "—"}</td>
+                    <tr key={c.id} className="border-b border-card-border/60 transition last:border-0 hover:bg-hover/50">
+                      <td className="px-3 py-2 text-right tabular-nums text-muted">{c.nvr_channel_number ?? "—"}</td>
                       <td className="px-3 py-2 text-foreground">{c.name}</td>
                       <td className="px-3 py-2"><StatusBadge status={c.status} /></td>
                       <td className="px-3 py-2 text-muted">{siteNames[c.placement?.site_id] || "—"}</td>

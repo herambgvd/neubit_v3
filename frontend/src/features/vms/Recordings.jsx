@@ -15,7 +15,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, PageHeader, Select } from "@/components/ui/kit";
+import { Button, EmptyState, MetricRow, PageHeader, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems, fmtBytes } from "@/lib/format";
 import { vms } from "./api";
@@ -105,6 +105,7 @@ export default function RecordingsPage() {
     () => recordings.reduce((sum, r) => sum + (r.file_size || 0), 0),
     [recordings],
   );
+  const lockedCount = useMemo(() => recordings.filter((r) => r.locked).length, [recordings]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["vms-recordings"] });
 
@@ -172,15 +173,26 @@ export default function RecordingsPage() {
       />
 
       {/* Summary */}
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <SummaryTile label="Recordings" value={total} />
-        <SummaryTile label="Total size" value={fmtBytes(totalBytes)} />
-        <SummaryTile label="Locked" value={recordings.filter((r) => r.locked).length} />
-        <SummaryTile
-          label="Scope"
-          value={cameraId ? cameraNames[cameraId] || "Camera" : "Estate"}
-        />
-      </div>
+      <MetricRow
+        className="mb-4"
+        items={[
+          { label: "Recordings", value: total, icon: "heroicons-outline:film", tone: "info" },
+          { label: "Total size", value: fmtBytes(totalBytes), icon: "heroicons-outline:circle-stack", tone: "neutral" },
+          {
+            label: "Protected",
+            value: lockedCount,
+            icon: "heroicons-solid:shield-check",
+            tone: lockedCount ? "warn" : "neutral",
+            hint: "Locked from retention",
+          },
+          {
+            label: "Scope",
+            value: cameraId ? cameraNames[cameraId] || "Camera" : "Estate",
+            icon: cameraId ? "heroicons-outline:video-camera" : "heroicons-outline:globe-alt",
+            tone: "neutral",
+          },
+        ]}
+      />
 
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-card-border bg-card p-3">
@@ -234,12 +246,12 @@ export default function RecordingsPage() {
           {apiError(error, "Failed to load recordings")}
         </div>
       ) : recordings.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-card-border bg-card py-20 text-center">
-          <Icon icon="heroicons-outline:film" className="mb-3 text-4xl text-muted opacity-50" />
-          <p className="font-medium text-foreground">No recordings found</p>
-          <p className="mt-1 text-sm text-muted">
-            Adjust the camera or date range. Recordings appear once a camera is actively recording.
-          </p>
+        <div className="rounded-xl border border-dashed border-card-border bg-card">
+          <EmptyState
+            icon="heroicons-outline:film"
+            title="No recordings found"
+            subtitle="Adjust the camera or date range. Recordings appear once a camera is actively recording."
+          />
         </div>
       ) : (
         <RecordingsTable
@@ -262,15 +274,6 @@ export default function RecordingsPage() {
         cameraName={exportRec ? cameraNames[exportRec.camera_id] : undefined}
         range={exportRec ? { from: exportRec.start_time, to: exportRec.end_time } : null}
       />
-    </div>
-  );
-}
-
-function SummaryTile({ label, value }) {
-  return (
-    <div className="rounded-xl border border-card-border bg-card px-4 py-3">
-      <div className="text-lg font-semibold text-foreground">{value}</div>
-      <div className="text-[11px] text-muted">{label}</div>
     </div>
   );
 }

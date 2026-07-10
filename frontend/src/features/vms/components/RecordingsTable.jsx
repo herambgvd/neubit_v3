@@ -75,15 +75,15 @@ export default function RecordingsTable({
     <div className="overflow-x-auto rounded-xl border border-card-border bg-card">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-card-border text-left text-muted">
-            {showCamera && <th className="px-4 py-3 font-medium">Camera</th>}
-            <th className="px-4 py-3 font-medium">Start</th>
-            <th className="px-4 py-3 font-medium">End</th>
-            <th className="px-4 py-3 font-medium">Duration</th>
-            <th className="px-4 py-3 font-medium">Size</th>
-            <th className="px-4 py-3 font-medium">Trigger</th>
-            <th className="px-4 py-3 font-medium">Integrity</th>
-            <th className="px-4 py-3 text-right font-medium">Actions</th>
+          <tr className="border-b border-card-border bg-hover/40 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
+            {showCamera && <th className="px-4 py-2.5">Camera</th>}
+            <th className="px-4 py-2.5">Start</th>
+            <th className="px-4 py-2.5">End</th>
+            <th className="px-4 py-2.5 text-right">Duration</th>
+            <th className="px-4 py-2.5 text-right">Size</th>
+            <th className="px-4 py-2.5">Trigger</th>
+            <th className="px-4 py-2.5">Integrity</th>
+            <th className="px-4 py-2.5 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -95,7 +95,7 @@ export default function RecordingsTable({
                 ? (new Date(r.end_time) - new Date(r.start_time)) / 1000
                 : null);
             return (
-              <tr key={r.id} className="border-b border-card-border last:border-0 hover:bg-hover/50">
+              <tr key={r.id} className="border-b border-card-border/60 last:border-0 transition hover:bg-hover/50">
                 {showCamera && (
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 text-foreground">
@@ -113,8 +113,8 @@ export default function RecordingsTable({
                 )}
                 <td className="px-4 py-3 text-muted">{fmtDateTime(r.start_time)}</td>
                 <td className="px-4 py-3 text-muted">{r.end_time ? fmtDateTime(r.end_time) : "—"}</td>
-                <td className="px-4 py-3 text-muted">{fmtDuration(dur)}</td>
-                <td className="px-4 py-3 text-muted">
+                <td className="px-4 py-3 text-right tabular-nums text-muted">{fmtDuration(dur)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-muted">
                   <span className="inline-flex items-center gap-1">
                     <Icon icon="heroicons-outline:circle-stack" className="text-xs" />
                     {fmtBytes(r.file_size)}

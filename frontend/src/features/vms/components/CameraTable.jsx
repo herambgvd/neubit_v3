@@ -144,16 +144,16 @@ export default function CameraTable({
     <div className="overflow-x-auto rounded-xl border border-card-border bg-card">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-card-border text-left text-[11px] uppercase tracking-wide text-muted">
+          <tr className="border-b border-card-border bg-hover/40 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
             <th className="w-8 px-2 py-2.5" />
             <th className="w-8 px-2 py-2.5">
               <input type="checkbox" checked={allSelected} onChange={(e) => onToggleAll?.(e.target.checked)} className="accent-foreground" />
             </th>
-            <th className="px-3 py-2.5 font-medium">Camera</th>
-            <th className="px-3 py-2.5 font-medium">Brand</th>
-            <th className="px-3 py-2.5 font-medium">Health</th>
-            <th className="px-3 py-2.5 font-medium">Site</th>
-            <th className="px-3 py-2.5 font-medium">Recording</th>
+            <th className="px-3 py-2.5">Camera</th>
+            <th className="px-3 py-2.5">Brand</th>
+            <th className="px-3 py-2.5">Health</th>
+            <th className="px-3 py-2.5">Site</th>
+            <th className="px-3 py-2.5">Recording</th>
             <th className="w-10 px-2 py-2.5" />
           </tr>
         </thead>
@@ -164,7 +164,7 @@ export default function CameraTable({
               onClick={() => onOpen?.(c)}
               onDragOver={(e) => { e.preventDefault(); setOverId(c.id); }}
               onDrop={() => handleDrop(c.id)}
-              className={`cursor-pointer border-b border-card-border transition hover:bg-hover ${
+              className={`cursor-pointer border-b border-card-border/60 transition last:border-0 hover:bg-hover/50 ${
                 overId === c.id ? "bg-hover" : ""
               } ${selectedIds.has(c.id) ? "bg-hover/60" : ""}`}
             >

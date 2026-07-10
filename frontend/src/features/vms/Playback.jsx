@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { PageHeader, Select } from "@/components/ui/kit";
+import { EmptyState, PageHeader, Select } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
@@ -99,9 +99,12 @@ export default function PlaybackPage() {
               onExportRange={(range) => setExportRange(range)}
             />
           ) : (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-card-border bg-card py-20 text-center text-muted">
-              <span className="mb-1 font-medium text-foreground">Select a camera</span>
-              <span className="text-sm">Pick a camera above to scrub its recorded footage.</span>
+            <div className="rounded-xl border border-dashed border-card-border bg-card">
+              <EmptyState
+                icon="heroicons-outline:play"
+                title="Select a camera"
+                subtitle="Pick a camera above to scrub its recorded footage."
+              />
             </div>
           )}
         </div>

@@ -15,7 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { PageHeader, Select } from "@/components/ui/kit";
+import { EmptyState, MetricRow, PageHeader, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "@/features/workflow/api";
@@ -142,6 +142,16 @@ export default function CameraEventsPage() {
 
   const total = q.data?.total ?? events.length;
 
+  // Severity breakdown + unacked count for the summary row (from the visible feed).
+  const summary = useMemo(() => {
+    const s = { critical: 0, warning: 0, info: 0, unacked: 0 };
+    for (const e of events) {
+      if (s[e.severity] != null) s[e.severity] += 1;
+      if (!e.acknowledged) s.unacked += 1;
+    }
+    return s;
+  }, [events]);
+
   const cameraOptions = [
     { value: "", label: "All cameras" },
     ...cameras.map((c) => ({ value: c.id, label: c.name })),
@@ -171,6 +181,17 @@ export default function CameraEventsPage() {
             </button>
           </span>
         }
+      />
+
+      {/* Summary */}
+      <MetricRow
+        className="mb-4"
+        items={[
+          { label: "Events", value: events.length, icon: "heroicons-outline:signal", tone: "info" },
+          { label: "Critical", value: summary.critical, icon: "heroicons-outline:exclamation-triangle", tone: summary.critical ? "bad" : "neutral" },
+          { label: "Warning", value: summary.warning, icon: "heroicons-outline:exclamation-circle", tone: summary.warning ? "warn" : "neutral" },
+          { label: "Unacked", value: summary.unacked, icon: "heroicons-outline:bell-alert", tone: summary.unacked ? "warn" : "ok" },
+        ]}
       />
 
       {/* Filters */}
@@ -242,11 +263,11 @@ export default function CameraEventsPage() {
             </div>
           </div>
         ) : events.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Icon icon="heroicons-outline:bell-slash" className="mb-2 text-2xl text-muted" />
-            <p className="text-sm text-muted">No camera events</p>
-            <p className="text-[11px] text-muted/70">Device events appear here as cameras report them.</p>
-          </div>
+          <EmptyState
+            icon="heroicons-outline:bell-slash"
+            title="No camera events"
+            subtitle="Device events appear here as cameras report them."
+          />
         ) : (
           <div className="divide-y divide-card-border">
             {events.map((e, idx) => (
