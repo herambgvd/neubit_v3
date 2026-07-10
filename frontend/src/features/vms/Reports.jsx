@@ -316,8 +316,8 @@ function ReportView({ report }) {
       <div className="space-y-4">
         <SummaryRow
           tiles={[
-            { label: "Cameras", value: totals.cameras ?? rows.length },
-            { label: "Avg uptime", value: `${totals.avg_uptime_pct ?? 0}%` },
+            { label: "Cameras", value: totals.cameras ?? rows.length, icon: "heroicons:video-camera", tone: "info" },
+            { label: "Avg uptime", value: `${totals.avg_uptime_pct ?? 0}%`, icon: "heroicons:signal", tone: (totals.avg_uptime_pct ?? 0) >= 90 ? "ok" : (totals.avg_uptime_pct ?? 0) >= 50 ? "warn" : "bad" },
           ]}
         />
         <BarTable
@@ -527,22 +527,40 @@ function SourceNote({ note }) {
   );
 }
 
+// Columns sized to the tile count (capped at 4) so the KPI row always fills the
+// width instead of leaving a half-empty gap on the right.
+const _COLS = { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5", 6: "sm:grid-cols-6" };
 function SummaryRow({ tiles }) {
+  const cols = _COLS[Math.min(tiles.length, 6)] || "sm:grid-cols-4";
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div className={`grid grid-cols-2 gap-2.5 ${cols}`}>
       {tiles.map((t) => (
-        <SummaryTile key={t.label} label={t.label} value={t.value} />
+        <SummaryTile key={t.label} label={t.label} value={t.value} icon={t.icon} tone={t.tone} />
       ))}
     </div>
   );
 }
 
-function SummaryTile({ label, value }) {
+const _TONE = {
+  ok: "text-emerald-500 bg-emerald-500/10",
+  warn: "text-amber-500 bg-amber-500/10",
+  bad: "text-red-500 bg-red-500/10",
+  info: "text-blue-500 bg-blue-500/10",
+};
+const _BAR = { ok: "bg-emerald-500/70", warn: "bg-amber-500/70", bad: "bg-red-500/70", info: "bg-blue-500/70" };
+function SummaryTile({ label, value, icon, tone = "info" }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-card-border bg-card px-4 py-3.5">
-      <span className="absolute inset-y-0 left-0 w-1 bg-blue-500/70" />
-      <div className="text-2xl font-semibold tracking-tight text-foreground tabular-nums">{value}</div>
-      <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wide capitalize text-muted">{label}</div>
+    <div className="relative flex items-center gap-3 overflow-hidden rounded-xl border border-card-border bg-card px-4 py-3.5">
+      <span className={`absolute inset-y-0 left-0 w-1 ${_BAR[tone] || _BAR.info}`} />
+      {icon && (
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${_TONE[tone] || _TONE.info}`}>
+          <Icon icon={icon} className="text-lg" />
+        </span>
+      )}
+      <div className="min-w-0">
+        <div className="text-2xl font-semibold leading-tight tracking-tight text-foreground tabular-nums">{value}</div>
+        <div className="mt-0.5 truncate text-[11px] font-medium uppercase tracking-wide capitalize text-muted">{label}</div>
+      </div>
     </div>
   );
 }
