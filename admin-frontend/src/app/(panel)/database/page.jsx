@@ -6,7 +6,7 @@ import { useMutation } from "@tanstack/react-query";
 import { AlertTriangle, Database, Download, FileUp, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
-import { adminApi, apiError, tokens } from "@/lib/api";
+import { adminApi, apiError } from "@/lib/api";
 import {
   Button,
   Card,
@@ -102,7 +102,7 @@ function ImportCard() {
       if (res?.ok) {
         // The restore replaced the users/sessions tables — force a fresh login.
         toast.success("Database restored — please sign in again");
-        tokens.clear();
+        adminApi.logout();
         setTimeout(() => router.replace("/login"), 1200);
       } else {
         toast.error("Restore reported errors — see output");

@@ -28,7 +28,7 @@ import {
   Users,
 } from "lucide-react";
 
-import { adminApi, tokens } from "@/lib/api";
+import { adminApi } from "@/lib/api";
 import { useTheme } from "@/components/theme";
 import { useRequireSuperadmin } from "@/lib/useRequireSuperadmin";
 import { ConfirmDialog } from "@/components/ui";
@@ -138,8 +138,10 @@ export default function PanelLayout({ children }) {
       return next;
     });
   }
-  function logout() {
-    tokens.clear();
+  async function logout() {
+    // Revoke the refresh token + clear the httpOnly cookie server-side, then drop
+    // the in-memory access token and bounce to login.
+    await adminApi.logout();
     router.replace("/login");
   }
 

@@ -1,43 +1,94 @@
 // Axios instance for the super-admin console. Talks to the backend admin API at
-// /api/v1 through the gateway. Attaches the admin JWT on every request; on 401 it
-// clears the session and bounces to /login.
+// /api/v1 through the gateway.
+//
+// Token model (hardened): the SHORT-LIVED access token lives only in memory (a
+// module variable) and is sent as a Bearer header — it is never written to
+// localStorage, so XSS cannot exfiltrate a durable credential. The long-lived
+// refresh token is an httpOnly cookie the browser sends automatically to
+// /auth/refresh (invisible to JS). On a 401 we transparently refresh the access
+// token from the cookie and retry the original request; only if that fails do we
+// bounce to /login. On a hard reload the in-memory token is gone, so the first
+// call 401s and self-heals via the cookie.
 import axios from "axios";
 
-// Default to the gateway origin ("http://localhost"); override with NEXT_PUBLIC_API_URL.
+// Same-origin with the admin UI (admin.localhost) so the refresh cookie is
+// first-party and SameSite=Lax works. Override with NEXT_PUBLIC_API_URL.
 const BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost") + "/api/v1";
 
-// Kept namespaced under "neubit.admin.*" so the admin session never collides with
-// an operator session in the same browser.
-export const ACCESS_KEY = "neubit.admin.access";
+// In-memory access token. Deliberately NOT persisted.
+let accessToken = null;
 
 export const tokens = {
   get access() {
-    return typeof window !== "undefined" ? localStorage.getItem(ACCESS_KEY) : null;
+    return accessToken;
   },
   set(access) {
-    if (typeof window === "undefined") return;
-    if (access) localStorage.setItem(ACCESS_KEY, access);
+    accessToken = access || null;
   },
   clear() {
-    if (typeof window === "undefined") return;
-    localStorage.removeItem(ACCESS_KEY);
+    accessToken = null;
   },
 };
 
-export const api = axios.create({ baseURL: BASE });
+// withCredentials so the httpOnly refresh cookie rides along (and same-origin XHR
+// stays explicit about credentials).
+export const api = axios.create({ baseURL: BASE, withCredentials: true });
 
 api.interceptors.request.use((config) => {
-  const t = tokens.access;
-  if (t) config.headers.Authorization = `Bearer ${t}`;
+  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
   return config;
 });
 
+// Single-flight refresh: concurrent 401s share one /auth/refresh call.
+let refreshPromise = null;
+function refreshAccess() {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(`${BASE}/auth/refresh`, {}, { withCredentials: true })
+      .then((r) => {
+        accessToken = r.data?.access_token || null;
+        return accessToken;
+      })
+      .catch((e) => {
+        accessToken = null;
+        throw e;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 api.interceptors.response.use(
   (r) => r,
-  (error) => {
-    if (typeof window !== "undefined" && error?.response?.status === 401) {
-      tokens.clear();
-      if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
+  async (error) => {
+    const original = error?.config;
+    const status = error?.response?.status;
+    const url = original?.url || "";
+    // Only try to recover a genuine 401 once, and never for the auth endpoints
+    // themselves (those failing means the session is truly gone).
+    const recoverable =
+      status === 401 &&
+      original &&
+      !original._retry &&
+      !url.includes("/auth/refresh") &&
+      !url.includes("/auth/login");
+    if (recoverable) {
+      original._retry = true;
+      try {
+        const fresh = await refreshAccess();
+        if (fresh) {
+          original.headers = original.headers || {};
+          original.headers.Authorization = `Bearer ${fresh}`;
+          return api(original);
+        }
+      } catch {
+        // fall through to the redirect below
+      }
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
     }
     return Promise.reject(error);
   }
@@ -67,6 +118,17 @@ export const adminApi = {
   async me() {
     const { data } = await api.get("/auth/me");
     return data;
+  },
+  // Revoke the refresh token server-side + clear the httpOnly cookie, then drop
+  // the in-memory access token. Best-effort: always clears locally even if the
+  // network call fails.
+  async logout() {
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      /* ignore — clear locally regardless */
+    }
+    tokens.clear();
   },
 
   // --- Account security (self-service, for the signed-in super-admin) ---------

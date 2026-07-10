@@ -13,26 +13,26 @@ export default function AdminLoginPage() {
   const router = useRouter();
 
   // If an already-signed-in super-admin lands on /login, send them straight to
-  // the dashboard instead of showing the form again. We verify the token via
-  // /auth/me (not just its presence) so a stale/invalid token still shows login.
+  // the dashboard. We just call /auth/me — the axios layer refreshes the access
+  // token from the httpOnly cookie if needed, so a valid session is detected even
+  // after a hard reload (when the in-memory access token is gone). A failed
+  // refresh simply leaves the sign-in form.
   //
-  // IMPORTANT: never branch the render on client-only state (localStorage) during
-  // hydration — server would render the form, the client the spinner, causing a
-  // hydration mismatch that regenerates the whole tree. So gate everything behind
-  // `mounted`: the server and first client paint are identical, and the session
-  // check only runs after mount.
+  // IMPORTANT: never branch the render on client-only state during hydration —
+  // server would render the form, the client a spinner, causing a hydration
+  // mismatch that regenerates the whole tree. So gate behind `mounted`: the server
+  // and first client paint are identical, and the session check runs after mount.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const hasToken = mounted && !!tokens.access;
   const { data: me, isLoading: meLoading } = useQuery({
     queryKey: ["me"],
     queryFn: adminApi.me,
-    enabled: hasToken,
+    enabled: mounted,
     retry: false,
     staleTime: 60_000,
   });
-  const alreadyIn = hasToken && !!me?.is_superadmin;
+  const alreadyIn = mounted && !!me?.is_superadmin;
 
   useEffect(() => {
     if (alreadyIn) router.replace("/dashboard");
@@ -97,7 +97,7 @@ export default function AdminLoginPage() {
   // Rendered identically on the server and the first client paint (mounted=false
   // → spinner), so there is no hydration branch. Once mounted we either redirect
   // (session confirmed) or fall through to the sign-in form below.
-  if (!mounted || alreadyIn || (hasToken && meLoading)) {
+  if (!mounted || alreadyIn || meLoading) {
     return (
       <AuthShell productName="Neubit" eyebrow="Super-admin" title="Neubit Admin">
         <div className="flex items-center justify-center py-8 text-muted">

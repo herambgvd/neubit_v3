@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner";
 import * as yup from "yup";
 
-import { adminApi, apiError, tokens } from "@/lib/api";
+import { adminApi, apiError } from "@/lib/api";
 import { useAdminForm } from "@/lib/useAdminForm";
 import {
   Badge,
@@ -418,8 +418,8 @@ function ChangePasswordCard() {
     onSuccess: () => {
       form.reset();
       toast.success("Password changed — please sign in again");
-      // Force a fresh login with the new password.
-      tokens.clear();
+      // Force a fresh login with the new password (also clears the refresh cookie).
+      adminApi.logout();
       setTimeout(() => router.replace("/login"), 900);
     },
     onError: (err) => toast.error(apiError(err, "Could not change password")),
