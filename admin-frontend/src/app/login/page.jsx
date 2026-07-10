@@ -4,13 +4,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { adminApi, apiError, tokens } from "@/lib/api";
 import AuthShell, { AuthInput, AuthLabel, AuthSubmit, AuthError } from "@/components/AuthShell";
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const qc = useQueryClient();
 
   // If an already-signed-in super-admin lands on /login, send them straight to
   // the dashboard. We just call /auth/me — the axios layer refreshes the access
@@ -25,14 +26,14 @@ export default function AdminLoginPage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const { data: me, isLoading: meLoading } = useQuery({
-    queryKey: ["me"],
-    queryFn: adminApi.me,
+  const { data: session, isLoading: sessionLoading } = useQuery({
+    queryKey: ["session"],
+    queryFn: adminApi.bootstrap,
     enabled: mounted,
     retry: false,
     staleTime: 60_000,
   });
-  const alreadyIn = mounted && !!me?.is_superadmin;
+  const alreadyIn = mounted && !!session?.is_superadmin;
 
   useEffect(() => {
     if (alreadyIn) router.replace("/dashboard");
@@ -53,6 +54,9 @@ export default function AdminLoginPage() {
       throw new Error("This account cannot access the admin console.");
     }
     tokens.set(data.access_token);
+    // Refresh the cached session gate (it was null pre-login) so the panel guard
+    // sees the new session instead of bouncing back to /login.
+    qc.invalidateQueries({ queryKey: ["session"] });
     toast.success("Signed in");
     router.push("/dashboard");
   }
@@ -97,7 +101,7 @@ export default function AdminLoginPage() {
   // Rendered identically on the server and the first client paint (mounted=false
   // → spinner), so there is no hydration branch. Once mounted we either redirect
   // (session confirmed) or fall through to the sign-in form below.
-  if (!mounted || alreadyIn || meLoading) {
+  if (!mounted || alreadyIn || sessionLoading) {
     return (
       <AuthShell productName="Neubit" eyebrow="Super-admin" title="Neubit Admin">
         <div className="flex items-center justify-center py-8 text-muted">

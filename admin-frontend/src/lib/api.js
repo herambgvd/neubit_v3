@@ -39,19 +39,22 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Single-flight refresh: concurrent 401s share one /auth/refresh call.
+// Single-flight refresh: concurrent callers share one /auth/refresh call. The
+// endpoint is a session probe — it answers 200 with a token when the httpOnly
+// cookie is valid, else 200 with a null token — so this never throws and never
+// logs a failing request. Send NO body (an empty {} would fail body validation).
 let refreshPromise = null;
 function refreshAccess() {
   if (!refreshPromise) {
     refreshPromise = axios
-      .post(`${BASE}/auth/refresh`, {}, { withCredentials: true })
+      .post(`${BASE}/auth/refresh`, undefined, { withCredentials: true })
       .then((r) => {
         accessToken = r.data?.access_token || null;
         return accessToken;
       })
-      .catch((e) => {
+      .catch(() => {
         accessToken = null;
-        throw e;
+        return null;
       })
       .finally(() => {
         refreshPromise = null;
@@ -116,6 +119,16 @@ export const adminApi = {
     return data;
   },
   async me() {
+    const { data } = await api.get("/auth/me");
+    return data;
+  },
+  // Session bootstrap for gates (panel guard / login page). Uses the in-memory
+  // access token if present (e.g. right after login); otherwise probes the
+  // refresh cookie. Only calls /auth/me when a session actually exists — so a
+  // signed-out user triggers ZERO failing requests. Returns the user or null.
+  async bootstrap() {
+    const token = accessToken || (await refreshAccess());
+    if (!token) return null;
     const { data } = await api.get("/auth/me");
     return data;
   },

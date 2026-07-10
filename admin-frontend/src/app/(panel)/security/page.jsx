@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -405,7 +404,6 @@ const pwSchema = yup.object({
 });
 
 function ChangePasswordCard() {
-  const router = useRouter();
   const form = useAdminForm(pwSchema, {
     current_password: "",
     new_password: "",
@@ -419,8 +417,11 @@ function ChangePasswordCard() {
       form.reset();
       toast.success("Password changed — please sign in again");
       // Force a fresh login with the new password (also clears the refresh cookie).
+      // Hard-navigate so no stale cached session survives.
       adminApi.logout();
-      setTimeout(() => router.replace("/login"), 900);
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 900);
     },
     onError: (err) => toast.error(apiError(err, "Could not change password")),
   });

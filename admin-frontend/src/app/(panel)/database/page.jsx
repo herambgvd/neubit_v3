@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { AlertTriangle, Database, Download, FileUp, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -86,7 +85,6 @@ function ExportCard() {
 }
 
 function ImportCard() {
-  const router = useRouter();
   const fileRef = useRef(null);
   const [file, setFile] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -103,7 +101,9 @@ function ImportCard() {
         // The restore replaced the users/sessions tables — force a fresh login.
         toast.success("Database restored — please sign in again");
         adminApi.logout();
-        setTimeout(() => router.replace("/login"), 1200);
+        setTimeout(() => {
+          window.location.href = "/login";
+        }, 1200);
       } else {
         toast.error("Restore reported errors — see output");
       }

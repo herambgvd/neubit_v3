@@ -121,7 +121,10 @@ class ResetPasswordIn(BaseModel):
 
 
 class AccessOut(BaseModel):
-    access_token: str
+    # None when there is no valid session — /auth/refresh answers 200 with a null
+    # token (a session probe) rather than erroring, so the SPA bootstrap makes no
+    # failing requests.
+    access_token: str | None = None
     token_type: str = "bearer"
 
 

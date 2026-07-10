@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -80,7 +80,6 @@ const PALETTE_NAV = [
 ];
 
 export default function PanelLayout({ children }) {
-  const router = useRouter();
   const pathname = usePathname();
   const { theme, toggle: toggleTheme } = useTheme();
   const { status } = useRequireSuperadmin();
@@ -139,10 +138,11 @@ export default function PanelLayout({ children }) {
     });
   }
   async function logout() {
-    // Revoke the refresh token + clear the httpOnly cookie server-side, then drop
-    // the in-memory access token and bounce to login.
+    // Revoke the refresh token + clear the httpOnly cookie server-side, drop the
+    // in-memory access token, then hard-navigate so all in-memory/query state is
+    // wiped (a fresh /login has no stale cached session).
     await adminApi.logout();
-    router.replace("/login");
+    window.location.href = "/login";
   }
 
   if (status !== "ready") {

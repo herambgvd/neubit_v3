@@ -163,22 +163,34 @@ async def login_mfa(
 
 
 @router.post("/refresh", response_model=AccessOut)
-async def refresh(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    data: RefreshIn | None = Body(default=None),
-) -> AccessOut:
-    """Mint a new access token from a valid refresh token.
+async def refresh(request: Request, db: AsyncSession = Depends(get_db)) -> AccessOut:
+    """Mint a new access token from the refresh token — a session probe.
 
-    The refresh token is read from the httpOnly cookie (SPA path), falling back to
-    the request body for non-browser / legacy callers that still send it inline.
+    The refresh token is read from the httpOnly cookie (browser path), falling back
+    to a JSON body ``{"refresh_token": ...}`` for non-browser / legacy callers.
+
+    When there is no cookie/body token, or it is invalid/expired/revoked, this
+    returns **200 with a null access_token** rather than a 4xx — so the SPA can
+    bootstrap its session without generating console/network errors when the user
+    is simply signed out. A genuinely present-but-valid token yields a new access
+    token as usual.
     """
-    token = (data.refresh_token if data else None) or request.cookies.get(
-        get_settings().refresh_cookie_name
-    )
+    token = request.cookies.get(get_settings().refresh_cookie_name)
     if not token:
-        raise UnauthorizedError("missing refresh token")
-    return AccessOut(access_token=await AuthService(db).refresh_access(token))
+        # Legacy/non-browser fallback: read {"refresh_token": ...} if a body exists.
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                token = body.get("refresh_token")
+        except Exception:  # noqa: BLE001 — no/invalid body is fine, treat as no token
+            token = None
+    if not token:
+        return AccessOut(access_token=None)
+    try:
+        return AccessOut(access_token=await AuthService(db).refresh_access(token))
+    except (UnauthorizedError, ValueError):
+        # Invalid / expired / revoked — no session, not an error for the probe.
+        return AccessOut(access_token=None)
 
 
 @router.get("/me", response_model=UserOut)
