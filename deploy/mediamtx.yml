@@ -107,12 +107,15 @@ paths:
     sourceOnDemand: no
     runOnDemand: >
       ffmpeg -nostdin -loglevel warning -rtsp_transport tcp
+      -analyzeduration 10M -probesize 10M -fflags +genpts+discardcorrupt
       -i rtsp://127.0.0.1:8554/$G1
       -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -level 3.1 -pix_fmt yuv420p -g 30 -an
       -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/$MTX_PATH
     # NOT restart:yes — with restart, MediaMTX immediately respawns ffmpeg after the
     # idle-close, so a transcode with 0 readers never actually reaps (orphaned CPU).
     # If ffmpeg exits/crashes the browser's next WHEP retry re-triggers on demand.
+    # startTimeout is generous: ffmpeg needs time to lock onto the H265 stream's
+    # VPS/SPS/PPS (bigger analyzeduration/probesize) — 15s was too tight and timed out.
     runOnDemandRestart: no
-    runOnDemandStartTimeout: 15s
-    runOnDemandCloseAfter: 15s
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 20s
