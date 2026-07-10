@@ -35,10 +35,12 @@ from .base import (
     Capabilities,
     Channel,
     CameraDriver,
+    ConfigBackup,
     Credentials,
     DeviceInfo,
     Discovered,
     DriverError,
+    FleetOpResult,
     PtzCommand,
     StreamInfo,
     StreamUris,
@@ -568,6 +570,80 @@ class CpPlusDriver(CameraDriver):
             f"{base}/cgi-bin/configManager.cgi?action=getConfig&name=MotionDetect", creds.username, creds.password
         )
         return {"applied": bool(shapes), "count": len(shapes), **_http.parse_cgi_kv(body or "")}
+
+    # ── device / fleet management (G7) — Dahua magicBox / configManager CGI ───
+    async def reboot(self, host: str, creds: Credentials) -> FleetOpResult:
+        """GET /cgi-bin/magicBox.cgi?action=reboot. # LIVE-VALIDATE: real reboot effect."""
+        try:
+            await _http.request_strict(
+                "GET", f"{self._base(host, creds)}/cgi-bin/magicBox.cgi?action=reboot",
+                creds.username, creds.password, verify_tls=creds.verify_tls,
+            )
+            return FleetOpResult(ok=True, detail="reboot requested")
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, detail=f"reboot failed: {exc}")
+
+    async def set_ntp(self, host: str, creds: Credentials, server: str) -> FleetOpResult:
+        """setConfig&NTP.Enable=true&NTP.Address=<server> via configManager.cgi.
+        # LIVE-VALIDATE: NTP config key names + timezone handling vary by model."""
+        from urllib.parse import quote
+
+        url = (
+            f"{self._base(host, creds)}/cgi-bin/configManager.cgi?action=setConfig"
+            f"&NTP.Enable=true&NTP.Address={quote(server, safe='')}&NTP.Port=123"
+        )
+        try:
+            await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
+            return FleetOpResult(ok=True, detail=f"ntp set to {server}", data={"server": server})
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, detail=f"set_ntp failed: {exc}")
+
+    async def set_password(
+        self, host: str, creds: Credentials, *, user: str, new_password: str
+    ) -> FleetOpResult:
+        """userManager.cgi?action=modifyPassword&name=<user>&pwd=<new>&pwdOld=<current>.
+        Uses the current session password as ``pwdOld`` (fleet rotation from the known
+        admin credential). # LIVE-VALIDATE: Dahua modifyPassword arg names + pwdOld reqs."""
+        from urllib.parse import quote
+
+        url = (
+            f"{self._base(host, creds)}/cgi-bin/userManager.cgi?action=modifyPassword"
+            f"&name={quote(user, safe='')}&pwd={quote(new_password, safe='')}"
+            f"&pwdOld={quote(creds.password or '', safe='')}"
+        )
+        try:
+            await _http.request_strict("GET", url, creds.username, creds.password, verify_tls=creds.verify_tls)
+            return FleetOpResult(ok=True, detail=f"password changed for {user}", data={"user": user})
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, detail=f"set_password failed: {exc}")
+
+    async def backup_config(self, host: str, creds: Credentials) -> ConfigBackup:
+        """GET /cgi-bin/Config.backup?action=All (Dahua config export).
+        # LIVE-VALIDATE: some models use /cgi-bin/configFileExport.backup instead."""
+        blob = await _http.get_bytes(
+            f"{self._base(host, creds)}/cgi-bin/Config.backup?action=All",
+            creds.username, creds.password, verify_tls=creds.verify_tls,
+        )
+        if not blob:
+            return ConfigBackup(supported=False, detail="config backup unavailable or unreachable")
+        return ConfigBackup(
+            supported=True, blob=blob, content_type="application/octet-stream",
+            filename=f"cpplus-{host}-config.backup", detail="config exported",
+        )
+
+    async def restore_config(self, host: str, creds: Credentials, blob: bytes) -> FleetOpResult:
+        """POST /cgi-bin/Config.restore?action=All with the config blob.
+        # LIVE-VALIDATE: Dahua restore wants a multipart form on most firmware; this posts
+        # the raw blob — confirm the exact upload form on a real device."""
+        try:
+            await _http.request_strict(
+                "POST", f"{self._base(host, creds)}/cgi-bin/Config.restore?action=All",
+                creds.username, creds.password, content=blob,
+                headers={"Content-Type": "application/octet-stream"}, verify_tls=creds.verify_tls,
+            )
+            return FleetOpResult(ok=True, detail="config restore requested")
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, detail=f"restore_config failed: {exc}")
 
     # ── event topic map ───────────────────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

@@ -41,12 +41,14 @@ from .base import (
     Capabilities,
     Channel,
     CameraDriver,
+    ConfigBackup,
     Credentials,
     DeviceEvent,
     DeviceInfo,
     Discovered,
     DriverError,
     EventCallback,
+    FleetOpResult,
     PtzCommand,
     StreamInfo,
     StreamUris,
@@ -1125,6 +1127,137 @@ class OnvifDriver(CameraDriver):
         except Exception as exc:  # noqa: BLE001
             raise DriverError(f"motion-zone write failed: {exc}") from None
         return {"applied": applied or not shapes, "count": len(shapes), "config_token": str(getattr(cfg, "token", ""))}
+
+    # ── device / fleet management (G7) — ONVIF Device Management service ───────
+    #
+    # These build faithful ONVIF SOAP calls via the onvif-zeep Device service. The blocking
+    # SDK work runs under ``asyncio.to_thread`` (same discipline as ``configure``), gated on
+    # a fast TCP pre-check + ``_HAS_ONVIF``. Graceful: unreachable / no-SDK / unsupported →
+    # ``FleetOpResult(ok=False, supported=...)`` — never raises. # LIVE-VALIDATE: on-device
+    # effect (reboot/restore reboot the camera; SetUser policies vary by vendor).
+
+    async def reboot(self, host: str, creds: Credentials) -> FleetOpResult:
+        """ONVIF ``SystemReboot`` (Device service). Returns the device's reboot message."""
+        if not _HAS_ONVIF:
+            return FleetOpResult(ok=False, supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return FleetOpResult(ok=False, detail="device unreachable")
+
+        def _run() -> str:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+            return str(cam.devicemgmt.SystemReboot() or "reboot requested")
+
+        try:
+            msg = await asyncio.to_thread(_run)
+            return FleetOpResult(ok=True, detail=msg)
+        except Exception as exc:  # noqa: BLE001 — graceful
+            return FleetOpResult(ok=False, detail=f"reboot failed: {exc}")
+
+    async def set_ntp(self, host: str, creds: Credentials, server: str) -> FleetOpResult:
+        """ONVIF ``SetNTP`` — set the device's NTP server (Manual, IPv4/DNS)."""
+        if not _HAS_ONVIF:
+            return FleetOpResult(ok=False, supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return FleetOpResult(ok=False, detail="device unreachable")
+
+        import ipaddress as _ip
+
+        def _run() -> None:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+            dm = cam.devicemgmt
+            # DNS name vs IPv4 → the right NTPInformation shape.
+            try:
+                _ip.ip_address(server)
+                addr = {"Type": "IPv4", "IPv4Address": server}
+            except ValueError:
+                addr = {"Type": "DNS", "DNSname": server}
+            req = dm.create_type("SetNTP")
+            req.FromDHCP = False
+            req.NTPManual = [addr]
+            dm.SetNTP(req)
+
+        try:
+            await asyncio.to_thread(_run)
+            return FleetOpResult(ok=True, detail=f"ntp set to {server}", data={"server": server})
+        except Exception as exc:  # noqa: BLE001
+            return FleetOpResult(ok=False, detail=f"set_ntp failed: {exc}")
+
+    async def set_password(
+        self, host: str, creds: Credentials, *, user: str, new_password: str
+    ) -> FleetOpResult:
+        """ONVIF ``SetUser`` — change the password of an existing device account ``user``.
+
+        Resolves the user's UserLevel from ``GetUsers`` (SetUser requires it); leaves the
+        level unchanged. # LIVE-VALIDATE: some devices need CreateUsers vs SetUser, and
+        password policy varies."""
+        if not _HAS_ONVIF:
+            return FleetOpResult(ok=False, supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return FleetOpResult(ok=False, detail="device unreachable")
+
+        def _run() -> None:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+            dm = cam.devicemgmt
+            level = "Administrator"
+            for u in dm.GetUsers() or []:
+                if str(getattr(u, "Username", "")) == user:
+                    level = str(getattr(u, "UserLevel", level)) or level
+                    break
+            dm.SetUser({"User": [{"Username": user, "Password": new_password, "UserLevel": level}]})
+
+        try:
+            await asyncio.to_thread(_run)
+            return FleetOpResult(ok=True, detail=f"password changed for {user}", data={"user": user})
+        except Exception as exc:  # noqa: BLE001
+            return FleetOpResult(ok=False, detail=f"set_password failed: {exc}")
+
+    async def backup_config(self, host: str, creds: Credentials) -> ConfigBackup:
+        """ONVIF ``GetSystemBackup`` — returns the device's backup files (concatenated).
+
+        ONVIF returns a list of ``BackupFile`` attachments; this concatenates their data
+        into one blob. # LIVE-VALIDATE: not all devices implement GetSystemBackup."""
+        if not _HAS_ONVIF:
+            return ConfigBackup(supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return ConfigBackup(supported=False, detail="device unreachable")
+
+        def _run() -> bytes:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+            files = cam.devicemgmt.GetSystemBackup() or []
+            chunks: list[bytes] = []
+            for f in files:
+                data = getattr(f, "Data", None)
+                if data is not None:
+                    chunks.append(data if isinstance(data, bytes) else str(data).encode())
+            return b"".join(chunks)
+
+        try:
+            blob = await asyncio.to_thread(_run)
+            if not blob:
+                return ConfigBackup(supported=False, detail="device returned no backup files")
+            return ConfigBackup(
+                supported=True, blob=blob, filename=f"onvif-{host}-backup.bin", detail="config exported"
+            )
+        except Exception as exc:  # noqa: BLE001
+            return ConfigBackup(supported=False, detail=f"backup failed: {exc}")
+
+    async def restore_config(self, host: str, creds: Credentials, blob: bytes) -> FleetOpResult:
+        """ONVIF ``RestoreSystem`` — restore a previously-exported backup blob.
+        # LIVE-VALIDATE: RestoreSystem reboots the device; the BackupFile name/shape varies."""
+        if not _HAS_ONVIF:
+            return FleetOpResult(ok=False, supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return FleetOpResult(ok=False, detail="device unreachable")
+
+        def _run() -> None:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+            cam.devicemgmt.RestoreSystem({"BackupFiles": [{"Name": "config.bin", "Data": blob}]})
+
+        try:
+            await asyncio.to_thread(_run)
+            return FleetOpResult(ok=True, detail="config restore requested (device will reboot)")
+        except Exception as exc:  # noqa: BLE001
+            return FleetOpResult(ok=False, detail=f"restore_config failed: {exc}")
 
     # ── event topic map (control-side) ────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

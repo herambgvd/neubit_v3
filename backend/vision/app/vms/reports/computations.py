@@ -27,7 +27,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, scoped
 
-from app.vms.models import Camera, CameraHealth, Recording, StoragePool, VmsEvent
+from app.vms.models import (
+    Bookmark,
+    Camera,
+    CameraHealth,
+    EvidenceLock,
+    ExportJob,
+    MotionSearchJob,
+    Recording,
+    StoragePool,
+    VmsEvent,
+)
 
 REPORT_KINDS = (
     "camera-uptime",
@@ -35,6 +45,8 @@ REPORT_KINDS = (
     "storage-usage",
     "event-stats",
     "health-summary",
+    "operator-activity",
+    "alarm-response",
 )
 
 
@@ -287,12 +299,199 @@ async def compute_health_summary(
     }
 
 
+# ── operator-activity ─────────────────────────────────────────────────────────────
+async def compute_operator_activity(
+    db: AsyncSession, scope: Scope, from_: datetime, to: datetime, camera_id: str | None
+) -> dict:
+    """Per-operator activity rollup over the window, from VISION's own actor-stamped rows.
+
+    SOURCE — HONESTY NOTE: the full operator audit trail (logins, config changes, PTZ,
+    playback, evidence access) lives in CORE's tenant-scoped ``audit_log`` (the P6-D
+    ``security/audit/video`` events vision POSTs there are recorded in core). Vision cannot
+    query core's DB directly, so this report aggregates ONLY the operator actions that
+    leave an actor-stamped row in vision's OWN tables:
+
+      * ``export``        — ExportJob.requested_by     (clip exports)
+      * ``motion_search`` — MotionSearchJob.requested_by (forensic searches)
+      * ``bookmark``      — Bookmark.created_by        (marked moments)
+      * ``evidence_lock`` — EvidenceLock.created_by    (legal holds placed)
+      * ``evidence_release``— EvidenceLock.released_by (legal holds released)
+      * ``event_ack``     — VmsEvent.acknowledged_by   (alarms acknowledged)
+
+    Each row is one operator with a per-action breakdown + a total. This is an operator-
+    ACTIVITY rollup of what vision can see; for the complete audit (logins / config / raw
+    playback) the frontend should link to core's Activity log. Tenant-scoped; an optional
+    ``camera_id`` narrows the camera-bearing sources (bookmarks/exports/motion/evidence/
+    event-ack). Empty window → zero rows (not an error).
+    """
+    # (action_label, model, actor_column, time_column, has_camera)
+    sources = [
+        ("export", ExportJob, ExportJob.requested_by, ExportJob.created_at, True),
+        ("motion_search", MotionSearchJob, MotionSearchJob.requested_by, MotionSearchJob.created_at, True),
+        ("bookmark", Bookmark, Bookmark.created_by, Bookmark.created_at, True),
+        ("evidence_lock", EvidenceLock, EvidenceLock.created_by, EvidenceLock.created_at, True),
+        ("evidence_release", EvidenceLock, EvidenceLock.released_by, EvidenceLock.released_at, True),
+        ("event_ack", VmsEvent, VmsEvent.acknowledged_by, VmsEvent.acknowledged_at, True),
+    ]
+    # operator -> {action -> count}
+    by_operator: dict[str, dict[str, int]] = {}
+    action_totals: dict[str, int] = {}
+    for action, model, actor_col, time_col, has_cam in sources:
+        stmt = (
+            scoped(select(actor_col, func.count().label("n")), model, scope)
+            .where(actor_col.is_not(None))
+            .where(time_col >= from_)
+            .where(time_col < to)
+            .group_by(actor_col)
+        )
+        if camera_id and has_cam:
+            stmt = stmt.where(model.camera_id == camera_id)
+        for operator, n in (await db.execute(stmt)).all():
+            key = str(operator)
+            by_operator.setdefault(key, {})[action] = int(n)
+            action_totals[action] = action_totals.get(action, 0) + int(n)
+
+    rows = []
+    for operator, actions in by_operator.items():
+        total = sum(actions.values())
+        rows.append({
+            "operator": operator,
+            "total_actions": total,
+            "exports": actions.get("export", 0),
+            "motion_searches": actions.get("motion_search", 0),
+            "bookmarks": actions.get("bookmark", 0),
+            "evidence_locks": actions.get("evidence_lock", 0),
+            "evidence_releases": actions.get("evidence_release", 0),
+            "event_acks": actions.get("event_ack", 0),
+        })
+    rows.sort(key=lambda r: r["total_actions"], reverse=True)
+    return {
+        "kind": "operator-activity",
+        "window": _window(from_, to),
+        "rows": rows,
+        "by_action": action_totals,
+        "totals": {
+            "operators": len(rows),
+            "total_actions": sum(action_totals.values()),
+        },
+        "source_note": (
+            "Aggregated from vision's actor-stamped rows (exports, motion searches, "
+            "bookmarks, evidence locks/releases, event acks). The full operator audit "
+            "trail (logins, config changes, raw playback) lives in core's Activity log."
+        ),
+    }
+
+
+# ── alarm-response ────────────────────────────────────────────────────────────────
+async def compute_alarm_response(
+    db: AsyncSession, scope: Scope, from_: datetime, to: datetime, camera_id: str | None
+) -> dict:
+    """Alarm acknowledgement analytics over the window, from VISION's ``VmsEvent`` rows.
+
+    SOURCE — HONESTY NOTE: workflow owns full incident lifecycle (assignment, resolution,
+    escalation); vision does NOT own incidents. What vision CAN see is the raw camera/
+    system event with its ``acknowledged`` / ``acknowledged_at`` fields, so this report
+    computes ack-rate + time-to-ack (occurred_at → acknowledged_at) from ``VmsEvent``. It
+    only covers alarm-tier events (severity in alarm|critical) — the operator-actionable
+    ones. For full incident response-time analytics (assign→resolve) the frontend should
+    use workflow's incident reports; this is the camera-side ack view vision derives.
+
+    Rows = per-camera ack stats; ``by_severity`` + top-level totals give the estate view.
+    Time-to-ack is in seconds (avg / max over acknowledged alarm events). Tenant-scoped;
+    optional ``camera_id`` narrows to one camera. Empty window → zero rows.
+    """
+    ALARM_SEVERITIES = ("alarm", "critical")
+
+    def _alarm_base():
+        s = (
+            scoped(select(VmsEvent), VmsEvent, scope)
+            .where(VmsEvent.occurred_at >= from_)
+            .where(VmsEvent.occurred_at < to)
+            .where(VmsEvent.severity.in_(ALARM_SEVERITIES))
+        )
+        return s.where(VmsEvent.camera_id == camera_id) if camera_id else s
+
+    events = list((await db.execute(_alarm_base())).scalars().all())
+
+    # Per-camera aggregation + global time-to-ack samples.
+    per_cam: dict[str, dict] = {}
+    ttas: list[float] = []  # time-to-ack seconds (global)
+    by_severity: dict[str, dict[str, int]] = {}
+    for ev in events:
+        cid = ev.camera_id or "(system)"
+        cam = per_cam.setdefault(cid, {"alarms": 0, "acked": 0, "tta": []})
+        cam["alarms"] += 1
+        sev = by_severity.setdefault(ev.severity, {"alarms": 0, "acked": 0})
+        sev["alarms"] += 1
+        if ev.acknowledged:
+            cam["acked"] += 1
+            sev["acked"] += 1
+            occurred = _aware(ev.occurred_at)
+            acked_at = _aware(ev.acknowledged_at)
+            if occurred and acked_at and acked_at >= occurred:
+                secs = (acked_at - occurred).total_seconds()
+                cam["tta"].append(secs)
+                ttas.append(secs)
+
+    # Resolve camera names.
+    cam_names = {
+        c.id: c.name
+        for c in (await db.execute(scoped(select(Camera), Camera, scope))).scalars().all()
+    }
+    rows = []
+    for cid, agg in per_cam.items():
+        acked = agg["acked"]
+        alarms = agg["alarms"]
+        tta = agg["tta"]
+        rows.append({
+            "camera_id": cid,
+            "camera_name": cam_names.get(cid, cid),
+            "alarms": alarms,
+            "acknowledged": acked,
+            "unacknowledged": alarms - acked,
+            "ack_rate_pct": round(100.0 * acked / alarms, 2) if alarms else 0.0,
+            "avg_time_to_ack_s": round(sum(tta) / len(tta), 1) if tta else None,
+            "max_time_to_ack_s": round(max(tta), 1) if tta else None,
+        })
+    rows.sort(key=lambda r: r["alarms"], reverse=True)
+
+    total_alarms = len(events)
+    total_acked = sum(1 for ev in events if ev.acknowledged)
+    return {
+        "kind": "alarm-response",
+        "window": _window(from_, to),
+        "rows": rows,
+        "by_severity": {
+            sev: {
+                **counts,
+                "ack_rate_pct": round(100.0 * counts["acked"] / counts["alarms"], 2)
+                if counts["alarms"] else 0.0,
+            }
+            for sev, counts in by_severity.items()
+        },
+        "totals": {
+            "alarms": total_alarms,
+            "acknowledged": total_acked,
+            "unacknowledged": total_alarms - total_acked,
+            "ack_rate_pct": round(100.0 * total_acked / total_alarms, 2) if total_alarms else 0.0,
+            "avg_time_to_ack_s": round(sum(ttas) / len(ttas), 1) if ttas else None,
+            "max_time_to_ack_s": round(max(ttas), 1) if ttas else None,
+        },
+        "source_note": (
+            "Derived from vision's VmsEvent ack fields (alarm/critical severity). Full "
+            "incident response-time analytics (assign→resolve) live in the workflow service."
+        ),
+    }
+
+
 _COMPUTE = {
     "camera-uptime": compute_camera_uptime,
     "recording-coverage": compute_recording_coverage,
     "storage-usage": compute_storage_usage,
     "event-stats": compute_event_stats,
     "health-summary": compute_health_summary,
+    "operator-activity": compute_operator_activity,
+    "alarm-response": compute_alarm_response,
 }
 
 

@@ -25,6 +25,7 @@ from app.vms.audio.router import router as audio_router
 from app.vms.bookmarks.router import router as bookmark_router
 from app.vms.cameras.router import router as camera_router
 from app.vms.dashboard.router import router as dashboard_router
+from app.vms.devicemgmt.router import router as devicemgmt_router
 from app.vms.evidence.router import router as evidence_router
 from app.vms.export.router import router as export_router
 from app.vms.groups.router import router as group_router
@@ -119,6 +120,13 @@ routers = [
     # order). Distinct from the camera router's ``POST /cameras/{id}/ptz`` single-command
     # endpoint (kept for compatibility). vms.ptz.control (writes) / vms.live.view (reads).
     ptz_router,
+    # Device / fleet management (G7) — /vms/cameras/{id}/{device-info|reboot|ntp|password|
+    # config-backup|config-restore} + /vms/cameras/bulk/{action}. Mounts BEFORE the camera
+    # router: its ``/cameras/{id}/...`` fleet paths are deeper than the camera catch-all,
+    # and ``/cameras/bulk/{action}`` must match here (not resolve to get_camera("bulk")).
+    # Driver-backed fleet ops (reboot/ntp/password/config backup+restore), graceful per
+    # brand. Reads vms.camera.read / writes vms.config.manage.
+    devicemgmt_router,
     camera_router,
     group_router,
     pattern_router,

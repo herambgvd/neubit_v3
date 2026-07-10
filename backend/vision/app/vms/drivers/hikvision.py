@@ -33,10 +33,12 @@ from .base import (
     Capabilities,
     Channel,
     CameraDriver,
+    ConfigBackup,
     Credentials,
     DeviceInfo,
     Discovered,
     DriverError,
+    FleetOpResult,
     PtzCommand,
     StreamInfo,
     StreamUris,
@@ -569,6 +571,105 @@ class HikvisionDriver(CameraDriver):
                 raise DriverError(f"Hikvision motion-region write failed: {exc}") from None
         current = await _http.get_text(url, creds.username, creds.password)
         return {"applied": bool(shapes), "count": len(shapes), "raw_xml": current}
+
+    # ── device / fleet management (G7) — ISAPI System endpoints ───────────────
+    async def reboot(self, host: str, creds: Credentials) -> FleetOpResult:
+        """PUT /ISAPI/System/reboot. # LIVE-VALIDATE: real reboot effect."""
+        try:
+            await _http.request_strict(
+                "PUT", f"{self._base(host, creds)}/ISAPI/System/reboot",
+                creds.username, creds.password, content="", verify_tls=creds.verify_tls,
+            )
+            return FleetOpResult(ok=True, detail="reboot requested")
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, detail=f"reboot failed: {exc}")
+
+    async def set_ntp(self, host: str, creds: Credentials, server: str) -> FleetOpResult:
+        """PUT /ISAPI/System/time/ntpServers/1 with an ``<NTPServer>`` body, then flip
+        the time-mode to NTP via /ISAPI/System/time. # LIVE-VALIDATE: exact NTP XML +
+        ntpServer id vary by firmware."""
+        base = self._base(host, creds)
+        ntp_xml = (
+            "<NTPServer><id>1</id><addressingFormatType>hostname</addressingFormatType>"
+            f"<hostName>{_xml_escape(server)}</hostName><portNo>123</portNo>"
+            "<synchronizeInterval>60</synchronizeInterval></NTPServer>"
+        )
+        time_xml = "<Time><timeMode>NTP</timeMode></Time>"
+        headers = {"Content-Type": "application/xml"}
+        try:
+            await _http.request_strict(
+                "PUT", f"{base}/ISAPI/System/time/ntpServers/1",
+                creds.username, creds.password, content=ntp_xml, headers=headers, verify_tls=creds.verify_tls,
+            )
+            # Best-effort switch to NTP mode; not fatal if it 4xxs (some firmware auto-flips).
+            try:
+                await _http.request_strict(
+                    "PUT", f"{base}/ISAPI/System/time",
+                    creds.username, creds.password, content=time_xml, headers=headers, verify_tls=creds.verify_tls,
+                )
+            except _http.BrandHTTPError:
+                pass
+            return FleetOpResult(ok=True, detail=f"ntp set to {server}", data={"server": server})
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, detail=f"set_ntp failed: {exc}")
+
+    async def set_password(
+        self, host: str, creds: Credentials, *, user: str, new_password: str
+    ) -> FleetOpResult:
+        """Resolve the Hik user id for ``user`` via GET /ISAPI/Security/users, then
+        PUT /ISAPI/Security/users/{id} with a ``<User>`` body carrying the new password.
+        # LIVE-VALIDATE: user-id resolution + password policy + re-auth after change."""
+        base = self._base(host, creds)
+        # Resolve the numeric user id (ISAPI keys users by id, not name).
+        listing = await _http.get_text(f"{base}/ISAPI/Security/users", creds.username, creds.password)
+        uid: str | None = None
+        for el in _http.xml_findall(listing or "", "User"):
+            uname = _http.el_text(el, "userName", "name")
+            if uname and uname == user:
+                uid = _http.el_text(el, "id")
+                break
+        if uid is None:
+            return FleetOpResult(ok=False, detail=f"user '{user}' not found on device")
+        body = (
+            f"<User><id>{_xml_escape(uid)}</id><userName>{_xml_escape(user)}</userName>"
+            f"<password>{_xml_escape(new_password)}</password></User>"
+        )
+        try:
+            await _http.request_strict(
+                "PUT", f"{base}/ISAPI/Security/users/{uid}",
+                creds.username, creds.password, content=body,
+                headers={"Content-Type": "application/xml"}, verify_tls=creds.verify_tls,
+            )
+            return FleetOpResult(ok=True, detail=f"password changed for {user}", data={"user": user})
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, detail=f"set_password failed: {exc}")
+
+    async def backup_config(self, host: str, creds: Credentials) -> ConfigBackup:
+        """GET /ISAPI/System/configurationData → the binary device config blob.
+        # LIVE-VALIDATE: some firmware wants ?model=... or an encryption secret."""
+        blob = await _http.get_bytes(
+            f"{self._base(host, creds)}/ISAPI/System/configurationData",
+            creds.username, creds.password, verify_tls=creds.verify_tls,
+        )
+        if not blob:
+            return ConfigBackup(supported=False, detail="configurationData unavailable or unreachable")
+        return ConfigBackup(
+            supported=True, blob=blob, content_type="application/octet-stream",
+            filename=f"hikvision-{host}-config.bin", detail="config exported",
+        )
+
+    async def restore_config(self, host: str, creds: Credentials, blob: bytes) -> FleetOpResult:
+        """PUT /ISAPI/System/configurationData with the previously-exported blob.
+        # LIVE-VALIDATE: restore reboots the device; some firmware needs a multipart form."""
+        try:
+            await _http.request_strict(
+                "PUT", f"{self._base(host, creds)}/ISAPI/System/configurationData",
+                creds.username, creds.password, content=blob,
+                headers={"Content-Type": "application/octet-stream"}, verify_tls=creds.verify_tls,
+            )
+            return FleetOpResult(ok=True, detail="config restore requested (device will reboot)")
+        except _http.BrandHTTPError as exc:
+            return FleetOpResult(ok=False, detail=f"restore_config failed: {exc}")
 
     # ── event topic map ───────────────────────────────────────────────────────
     def event_topic_map(self) -> dict[str, tuple[str, str, str]]:

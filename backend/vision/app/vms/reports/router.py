@@ -25,6 +25,7 @@ from kernel.auth import Principal, Scope, get_scope, require_permission
 
 from app.db import get_db
 
+from .computations import REPORT_KINDS
 from .render import PdfUnavailable, to_csv, to_pdf
 from .schemas import (
     ReportScheduleCreate,
@@ -110,6 +111,16 @@ async def delete_schedule(
 
 
 # ── ad-hoc report reads ──────────────────────────────────────────────────
+
+
+@router.get(
+    "/reports",
+    dependencies=[Depends(require_permission(PERM_VIEW))],
+)
+async def list_report_kinds() -> dict:
+    """The available report kinds (for the Reports page kind picker). Includes the G8
+    ``operator-activity`` + ``alarm-response`` kinds alongside the operational ones."""
+    return {"kinds": list(REPORT_KINDS)}
 
 
 @router.get(

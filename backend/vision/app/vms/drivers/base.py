@@ -178,6 +178,42 @@ class TalkTarget:
 
 
 @dataclass
+class FleetOpResult:
+    """Result of a device / fleet-management operation (G7).
+
+    The uniform shape every fleet op (reboot / set_ntp / set_password / restore_config)
+    returns so the service + bulk fan-out can report per-camera outcome without brand
+    branching. ``ok`` is the operator-visible success; ``detail`` a short human message;
+    ``supported`` distinguishes "the brand can't do this" (graceful degrade → ok=False,
+    supported=False) from "the op ran but failed" (ok=False, supported=True). ``data``
+    carries any op-specific echo (e.g. the NTP server accepted, the firmware version).
+    """
+
+    ok: bool = False
+    supported: bool = True
+    detail: str | None = None
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ConfigBackup:
+    """Result of ``backup_config`` (G7) — a device configuration blob for archival/restore.
+
+    ``blob`` is the raw device config bytes (brand-specific: Hik ISAPI
+    ``configurationData`` is a binary blob, Dahua ``configFileExport`` a backup file,
+    ONVIF ``GetSystemBackup`` a set of backup files). ``content_type`` +
+    ``filename`` advise the download response. ``supported=False`` (empty blob) when the
+    brand has no config-backup surface — graceful, never raises.
+    """
+
+    supported: bool = False
+    blob: bytes | None = None
+    content_type: str = "application/octet-stream"
+    filename: str = "config.bin"
+    detail: str | None = None
+
+
+@dataclass
 class Capabilities:
     """Detected capability matrix — persisted to ``Camera.onvif_capabilities`` /
     ``NVR.capabilities``. Brand-neutral booleans + a verbatim ``raw`` blob."""
@@ -405,6 +441,63 @@ class CameraDriver(abc.ABC):
         (MediaMTX path / server-side proxy) plays. P4-B. MUST NOT raise — ``None`` when
         unsupported / unreachable."""
         return None
+
+    # ── device / fleet management (G7) ────────────────────────────────────────
+    #
+    # Fleet ops are EXPLICIT operator actions, but — unlike ``ptz``/``configure`` — they
+    # degrade GRACEFULLY per brand rather than raising: a device that can't be reached, or
+    # a brand with no surface for the op, returns ``FleetOpResult(ok=False, supported=...)``
+    # so the bulk fan-out can report a per-camera outcome without a partial-failure
+    # exception aborting the batch. The concrete drivers build the real brand request
+    # faithfully (Hik ISAPI, Dahua CGI, ONVIF SOAP); the actual on-device effect is
+    # ``# LIVE-VALIDATE`` (no live devices in dev). Defaults here = "unsupported".
+
+    async def get_device_info(self, host: str, creds: Credentials) -> DeviceInfo:
+        """Fleet identity read — model / firmware / serial for the device-management panel.
+
+        DEFAULT delegates to ``probe`` (which every driver implements) so firmware +
+        identity are available brand-agnostically. MUST NOT raise — graceful
+        ``DeviceInfo(reachable=False, ...)`` via ``probe``."""
+        try:
+            return await self.probe(host, creds)
+        except Exception as exc:  # noqa: BLE001 — read must never raise
+            return DeviceInfo(reachable=False, error=str(exc))
+
+    async def reboot(self, host: str, creds: Credentials) -> FleetOpResult:
+        """Reboot the device (Hik ISAPI ``PUT /ISAPI/System/reboot`` / ONVIF
+        ``SystemReboot`` / Dahua ``magicBox.cgi?action=reboot``). MUST NOT raise —
+        ``FleetOpResult(ok=False, supported=False)`` when unsupported/unreachable.
+        # LIVE-VALIDATE: real reboot effect."""
+        return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: reboot not supported")
+
+    async def set_ntp(self, host: str, creds: Credentials, server: str) -> FleetOpResult:
+        """Point the device time-sync at ``server`` (NTP host). Hik ISAPI
+        ``PUT /ISAPI/System/time/ntpServers`` / ONVIF ``SetNTP`` / Dahua ``configManager
+        setConfig&name=NTP``. MUST NOT raise. # LIVE-VALIDATE."""
+        return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: set_ntp not supported")
+
+    async def set_password(
+        self, host: str, creds: Credentials, *, user: str, new_password: str
+    ) -> FleetOpResult:
+        """Change the password of device account ``user`` (Hik ISAPI
+        ``PUT /ISAPI/Security/users/{id}`` / ONVIF ``SetUser`` / Dahua
+        ``userManager.cgi?action=modifyPassword``). MUST NOT raise — graceful. The bulk
+        password op fans this out across a fleet. # LIVE-VALIDATE: user-id resolution +
+        auth-after-change."""
+        return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: set_password not supported")
+
+    async def backup_config(self, host: str, creds: Credentials) -> ConfigBackup:
+        """Export the device configuration as a blob (Hik ISAPI
+        ``GET /ISAPI/System/configurationData`` / Dahua ``configFileExport`` / ONVIF
+        ``GetSystemBackup``). MUST NOT raise — ``ConfigBackup(supported=False)`` on
+        failure/unsupported. # LIVE-VALIDATE."""
+        return ConfigBackup(supported=False, detail=f"{self.brand}: config backup not supported")
+
+    async def restore_config(self, host: str, creds: Credentials, blob: bytes) -> FleetOpResult:
+        """Restore a previously-exported config ``blob`` (Hik ISAPI
+        ``PUT /ISAPI/System/configurationData`` / Dahua ``configFileImport`` / ONVIF
+        ``RestoreSystem``). MUST NOT raise. # LIVE-VALIDATE: restore reboots the device."""
+        return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: config restore not supported")
 
     async def aclose(self) -> None:
         """Release any held resources (HTTP client). Best-effort."""
