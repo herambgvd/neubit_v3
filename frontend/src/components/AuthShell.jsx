@@ -208,8 +208,8 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
 
       <div className="relative z-10 grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
         {/* Brand panel */}
-        <aside className="relative hidden flex-col justify-between border-r border-white/[0.06] p-12 lg:flex xl:p-16">
-          <Link href="/" className="inline-flex items-center gap-3">
+        <aside className="relative hidden flex-col gap-10 overflow-y-auto border-r border-white/[0.06] p-12 lg:flex xl:p-16">
+          <Link href="/" className="inline-flex shrink-0 items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo/neubit_logo.svg" alt={productName} className="h-8 w-auto invert brightness-0" />
           </Link>
@@ -252,7 +252,7 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
             </div>
           </motion.div>
 
-          <div className="font-mono text-[11px] text-white/35">
+          <div className="mt-auto shrink-0 pt-2 font-mono text-[11px] text-white/35">
             © {new Date().getFullYear()} {productName}. All rights reserved.
           </div>
         </aside>
