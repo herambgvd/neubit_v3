@@ -33,6 +33,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { useLiveSession } from "../hooks/useLiveSession";
+import { acquireSlot, releaseSlot } from "../lib/connectGate";
 import TalkButton from "./TalkButton";
 
 const WHEP_MAX_ATTEMPTS = 8;
@@ -121,6 +122,20 @@ function LivePlayer({
     const whepAbort = new AbortController();
     let whepResource = null;
 
+    // ── connection-concurrency gate ────────────────────────────────────────
+    // We hold ONE slot from `connectGate` while THIS connection is forming, and
+    // release it the instant the connection SETTLES — the first of: stream
+    // playing/ready, terminal failure (ladder exhausted), or unmount. Releasing
+    // hands the slot to the next waiting tile so the wall fills a few at a time
+    // instead of bursting the NVR's connection limit. `releaseGate` is idempotent
+    // — safe to call from every exit path; only the first call frees the slot.
+    let slotReleased = false;
+    const releaseGate = () => {
+      if (slotReleased) return;
+      slotReleased = true;
+      releaseSlot();
+    };
+
     setLoading(true);
     setError(null);
 
@@ -192,6 +207,7 @@ function LivePlayer({
         else {
           setError("Stream is unavailable right now.");
           setLoading(false);
+          releaseGate();
         }
       };
 
@@ -214,6 +230,7 @@ function LivePlayer({
           if (evt.streams[0]) {
             video.srcObject = evt.streams[0];
             setLoading(false);
+            releaseGate();
             onReady?.("webrtc");
             if (autoPlay) video.play().catch(() => {});
           }
@@ -332,6 +349,7 @@ function LivePlayer({
         nativeLoaded = () => {
           if (disposed) return;
           setLoading(false);
+          releaseGate();
           onReady?.("hls");
           if (autoPlay) video.play().catch(() => {});
         };
@@ -341,6 +359,7 @@ function LivePlayer({
           else {
             setError("Stream is unavailable right now.");
             setLoading(false);
+            releaseGate();
           }
         };
         video.addEventListener("loadedmetadata", nativeLoaded);
@@ -356,6 +375,7 @@ function LivePlayer({
           else {
             setError("This browser cannot play the stream.");
             setLoading(false);
+            releaseGate();
           }
           return;
         }
@@ -377,6 +397,7 @@ function LivePlayer({
           if (disposed) return;
           warmedUp = true;
           setLoading(false);
+          releaseGate();
           onReady?.("hls");
           if (autoPlay) video.play().catch(() => {});
         });
@@ -414,6 +435,7 @@ function LivePlayer({
             }
             setError("Stream is unavailable right now.");
             setLoading(false);
+            releaseGate();
             return;
           }
 
@@ -440,6 +462,7 @@ function LivePlayer({
                 } catch {
                   setError("Stream is unavailable right now.");
                   setLoading(false);
+                  releaseGate();
                 }
                 break;
               default:
@@ -453,6 +476,7 @@ function LivePlayer({
                 }
                 setError("Stream is unavailable right now.");
                 setLoading(false);
+                releaseGate();
             }
           }
         });
@@ -460,15 +484,31 @@ function LivePlayer({
         if (!disposed) {
           setError("Player failed to initialise.");
           setLoading(false);
+          releaseGate();
         }
       }
     };
 
-    if (preferWebrtc && webrtcUrl) startWebRTC();
-    else startHLS();
+    // Gate the START of this connection. `acquireSlot()` resolves immediately
+    // when a slot is free (single-camera modal → instant, no user-visible delay);
+    // on the wall it queues so connections form a few at a time. If the tile
+    // unmounted while we were queued, `disposed` is already true → release the
+    // slot we were just handed and bail without opening a connection.
+    acquireSlot().then(() => {
+      if (disposed) {
+        releaseGate();
+        return;
+      }
+      if (preferWebrtc && webrtcUrl) startWebRTC();
+      else startHLS();
+    });
 
     return () => {
       disposed = true;
+      // Unmount is a settle point: free our slot (whether still queued, mid-
+      // connect, or already settled — releaseGate is idempotent) so the next
+      // tile can proceed and the gate never deadlocks.
+      releaseGate();
       cleanup();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
