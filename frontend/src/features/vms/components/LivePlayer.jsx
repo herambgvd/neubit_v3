@@ -141,7 +141,10 @@ function LivePlayer({
 
     const cleanup = () => {
       try {
-        whepAbort.abort();
+        // Pass an explicit reason so the aborted fetch rejects with THIS (not the
+        // default "signal is aborted without reason" DOMException the dev overlay
+        // flags). The rejection is swallowed in sendOffer's catch below.
+        whepAbort.abort(new DOMException("LivePlayer unmounted", "AbortError"));
       } catch {}
       if (whepResource) {
         // Fire-and-forget; keepalive lets it finish during page navigation.
@@ -282,7 +285,7 @@ function LivePlayer({
               pc.close();
             } catch {}
             await new Promise((r) => setTimeout(r, WHEP_RETRY_MS));
-            if (!disposed) sendOffer(attempt + 1);
+            if (!disposed) sendOffer(attempt + 1).catch(() => {});
             return;
           }
           // 400 = negotiation failed — the browser can't decode this codec (H265
@@ -313,13 +316,16 @@ function LivePlayer({
           const answer = await res.text();
           await pc.setRemoteDescription({ type: "answer", sdp: answer });
         } catch (e) {
-          if (disposed) return;
+          // Aborted (unmount/navigation) → swallow silently; never retry or
+          // fall back on an aborted signal. This is the AbortError the dev
+          // overlay was surfacing as an unhandled rejection.
+          if (disposed || whepAbort.signal.aborted || e?.name === "AbortError") return;
           if (attempt < WHEP_MAX_ATTEMPTS) {
             try {
               pc.close();
             } catch {}
             await new Promise((r) => setTimeout(r, WHEP_RETRY_MS));
-            if (!disposed) sendOffer(attempt + 1);
+            if (!disposed) sendOffer(attempt + 1).catch(() => {});
             return;
           }
           // Exhausted WebRTC on this url — transcode fallback, then HLS.
@@ -327,7 +333,9 @@ function LivePlayer({
         }
       };
 
-      sendOffer(1);
+      // Fire-and-forget: sendOffer owns its own error handling; swallow any
+      // stray rejection (e.g. an aborted signal) so it never floats unhandled.
+      sendOffer(1).catch(() => {});
     };
 
     // ── HLS (hls.js / native) ────────────────────────────────────────────
@@ -499,8 +507,10 @@ function LivePlayer({
         releaseGate();
         return;
       }
-      if (preferWebrtc && webrtcUrl) startWebRTC();
-      else startHLS();
+      // startWebRTC/startHLS own their errors; swallow any stray rejection
+      // (e.g. an aborted signal on unmount) so it never floats unhandled.
+      if (preferWebrtc && webrtcUrl) startWebRTC().catch(() => {});
+      else startHLS().catch(() => {});
     });
 
     return () => {
