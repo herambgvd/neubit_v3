@@ -488,7 +488,7 @@ export default function Streaming() {
   );
 
   return (
-    <div ref={wallRef} className="flex h-[calc(100vh-3.5rem)] flex-col bg-background fullscreen:h-screen">
+    <div ref={wallRef} className="flex h-full min-h-0 flex-col bg-background fullscreen:h-screen">
       <WallToolbar
         railOpen={railOpen}
         onToggleRail={() => setRailOpen((o) => !o)}

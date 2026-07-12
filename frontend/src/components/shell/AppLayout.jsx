@@ -57,6 +57,14 @@ export default function AppLayout({ children }) {
 
   // Full-height shell: header + footer stay fixed, only <main> scrolls. The Config
   // sub-tab bar appears under the header whenever we're inside the Config section.
+  //
+  // The Video Wall (/streaming) is an IMMERSIVE surface — it should fill the
+  // remaining viewport EXACTLY, full-bleed, with no page padding and no page
+  // scroll (a real-VMS control-room feel). So for that route only, <main> drops
+  // its padding + scroll and becomes a bounded, overflow-hidden pane the wall
+  // fills via h-full. Every other page keeps the padded, scrollable <main>.
+  const immersiveWall = pathname === "/streaming";
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <Header />
@@ -64,7 +72,15 @@ export default function AppLayout({ children }) {
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
       {isStreamingRoute(pathname) && <SectionTabs tabs={streamTabs} />}
       <AnnouncementBanner />
-      <main className="flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6">{children}</main>
+      <main
+        className={
+          immersiveWall
+            ? "flex-1 min-h-0 w-full overflow-hidden"
+            : "flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6"
+        }
+      >
+        {children}
+      </main>
       <Footer />
       <CommandPalette />
       {/* App-wide operator popups (VMS linkage `popup` action → floating live camera). */}
