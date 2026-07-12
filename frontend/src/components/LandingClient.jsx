@@ -287,73 +287,78 @@ export default function LandingPage() {
           style={{ y: heroY, opacity: heroOpacity }}
           className="relative z-10 mx-auto max-w-7xl px-6 pt-16 pb-24 lg:pt-20 lg:pb-28"
         >
+          {/* Centered headline block */}
           <motion.div
             initial="hidden"
             animate="show"
             variants={stagger}
-            className="grid gap-14 lg:grid-cols-[0.95fr_1.05fr] lg:items-center"
+            className="mx-auto max-w-4xl text-center"
           >
-            <div>
-              <motion.div
-                variants={fadeUp}
-                className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3 py-1 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur"
-              >
+            <motion.div variants={fadeUp} className="flex justify-center">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur">
                 <span
                   className="h-1.5 w-1.5 animate-pulse rounded-full"
                   style={{ background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
                 />
                 UNIFIED COMMAND &amp; CONTROL PLATFORM
-              </motion.div>
-
-              <motion.h1
-                variants={fadeUp}
-                className="mt-6 text-[2.9rem] font-semibold leading-[1.02] tracking-tight sm:text-6xl lg:text-[4.4rem]"
-              >
-                Command.
-                <br />
-                Control.
-                <br />
-                <span style={{ color: ACCENT }}>Intelligence.</span>
-              </motion.h1>
-
-              <motion.p variants={fadeUp} className="mt-6 max-w-xl text-lg leading-relaxed text-white/55">
-                The intelligence layer for enterprise command &amp; control. Unify video, access,
-                intrusion, fire, and analytics into a single operational layer — where every event
-                triggers the right action instantly.
-              </motion.p>
-
-              <motion.p variants={fadeUp} className="mt-4 font-mono text-sm text-white/40">
-                Not a dashboard. <span className="text-white">A decision execution system.</span>
-              </motion.p>
-
-              <motion.div variants={fadeUp} className="mt-9 flex flex-wrap items-center gap-3">
-                <Link
-                  href="#cta"
-                  className="inline-flex items-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-medium text-black transition-colors hover:bg-white/90"
-                >
-                  Book a Demo <ArrowRight className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="#cta"
-                  className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.02] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white/[0.06]"
-                >
-                  Talk to an Expert
-                </Link>
-              </motion.div>
-
-              <motion.div variants={fadeUp} className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-3 font-mono text-[11px] text-white/40">
-                {PILLARS.map(({ icon: Icon, label }) => (
-                  <div key={label} className="inline-flex items-center gap-1.5">
-                    <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} />
-                    {label}
-                  </div>
-                ))}
-              </motion.div>
-            </div>
-
-            <motion.div variants={fadeUp}>
-              <ConsoleHero />
+              </div>
             </motion.div>
+
+            <motion.h1
+              variants={fadeUp}
+              className="mt-7 text-[3.1rem] font-semibold leading-[1.02] tracking-tight sm:text-6xl lg:text-[4.6rem]"
+            >
+              Command. Control.{" "}
+              <span style={{ color: ACCENT }}>Intelligence.</span>
+            </motion.h1>
+
+            <motion.p variants={fadeUp} className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-white/55">
+              The intelligence layer for enterprise command &amp; control. Unify video, access,
+              intrusion, fire, and analytics into a single operational layer — where every event
+              triggers the right action instantly.
+            </motion.p>
+
+            <motion.p variants={fadeUp} className="mt-4 font-mono text-sm text-white/40">
+              Not a dashboard. <span className="text-white">A decision execution system.</span>
+            </motion.p>
+
+            <motion.div variants={fadeUp} className="mt-9 flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="#cta"
+                className="inline-flex items-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-medium text-black transition-colors hover:bg-white/90"
+              >
+                Book a Demo <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href="#cta"
+                className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.02] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white/[0.06]"
+              >
+                Talk to an Expert
+              </Link>
+            </motion.div>
+
+            {/* Capability pillars as badges */}
+            <motion.div variants={fadeUp} className="mt-10 flex flex-wrap items-center justify-center gap-2.5">
+              {PILLARS.map(({ icon: Icon, label }) => (
+                <span
+                  key={label}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.025] px-3.5 py-1.5 font-mono text-xs text-white/65 backdrop-blur transition-colors hover:border-white/[0.2] hover:text-white"
+                >
+                  <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+                  {label}
+                </span>
+              ))}
+            </motion.div>
+          </motion.div>
+
+          {/* Full-width live console */}
+          <motion.div
+            initial={{ opacity: 0, y: 44 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="mx-auto mt-16 max-w-6xl lg:mt-20"
+          >
+            <ConsoleHero />
           </motion.div>
         </motion.div>
       </section>

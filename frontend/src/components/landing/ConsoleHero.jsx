@@ -420,19 +420,19 @@ export default function ConsoleHero() {
       >
         <StatusBar time={time} />
 
-        <div className="grid gap-2 p-2.5 lg:grid-cols-[1.55fr_1fr]">
-          {/* left column: video wall + KPIs */}
-          <div className="flex flex-col gap-2">
-            <VideoWall time={time} />
-            <KpiRow />
+        {/* Full-width ops layout: video wall · event feed · situational map,
+            then a full-span KPI strip underneath. */}
+        <div className="grid gap-2 p-2.5 lg:grid-cols-[1.9fr_1.15fr_1fr]">
+          <VideoWall time={time} />
+          <div className="flex min-h-[240px] flex-col">
+            <EventFeed time={time} />
           </div>
-          {/* right column: event feed + radar */}
-          <div className="flex min-h-0 flex-col gap-2">
-            <div className="min-h-[150px] flex-1">
-              <EventFeed time={time} />
-            </div>
+          <div className="flex flex-col">
             <Radar />
           </div>
+        </div>
+        <div className="px-2.5 pb-2.5">
+          <KpiRow />
         </div>
       </motion.div>
     </div>
