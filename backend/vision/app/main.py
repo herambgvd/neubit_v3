@@ -46,7 +46,7 @@ from app.vms.onvif_server import advertiser as onvif_advertiser
 from app.vms.onvif_server import soap_router as onvif_soap_router
 from app.vms.recording import RecordingConsumer, RecordingScheduler
 from app.vms.reports import ReportScheduler
-from app.vms.storage import RetentionTieringWorker
+from app.vms.storage import RaidMonitor, RetentionTieringWorker
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vision")
@@ -82,6 +82,14 @@ async def lifespan(app: FastAPI):
     storage_worker = RetentionTieringWorker(get_sessionmaker())
     await storage_worker.start()
     app.state.storage_worker = storage_worker
+
+    # RAID compliance: poll software-RAID (mdadm) arrays → upsert health snapshot +
+    # fire a one-shot ``raid_degraded`` alert on a healthy→degraded transition so an
+    # operator swaps the failed disk before a second failure loses footage. Own DB
+    # session per poll; graceful (non-Linux host → reports unavailable + idles).
+    raid_monitor = RaidMonitor(get_sessionmaker())
+    await raid_monitor.start()
+    app.state.raid_monitor = raid_monitor
 
     # P4-B clip export: drain queued ExportJobs → ffmpeg-concat the covered recorded
     # fmp4 segments into a single downloadable mp4 (in the downloads area on the
@@ -168,6 +176,7 @@ async def lifespan(app: FastAPI):
     await event_supervisor.stop()
     await motion_search_worker.stop()
     await export_worker.stop()
+    await raid_monitor.stop()
     await storage_worker.stop()
     await rec_scheduler.stop()
     await sampler.stop()

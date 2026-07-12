@@ -24,6 +24,8 @@ from kernel.auth import Principal, Scope, get_scope, require_permission
 from app.db import get_db
 
 from .schemas import (
+    RaidDeviceOut,
+    RaidStatusResponse,
     RecordingIntegrityResult,
     RecordingLockBody,
     StoragePoolCreate,
@@ -100,6 +102,29 @@ async def pool_usage(
     svc: Annotated[StorageService, Depends(get_storage_service)],
 ) -> StoragePoolUsage:
     return await svc.pool_usage(pool_id)
+
+
+# ── RAID health (software-RAID monitoring) ──────────────────────────────
+@router.get(
+    "/raid/status",
+    response_model=RaidStatusResponse,
+    dependencies=[Depends(require_permission(PERM_VIEW))],
+)
+async def raid_status(
+    svc: Annotated[StorageService, Depends(get_storage_service)],
+) -> RaidStatusResponse:
+    return await svc.raid_status()
+
+
+@router.get(
+    "/raid/devices",
+    response_model=list[RaidDeviceOut],
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def raid_devices(
+    svc: Annotated[StorageService, Depends(get_storage_service)],
+) -> list[RaidDeviceOut]:
+    return await svc.raid_devices()
 
 
 @router.patch("/pools/{pool_id}", response_model=StoragePoolPublic)

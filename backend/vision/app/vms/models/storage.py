@@ -109,9 +109,58 @@ class StoragePool(Base):
     # Whether reachability validated on last create/update (advisory).
     reachable: Mapped[bool | None] = mapped_column(Boolean)
 
+    # ── RAID link (optional) ────────────────────────────────────────────
+    # A local pool may sit on a software-RAID array. These are DOCUMENTARY: they
+    # let the UI show "this pool is on /dev/md0, RAID5" and cross-link the pool to
+    # its live health in ``raid_arrays`` (matched on ``raid_device``). NULL = the
+    # pool is not on a monitored RAID array (plain disk / NAS / S3).
+    raid_level: Mapped[str | None] = mapped_column(String(16))  # raid1|raid5|raid6|raid10
+    raid_device: Mapped[str | None] = mapped_column(String(64))  # /dev/md0
+
     created_by: Mapped[str | None] = mapped_column(String(64))
     updated_by: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+
+class RaidArray(Base):
+    """Live health snapshot of a software-RAID (mdadm) array — node infrastructure.
+
+    RAID arrays are PHYSICAL, node-global hardware (not tenant data), so this table is
+    NOT tenant-scoped: one row per md device (``/dev/md0``), upserted every poll by the
+    ``RaidMonitor`` worker off ``app.vms.common.raid_service``. It exists so the Storage
+    UI / dashboard / reports can read array health without shelling out per request, and
+    so a healthy→degraded transition can be detected (compare stored ``health`` before
+    upsert) to fire a ``raid_degraded`` alert exactly once.
+
+    ⭐ Enterprise-VMS parity: Genetec/Milestone all surface RAID health + degrade alerts;
+    the VMS does not BUILD the array (OS/controller does) — it monitors + alerts.
+    """
+
+    __tablename__ = "raid_arrays"
+    __table_args__ = (Index("ix_raid_arrays_health", "health"),)
+
+    # md device path is the natural key (one array per device on a node).
+    device: Mapped[str] = mapped_column(String(64), primary_key=True)
+    level: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'unknown'"))
+    # Raw mdadm "State :" line (e.g. "clean", "clean, degraded", "active, resyncing").
+    state: Mapped[str | None] = mapped_column(String(128))
+    # Derived operator status: healthy | degraded | rebuilding | failed | unknown.
+    health: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'unknown'"))
+    working_devices: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    failed_devices: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    total_devices: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    rebuild_status: Mapped[str | None] = mapped_column(String(255))  # raw "Rebuild Status :" line
+    rebuild_percent: Mapped[int | None] = mapped_column(Integer)  # parsed % (null = not rebuilding)
+
+    # When this array was first seen degraded in the CURRENT degraded episode (cleared
+    # on recovery) — lets the UI show "degraded for 3h" and the alert carry duration.
+    first_degraded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
     updated_at: Mapped[datetime] = mapped_column(

@@ -54,7 +54,7 @@ from .pattern import CameraPattern
 from .ptz import PtzPatrol, PtzPreset
 from .recording import Recording
 from .report import ReportSchedule
-from .storage import StoragePool, TierRule
+from .storage import RaidArray, StoragePool, TierRule
 from .videowall import VideoWall, WallMonitor, WallPreset, WallTour
 
 __all__ = [
@@ -70,6 +70,7 @@ __all__ = [
     "Recording",
     "StoragePool",
     "TierRule",
+    "RaidArray",
     "CameraPattern",
     "ExportJob",
     "VmsEvent",

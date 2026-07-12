@@ -19,6 +19,7 @@ reused by the recording consumer (checksum-on-finalize) + the worker.
 from __future__ import annotations
 
 from .router import rec_router, router
+from .raid_monitor import RaidMonitor
 from .service import StorageService, compute_integrity
 from .worker import RetentionTieringWorker
 
@@ -28,4 +29,5 @@ __all__ = [
     "StorageService",
     "compute_integrity",
     "RetentionTieringWorker",
+    "RaidMonitor",
 ]

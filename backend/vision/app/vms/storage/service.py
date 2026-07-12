@@ -126,6 +126,8 @@ class StorageService:
             s3_access_key=body.s3_access_key,
             s3_enc_secret_key=encrypt_secret(body.s3_secret_key) if body.s3_secret_key else None,
             s3_use_ssl=body.s3_use_ssl,
+            raid_level=body.raid_level,
+            raid_device=body.raid_device,
             created_by=actor_id,
             updated_by=actor_id,
         )
@@ -149,6 +151,33 @@ class StorageService:
 
     async def get_pool(self, pool_id: str) -> StoragePoolPublic:
         return StoragePoolPublic.from_row(await self._pool(pool_id))
+
+    # ── RAID health (software-RAID / mdadm) ─────────────────────────────
+    async def raid_status(self):
+        """Latest software-RAID array health (unhealthy first). Node-global infra —
+        the ``RaidMonitor`` worker upserts ``raid_arrays`` every poll; this just reads
+        the stored snapshot + reports host availability."""
+        from app.vms.common.raid_service import raid_service
+        from app.vms.models import RaidArray
+
+        from .schemas import RaidArrayOut, RaidStatusResponse
+
+        probe = raid_service.probe_available()
+        rows = (await self.db.execute(select(RaidArray))).scalars().all()
+        rows = sorted(rows, key=lambda r: (r.health == "healthy", r.device))
+        return RaidStatusResponse(
+            available=bool(probe.get("available")),
+            reason=probe.get("reason"),
+            arrays=[RaidArrayOut.from_row(r) for r in rows],
+        )
+
+    async def raid_devices(self):
+        """Live physical-disk list (lsblk) — candidate members for a new array."""
+        from app.vms.common.raid_service import raid_service
+
+        from .schemas import RaidDeviceOut
+
+        return [RaidDeviceOut.model_validate(d) for d in await raid_service.list_block_devices()]
 
     async def update_pool(self, pool_id: str, body: StoragePoolUpdate, *, actor) -> StoragePoolPublic:
         row = await self._pool(pool_id)

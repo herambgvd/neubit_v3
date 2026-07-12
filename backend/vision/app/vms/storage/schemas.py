@@ -46,6 +46,10 @@ class StoragePoolCreate(BaseModel):
     s3_secret_key: Optional[str] = None  # write-only → encrypted at rest
     s3_use_ssl: bool = True
 
+    # RAID link (optional) — documentary tie from a local pool to a monitored array.
+    raid_level: Optional[Literal["raid0", "raid1", "raid5", "raid6", "raid10"]] = None
+    raid_device: Optional[str] = Field(default=None, max_length=64)
+
 
 class StoragePoolUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -71,6 +75,9 @@ class StoragePoolUpdate(BaseModel):
     s3_access_key: Optional[str] = Field(default=None, max_length=255)
     s3_secret_key: Optional[str] = None
     s3_use_ssl: Optional[bool] = None
+
+    raid_level: Optional[Literal["raid0", "raid1", "raid5", "raid6", "raid10"]] = None
+    raid_device: Optional[str] = Field(default=None, max_length=64)
 
 
 class StoragePoolPublic(BaseModel):
@@ -100,6 +107,9 @@ class StoragePoolPublic(BaseModel):
     s3_access_key: Optional[str] = None
     s3_use_ssl: bool = True
     s3_has_secret_key: bool = False
+
+    raid_level: Optional[str] = None
+    raid_device: Optional[str] = None
 
     reachable: Optional[bool] = None
     created_at: datetime
@@ -131,6 +141,8 @@ class StoragePoolPublic(BaseModel):
                 "s3_access_key": row.s3_access_key,
                 "s3_use_ssl": row.s3_use_ssl,
                 "s3_has_secret_key": bool(row.s3_enc_secret_key),
+                "raid_level": row.raid_level,
+                "raid_device": row.raid_device,
                 "reachable": row.reachable,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
@@ -229,3 +241,54 @@ class RecordingIntegrityResult(BaseModel):
     checksum: Optional[str] = None
     locked: bool
     locked_by: Optional[str] = None
+
+
+# ── RAID (software-RAID health monitoring) ───────────────────────────────────
+class RaidArrayOut(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    device: str
+    level: str
+    state: Optional[str] = None
+    health: str  # healthy | degraded | rebuilding | failed | unknown
+    working_devices: int
+    failed_devices: int
+    total_devices: int
+    rebuild_status: Optional[str] = None
+    rebuild_percent: Optional[int] = None
+    first_degraded_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, row) -> "RaidArrayOut":
+        return cls.model_validate(
+            {
+                "device": row.device,
+                "level": row.level,
+                "state": row.state,
+                "health": row.health,
+                "working_devices": row.working_devices,
+                "failed_devices": row.failed_devices,
+                "total_devices": row.total_devices,
+                "rebuild_status": row.rebuild_status,
+                "rebuild_percent": row.rebuild_percent,
+                "first_degraded_at": row.first_degraded_at,
+                "last_seen_at": row.last_seen_at,
+            }
+        )
+
+
+class RaidDeviceOut(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str  # /dev/sdb
+    size: str  # human-readable (lsblk SIZE)
+    model: str = ""
+
+
+class RaidStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    available: bool  # False on non-Linux / mdadm-absent hosts
+    reason: Optional[str] = None  # why unavailable (shown in UI)
+    arrays: list[RaidArrayOut] = []

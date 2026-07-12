@@ -619,6 +619,13 @@ export const vms = {
       update: (id, body) => unwrap(api.patch(`${STORAGE}/tier-rules/${id}`, body)),
       remove: (id) => unwrap(api.delete(`${STORAGE}/tier-rules/${id}`)),
     },
+    // RAID health (software-RAID / mdadm monitoring). status → { available, reason,
+    // arrays:[{device,level,health,working/failed/total_devices,rebuild_percent,...}] }.
+    // The RaidMonitor worker upserts array health every poll + alerts on degrade.
+    raid: {
+      status: () => unwrap(api.get(`${STORAGE}/raid/status`)),
+      devices: () => unwrap(api.get(`${STORAGE}/raid/devices`)),
+    },
   },
 };
 
