@@ -113,11 +113,28 @@ function LivePlayer({
     // has fully given up. Stops the HLS error handlers from bouncing back to
     // WebRTC — otherwise HLS(HEVC)→WebRTC→transcode-fail→HLS would loop forever.
     let webrtcExhausted = false;
+    // Abort in-flight WHEP POST(s) on unmount so navigating away doesn't leave
+    // pending requests holding connections (that's what made leaving the wall
+    // feel slow). And remember the WHEP session resource (Location header) so we
+    // can DELETE it on teardown — ending the MediaMTX reader + reaping the
+    // on-demand source/transcode immediately instead of waiting for a timeout.
+    const whepAbort = new AbortController();
+    let whepResource = null;
 
     setLoading(true);
     setError(null);
 
     const cleanup = () => {
+      try {
+        whepAbort.abort();
+      } catch {}
+      if (whepResource) {
+        // Fire-and-forget; keepalive lets it finish during page navigation.
+        try {
+          fetch(whepResource, { method: "DELETE", keepalive: true });
+        } catch {}
+        whepResource = null;
+      }
       if (hlsRef.current) {
         try {
           hlsRef.current.stopLoad?.();
@@ -238,6 +255,7 @@ function LivePlayer({
             method: "POST",
             headers: { "Content-Type": "application/sdp" },
             body: pc.localDescription.sdp,
+            signal: whepAbort.signal,
           });
 
           // 404 = MediaMTX has the path but the RTSP source isn't ready yet
@@ -261,6 +279,19 @@ function LivePlayer({
             return;
           }
           if (!res.ok) throw new Error(`WHEP ${res.status}`);
+
+          // Remember the WHEP session resource so cleanup() can DELETE it (ends
+          // the MediaMTX reader immediately). Carry the media token for the
+          // ForwardAuth gate on the DELETE.
+          try {
+            const loc = res.headers.get("Location");
+            if (loc) {
+              const resUrl = new URL(loc, window.location.origin);
+              const tok = new URL(url, window.location.origin).searchParams.get("token");
+              if (tok && !resUrl.searchParams.get("token")) resUrl.searchParams.set("token", tok);
+              whepResource = resUrl.toString();
+            }
+          } catch {}
 
           const answer = await res.text();
           await pc.setRemoteDescription({ type: "answer", sdp: answer });
