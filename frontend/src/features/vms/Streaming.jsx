@@ -27,7 +27,7 @@
 // (`tile-i`) so React preserves the mounted player across layout/spotlight
 // changes — spotlighting a tile REUSES its session instead of restarting it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -52,6 +52,8 @@ import SpotlightOverlay from "./components/SpotlightOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
 import PatternPickerMenu from "./components/PatternPickerMenu";
 import PatternHud from "./components/PatternHud";
+import PatternFormModal from "./components/PatternFormModal";
+import SaveWallGroupModal from "./components/SaveWallGroupModal";
 import { usePatternRotation } from "./hooks/usePatternRotation";
 
 const LS_LAYOUT = "neubit.vms.wall.layout";
@@ -120,6 +122,11 @@ export default function Streaming() {
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [confirm, setConfirm] = useState(null);
+  // Inline (from the wall) creation surfaces — save current wall → server Camera
+  // Group, and build a Pattern — so operators don't have to trip to Config.
+  const [saveGroupOpen, setSaveGroupOpen] = useState(false);
+  const [patternFormOpen, setPatternFormOpen] = useState(false);
+  const qc = useQueryClient();
 
   const wallRef = useRef(null); // fullscreen-wall target
   const gridRef = useRef(null); // for mute-all DOM sweep
@@ -156,6 +163,12 @@ export default function Streaming() {
   );
   const liveCount = mountedIds.size;
   const onlineCount = cameras.filter((c) => c.status === "online").length;
+
+  // Ordered camera ids currently on the wall (for "save wall as group").
+  const wallCameraIds = useMemo(
+    () => cells.map((c) => c.cameraId).filter(Boolean),
+    [cells],
+  );
 
   // Set of camera ids that still EXIST — the rotation engine uses it to skip
   // groups whose cameras were deleted (robustness).
@@ -507,11 +520,14 @@ export default function Streaming() {
             activeId={rotation.active ? activePattern?.id : null}
             onPlay={(p) => startPattern(p)}
             onStop={exitPattern}
+            onCreate={() => setPatternFormOpen(true)}
           />
         }
         savedControl={
           <SavedLayoutsMenu layouts={savedLayouts} onApply={applySaved} onDelete={deleteSaved} onSave={() => setSaveOpen(true)} canSave={liveCount > 0} />
         }
+        onSaveGroup={() => setSaveGroupOpen(true)}
+        canSaveGroup={liveCount > 0}
         allMuted={allMuted}
         onToggleMuteAll={() => setAllMuted((m) => !m)}
         onFullscreen={toggleFullscreenWall}
@@ -620,6 +636,31 @@ export default function Streaming() {
           Saves the grid + camera assignment to this browser. {liveCount} camera{liveCount === 1 ? "" : "s"} on the wall.
         </p>
       </Modal>
+
+      {/* Inline: save the current wall as a server Camera Group (fewer clicks — no
+          trip to Config → Patterns → Camera Groups). */}
+      <SaveWallGroupModal
+        open={saveGroupOpen}
+        layoutKey={layoutKey}
+        cameraIds={wallCameraIds}
+        onClose={() => setSaveGroupOpen(false)}
+        onSaved={() => {
+          setSaveGroupOpen(false);
+          qc.invalidateQueries({ queryKey: ["vms-camera-groups"] });
+        }}
+      />
+
+      {/* Inline: build a Pattern (rotation of groups) without leaving the wall. */}
+      <PatternFormModal
+        open={patternFormOpen}
+        pattern={null}
+        groups={groups}
+        onClose={() => setPatternFormOpen(false)}
+        onSaved={() => {
+          setPatternFormOpen(false);
+          qc.invalidateQueries({ queryKey: ["vms-patterns"] });
+        }}
+      />
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>

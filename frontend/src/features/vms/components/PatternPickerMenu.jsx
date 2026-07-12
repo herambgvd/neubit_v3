@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 
-export default function PatternPickerMenu({ patterns = [], loading, activeId, onPlay, onStop }) {
+export default function PatternPickerMenu({ patterns = [], loading, activeId, onPlay, onStop, onCreate }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -48,19 +48,34 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
         <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-card-border bg-card py-1 shadow-2xl">
           <div className="flex items-center justify-between px-3 py-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Patterns</span>
-            {active && (
-              <button
-                type="button"
-                onClick={() => {
-                  onStop?.();
-                  setOpen(false);
-                }}
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-red-500 transition hover:bg-red-500/10"
-              >
-                <Icon icon="heroicons-mini:stop" className="text-xs" />
-                Stop
-              </button>
-            )}
+            <div className="flex items-center gap-1">
+              {active && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onStop?.();
+                    setOpen(false);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-red-500 transition hover:bg-red-500/10"
+                >
+                  <Icon icon="heroicons-mini:stop" className="text-xs" />
+                  Stop
+                </button>
+              )}
+              {onCreate && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCreate();
+                    setOpen(false);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-blue-400 transition hover:bg-blue-500/10"
+                >
+                  <Icon icon="heroicons-mini:plus" className="text-xs" />
+                  New
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -70,10 +85,25 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
           ) : patterns.length === 0 ? (
             <div className="px-3 py-3 text-xs text-muted">
               No patterns yet.{" "}
-              <Link href="/config/patterns" className="text-blue-400 hover:underline">
-                Create one
-              </Link>{" "}
-              in Config → Patterns.
+              {onCreate ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCreate();
+                    setOpen(false);
+                  }}
+                  className="text-blue-400 hover:underline"
+                >
+                  Create one here
+                </button>
+              ) : (
+                <>
+                  <Link href="/config/patterns" className="text-blue-400 hover:underline">
+                    Create one
+                  </Link>{" "}
+                  in Config → Patterns.
+                </>
+              )}
             </div>
           ) : (
             <ul className="max-h-72 overflow-y-auto border-t border-card-border pt-1">

@@ -164,6 +164,19 @@ export function getGroupLayout(key) {
   return GROUP_LAYOUTS.find((l) => l.key === key) || GROUP_LAYOUTS[1];
 }
 
+// Map a WALL layoutKey → a valid GROUP layout key (for "save wall as group"). The
+// two registries overlap on 1x1/2x2/3x3/4x4 (identity); for wall-only grids
+// (2x3/3x4/5x5/1+5/1+7) pick the smallest group layout that fits the wall's
+// capacity so every camera on the wall lands in the group. Falls back to largest.
+export function wallLayoutToGroup(wallKey) {
+  if (GROUP_LAYOUTS.some((l) => l.key === wallKey)) return wallKey;
+  const cap = getLayout(wallKey)?.capacity || 4;
+  const fit = [...GROUP_LAYOUTS]
+    .sort((a, b) => a.capacity - b.capacity)
+    .find((l) => l.capacity >= cap);
+  return (fit || GROUP_LAYOUTS[GROUP_LAYOUTS.length - 1]).key;
+}
+
 // CSS grid-template for a group builder/preview cell of `cols × rows`.
 export function groupGridStyle(layout) {
   const l = getGroupLayout(layout?.key || layout);

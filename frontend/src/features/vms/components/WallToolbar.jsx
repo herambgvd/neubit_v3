@@ -42,6 +42,8 @@ export default function WallToolbar({
   onTourInterval,
   patternControl, // <PatternPickerMenu/> element (server-persisted rotations)
   savedControl, // <SavedLayoutsMenu/> element (localStorage static layouts)
+  onSaveGroup, // capture the current wall as a server Camera Group (inline)
+  canSaveGroup, // gate: at least one camera on the wall
   allMuted,
   onToggleMuteAll,
   onFullscreen,
@@ -83,6 +85,18 @@ export default function WallToolbar({
 
         {patternControl}
         {savedControl}
+        {onSaveGroup && (
+          <button
+            type="button"
+            title="Save the current wall as a reusable camera group"
+            disabled={!canSaveGroup}
+            onClick={onSaveGroup}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-card-border bg-card px-2.5 text-xs font-medium text-foreground transition hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Icon icon="heroicons-outline:folder-plus" className="text-sm text-muted" />
+            Save group
+          </button>
+        )}
 
         <div className="mx-0.5 h-6 w-px bg-card-border" />
 
