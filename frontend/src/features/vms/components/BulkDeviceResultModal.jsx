@@ -8,7 +8,12 @@ import { Icon } from "@iconify/react";
 
 import { Button, Modal } from "@/components/ui/kit";
 
-const ACTION_LABEL = { reboot: "Reboot", ntp: "Set NTP", password: "Change password" };
+const ACTION_LABEL = {
+  reboot: "Reboot",
+  ntp: "Set NTP",
+  password: "Change password",
+  "apply-stream-policy": "Apply web profile (H.264)",
+};
 
 function statusFor(item) {
   if (item.ok) return { icon: "heroicons:check-circle", tone: "text-emerald-500", label: "Applied" };

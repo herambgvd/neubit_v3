@@ -9,7 +9,7 @@
 //
 // Reads (device-info) gate on vms.camera.read; all writes on vms.config.manage.
 import { useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ import { Field } from "@/components/common";
 import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import CodecBadge from "./CodecBadge";
 
 // Turn a { ok, supported, detail } op result into a toast. `supported === false`
 // means the brand driver has no such op — surface it as an info, not an error.
@@ -41,10 +42,22 @@ function InfoRow({ label, value }) {
   );
 }
 
-export default function DeviceMaintenance({ cameraId, cameraName }) {
+export default function DeviceMaintenance({ cameraId, cameraName, camera }) {
   const { can } = useAuth();
+  const qc = useQueryClient();
   const canManage = can("vms.config.manage");
   const canRead = can("vms.camera.read");
+
+  // Fresh camera row for the codec badge — seeded by the passed-in `camera` so it
+  // renders instantly, then re-read after an apply so the badge flips to H.264.
+  const cameraQ = useQuery({
+    queryKey: ["vms-camera", cameraId],
+    queryFn: () => vms.cameras.get(cameraId),
+    enabled: canRead,
+    initialData: camera,
+    staleTime: 15_000,
+  });
+  const cam = cameraQ.data || camera || {};
 
   const [ntpServer, setNtpServer] = useState("");
   const [pwUser, setPwUser] = useState("");
@@ -120,8 +133,31 @@ export default function DeviceMaintenance({ cameraId, cameraName }) {
     onError: (e) => toast.error(apiError(e, "Restore failed")),
   });
 
+  // ── Web codec policy — force the sub-stream to H.264 (browser-direct) ──────
+  const streamPolicy = useMutation({
+    mutationFn: () => vms.cameras.applyStreamPolicy(cameraId),
+    onSuccess: (res) => {
+      if (res?.already) {
+        toast.message("Already H.264", {
+          description: res.detail || "The sub-stream is already H.264 — browsers play it directly.",
+        });
+      } else {
+        toastOpResult(res, "Web profile");
+      }
+      // Refresh so the codec badge reflects the new sub-stream codec.
+      cameraQ.refetch();
+      qc.invalidateQueries({ queryKey: ["vms-cameras"] });
+    },
+    onError: (e) => toast.error(apiError(e, "Apply web profile failed")),
+  });
+
   const pending =
-    reboot.isPending || ntp.isPending || password.isPending || backup.isPending || restore.isPending;
+    reboot.isPending ||
+    ntp.isPending ||
+    password.isPending ||
+    backup.isPending ||
+    restore.isPending ||
+    streamPolicy.isPending;
 
   // Read the picked file → base64 (strip the data: prefix) → POST.
   const onRestoreFile = (file) => {
@@ -148,7 +184,10 @@ export default function DeviceMaintenance({ cameraId, cameraName }) {
     <div className="space-y-5">
       {/* Device info */}
       <section>
-        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Device info</h4>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Device info</h4>
+          <CodecBadge camera={cam} />
+        </div>
         <div className="rounded-lg border border-card-border bg-hover/30 px-3 py-2">
           {infoQ.isLoading ? (
             <div className="flex items-center gap-2 py-3 text-sm text-muted">
@@ -301,6 +340,29 @@ export default function DeviceMaintenance({ cameraId, cameraName }) {
             <p className="mt-1.5 text-[11px] text-muted">
               Backup downloads the device config blob. Restore uploads it back (base64) — brand-dependent.
             </p>
+          </div>
+
+          {/* Web streaming codec policy — force the sub-stream to H.264 */}
+          <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm text-foreground">Web streaming profile</p>
+              <CodecBadge camera={cam} showDash />
+            </div>
+            <p className="mt-1 mb-2 text-[11px] text-muted">
+              Forces the sub-stream to H.264 so browsers play it directly — no transcoding. The main
+              stream stays H.265 for recording.
+            </p>
+            <div className="flex justify-end">
+              <Button
+                variant="secondary"
+                icon="heroicons-outline:bolt"
+                className="!py-1.5 !text-xs"
+                disabled={!canManage || pending}
+                onClick={() => streamPolicy.mutate()}
+              >
+                {streamPolicy.isPending ? "Applying…" : "Apply web profile (H.264)"}
+              </Button>
+            </div>
           </div>
         </div>
       </section>

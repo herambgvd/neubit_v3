@@ -111,11 +111,13 @@ export default function CamerasPage() {
       if (action === "reboot") return vms.deviceMgmt.bulk.reboot(ids);
       if (action === "ntp") return vms.deviceMgmt.bulk.ntp(ids, server);
       if (action === "password") return vms.deviceMgmt.bulk.password(ids, { user, new_password });
+      if (action === "apply-stream-policy") return vms.deviceMgmt.bulk.applyStreamPolicy(ids);
       return Promise.reject(new Error("Unknown device action"));
     },
     onSuccess: (res) => {
       setDeviceResult(res); // show the per-camera results summary
       setSelectedIds(new Set());
+      invalidate(); // codec badges may have flipped to H.264
     },
     onError: (e) => toast.error(apiError(e, "Bulk device action failed")),
   });

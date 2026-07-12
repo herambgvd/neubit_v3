@@ -128,6 +128,15 @@ export const vms = {
     // camera speaker).
     talkSession: (id) => unwrap(api.post(`${CAMERAS}/${id}/talk/session`, {})),
 
+    // ── Stream codec policy — force the SUB (web) stream to H.264 ────────────
+    // POST /vms/cameras/{id}/apply-stream-policy → pushes the sub-stream to
+    // H.264 via the brand driver so browsers play it directly (no transcode);
+    // MAIN stays H.265 for recording. Best-effort like the G7 device ops —
+    // returns a StreamPolicyResult { ok, supported, already, detail, ... }. Gate:
+    // vms.config.manage. The camera's sub_stream_codec/web_codec_enforced update
+    // on success (refetch the camera to refresh the codec badge).
+    applyStreamPolicy: (id) => unwrap(api.post(`${CAMERAS}/${id}/apply-stream-policy`, {})),
+
     // Snapshot URL for a saved camera (rendered via <img>, not fetched here).
     snapshotUrl: (id) => `${CAMERAS}/${id}/snapshot`,
   },
@@ -535,6 +544,12 @@ export const vms = {
         unwrap(api.post(`${CAMERAS}/bulk/ntp`, { camera_ids, server })),
       password: (camera_ids, { user, new_password } = {}) =>
         unwrap(api.post(`${CAMERAS}/bulk/password`, { camera_ids, user, new_password })),
+      // POST /vms/cameras/bulk/apply-stream-policy { camera_ids } → per-camera
+      //   results (same shape as the other bulk ops: { action, total, succeeded,
+      //   items:[{ camera_id, camera_name, ok, supported, detail }] }). Forces each
+      //   camera's sub-stream to H.264 for browser-direct playback.
+      applyStreamPolicy: (camera_ids) =>
+        unwrap(api.post(`${CAMERAS}/bulk/apply-stream-policy`, { camera_ids })),
     },
   },
 

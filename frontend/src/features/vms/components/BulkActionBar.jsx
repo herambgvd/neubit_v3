@@ -100,6 +100,9 @@ export default function BulkActionBar({
           <Button variant="ghost" icon="heroicons-outline:key" className="!px-2.5 !py-1.5 !text-xs" onClick={() => setMode("password")}>
             Password
           </Button>
+          <Button variant="ghost" icon="heroicons-outline:bolt" className="!px-2.5 !py-1.5 !text-xs" disabled={pending} onClick={() => onDeviceAction?.({ action: "apply-stream-policy" })} title="Force the sub-stream to H.264 for browser-direct playback (main stays H.265 for recording)">
+            Web profile
+          </Button>
           <Button variant="ghost" icon="heroicons-outline:arrow-uturn-left" className="!px-2 !py-1.5 !text-xs" onClick={reset}>
             Back
           </Button>

@@ -100,7 +100,7 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
             />
           </div>
         ) : tab === "device" ? (
-          <DeviceMaintenance cameraId={camera.id} cameraName={camera.name} />
+          <DeviceMaintenance cameraId={camera.id} cameraName={camera.name} camera={camera} />
         ) : (
           <CameraConfigForm
             tab={tab}
