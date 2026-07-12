@@ -305,12 +305,19 @@ function LivePlayer({
           // `url` is the full WHEP endpoint + already carries "?token=".
           // MediaMTX WHEP CORS only allows Authorization/Content-Type/If-Match
           // — never add extra headers here.
-          const res = await fetch(url, {
+          const whepFetch = fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/sdp" },
             body: pc.localDescription.sdp,
             signal: whepAbort.signal,
           });
+          // Attach a swallow to the RAW promise so an abort-on-unmount rejection
+          // is never reported as "unhandled" — Chrome fires unhandledrejection in
+          // the same microtask the fetch aborts, BEFORE the await's catch runs, so
+          // the dev overlay would otherwise flash a Runtime AbortError. The await
+          // below still routes genuine errors to the catch normally.
+          whepFetch.catch(() => {});
+          const res = await whepFetch;
 
           // 404 = MediaMTX has the path but the RTSP source isn't ready yet
           // (also the transcode ffmpeg spinning up) → keep retrying same url.
