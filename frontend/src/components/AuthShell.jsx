@@ -82,9 +82,9 @@ function MiniConsole() {
           <span className="font-mono text-[9px] tabular-nums text-white/50">{fmt(now)}</span>
         </div>
 
-        <div className="space-y-2 p-2.5">
+        <div className="space-y-1.5 p-2">
           {/* mini video wall */}
-          <div className="rounded-md border border-white/[0.07] bg-white/[0.015] p-2">
+          <div className="rounded-md border border-white/[0.07] bg-white/[0.015] p-1.5">
             <div className="mb-1.5 flex items-center justify-between px-0.5">
               <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-white/40">Video Wall · 6 / 512</span>
               <span className="flex items-center gap-1 font-mono text-[9px] text-white/40">
@@ -133,8 +133,8 @@ function MiniConsole() {
           </div>
 
           {/* mini event feed */}
-          <div className="rounded-md border border-white/[0.07] bg-white/[0.015] p-2">
-            <div className="mb-1.5 flex items-center justify-between px-0.5">
+          <div className="rounded-md border border-white/[0.07] bg-white/[0.015] p-1.5">
+            <div className="mb-1 flex items-center justify-between px-0.5">
               <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-white/40">Event Feed</span>
               <span className="font-mono text-[9px] tabular-nums text-white/40">{fmt(now)}</span>
             </div>
@@ -208,7 +208,7 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
 
       <div className="relative z-10 grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
         {/* Brand panel */}
-        <aside className="relative hidden flex-col gap-10 overflow-y-auto border-r border-white/[0.06] p-12 lg:flex xl:p-16">
+        <aside className="relative hidden flex-col gap-8 border-r border-white/[0.06] p-10 lg:flex xl:p-14">
           <Link href="/" className="inline-flex shrink-0 items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo/neubit_logo.svg" alt={productName} className="h-8 w-auto invert brightness-0" />
@@ -227,19 +227,19 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
               />
               UNIFIED COMMAND &amp; CONTROL
             </div>
-            <h2 className="mt-5 text-3xl font-semibold leading-[1.1] tracking-tight xl:text-4xl">
+            <h2 className="mt-4 text-3xl font-semibold leading-[1.1] tracking-tight xl:text-4xl">
               Command. Control. <span style={{ color: ACCENT }}>Intelligence.</span>
             </h2>
-            <p className="mt-4 leading-relaxed text-white/55">
+            <p className="mt-3 text-sm leading-relaxed text-white/55">
               The intelligence layer for enterprise command &amp; control — where every event triggers the
               right action, instantly.
             </p>
 
-            <div className="mt-8">
+            <div className="mt-6">
               <MiniConsole />
             </div>
 
-            <div className="mt-8 flex flex-wrap items-center gap-2">
+            <div className="mt-6 flex flex-wrap items-center gap-2">
               {PILLARS.map(({ icon: Icon, label }) => (
                 <span
                   key={label}
