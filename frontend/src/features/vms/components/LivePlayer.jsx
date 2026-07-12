@@ -60,6 +60,24 @@ function toTranscodedWhepUrl(url) {
   }
 }
 
+// Stream IDENTITY = the session URL WITHOUT its "?token=". useLiveSession renews
+// the media token every ~4-5 min (TTL 300s) and hands back the SAME path with a
+// FRESH token — which changed the url string and, when used as an effect dep,
+// tore down and RECONNECTED a perfectly healthy stream (the "refresh every few
+// minutes" the operator saw). An already-established WebRTC connection doesn't
+// need the new token (it's only checked at WHEP connect), so we key the attach
+// effect on this token-less identity: a token-only renew no longer re-attaches.
+function streamKey(url) {
+  if (!url) return "";
+  try {
+    const u = new URL(url, window.location.origin);
+    u.searchParams.delete("token");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 function LivePlayer({
   cameraId,
   cameraName,
@@ -80,6 +98,16 @@ function LivePlayer({
   const { hlsUrl, webrtcUrl, ready, loading: sessionLoading, error: sessionError, retry: retrySession } =
     useLiveSession(cameraId, { profile });
 
+  // Keep the freshest session URLs (with the CURRENT token) in refs. The attach
+  // effect keys on the token-less stream identity (streamKey) so a token-only
+  // renew never re-runs it, but when it DOES run it reads the live token here.
+  const hlsUrlRef = useRef(hlsUrl);
+  const webrtcUrlRef = useRef(webrtcUrl);
+  hlsUrlRef.current = hlsUrl;
+  webrtcUrlRef.current = webrtcUrl;
+  const hlsKey = streamKey(hlsUrl);
+  const webrtcKey = streamKey(webrtcUrl);
+
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const hlsRef = useRef(null);
@@ -99,6 +127,12 @@ function LivePlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return undefined;
+    // Read the freshest session URLs (with live token) from refs. Shadowing the
+    // component-scope hlsUrl/webrtcUrl here means every connect path below uses
+    // the current token, while the effect only RE-RUNS on a real stream-identity
+    // change (streamKey deps) — never on a token-only renew.
+    const hlsUrl = hlsUrlRef.current;
+    const webrtcUrl = webrtcUrlRef.current;
     // Nothing to play yet — session is still being issued.
     if (!hlsUrl && !webrtcUrl) {
       setLoading(true);
@@ -522,7 +556,7 @@ function LivePlayer({
       cleanup();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hlsUrl, webrtcUrl, attach]);
+  }, [hlsKey, webrtcKey, attach]);
 
   // Keep the <video> mute in sync.
   useEffect(() => {
