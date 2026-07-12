@@ -143,11 +143,11 @@ export function Select({ label, options = [], value, onChange, disabled, placeho
             style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, zIndex: 60 }}
             className="max-h-60 overflow-auto rounded-lg border border-card-border bg-card shadow-2xl py-1 animate-fade-in"
           >
-            {options.map((o) => {
+            {options.map((o, i) => {
               const active = String(o.value) === String(value ?? "");
               return (
                 <button
-                  key={o.value}
+                  key={`${o.value ?? ""}-${i}`}
                   type="button"
                   onClick={() => pick(o.value)}
                   className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition ${
