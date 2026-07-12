@@ -40,6 +40,24 @@ const WHEP_MAX_ATTEMPTS = 8;
 const WHEP_RETRY_MS = 2_000;
 const HLS_COLD_RETRIES = 8;
 
+// Silence AbortError rejection NOISE, once, process-wide. When we abort in-flight
+// WHEP fetch(es) / body reads on unmount, Chrome reports the rejection to
+// `unhandledrejection` in the SAME microtask — sometimes BEFORE the awaiting
+// try/catch runs — so Next's dev overlay flashes "Runtime AbortError: LivePlayer
+// unmounted" even though the abort is fully handled and intentional. AbortErrors that
+// reach here are never actionable (they're always deliberate cancellations), so we
+// preventDefault them; every other rejection still surfaces normally. Guarded so it
+// registers a single listener no matter how many LivePlayers mount.
+if (typeof window !== "undefined" && !window.__neubitAbortSwallow) {
+  window.__neubitAbortSwallow = true;
+  window.addEventListener("unhandledrejection", (e) => {
+    const r = e?.reason;
+    if (r && (r.name === "AbortError" || r instanceof DOMException)) {
+      e.preventDefault();
+    }
+  });
+}
+
 // H265→H264 transcode fallback. Chrome's WebRTC can't decode HEVC, so a direct
 // WHEP POST for an H265 camera fails to negotiate (MediaMTX returns 400). We then
 // retry ONCE against the transcoded variant — the same WHEP URL with "/h264"
