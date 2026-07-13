@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, PageHeader } from "@/components/ui/kit";
+import { Button, ConfirmDialog } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, titleize } from "@/lib/format";
@@ -79,16 +79,10 @@ export default function NvrPage() {
 
   return (
     <div>
-      <PageHeader
-        title="NVR / Recorders"
-        subtitle="Onboard multi-brand recorders and map their channels to cameras."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>Discover</Button>
-            <Button variant="success" icon="heroicons-outline:plus" onClick={() => setAddOpen(true)}>Add NVR</Button>
-          </div>
-        }
-      />
+      <div className="mb-4 flex items-center justify-end gap-2">
+        <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>Discover</Button>
+        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setAddOpen(true)}>Add NVR</Button>
+      </div>
 
       <MasterDetail
         gridCols="lg:grid-cols-[24rem_1fr]"
