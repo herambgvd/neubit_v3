@@ -24,8 +24,11 @@ const ACCENT = "#10b981"; // emerald — the single restrained accent
 /* Shared live clock — one interval, shared across children via prop.  */
 /* ------------------------------------------------------------------ */
 function useClock() {
-  const [now, setNow] = useState(() => new Date());
+  // Start null so SSR + first client render agree (no wall-clock in the HTML) —
+  // the real time is set only AFTER mount, avoiding a hydration mismatch.
+  const [now, setNow] = useState(null);
   useEffect(() => {
+    setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
@@ -33,6 +36,7 @@ function useClock() {
 }
 
 function fmtTime(d) {
+  if (!d) return "--:--:--"; // pre-mount placeholder (matches server render)
   return d.toLocaleTimeString("en-GB", { hour12: false });
 }
 
