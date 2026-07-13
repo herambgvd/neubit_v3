@@ -130,13 +130,13 @@ export default function CameraDetailView({
         </div>
       </div>
 
-      {/* Body */}
-      <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="mb-3" />
+      {/* Body — a flex column that fills the pane. Tabs stay fixed; the tab CONTENT
+          gets the remaining height. View fills it (player letterboxes via
+          object-contain → NO scroll); config/maintenance scroll internally. */}
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-3">
+        <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="mb-3 shrink-0" />
         {tab === "view" ? (
-          // Cap the 16:9 player by WIDTH so its height never exceeds the visible
-          // body — the View tab fits without scrolling (max-w = availHeight*16/9).
-          <div className="mx-auto aspect-video w-full max-w-[calc((100dvh-18rem)*16/9)] overflow-hidden rounded-lg border border-card-border bg-black">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-card-border bg-black">
             <LivePlayer
               cameraId={camera.id}
               cameraName={camera.name}
@@ -146,23 +146,27 @@ export default function CameraDetailView({
             />
           </div>
         ) : tab === "device" ? (
-          <DeviceMaintenance cameraId={camera.id} cameraName={camera.name} camera={camera} />
+          <div className="scroll-themed min-h-0 flex-1 overflow-y-auto">
+            <DeviceMaintenance cameraId={camera.id} cameraName={camera.name} camera={camera} />
+          </div>
         ) : (
-          <CameraConfigForm
-            tab={tab}
-            form={form}
-            set={set}
-            errors={errors}
-            sites={sites}
-            floors={floors}
-            zones={zones}
-            isEdit
-            cameraId={camera.id}
-            cameraName={camera.name}
-            onManualStart={() => startRec.mutate()}
-            onManualStop={() => stopRec.mutate()}
-            manualPending={startRec.isPending || stopRec.isPending}
-          />
+          <div className="scroll-themed min-h-0 flex-1 overflow-y-auto">
+            <CameraConfigForm
+              tab={tab}
+              form={form}
+              set={set}
+              errors={errors}
+              sites={sites}
+              floors={floors}
+              zones={zones}
+              isEdit
+              cameraId={camera.id}
+              cameraName={camera.name}
+              onManualStart={() => startRec.mutate()}
+              onManualStop={() => stopRec.mutate()}
+              manualPending={startRec.isPending || stopRec.isPending}
+            />
+          </div>
         )}
       </div>
     </div>
