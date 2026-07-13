@@ -88,17 +88,17 @@ export default function CameraDetailView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-card-border px-5 py-3.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-card-border bg-hover text-muted">
-            <Icon icon="heroicons-outline:video-camera" className="text-base" />
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-card-border px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-card-border bg-hover text-muted">
+            <Icon icon="heroicons-outline:video-camera" className="text-sm" />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="truncate text-base font-semibold text-foreground">{camera.name}</h2>
+              <h2 className="truncate text-sm font-semibold text-foreground">{camera.name}</h2>
               <CodecBadge camera={camera} />
             </div>
-            <p className="truncate font-mono text-[11px] text-muted">
+            <p className="truncate font-mono text-[10px] text-muted">
               {cameraIp}
               {camera.nvr_id ? " · NVR channel" : ""}
             </p>
@@ -131,8 +131,8 @@ export default function CameraDetailView({
       </div>
 
       {/* Body */}
-      <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="mb-4" />
+      <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="mb-3" />
         {tab === "view" ? (
           <div className="aspect-video w-full overflow-hidden rounded-lg border border-card-border bg-black">
             <LivePlayer

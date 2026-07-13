@@ -179,29 +179,29 @@ export default function CamerasPage() {
   };
 
   const fieldCls =
-    "h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted";
+    "h-8 w-full rounded-lg border border-field bg-transparent px-3 text-[13px] text-foreground placeholder:text-muted outline-none focus:border-muted";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Top toolbar — actions only, right-aligned (consistent with NVR / Access). */}
-      <div className="mb-4 flex shrink-0 items-center justify-end gap-2">
-        <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
+      <div className="mb-2.5 flex shrink-0 items-center justify-end gap-2">
+        <Button variant="secondary" className="!py-1.5 !text-[13px]" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
           Discovery
         </Button>
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
+        <Button variant="success" className="!py-1.5 !text-[13px]" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
           Add camera
         </Button>
       </div>
 
       {/* Two-card master/detail */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[24rem_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[22rem_1fr]">
         {/* ── Left: camera list ── */}
         <aside className="flex min-h-0 flex-col rounded-xl border border-card-border bg-card">
-          <header className="flex shrink-0 items-center justify-between border-b border-card-border px-4 py-3">
+          <header className="flex shrink-0 items-center justify-between border-b border-card-border px-3 py-2">
             <div className="flex items-center gap-2">
               <Icon icon="heroicons-outline:video-camera" className="text-sm text-muted" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted">Cameras</span>
-              <span className="rounded-full bg-hover px-2 py-0.5 text-[11px] font-medium text-muted">{statusCounts.total}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Cameras</span>
+              <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] font-medium text-muted">{statusCounts.total}</span>
             </div>
             <button
               onClick={() => { invalidate(); healthQ.refetch(); }}
@@ -212,26 +212,25 @@ export default function CamerasPage() {
             </button>
           </header>
 
-          <div className="flex shrink-0 items-center gap-3 px-4 pt-3 text-xs">
-            <span className="flex items-center gap-1 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{statusCounts.online} online</span>
-            <span className="flex items-center gap-1 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-muted" />{statusCounts.offline} offline</span>
-          </div>
-
-          {/* Filters */}
-          <div className="shrink-0 space-y-2 px-3 pb-3 pt-3">
+          {/* Filters + status counts */}
+          <div className="shrink-0 space-y-1.5 px-2 pb-2 pt-2">
             <label className="relative block">
-              <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-muted" />
+              <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or IP…" className={`${fieldCls} pl-8`} />
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              <Select value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_FILTERS.map((s) => ({ value: s.key, label: s.key === "" ? "All statuses" : s.label }))} className="!h-9 !py-1.5" />
-              <Select value={brand} onChange={(e) => setBrand(e.target.value)} options={BRAND_FILTERS} className="!h-9 !py-1.5" />
+            <div className="grid grid-cols-2 gap-1.5">
+              <Select value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_FILTERS.map((s) => ({ value: s.key, label: s.key === "" ? "All statuses" : s.label }))} className="!h-8 !py-1" />
+              <Select value={brand} onChange={(e) => setBrand(e.target.value)} options={BRAND_FILTERS} className="!h-8 !py-1" />
             </div>
-            <Select value={siteFilter} onChange={(e) => setSiteFilter(e.target.value)} options={[{ value: "", label: "All sites" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]} className="!h-9 !py-1.5" />
+            <Select value={siteFilter} onChange={(e) => setSiteFilter(e.target.value)} options={[{ value: "", label: "All sites" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]} className="!h-8 !py-1" />
+            <div className="flex items-center gap-3 px-0.5 pt-0.5 text-[11px]">
+              <span className="flex items-center gap-1 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{statusCounts.online} online</span>
+              <span className="flex items-center gap-1 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-muted" />{statusCounts.offline} offline</span>
+            </div>
           </div>
 
           {/* List */}
-          <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
             {camerasQ.isLoading ? (
               <div className="px-2 py-8 text-center text-xs text-muted">Loading…</div>
             ) : camerasQ.isError ? (
@@ -241,7 +240,7 @@ export default function CamerasPage() {
                 {search || status || brand || siteFilter ? "No cameras match." : "No cameras yet — click Add camera."}
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {cameras.map((c) => (
                   <CameraListItem
                     key={c.id}
@@ -326,7 +325,7 @@ function CameraListItem({ camera, siteName, selected, bulkChecked, onSelect, onT
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
-      className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 transition ${
+      className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition ${
         selected ? "border-foreground bg-hover" : "border-transparent hover:bg-hover"
       }`}
     >
@@ -339,12 +338,12 @@ function CameraListItem({ camera, siteName, selected, bulkChecked, onSelect, onT
         aria-label={`Select ${camera.name}`}
       />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+        <p className="flex items-center gap-1.5 truncate text-[13px] font-medium text-foreground">
           <StatusDot status={camera.status} />
           <span className="truncate">{camera.name}</span>
           <CodecBadge camera={camera} />
         </p>
-        <p className="truncate font-mono text-[11px] text-muted">
+        <p className="truncate font-mono text-[10px] text-muted">
           {cameraIp(camera)}
           {camera.brand ? ` · ${titleize(camera.brand)}` : ""}
           {siteName ? ` · ${siteName}` : ""}

@@ -74,8 +74,8 @@ export default function AccessControlPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-4 flex shrink-0 items-center justify-end">
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setBrandPickerOpen(true)}>
+      <div className="mb-2.5 flex shrink-0 items-center justify-end">
+        <Button variant="success" className="!py-1.5 !text-[13px]" icon="heroicons-outline:plus" onClick={() => setBrandPickerOpen(true)}>
           Add controller
         </Button>
       </div>

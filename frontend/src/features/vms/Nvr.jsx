@@ -79,9 +79,9 @@ export default function NvrPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-4 flex shrink-0 items-center justify-end gap-2">
-        <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>Discover</Button>
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setAddOpen(true)}>Add NVR</Button>
+      <div className="mb-2.5 flex shrink-0 items-center justify-end gap-2">
+        <Button variant="secondary" className="!py-1.5 !text-[13px]" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>Discover</Button>
+        <Button variant="success" className="!py-1.5 !text-[13px]" icon="heroicons-outline:plus" onClick={() => setAddOpen(true)}>Add NVR</Button>
       </div>
 
       <MasterDetail

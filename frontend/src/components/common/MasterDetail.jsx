@@ -20,7 +20,7 @@ import { Icon } from "@iconify/react";
 export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_1fr]", className = "", fill = false }) {
   return (
     <div
-      className={`grid grid-cols-1 gap-4 ${
+      className={`grid grid-cols-1 gap-3 ${
         fill ? "h-full min-h-0" : "min-h-[70vh]"
       } ${gridCols} ${className}`}
     >
@@ -46,34 +46,34 @@ export function ListPanel({
 }) {
   return (
     <aside className={`flex min-h-0 flex-col rounded-xl border border-card-border bg-card ${className}`}>
-      <header className="flex items-center justify-between border-b border-card-border px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between border-b border-card-border px-3 py-2">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted">{title}</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{title}</span>
           {count != null && (
-            <span className="rounded-full bg-hover px-2 py-0.5 text-[11px] font-medium text-muted">{count}</span>
+            <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] font-medium text-muted">{count}</span>
           )}
         </div>
         {action}
       </header>
 
       {onSearch && (
-        <div className="p-3">
+        <div className="shrink-0 p-2">
           <label className="relative block">
             <Icon
               icon="heroicons-outline:magnifying-glass"
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-muted"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted"
             />
             <input
               value={search}
               onChange={(e) => onSearch(e.target.value)}
               placeholder={searchPlaceholder}
-              className="h-9 w-full rounded-lg border border-field bg-transparent pl-8 pr-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted"
+              className="h-8 w-full rounded-lg border border-field bg-transparent pl-8 pr-3 text-[13px] text-foreground placeholder:text-muted outline-none transition focus:border-muted"
             />
           </label>
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div className="scroll-themed min-h-0 flex-1 overflow-y-auto">{children}</div>
     </aside>
   );
 }
