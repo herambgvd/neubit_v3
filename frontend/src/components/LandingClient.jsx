@@ -244,15 +244,15 @@ export default function LandingPage() {
         .from(".hero-badge", { y: 14, opacity: 0, stagger: 0.06, duration: 0.4 }, "-=0.3")
         .from(".hero-console", { y: 44, opacity: 0, duration: 0.9 }, "-=0.35");
 
-      // ── Parallax: the console drifts + softens as you scroll past the hero ──
+      // ── Parallax: the console drifts GENTLY as you scroll past the hero. No
+      // opacity fade — that was making the console look like it vanished. ───────
       gsap.to(".hero-console", {
-        yPercent: 14,
-        opacity: 0.55,
+        yPercent: 6,
         ease: "none",
         scrollTrigger: {
-          trigger: root.current,
-          start: "top top",
-          end: "65% top",
+          trigger: ".hero-console",
+          start: "top 30%",
+          end: "bottom top",
           scrub: true,
         },
       });
