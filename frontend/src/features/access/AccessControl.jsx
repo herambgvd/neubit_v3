@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog } from "@/components/ui/kit";
+import { ConfirmDialog } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
@@ -74,12 +74,6 @@ export default function AccessControlPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-2.5 flex shrink-0 items-center justify-end">
-        <Button variant="success" className="!py-1.5 !text-[13px]" icon="heroicons-outline:plus" onClick={() => setBrandPickerOpen(true)}>
-          Add controller
-        </Button>
-      </div>
-
       <MasterDetail
         fill
         className="min-h-0 flex-1"
@@ -92,13 +86,22 @@ export default function AccessControlPage() {
             onSearch={setSearch}
             searchPlaceholder="Search name or URL…"
             action={
-              <button
-                onClick={() => qc.invalidateQueries({ queryKey: ["ac-instances"] })}
-                title="Refresh"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
-              >
-                <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => qc.invalidateQueries({ queryKey: ["ac-instances"] })}
+                  title="Refresh"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+                >
+                  <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
+                </button>
+                <button
+                  onClick={() => setBrandPickerOpen(true)}
+                  title="Add controller"
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+                >
+                  <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+                </button>
+              </div>
             }
           >
             <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
