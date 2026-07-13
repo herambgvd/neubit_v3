@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, PageHeader } from "@/components/ui/kit";
+import { Button, ConfirmDialog } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
@@ -74,15 +74,11 @@ export default function AccessControlPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Access Control"
-        subtitle="Onboard and manage access-control controllers (DDS today; pluggable per brand)."
-        actions={
-          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setBrandPickerOpen(true)}>
-            Add controller
-          </Button>
-        }
-      />
+      <div className="mb-4 flex items-center justify-end">
+        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setBrandPickerOpen(true)}>
+          Add controller
+        </Button>
+      </div>
 
       <MasterDetail
         gridCols="lg:grid-cols-[24rem_1fr]"
