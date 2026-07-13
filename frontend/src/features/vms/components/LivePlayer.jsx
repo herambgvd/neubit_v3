@@ -332,19 +332,32 @@ function LivePlayer({
           // `url` is the full WHEP endpoint + already carries "?token=".
           // MediaMTX WHEP CORS only allows Authorization/Content-Type/If-Match
           // — never add extra headers here.
-          const whepFetch = fetch(url, {
+          //
+          // NOTE: the WHEP POST is intentionally NOT aborted on unmount. Aborting
+          // it rejected with an AbortError that Next's dev-overlay unhandledrejection
+          // listener grabbed before our own handlers could — flashing "Runtime
+          // AbortError: LivePlayer unmounted" on every camera switch. The POST is a
+          // quick request; we just let it finish and bail on `disposed`. Cleanup
+          // still tears down the connection (pc.close) + DELETEs the WHEP session.
+          const res = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/sdp" },
             body: pc.localDescription.sdp,
-            signal: whepAbort.signal,
           });
-          // Attach a swallow to the RAW promise so an abort-on-unmount rejection
-          // is never reported as "unhandled" — Chrome fires unhandledrejection in
-          // the same microtask the fetch aborts, BEFORE the await's catch runs, so
-          // the dev overlay would otherwise flash a Runtime AbortError. The await
-          // below still routes genuine errors to the catch normally.
-          whepFetch.catch(() => {});
-          const res = await whepFetch;
+          // Unmounted while the POST was in flight → don't touch a torn-down pc;
+          // reap the just-created session so it doesn't linger.
+          if (disposed) {
+            try {
+              const loc = res.headers.get("Location");
+              if (loc) {
+                const resUrl = new URL(loc, window.location.origin);
+                const tok = new URL(url, window.location.origin).searchParams.get("token");
+                if (tok && !resUrl.searchParams.get("token")) resUrl.searchParams.set("token", tok);
+                fetch(resUrl.toString(), { method: "DELETE", keepalive: true }).catch(() => {});
+              }
+            } catch {}
+            return;
+          }
 
           // 404 = MediaMTX has the path but the RTSP source isn't ready yet
           // (also the transcode ffmpeg spinning up) → keep retrying same url.
