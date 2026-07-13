@@ -38,12 +38,14 @@ export function Field({
   ...control
 }) {
   const errCls = error ? "!border-red-500" : "";
-  // Keep controlled inputs controlled: ANY field with an onChange handler (or an
-  // explicit value prop) is controlled — guarantee it always has a defined value
-  // ("") so React never flips controlled↔uncontrolled, even if a caller passes
-  // value={undefined} or omits value on some renders. (A defined→undefined value
-  // throws the "changing a controlled input to be uncontrolled" warning.)
-  if ((control.onChange !== undefined || "value" in control) && control.value == null) {
+  // Keep controlled inputs controlled. For a value-controlled input/textarea, force
+  // a defined value ("") whenever the caller's value is null/undefined — even a
+  // number field whose value momentarily becomes undefined (e.g. form re-hydrates
+  // on camera switch) would otherwise flip controlled→uncontrolled and warn. A
+  // checkbox/radio uses `checked`, so coerce that to false the same way.
+  if ("checked" in control) {
+    if (control.checked == null) control.checked = false;
+  } else if (as !== "select" && control.value == null) {
     control.value = "";
   }
   return (
