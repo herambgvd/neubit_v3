@@ -183,7 +183,7 @@ function MiniConsole() {
 /* ------------------------------------------------------------------ */
 export default function AuthShell({ eyebrow, title, subtitle, productName = "Neubit", children }) {
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#0a0a0a] text-white antialiased selection:bg-emerald-500/20">
+    <div className="relative h-screen w-full overflow-hidden bg-[#0a0a0a] text-white antialiased selection:bg-emerald-500/20">
       {/* line grid */}
       <div
         aria-hidden
@@ -206,9 +206,9 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
         }}
       />
 
-      <div className="relative z-10 grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
+      <div className="relative z-10 grid h-full lg:grid-cols-[1.05fr_1fr]">
         {/* Brand panel */}
-        <aside className="relative hidden flex-col gap-8 border-r border-white/[0.06] p-10 lg:flex xl:p-14">
+        <aside className="relative hidden h-full min-h-0 flex-col gap-6 overflow-hidden border-r border-white/[0.06] p-10 lg:flex xl:p-12">
           <Link href="/" className="inline-flex shrink-0 items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo/neubit_logo.svg" alt={productName} className="h-8 w-auto invert brightness-0" />
@@ -257,8 +257,9 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
           </div>
         </aside>
 
-        {/* Form panel */}
-        <section className="flex items-center justify-center px-6 py-12 sm:px-10">
+        {/* Form panel — internal scroll fallback only (tiny screens); the PAGE
+            never scrolls (root is h-screen overflow-hidden). */}
+        <section className="flex h-full items-center justify-center overflow-y-auto px-6 py-10 sm:px-10">
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
