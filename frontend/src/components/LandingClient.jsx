@@ -1,12 +1,12 @@
 "use client";
 
-// Landing page — Vercel-dark marketing surface with GSAP-driven motion:
-//   • a hero entrance TIMELINE (eyebrow → headline → copy → CTAs → badges → console),
-//   • ScrollTrigger.batch REVEALS for every section block as it enters the viewport,
-//   • a scrubbed PARALLAX on the live console as you scroll past the hero.
-// The live command-and-control console (ConsoleHero) keeps its own Framer Motion
-// loops (video-wall shimmer, event feed, radar, count-ups) — GSAP owns page-level
-// entrance + scroll; Framer owns the always-on micro-animation inside the console.
+// Landing page — ground-up rebuild in a Verkada-class enterprise pattern, kept on
+// our dark command-center identity. Structure: sticky glass nav → product-forward
+// hero (live console in an app-window frame) → sectors trust strip → one-platform
+// suite → alternating feature deep-dives → count-up stats band → industries →
+// security & compliance → CTA → multi-column footer. Motion is GSAP: a hero
+// entrance timeline, ScrollTrigger.batch reveals, count-ups, and a gentle console
+// drift. The live console keeps its own Framer loops inside ConsoleHero.
 import Link from "next/link";
 import { useRef } from "react";
 import { gsap } from "gsap";
@@ -17,263 +17,287 @@ import {
   Activity,
   Boxes,
   Cable,
+  Check,
   Cloud,
   Cpu,
   Eye,
   Fingerprint,
   Flame,
-  GitBranch,
   Globe2,
+  KeyRound,
   LayoutGrid,
+  Lock,
   Network,
   Radar,
-  ServerCog,
+  ScrollText,
   ShieldCheck,
-  Siren,
   Sparkles,
   Workflow,
   Zap,
-  Check,
 } from "lucide-react";
 
 import ConsoleHero from "@/components/landing/ConsoleHero";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-/* Single restrained accent — emerald, used only for live/status/CTA. */
 const ACCENT = "#10b981";
 
 const NAV = [
-  ["#what", "Platform"],
-  ["#how", "How it works"],
-  ["#architecture", "Architecture"],
-  ["#use-cases", "Use cases"],
-  ["#why-neubit", "Why Neubit"],
+  ["#platform", "Platform"],
+  ["#features", "How it works"],
+  ["#industries", "Industries"],
+  ["#security", "Security"],
+  ["#why", "Why Neubit"],
 ];
 
 const PILLARS = [
-  { icon: Eye, label: "Video Surveillance" },
-  { icon: Fingerprint, label: "Access Control" },
-  { icon: Radar, label: "Intrusion Detection" },
-  { icon: Flame, label: "Fire & Life Safety" },
-  { icon: Sparkles, label: "AI Video Analytics" },
-  { icon: Workflow, label: "Workflow & BI" },
+  { icon: Eye, label: "Video Surveillance", body: "Unified live + recorded video across every site and NVR." },
+  { icon: Fingerprint, label: "Access Control", body: "Doors, cardholders and schedules on one control plane." },
+  { icon: Radar, label: "Intrusion Detection", body: "Sensors and perimeter events correlated in real time." },
+  { icon: Flame, label: "Fire & Life Safety", body: "Panels and alarms wired into coordinated response." },
+  { icon: Sparkles, label: "AI Video Analytics", body: "Turn footage into events — search, counting, alerts." },
+  { icon: Workflow, label: "Workflow & BI", body: "Automate multi-step response and report on everything." },
 ];
 
-const IMPACTS = [
-  ["Eliminate", "manual coordination between systems and teams"],
-  ["Standardize", "operations across sites and environments"],
-  ["Improve", "compliance, audit readiness, and reporting visibility"],
-  ["Scale", "operations without increasing operational complexity"],
+const SECTORS = [
+  "Smart Cities",
+  "Airports & Transit",
+  "Manufacturing",
+  "Government",
+  "Enterprise",
+  "Critical Infrastructure",
 ];
 
-const FLOW = [
-  { step: "01", title: "Input", body: "Cameras, sensors, access panels, fire systems, IoT devices.", icon: Cable },
-  { step: "02", title: "Orchestration", body: "Event-driven processing engine with workflow automation.", icon: GitBranch },
-  { step: "03", title: "Action", body: "Alerts, automated system triggers, dashboards, reporting.", icon: Zap },
+const FEATURES = [
+  {
+    eyebrow: "See everything, live",
+    title: "One operational view across every system and site.",
+    body:
+      "Replace a wall of disconnected dashboards with a single command surface — live video, access, intrusion and fire, correlated on one screen for every location.",
+    points: ["Multi-site video wall + patterns", "Live health across cameras & NVRs", "Spotlight, tour and shared control-room walls"],
+    visual: "wall",
+  },
+  {
+    eyebrow: "Act, don't just alert",
+    title: "Every event triggers the right action — instantly.",
+    body:
+      "An event-driven engine correlates detections and runs coordinated, multi-step responses across systems: raise an incident, cue cameras, notify the right people, log it all.",
+    points: ["Visual SOP + workflow automation", "Cross-system linkage rules", "Incidents with full situational context"],
+    visual: "flow",
+  },
+  {
+    eyebrow: "Command from anywhere",
+    title: "Centralized control across cities, sites and clients.",
+    body:
+      "Run one facility or hundreds from a single layer — multi-tenant, resilient, and deployable in cloud, hybrid or fully on-premise for regulated environments.",
+    points: ["Multi-site, multi-tenant control", "Cloud · hybrid · sovereign on-prem", "High-availability, horizontal scale"],
+    visual: "map",
+  },
 ];
 
-const ARCHITECTURE = [
-  { icon: ShieldCheck, title: "Unified Management System", body: "Identity, governance, and control across the estate." },
-  { icon: ServerCog, title: "API Gateway", body: "Secure, centralized access layer for every subsystem." },
-  { icon: Boxes, title: "Subsystem Modules", body: "Video, access, intrusion, fire, and analytics — independent yet integrated." },
-  { icon: Network, title: "Event Bus", body: "Real-time system-to-system communication backbone." },
-  { icon: Cpu, title: "Data & Intelligence", body: "Operational state, history, and decision insights." },
+const STATS = [
+  { to: 512, label: "Cameras per node", fmt: (v) => Math.round(v).toLocaleString() },
+  { to: 24, label: "Sites unified", fmt: (v) => Math.round(v) },
+  { to: 1.8, label: "Avg response (s)", fmt: (v) => v.toFixed(1) },
+  { to: 99.99, label: "Uptime target %", fmt: (v) => v.toFixed(2) },
 ];
 
-const CAPABILITIES = [
-  { icon: LayoutGrid, title: "Single Operational View", body: "Eliminate multiple dashboards — complete visibility across systems and locations." },
-  { icon: Workflow, title: "Automated Cross-System Response", body: "Trigger coordinated, multi-step actions across video, access, fire, and alerts instantly." },
-  { icon: Activity, title: "Real-Time Decision Intelligence", body: "Convert live events into actionable outcomes — not just notifications." },
-  { icon: Cable, title: "Seamless Integration", body: "Work with existing infrastructure — no rip-and-replace required." },
-  { icon: Globe2, title: "Centralized Multi-Site Control", body: "Manage multiple facilities, cities, or clients from one command layer." },
-  { icon: Cloud, title: "Flexible Deployment", body: "Cloud, hybrid, or fully on-premise environments." },
+const INDUSTRIES = [
+  ["Smart Cities", "Safe-city programs and metropolitan command centers.", Globe2],
+  ["Airports & Transit", "Aviation, rail and transportation infrastructure.", Network],
+  ["Manufacturing", "Industrial operations and facility security.", Boxes],
+  ["Government", "Command centers and critical agencies.", ShieldCheck],
+  ["Enterprise", "Distributed corporate security operations.", LayoutGrid],
+  ["Critical Infrastructure", "Utilities, energy and regulated environments.", Cpu],
 ];
 
-const MODULES = [
-  "Video Management System (VMS)",
-  "Access Control Integration",
-  "Intrusion Detection",
-  "Fire & Life Safety Systems",
-  "AI Video Analytics Engine",
-  "Workflow Automation Engine",
-  "Business Intelligence & Reporting",
-];
-
-const COMPARISON = [
-  ["Operating model", "Reactive monitoring", "System-driven execution"],
-  ["Systems", "Disconnected dashboards", "Unified control layer"],
-  ["Response", "Manual coordination", "Automated, multi-system actions"],
-  ["Output", "Alerts & notifications", "Coordinated decisions"],
-  ["Scale", "Linear with headcount", "Horizontal across sites"],
-];
-
-const USE_CASES = [
-  ["Smart Cities", "Safe-city programs and metropolitan command centers."],
-  ["Airports & Transit", "Aviation, rail, and transportation infrastructure."],
-  ["Manufacturing", "Industrial operations and facility security."],
-  ["Government", "Command centers and critical agencies."],
-  ["Enterprise", "Distributed corporate security operations."],
-  ["Critical Infrastructure", "Utilities, energy, and regulated environments."],
-];
-
-const RESPONSE_STEPS = [
-  "Detection captured instantly",
-  "Event processed through the platform",
-  "Workflow triggers predefined response logic",
-  "Multiple systems act simultaneously",
-  "Operators receive full, real-time situational context",
-];
-
-const INTEGRATIONS = [
-  "CCTV & Video Infrastructure",
-  "Access Control Systems",
-  "Fire & Alarm Panels",
-  "IoT Devices & Sensors",
-  "Enterprise Systems via APIs & Webhooks",
-];
-
-const DEPLOYMENTS = [
-  { tag: "Cloud", title: "SaaS", body: "Rapid deployment, managed scale." },
-  { tag: "Hybrid", title: "Edge + Cloud", body: "Edge performance with centralized control." },
-  { tag: "On-Premise", title: "Sovereign", body: "Full control for regulated environments." },
+const SECURITY = [
+  { icon: Lock, label: "Encryption at rest & in transit" },
+  { icon: KeyRound, label: "RBAC + 2FA / SSO / LDAP" },
+  { icon: ScrollText, label: "Append-only audit trail" },
+  { icon: ShieldCheck, label: "Tamper-proof signed export" },
+  { icon: Cloud, label: "Sovereign on-prem option" },
+  { icon: Activity, label: "Four-eyes dual authorization" },
 ];
 
 const WHY = [
   "Replace siloed systems with a unified control architecture",
-  "Automate response without increasing operational complexity",
+  "Automate response without adding operational complexity",
   "Enable real-time, system-driven decision execution",
-  "Maintain flexibility across deployment and infrastructure",
+  "Stay flexible across deployment and infrastructure",
   "Future-proof operations with a scalable, extensible platform",
+  "Keep full ownership of your data and video",
+];
+
+const FOOTER = [
+  ["Platform", [["Video Surveillance", "#platform"], ["Access Control", "#platform"], ["Intrusion & Fire", "#platform"], ["Workflow & BI", "#platform"]]],
+  ["Solutions", [["Smart Cities", "#industries"], ["Airports & Transit", "#industries"], ["Enterprise", "#industries"], ["Government", "#industries"]]],
+  ["Company", [["Why Neubit", "#why"], ["Security", "#security"], ["Book a demo", "#cta"], ["Sign in", "/login"]]],
 ];
 
 /* ------------------------------------------------------------------ */
-/* Reusable primitives                                                 */
+/* Shared bits                                                         */
 /* ------------------------------------------------------------------ */
-
-/** Dotted-grid + radial-glow backdrop shared by sections. */
-function GridBackdrop({ glow = false }) {
+function Eyebrow({ children, className = "" }) {
   return (
-    <>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.6]"
-        style={{
-          backgroundImage:
-            "radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px)",
-          backgroundSize: "26px 26px",
-          maskImage:
-            "radial-gradient(ellipse 80% 70% at 50% 40%, black 30%, transparent 85%)",
-        }}
-      />
-      {glow && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(700px 340px at 78% 8%, rgba(16,185,129,0.10), transparent 60%)," +
-              "radial-gradient(700px 340px at 12% 90%, rgba(255,255,255,0.035), transparent 60%)",
-          }}
-        />
-      )}
-    </>
-  );
-}
-
-/** Section — cohesive dark tones; `tone` only shifts the near-black shade. */
-function Section({ id, tone = "base", children }) {
-  const bg = tone === "raised" ? "bg-[#0d0d0f]" : "bg-[#0a0a0a]";
-  return (
-    <section id={id} className={`relative ${bg} text-white`}>
-      <GridBackdrop />
-      <div className="relative mx-auto max-w-7xl px-6 py-24 lg:py-28">{children}</div>
-    </section>
-  );
-}
-
-function Eyebrow({ children }) {
-  return (
-    <div className="inline-flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-white/45">
+    <div className={`inline-flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-white/45 ${className}`}>
       <span className="h-1 w-1 rounded-full" style={{ background: ACCENT }} />
       {children}
     </div>
   );
 }
 
-// The `reveal` class is what GSAP's ScrollTrigger.batch animates into view.
-function SectionHeading({ eyebrow, title, description, center = true }) {
+const cardBase =
+  "rounded-2xl border border-white/[0.08] bg-white/[0.02] transition-[transform,border-color,background-color] duration-300 hover:-translate-y-1 hover:border-white/[0.16]";
+
+// Browser/app chrome frame around the live console — makes the product feel real.
+function AppWindow({ children }) {
   return (
-    <div className={`reveal max-w-3xl ${center ? "mx-auto text-center" : ""}`}>
-      <div className={center ? "flex justify-center" : ""}>
-        <Eyebrow>{eyebrow}</Eyebrow>
+    <div className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#0b0b0d] shadow-[0_50px_140px_-40px_rgba(0,0,0,0.95)]">
+      <div className="flex items-center gap-3 border-b border-white/[0.07] bg-white/[0.02] px-4 py-2.5">
+        <div className="flex gap-1.5">
+          {["#ff5f57", "#febc2e", "#28c840"].map((c) => (
+            <span key={c} className="h-2.5 w-2.5 rounded-full" style={{ background: c, opacity: 0.6 }} />
+          ))}
+        </div>
+        <div className="mx-auto flex items-center gap-2 rounded-md bg-white/[0.04] px-3 py-1 font-mono text-[10px] text-white/40">
+          <Lock className="h-2.5 w-2.5" />
+          neubit.command/live
+        </div>
+        <span className="hidden font-mono text-[10px] text-white/30 sm:block">C2</span>
       </div>
-      <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-[2.9rem] lg:leading-[1.1]">
-        {title}
-      </h2>
-      {description && (
-        <p className="mt-5 text-lg leading-relaxed text-white/55">{description}</p>
-      )}
+      {children}
     </div>
   );
 }
 
-/* Card shell — thin border, hover lift + accent edge. */
-const cardBase =
-  "rounded-xl border border-white/[0.08] bg-white/[0.015] transition-[transform,border-color,background-color] duration-300 hover:-translate-y-1 hover:border-white/[0.16]";
+/* Feature-row visuals — lightweight framed panels (CSS/SVG, no framer). */
+function FeatureVisual({ kind }) {
+  if (kind === "wall") {
+    return (
+      <div className="rounded-xl border border-white/[0.08] bg-[#08080a] p-3">
+        <div className="grid grid-cols-3 gap-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="relative aspect-video overflow-hidden rounded-md border border-white/[0.06] bg-gradient-to-br from-[#161619] to-[#0a0a0b]">
+              <span className="absolute left-1.5 top-1.5 flex items-center gap-1">
+                <span className="h-1 w-1 animate-pulse rounded-full" style={{ background: ACCENT }} />
+                <span className="font-mono text-[6px] tracking-wider text-white/50">LIVE</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (kind === "flow") {
+    const rows = [
+      ["#f59e0b", "MOTION", "Gate 3"],
+      ["#ef4444", "INTRUSION", "Perimeter"],
+      ["#10b981", "ACCESS", "Lobby"],
+    ];
+    return (
+      <div className="rounded-xl border border-white/[0.08] bg-[#08080a] p-4">
+        <div className="space-y-2">
+          {rows.map(([c, tag, loc]) => (
+            <div key={tag} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: c, boxShadow: `0 0 6px ${c}` }} />
+              <span className="font-mono text-[11px] text-white/70">{tag}</span>
+              <span className="ml-auto font-mono text-[10px] text-white/40">{loc}</span>
+            </div>
+          ))}
+        </div>
+        <div className="my-3 flex items-center justify-center text-white/30">
+          <div className="h-4 w-px bg-white/15" />
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border px-3 py-2.5" style={{ borderColor: `${ACCENT}44`, background: "rgba(16,185,129,0.06)" }}>
+          <Zap className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+          <span className="font-mono text-[11px]" style={{ color: ACCENT }}>WORKFLOW → incident · cue cameras · notify</span>
+        </div>
+      </div>
+    );
+  }
+  // map
+  const blips = [[30, 40], [64, 28], [76, 66], [46, 72], [58, 50]];
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-[#08080a] p-4">
+      <svg viewBox="0 0 100 72" className="h-full w-full">
+        {[46, 32, 18].map((r) => (
+          <circle key={r} cx="50" cy="40" r={r * 0.7} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="0.3" />
+        ))}
+        {blips.map(([x, y], i) => (
+          <g key={i}>
+            <line x1="50" y1="40" x2={x} y2={y} stroke="rgba(16,185,129,0.25)" strokeWidth="0.3" />
+            <circle cx={x} cy={y} r="1.4" fill={i === 3 ? "#ef4444" : ACCENT} />
+          </g>
+        ))}
+        <circle cx="50" cy="40" r="2" fill={ACCENT} />
+      </svg>
+      <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-white/40">
+        <span>SITES · 24</span>
+        <span className="flex items-center gap-1"><span className="h-1 w-1 rounded-full" style={{ background: ACCENT }} /> all reporting</span>
+      </div>
+    </div>
+  );
+}
 
+/* ------------------------------------------------------------------ */
 export default function LandingPage() {
   const root = useRef(null);
 
   useGSAP(
     () => {
-      // Respect reduced-motion: reveal everything instantly, skip the choreography.
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (reduce) {
         gsap.set(".reveal", { opacity: 1, y: 0 });
         return;
       }
 
-      // ── Hero entrance timeline ──────────────────────────────────────────
       const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
       tl.from(".hero-eyebrow", { y: 20, opacity: 0, duration: 0.6 })
         .from(".hero-title", { y: 30, opacity: 0, duration: 0.75 }, "-=0.3")
         .from(".hero-sub", { y: 20, opacity: 0, duration: 0.6 }, "-=0.45")
-        .from(".hero-note", { y: 16, opacity: 0, duration: 0.5 }, "-=0.45")
         .from(".hero-cta", { y: 16, opacity: 0, duration: 0.5 }, "-=0.4")
-        .from(".hero-badge", { y: 14, opacity: 0, stagger: 0.06, duration: 0.4 }, "-=0.3")
-        .from(".hero-console", { y: 44, opacity: 0, duration: 0.9 }, "-=0.35");
+        .from(".hero-badge", { y: 14, opacity: 0, stagger: 0.05, duration: 0.4 }, "-=0.3")
+        .from(".hero-window", { y: 48, opacity: 0, duration: 0.95 }, "-=0.3");
 
-      // ── Parallax: the console drifts GENTLY as you scroll past the hero. No
-      // opacity fade — that was making the console look like it vanished. ───────
-      gsap.to(".hero-console", {
-        yPercent: 6,
+      // Gentle console drift (no opacity fade — it must never look like it vanished).
+      gsap.to(".hero-window", {
+        yPercent: 5,
         ease: "none",
-        scrollTrigger: {
-          trigger: ".hero-console",
-          start: "top 30%",
-          end: "bottom top",
-          scrub: true,
-        },
+        scrollTrigger: { trigger: ".hero-window", start: "top 20%", end: "bottom top", scrub: true },
       });
 
-      // ── Section reveals — batch each `.reveal` as it enters the viewport ──
       gsap.set(".reveal", { opacity: 0, y: 26 });
       ScrollTrigger.batch(".reveal", {
         start: "top 88%",
         once: true,
         onEnter: (els) =>
-          gsap.to(els, {
-            opacity: 1,
-            y: 0,
-            duration: 0.6,
-            ease: "power2.out",
-            stagger: 0.08,
-            overwrite: true,
-          }),
+          gsap.to(els, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out", stagger: 0.08, overwrite: true }),
       });
 
-      // First paint may land mid-scroll (deep link / refresh) — sync triggers.
+      // Count-up stats on enter.
+      gsap.utils.toArray(".stat-num").forEach((el) => {
+        const to = parseFloat(el.dataset.to);
+        const dec = parseInt(el.dataset.dec || "0", 10);
+        const obj = { v: 0 };
+        ScrollTrigger.create({
+          trigger: el,
+          start: "top 90%",
+          once: true,
+          onEnter: () =>
+            gsap.to(obj, {
+              v: to,
+              duration: 1.6,
+              ease: "power2.out",
+              onUpdate: () => {
+                el.textContent = dec
+                  ? obj.v.toFixed(dec)
+                  : Math.round(obj.v).toLocaleString();
+              },
+            }),
+        });
+      });
+
       ScrollTrigger.refresh();
     },
     { scope: root },
@@ -281,18 +305,37 @@ export default function LandingPage() {
 
   return (
     <div ref={root} className="min-h-screen bg-[#0a0a0a] text-white antialiased selection:bg-emerald-500/20">
-      {/* ============================= HERO ============================= */}
-      <section className="relative overflow-hidden bg-[#0a0a0a]">
-        {/* grid + radial glows */}
+      {/* ── Sticky glass nav ── */}
+      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#0a0a0a]/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+          <Link href="/" className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-7 w-auto invert brightness-0" />
+          </Link>
+          <nav className="hidden items-center gap-8 text-sm text-white/55 md:flex">
+            {NAV.map(([href, label]) => (
+              <a key={href} href={href} className="transition-colors hover:text-white">{label}</a>
+            ))}
+          </nav>
+          <div className="flex items-center gap-3">
+            <Link href="/login" className="hidden text-sm text-white/60 transition-colors hover:text-white sm:inline">Sign in</Link>
+            <Link href="#cta" className="inline-flex items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-white/90">
+              Book a Demo <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Hero ── */}
+      <section className="relative overflow-hidden">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-[0.7]"
           style={{
             backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px)",
+              "linear-gradient(rgba(255,255,255,0.026) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.026) 1px, transparent 1px)",
             backgroundSize: "56px 56px",
-            maskImage:
-              "radial-gradient(ellipse 90% 80% at 50% 0%, black 40%, transparent 90%)",
+            maskImage: "radial-gradient(ellipse 90% 80% at 50% 0%, black 40%, transparent 90%)",
           }}
         />
         <div
@@ -300,469 +343,269 @@ export default function LandingPage() {
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(800px 460px at 85% -8%, rgba(16,185,129,0.14), transparent 60%)," +
-              "radial-gradient(760px 420px at -8% 24%, rgba(255,255,255,0.04), transparent 60%)",
+              "radial-gradient(900px 500px at 50% -12%, rgba(16,185,129,0.14), transparent 60%)," +
+              "radial-gradient(700px 420px at 12% 20%, rgba(255,255,255,0.035), transparent 60%)",
           }}
         />
+        <div className="relative mx-auto max-w-7xl px-6 pt-20 pb-16 text-center lg:pt-24">
+          <div className="hero-eyebrow flex justify-center">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }} />
+              UNIFIED COMMAND &amp; CONTROL PLATFORM
+            </div>
+          </div>
 
-        {/* NAV */}
-        <header className="relative z-20 border-b border-white/[0.06]">
-          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-            <Link href="/" className="flex items-center gap-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-7 w-auto invert brightness-0" />
+          <h1 className="hero-title mx-auto mt-7 max-w-4xl text-[3.1rem] font-semibold leading-[1.02] tracking-tight sm:text-6xl lg:text-[4.6rem]">
+            Command. Control. <span style={{ color: ACCENT }}>Intelligence.</span>
+          </h1>
+          <p className="hero-sub mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-white/55">
+            The intelligence layer for enterprise physical security. Unify video, access, intrusion,
+            fire and analytics into one operational layer — where every event triggers the right
+            action, instantly.
+          </p>
+
+          <div className="hero-cta mt-9 flex flex-wrap items-center justify-center gap-3">
+            <Link href="#cta" className="inline-flex items-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-medium text-black transition-colors hover:bg-white/90">
+              Book a Demo <ArrowRight className="h-4 w-4" />
             </Link>
-            <nav className="hidden items-center gap-8 text-sm text-white/55 md:flex">
-              {NAV.map(([href, label]) => (
-                <a key={href} href={href} className="transition-colors hover:text-white">
-                  {label}
-                </a>
-              ))}
-            </nav>
-            <div className="flex items-center gap-3">
-              <Link href="/login" className="hidden text-sm text-white/60 transition-colors hover:text-white sm:inline">
-                Sign in
-              </Link>
-              <Link
-                href="#cta"
-                className="inline-flex items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-white/90"
-              >
-                Book a Demo <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        <div className="relative z-10 mx-auto max-w-7xl px-6 pt-16 pb-24 lg:pt-20 lg:pb-28">
-          {/* Centered headline block */}
-          <div className="mx-auto max-w-4xl text-center">
-            <div className="hero-eyebrow flex justify-center">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur">
-                <span
-                  className="h-1.5 w-1.5 animate-pulse rounded-full"
-                  style={{ background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
-                />
-                UNIFIED COMMAND &amp; CONTROL PLATFORM
-              </div>
-            </div>
-
-            <h1 className="hero-title mt-7 text-[3.1rem] font-semibold leading-[1.02] tracking-tight sm:text-6xl lg:text-[4.6rem]">
-              Command. Control.{" "}
-              <span style={{ color: ACCENT }}>Intelligence.</span>
-            </h1>
-
-            <p className="hero-sub mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-white/55">
-              The intelligence layer for enterprise command &amp; control. Unify video, access,
-              intrusion, fire, and analytics into a single operational layer — where every event
-              triggers the right action instantly.
-            </p>
-
-            <p className="hero-note mt-4 font-mono text-sm text-white/40">
-              Not a dashboard. <span className="text-white">A decision execution system.</span>
-            </p>
-
-            <div className="hero-cta mt-9 flex flex-wrap items-center justify-center gap-3">
-              <Link
-                href="#cta"
-                className="inline-flex items-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-medium text-black transition-colors hover:bg-white/90"
-              >
-                Book a Demo <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="#cta"
-                className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.02] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white/[0.06]"
-              >
-                Talk to an Expert
-              </Link>
-            </div>
-
-            {/* Capability pillars as badges */}
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-2.5">
-              {PILLARS.map(({ icon: Icon, label }) => (
-                <span
-                  key={label}
-                  className="hero-badge inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.025] px-3.5 py-1.5 font-mono text-xs text-white/65 backdrop-blur transition-colors hover:border-white/[0.2] hover:text-white"
-                >
-                  <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} />
-                  {label}
-                </span>
-              ))}
-            </div>
+            <Link href="#features" className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.02] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white/[0.06]">
+              See how it works
+            </Link>
           </div>
 
-          {/* Full-width live console */}
-          <div className="hero-console mx-auto mt-16 max-w-6xl lg:mt-20">
-            <ConsoleHero />
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
+            {PILLARS.map(({ icon: Icon, label }) => (
+              <span key={label} className="hero-badge inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.025] px-3 py-1.5 font-mono text-[11px] text-white/60 backdrop-blur">
+                <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+                {label}
+              </span>
+            ))}
+          </div>
+
+          {/* Product, framed */}
+          <div className="hero-window mx-auto mt-16 max-w-6xl">
+            <AppWindow>
+              <ConsoleHero />
+            </AppWindow>
           </div>
         </div>
       </section>
 
-      {/* ========================= POSITIONING ========================= */}
-      <Section id="positioning" tone="base">
-        <div className="reveal mx-auto max-w-4xl text-center">
-          <div className="flex justify-center">
-            <Eyebrow>Positioning</Eyebrow>
-          </div>
-          <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.9rem] lg:leading-[1.1]">
-            Fragmented systems don&apos;t fail technically — they fail{" "}
-            <span style={{ color: ACCENT }}>operationally.</span>
-          </h2>
-          <p className="mt-6 text-lg leading-relaxed text-white/55">
-            Disconnected tools, delayed response, and manual coordination create risk at scale. Neubit
-            replaces passive monitoring with active, system-driven operations — a unified, event-driven
-            control layer where systems respond together, in real time, without human dependency.
+      {/* ── Sectors trust strip ── */}
+      <section className="border-y border-white/[0.06] bg-[#0c0c0e]">
+        <div className="mx-auto max-w-7xl px-6 py-8">
+          <p className="reveal text-center font-mono text-[11px] uppercase tracking-[0.2em] text-white/35">
+            Built for high-responsibility environments
           </p>
-        </div>
-      </Section>
-
-      {/* ========================= WHAT IS NEUBIT ====================== */}
-      <Section id="what" tone="raised">
-        <SectionHeading
-          eyebrow="What is Neubit"
-          title="A unified command & control platform."
-          description="Neubit consolidates your entire physical security and operational ecosystem into a single, intelligent control interface."
-        />
-        <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {PILLARS.map(({ icon: Icon, label }) => (
-            <div key={label} className={`reveal group ${cardBase} p-6`}>
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]"
-                style={{ color: ACCENT }}
-              >
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="mt-4 text-base font-medium text-white">{label}</div>
-              <div className="mt-1 font-mono text-xs text-white/40">Integrated · Coordinated · Acted upon</div>
-            </div>
-          ))}
-        </div>
-        <p className="reveal mx-auto mt-10 max-w-2xl text-center text-sm text-white/45">
-          Instead of switching between systems, your entire operation runs through one platform — where
-          every event is captured, correlated, and acted upon instantly.
-        </p>
-      </Section>
-
-      {/* ========================= BUSINESS IMPACT ===================== */}
-      <Section id="impact" tone="base">
-        <SectionHeading
-          eyebrow="Business Impact"
-          title="What this means for your organization."
-          description="Reduce response time, improve coordination, and enable real-time control."
-        />
-        <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2">
-          {IMPACTS.map(([verb, body]) => (
-            <div key={verb} className="reveal bg-[#0a0a0a] p-8">
-              <div className="font-mono text-xs font-medium uppercase tracking-[0.18em]" style={{ color: ACCENT }}>
-                {verb}
-              </div>
-              <div className="mt-2 text-lg text-white/85">{body}</div>
-            </div>
-          ))}
-        </div>
-        <p className="reveal mt-10 text-center text-base text-white/55">
-          Neubit turns operational data into <span className="font-medium text-white">real-time execution capability.</span>
-        </p>
-      </Section>
-
-      {/* ========================= HOW IT WORKS ======================== */}
-      <Section id="how" tone="raised">
-        <SectionHeading
-          eyebrow="How Neubit Works"
-          title="From detection to decision — instantly."
-          description="Input → Orchestration → Action. Every event flows through a centralized event backbone, ensuring immediate correlation and coordinated response."
-        />
-        <div className="mt-14 grid gap-4 lg:grid-cols-3">
-          {FLOW.map(({ step, title, body, icon: Icon }, i) => (
-            <div key={step} className={`reveal relative ${cardBase} p-7`}>
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs" style={{ color: ACCENT }}>{step}</span>
-                <Icon className="h-5 w-5" style={{ color: ACCENT }} />
-              </div>
-              <div className="mt-6 text-xl font-medium text-white">{title}</div>
-              <div className="mt-2 text-sm leading-relaxed text-white/55">{body}</div>
-              {i < FLOW.length - 1 && (
-                <div
-                  className="absolute right-[-18px] top-1/2 hidden h-px w-9 lg:block"
-                  style={{ background: `linear-gradient(90deg, ${ACCENT}88, transparent)` }}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* ========================= ARCHITECTURE ======================== */}
-      <Section id="architecture" tone="base">
-        <SectionHeading
-          eyebrow="Platform Architecture"
-          title="Built for real-time, multi-system orchestration."
-          description="All systems operate as a single coordinated platform — not disconnected tools."
-        />
-        <div className="mt-14 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {ARCHITECTURE.map(({ icon: Icon, title, body }) => (
-            <div key={title} className={`reveal ${cardBase} p-6`}>
-              <Icon className="h-6 w-6" style={{ color: ACCENT }} />
-              <div className="mt-4 text-base font-medium text-white">{title}</div>
-              <div className="mt-1.5 text-sm leading-relaxed text-white/50">{body}</div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* ========================= CAPABILITIES ======================== */}
-      <Section id="capabilities" tone="raised">
-        <SectionHeading eyebrow="Key Capabilities" title="Control complexity without increasing it." />
-        <div className="mt-14 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {CAPABILITIES.map(({ icon: Icon, title, body }) => (
-            <div key={title} className={`reveal ${cardBase} p-6`}>
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.08] bg-black/40"
-                style={{ color: ACCENT }}
-              >
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="mt-4 text-base font-medium text-white">{title}</div>
-              <div className="mt-1.5 text-sm leading-relaxed text-white/50">{body}</div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* ========================= MODULES ============================= */}
-      <Section id="modules" tone="base">
-        <SectionHeading
-          eyebrow="Platform Modules"
-          title="Modular capabilities. Unified execution."
-          description="Each module scales independently — yet operates together through a unified event-driven system."
-        />
-        <ul className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {MODULES.map((m) => (
-            <li
-              key={m}
-              className="reveal flex items-center gap-3 rounded-lg border border-white/[0.08] bg-white/[0.015] px-5 py-4 transition-colors hover:border-white/[0.16]"
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: ACCENT, boxShadow: `0 0 6px ${ACCENT}` }} />
-              <span className="text-sm font-medium text-white/80">{m}</span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      {/* ========================= TRADITIONAL VS NEUBIT =============== */}
-      <Section id="vs" tone="raised">
-        <SectionHeading
-          eyebrow="Traditional vs Neubit"
-          title="From monitoring to command & control."
-          description="Legacy systems generate alerts. Neubit executes decisions."
-        />
-        <div className="reveal mt-14 overflow-hidden rounded-xl border border-white/[0.08]">
-          <div className="grid grid-cols-3 bg-white/[0.03] px-6 py-4 font-mono text-[11px] font-medium uppercase tracking-[0.15em] text-white/45">
-            <div>Dimension</div>
-            <div>Traditional</div>
-            <div style={{ color: ACCENT }}>Neubit</div>
+          <div className="reveal mt-5 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+            {SECTORS.map((s) => (
+              <span key={s} className="font-mono text-sm text-white/40 transition-colors hover:text-white/70">{s}</span>
+            ))}
           </div>
-          {COMPARISON.map(([dim, legacy, neubit], i) => (
-            <div
-              key={dim}
-              className={`grid grid-cols-3 items-center border-t border-white/[0.06] px-6 py-5 text-sm ${
-                i % 2 === 0 ? "bg-white/[0.012]" : "bg-transparent"
-              }`}
-            >
-              <div className="font-medium text-white">{dim}</div>
-              <div className="text-white/45">{legacy}</div>
-              <div className="text-white/90">{neubit}</div>
-            </div>
-          ))}
         </div>
-      </Section>
+      </section>
 
-      {/* ========================= USE CASES =========================== */}
-      <Section id="use-cases" tone="base">
-        <SectionHeading eyebrow="Use Cases" title="Built for high-responsibility environments." />
-        <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2 lg:grid-cols-3">
-          {USE_CASES.map(([title, body]) => (
-            <div key={title} className="reveal group bg-[#0a0a0a] p-7 transition-colors hover:bg-white/[0.02]">
-              <div className="text-base font-medium text-white">{title}</div>
-              <div className="mt-1.5 text-sm text-white/50">{body}</div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* ========================= REAL-WORLD RESPONSE ================= */}
-      <Section id="response" tone="raised">
-        <div className="grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:items-center">
-          <div className="reveal">
-            <Eyebrow>Real-World Response</Eyebrow>
-            <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Coordinated action — executed in seconds.
+      {/* ── One platform (suite) ── */}
+      <section id="platform" className="relative bg-[#0a0a0a]">
+        <div className="mx-auto max-w-7xl px-6 py-24 lg:py-28">
+          <div className="reveal mx-auto max-w-3xl text-center">
+            <div className="flex justify-center"><Eyebrow>One platform</Eyebrow></div>
+            <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.9rem] lg:leading-[1.1]">
+              Every system, on one control plane.
             </h2>
-            <p className="mt-4 leading-relaxed text-white/55">
-              When a critical event occurs, response isn&apos;t managed manually — it&apos;s built into the system.
+            <p className="mt-5 text-lg leading-relaxed text-white/55">
+              Neubit consolidates your entire physical-security estate into a single, intelligent
+              interface — no more switching between disconnected tools.
             </p>
           </div>
-          <ol className="relative space-y-3">
-            <div
-              className="absolute left-[15px] top-3 bottom-3 w-px"
-              style={{ background: `linear-gradient(to bottom, ${ACCENT}88, ${ACCENT}22, transparent)` }}
-            />
-            {RESPONSE_STEPS.map((step, i) => (
-              <li key={step} className="reveal relative flex items-start gap-4">
-                <div
-                  className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-medium"
-                  style={{ borderColor: `${ACCENT}55`, background: "rgba(16,185,129,0.08)", color: ACCENT }}
-                >
-                  0{i + 1}
+          <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {PILLARS.map(({ icon: Icon, label, body }) => (
+              <div key={label} className={`reveal ${cardBase} p-6`}>
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03]" style={{ color: ACCENT }}>
+                  <Icon className="h-5 w-5" />
                 </div>
-                <div className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.015] px-5 py-3.5 text-sm text-white/80">
-                  {step}
-                </div>
-              </li>
+                <div className="mt-4 text-base font-medium text-white">{label}</div>
+                <div className="mt-1.5 text-sm leading-relaxed text-white/50">{body}</div>
+              </div>
             ))}
-          </ol>
+          </div>
         </div>
-      </Section>
+      </section>
 
-      {/* ========================= INTEGRATION ========================= */}
-      <Section id="integration" tone="base">
-        <SectionHeading
-          eyebrow="Integration"
-          title="Built to work with your existing ecosystem."
-          description="No replacement. No disruption. Full interoperability."
-        />
-        <div className="mt-14 flex flex-wrap justify-center gap-3">
-          {INTEGRATIONS.map((i) => (
-            <span
-              key={i}
-              className="reveal rounded-full border border-white/[0.1] bg-white/[0.02] px-5 py-2.5 font-mono text-xs text-white/60 transition-colors hover:border-white/[0.2] hover:text-white"
-            >
-              {i}
-            </span>
+      {/* ── Feature deep-dives (alternating) ── */}
+      <section id="features" className="relative bg-[#0d0d0f]">
+        <div className="mx-auto max-w-7xl space-y-20 px-6 py-24 lg:space-y-28 lg:py-28">
+          {FEATURES.map((f, i) => (
+            <div key={f.title} className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+              <div className={`reveal ${i % 2 === 1 ? "lg:order-2" : ""}`}>
+                <Eyebrow>{f.eyebrow}</Eyebrow>
+                <h3 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-[2.1rem] lg:leading-[1.15]">
+                  {f.title}
+                </h3>
+                <p className="mt-4 leading-relaxed text-white/55">{f.body}</p>
+                <ul className="mt-6 space-y-2.5">
+                  {f.points.map((p) => (
+                    <li key={p} className="flex items-center gap-3 text-sm text-white/75">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border" style={{ borderColor: `${ACCENT}55` }}>
+                        <Check className="h-3 w-3" style={{ color: ACCENT }} />
+                      </span>
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className={`reveal ${i % 2 === 1 ? "lg:order-1" : ""}`}>
+                <FeatureVisual kind={f.visual} />
+              </div>
+            </div>
           ))}
         </div>
-      </Section>
+      </section>
 
-      {/* ========================= SCALABILITY ========================= */}
-      <Section id="scalability" tone="raised">
-        <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
-          <div className="reveal">
-            <Eyebrow>Scalability</Eyebrow>
-            <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Engineered for enterprise environments.
+      {/* ── Stats band ── */}
+      <section className="relative overflow-hidden bg-[#0a0a0a]">
+        <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(700px 300px at 50% 120%, rgba(16,185,129,0.10), transparent 60%)" }} />
+        <div className="relative mx-auto max-w-7xl px-6 py-20">
+          <div className="grid grid-cols-2 gap-8 lg:grid-cols-4">
+            {STATS.map((s) => {
+              const dec = s.label.includes("%") ? 2 : s.label.includes("(s)") ? 1 : 0;
+              return (
+                <div key={s.label} className="reveal text-center">
+                  <div className="font-mono text-4xl font-semibold tabular-nums text-white sm:text-5xl">
+                    <span className="stat-num" data-to={s.to} data-dec={dec}>0</span>
+                  </div>
+                  <div className="mt-2 font-mono text-[11px] uppercase tracking-[0.15em] text-white/40">{s.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Industries ── */}
+      <section id="industries" className="relative bg-[#0d0d0f]">
+        <div className="mx-auto max-w-7xl px-6 py-24 lg:py-28">
+          <div className="reveal mx-auto max-w-3xl text-center">
+            <div className="flex justify-center"><Eyebrow>Industries</Eyebrow></div>
+            <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.9rem] lg:leading-[1.1]">
+              Trusted where response time matters most.
             </h2>
           </div>
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {[
-              "Multi-site, multi-region deployments",
-              "High device and event throughput",
-              "Horizontal scaling across modules",
-              "Resilient, high-availability architecture",
-            ].map((s) => (
-              <li
-                key={s}
-                className="reveal flex items-start gap-3 rounded-lg border border-white/[0.08] bg-white/[0.015] p-4 text-sm text-white/70"
-              >
-                <Siren className="mt-0.5 h-4 w-4 shrink-0" style={{ color: ACCENT }} />
-                {s}
+          <div className="mt-14 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {INDUSTRIES.map(([title, body, Icon]) => (
+              <div key={title} className={`reveal ${cardBase} p-6`}>
+                <Icon className="h-6 w-6" style={{ color: ACCENT }} />
+                <div className="mt-4 text-base font-medium text-white">{title}</div>
+                <div className="mt-1.5 text-sm leading-relaxed text-white/50">{body}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Security & compliance ── */}
+      <section id="security" className="relative bg-[#0a0a0a]">
+        <div className="mx-auto max-w-7xl px-6 py-24 lg:py-28">
+          <div className="grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+            <div className="reveal">
+              <Eyebrow>Security &amp; compliance</Eyebrow>
+              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-[2.5rem] lg:leading-[1.1]">
+                Enterprise-grade by default. Your data, your control.
+              </h2>
+              <p className="mt-5 leading-relaxed text-white/55">
+                Hardened for regulated environments — encryption, granular access control, full
+                auditability and tamper-proof evidence, with a fully sovereign on-premise option.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {SECURITY.map(({ icon: Icon, label }) => (
+                <div key={label} className="reveal flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-black/40" style={{ color: ACCENT }}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="text-sm text-white/75">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Why Neubit ── */}
+      <section id="why" className="relative bg-[#0d0d0f]">
+        <div className="mx-auto max-w-7xl px-6 py-24 lg:py-28">
+          <div className="reveal mx-auto max-w-3xl text-center">
+            <div className="flex justify-center"><Eyebrow>Why Neubit</Eyebrow></div>
+            <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.9rem] lg:leading-[1.1]">
+              From monitoring to command &amp; control.
+            </h2>
+          </div>
+          <ul className="mt-14 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {WHY.map((w) => (
+              <li key={w} className={`reveal flex items-start gap-4 ${cardBase} p-6 text-white/70`}>
+                <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border" style={{ borderColor: `${ACCENT}55` }}>
+                  <Check className="h-3 w-3" style={{ color: ACCENT }} />
+                </div>
+                <div className="text-sm leading-relaxed">{w}</div>
               </li>
             ))}
           </ul>
         </div>
-      </Section>
+      </section>
 
-      {/* ========================= DEPLOYMENT ========================== */}
-      <Section id="deployment" tone="base">
-        <SectionHeading eyebrow="Deployment Options" title="One platform. Multiple deployment models." />
-        <div className="mt-14 grid gap-4 lg:grid-cols-3">
-          {DEPLOYMENTS.map(({ tag, title, body }) => (
-            <div key={tag} className={`reveal ${cardBase} p-7`}>
-              <div className="font-mono text-xs font-medium uppercase tracking-[0.18em]" style={{ color: ACCENT }}>
-                {tag}
-              </div>
-              <div className="mt-3 text-2xl font-semibold tracking-tight text-white">{title}</div>
-              <div className="mt-2 text-sm leading-relaxed text-white/50">{body}</div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* ========================= WHY NEUBIT ========================== */}
-      <Section id="why-neubit" tone="raised">
-        <SectionHeading eyebrow="Why Neubit" title="Why enterprises choose Neubit." />
-        <ul className="mt-14 grid gap-3 md:grid-cols-2">
-          {WHY.map((w) => (
-            <li key={w} className={`reveal flex items-start gap-4 ${cardBase} p-6 text-white/70`}>
-              <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border" style={{ borderColor: `${ACCENT}55` }}>
-                <Check className="h-3 w-3" style={{ color: ACCENT }} />
-              </div>
-              <div className="text-sm leading-relaxed">{w}</div>
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      {/* ============================= CTA ============================= */}
+      {/* ── CTA ── */}
       <section id="cta" className="relative overflow-hidden bg-[#0a0a0a] text-white">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(700px 400px at 50% 0%, rgba(16,185,129,0.14), transparent 60%)," +
-              "radial-gradient(760px 460px at 50% 100%, rgba(255,255,255,0.04), transparent 60%)",
-          }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.5]"
-          style={{
-            backgroundImage: "radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px)",
-            backgroundSize: "26px 26px",
-            maskImage: "radial-gradient(ellipse 70% 60% at 50% 40%, black 20%, transparent 80%)",
-          }}
-        />
+        <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(700px 400px at 50% 0%, rgba(16,185,129,0.16), transparent 60%)" }} />
         <div className="relative mx-auto max-w-5xl px-6 py-24 text-center lg:py-32">
-          <div className="reveal mb-6 flex justify-center">
-            <Eyebrow>Get Started</Eyebrow>
-          </div>
           <h2 className="reveal text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
-            Move from monitoring to{" "}
-            <span style={{ color: ACCENT }}>command &amp; control.</span>
+            Move from monitoring to <span style={{ color: ACCENT }}>command &amp; control.</span>
           </h2>
           <p className="reveal mx-auto mt-6 max-w-2xl text-lg text-white/55">
-            Delayed decisions create risk. Fragmented systems create inefficiency. Neubit brings everything
-            into one unified platform — so your operations can respond instantly.
+            Fragmented systems create risk and inefficiency. Neubit brings everything into one unified
+            platform — so your operations respond instantly.
           </p>
           <div className="reveal mt-10 flex flex-wrap justify-center gap-3">
-            <Link
-              href="#"
-              className="inline-flex items-center gap-2 rounded-md bg-white px-6 py-3.5 text-sm font-medium text-black transition-colors hover:bg-white/90"
-            >
+            <Link href="#" className="inline-flex items-center gap-2 rounded-md bg-white px-6 py-3.5 text-sm font-medium text-black transition-colors hover:bg-white/90">
               Book a Demo <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link
-              href="#"
-              className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.02] px-6 py-3.5 text-sm font-medium text-white transition-colors hover:bg-white/[0.06]"
-            >
+            <Link href="#" className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.02] px-6 py-3.5 text-sm font-medium text-white transition-colors hover:bg-white/[0.06]">
               Talk to an Expert
             </Link>
           </div>
         </div>
       </section>
 
-      {/* ============================= FOOTER ========================== */}
+      {/* ── Footer ── */}
       <footer className="border-t border-white/[0.08] bg-[#0a0a0a]">
-        <div className="mx-auto flex max-w-7xl flex-col items-start gap-4 px-6 py-10 text-sm text-white/45 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-6 w-auto opacity-70 invert brightness-0" />
-            <span>© {new Date().getFullYear()} Neubit. Unified Command &amp; Control Platform.</span>
+        <div className="mx-auto max-w-7xl px-6 py-14">
+          <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+            <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-7 w-auto opacity-80 invert brightness-0" />
+              <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/45">
+                The unified command &amp; control platform for enterprise physical security.
+              </p>
+            </div>
+            {FOOTER.map(([title, links]) => (
+              <div key={title}>
+                <div className="font-mono text-[11px] font-medium uppercase tracking-[0.15em] text-white/40">{title}</div>
+                <ul className="mt-4 space-y-2.5">
+                  {links.map(([label, href]) => (
+                    <li key={label}>
+                      {href.startsWith("/") ? (
+                        <Link href={href} className="text-sm text-white/55 transition-colors hover:text-white">{label}</Link>
+                      ) : (
+                        <a href={href} className="text-sm text-white/55 transition-colors hover:text-white">{label}</a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-          <div className="flex flex-wrap gap-6">
-            <Link href="/login" className="transition-colors hover:text-white">Sign in</Link>
-            <a href="#what" className="transition-colors hover:text-white">Platform</a>
-            <a href="#architecture" className="transition-colors hover:text-white">Architecture</a>
-            <a href="#use-cases" className="transition-colors hover:text-white">Use cases</a>
+          <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-white/[0.06] pt-6 text-xs text-white/35 md:flex-row md:items-center">
+            <span>© {new Date().getFullYear()} Neubit. Unified Command &amp; Control Platform.</span>
+            <span className="font-mono">Command · Control · Intelligence</span>
           </div>
         </div>
       </footer>
