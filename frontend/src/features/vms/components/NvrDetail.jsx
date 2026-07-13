@@ -16,9 +16,9 @@ import StatusBadge from "./StatusBadge";
 
 function InfoCell({ label, value }) {
   return (
-    <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2">
+    <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-1.5">
       <p className="text-[10px] uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-0.5 truncate text-sm text-foreground">{value ?? "—"}</p>
+      <p className="mt-0.5 truncate text-[13px] font-medium text-foreground">{value ?? "—"}</p>
     </div>
   );
 }
@@ -59,10 +59,10 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-card-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
-            <Icon icon="heroicons-outline:server-stack" className="text-lg" />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-card-border px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+            <Icon icon="heroicons-outline:server-stack" className="text-base" />
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold text-foreground">{nvr.name}</h1>
@@ -81,13 +81,13 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="scroll-themed min-h-0 flex-1 overflow-y-auto p-3">
         {nvr.last_error && (
           <div className="mb-3 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] text-red-500">{nvr.last_error}</div>
         )}
 
         {/* Health grid */}
-        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <InfoCell label="Status" value={titleize(health?.status || nvr.status)} />
           <InfoCell label="Channels" value={health?.channel_count ?? nvr.channel_count} />
           <InfoCell label="Mapped" value={health?.mapped_channel_count ?? channelCams.length} />
@@ -98,7 +98,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
 
         {/* Mapped channel-cameras */}
         <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Mapped channels ({channelCams.length})</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Mapped channels ({channelCams.length})</p>
           <Button variant="secondary" className="!px-2.5 !py-1 !text-xs" icon="heroicons-outline:queue-list" onClick={() => onMapChannels?.(nvr)}>
             Map channels
           </Button>
@@ -110,13 +110,13 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border border-card-border">
-            <table className="w-full text-sm">
+            <table className="w-full text-[13px]">
               <thead>
-                <tr className="border-b border-card-border bg-hover/40 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  <th className="px-3 py-2 text-right">Ch</th>
-                  <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Site</th>
+                <tr className="border-b border-card-border bg-hover/40 text-left text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  <th className="w-12 px-3 py-1.5 text-right">Ch</th>
+                  <th className="px-3 py-1.5">Name</th>
+                  <th className="px-3 py-1.5">Status</th>
+                  <th className="px-3 py-1.5">Site</th>
                 </tr>
               </thead>
               <tbody>
@@ -124,11 +124,11 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
                   .slice()
                   .sort((a, b) => (a.nvr_channel_number ?? 0) - (b.nvr_channel_number ?? 0))
                   .map((c) => (
-                    <tr key={c.id} className="border-b border-card-border/60 transition last:border-0 hover:bg-hover/50">
-                      <td className="px-3 py-2 text-right tabular-nums text-muted">{c.nvr_channel_number ?? "—"}</td>
-                      <td className="px-3 py-2 text-foreground">{c.name}</td>
-                      <td className="px-3 py-2"><StatusBadge status={c.status} /></td>
-                      <td className="px-3 py-2 text-muted">{siteNames[c.placement?.site_id] || "—"}</td>
+                    <tr key={c.id} className="border-b border-card-border/50 transition last:border-0 hover:bg-hover/50">
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-muted">{c.nvr_channel_number ?? "—"}</td>
+                      <td className="px-3 py-1.5 font-medium text-foreground">{c.name}</td>
+                      <td className="px-3 py-1.5"><StatusBadge status={c.status} /></td>
+                      <td className="px-3 py-1.5 text-muted">{siteNames[c.placement?.site_id] || "—"}</td>
                     </tr>
                   ))}
               </tbody>
