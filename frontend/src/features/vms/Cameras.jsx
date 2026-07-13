@@ -1,52 +1,46 @@
 "use client";
 
-// VMS → Cameras. The operator-facing camera estate: a compact action toolbar
-// (view toggle + ONVIF discovery + Add camera), a filter bar (search + brand +
-// site + status), and a sortable/selectable TanStack DataTable (or grid view),
-// with onboard (manual + ONVIF bulk-add), bulk actions, per-row snapshot/edit/
-// delete. Rethemed to v3's dark tokens + the shared kit/common layer.
-//
-// Live video (P2-D): grid tiles + the row "Go live" action open a LivePlayer
-// modal (WebRTC + HLS fallback); playback (recorded) is P3/P4.
-import { useMemo, useState } from "react";
+// VMS → Cameras. neubit_v2-parity two-card master/detail: a left list of cameras
+// (search + filters + bulk-select) and a right INLINE detail pane (CameraDetailView
+// — live view, config edit, maintenance) — NO edit modal. Onboarding + ONVIF
+// discovery stay modal (add-only). Consistent with the NVR + Access Control pages.
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, EmptyState, Select } from "@/components/ui/kit";
+import { Button, ConfirmDialog, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { asItems } from "@/lib/format";
+import { asItems, titleize } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { vms } from "./api";
 import { BRAND_FILTERS, STATUS_FILTERS } from "./constants";
-import CameraTable from "./components/CameraTable";
-import CameraGrid from "./components/CameraGrid";
+import { StatusDot } from "./components/StatusBadge";
+import CodecBadge from "./components/CodecBadge";
+import CameraDetailView from "./components/CameraDetailView";
 import BulkActionBar from "./components/BulkActionBar";
 import OnboardCameraModal from "./components/OnboardCameraModal";
-import EditCameraModal from "./components/EditCameraModal";
 import BulkDeviceResultModal from "./components/BulkDeviceResultModal";
 import OnvifDiscoveryModal from "./components/OnvifDiscoveryModal";
 import SnapshotModal from "./components/SnapshotModal";
-import LivePlayerModal from "./components/LivePlayerModal";
+
+const cameraIp = (c) => c.network_info?.ip || c.onvif?.host || "—";
 
 export default function CamerasPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const canManageDevices = can("vms.config.manage");
-  const [view, setView] = useState("table"); // table | grid
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [brand, setBrand] = useState("");
   const [siteFilter, setSiteFilter] = useState("");
-  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectedIds, setSelectedIds] = useState(new Set()); // bulk selection
+  const [selectedId, setSelectedId] = useState(null); // detail (single) selection
 
   const [onboardOpen, setOnboardOpen] = useState(false);
   const [discoverOpen, setDiscoverOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-  const [editTab, setEditTab] = useState("view"); // initial tab for the edit modal
   const [snapTarget, setSnapTarget] = useState(null);
-  const [liveTarget, setLiveTarget] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [deviceResult, setDeviceResult] = useState(null); // bulk device-op result summary
 
@@ -64,25 +58,33 @@ export default function CamerasPage() {
     queryFn: () => vms.health.latest(),
     refetchInterval: 30_000,
   });
-  const healthById = useMemo(() => {
-    const m = {};
-    for (const h of asItems(healthQ.data)) m[h.camera_id] = h;
-    return m;
-  }, [healthQ.data]);
 
   const groupsQ = useQuery({ queryKey: ["vms-groups"], queryFn: () => vms.groups.list(), staleTime: 60_000 });
   const groups = asItems(groupsQ.data);
 
   const sitesQ = useQuery({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }), staleTime: 60_000 });
   const sites = asItems(sitesQ.data);
-  // Floors/zones are NOT fetched globally (they cap at 100 + don't scale) — the
-  // onboard/edit modals load them cascading per selected site/floor.
 
   const siteNames = useMemo(() => {
     const m = {};
     for (const s of sites) m[s.site_id] = s.name;
     return m;
   }, [sites]);
+
+  const statusCounts = useMemo(() => {
+    let online = 0;
+    for (const c of cameras) if (c.status === "online") online += 1;
+    return { online, offline: cameras.length - online, total: cameras.length };
+  }, [cameras]);
+
+  // Derived detail selection + auto-select the first camera.
+  const selected = cameras.find((c) => c.id === selectedId) || null;
+  useEffect(() => {
+    if (cameras.length === 0) return;
+    if (!selectedId || !cameras.some((c) => c.id === selectedId)) {
+      setSelectedId(cameras[0].id);
+    }
+  }, [cameras, selectedId]);
 
   // ── Mutations ────────────────────────────────────────────────────────
   const invalidate = () => qc.invalidateQueries({ queryKey: ["vms-cameras"] });
@@ -115,9 +117,9 @@ export default function CamerasPage() {
       return Promise.reject(new Error("Unknown device action"));
     },
     onSuccess: (res) => {
-      setDeviceResult(res); // show the per-camera results summary
+      setDeviceResult(res);
       setSelectedIds(new Set());
-      invalidate(); // codec badges may have flipped to H.264
+      invalidate();
     },
     onError: (e) => toast.error(apiError(e, "Bulk device action failed")),
   });
@@ -150,15 +152,17 @@ export default function CamerasPage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  const toggleAll = (checked) =>
-    setSelectedIds(checked ? new Set(cameras.map((c) => c.id)) : new Set());
 
   const askDelete = (cam) =>
     setConfirm({
       title: "Delete camera",
       message: `Remove ${cam.name}? Recordings are retained per policy. This cannot be undone.`,
       confirmLabel: "Delete",
-      onConfirm: () => { remove.mutate(cam.id); setConfirm(null); },
+      onConfirm: () => {
+        remove.mutate(cam.id);
+        if (selectedId === cam.id) setSelectedId(null);
+        setConfirm(null);
+      },
     });
 
   const runBulk = (payload) => {
@@ -174,130 +178,107 @@ export default function CamerasPage() {
     }
   };
 
-  const viewToggle = (
-    <div className="inline-flex overflow-hidden rounded-md border border-card-border">
-      {[
-        { k: "table", icon: "heroicons-outline:table-cells" },
-        { k: "grid", icon: "heroicons-outline:squares-2x2" },
-      ].map((v) => (
-        <button
-          key={v.k}
-          type="button"
-          onClick={() => setView(v.k)}
-          className={`px-2.5 py-2 text-sm transition ${view === v.k ? "bg-foreground text-background" : "text-muted hover:bg-hover"}`}
-        >
-          <Icon icon={v.icon} className="text-base" />
-        </button>
-      ))}
-    </div>
-  );
+  const fieldCls =
+    "h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Single toolbar row — filters on the left, actions on the right.
-          (No title/subtitle; the "Cameras" sub-tab above already labels the page.) */}
-      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
-        <label className="relative block w-64 max-w-full">
-          <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-muted" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name or IP…"
-            className="h-9 w-full rounded-lg border border-field bg-transparent pl-8 pr-3 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
-          />
-        </label>
-        <Select value={brand} onChange={(e) => setBrand(e.target.value)} options={BRAND_FILTERS} className="!h-9 !py-1.5 w-40" />
-        <Select
-          value={siteFilter}
-          onChange={(e) => setSiteFilter(e.target.value)}
-          options={[{ value: "", label: "All sites" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]}
-          className="!h-9 !py-1.5 w-44"
-        />
-        <Select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          options={STATUS_FILTERS.map((s) => ({ value: s.key, label: s.key === "" ? "All statuses" : s.label }))}
-          className="!h-9 !py-1.5 w-40"
-        />
-        <button
-          onClick={() => { invalidate(); healthQ.refetch(); }}
-          title="Refresh"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-card-border text-muted hover:bg-hover hover:text-foreground"
-        >
-          <Icon icon="heroicons-outline:arrow-path" className="text-base" />
-        </button>
-
-        {/* Actions pushed to the right */}
-        <div className="ml-auto flex items-center gap-2">
-          {viewToggle}
-          <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
-            Discovery
-          </Button>
-          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
-            Add camera
-          </Button>
-        </div>
+      {/* Top toolbar — actions only, right-aligned (consistent with NVR / Access). */}
+      <div className="mb-4 flex shrink-0 items-center justify-end gap-2">
+        <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
+          Discovery
+        </Button>
+        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
+          Add camera
+        </Button>
       </div>
 
-      {/* Body — the ONLY scroll area (page itself never scrolls; toolbar +
-          bulk-bar stay fixed). Themed scrollbar. */}
-      <div className="scroll-themed min-h-0 flex-1 overflow-y-auto pb-2">
-      {camerasQ.isLoading ? (
-        <div className="flex items-center justify-center gap-2 rounded-xl border border-card-border bg-card py-20 text-sm text-muted">
-          <Icon icon="svg-spinners:180-ring" className="text-base" /> Loading cameras…
-        </div>
-      ) : camerasQ.isError ? (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/10 py-10 text-center text-sm text-red-500">
-          {apiError(camerasQ.error, "Failed to load cameras")}
-        </div>
-      ) : cameras.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-card-border bg-card">
-          <EmptyState
-            icon="heroicons-outline:video-camera"
-            title={search || status || brand || siteFilter ? "No cameras match" : "No cameras yet"}
-            subtitle={
-              search || status || brand || siteFilter
-                ? "Adjust the search or filters above."
-                : "Add one manually or run an ONVIF discovery scan."
-            }
-            action={
-              <div className="flex gap-2">
-                <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>Discover</Button>
-                <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>Add camera</Button>
+      {/* Two-card master/detail */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[24rem_1fr]">
+        {/* ── Left: camera list ── */}
+        <aside className="flex min-h-0 flex-col rounded-xl border border-card-border bg-card">
+          <header className="flex shrink-0 items-center justify-between border-b border-card-border px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Icon icon="heroicons-outline:video-camera" className="text-sm text-muted" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted">Cameras</span>
+              <span className="rounded-full bg-hover px-2 py-0.5 text-[11px] font-medium text-muted">{statusCounts.total}</span>
+            </div>
+            <button
+              onClick={() => { invalidate(); healthQ.refetch(); }}
+              title="Refresh"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+            >
+              <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
+            </button>
+          </header>
+
+          <div className="flex shrink-0 items-center gap-3 px-4 pt-3 text-xs">
+            <span className="flex items-center gap-1 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{statusCounts.online} online</span>
+            <span className="flex items-center gap-1 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-muted" />{statusCounts.offline} offline</span>
+          </div>
+
+          {/* Filters */}
+          <div className="shrink-0 space-y-2 px-3 pb-3 pt-3">
+            <label className="relative block">
+              <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-muted" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or IP…" className={`${fieldCls} pl-8`} />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <Select value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_FILTERS.map((s) => ({ value: s.key, label: s.key === "" ? "All statuses" : s.label }))} className="!h-9 !py-1.5" />
+              <Select value={brand} onChange={(e) => setBrand(e.target.value)} options={BRAND_FILTERS} className="!h-9 !py-1.5" />
+            </div>
+            <Select value={siteFilter} onChange={(e) => setSiteFilter(e.target.value)} options={[{ value: "", label: "All sites" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]} className="!h-9 !py-1.5" />
+          </div>
+
+          {/* List */}
+          <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+            {camerasQ.isLoading ? (
+              <div className="px-2 py-8 text-center text-xs text-muted">Loading…</div>
+            ) : camerasQ.isError ? (
+              <div className="px-2 py-8 text-center text-xs text-red-500">{apiError(camerasQ.error, "Failed to load cameras")}</div>
+            ) : cameras.length === 0 ? (
+              <div className="px-2 py-8 text-center text-xs text-muted">
+                {search || status || brand || siteFilter ? "No cameras match." : "No cameras yet — click Add camera."}
               </div>
-            }
-          />
-        </div>
-      ) : view === "table" ? (
-        <CameraTable
-          cameras={cameras}
-          healthById={healthById}
-          siteNames={siteNames}
-          selectedIds={selectedIds}
-          onToggleSelect={toggleSelect}
-          onToggleAll={toggleAll}
-          onOpen={(c) => { setEditTab("view"); setEditTarget(c); }}
-          onLive={(c) => setLiveTarget(c)}
-          onSnapshot={(c) => setSnapTarget(c)}
-          onEdit={(c) => { setEditTab("view"); setEditTarget(c); }}
-          onDevice={(c) => { setEditTab("device"); setEditTarget(c); }}
-          onDelete={askDelete}
-        />
-      ) : (
-        <CameraGrid
-          cameras={cameras}
-          healthById={healthById}
-          siteNames={siteNames}
-          selectedIds={selectedIds}
-          onToggleSelect={toggleSelect}
-          onLive={(c) => setLiveTarget(c)}
-          onSnapshot={(c) => setSnapTarget(c)}
-          onEdit={(c) => { setEditTab("view"); setEditTarget(c); }}
-          onDelete={askDelete}
-        />
-      )}
+            ) : (
+              <div className="space-y-1">
+                {cameras.map((c) => (
+                  <CameraListItem
+                    key={c.id}
+                    camera={c}
+                    siteName={siteNames[c.placement?.site_id]}
+                    selected={c.id === selectedId}
+                    bulkChecked={selectedIds.has(c.id)}
+                    onSelect={() => setSelectedId(c.id)}
+                    onToggleBulk={() => toggleSelect(c.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* ── Right: inline detail ── */}
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+          {selected ? (
+            <CameraDetailView
+              key={selected.id}
+              camera={selected}
+              sites={sites}
+              onUpdated={invalidate}
+              onDelete={askDelete}
+              onSnapshot={(c) => setSnapTarget(c)}
+            />
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted">
+              <Icon icon="heroicons-outline:video-camera" className="text-3xl text-muted/50" />
+              Select a camera to view details.
+            </div>
+          )}
+        </section>
       </div>
 
+      {/* Bulk-action bar (floats when cameras are selected) */}
       <BulkActionBar
         count={selectedIds.size}
         groups={groups}
@@ -308,12 +289,12 @@ export default function CamerasPage() {
         pending={bulk.isPending || bulkDevice.isPending}
       />
 
-      {/* Modals */}
+      {/* Modals (add-only + snapshot + bulk result) */}
       {onboardOpen && (
         <OnboardCameraModal
           sites={sites}
           onClose={() => setOnboardOpen(false)}
-          onSuccess={() => { setOnboardOpen(false); invalidate(); }}
+          onSuccess={(created) => { setOnboardOpen(false); invalidate(); if (created?.id) setSelectedId(created.id); }}
         />
       )}
       {discoverOpen && (
@@ -323,26 +304,52 @@ export default function CamerasPage() {
           onSuccess={() => { setDiscoverOpen(false); invalidate(); }}
         />
       )}
-      {editTarget && (
-        <EditCameraModal
-          camera={editTarget}
-          sites={sites}
-          initialTab={editTab}
-          onClose={() => setEditTarget(null)}
-          onSuccess={() => { setEditTarget(null); invalidate(); }}
-        />
-      )}
       {snapTarget && <SnapshotModal camera={snapTarget} onClose={() => setSnapTarget(null)} />}
-      {liveTarget && <LivePlayerModal camera={liveTarget} onClose={() => setLiveTarget(null)} />}
-      {deviceResult && (
-        <BulkDeviceResultModal result={deviceResult} onClose={() => setDeviceResult(null)} />
-      )}
+      {deviceResult && <BulkDeviceResultModal result={deviceResult} onClose={() => setDeviceResult(null)} />}
 
       <ConfirmDialog
         state={confirm}
         onClose={() => setConfirm(null)}
         pending={remove.isPending || bulk.isPending || bulkDevice.isPending}
       />
+    </div>
+  );
+}
+
+// Compact camera row for the left list — status dot + name + codec badge + a
+// meta line (ip · brand · site). Bulk-checkbox on the left; the row selects for
+// the detail pane. Selected row gets an accent border + hover fill.
+function CameraListItem({ camera, siteName, selected, bulkChecked, onSelect, onToggleBulk }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
+      className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 transition ${
+        selected ? "border-foreground bg-hover" : "border-transparent hover:bg-hover"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={bulkChecked}
+        onChange={onToggleBulk}
+        onClick={(e) => e.stopPropagation()}
+        className="accent-foreground"
+        aria-label={`Select ${camera.name}`}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+          <StatusDot status={camera.status} />
+          <span className="truncate">{camera.name}</span>
+          <CodecBadge camera={camera} />
+        </p>
+        <p className="truncate font-mono text-[11px] text-muted">
+          {cameraIp(camera)}
+          {camera.brand ? ` · ${titleize(camera.brand)}` : ""}
+          {siteName ? ` · ${siteName}` : ""}
+        </p>
+      </div>
     </div>
   );
 }
