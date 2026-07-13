@@ -50,12 +50,21 @@ const HLS_COLD_RETRIES = 8;
 // registers a single listener no matter how many LivePlayers mount.
 if (typeof window !== "undefined" && !window.__neubitAbortSwallow) {
   window.__neubitAbortSwallow = true;
-  window.addEventListener("unhandledrejection", (e) => {
-    const r = e?.reason;
-    if (r && (r.name === "AbortError" || r instanceof DOMException)) {
-      e.preventDefault();
-    }
-  });
+  // CAPTURE phase + stopImmediatePropagation so this runs BEFORE Next's dev-overlay
+  // unhandledrejection listener and prevents it from ever showing the AbortError.
+  // (preventDefault alone doesn't stop other listeners; Next's overlay was already
+  // firing first, so the overlay still appeared on camera switch / unmount.)
+  window.addEventListener(
+    "unhandledrejection",
+    (e) => {
+      const r = e?.reason;
+      if (r && (r.name === "AbortError" || r instanceof DOMException)) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    },
+    true,
+  );
 }
 
 // H265→H264 transcode fallback. Chrome's WebRTC can't decode HEVC, so a direct
@@ -372,7 +381,11 @@ function LivePlayer({
             }
           } catch {}
 
-          const answer = await res.text();
+          // res.text() reads the body stream (also signal-bound) — swallow on the
+          // raw promise so an abort during the read never floats unhandled either.
+          const answerP = res.text();
+          answerP.catch(() => {});
+          const answer = await answerP;
           await pc.setRemoteDescription({ type: "answer", sdp: answer });
         } catch (e) {
           // Aborted (unmount/navigation) → swallow silently; never retry or
