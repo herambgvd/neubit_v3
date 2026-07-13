@@ -13,6 +13,7 @@ what makes the SOAP server multi-tenant — the username→tenant map lives in t
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -61,7 +62,11 @@ class OnvifServerService:
         if row is not None:
             return row
         tenant = None if self.scope.is_platform else self.scope.tenant_id
+        # A TRANSIENT (unsaved) default for a first read. The model's ``id`` column
+        # default (_uuid_str) only fires on flush, so a freshly-constructed object has
+        # ``id = None`` → OnvifServerConfigPublic (id: str) 500s. Set one explicitly.
         return OnvifServerConfig(
+            id=str(uuid.uuid4()),
             tenant_id=tenant,
             enabled=False,
             exposed_camera_ids=["*"],
