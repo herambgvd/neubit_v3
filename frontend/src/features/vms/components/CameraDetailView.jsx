@@ -134,7 +134,9 @@ export default function CameraDetailView({
       <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="mb-3" />
         {tab === "view" ? (
-          <div className="aspect-video w-full overflow-hidden rounded-lg border border-card-border bg-black">
+          // Cap the 16:9 player by WIDTH so its height never exceeds the visible
+          // body — the View tab fits without scrolling (max-w = availHeight*16/9).
+          <div className="mx-auto aspect-video w-full max-w-[calc((100dvh-18rem)*16/9)] overflow-hidden rounded-lg border border-card-border bg-black">
             <LivePlayer
               cameraId={camera.id}
               cameraName={camera.name}
