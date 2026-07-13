@@ -9,7 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Select } from "@/components/ui/kit";
+import { ConfirmDialog, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems, titleize } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -183,33 +183,40 @@ export default function CamerasPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Top toolbar — actions only, right-aligned (consistent with NVR / Access). */}
-      <div className="mb-2.5 flex shrink-0 items-center justify-end gap-2">
-        <Button variant="secondary" className="!py-1.5 !text-[13px]" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>
-          Discovery
-        </Button>
-        <Button variant="success" className="!py-1.5 !text-[13px]" icon="heroicons-outline:plus" onClick={() => setOnboardOpen(true)}>
-          Add camera
-        </Button>
-      </div>
-
-      {/* Two-card master/detail */}
+      {/* Two-card master/detail — fills the whole body (list actions live in the
+          aside header, so no toolbar row eats vertical space). */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[22rem_1fr]">
         {/* ── Left: camera list ── */}
         <aside className="flex min-h-0 flex-col rounded-xl border border-card-border bg-card">
-          <header className="flex shrink-0 items-center justify-between border-b border-card-border px-3 py-2">
-            <div className="flex items-center gap-2">
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-card-border px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2">
               <Icon icon="heroicons-outline:video-camera" className="text-sm text-muted" />
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Cameras</span>
               <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] font-medium text-muted">{statusCounts.total}</span>
             </div>
-            <button
-              onClick={() => { invalidate(); healthQ.refetch(); }}
-              title="Refresh"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
-            >
-              <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                onClick={() => { invalidate(); healthQ.refetch(); }}
+                title="Refresh"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+              >
+                <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
+              </button>
+              <button
+                onClick={() => setDiscoverOpen(true)}
+                title="ONVIF discovery"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted hover:bg-hover hover:text-foreground"
+              >
+                <Icon icon="heroicons-outline:magnifying-glass" className="text-sm" />
+              </button>
+              <button
+                onClick={() => setOnboardOpen(true)}
+                title="Add camera"
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+              >
+                <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+              </button>
+            </div>
           </header>
 
           {/* Filters + status counts */}
