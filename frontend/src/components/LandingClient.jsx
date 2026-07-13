@@ -1,8 +1,17 @@
 "use client";
 
+// Landing page — Vercel-dark marketing surface with GSAP-driven motion:
+//   • a hero entrance TIMELINE (eyebrow → headline → copy → CTAs → badges → console),
+//   • ScrollTrigger.batch REVEALS for every section block as it enters the viewport,
+//   • a scrubbed PARALLAX on the live console as you scroll past the hero.
+// The live command-and-control console (ConsoleHero) keeps its own Framer Motion
+// loops (video-wall shimmer, event feed, radar, count-ups) — GSAP owns page-level
+// entrance + scroll; Framer owns the always-on micro-animation inside the console.
 import Link from "next/link";
-import { motion, useScroll, useTransform } from "framer-motion";
 import { useRef } from "react";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
 import {
   ArrowRight,
   Activity,
@@ -29,18 +38,10 @@ import {
 
 import ConsoleHero from "@/components/landing/ConsoleHero";
 
+gsap.registerPlugin(ScrollTrigger, useGSAP);
+
 /* Single restrained accent — emerald, used only for live/status/CTA. */
 const ACCENT = "#10b981";
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 22 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
-};
-
-const stagger = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.07 } },
-};
 
 const NAV = [
   ["#what", "Platform"],
@@ -180,10 +181,7 @@ function GridBackdrop({ glow = false }) {
   );
 }
 
-/**
- * Section — cohesive dark tones. `tone` only shifts the near-black shade for
- * subtle tonal variation between sections (never light).
- */
+/** Section — cohesive dark tones; `tone` only shifts the near-black shade. */
 function Section({ id, tone = "base", children }) {
   const bg = tone === "raised" ? "bg-[#0d0d0f]" : "bg-[#0a0a0a]";
   return (
@@ -203,9 +201,10 @@ function Eyebrow({ children }) {
   );
 }
 
+// The `reveal` class is what GSAP's ScrollTrigger.batch animates into view.
 function SectionHeading({ eyebrow, title, description, center = true }) {
   return (
-    <div className={`max-w-3xl ${center ? "mx-auto text-center" : ""}`}>
+    <div className={`reveal max-w-3xl ${center ? "mx-auto text-center" : ""}`}>
       <div className={center ? "flex justify-center" : ""}>
         <Eyebrow>{eyebrow}</Eyebrow>
       </div>
@@ -219,20 +218,71 @@ function SectionHeading({ eyebrow, title, description, center = true }) {
   );
 }
 
-/* Card shell — thin border, subtle hover lift + accent edge. */
+/* Card shell — thin border, hover lift + accent edge. */
 const cardBase =
-  "rounded-xl border border-white/[0.08] bg-white/[0.015] transition-colors duration-300 hover:border-white/[0.16]";
+  "rounded-xl border border-white/[0.08] bg-white/[0.015] transition-[transform,border-color,background-color] duration-300 hover:-translate-y-1 hover:border-white/[0.16]";
 
 export default function LandingPage() {
-  const heroRef = useRef(null);
-  const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
-  const heroY = useTransform(scrollYProgress, [0, 1], [0, 90]);
-  const heroOpacity = useTransform(scrollYProgress, [0, 1], [1, 0.25]);
+  const root = useRef(null);
+
+  useGSAP(
+    () => {
+      // Respect reduced-motion: reveal everything instantly, skip the choreography.
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) {
+        gsap.set(".reveal", { opacity: 1, y: 0 });
+        return;
+      }
+
+      // ── Hero entrance timeline ──────────────────────────────────────────
+      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+      tl.from(".hero-eyebrow", { y: 20, opacity: 0, duration: 0.6 })
+        .from(".hero-title", { y: 30, opacity: 0, duration: 0.75 }, "-=0.3")
+        .from(".hero-sub", { y: 20, opacity: 0, duration: 0.6 }, "-=0.45")
+        .from(".hero-note", { y: 16, opacity: 0, duration: 0.5 }, "-=0.45")
+        .from(".hero-cta", { y: 16, opacity: 0, duration: 0.5 }, "-=0.4")
+        .from(".hero-badge", { y: 14, opacity: 0, stagger: 0.06, duration: 0.4 }, "-=0.3")
+        .from(".hero-console", { y: 44, opacity: 0, duration: 0.9 }, "-=0.35");
+
+      // ── Parallax: the console drifts + softens as you scroll past the hero ──
+      gsap.to(".hero-console", {
+        yPercent: 14,
+        opacity: 0.55,
+        ease: "none",
+        scrollTrigger: {
+          trigger: root.current,
+          start: "top top",
+          end: "65% top",
+          scrub: true,
+        },
+      });
+
+      // ── Section reveals — batch each `.reveal` as it enters the viewport ──
+      gsap.set(".reveal", { opacity: 0, y: 26 });
+      ScrollTrigger.batch(".reveal", {
+        start: "top 88%",
+        once: true,
+        onEnter: (els) =>
+          gsap.to(els, {
+            opacity: 1,
+            y: 0,
+            duration: 0.6,
+            ease: "power2.out",
+            stagger: 0.08,
+            overwrite: true,
+          }),
+      });
+
+      // First paint may land mid-scroll (deep link / refresh) — sync triggers.
+      ScrollTrigger.refresh();
+    },
+    { scope: root },
+  );
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white antialiased selection:bg-emerald-500/20">
+    <div ref={root} className="min-h-screen bg-[#0a0a0a] text-white antialiased selection:bg-emerald-500/20">
       {/* ============================= HERO ============================= */}
-      <section ref={heroRef} className="relative overflow-hidden bg-[#0a0a0a]">
+      <section className="relative overflow-hidden bg-[#0a0a0a]">
         {/* grid + radial glows */}
         <div
           aria-hidden
@@ -283,18 +333,10 @@ export default function LandingPage() {
           </div>
         </header>
 
-        <motion.div
-          style={{ y: heroY, opacity: heroOpacity }}
-          className="relative z-10 mx-auto max-w-7xl px-6 pt-16 pb-24 lg:pt-20 lg:pb-28"
-        >
+        <div className="relative z-10 mx-auto max-w-7xl px-6 pt-16 pb-24 lg:pt-20 lg:pb-28">
           {/* Centered headline block */}
-          <motion.div
-            initial="hidden"
-            animate="show"
-            variants={stagger}
-            className="mx-auto max-w-4xl text-center"
-          >
-            <motion.div variants={fadeUp} className="flex justify-center">
+          <div className="mx-auto max-w-4xl text-center">
+            <div className="hero-eyebrow flex justify-center">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur">
                 <span
                   className="h-1.5 w-1.5 animate-pulse rounded-full"
@@ -302,27 +344,24 @@ export default function LandingPage() {
                 />
                 UNIFIED COMMAND &amp; CONTROL PLATFORM
               </div>
-            </motion.div>
+            </div>
 
-            <motion.h1
-              variants={fadeUp}
-              className="mt-7 text-[3.1rem] font-semibold leading-[1.02] tracking-tight sm:text-6xl lg:text-[4.6rem]"
-            >
+            <h1 className="hero-title mt-7 text-[3.1rem] font-semibold leading-[1.02] tracking-tight sm:text-6xl lg:text-[4.6rem]">
               Command. Control.{" "}
               <span style={{ color: ACCENT }}>Intelligence.</span>
-            </motion.h1>
+            </h1>
 
-            <motion.p variants={fadeUp} className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-white/55">
+            <p className="hero-sub mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-white/55">
               The intelligence layer for enterprise command &amp; control. Unify video, access,
               intrusion, fire, and analytics into a single operational layer — where every event
               triggers the right action instantly.
-            </motion.p>
+            </p>
 
-            <motion.p variants={fadeUp} className="mt-4 font-mono text-sm text-white/40">
+            <p className="hero-note mt-4 font-mono text-sm text-white/40">
               Not a dashboard. <span className="text-white">A decision execution system.</span>
-            </motion.p>
+            </p>
 
-            <motion.div variants={fadeUp} className="mt-9 flex flex-wrap items-center justify-center gap-3">
+            <div className="hero-cta mt-9 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="#cta"
                 className="inline-flex items-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-medium text-black transition-colors hover:bg-white/90"
@@ -335,56 +374,45 @@ export default function LandingPage() {
               >
                 Talk to an Expert
               </Link>
-            </motion.div>
+            </div>
 
             {/* Capability pillars as badges */}
-            <motion.div variants={fadeUp} className="mt-10 flex flex-wrap items-center justify-center gap-2.5">
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-2.5">
               {PILLARS.map(({ icon: Icon, label }) => (
                 <span
                   key={label}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.025] px-3.5 py-1.5 font-mono text-xs text-white/65 backdrop-blur transition-colors hover:border-white/[0.2] hover:text-white"
+                  className="hero-badge inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.025] px-3.5 py-1.5 font-mono text-xs text-white/65 backdrop-blur transition-colors hover:border-white/[0.2] hover:text-white"
                 >
                   <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} />
                   {label}
                 </span>
               ))}
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
 
           {/* Full-width live console */}
-          <motion.div
-            initial={{ opacity: 0, y: 44 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.9, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="mx-auto mt-16 max-w-6xl lg:mt-20"
-          >
+          <div className="hero-console mx-auto mt-16 max-w-6xl lg:mt-20">
             <ConsoleHero />
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
       </section>
 
       {/* ========================= POSITIONING ========================= */}
       <Section id="positioning" tone="base">
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-100px" }}
-          variants={stagger}
-          className="mx-auto max-w-4xl text-center"
-        >
-          <motion.div variants={fadeUp} className="flex justify-center">
+        <div className="reveal mx-auto max-w-4xl text-center">
+          <div className="flex justify-center">
             <Eyebrow>Positioning</Eyebrow>
-          </motion.div>
-          <motion.h2 variants={fadeUp} className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.9rem] lg:leading-[1.1]">
+          </div>
+          <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.9rem] lg:leading-[1.1]">
             Fragmented systems don&apos;t fail technically — they fail{" "}
             <span style={{ color: ACCENT }}>operationally.</span>
-          </motion.h2>
-          <motion.p variants={fadeUp} className="mt-6 text-lg leading-relaxed text-white/55">
+          </h2>
+          <p className="mt-6 text-lg leading-relaxed text-white/55">
             Disconnected tools, delayed response, and manual coordination create risk at scale. Neubit
             replaces passive monitoring with active, system-driven operations — a unified, event-driven
             control layer where systems respond together, in real time, without human dependency.
-          </motion.p>
-        </motion.div>
+          </p>
+        </div>
       </Section>
 
       {/* ========================= WHAT IS NEUBIT ====================== */}
@@ -394,20 +422,9 @@ export default function LandingPage() {
           title="A unified command & control platform."
           description="Neubit consolidates your entire physical security and operational ecosystem into a single, intelligent control interface."
         />
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-        >
+        <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {PILLARS.map(({ icon: Icon, label }) => (
-            <motion.div
-              key={label}
-              variants={fadeUp}
-              whileHover={{ y: -3 }}
-              className={`group ${cardBase} p-6`}
-            >
+            <div key={label} className={`reveal group ${cardBase} p-6`}>
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]"
                 style={{ color: ACCENT }}
@@ -416,10 +433,10 @@ export default function LandingPage() {
               </div>
               <div className="mt-4 text-base font-medium text-white">{label}</div>
               <div className="mt-1 font-mono text-xs text-white/40">Integrated · Coordinated · Acted upon</div>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
-        <p className="mx-auto mt-10 max-w-2xl text-center text-sm text-white/45">
+        </div>
+        <p className="reveal mx-auto mt-10 max-w-2xl text-center text-sm text-white/45">
           Instead of switching between systems, your entire operation runs through one platform — where
           every event is captured, correlated, and acted upon instantly.
         </p>
@@ -432,23 +449,17 @@ export default function LandingPage() {
           title="What this means for your organization."
           description="Reduce response time, improve coordination, and enable real-time control."
         />
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2"
-        >
+        <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2">
           {IMPACTS.map(([verb, body]) => (
-            <motion.div key={verb} variants={fadeUp} className="bg-[#0a0a0a] p-8">
+            <div key={verb} className="reveal bg-[#0a0a0a] p-8">
               <div className="font-mono text-xs font-medium uppercase tracking-[0.18em]" style={{ color: ACCENT }}>
                 {verb}
               </div>
               <div className="mt-2 text-lg text-white/85">{body}</div>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
-        <p className="mt-10 text-center text-base text-white/55">
+        </div>
+        <p className="reveal mt-10 text-center text-base text-white/55">
           Neubit turns operational data into <span className="font-medium text-white">real-time execution capability.</span>
         </p>
       </Section>
@@ -460,15 +471,9 @@ export default function LandingPage() {
           title="From detection to decision — instantly."
           description="Input → Orchestration → Action. Every event flows through a centralized event backbone, ensuring immediate correlation and coordinated response."
         />
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-4 lg:grid-cols-3"
-        >
+        <div className="mt-14 grid gap-4 lg:grid-cols-3">
           {FLOW.map(({ step, title, body, icon: Icon }, i) => (
-            <motion.div key={step} variants={fadeUp} className={`relative ${cardBase} p-7`}>
+            <div key={step} className={`reveal relative ${cardBase} p-7`}>
               <div className="flex items-center justify-between">
                 <span className="font-mono text-xs" style={{ color: ACCENT }}>{step}</span>
                 <Icon className="h-5 w-5" style={{ color: ACCENT }} />
@@ -481,9 +486,9 @@ export default function LandingPage() {
                   style={{ background: `linear-gradient(90deg, ${ACCENT}88, transparent)` }}
                 />
               )}
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
       </Section>
 
       {/* ========================= ARCHITECTURE ======================== */}
@@ -493,35 +498,23 @@ export default function LandingPage() {
           title="Built for real-time, multi-system orchestration."
           description="All systems operate as a single coordinated platform — not disconnected tools."
         />
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-3 md:grid-cols-2 lg:grid-cols-3"
-        >
+        <div className="mt-14 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {ARCHITECTURE.map(({ icon: Icon, title, body }) => (
-            <motion.div key={title} variants={fadeUp} whileHover={{ y: -3 }} className={`${cardBase} p-6`}>
+            <div key={title} className={`reveal ${cardBase} p-6`}>
               <Icon className="h-6 w-6" style={{ color: ACCENT }} />
               <div className="mt-4 text-base font-medium text-white">{title}</div>
               <div className="mt-1.5 text-sm leading-relaxed text-white/50">{body}</div>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
       </Section>
 
       {/* ========================= CAPABILITIES ======================== */}
       <Section id="capabilities" tone="raised">
         <SectionHeading eyebrow="Key Capabilities" title="Control complexity without increasing it." />
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-3 md:grid-cols-2 lg:grid-cols-3"
-        >
+        <div className="mt-14 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {CAPABILITIES.map(({ icon: Icon, title, body }) => (
-            <motion.div key={title} variants={fadeUp} whileHover={{ y: -3 }} className={`${cardBase} p-6`}>
+            <div key={title} className={`reveal ${cardBase} p-6`}>
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.08] bg-black/40"
                 style={{ color: ACCENT }}
@@ -530,9 +523,9 @@ export default function LandingPage() {
               </div>
               <div className="mt-4 text-base font-medium text-white">{title}</div>
               <div className="mt-1.5 text-sm leading-relaxed text-white/50">{body}</div>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
       </Section>
 
       {/* ========================= MODULES ============================= */}
@@ -542,24 +535,17 @@ export default function LandingPage() {
           title="Modular capabilities. Unified execution."
           description="Each module scales independently — yet operates together through a unified event-driven system."
         />
-        <motion.ul
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-        >
+        <ul className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {MODULES.map((m) => (
-            <motion.li
+            <li
               key={m}
-              variants={fadeUp}
-              className="flex items-center gap-3 rounded-lg border border-white/[0.08] bg-white/[0.015] px-5 py-4 transition-colors hover:border-white/[0.16]"
+              className="reveal flex items-center gap-3 rounded-lg border border-white/[0.08] bg-white/[0.015] px-5 py-4 transition-colors hover:border-white/[0.16]"
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: ACCENT, boxShadow: `0 0 6px ${ACCENT}` }} />
               <span className="text-sm font-medium text-white/80">{m}</span>
-            </motion.li>
+            </li>
           ))}
-        </motion.ul>
+        </ul>
       </Section>
 
       {/* ========================= TRADITIONAL VS NEUBIT =============== */}
@@ -569,13 +555,7 @@ export default function LandingPage() {
           title="From monitoring to command & control."
           description="Legacy systems generate alerts. Neubit executes decisions."
         />
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="mt-14 overflow-hidden rounded-xl border border-white/[0.08]"
-        >
+        <div className="reveal mt-14 overflow-hidden rounded-xl border border-white/[0.08]">
           <div className="grid grid-cols-3 bg-white/[0.03] px-6 py-4 font-mono text-[11px] font-medium uppercase tracking-[0.15em] text-white/45">
             <div>Dimension</div>
             <div>Traditional</div>
@@ -593,36 +573,26 @@ export default function LandingPage() {
               <div className="text-white/90">{neubit}</div>
             </div>
           ))}
-        </motion.div>
+        </div>
       </Section>
 
       {/* ========================= USE CASES =========================== */}
       <Section id="use-cases" tone="base">
         <SectionHeading eyebrow="Use Cases" title="Built for high-responsibility environments." />
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2 lg:grid-cols-3"
-        >
+        <div className="mt-14 grid gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-2 lg:grid-cols-3">
           {USE_CASES.map(([title, body]) => (
-            <motion.div
-              key={title}
-              variants={fadeUp}
-              className="group bg-[#0a0a0a] p-7 transition-colors hover:bg-white/[0.02]"
-            >
+            <div key={title} className="reveal group bg-[#0a0a0a] p-7 transition-colors hover:bg-white/[0.02]">
               <div className="text-base font-medium text-white">{title}</div>
               <div className="mt-1.5 text-sm text-white/50">{body}</div>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
       </Section>
 
       {/* ========================= REAL-WORLD RESPONSE ================= */}
       <Section id="response" tone="raised">
         <div className="grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:items-center">
-          <div>
+          <div className="reveal">
             <Eyebrow>Real-World Response</Eyebrow>
             <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
               Coordinated action — executed in seconds.
@@ -631,19 +601,13 @@ export default function LandingPage() {
               When a critical event occurs, response isn&apos;t managed manually — it&apos;s built into the system.
             </p>
           </div>
-          <motion.ol
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, margin: "-80px" }}
-            variants={stagger}
-            className="relative space-y-3"
-          >
+          <ol className="relative space-y-3">
             <div
               className="absolute left-[15px] top-3 bottom-3 w-px"
               style={{ background: `linear-gradient(to bottom, ${ACCENT}88, ${ACCENT}22, transparent)` }}
             />
             {RESPONSE_STEPS.map((step, i) => (
-              <motion.li key={step} variants={fadeUp} className="relative flex items-start gap-4">
+              <li key={step} className="reveal relative flex items-start gap-4">
                 <div
                   className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-medium"
                   style={{ borderColor: `${ACCENT}55`, background: "rgba(16,185,129,0.08)", color: ACCENT }}
@@ -653,9 +617,9 @@ export default function LandingPage() {
                 <div className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.015] px-5 py-3.5 text-sm text-white/80">
                   {step}
                 </div>
-              </motion.li>
+              </li>
             ))}
-          </motion.ol>
+          </ol>
         </div>
       </Section>
 
@@ -666,29 +630,22 @@ export default function LandingPage() {
           title="Built to work with your existing ecosystem."
           description="No replacement. No disruption. Full interoperability."
         />
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 flex flex-wrap justify-center gap-3"
-        >
+        <div className="mt-14 flex flex-wrap justify-center gap-3">
           {INTEGRATIONS.map((i) => (
-            <motion.span
+            <span
               key={i}
-              variants={fadeUp}
-              className="rounded-full border border-white/[0.1] bg-white/[0.02] px-5 py-2.5 font-mono text-xs text-white/60 transition-colors hover:border-white/[0.2] hover:text-white"
+              className="reveal rounded-full border border-white/[0.1] bg-white/[0.02] px-5 py-2.5 font-mono text-xs text-white/60 transition-colors hover:border-white/[0.2] hover:text-white"
             >
               {i}
-            </motion.span>
+            </span>
           ))}
-        </motion.div>
+        </div>
       </Section>
 
       {/* ========================= SCALABILITY ========================= */}
       <Section id="scalability" tone="raised">
         <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
-          <div>
+          <div className="reveal">
             <Eyebrow>Scalability</Eyebrow>
             <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
               Engineered for enterprise environments.
@@ -703,7 +660,7 @@ export default function LandingPage() {
             ].map((s) => (
               <li
                 key={s}
-                className="flex items-start gap-3 rounded-lg border border-white/[0.08] bg-white/[0.015] p-4 text-sm text-white/70"
+                className="reveal flex items-start gap-3 rounded-lg border border-white/[0.08] bg-white/[0.015] p-4 text-sm text-white/70"
               >
                 <Siren className="mt-0.5 h-4 w-4 shrink-0" style={{ color: ACCENT }} />
                 {s}
@@ -716,48 +673,32 @@ export default function LandingPage() {
       {/* ========================= DEPLOYMENT ========================== */}
       <Section id="deployment" tone="base">
         <SectionHeading eyebrow="Deployment Options" title="One platform. Multiple deployment models." />
-        <motion.div
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-4 lg:grid-cols-3"
-        >
+        <div className="mt-14 grid gap-4 lg:grid-cols-3">
           {DEPLOYMENTS.map(({ tag, title, body }) => (
-            <motion.div key={tag} variants={fadeUp} whileHover={{ y: -4 }} className={`${cardBase} p-7`}>
+            <div key={tag} className={`reveal ${cardBase} p-7`}>
               <div className="font-mono text-xs font-medium uppercase tracking-[0.18em]" style={{ color: ACCENT }}>
                 {tag}
               </div>
               <div className="mt-3 text-2xl font-semibold tracking-tight text-white">{title}</div>
               <div className="mt-2 text-sm leading-relaxed text-white/50">{body}</div>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
       </Section>
 
       {/* ========================= WHY NEUBIT ========================== */}
       <Section id="why-neubit" tone="raised">
         <SectionHeading eyebrow="Why Neubit" title="Why enterprises choose Neubit." />
-        <motion.ul
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="mt-14 grid gap-3 md:grid-cols-2"
-        >
-          {WHY.map((w, i) => (
-            <motion.li
-              key={w}
-              variants={fadeUp}
-              className={`flex items-start gap-4 ${cardBase} p-6 text-white/70`}
-            >
+        <ul className="mt-14 grid gap-3 md:grid-cols-2">
+          {WHY.map((w) => (
+            <li key={w} className={`reveal flex items-start gap-4 ${cardBase} p-6 text-white/70`}>
               <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border" style={{ borderColor: `${ACCENT}55` }}>
                 <Check className="h-3 w-3" style={{ color: ACCENT }} />
               </div>
               <div className="text-sm leading-relaxed">{w}</div>
-            </motion.li>
+            </li>
           ))}
-        </motion.ul>
+        </ul>
       </Section>
 
       {/* ============================= CTA ============================= */}
@@ -781,29 +722,18 @@ export default function LandingPage() {
           }}
         />
         <div className="relative mx-auto max-w-5xl px-6 py-24 text-center lg:py-32">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="mb-6 flex justify-center"
-          >
+          <div className="reveal mb-6 flex justify-center">
             <Eyebrow>Get Started</Eyebrow>
-          </motion.div>
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl"
-          >
+          </div>
+          <h2 className="reveal text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
             Move from monitoring to{" "}
             <span style={{ color: ACCENT }}>command &amp; control.</span>
-          </motion.h2>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-white/55">
+          </h2>
+          <p className="reveal mx-auto mt-6 max-w-2xl text-lg text-white/55">
             Delayed decisions create risk. Fragmented systems create inefficiency. Neubit brings everything
             into one unified platform — so your operations can respond instantly.
           </p>
-          <div className="mt-10 flex flex-wrap justify-center gap-3">
+          <div className="reveal mt-10 flex flex-wrap justify-center gap-3">
             <Link
               href="#"
               className="inline-flex items-center gap-2 rounded-md bg-white px-6 py-3.5 text-sm font-medium text-black transition-colors hover:bg-white/90"
