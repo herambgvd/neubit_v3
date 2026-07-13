@@ -702,15 +702,6 @@ function LivePlayer({
         >
           <span className="pointer-events-auto truncate text-xs font-medium text-white/90">
             {cameraName || ""}
-            {mode === "webrtc" ? (
-              <span className="ml-1.5 rounded bg-white/15 px-1 py-0.5 text-[9px] uppercase tracking-wide">
-                WebRTC
-              </span>
-            ) : (
-              <span className="ml-1.5 rounded bg-white/15 px-1 py-0.5 text-[9px] uppercase tracking-wide">
-                HLS
-              </span>
-            )}
           </span>
           <div className="pointer-events-auto flex items-center gap-0.5">
             {/* Push-to-talk (G6) — only for a talk-capable camera + vms.live.view. */}
