@@ -193,10 +193,10 @@ export default function CamerasPage() {
   );
 
   return (
-    <div className="pb-8">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Single toolbar row — filters on the left, actions on the right.
           (No title/subtitle; the "Cameras" sub-tab above already labels the page.) */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
         <label className="relative block w-64 max-w-full">
           <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-muted" />
           <input
@@ -239,7 +239,9 @@ export default function CamerasPage() {
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body — the ONLY scroll area (page itself never scrolls; toolbar +
+          bulk-bar stay fixed). Themed scrollbar. */}
+      <div className="scroll-themed min-h-0 flex-1 overflow-y-auto pb-2">
       {camerasQ.isLoading ? (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-card-border bg-card py-20 text-sm text-muted">
           <Icon icon="svg-spinners:180-ring" className="text-base" /> Loading cameras…
@@ -294,6 +296,7 @@ export default function CamerasPage() {
           onDelete={askDelete}
         />
       )}
+      </div>
 
       <BulkActionBar
         count={selectedIds.size}

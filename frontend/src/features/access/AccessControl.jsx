@@ -73,14 +73,16 @@ export default function AccessControlPage() {
   });
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-end">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-4 flex shrink-0 items-center justify-end">
         <Button variant="success" icon="heroicons-outline:plus" onClick={() => setBrandPickerOpen(true)}>
           Add controller
         </Button>
       </div>
 
       <MasterDetail
+        fill
+        className="min-h-0 flex-1"
         gridCols="lg:grid-cols-[24rem_1fr]"
         aside={
           <ListPanel

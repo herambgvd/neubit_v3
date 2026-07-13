@@ -14,11 +14,22 @@
 // runtime-built arbitrary value). Defaults to a 22rem list column.
 import { Icon } from "@iconify/react";
 
-export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_1fr]", className = "" }) {
+// `fill` = fill the parent's height and scroll INTERNALLY (no page scroll): the grid
+// takes h-full, the list-aside scrolls its own body, and the detail pane gets its own
+// themed scroll container. Used by the contained device pages (NVR / Access Control).
+export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_1fr]", className = "", fill = false }) {
   return (
-    <div className={`grid min-h-[70vh] grid-cols-1 gap-4 ${gridCols} ${className}`}>
+    <div
+      className={`grid grid-cols-1 gap-4 ${
+        fill ? "h-full min-h-0" : "min-h-[70vh]"
+      } ${gridCols} ${className}`}
+    >
       {aside}
-      {children}
+      {fill ? (
+        <div className="scroll-themed min-h-0 overflow-y-auto">{children}</div>
+      ) : (
+        children
+      )}
     </div>
   );
 }

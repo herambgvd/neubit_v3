@@ -47,3 +47,27 @@
   border-radius: 9999px;
 }
 .nav-scroll:hover::-webkit-scrollbar-thumb { background: var(--muted); }
+
+/* App-wide themed scrollbar — slim, dark, uses theme tokens. `.app-scroll` for the
+   shell's main pane, `.scroll-themed` for any inner scroll container. Track is
+   transparent; the rounded thumb sits on the border token and brightens on hover. */
+.app-scroll,
+.scroll-themed {
+  scrollbar-width: thin;
+  scrollbar-color: var(--card-border) transparent;
+}
+.app-scroll::-webkit-scrollbar,
+.scroll-themed::-webkit-scrollbar { width: 10px; height: 10px; }
+.app-scroll::-webkit-scrollbar-track,
+.scroll-themed::-webkit-scrollbar-track { background: transparent; }
+.app-scroll::-webkit-scrollbar-thumb,
+.scroll-themed::-webkit-scrollbar-thumb {
+  background: var(--card-border);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.app-scroll:hover::-webkit-scrollbar-thumb,
+.scroll-themed:hover::-webkit-scrollbar-thumb { background: var(--muted); }
+.app-scroll::-webkit-scrollbar-thumb:hover,
+.scroll-themed::-webkit-scrollbar-thumb:hover { background: var(--foreground); }

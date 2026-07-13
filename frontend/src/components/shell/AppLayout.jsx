@@ -65,6 +65,21 @@ export default function AppLayout({ children }) {
   // fills via h-full. Every other page keeps the padded, scrollable <main>.
   const immersiveWall = pathname === "/streaming";
 
+  // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
+  // the toolbar stays fixed and only the content card scrolls internally. So <main>
+  // becomes a bounded, overflow-hidden pane (keeps padding) that the page fills via
+  // h-full + its own inner overflow. Keeps all three device pages consistent.
+  const contained =
+    pathname === "/devices/cameras" ||
+    pathname === "/devices/nvr" ||
+    pathname === "/access-control";
+
+  const mainClass = immersiveWall
+    ? "flex-1 min-h-0 w-full overflow-hidden"
+    : contained
+      ? "flex-1 min-h-0 w-full overflow-hidden px-6 lg:px-8 py-6"
+      : "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6";
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <Header />
@@ -72,15 +87,7 @@ export default function AppLayout({ children }) {
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
       {isStreamingRoute(pathname) && <SectionTabs tabs={streamTabs} />}
       <AnnouncementBanner />
-      <main
-        className={
-          immersiveWall
-            ? "flex-1 min-h-0 w-full overflow-hidden"
-            : "flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6"
-        }
-      >
-        {children}
-      </main>
+      <main className={mainClass}>{children}</main>
       <Footer />
       <CommandPalette />
       {/* App-wide operator popups (VMS linkage `popup` action → floating live camera). */}

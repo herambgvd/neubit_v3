@@ -78,13 +78,15 @@ export default function NvrPage() {
     });
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-end gap-2">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-4 flex shrink-0 items-center justify-end gap-2">
         <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => setDiscoverOpen(true)}>Discover</Button>
         <Button variant="success" icon="heroicons-outline:plus" onClick={() => setAddOpen(true)}>Add NVR</Button>
       </div>
 
       <MasterDetail
+        fill
+        className="min-h-0 flex-1"
         gridCols="lg:grid-cols-[24rem_1fr]"
         aside={
           <ListPanel
