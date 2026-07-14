@@ -30,8 +30,15 @@
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+/* Top-anchored panels (command palette): keep the horizontal -50% centering
+   throughout so the panel doesn't flash off-center before settling. */
+@keyframes command-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
 .animate-fade-in { animation: fade-in 0.15s ease-out; }
 .animate-modal-in { animation: modal-in 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
+.animate-command-in { animation: command-in 0.16s cubic-bezier(0.16, 1, 0.3, 1); }
 
 /* Thin, themed horizontal scrollbar for nav / tab strips (top nav + Config sub-tabs).
    Track is invisible; the slim rounded thumb uses the border token and brightens on
