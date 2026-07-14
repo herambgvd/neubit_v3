@@ -121,8 +121,8 @@ export default function OnvifServerPage() {
   return (
     <div className="pb-8">
       <PageHeader
-        title="ONVIF Server"
-        subtitle="Expose your cameras to a third-party VMS (Milestone, Genetec, …) over ONVIF Profile S. This node acts as an ONVIF device the other VMS can discover and pull."
+        title="External Access"
+        subtitle="Expose your cameras to external systems (Milestone, Genetec, a city command center, …) over ONVIF Profile S. This node acts as an ONVIF device other VMS can discover and pull."
         actions={
           canManage && (
             <Button variant="primary" icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
