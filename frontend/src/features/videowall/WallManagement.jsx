@@ -8,7 +8,7 @@
 // Perm-gated on vms.wall.manage (writes). Reads need vms.wall.view. Bound to the
 // VW-A backend (/api/v1/vms/walls/...) + the VW-B decoder endpoints
 // (/api/v1/vms/decoders — degrades cleanly if VW-B isn't live yet).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -56,6 +56,11 @@ export default function WallManagement() {
   });
   const walls = useMemo(() => asItems(wallsQ.data), [wallsQ.data]);
   const selected = useMemo(() => walls.find((w) => w.id === selectedId) || null, [walls, selectedId]);
+
+  // Auto-select the first wall when nothing is selected (matches Sites / NVR).
+  useEffect(() => {
+    if (!selected && walls.length > 0) setSelectedId(walls[0].id);
+  }, [selected, walls]);
 
   // Decoders are wall-independent (tenant-scoped catalog) — used across the
   // Decoders tab and the monitor form. Gracefully empty if VW-B isn't live.

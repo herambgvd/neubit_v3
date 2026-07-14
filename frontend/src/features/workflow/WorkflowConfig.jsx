@@ -3,9 +3,7 @@
 // Workflow configuration (page entry; a route wrapper re-exports this default).
 // Thin orchestrator: renders the shared TabBar + the active tab. Each tab
 // (SOPs / Triggers / Forms / Notifications / Threat levels) is its own component.
-import Link from "next/link";
 import { useState } from "react";
-import { Icon } from "@iconify/react";
 
 import { TabBar } from "@/components/common";
 import SopsTab from "./components/config/SopsTab";
@@ -31,16 +29,6 @@ export default function WorkflowConfigPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-end">
-        <Link
-          href="/workflow"
-          className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
-        >
-          <Icon icon="heroicons-outline:arrow-left" className="text-base" />
-          Incidents
-        </Link>
-      </div>
-
       <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-4" />
 
       {tab === "sops" && <SopsTab />}

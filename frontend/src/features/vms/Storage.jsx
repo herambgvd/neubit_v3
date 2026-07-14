@@ -7,19 +7,22 @@
 //   • Retention overview — a read-out of per-pool caps + rule coverage.
 // Ported from gvd_nvr's Storage page, reskinned to v3's dark tokens + the
 // shared kit/common layer. Lives under Config → Storage.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, EmptyState, MetricRow } from "@/components/ui/kit";
-import { TabBar } from "@/components/common";
+import { ConfirmDialog, EmptyState, MetricRow, Spinner } from "@/components/ui/kit";
+import { MasterDetail, ListPanel, TabBar } from "@/components/common";
 import { apiError } from "@/lib/api";
-import { asItems, fmtBytes } from "@/lib/format";
+import { asItems } from "@/lib/format";
 import { vms } from "./api";
-import StoragePoolCard from "./components/StoragePoolCard";
+import StoragePoolDetail from "./components/StoragePoolDetail";
 import StoragePoolModal from "./components/StoragePoolModal";
 import TierRuleModal from "./components/TierRuleModal";
+import { POOL_TYPES } from "./constants";
+
+const TYPE_ICON = Object.fromEntries(POOL_TYPES.map((t) => [t.value, t.icon]));
 
 const TABS = [
   { key: "pools", label: "Pools", icon: "heroicons-outline:circle-stack" },
@@ -103,23 +106,13 @@ export default function StoragePage() {
 
   return (
     <div className="pb-8">
-      <div className="mb-4 flex items-center justify-end">
-        {tab === "pools" ? (
-          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setPoolModal({})}>
-            Add pool
-          </Button>
-        ) : tab === "rules" ? (
-          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setRuleModal({})}>
-            Add rule
-          </Button>
-        ) : null}
-      </div>
-
       <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-5" />
 
       {tab === "pools" ? (
         <PoolsTab
           pools={pools}
+          rules={rules}
+          poolNames={poolNames}
           query={poolsQ}
           onAdd={() => setPoolModal({})}
           onEdit={(p) => setPoolModal(p)}
@@ -158,118 +151,397 @@ export default function StoragePage() {
   );
 }
 
-// ── Pools tab ────────────────────────────────────────────────────────────
-function PoolsTab({ pools, query, onAdd, onEdit, onDelete }) {
-  const totalCap = pools.reduce((s, p) => s + (p.max_size_bytes || 0), 0);
-  const defaultPool = pools.find((p) => p.is_default);
-
-  if (query.isLoading) return <Loading label="Loading pools…" />;
-  if (query.isError) return <ErrorBox error={query.error} fallback="Failed to load pools" />;
-  if (pools.length === 0)
-    return (
-      <EmptyState
-        icon="heroicons-outline:circle-stack"
-        title="No storage pools"
-        subtitle="Add a local, NAS or S3 pool to start recording."
-        action={<Button variant="success" icon="heroicons-outline:plus" onClick={onAdd}>Add pool</Button>}
-      />
-    );
-
+// ── Pools tab — master/detail (list + StoragePoolDetail), mirrors Sites ─────
+function PoolListItem({ pool, selected, onSelect }) {
+  const p = pool;
+  const typeLabel = POOL_TYPES.find((t) => t.value === p.pool_type)?.label || p.pool_type;
+  const loc =
+    p.pool_type === "s3"
+      ? p.s3_bucket || p.s3_endpoint || "—"
+      : p.pool_type === "nfs" || p.pool_type === "smb"
+        ? `${p.nas_server || "?"}:${p.nas_share || p.path || "?"}`
+        : p.path || "—";
   return (
-    <>
-      <MetricRow
-        className="mb-4"
-        items={[
-          { label: "Pools", value: pools.length, icon: "heroicons-outline:circle-stack", tone: "info" },
-          { label: "Declared capacity", value: totalCap ? fmtBytes(totalCap) : "Unlimited", icon: "heroicons-outline:server-stack", tone: "neutral" },
-          { label: "Default pool", value: defaultPool?.name || "None set", icon: "heroicons-outline:star", tone: defaultPool ? "ok" : "warn" },
-        ]}
-      />
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {pools.map((pool) => (
-          <StoragePoolCard key={pool.id} pool={pool} onEdit={() => onEdit(pool)} onDelete={() => onDelete(pool)} />
-        ))}
-      </div>
-    </>
+    <li className="relative">
+      <button
+        onClick={onSelect}
+        className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${
+          selected ? "bg-hover" : "hover:bg-hover"
+        }`}
+      >
+        {selected && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />}
+        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-md bg-hover text-muted shrink-0 border border-card-border">
+          <Icon icon={TYPE_ICON[p.pool_type] || "heroicons-outline:server"} className="text-base" />
+          <span
+            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-card ${
+              p.is_active !== false ? "bg-green-500" : "bg-muted/50"
+            }`}
+          />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-foreground truncate">{p.name}</span>
+            {p.is_default && (
+              <span className="text-[10px] rounded-full bg-blue-500/10 text-blue-400 px-1.5 py-0.5 font-medium">
+                Default
+              </span>
+            )}
+          </span>
+          <span className="block text-xs text-muted truncate">{typeLabel}</span>
+          <span className="block text-[10px] font-mono text-muted/70 truncate">{loc}</span>
+        </span>
+      </button>
+    </li>
   );
 }
 
-// ── Tier-rules tab ─────────────────────────────────────────────────────────
-function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
-  if (query.isLoading) return <Loading label="Loading rules…" />;
-  if (query.isError) return <ErrorBox error={query.error} fallback="Failed to load rules" />;
-  if (rules.length === 0)
-    return (
-      <EmptyState
-        icon="heroicons-outline:arrows-right-left"
-        title="No tier rules"
-        subtitle="Rules move recordings between pools as they age (hot → cold)."
-        action={<Button variant="success" icon="heroicons-outline:plus" onClick={onAdd}>Add rule</Button>}
-      />
-    );
+function PoolsTab({ pools, rules, poolNames, query, onAdd, onEdit, onDelete }) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
 
-  const fmtAge = (h) => (h >= 24 ? `${Math.round(h / 24)}d (${h}h)` : `${h}h`);
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return pools;
+    return pools.filter((p) =>
+      [p.name, p.path, p.s3_bucket, p.nas_server].filter(Boolean).join(" ").toLowerCase().includes(term),
+    );
+  }, [pools, search]);
+
+  const selected = useMemo(() => pools.find((p) => p.id === selectedId) || null, [pools, selectedId]);
+
+  useEffect(() => {
+    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
+  }, [selected, filtered]);
+
+  const activeCount = pools.filter((p) => p.is_active !== false).length;
+
+  const listActions = (
+    <button
+      onClick={onAdd}
+      title="Add pool"
+      className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+    >
+      <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+    </button>
+  );
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-card-border bg-card">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-card-border bg-hover/40">
-            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">Name</th>
-            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">Flow</th>
-            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-muted">Move after</th>
-            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">Status</th>
-            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-muted">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rules.map((rule) => (
-            <tr key={rule.id} className="border-b border-card-border/60 last:border-0 hover:bg-hover/50">
-              <td className="px-4 py-3 font-medium text-foreground">{rule.name}</td>
-              <td className="px-4 py-3 text-muted">
-                <span className="inline-flex items-center gap-1.5">
-                  {poolNames[rule.source_pool_id] || "—"}
-                  <Icon icon="heroicons-outline:arrow-long-right" className="text-sm" />
-                  {poolNames[rule.target_pool_id] || "—"}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-right tabular-nums text-muted">{fmtAge(rule.after_age_hours || 0)}</td>
-              <td className="px-4 py-3">
-                {rule.enabled ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-500">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Enabled
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-card-border bg-hover px-2 py-0.5 text-[11px] text-muted">
-                    <span className="h-1.5 w-1.5 rounded-full bg-muted" /> Disabled
-                  </span>
-                )}
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex items-center justify-end gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onEdit(rule)}
-                    title="Edit"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-hover hover:text-foreground"
-                  >
-                    <Icon icon="heroicons-outline:pencil-square" className="text-base" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDelete(rule)}
-                    title="Delete"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-500/10"
-                  >
-                    <Icon icon="heroicons-outline:trash" className="text-base" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <MasterDetail
+      aside={
+        <ListPanel
+          title="Pools"
+          count={pools.length}
+          action={listActions}
+          search={search}
+          onSearch={setSearch}
+          searchPlaceholder="Search pools…"
+        >
+          <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              <span className="text-muted">{activeCount} active</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
+              <span className="text-muted">{pools.length - activeCount} inactive</span>
+            </span>
+          </div>
+
+          {query.isLoading ? (
+            <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted">
+              <Spinner className="!h-4 !w-4" /> Loading…
+            </div>
+          ) : query.isError ? (
+            <div className="px-4 py-6 text-center text-xs text-red-500">
+              {apiError(query.error, "Failed to load pools")}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-4 py-12 text-center">
+              <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
+                <Icon icon="heroicons-outline:circle-stack" className="text-lg text-muted" />
+              </div>
+              <div className="text-sm font-medium text-foreground">
+                {search.trim() ? "No matches" : "No storage pools"}
+              </div>
+              <div className="mt-0.5 text-xs text-muted">
+                {search.trim() ? "Try a different keyword." : "Click Add to create your first pool."}
+              </div>
+            </div>
+          ) : (
+            <ul className="divide-y divide-card-border">
+              {filtered.map((p) => (
+                <PoolListItem key={p.id} pool={p} selected={p.id === selectedId} onSelect={() => setSelectedId(p.id)} />
+              ))}
+            </ul>
+          )}
+        </ListPanel>
+      }
+    >
+      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+        {selected ? (
+          <StoragePoolDetail
+            key={selected.id}
+            pool={selected}
+            rules={rules}
+            poolNames={poolNames}
+            onClose={() => setSelectedId(null)}
+            onEdit={() => onEdit(selected)}
+            onDelete={() => onDelete(selected)}
+          />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
+              <Icon icon="heroicons-outline:circle-stack" className="text-xl" />
+            </span>
+            <div className="mt-3 text-sm font-semibold text-foreground">No pool selected</div>
+            <div className="text-xs text-muted mt-0.5">
+              Pick one from the list, or click <b>Add</b> to create a new pool.
+            </div>
+          </div>
+        )}
+      </section>
+    </MasterDetail>
+  );
+}
+
+// ── Tier-rules tab — master/detail (list + detail), mirrors Pools ───────────
+const fmtAge = (h) => (h >= 24 ? `${Math.round(h / 24)}d (${h}h)` : `${h}h`);
+
+function TierInfoField({ label, children }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
+      <div className="mt-1 text-sm text-foreground">{children}</div>
     </div>
+  );
+}
+
+function TierRuleListItem({ rule, poolNames, selected, onSelect }) {
+  return (
+    <li className="relative">
+      <button
+        onClick={onSelect}
+        className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${
+          selected ? "bg-hover" : "hover:bg-hover"
+        }`}
+      >
+        {selected && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />}
+        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-md bg-hover text-muted shrink-0 border border-card-border">
+          <Icon icon="heroicons-outline:arrows-right-left" className="text-base" />
+          <span
+            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-card ${
+              rule.enabled ? "bg-green-500" : "bg-muted/50"
+            }`}
+          />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-foreground truncate">{rule.name}</span>
+            {!rule.enabled && (
+              <span className="text-[10px] rounded-full bg-hover px-1.5 py-0.5 font-medium text-muted">Disabled</span>
+            )}
+          </span>
+          <span className="block text-xs text-muted truncate">
+            {poolNames[rule.source_pool_id] || "—"} → {poolNames[rule.target_pool_id] || "—"}
+          </span>
+          <span className="block text-[10px] text-muted/70">after {fmtAge(rule.after_age_hours || 0)}</span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function TierRuleDetail({ rule, poolNames, onClose, onEdit, onDelete }) {
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 shrink-0">
+            <Icon icon="heroicons-outline:arrows-right-left" className="text-2xl" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold text-foreground truncate">{rule.name}</h2>
+            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted flex-wrap">
+              <span>after {fmtAge(rule.after_age_hours || 0)}</span>
+              <span
+                className={`rounded-full px-2 py-0.5 font-medium ${
+                  rule.enabled ? "bg-green-500/10 text-green-500" : "bg-hover text-muted"
+                }`}
+              >
+                {rule.enabled ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={onClose}
+            title="Close"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+          >
+            <Icon icon="heroicons-outline:x-mark" className="text-base" />
+          </button>
+          <button
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover"
+          >
+            <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
+          </button>
+          <button
+            onClick={onDelete}
+            className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20"
+          >
+            <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Flow</div>
+          <div className="flex items-center gap-3 rounded-xl border border-card-border bg-hover/40 px-4 py-3">
+            <div className="flex-1 min-w-0 text-center">
+              <div className="text-[10px] uppercase tracking-wide text-muted">Source</div>
+              <div className="mt-0.5 text-sm font-medium text-foreground truncate">
+                {poolNames[rule.source_pool_id] || "—"}
+              </div>
+            </div>
+            <Icon icon="heroicons-outline:arrow-long-right" className="text-lg text-muted shrink-0" />
+            <div className="flex-1 min-w-0 text-center">
+              <div className="text-[10px] uppercase tracking-wide text-muted">Target</div>
+              <div className="mt-0.5 text-sm font-medium text-foreground truncate">
+                {poolNames[rule.target_pool_id] || "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+          <TierInfoField label="Move after">{fmtAge(rule.after_age_hours || 0)}</TierInfoField>
+          <TierInfoField label="Status">{rule.enabled ? "Enabled" : "Disabled"}</TierInfoField>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return rules;
+    return rules.filter((r) =>
+      [r.name, poolNames[r.source_pool_id], poolNames[r.target_pool_id]]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [rules, poolNames, search]);
+
+  const selected = useMemo(() => rules.find((r) => r.id === selectedId) || null, [rules, selectedId]);
+
+  useEffect(() => {
+    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
+  }, [selected, filtered]);
+
+  const enabledCount = rules.filter((r) => r.enabled).length;
+
+  const listActions = (
+    <button
+      onClick={onAdd}
+      title="Add rule"
+      className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+    >
+      <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+    </button>
+  );
+
+  return (
+    <MasterDetail
+      aside={
+        <ListPanel
+          title="Tier Rules"
+          count={rules.length}
+          action={listActions}
+          search={search}
+          onSearch={setSearch}
+          searchPlaceholder="Search rules…"
+        >
+          <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              <span className="text-muted">{enabledCount} enabled</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
+              <span className="text-muted">{rules.length - enabledCount} disabled</span>
+            </span>
+          </div>
+
+          {query.isLoading ? (
+            <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted">
+              <Spinner className="!h-4 !w-4" /> Loading…
+            </div>
+          ) : query.isError ? (
+            <div className="px-4 py-6 text-center text-xs text-red-500">
+              {apiError(query.error, "Failed to load rules")}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-4 py-12 text-center">
+              <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
+                <Icon icon="heroicons-outline:arrows-right-left" className="text-lg text-muted" />
+              </div>
+              <div className="text-sm font-medium text-foreground">
+                {search.trim() ? "No matches" : "No tier rules"}
+              </div>
+              <div className="mt-0.5 text-xs text-muted">
+                {search.trim()
+                  ? "Try a different keyword."
+                  : "Rules move recordings between pools as they age (hot → cold)."}
+              </div>
+            </div>
+          ) : (
+            <ul className="divide-y divide-card-border">
+              {filtered.map((r) => (
+                <TierRuleListItem
+                  key={r.id}
+                  rule={r}
+                  poolNames={poolNames}
+                  selected={r.id === selectedId}
+                  onSelect={() => setSelectedId(r.id)}
+                />
+              ))}
+            </ul>
+          )}
+        </ListPanel>
+      }
+    >
+      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+        {selected ? (
+          <TierRuleDetail
+            key={selected.id}
+            rule={selected}
+            poolNames={poolNames}
+            onClose={() => setSelectedId(null)}
+            onEdit={() => onEdit(selected)}
+            onDelete={() => onDelete(selected)}
+          />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
+              <Icon icon="heroicons-outline:arrows-right-left" className="text-xl" />
+            </span>
+            <div className="mt-3 text-sm font-semibold text-foreground">No rule selected</div>
+            <div className="text-xs text-muted mt-0.5">
+              Pick one from the list, or click <b>Add</b> to create a new rule.
+            </div>
+          </div>
+        )}
+      </section>
+    </MasterDetail>
   );
 }
 

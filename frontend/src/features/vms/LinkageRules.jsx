@@ -1,45 +1,51 @@
 "use client";
 
-// VMS → Linkage (P5-C). The event-automation surface: linkage rules that fire
-// actions (record / notify / PTZ / output / popup) when a matching camera event
-// arrives. A rule list with an active toggle + trigger/scope/action summary, an
-// editor modal (LinkageRuleModal), and delete. CRUD via vms.linkage.
-//
-// Lives under Config → Linkage.
-import { useMemo, useState } from "react";
+// VMS → Linkage (P5-C). Event-automation rules that fire actions (record / notify
+// / PTZ / output / popup) when a matching camera event arrives. Master/detail:
+// LEFT a searchable rule list (Add + active/inactive counts in the header), RIGHT
+// LinkageRuleDetail (trigger/scope/actions + active toggle). Editing runs through
+// LinkageRuleModal. Mirrors the Sites config layout. Lives under Config → Linkage.
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, EmptyState, MetricRow, Toggle } from "@/components/ui/kit";
+import { ConfirmDialog, Spinner } from "@/components/ui/kit";
+import { MasterDetail, ListPanel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
-import { EVENT_TYPE_PRESETS, LINKAGE_ACTION_TYPES } from "./constants";
+import LinkageRuleListItem from "./components/LinkageRuleListItem";
+import LinkageRuleDetail from "./components/LinkageRuleDetail";
 import LinkageRuleModal from "./components/LinkageRuleModal";
-
-const actionLabel = (t) => LINKAGE_ACTION_TYPES.find((a) => a.value === t)?.label || t;
-
-function scopeLabel(scope = {}) {
-  if (!scope || scope.all || Object.keys(scope).length === 0) return "Any camera";
-  if (Array.isArray(scope.camera_ids) && scope.camera_ids.length)
-    return `${scope.camera_ids.length} camera${scope.camera_ids.length === 1 ? "" : "s"}`;
-  if (Array.isArray(scope.group_ids) && scope.group_ids.length)
-    return `${scope.group_ids.length} group${scope.group_ids.length === 1 ? "" : "s"}`;
-  return "Any camera";
-}
 
 export default function LinkageRulesPage() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(undefined); // undefined=closed, null=new, obj=edit
   const [saveError, setSaveError] = useState(null);
   const [confirm, setConfirm] = useState(null); // { rule } or null
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
 
   const q = useQuery({
     queryKey: ["vms-linkage-rules"],
     queryFn: () => vms.linkage.list({ limit: 200 }),
   });
   const rules = useMemo(() => asItems(q.data), [q.data]);
+
+  const activeCount = rules.filter((r) => r.is_active).length;
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return rules;
+    return rules.filter((r) => r.name?.toLowerCase().includes(term));
+  }, [rules, search]);
+
+  const selected = useMemo(() => rules.find((r) => r.id === selectedId) || null, [rules, selectedId]);
+
+  useEffect(() => {
+    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
+  }, [selected, filtered]);
 
   const saveMut = useMutation({
     mutationFn: ({ id, body }) => (id ? vms.linkage.update(id, body) : vms.linkage.create(body)),
@@ -60,9 +66,10 @@ export default function LinkageRulesPage() {
 
   const delMut = useMutation({
     mutationFn: (id) => vms.linkage.remove(id),
-    onSuccess: () => {
+    onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ["vms-linkage-rules"] });
       toast.success("Rule deleted");
+      if (selectedId === id) setSelectedId(null);
       setConfirm(null);
     },
     onError: (e) => toast.error(apiError(e, "Failed to delete rule")),
@@ -73,116 +80,100 @@ export default function LinkageRulesPage() {
     setEditing(null);
   };
 
+  const listActions = (
+    <button
+      onClick={openNew}
+      title="New rule"
+      className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+    >
+      <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+    </button>
+  );
+
   return (
-    <div className="pb-8">
-      <div className="mb-4 flex items-center justify-end">
-        <Button icon="heroicons-outline:plus" onClick={openNew}>
-          New rule
-        </Button>
-      </div>
+    <div>
+      <MasterDetail
+        aside={
+          <ListPanel
+            title="Linkage"
+            count={rules.length}
+            action={listActions}
+            search={search}
+            onSearch={setSearch}
+            searchPlaceholder="Search rules…"
+          >
+            <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                <span className="text-muted">{activeCount} active</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
+                <span className="text-muted">{rules.length - activeCount} inactive</span>
+              </span>
+            </div>
 
-      {q.isLoading ? (
-        <div className="flex items-center gap-2 p-6 text-xs text-muted">
-          <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading rules…
-        </div>
-      ) : q.isError ? (
-        <div className="m-1 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">
-          <Icon icon="heroicons-outline:exclamation-circle" className="mt-0.5 shrink-0 text-sm" />
-          <div>
-            <p className="font-medium">Failed to load rules</p>
-            <p className="mt-0.5 text-[11px] opacity-80">{apiError(q.error, "Unknown error")}</p>
-          </div>
-        </div>
-      ) : rules.length === 0 ? (
-        <EmptyState
-          icon="heroicons-outline:bolt"
-          title="No linkage rules yet"
-          subtitle="Create a rule to react to camera events — e.g. start a clip on motion, or pop the camera when a zone is breached."
-          action={
-            <Button icon="heroicons-outline:plus" onClick={openNew}>
-              New rule
-            </Button>
-          }
-        />
-      ) : (
-        <div className="space-y-4">
-          <MetricRow
-            items={[
-              { label: "Rules", value: rules.length, icon: "heroicons-outline:bolt", tone: "info" },
-              { label: "Active", value: rules.filter((r) => r.is_active).length, icon: "heroicons-outline:play", tone: "ok" },
-              { label: "Inactive", value: rules.filter((r) => !r.is_active).length, icon: "heroicons-outline:pause", tone: "neutral" },
-            ]}
-          />
-          <div className="space-y-2">
-          {rules.map((rule) => {
-            const tp = EVENT_TYPE_PRESETS[rule.trigger_event_type] || EVENT_TYPE_PRESETS.system;
-            return (
-              <div
-                key={rule.id}
-                className="flex items-center gap-3 rounded-xl border border-card-border bg-card px-4 py-3"
-              >
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${tp.cls}`}>
-                  <Icon icon={tp.icon} className="text-base" />
-                </span>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-semibold text-foreground">{rule.name}</span>
-                    {!rule.is_active && (
-                      <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] font-medium text-muted">Inactive</span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
-                    <span>on {tp.label}</span>
-                    <span className="opacity-40">·</span>
-                    <span>{scopeLabel(rule.camera_scope)}</span>
-                    <span className="opacity-40">·</span>
-                    <span className="inline-flex items-center gap-1">
-                      <Icon icon="heroicons-outline:bolt" className="text-[11px]" />
-                      {(rule.actions || []).length
-                        ? (rule.actions || []).map((a) => actionLabel(a.type)).join(", ")
-                        : "no actions"}
-                    </span>
-                    {rule.cooldown_seconds > 0 && (
-                      <>
-                        <span className="opacity-40">·</span>
-                        <span>cooldown {rule.cooldown_seconds}s</span>
-                      </>
-                    )}
-                  </div>
+            {q.isLoading ? (
+              <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted">
+                <Spinner className="!h-4 !w-4" /> Loading…
+              </div>
+            ) : q.isError ? (
+              <div className="px-4 py-6 text-center text-xs text-red-500">
+                {apiError(q.error, "Failed to load rules")}
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="px-4 py-12 text-center">
+                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
+                  <Icon icon="heroicons-outline:bolt" className="text-lg text-muted" />
                 </div>
-
-                <div className="flex shrink-0 items-center gap-2">
-                  <Toggle
-                    checked={rule.is_active}
-                    onChange={(v) => toggleMut.mutate({ id: rule.id, is_active: v })}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSaveError(null);
-                      setEditing(rule);
-                    }}
-                    title="Edit"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-card-border text-muted hover:bg-hover hover:text-foreground"
-                  >
-                    <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirm({ rule })}
-                    title="Delete"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-card-border text-muted hover:bg-hover hover:text-red-500"
-                  >
-                    <Icon icon="heroicons-outline:trash" className="text-sm" />
-                  </button>
+                <div className="text-sm font-medium text-foreground">
+                  {search.trim() ? "No matches" : "No linkage rules yet"}
+                </div>
+                <div className="mt-0.5 text-xs text-muted">
+                  {search.trim() ? "Try a different keyword." : "Click Add to create your first rule."}
                 </div>
               </div>
-            );
-          })}
-          </div>
-        </div>
-      )}
+            ) : (
+              <ul className="divide-y divide-card-border">
+                {filtered.map((r) => (
+                  <LinkageRuleListItem
+                    key={r.id}
+                    rule={r}
+                    selected={r.id === selectedId}
+                    onSelect={() => setSelectedId(r.id)}
+                  />
+                ))}
+              </ul>
+            )}
+          </ListPanel>
+        }
+      >
+        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+          {selected ? (
+            <LinkageRuleDetail
+              key={selected.id}
+              rule={selected}
+              onToggle={(v) => toggleMut.mutate({ id: selected.id, is_active: v })}
+              onClose={() => setSelectedId(null)}
+              onEdit={() => {
+                setSaveError(null);
+                setEditing(selected);
+              }}
+              onDelete={() => setConfirm({ rule: selected })}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
+              <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
+                <Icon icon="heroicons-outline:bolt" className="text-xl" />
+              </span>
+              <div className="mt-3 text-sm font-semibold text-foreground">No rule selected</div>
+              <div className="text-xs text-muted mt-0.5">
+                Pick one from the list, or click <b>Add</b> to create a new rule.
+              </div>
+            </div>
+          )}
+        </section>
+      </MasterDetail>
 
       <LinkageRuleModal
         open={editing !== undefined}
