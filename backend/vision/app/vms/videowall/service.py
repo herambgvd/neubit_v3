@@ -504,7 +504,8 @@ class VideoWallService:
         if not host:
             return None
         rtsp_port = (camera.network_info or {}).get("rtsp_port") or 554
-        channel = camera.nvr_channel_number or 1
+        # channel 0 is a valid NVR channel index — explicit None check, never `or 1`.
+        channel = camera.nvr_channel_number if camera.nvr_channel_number is not None else 1
         base = f"rtsp://{host}:{rtsp_port}/Streaming/Channels/{channel:d}01"
         return _inject_rtsp_creds(base, username, password) if use_creds else base
 

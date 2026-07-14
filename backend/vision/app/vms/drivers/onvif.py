@@ -34,8 +34,10 @@ import os
 import re
 import socket
 from typing import Any
+from datetime import datetime as _dt
+from datetime import timezone as _tz
 from urllib.parse import quote as _q
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from .base import (
     Capabilities,
@@ -306,6 +308,117 @@ def _inject_creds(url: str, username: str, password: str) -> str:
     if "@" in authority:
         return url
     return f"{proto}://{_q(username, safe='')}:{_q(password or '', safe='')}@{rest}"
+
+
+# ── ONVIF Profile-G (recording/search/replay) helpers ─────────────────────────
+# Many NVRs (incl. GVD/GV-* firmware) advertise the recording/search/replay services
+# in ``GetServices`` but NOT in the legacy ``GetCapabilities`` that python-onvif's
+# ``create_*_service`` relies on — so the SDK raises "device doesn't support service".
+# We fix that by injecting the XAddrs from ``GetServices`` before creating the services.
+_REC_NS = "http://www.onvif.org/ver10/recording/wsdl"
+_SEARCH_NS = "http://www.onvif.org/ver10/search/wsdl"
+_REPLAY_NS = "http://www.onvif.org/ver10/replay/wsdl"
+
+
+def _attach_profileg(cam) -> tuple[Any, Any]:
+    """Inject Profile-G XAddrs from GetServices, then create the recording + search
+    services. Returns (recording_service, search_service); either may be None."""
+    try:
+        dev = cam.create_devicemgmt_service()
+        xaddr = {s.Namespace: s.XAddr for s in dev.GetServices({"IncludeCapability": False})}
+        for ns in (_REC_NS, _SEARCH_NS, _REPLAY_NS):
+            if ns in xaddr:
+                cam.xaddrs[ns] = xaddr[ns]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("ONVIF GetServices/XAddr inject failed: %s", exc)
+    recording = search = None
+    try:
+        recording = cam.create_recording_service()
+    except Exception:  # noqa: BLE001
+        recording = None
+    try:
+        search = cam.create_search_service()
+    except Exception:  # noqa: BLE001
+        search = None
+    return recording, search
+
+
+_TOKEN_RE = re.compile(r"_(\d+)_(main|sub)$")
+
+
+def _tokens_for_channel(recs, channel, *, stream: str = "main") -> list[str]:
+    """RecordingTokens (``RecordingToken_<n>_<stream>``) for a channel. The token index
+    ``n`` is the ONVIF **video-source index** == our ``nvr_channel_number`` (NOT a 1-based
+    physical channel) — e.g. our "Channel 4" (nvr_channel_number 6) → ``RecordingToken_6``.
+    Numeric-index match (no lexical sort). ``channel`` None → all tokens for the stream."""
+    pairs: list[tuple[int, str]] = []
+    for r in recs:
+        tok = str(getattr(r, "RecordingToken", "") or "")
+        m = _TOKEN_RE.search(tok)
+        if m and m.group(2) == stream:
+            pairs.append((int(m.group(1)), tok))
+    pairs.sort()
+    if channel is None:
+        return [t for _, t in pairs]
+    ch = int(channel)
+    for i, t in pairs:
+        if i == ch:
+            return [t]
+    return []
+
+
+def _onvif_iso(dt) -> str | None:
+    """A zeep datetime (or str) → 'YYYY-MM-DDTHH:MM:SSZ'."""
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        return _nvr_time(dt)
+    try:
+        return dt.astimezone(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:  # noqa: BLE001
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _nvr_time(iso: str | None) -> str | None:
+    """Any ISO-8601 string → 'YYYY-MM-DDTHH:MM:SSZ' (the NVR replay-URI format; drops
+    fractional seconds so string comparison against recorded spans is uniform)."""
+    if not iso:
+        return None
+    try:
+        d = _dt.fromisoformat(str(iso).replace("Z", "+00:00"))
+        return d.astimezone(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:  # noqa: BLE001
+        return str(iso)
+
+
+def _recording_span(search, recording, token: str) -> tuple[str, str] | None:
+    """(from, until) recorded span for a token via GetRecordingInformation. None if N/A."""
+    for svc in (search, recording):
+        if svc is None:
+            continue
+        try:
+            info = svc.GetRecordingInformation({"RecordingToken": token})
+            frm = _onvif_iso(getattr(info, "EarliestRecording", None))
+            until = _onvif_iso(getattr(info, "LatestRecording", None))
+            if frm and until:
+                return frm, until
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _rewrite_replay_window(url: str, start_time: str | None, end_time: str | None) -> str:
+    """Rewrite starttime/endtime query params in an NVR replay RTSP URI to the requested
+    window, so HLS/RTSP playback starts at the right instant."""
+    if not (start_time or end_time):
+        return url
+    p = urlparse(url)
+    q = parse_qs(p.query)
+    if start_time and _nvr_time(start_time):
+        q["starttime"] = [_nvr_time(start_time)]
+    if end_time and _nvr_time(end_time):
+        q["endtime"] = [_nvr_time(end_time)]
+    return urlunparse(p._replace(query=urlencode(q, doseq=True)))
 
 
 class OnvifDriver(CameraDriver):
@@ -1611,48 +1724,44 @@ class OnvifDriver(CameraDriver):
         start_time: str | None = None,
         end_time: str | None = None,
     ) -> list[dict[str, Any]]:
-        """ONVIF Profile G recording search (GetRecordings → FindRecordings fallback).
-        Ported from gvd_nvr ``search_recordings``. Never raises."""
+        """ONVIF Profile-G recording search. Injects the recording/search XAddrs from
+        GetServices (NVRs like GVD omit them from GetCapabilities → SDK can't create the
+        services otherwise), then reads each channel's recorded span via
+        GetRecordingInformation. ``channel`` is the 1-based physical channel. Never raises."""
         if not _HAS_ONVIF:
             return []
+
+        req_from = _nvr_time(start_time)
+        req_until = _nvr_time(end_time)
 
         def _search() -> list[dict[str, Any]]:
             try:
                 cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
-                try:
-                    recording = cam.create_recording_service()
-                except Exception:  # noqa: BLE001
+                recording, search = _attach_profileg(cam)
+                if recording is None:
+                    log.warning("[%s] ONVIF recording service unavailable", host)
                     return []
                 try:
-                    recs = recording.GetRecordings()
-                    if recs:
-                        out = []
-                        for rec in recs:
-                            token = getattr(rec, "RecordingToken", None) or str(rec)
-                            out.append(
-                                {"recording_token": str(token), "start_time": start_time, "end_time": end_time}
-                            )
-                        return out
-                except Exception:  # noqa: BLE001
-                    pass
-                # Fallback: FindRecordings search API.
-                scope = {"IncludedSources": [], "IncludedRecordings": [], "RecordingInformationFilter": None}
-                if start_time and end_time:
-                    scope["StartTime"] = start_time
-                    scope["EndTime"] = end_time
-                result = recording.FindRecordings({"Scope": scope})
-                search_token = getattr(result, "SearchToken", None)
-                if not search_token:
+                    recs = recording.GetRecordings() or []
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("[%s] GetRecordings failed: %s", host, exc)
                     return []
-                results = recording.GetRecordingSearchResults(
-                    {"SearchToken": search_token, "MinResults": 1, "MaxResults": 100, "WaitTime": "PT5S"}
-                )
-                out = []
-                for rec in getattr(results, "RecordingResult", []) or []:
-                    token = getattr(rec, "RecordingToken", None)
-                    if token:
+                out: list[dict[str, Any]] = []
+                for token in _tokens_for_channel(recs, channel, stream="main"):
+                    span = _recording_span(search, recording, token)
+                    if not span:
+                        continue
+                    rec_from, rec_until = span
+                    seg_from = max(rec_from, req_from) if req_from else rec_from
+                    seg_until = min(rec_until, req_until) if req_until else rec_until
+                    if seg_from and seg_until and seg_from < seg_until:
                         out.append(
-                            {"recording_token": str(token), "start_time": start_time, "end_time": end_time}
+                            {
+                                "recording_token": token,
+                                "channel": channel,
+                                "start_time": seg_from,
+                                "end_time": seg_until,
+                            }
                         )
                 return out
             except Exception as exc:  # noqa: BLE001
@@ -1671,44 +1780,44 @@ class OnvifDriver(CameraDriver):
         end_time: str | None = None,
         recording_token: str | None = None,
     ) -> str | None:
-        """ONVIF Profile G GetReplayUri. Ported from gvd_nvr ``get_replay_uri``. Never raises.
-
-        Profile G replay is keyed by a ``RecordingToken``, not a channel+window: when no
-        explicit ``recording_token`` is given we first ``search_recordings`` (for the
-        channel/window) and replay the first match's token. The replay stream position is
-        then driven by the RTSP Range header (playback control), not the URI — so the URI
-        is the recording's replay endpoint. Returns ``None`` when nothing matches.
-        """
+        """ONVIF Profile-G GetReplayUri → an RTSP-with-time-window playback URI. Resolves
+        the ``RecordingToken`` for the 1-based physical ``channel`` (or uses an explicit
+        one), then rewrites the URI's starttime/endtime to the requested window so playback
+        starts at the right instant. Injects Profile-G XAddrs first. Never raises."""
         if not _HAS_ONVIF:
-            return None
-
-        token = recording_token
-        if not token:
-            matches = await self.search_recordings(
-                host, creds, channel=channel, start_time=start_time, end_time=end_time
-            )
-            for m in matches:
-                if m.get("recording_token"):
-                    token = m["recording_token"]
-                    break
-        if not token:
             return None
 
         def _get() -> str | None:
             try:
                 cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+                recording, _search = _attach_profileg(cam)
+                token = recording_token
+                if not token and recording is not None:
+                    try:
+                        recs = recording.GetRecordings() or []
+                    except Exception:  # noqa: BLE001
+                        recs = []
+                    toks = _tokens_for_channel(recs, channel, stream="main")
+                    token = toks[0] if toks else None
+                if not token:
+                    return None
                 try:
                     replay = cam.create_replay_service()
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("[%s] ONVIF replay service unavailable: %s", host, exc)
                     return None
                 uri = replay.GetReplayUri(
                     {
-                        "StreamSetup": {"Stream": "RTP_Unicast", "Transport": {"Protocol": "RTSP"}},
+                        "StreamSetup": {"Stream": "RTP-Unicast", "Transport": {"Protocol": "RTSP"}},
                         "RecordingToken": token,
                     }
                 )
-                url = getattr(uri, "Uri", None)
-                return _inject_creds(url, creds.username, creds.password) if url else None
+                # GetReplayUri may return a plain RTSP string OR an object with ``.Uri``.
+                url = getattr(uri, "Uri", None) or (uri if isinstance(uri, str) else None)
+                if not url:
+                    return None
+                url = _rewrite_replay_window(url, start_time, end_time)
+                return _inject_creds(url, creds.username, creds.password)
             except Exception as exc:  # noqa: BLE001
                 log.warning("[%s] GetReplayUri failed: %s", host, exc)
                 return None
