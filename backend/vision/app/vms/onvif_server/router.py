@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Principal, Scope, get_scope, require_permission
@@ -41,10 +41,23 @@ async def _get_service(
     return OnvifServerService(db, scope)
 
 
+def require_superadmin(scope: Annotated[Scope, Depends(get_scope)]) -> Scope:
+    """External Access (ONVIF server) is VENDOR-ONLY: exposing a tenant's cameras
+    outward to a third-party VMS is a platform decision, so a client's own admin
+    (has vms.config.manage but is NOT superadmin) must not be able to enable or view
+    it. Only the platform super-admin (the vendor) may."""
+    if not scope.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="External Access is managed by the platform administrator only.",
+        )
+    return scope
+
+
 @config_router.get(
     "/onvif-server/config",
     response_model=OnvifServerConfigPublic,
-    dependencies=[Depends(require_permission(PERM_MANAGE))],
+    dependencies=[Depends(require_permission(PERM_MANAGE)), Depends(require_superadmin)],
 )
 async def get_config(
     svc: Annotated[OnvifServerService, Depends(_get_service)],
@@ -55,6 +68,7 @@ async def get_config(
 @config_router.put(
     "/onvif-server/config",
     response_model=OnvifServerConfigPublic,
+    dependencies=[Depends(require_superadmin)],
 )
 async def upsert_config(
     body: OnvifServerConfigUpdate,

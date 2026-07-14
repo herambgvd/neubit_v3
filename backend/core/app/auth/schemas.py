@@ -38,6 +38,9 @@ class UserOut(BaseModel):
     email: str
     full_name: str | None
     role: RoleOut
+    # Platform (vendor) super-admin — gates vendor-only features (e.g. External
+    # Access / ONVIF server) that a client's own admin must NOT be able to enable.
+    is_superadmin: bool = False
     is_active: bool
     email_verified: bool
     created_at: dt.datetime
