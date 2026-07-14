@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, EmptyState, MetricRow, PageHeader, Toggle } from "@/components/ui/kit";
+import { Button, ConfirmDialog, EmptyState, MetricRow, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
@@ -75,15 +75,11 @@ export default function LinkageRulesPage() {
 
   return (
     <div className="pb-8">
-      <PageHeader
-        title="Linkage rules"
-        subtitle="Automate actions from camera events — record, notify, PTZ, output, or pop the camera for an operator."
-        actions={
-          <Button icon="heroicons-outline:plus" onClick={openNew}>
-            New rule
-          </Button>
-        }
-      />
+      <div className="mb-4 flex items-center justify-end">
+        <Button icon="heroicons-outline:plus" onClick={openNew}>
+          New rule
+        </Button>
+      </div>
 
       {q.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-xs text-muted">

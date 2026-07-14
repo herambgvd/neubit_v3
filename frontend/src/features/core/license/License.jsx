@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { PageHeader, Spinner } from "@/components/ui/kit";
+import { Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import LicenseOverview from "./components/LicenseOverview";
 import UpdateLicensePanel from "./components/UpdateLicensePanel";
@@ -35,11 +35,6 @@ export default function LicensePage() {
 
   return (
     <div>
-      <PageHeader
-        title="License"
-        subtitle="Review your license status and apply renewals."
-      />
-
       {license.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner />

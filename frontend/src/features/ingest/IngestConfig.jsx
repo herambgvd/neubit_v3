@@ -12,7 +12,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, PageHeader } from "@/components/ui/kit";
+import { Icon } from "@iconify/react";
+
+import { ConfirmDialog } from "@/components/ui/kit";
 import { MasterDetail, EmptyDetail } from "@/components/common";
 import { asItems, idOf } from "@/lib/format";
 import { apiError } from "@/lib/api";
@@ -69,16 +71,6 @@ export default function IngestConfigPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Ingest"
-        subtitle="Receive events from external systems via categorized webhooks."
-        actions={
-          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setMode("create")}>
-            Add category
-          </Button>
-        }
-      />
-
       <MasterDetail
         aside={
           <CategoryList
@@ -95,6 +87,15 @@ export default function IngestConfigPage() {
             }}
             catId={catId}
             suppressSelected={mode === "create"}
+            action={
+              <button
+                onClick={() => setMode("create")}
+                title="Add category"
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+              >
+                <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+              </button>
+            }
           />
         }
       >

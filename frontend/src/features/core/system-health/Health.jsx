@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import SystemResources from "@/components/SystemResources";
-import { Badge, Card, PageHeader, Spinner } from "@/components/ui/kit";
+import { Badge, Card, Spinner } from "@/components/ui/kit";
 import { api } from "@/lib/api";
 
 const DEP_META = {
@@ -25,17 +25,13 @@ export default function HealthPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="System health"
-        subtitle="Live status of the platform's dependencies and host resources."
-        actions={
-          overall ? (
-            <Badge color={overall === "healthy" ? "green" : "red"}>
-              {overall === "healthy" ? "All systems operational" : "Degraded"}
-            </Badge>
-          ) : null
-        }
-      />
+      <div className="mb-4 flex items-center justify-end">
+        {overall ? (
+          <Badge color={overall === "healthy" ? "green" : "red"}>
+            {overall === "healthy" ? "All systems operational" : "Degraded"}
+          </Badge>
+        ) : null}
+      </div>
 
       <div>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Dependencies</h2>

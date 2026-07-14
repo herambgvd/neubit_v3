@@ -14,7 +14,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 import Link from "next/link";
 
-import { Button, ConfirmDialog, EmptyState, PageHeader, Spinner } from "@/components/ui/kit";
+import { Button, ConfirmDialog, EmptyState, Spinner } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { asItems } from "@/lib/format";
 import { apiError } from "@/lib/api";
@@ -114,34 +114,44 @@ export default function WallManagement() {
 
   return (
     <div>
-      <PageHeader
-        title="Video wall management"
-        subtitle="Shared control-room display surfaces — walls, monitors, presets, tours and decoders."
-        actions={
-          <>
-            <Link href="/wall">
-              <Button variant="secondary" icon="heroicons-outline:play">
-                Open console
-              </Button>
-            </Link>
-            {canManage && (
-              <Button variant="primary" icon="heroicons-mini:plus" onClick={() => setWallModal({})}>
-                New wall
-              </Button>
-            )}
-          </>
-        }
-      />
-
       <MasterDetail
         aside={
-          <ListPanel title="Walls" count={walls.length}>
+          <ListPanel
+            title="Walls"
+            count={walls.length}
+            action={
+              <div className="flex items-center gap-1">
+                <Link
+                  href="/wall"
+                  title="Open console"
+                  className="inline-flex h-7 items-center gap-1 rounded-md border border-card-border px-2 text-[12px] font-medium text-foreground transition hover:bg-hover"
+                >
+                  <Icon icon="heroicons-outline:play" className="text-sm" /> Console
+                </Link>
+                {canManage && (
+                  <button
+                    onClick={() => setWallModal({})}
+                    title="New wall"
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+                  >
+                    <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+                  </button>
+                )}
+              </div>
+            }
+          >
             {wallsQ.isLoading ? (
               <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
                 <Spinner /> Loading…
               </div>
             ) : walls.length === 0 ? (
-              <div className="px-4 py-10 text-center text-xs text-muted">No walls yet.</div>
+              <div className="px-4 py-12 text-center">
+                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
+                  <Icon icon="heroicons:computer-desktop" className="text-lg text-muted" />
+                </div>
+                <div className="text-sm font-medium text-foreground">No walls yet</div>
+                <div className="mt-0.5 text-xs text-muted">Click Add to create your first wall.</div>
+              </div>
             ) : (
               <ul className="p-2">
                 {walls.map((w) => (

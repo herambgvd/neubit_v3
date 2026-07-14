@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { PageHeader, Spinner } from "@/components/ui/kit";
+import { Spinner } from "@/components/ui/kit";
 import { api } from "@/lib/api";
 
 import { ChannelCard } from "./components/ChannelCard";
@@ -15,10 +15,6 @@ export default function ChannelsPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Channels"
-        subtitle="Configure how Neubit delivers notifications — email, push, and webhooks."
-      />
       {channels.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner />

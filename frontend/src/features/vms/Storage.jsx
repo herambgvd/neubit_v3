@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, EmptyState, MetricRow, PageHeader } from "@/components/ui/kit";
+import { Button, ConfirmDialog, EmptyState, MetricRow } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, fmtBytes } from "@/lib/format";
@@ -103,21 +103,17 @@ export default function StoragePage() {
 
   return (
     <div className="pb-8">
-      <PageHeader
-        title="Storage"
-        subtitle="Recording pools, tiering and retention across local, NAS and cloud."
-        actions={
-          tab === "pools" ? (
-            <Button variant="success" icon="heroicons-outline:plus" onClick={() => setPoolModal({})}>
-              Add pool
-            </Button>
-          ) : tab === "rules" ? (
-            <Button variant="success" icon="heroicons-outline:plus" onClick={() => setRuleModal({})}>
-              Add rule
-            </Button>
-          ) : null
-        }
-      />
+      <div className="mb-4 flex items-center justify-end">
+        {tab === "pools" ? (
+          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setPoolModal({})}>
+            Add pool
+          </Button>
+        ) : tab === "rules" ? (
+          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setRuleModal({})}>
+            Add rule
+          </Button>
+        ) : null}
+      </div>
 
       <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-5" />
 

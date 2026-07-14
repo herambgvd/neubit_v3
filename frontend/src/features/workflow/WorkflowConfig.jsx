@@ -7,7 +7,6 @@ import Link from "next/link";
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { PageHeader } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
 import SopsTab from "./components/config/SopsTab";
 import TriggersTab from "./components/config/TriggersTab";
@@ -32,19 +31,15 @@ export default function WorkflowConfigPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Workflow configuration"
-        subtitle="Define SOPs, their state machines, and the triggers that raise incidents."
-        actions={
-          <Link
-            href="/workflow"
-            className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
-          >
-            <Icon icon="heroicons-outline:arrow-left" className="text-base" />
-            Incidents
-          </Link>
-        }
-      />
+      <div className="mb-4 flex items-center justify-end">
+        <Link
+          href="/workflow"
+          className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
+        >
+          <Icon icon="heroicons-outline:arrow-left" className="text-base" />
+          Incidents
+        </Link>
+      </div>
 
       <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-4" />
 

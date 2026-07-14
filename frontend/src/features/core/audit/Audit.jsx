@@ -6,7 +6,7 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Button, PageHeader } from "@/components/ui/kit";
+import { Button } from "@/components/ui/kit";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import RetentionCard from "./components/RetentionCard";
@@ -33,7 +33,6 @@ export default function AuditPage() {
 
   return (
     <div>
-      <PageHeader title="Audit log" subtitle="A read-only record of actions taken across the platform." />
       {can("settings.manage") && <RetentionCard />}
       <AuditTable items={items} loading={audit.isLoading} />
 

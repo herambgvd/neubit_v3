@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Card, PageHeader, Spinner } from "@/components/ui/kit";
+import { Button, Card, Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import SettingField from "./components/SettingField";
 
@@ -38,15 +38,11 @@ export default function SettingsGeneralPage() {
 
   return (
     <div>
-      <PageHeader
-        title="General settings"
-        subtitle="Platform-wide options an administrator can change."
-        actions={
-          <Button variant="primary" disabled={save.isPending || cfg.isLoading} onClick={() => save.mutate()}>
-            {save.isPending ? "Saving…" : "Save changes"}
-          </Button>
-        }
-      />
+      <div className="mb-4 flex items-center justify-end">
+        <Button variant="primary" disabled={save.isPending || cfg.isLoading} onClick={() => save.mutate()}>
+          {save.isPending ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
 
       {cfg.isLoading ? (
         <div className="flex justify-center py-16">
