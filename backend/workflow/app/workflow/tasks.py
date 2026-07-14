@@ -384,3 +384,19 @@ async def run_correlation_consumer() -> None:
             await asyncio.sleep(3600)
     finally:
         await engine.close()
+
+
+# ── Notify consumer (long-running) ─────────────────────────────────────
+
+
+async def run_notify_consumer() -> None:
+    """Start the notify-request consumer and block forever (Celery long-running).
+
+    Drains ``tenant.*.notify.request`` / ``tenant.*.vms.popup`` into the
+    notification outbox (email / webhook / push), which ``dispatch_notifications``
+    then delivers. Kept separate from the correlation consumer (that one creates
+    incidents; this one creates notifications).
+    """
+    from .notify_consumer import run_notify_consumer as _run
+
+    await _run()

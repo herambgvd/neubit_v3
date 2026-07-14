@@ -78,6 +78,7 @@ class CorePerm:
     ROLE_MANAGE = "role.manage"
     APIKEY_MANAGE = "apikey.manage"
     AUDIT_READ = "audit.read"
+    AUDIT_WRITE = "audit.write"
     BRANDING_MANAGE = "branding.manage"
     SETTINGS_MANAGE = "settings.manage"
     SYSTEM_READ = "system.read"
@@ -106,6 +107,33 @@ class CorePerm:
     TAGS_CREATE = "tags.create"
     TAGS_UPDATE = "tags.update"
     TAGS_DELETE = "tags.delete"
+    # --- VMS domain (video: cameras/NVR/live/recording/playback) -----------
+    # Owned by the `vms` (vision) service; registered here so roles can grant
+    # them in the core role editor + they ride in the JWT permissions claim.
+    VMS_CAMERA_READ = "vms.camera.read"
+    VMS_CAMERA_MANAGE = "vms.camera.manage"
+    VMS_NVR_MANAGE = "vms.nvr.manage"
+    VMS_LIVE_VIEW = "vms.live.view"
+    VMS_PLAYBACK_VIEW = "vms.playback.view"
+    VMS_RECORDING_CONTROL = "vms.recording.control"
+    VMS_EXPORT = "vms.export"
+    VMS_PTZ_CONTROL = "vms.ptz.control"
+    VMS_CONFIG_MANAGE = "vms.config.manage"
+    # Video Wall (VW-A) — shared control-room display wall. VIEW = read walls /
+    # monitors / live state / presets / tours; CONTROL = drive the live shared state
+    # (push a camera to a cell, clear, apply/save preset, start/stop tour); MANAGE =
+    # wall / monitor / preset / tour CRUD (+ decoder registration in VW-B).
+    VMS_WALL_VIEW = "vms.wall.view"
+    VMS_WALL_CONTROL = "vms.wall.control"
+    VMS_WALL_MANAGE = "vms.wall.manage"
+    # --- Enterprise security (P6-D) ---------------------------------------
+    # Manage the security surface: 2FA-enforcement policy, LDAP/AD directory,
+    # OIDC SSO. Held by a tenant's security admin.
+    SECURITY_MANAGE = "security.manage"
+    # Approve/deny a four-eyes (dual-authorization) request raised by someone
+    # else. Deliberately SEPARATE from security.manage so the approver is a
+    # distinct privileged role, not just whoever configures security.
+    DUALAUTH_APPROVE = "dualauth.approve"
 
 
 PERMISSIONS.register(
@@ -115,6 +143,7 @@ PERMISSIONS.register(
     Permission(CorePerm.ROLE_MANAGE, "Create / edit roles & permissions", "Roles"),
     Permission(CorePerm.APIKEY_MANAGE, "Manage API keys", "API keys"),
     Permission(CorePerm.AUDIT_READ, "View audit log", "Audit"),
+    Permission(CorePerm.AUDIT_WRITE, "Ingest audit events (service-to-service)", "Audit"),
     Permission(CorePerm.BRANDING_MANAGE, "Edit branding / white-label", "Branding"),
     Permission(CorePerm.SETTINGS_MANAGE, "Edit integration settings", "Settings"),
     Permission(CorePerm.SYSTEM_READ, "View system resources", "System"),
@@ -143,4 +172,20 @@ PERMISSIONS.register(
     Permission(CorePerm.TAGS_CREATE, "Create tags", "Tags"),
     Permission(CorePerm.TAGS_UPDATE, "Edit / assign tags", "Tags"),
     Permission(CorePerm.TAGS_DELETE, "Delete tags", "Tags"),
+    # --- VMS domain (video) ------------------------------------------------
+    Permission(CorePerm.VMS_CAMERA_READ, "View cameras + live", "VMS"),
+    Permission(CorePerm.VMS_CAMERA_MANAGE, "Add / edit / delete cameras", "VMS"),
+    Permission(CorePerm.VMS_NVR_MANAGE, "Onboard / manage NVRs", "VMS"),
+    Permission(CorePerm.VMS_LIVE_VIEW, "View live video", "VMS"),
+    Permission(CorePerm.VMS_PLAYBACK_VIEW, "View recorded playback", "VMS"),
+    Permission(CorePerm.VMS_RECORDING_CONTROL, "Start / stop / configure recording", "VMS"),
+    Permission(CorePerm.VMS_EXPORT, "Export video / clips", "VMS"),
+    Permission(CorePerm.VMS_PTZ_CONTROL, "Control PTZ", "VMS"),
+    Permission(CorePerm.VMS_CONFIG_MANAGE, "Edit camera config", "VMS"),
+    Permission(CorePerm.VMS_WALL_VIEW, "View video walls + live state", "VMS"),
+    Permission(CorePerm.VMS_WALL_CONTROL, "Drive video-wall live state (push / presets / tours)", "VMS"),
+    Permission(CorePerm.VMS_WALL_MANAGE, "Create / edit video walls, monitors, presets, tours", "VMS"),
+    # --- Enterprise security ----------------------------------------------
+    Permission(CorePerm.SECURITY_MANAGE, "Manage 2FA policy / LDAP / SSO", "Security"),
+    Permission(CorePerm.DUALAUTH_APPROVE, "Approve four-eyes requests", "Security"),
 )

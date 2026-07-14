@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { api, apiError, tokens } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import AuthShell, { AuthInput, AuthLabel, AuthSubmit } from "@/components/AuthShell";
 
 // First-run wizard: creates the very first administrator, then signs them in.
 // Only reachable while the deployment has zero users (backend enforces this too).
@@ -54,81 +55,74 @@ export default function SetupPage() {
 
   if (checking) return null;
 
-  const field =
-    "w-full rounded-md border border-card-border bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted";
-
   return (
-    <div className="w-full max-w-md rounded-xl bg-card border border-card-border p-8">
-      <div className="mb-7 text-center">
-        <div className="mx-auto mb-4 h-11 w-11 rounded-lg bg-white flex items-center justify-center text-black text-lg font-bold">
-          N
-        </div>
-        <h1 className="text-lg font-semibold tracking-tight text-foreground">Welcome — let's get set up</h1>
-        <p className="text-sm text-muted mt-1">Create the first administrator account.</p>
-      </div>
-
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-muted mb-1.5">Full name</label>
-          <input
+    <AuthShell
+      eyebrow="First-run setup"
+      title="Welcome — let's get set up"
+      subtitle="Create the first administrator account for this deployment."
+    >
+      <form onSubmit={onSubmit} className="space-y-5" noValidate>
+        <div className="space-y-1.5">
+          <AuthLabel htmlFor="full_name">Full name</AuthLabel>
+          <AuthInput
+            id="full_name"
             value={form.full_name}
             onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-            className={field}
             placeholder="Jane Doe"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-muted mb-1.5">Email</label>
-          <input
+        <div className="space-y-1.5">
+          <AuthLabel htmlFor="email">Work email</AuthLabel>
+          <AuthInput
+            id="email"
             type="email"
+            autoComplete="email"
             required
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
-            className={field}
-            placeholder="admin@example.com"
+            placeholder="admin@company.com"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-muted mb-1.5">Password</label>
+        <div className="space-y-1.5">
+          <AuthLabel htmlFor="password">Password</AuthLabel>
           <div className="relative">
-            <input
+            <AuthInput
+              id="password"
               type={show ? "text" : "password"}
+              autoComplete="new-password"
               required
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className={`${field} pr-10`}
               placeholder="At least 8 chars, a letter and a number"
+              className="pr-10"
             />
             <button
               type="button"
               onClick={() => setShow((s) => !s)}
-              className="absolute inset-y-0 right-0 flex items-center px-3 text-muted hover:text-foreground transition"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 transition hover:text-white/70"
               aria-label={show ? "Hide password" : "Show password"}
             >
-              <Icon icon={show ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="text-lg" />
+              <Icon icon={show ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="h-4 w-4" />
             </button>
           </div>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-muted mb-1.5">Confirm password</label>
-          <input
+        <div className="space-y-1.5">
+          <AuthLabel htmlFor="confirm">Confirm password</AuthLabel>
+          <AuthInput
+            id="confirm"
             type="password"
+            autoComplete="new-password"
             required
             value={form.confirm}
             onChange={(e) => setForm({ ...form, confirm: e.target.value })}
-            className={field}
             placeholder="Re-enter password"
           />
-          {mismatch && <p className="text-xs text-red-500 mt-1">Passwords do not match.</p>}
+          {mismatch && <p className="mt-1 text-xs text-red-400">Passwords do not match.</p>}
         </div>
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="w-full rounded-md bg-foreground text-background hover:opacity-90 disabled:opacity-50 font-medium py-2.5 text-sm transition"
-        >
-          {busy ? "Creating…" : "Create admin & continue"}
-        </button>
+        <AuthSubmit loading={busy} disabled={!canSubmit}>
+          Create admin &amp; continue
+        </AuthSubmit>
       </form>
-    </div>
+    </AuthShell>
   );
 }

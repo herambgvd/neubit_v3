@@ -1,0 +1,237 @@
+"""Vision — VMS control-plane service (camera + NVR master, onboarding, drivers).
+
+Boots the FastAPI app on ``kernel`` (config/auth/events/errors), connects the NATS
+event bus, and exposes a JWT-verified, tenant-scoped API under the service
+api_prefix. It is the Python control-plane half of the VMS; the Go ``nvr`` service
+is the data-plane half — the two share this exact JWT + NATS + error contract via
+the kernel(s) and interoperate over NATS + REST only (D8).
+
+P1-A is a SCAFFOLD: ``/health`` + ``/api/v1/vms/whoami`` prove config/JWT/tenant
+scope/NATS work. Camera/NVR CRUD, ONVIF discovery, drivers and health arrive in
+the next modules (the routers just mount here alongside whoami).
+
+Run:  uvicorn app.main:app --host 0.0.0.0 --port 8000
+"""
+
+from __future__ import annotations
+
+import logging
+
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from kernel.auth import Principal, Scope, get_principal, get_scope
+from kernel.config import get_settings
+from kernel.errors import register_error_handlers
+from kernel.events import subject
+
+# The onboarding service publishes through the shared VMS event bus
+# (``app.vms.common.events``) — one process-wide bus that both startup announcements and
+# camera lifecycle/status events ride. The VMS subject namespace is
+# ``tenant.<id>.vms.*`` (+ ``device.camera.*`` for the Map / core), shared with the
+# Go ``nvr`` service.
+from app.db import get_sessionmaker
+from app.vms import routers as vms_routers
+from app.vms.anr import AnrConsumer
+from app.vms.common.events import bus
+from app.vms.events import EventSupervisor
+from app.vms.export import ExportWorker
+from app.vms.health import HealthSampler
+from app.vms.motion_search import MotionSearchWorker
+from app.vms.ptz import get_cycler
+from app.vms.linkage import LinkageConsumer
+from app.vms.onvif_server import advertiser as onvif_advertiser
+from app.vms.onvif_server import soap_router as onvif_soap_router
+from app.vms.recording import RecordingConsumer, RecordingScheduler
+from app.vms.reports import ReportScheduler
+from app.vms.storage import RaidMonitor, RetentionTieringWorker
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("vision")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await bus.connect()
+    # Announce startup on the same spine the Python + Go services use.
+    await bus.publish(subject(None, "vms", "startup"), {"service": "vision"})
+    # Background reachability sampler (all tenants): keeps camera/NVR status live +
+    # writes the CameraHealth time-series + auto-purges it. Its own DB session per
+    # cycle; bounded concurrency; graceful-on-unreachable (won't crash the app).
+    sampler = HealthSampler(get_sessionmaker())
+    await sampler.start()
+    app.state.health_sampler = sampler
+
+    # P3-A recording: consume the Go nvr's segment events → persist Recording rows,
+    # and drive schedule-mode cameras' record windows (start/stop the nvr). Both own
+    # their own DB session per message/cycle; graceful when NATS is disabled.
+    rec_consumer = RecordingConsumer(bus, get_sessionmaker())
+    await rec_consumer.start()
+    app.state.recording_consumer = rec_consumer
+
+    rec_scheduler = RecordingScheduler(get_sessionmaker())
+    await rec_scheduler.start()
+    app.state.recording_scheduler = rec_scheduler
+
+    # P3-B storage: retention + tiering sweep. Deletes recordings past their camera's
+    # retention window / over a pool's capacity (NEVER touching locked ones) and moves
+    # aged recordings hot→cold per TierRule (local→S3/MinIO). Own DB session per cycle;
+    # graceful (unreachable pool / missing file → log + skip).
+    storage_worker = RetentionTieringWorker(get_sessionmaker())
+    await storage_worker.start()
+    app.state.storage_worker = storage_worker
+
+    # RAID compliance: poll software-RAID (mdadm) arrays → upsert health snapshot +
+    # fire a one-shot ``raid_degraded`` alert on a healthy→degraded transition so an
+    # operator swaps the failed disk before a second failure loses footage. Own DB
+    # session per poll; graceful (non-Linux host → reports unavailable + idles).
+    raid_monitor = RaidMonitor(get_sessionmaker())
+    await raid_monitor.start()
+    app.state.raid_monitor = raid_monitor
+
+    # P4-B clip export: drain queued ExportJobs → ffmpeg-concat the covered recorded
+    # fmp4 segments into a single downloadable mp4 (in the downloads area on the
+    # recordings volume). Own DB session per cycle; bounded concurrency; graceful
+    # (missing segments / ffmpeg fail → job status=failed, never crashes the loop).
+    export_worker = ExportWorker(get_sessionmaker())
+    await export_worker.start()
+    app.state.export_worker = export_worker
+
+    # G4 forensic motion search: drain queued MotionSearchJobs → non-AI ffmpeg VMD over
+    # the covered recorded fmp4 segments in the drawn region(s) → threshold the per-frame
+    # scene-change scores into hit intervals → store them. Own DB session per cycle;
+    # bounded concurrency; graceful (missing/tiered segment or ffmpeg fail → partial hits
+    # + a note, only a fully-unanalyzable job fails; never crashes the loop).
+    motion_search_worker = MotionSearchWorker(get_sessionmaker())
+    await motion_search_worker.start()
+    app.state.motion_search_worker = motion_search_worker
+
+    # P5-A camera device-events: the event-supervisor opens one ONVIF/brand
+    # subscription per active ``onvif_events_enabled`` camera (re-scanned on a tick,
+    # like the health sampler discovers cameras), normalizes → dedupes → persists a
+    # VmsEvent → publishes ``tenant.<id>.vms.camera.<event_type>`` — the exact subject
+    # the workflow correlation engine consumes (``tenant.*.vms.>`` → SOP incidents).
+    # Bounded concurrency; reconnect/backoff; graceful (a dead camera never stalls
+    # others; SDK-missing/unreachable → just no events). Own DB session per event.
+    event_supervisor = EventSupervisor(get_sessionmaker())
+    await event_supervisor.start()
+    app.state.event_supervisor = event_supervisor
+
+    # P5-B event-linkage: subscribe to camera events (``tenant.*.vms.>``) AND access
+    # events (``tenant.*.access.>``) → match enabled LinkageRules (event_type + filter +
+    # camera scope + schedule + cooldown) → execute actions (start_recording via the Go
+    # nvr event-clip, notify via the connector framework, ptz_preset, trigger_output,
+    # popup) → write a LinkageFire audit row. An access door event resolves the camera(s)
+    # at that door (explicit map or core-placement proximity) for access↔video
+    # verification. Durable JetStream consumers; own DB session per event; every action
+    # is graceful (a down camera/nvr logs + continues, never crashes the consumer).
+    linkage_consumer = LinkageConsumer(bus, get_sessionmaker())
+    await linkage_consumer.start()
+    app.state.linkage_consumer = linkage_consumer
+
+    # P6-B operational reporting: the report scheduler fires each ENABLED ReportSchedule
+    # on its cadence — computes the report (uptime/coverage/storage/event-stats) in that
+    # schedule's tenant scope, renders it (CSV/PDF/JSON), and publishes
+    # ``tenant.<id>.notify.request`` for the workflow/notifier connector to fan out. Own
+    # DB session per cycle; graceful (a bad schedule records last_error + advances).
+    report_scheduler = ReportScheduler(get_sessionmaker())
+    await report_scheduler.start()
+    app.state.report_scheduler = report_scheduler
+
+    # P6-A ANR fulfiller: subscribe to the Go ``nvr``'s ``tenant.*.vms.anr.request``
+    # (a detected recording gap → an ANRJob). Per request the fulfiller resolves the
+    # footage source (NVR channel → the NVR's driver; else an edge/Profile-G camera →
+    # its driver), reuses the P4-B footage search to get a replay URI, ffmpeg-pulls the
+    # gap into an fmp4 segment on the shared recordings volume (which the segment tracker
+    # turns into a Recording row), and publishes ``tenant.<id>.vms.anr.result``. Own DB
+    # session per message; bounded concurrency; idempotent per job_id; graceful (an
+    # unreachable edge/NVR or ffmpeg failure → result{status:failed}, never crashes).
+    anr_consumer = AnrConsumer(bus, get_sessionmaker())
+    await anr_consumer.start()
+    app.state.anr_consumer = anr_consumer
+
+    # G1 PTZ patrols: bind the process-local patrol cycler to the app sessionmaker and
+    # re-arm any patrol whose ``is_running`` flag survived a restart (goto-preset in order
+    # on dwell). Cycler tasks are process-local — a restart drops running tours; this
+    # re-arm resumes them from the persisted intent. Graceful (no cameras → no-op).
+    patrol_cycler = get_cycler()
+    patrol_cycler.bind(get_sessionmaker())
+    await patrol_cycler.rearm_running()
+    app.state.patrol_cycler = patrol_cycler
+
+    # P6-C ONVIF server: advertise OUR VMS as an ONVIF device via WS-Discovery so
+    # external VMS/recorders (Milestone/Genetec/NVRs) auto-find us on the LAN and pull
+    # our camera streams + recordings over the /onvif/* SOAP endpoints. GRACEFUL:
+    # multicast is often unavailable in a bridged Docker network → the advertiser logs
+    # + disables itself (SOAP still works; clients add us by URL); never crashes.
+    await onvif_advertiser.start()
+
+    yield
+
+    await onvif_advertiser.stop()
+    await patrol_cycler.stop_all()
+    await report_scheduler.stop()
+    await event_supervisor.stop()
+    await motion_search_worker.stop()
+    await export_worker.stop()
+    await raid_monitor.stop()
+    await storage_worker.stop()
+    await rec_scheduler.stop()
+    await sampler.stop()
+    await bus.close()
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+    app = FastAPI(title="Neubit Vision (VMS control-plane)", lifespan=lifespan)
+    register_error_handlers(app)
+
+    # CORS — the operator UI may call this satellite directly (dev :3000) instead
+    # of through the gateway. Mirror core's policy (shared kernel settings).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_origin_regex=settings.cors_origin_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/health")
+    async def health() -> dict:
+        return {"status": "ok", "service": "vision", "env": settings.env}
+
+    # Sample authed route — proves JWT verification + tenant scope work locally
+    # (a core-minted token verifies here identically to the Go nvr service).
+    @app.get(f"{settings.api_prefix}/vms/whoami")
+    async def whoami(
+        principal: Principal = Depends(get_principal),
+        scope: Scope = Depends(get_scope),
+    ) -> dict:
+        return {
+            "user_id": str(principal.user_id),
+            "tenant_id": str(principal.tenant_id) if principal.tenant_id else None,
+            "is_superadmin": principal.is_superadmin,
+            "permissions": principal.permissions,
+            "is_platform": scope.is_platform,
+            "service": "vision",
+        }
+
+    # VMS REST routers (P1-D: camera onboarding — CRUD, ONVIF discovery/probe/
+    # channels/bulk-add/snapshot, config sub-resources, groups + ACL). NVR
+    # onboarding mounts alongside in P1-E.
+    for r in vms_routers:
+        app.include_router(r, prefix=settings.api_prefix)
+
+    # P6-C ONVIF SOAP server — mounted at the app ROOT (NOT under api_prefix): external
+    # ONVIF clients hit ``http://<host>/onvif/device_service`` etc. Auth is WS-Security
+    # UsernameToken (resolves the tenant), NOT the kernel JWT — the gateway routes
+    # ``/onvif`` here (see gateway/dynamic/routes.yml).
+    app.include_router(onvif_soap_router)
+
+    return app
+
+
+app = create_app()

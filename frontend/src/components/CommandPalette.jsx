@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
-import { menuItems, configTabs, deviceTabs } from "@/config/menu";
+import { menuItems, configTabs, deviceTabs, streamTabs } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 
 // Flatten the nav into a list of {title, link, icon, perm} entries the palette can offer
@@ -17,7 +17,7 @@ function navPages() {
     if (item.disabled || item.section || !item.link) continue;
     out.push(item);
   }
-  for (const t of [...configTabs, ...deviceTabs]) {
+  for (const t of [...configTabs, ...deviceTabs, ...streamTabs]) {
     if (t.disabled || !t.link) continue;
     out.push(t);
   }

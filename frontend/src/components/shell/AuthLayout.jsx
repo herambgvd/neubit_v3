@@ -1,5 +1,5 @@
+// Auth pages (setup, forgot-password) render their own full-screen AuthShell,
+// so this layout is a pass-through — no extra centering/background wrapper.
 export default function AuthLayout({ children }) {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">{children}</div>
-  );
+  return children;
 }

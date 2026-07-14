@@ -73,6 +73,10 @@ class LoginResult(BaseModel):
     access_token: str | None = None
     refresh_token: str | None = None
     token_type: str = "bearer"
+    # Set when a security policy REQUIRES 2FA but the user hasn't enrolled yet. The
+    # client must route them to /auth/me/2fa/setup (using the short-lived
+    # ``mfa_token`` as a bearer) before they can obtain real tokens.
+    enrollment_required: bool = False
 
 
 class MfaLoginIn(BaseModel):

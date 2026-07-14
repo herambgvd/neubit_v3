@@ -9,6 +9,8 @@
 //   <Field label="Notes" as="textarea" rows={3} value={notes} onChange={...} />
 //   <Field label="Priority" as="select" value={p} onChange={...} options={[{value,label}]} />
 
+import SelectMenu from "./SelectMenu";
+
 // Base control classes (shared so raw inputs match Field visually).
 export const fieldClass =
   "mt-1 h-10 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted";
@@ -36,19 +38,32 @@ export function Field({
   ...control
 }) {
   const errCls = error ? "!border-red-500" : "";
+  // Keep controlled inputs controlled. For a value-controlled input/textarea, force
+  // a defined value ("") whenever the caller's value is null/undefined — even a
+  // number field whose value momentarily becomes undefined (e.g. form re-hydrates
+  // on camera switch) would otherwise flip controlled→uncontrolled and warn. A
+  // checkbox/radio uses `checked`, so coerce that to false the same way.
+  if ("checked" in control) {
+    if (control.checked == null) control.checked = false;
+  } else if (as !== "select" && control.value == null) {
+    control.value = "";
+  }
   return (
     <div className={containerClassName}>
       {label && <FieldLabel required={required}>{label}</FieldLabel>}
       {as === "textarea" ? (
         <textarea {...control} className={`${areaClass} ${errCls} ${className}`} />
       ) : as === "select" ? (
-        <select {...control} className={`${fieldClass} ${errCls} ${className}`}>
-          {options.map((o) => (
-            <option key={o.value} value={o.value} className="bg-card">
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          options={options}
+          value={control.value}
+          onChange={control.onChange}
+          disabled={control.disabled}
+          placeholder={control.placeholder}
+          id={control.id}
+          name={control.name}
+          className={`${errCls} ${className}`}
+        />
       ) : (
         <input {...control} className={`${fieldClass} ${errCls} ${className}`} />
       )}

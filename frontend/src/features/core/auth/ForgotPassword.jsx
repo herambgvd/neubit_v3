@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
+import AuthShell, { AuthInput, AuthLabel, AuthSubmit } from "@/components/AuthShell";
 
 // Two-step reset: (1) request a token by email, (2) enter the token + new password.
 // An invite/reset email links here with ?token=... so we jump straight to step 2.
@@ -56,55 +57,73 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  const field =
-    "w-full rounded-md border border-card-border bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted";
-
   return (
-    <div className="w-full max-w-sm rounded-xl bg-card border border-card-border p-8">
-      <div className="mb-7 text-center">
-        <div className="mx-auto mb-4 h-11 w-11 rounded-lg bg-white flex items-center justify-center text-black text-lg font-bold">
-          N
-        </div>
-        <h1 className="text-lg font-semibold tracking-tight text-foreground">Reset your password</h1>
-        <p className="text-sm text-muted mt-1">
-          {step === "request" ? "We'll email you a reset token." : "Enter the token from your email."}
-        </p>
-      </div>
-
+    <AuthShell
+      eyebrow="Reset"
+      title="Reset your password"
+      subtitle={
+        step === "request"
+          ? "Enter your email and we'll send a reset token."
+          : "Enter the token from your email and choose a new password."
+      }
+    >
       {step === "request" ? (
-        <form onSubmit={requestReset} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-muted mb-1.5">Email</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={field} placeholder="you@example.com" />
+        <form onSubmit={requestReset} className="space-y-5" noValidate>
+          <div className="space-y-1.5">
+            <AuthLabel htmlFor="email">Work email</AuthLabel>
+            <AuthInput
+              id="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@company.com"
+            />
           </div>
-          <button type="submit" disabled={busy} className="w-full rounded-md bg-foreground text-background hover:opacity-90 disabled:opacity-50 font-medium py-2.5 text-sm transition">
-            {busy ? "Sending…" : "Send reset token"}
-          </button>
+          <AuthSubmit loading={busy}>Send reset token</AuthSubmit>
         </form>
       ) : (
-        <form onSubmit={doReset} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-muted mb-1.5">Reset token</label>
-            <input required value={token} onChange={(e) => setToken(e.target.value)} className={field} placeholder="paste token from email" />
+        <form onSubmit={doReset} className="space-y-5" noValidate>
+          <div className="space-y-1.5">
+            <AuthLabel htmlFor="token">Reset token</AuthLabel>
+            <AuthInput
+              id="token"
+              required
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="paste token from email"
+              className="font-mono"
+            />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-muted mb-1.5">New password</label>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={field} placeholder="••••••••" />
+          <div className="space-y-1.5">
+            <AuthLabel htmlFor="new-password">New password</AuthLabel>
+            <AuthInput
+              id="new-password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••••••"
+            />
           </div>
-          <button type="submit" disabled={busy} className="w-full rounded-md bg-foreground text-background hover:opacity-90 disabled:opacity-50 font-medium py-2.5 text-sm transition">
-            {busy ? "Updating…" : "Set new password"}
-          </button>
-          <button type="button" onClick={() => setStep("request")} className="w-full text-xs text-muted hover:text-foreground transition">
-            Didn't get it? Request again
+          <AuthSubmit loading={busy}>Set new password</AuthSubmit>
+          <button
+            type="button"
+            onClick={() => setStep("request")}
+            className="w-full text-center text-xs text-white/40 transition hover:text-white/70"
+          >
+            Didn&apos;t get it? Request again
           </button>
         </form>
       )}
 
       <div className="mt-6 text-center">
-        <Link href="/login" className="text-xs text-muted hover:text-foreground transition">
+        <Link href="/login" className="font-mono text-[11px] text-white/40 transition hover:text-white/70">
           ← Back to sign in
         </Link>
       </div>
-    </div>
+    </AuthShell>
   );
 }

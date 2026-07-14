@@ -201,7 +201,7 @@ export default function WorkflowDetailPage() {
         <div className="space-y-4">
           <StateMachine states={states} transitions={transitions} currentStateId={currentStateId} currentStateName={currentStateName} />
           <IncidentTimeline history={history} />
-          {eventPayload && <EventPayloadInspector payload={eventPayload} eventType={inst.event_type} />}
+          {eventPayload && <EventPayloadInspector payload={eventPayload} eventType={inst.event_type} incident={inst} />}
         </div>
 
         {/* Right: current state + allowed transitions */}

@@ -1,0 +1,122 @@
+# MediaMTX — neubit_v3 VMS media node (P2-A, local dev config).
+#
+# Ported from neubit_v2 deploy/local/mediamtx.yml. This is the media data-plane:
+# the Go `nvr` service adds/patches/deletes paths at runtime via the control API
+# on :9997 (each path's `source` is a camera RTSP URL; MediaMTX pulls on demand).
+# Browsers play HLS (:8888) / WebRTC-WHEP (:8889) — the :9997 control API stays
+# INTERNAL (nvr-only, never routed through the public Traefik gateway).
+
+logLevel: info
+
+# ── Authentication ──
+# Single permissive internal user — the local docker network is private and the
+# control API is not exposed publicly. Public HLS/WebRTC token-auth lands at the
+# Traefik ForwardAuth layer in P2-C, not here.
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass: ""
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+      - action: metrics
+      - action: pprof
+
+# ── REST control API (INTERNAL — nvr adds/patches/deletes paths at runtime) ──
+api: yes
+apiAddress: :9997
+
+# ── Playback server (P4-A — recorded fmp4 playback) ──
+# A SEPARATE server that serves the recorded segments of a path as a seekable
+# stream: GET /list?path=<name> (recorded ranges) + GET /get?path=&start=&duration=
+# &format=fmp4 (the recorded stream). The Go `nvr` queries /list on this INTERNAL
+# port to enumerate ranges; the browser-facing /get is routed through the Traefik
+# gateway under /media/playback, token-gated by the SAME media-auth ForwardAuth as
+# live (P2-C). This port (:9996) is NOT published to the host — internal-only.
+playback: yes
+playbackAddress: :9996
+
+# ── Timeouts / buffers ──
+readTimeout: 30s
+writeTimeout: 30s
+readBufferCount: 2048
+
+# ── Protocol listeners ──
+rtspAddress: :8554
+rtmpAddress: :1935
+hlsAddress: :8888
+webrtcAddress: :8889
+
+# ── HLS ──
+# fmp4 supports H.265; alwaysRemux keeps the muxer hot between viewers so the
+# next reader doesn't pay a cold-start penalty (v1/v2 behaviour — makes stream
+# resume immediate after navigation).
+hlsVariant: fmp4
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+hlsAlwaysRemux: yes
+
+# ── WebRTC ──
+# Advertise `localhost` as an extra ICE host candidate so the browser (on the
+# docker host) can reach the listener; without this MediaMTX only advertises the
+# container's docker-network IP and ICE never completes.
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts: [localhost]
+webrtcICEServers2: []
+
+# ── CORS ──
+hlsAllowOrigins: ["*"]
+webrtcAllowOrigins: ["*"]
+
+# ── Path defaults ──
+# nvr sets sourceOnDemand per path via the API. Defaults here only cover any
+# path that bypasses the service; on-demand so an idle path does not pull RTSP.
+pathDefaults:
+  sourceOnDemand: yes
+  sourceOnDemandStartTimeout: 20s
+  sourceOnDemandCloseAfter: 120s
+  rtspTransport: tcp
+  record: no
+
+# ── H265→H264 live-view transcode (on demand) ──
+# Chrome/Chromium WebRTC cannot decode H265/HEVC, so a WHEP POST for an HEVC
+# camera returns 400 and live view is blank. This regex path transcodes ANY
+# "<basepath>/h264" request to H264 on demand: when a browser reads
+# cameras/<tenant>/<cam>/<profile>/h264, MediaMTX runs ffmpeg which READS the
+# camera's real (H265) base path — cameras/<tenant>/<cam>/<profile>, itself an
+# on-demand path whose RTSP source activates — and REPUBLISHES an H264 baseline
+# stream to the /h264 path. H264 cameras never hit this (the frontend only falls
+# back to /h264 after a direct WHEP fails), so they stay zero-cost.
+#
+# Variables (verified against MediaMTX v1.19.2 reference config):
+#   $G1       = first regex group  → the base path (cameras/<t>/<c>/<profile>)
+#   $MTX_PATH = full matched path  → cameras/<t>/<c>/<profile>/h264
+# Audio is dropped (-an): G711 doesn't WebRTC-negotiate cleanly; opus can come later.
+paths:
+  "~^(.+)/h264$":
+    # ffmpeg publishes INTO this path, so the source is "publisher" (not an RTSP
+    # pull). Override the pathDefaults sourceOnDemand (invalid on a publisher path
+    # → MediaMTX refuses to boot otherwise).
+    source: publisher
+    sourceOnDemand: no
+    runOnDemand: >
+      ffmpeg -nostdin -loglevel warning -rtsp_transport tcp
+      -analyzeduration 10M -probesize 10M -fflags +genpts+discardcorrupt
+      -i rtsp://127.0.0.1:8554/$G1
+      -vf scale=-2:480 -r 15
+      -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -level 3.1 -pix_fmt yuv420p -g 30 -an
+      -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/$MTX_PATH
+    # NOT restart:yes — with restart, MediaMTX immediately respawns ffmpeg after the
+    # idle-close, so a transcode with 0 readers never actually reaps (orphaned CPU).
+    # If ffmpeg exits/crashes the browser's next WHEP retry re-triggers on demand.
+    # startTimeout is generous: ffmpeg needs time to lock onto the H265 stream's
+    # VPS/SPS/PPS (bigger analyzeduration/probesize) — 15s was too tight and timed out.
+    runOnDemandRestart: no
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 20s

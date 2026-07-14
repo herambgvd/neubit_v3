@@ -21,6 +21,7 @@ Tables:
     notification_templates   — reusable message templates
     notification_channels    — per-tenant delivery config (email/webhook/whatsapp…)
     notifications            — the outbox (dispatched by the connector framework)
+    device_tokens            — per-user mobile push tokens (FCM/APNs) for the push connector
     threat_levels            — deployment/site threat-posture register
     correlation_dedup        — trigger-firing dedup slots (idempotency)
     alert_formats            — alert_code → SOP mapping (category/severity/priority/icon)
@@ -328,6 +329,48 @@ class Notification(Base, _TenantTimestamped):
         DateTime(timezone=True), index=True
     )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ── Device token (mobile push registration) ────────────────────────────
+
+
+class DeviceToken(Base, _TenantTimestamped):
+    """A registered mobile push token for one user's device.
+
+    The push connector (``connectors/push.py``) looks up a user's enabled tokens
+    at dispatch time and sends to each. Tokens are TENANT-SCOPED: a push only ever
+    reaches tokens belonging to the target tenant's users (isolation lives in the
+    ``(tenant_id, user_id)`` filter). A token the provider reports as
+    invalid/unregistered is disabled (``is_active = False``) rather than deleted so
+    the audit trail survives.
+
+    ``platform`` is the connector provider kind: ``fcm`` (Android / web) or
+    ``apns`` (iOS). ``token`` is the opaque provider registration token (FCM
+    registration id, or APNs device token hex). ``(tenant_id, platform, token)`` is
+    unique so re-registering the same device is an upsert, not a duplicate.
+    """
+
+    __tablename__ = "device_tokens"
+
+    device_token_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    # The user (a core user_id) this device belongs to.
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # fcm | apns — routes to the matching provider inside the push connector.
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    # The opaque provider registration token (FCM reg id / APNs device token).
+    token: Mapped[str] = mapped_column(String(512), nullable=False)
+    # Optional human label ("Pixel 8", "iPad — front desk").
+    label: Mapped[str | None] = mapped_column(String(255))
+    # Disabled when the provider reports the token invalid/unregistered (pruning).
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), index=True
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # A device registers once per (tenant, platform, token). Re-registration upserts.
+    __table_args__ = (
+        Index("uq_device_tokens_tenant_platform_token", "tenant_id", "platform", "token", unique=True),
+    )
 
 
 # ── Threat level ───────────────────────────────────────────────────────

@@ -22,10 +22,13 @@ import {
   incSiteName,
   incAssignedId,
   incAssigneeName,
+  incCameraId,
+  incEventTime,
   sev,
   slaFor,
   isOpen,
 } from "./lib";
+import AlarmCardCamera from "./AlarmCardCamera";
 
 // A status → glyph for the card's type icon.
 const STATUS_ICON = {
@@ -81,6 +84,10 @@ export default function AlarmCard({
   // matching STATUS_ACTIONS in IncidentActionBar. We never render an illegal
   // action; the backend still enforces the machine.
   const canAck = it.status === "pending";
+
+  // A camera-sourced incident (VMS event) gets a live snapshot + "view recording".
+  const cameraId = incCameraId(it);
+  const eventTime = incEventTime(it);
 
   const stop = (e) => e.stopPropagation();
 
@@ -156,6 +163,13 @@ export default function AlarmCard({
             )}
           </span>
         </div>
+
+        {/* Camera media (P5-C) — only for incidents with an associated camera. */}
+        {cameraId && (
+          <div className="pl-11">
+            <AlarmCardCamera cameraId={cameraId} eventTime={eventTime} />
+          </div>
+        )}
       </Link>
 
       {/* Quick actions rail (appears on hover; always visible on touch via group) */}

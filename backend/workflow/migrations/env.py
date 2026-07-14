@@ -18,7 +18,8 @@ from app.db import Base
 
 # Import all model modules so their tables register on Base.metadata.
 # Workflow domain: SOP / State / Transition / Trigger / WorkflowInstance / Form /
-# NotificationTemplate / NotificationChannel / Notification / ThreatLevel / CorrelationDedup.
+# NotificationTemplate / NotificationChannel / Notification / DeviceToken /
+# ThreatLevel / AlertFormat / CorrelationDedup.
 import app.workflow.models  # noqa: F401,E402
 
 config = context.config

@@ -89,6 +89,14 @@ export const workflow = {
   },
 
   instances: {
+    // GET /workflow/instances — filters: q, status, priority, site_id, sop_id,
+    // assigned_to, skip/limit, plus the CROSS-LINK filters:
+    //   • event_id — incidents spawned by an originating event id. Matches EITHER
+    //     the bus-envelope id OR trigger_data.payload.event_id, so passing a CAMERA
+    //     event id (VmsEvent.id) finds the incident that camera event raised.
+    //   • source   — originating domain: "vision" (camera events) | "access" |
+    //     "ingest" | … | "manual" (operator-raised, no trigger envelope).
+    // Each incident row also carries derived `event_source` + `source_event_id`.
     list: (params = {}) => unwrap(api.get(`${WF}/instances${qs(params)}`)),
     get: (id) => unwrap(api.get(`${WF}/instances/${id}`)),
     stats: (params = {}) => unwrap(api.get(`${WF}/instances/stats${qs(params)}`)),

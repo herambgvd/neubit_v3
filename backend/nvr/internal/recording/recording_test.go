@@ -1,0 +1,87 @@
+package recording
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestParsePath(t *testing.T) {
+	dir := "/recordings"
+	p := "/recordings/cameras/tenantA/cam-1/main/2026-07-09_10-00-00-000000.mp4"
+	tenant, cam, profile, ok := parsePath(p, dir)
+	if !ok {
+		t.Fatalf("expected parse ok for %q", p)
+	}
+	if tenant != "tenantA" || cam != "cam-1" || profile != "main" {
+		t.Fatalf("got tenant=%q cam=%q profile=%q", tenant, cam, profile)
+	}
+
+	// Trailing-slash dir is handled the same.
+	if _, _, _, ok := parsePath(p, "/recordings/"); !ok {
+		t.Fatalf("expected parse ok with trailing-slash dir")
+	}
+
+	// A path that does not match the cameras/<t>/<c>/<p>/<seg> layout → not ok.
+	if _, _, _, ok := parsePath("/recordings/junk/file.mp4", dir); ok {
+		t.Fatalf("expected parse to reject a non-conforming path")
+	}
+}
+
+func TestParseSegmentStart(t *testing.T) {
+	got := parseSegmentStart("2026-07-09_10-30-15-123456.mp4")
+	want := time.Date(2026, 7, 9, 10, 30, 15, 123456000, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("start parse: got %v want %v", got, want)
+	}
+	// A non-conforming name → zero time (emit falls back to mtime).
+	if !parseSegmentStart("garbage.mp4").IsZero() {
+		t.Fatalf("expected zero time for a non-conforming segment name")
+	}
+}
+
+func TestRecordPathTemplate(t *testing.T) {
+	if got := recordPathTemplate("/recordings"); got != "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f" {
+		t.Fatalf("record template: %q", got)
+	}
+	// Trailing slash normalised.
+	if got := recordPathTemplate("/recordings/"); got != "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f" {
+		t.Fatalf("record template (trailing slash): %q", got)
+	}
+}
+
+func TestCollectSegments(t *testing.T) {
+	root := t.TempDir()
+	pathDir := filepath.Join(root, "cameras", "t1", "c1", "main")
+	if err := os.MkdirAll(pathDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seg := filepath.Join(pathDir, "2026-07-09_10-00-00-000000.mp4")
+	if err := os.WriteFile(seg, []byte("fmp4data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A non-mp4 sibling must be ignored.
+	if err := os.WriteFile(filepath.Join(pathDir, "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	segs, err := collectSegments(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segs) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(segs))
+	}
+	if segs[0].size != int64(len("fmp4data")) {
+		t.Fatalf("segment size: got %d", segs[0].size)
+	}
+	if segs[0].start.IsZero() {
+		t.Fatalf("segment start should parse from the filename")
+	}
+
+	// A missing root is a graceful error (no recordings yet), not a panic.
+	if _, err := collectSegments(filepath.Join(root, "nope")); err == nil {
+		t.Fatalf("expected error for a missing recordings root")
+	}
+}
