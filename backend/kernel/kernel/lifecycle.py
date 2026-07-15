@@ -22,9 +22,16 @@ from typing import Any
 
 log = logging.getLogger("kernel.lifecycle")
 
-# Subject a service subscribes to for offboard. Matches core's
-# events_nats.publish(str(tenant_id), "tenant", "offboarded", ...).
+# Subjects a service subscribes to. Match core's
+# events_nats.publish(str(tenant_id), "tenant", "<event>", ...).
 OFFBOARD_PATTERN = "tenant.*.tenant.offboarded"
+PROVISIONED_PATTERN = "tenant.*.tenant.provisioned"
+
+
+def _per_tenant_enabled() -> bool:
+    from .config import get_settings
+
+    return bool(getattr(get_settings(), "db_per_tenant", False))
 
 
 async def erase_tenant_data(database: Any, tenant_id: str) -> int:
@@ -65,9 +72,38 @@ async def subscribe_tenant_offboard(bus: Any, database: Any, *, durable: str) ->
         if not tid or tid == "platform":
             return
         try:
-            removed = await erase_tenant_data(database, tid)
-            log.info("tenant offboard: erased %d rows for tenant %s", removed, tid)
+            if _per_tenant_enabled():
+                # DB-per-tenant: dropping the database IS the erase (complete + trivial).
+                from .provisioning import drop_tenant_db
+
+                await drop_tenant_db(database.database_url, tid)
+                log.info("tenant offboard: dropped database for tenant %s", tid)
+            else:
+                removed = await erase_tenant_data(database, tid)
+                log.info("tenant offboard: erased %d rows for tenant %s", removed, tid)
         except Exception as exc:  # noqa: BLE001 — a bad erase must not kill the consumer
-            log.warning("tenant offboard erase failed for %s: %s", tid, exc)
+            log.warning("tenant offboard failed for %s: %s", tid, exc)
 
     await bus.subscribe(OFFBOARD_PATTERN, _handler, durable=durable)
+
+
+async def subscribe_tenant_provisioned(bus: Any, database: Any, *, durable: str) -> None:
+    """Wire a durable consumer that provisions this service's per-tenant database when
+    core creates a tenant. No-op unless ``db_per_tenant`` is on (shared-DB mode needs
+    no provisioning). Call once in the service's startup lifespan, like the offboard
+    consumer.
+    """
+
+    async def _handler(envelope: dict) -> None:
+        tid = envelope.get("tenant_id")
+        if not tid or tid == "platform" or not _per_tenant_enabled():
+            return
+        try:
+            from .provisioning import provision_tenant_schema
+
+            await provision_tenant_schema(database.database_url, database.Base.metadata, tid)
+            log.info("tenant provision: created database + schema for tenant %s", tid)
+        except Exception as exc:  # noqa: BLE001 — never let a bad provision kill the consumer
+            log.warning("tenant provision failed for %s: %s", tid, exc)
+
+    await bus.subscribe(PROVISIONED_PATTERN, _handler, durable=durable)

@@ -65,10 +65,11 @@ async def lifespan(app: FastAPI):
     # Announce startup on the same spine the Python + Go services use.
     await bus.publish(subject(None, "vms", "startup"), {"service": "vision"})
     # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
-    from kernel.lifecycle import subscribe_tenant_offboard
+    from kernel.lifecycle import subscribe_tenant_offboard, subscribe_tenant_provisioned
 
     from app.db import database
 
+    await subscribe_tenant_provisioned(bus, database, durable="vision-provision")
     await subscribe_tenant_offboard(bus, database, durable="vision-offboard")
     # Background reachability sampler (all tenants): keeps camera/NVR status live +
     # writes the CameraHealth time-series + auto-purges it. Its own DB session per

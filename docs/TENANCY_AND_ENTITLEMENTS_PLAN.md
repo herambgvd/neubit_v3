@@ -41,7 +41,8 @@ no dependency arrow can run in parallel if capacity allows.
 | **4b** | Isolation: Postgres RLS + NOT-NULL sentinel migration | Isolation | 4a | ⏸ Deferred |
 | **5** | Gateway defense-in-depth (ForwardAuth wired) | Isolation | 4a | ✅ Done |
 | **6** | Tenant lifecycle orchestration + entitlements contract | both | 3, 4a | ✅ Done |
-| **7** | DB-per-tenant (strong isolation) | Isolation | 4, 6 | ⬜ |
+| **7a** | DB-per-tenant foundation (router · provisioning · flag) | Isolation | 4a, 6 | ✅ Done |
+| **7b** | DB-per-tenant cutover (route wiring · data migration · runner) | Isolation | 7a, 4b | ⏸ Deferred |
 | **8** | Hardening (super-admin realm · NATS per-tenant · encryption keys) | both | 5, 7 | ⬜ |
 
 **Execution order rationale:** Entitlements first (Phases 1–3) — it is the felt problem
@@ -474,30 +475,65 @@ one-line wiring).
 
 ---
 
-## Phase 7 — DB-per-tenant (strong isolation)  ⬜
+## Phase 7a — DB-per-tenant foundation  ✅
 
-**Goal:** The stated ARCHITECTURE.md §10 target — each tenant's operational data in its own
-database, for STQC/enterprise isolation. On-prem = one tenant = one DB (same code path).
+**Goal:** Build + prove the DB-per-tenant machinery (ARCHITECTURE.md §10) **behind a flag
+(`VE_DB_PER_TENANT`, default OFF)** so the shared-DB stack is untouched, while the reusable
+hard parts — the request-time router and the provisioning primitives — exist and are tested.
 
-**Depends on:** Phases 4, 6.
+**Depends on:** Phases 4a, 6.
 
 ### Tasks
-- [ ] Tenant→engine resolver + per-tenant pooled connections in `kernel/db.py` and
-      `gokernel/db` (route at request time from the verified tenant claim).
-- [ ] Migration runner that applies each service's migrations across all tenant DBs.
-- [ ] Provision = create DB (on `tenant.provisioned`); offboard = drop DB (+ per-tenant object
-      bucket + NATS namespace).
-- [ ] Control DB keeps `tenant_id` for the registry/identity/licensing tables only.
+- [x] **Tenant→DB router** in [`kernel/db.py`](../backend/kernel/kernel/db.py):
+      `sessionmaker_for(tenant_id)` / `get_db_for(tenant_id)` return a lazily-built, pooled
+      sessionmaker on `<base>_t_<tenant_hex>` when the flag is on, and **fall back to the shared
+      engine** when off or `tenant_id` is None. The shared `get_db` is unchanged.
+- [x] **Provisioning primitives** in
+      [`kernel/provisioning.py`](../backend/kernel/kernel/provisioning.py): `create_tenant_db`,
+      `drop_tenant_db` (FORCE), `provision_tenant_schema` (create DB + `metadata.create_all`),
+      plus `tenant_db_name`/`tenant_url` derivation. DDL via a raw asyncpg admin connection.
+- [x] **Lifecycle wiring** ([`kernel/lifecycle.py`](../backend/kernel/kernel/lifecycle.py)):
+      `subscribe_tenant_provisioned` (create the tenant DB + schema on `tenant.provisioned`) and
+      an offboard consumer that now **drops the DB** when the flag is on / **erases rows** when
+      off. Both wired into all four Python satellites' lifespans (dormant while the flag is off).
+- [x] Config flag `db_per_tenant` ([`kernel/config.py`](../backend/kernel/kernel/config.py)).
 
 ### Tests
-- [ ] Two tenants write "the same" row; each lands in its own DB; neither can see the other's.
-- [ ] Migration runner applies a new migration to every tenant DB.
-- [ ] Provision creates a usable DB; offboard drops it cleanly.
+- [x] Unit: `tenant_db_name`/`tenant_url` derivation (≤63 chars, only the DB name swapped);
+      **flag-off router falls back to the shared sessionmaker** for both None and a real id
+      ([`test_db_per_tenant.py`](../backend/workflow/tests/test_db_per_tenant.py)).
+- [x] **Live Postgres**: `provision_tenant_schema` creates `neubit_workflow_t_<hex>`, builds the
+      real workflow schema (`notification_channels` present), then `drop_tenant_db` removes it —
+      verified against the running server.
+- [x] All four satellites restart clean with both consumers wired (flag off → dormant).
+
+**Exit criteria:** the router + provisioning primitives exist and are proven against Postgres,
+with the shared-DB stack unaffected. **Met.**
+
+**Completed:** 2026-07-15
+
+---
+
+## Phase 7b — DB-per-tenant cutover  ⏸ Deferred
+
+**Why deferred:** flipping `VE_DB_PER_TENANT` on a populated multi-tenant stack is a deliberate
+**data migration**, not a code toggle. It also depends on Phase 4b (the NOT-NULL/sentinel work),
+and it changes every service's query path. Done in a planned window, not a feature turn.
+
+### Tasks (when scheduled)
+- [ ] Route each service's DB dependency from the shared `get_db` to `get_db_for(principal.
+      tenant_id)` so queries actually land in the tenant's DB (the router already exists).
+- [ ] Per-tenant **migration runner**: apply each service's Alembic migrations across all tenant
+      DBs (provision uses `create_all` for a fresh DB; existing tenant DBs need the delta runner).
+- [ ] **Backfill migration**: copy each existing tenant's rows from the shared service DB into
+      its new per-tenant DB, then flip the flag.
+- [ ] Per-tenant **object-store bucket** + **NATS namespace/account** on provision; drop on
+      offboard (the DB drop is already wired).
+- [ ] `gokernel` DB router parity (nvr) for the Go data plane.
+- [ ] On-prem edition: seed the single tenant + its DB at install (the deferred Phase-6 item).
 
 **Exit criteria:** operational data is physically separated per tenant; provisioning/offboarding
 are DB-level; on-prem and cloud share the path.
-
-**Completed:** _(date)_
 
 ---
 

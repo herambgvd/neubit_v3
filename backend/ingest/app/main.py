@@ -43,10 +43,11 @@ async def lifespan(app: FastAPI):
     # Announce the service came up on the platform namespace (harmless if NATS off).
     await bus.publish(subject(None, "ingest", "startup"), {"service": "ingest"})
     # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
-    from kernel.lifecycle import subscribe_tenant_offboard
+    from kernel.lifecycle import subscribe_tenant_offboard, subscribe_tenant_provisioned
 
     from app.db import database
 
+    await subscribe_tenant_provisioned(bus, database, durable="ingest-provision")
     await subscribe_tenant_offboard(bus, database, durable="ingest-offboard")
     yield
     await bus.close()
