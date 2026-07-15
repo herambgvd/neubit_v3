@@ -60,19 +60,41 @@ class DeviceMgmtService:
         return FleetOpResult(ok=False, detail=detail)
 
     # ── per-camera ops ───────────────────────────────────────────────────
-    async def device_info(self, camera_id: str):
-        """Firmware / identity read for one camera (driver ``get_device_info`` → probe)."""
+    async def device_info(self, camera_id: str, *, refresh: bool = False):
+        """Firmware / identity read for one camera (driver ``get_device_info`` → probe).
+
+        Device identity (make/model/firmware/serial/MAC) is effectively static, so we
+        cache it on the camera row (``onvif_capabilities['device_info']``) and serve it
+        instantly on every Maintenance-tab open — a live ONVIF probe only runs when the
+        caller passes ``refresh=True`` or nothing is cached yet.
+        """
+        from app.vms.drivers import DeviceInfo
+
         row = await self._row(camera_id)
+        cached = (row.onvif_capabilities or {}).get("device_info")
+        if not refresh and cached:
+            return DeviceInfo(**cached)
+
         host = self._host(row)
         if not host:
-            from app.vms.drivers import DeviceInfo
-
             return DeviceInfo(reachable=False, error="camera has no reachable host configured")
         driver = get_driver(row.brand)
         try:
-            return await driver.get_device_info(host, self._creds_for(row))
+            info = await driver.get_device_info(host, self._creds_for(row))
         finally:
             await driver.aclose()
+
+        # Persist only a good (reachable) read so a transient probe failure never
+        # overwrites the stored identity.
+        if getattr(info, "reachable", False):
+            caps = dict(row.onvif_capabilities or {})
+            caps["device_info"] = device_info_dict(info)
+            row.onvif_capabilities = caps
+            await self.db.commit()
+        elif cached:
+            # unreachable now but we have a stored identity → serve it
+            return DeviceInfo(**cached)
+        return info
 
     async def reboot(self, camera_id: str) -> FleetOpResult:
         return await self._run(camera_id, lambda d, host, creds: d.reboot(host, creds))
@@ -85,6 +107,18 @@ class DeviceMgmtService:
             camera_id,
             lambda d, host, creds: d.set_password(host, creds, user=user, new_password=new_password),
         )
+
+    async def list_users(self, camera_id: str) -> FleetOpResult:
+        return await self._run(camera_id, lambda d, host, creds: d.list_users(host, creds))
+
+    async def add_user(self, camera_id: str, *, user: str, password: str, level: str = "User") -> FleetOpResult:
+        return await self._run(
+            camera_id,
+            lambda d, host, creds: d.add_user(host, creds, user=user, password=password, level=level),
+        )
+
+    async def delete_user(self, camera_id: str, *, user: str) -> FleetOpResult:
+        return await self._run(camera_id, lambda d, host, creds: d.delete_user(host, creds, user=user))
 
     async def backup_config(self, camera_id: str) -> ConfigBackup:
         row = await self._row(camera_id)

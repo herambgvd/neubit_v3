@@ -43,6 +43,8 @@ export function toCreateBody(form) {
       audio_enabled: !!form.audio_enabled,
     },
     ptz: { capable: !!form.ptz_capable },
+    // Per-camera storage pool — "" clears to the default recordings volume.
+    storage_pool_id: form.storage_pool_id || undefined,
     placement: {
       site_id: form.site_id || undefined,
       floor_id: form.floor_id || undefined,
@@ -101,6 +103,7 @@ export function fromCamera(cam) {
     post_buffer_seconds: rec.post_buffer_seconds ?? 5,
     anr_enabled: !!rec.anr_enabled,
     audio_enabled: !!rec.audio_enabled,
+    storage_pool_id: cam.storage_pool_id || "",
     ptz_capable: !!(cam.ptz && cam.ptz.capable),
     site_id: place.site_id || "",
     floor_id: place.floor_id || "",

@@ -30,6 +30,7 @@ import { asItems } from "@/lib/format";
 import { vms } from "../api";
 import { usePlaybackSession } from "../hooks/usePlaybackSession";
 import ScrubBar from "./ScrubBar";
+import H265WebPlayer from "./H265WebPlayer";
 import BookmarkModal from "./BookmarkModal";
 import EvidenceLockModal from "./EvidenceLockModal";
 import BookmarksPanel from "./BookmarksPanel";
@@ -45,6 +46,23 @@ const iso = (ms) => new Date(ms).toISOString();
 function readout(ms) {
   if (ms == null) return "--:--:--";
   return new Date(ms).toLocaleTimeString(undefined, { hour12: false });
+}
+
+// Insert "/h264" before the HLS manifest filename → MediaMTX's transcode variant
+// (deploy/mediamtx.yml "~^(.+)/h264$" runs ffmpeg → H.264). The "?token=" is preserved
+// (the media token authorizes the /h264 sub-path too). Used as the H.265/HEVC fallback:
+// browsers/hls.js can't decode HEVC, so on a codec error we reload this transcoded URL.
+// Returns null when it isn't an index.m3u8 URL or is already a /h264 variant.
+function toH264Hls(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://x");
+    if (/\/h264\/index\.m3u8$/.test(u.pathname) || !/\/index\.m3u8$/.test(u.pathname)) return null;
+    u.pathname = u.pathname.replace(/\/index\.m3u8$/, "/h264/index.m3u8");
+    return u.href;
+  } catch {
+    return null;
+  }
 }
 
 export default function PlaybackPlayer({
@@ -64,6 +82,10 @@ export default function PlaybackPlayer({
   playing = false,
   speed = 1,
   seekMs = null, // epoch ms the parent wants everyone at
+  // Bumped by the parent ONLY on an explicit user scrub. NVR replay reloads on this (a
+  // linear stream can't random-seek); it must NOT reload on the auto-settled initial
+  // seekMs, or it would tear down the freshly-loaded session (→ black cell).
+  seekNonce = 0,
   windowStart: extWindowStart = null,
   windowEnd: extWindowEnd = null,
   onClock, // (ms) => void — report this cell's playback position (slaved lead cell)
@@ -207,6 +229,35 @@ export default function PlaybackPlayer({
     enabled: !!cameraId,
   });
 
+  // H.265/HEVC handling. hls.js (Chrome/Firefox) can't decode HEVC, so on a codec-incompatible
+  // error we ESCALATE in two stages:
+  //   1. WASM decode in the browser via h265web.js (`useH265`) — NO server transcode, the
+  //      preferred path (offloads zero CPU to the server).
+  //   2. If the WASM decoder can't init (old browser / no SIMD), fall through to the /h264
+  //      ffmpeg transcode variant (`transcoded`) — the last-resort compatibility path.
+  // H.264 streams never trip either stage, so they stay on the plain hls.js/<video> path at
+  // zero cost. Both reset on every new session URL.
+  const [useH265, setUseH265] = useState(false);
+  const useH265Ref = useRef(false);
+  const [h265Seek, setH265Seek] = useState(null); // WASM-path scrub target (epoch ms)
+  const [transcoded, setTranscoded] = useState(false);
+  const transcodedRef = useRef(false);
+  useEffect(() => {
+    useH265Ref.current = useH265;
+  }, [useH265]);
+  useEffect(() => {
+    transcodedRef.current = transcoded;
+  }, [transcoded]);
+  useEffect(() => {
+    setUseH265(false);
+    setH265Seek(null);
+    setTranscoded(false);
+  }, [hlsUrl]);
+  const effHls = useMemo(
+    () => (transcoded && toH264Hls(hlsUrl) ? toH264Hls(hlsUrl) : hlsUrl),
+    [transcoded, hlsUrl],
+  );
+
   // Load a session for the current window whenever the window changes.
   useEffect(() => {
     if (!cameraId) return;
@@ -226,9 +277,28 @@ export default function PlaybackPlayer({
   // ── HLS attach ───────────────────────────────────────────────────────────
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !hlsUrl) return undefined;
+    // In WASM (h265web) mode the <video>/hls.js path is inactive — the canvas player owns
+    // the stream, so skip attaching hls.js entirely.
+    if (!video || !effHls || useH265) return undefined;
     let disposed = false;
     setVideoError(false);
+
+    // Codec escalation on an undecodable HEVC stream:
+    //   1st codec error  → WASM decode (h265web.js) — no server transcode.
+    //   if WASM fails     → /h264 ffmpeg transcode variant (handled via onWasmError below).
+    const escalateHevc = () => {
+      if (useH265Ref.current || transcodedRef.current) return false;
+      useH265Ref.current = true;
+      setUseH265(true); // → render <H265WebPlayer>, this effect early-returns (hls.js off)
+      return true;
+    };
+    // Final fallback (only reached if the WASM decoder itself can't init).
+    const fallbackToH264 = () => {
+      if (transcodedRef.current || !toH264Hls(hlsUrl)) return false;
+      transcodedRef.current = true;
+      setTranscoded(true); // → effHls flips to /h264 → this effect re-runs on the variant
+      return true;
+    };
 
     const cleanup = () => {
       if (hlsRef.current) {
@@ -246,35 +316,54 @@ export default function PlaybackPlayer({
 
     const attach = async () => {
       cleanup();
-      // Native HLS (Safari).
+      // Native HLS (Safari — decodes HEVC natively, so no transcode needed there).
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = hlsUrl;
+        video.src = effHls;
         return;
       }
       try {
         const Hls = (await import("hls.js")).default;
         if (disposed) return;
         if (!Hls.isSupported()) {
-          video.src = hlsUrl; // last-ditch
+          video.src = effHls; // last-ditch
           return;
         }
         const hls = new Hls({
           enableWorker: false,
           backBufferLength: 90,
-          manifestLoadingMaxRetry: 3,
-          manifestLoadingRetryDelay: 600,
+          manifestLoadingMaxRetry: 4,
+          manifestLoadingRetryDelay: 800,
           fragLoadingMaxRetry: 6,
         });
         hlsRef.current = hls;
-        hls.loadSource(hlsUrl);
+        hls.loadSource(effHls);
         hls.attachMedia(video);
+        // The live-HLS timeline can start at a non-zero PTS (e.g. 10s), so the default
+        // currentTime=0 sits BEFORE the buffer → black. Snap into the buffer as soon as a
+        // segment is appended (the <video> "loadeddata"/"canplay" events may NEVER fire
+        // when there's no decodable frame at time 0, so we key off hls.js buffering).
+        hls.on(Hls.Events.BUFFER_APPENDED, () => {
+          try {
+            if (video.buffered.length && video.currentTime < video.buffered.start(0) - 0.3) {
+              video.currentTime = video.buffered.start(0) + 0.05;
+            }
+          } catch {}
+        });
         hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (disposed || !data?.fatal) return;
+          if (disposed) return;
+          // HEVC / undecodable codec → WASM decode (h265web.js), may fire non-fatal first.
+          const codecIssue =
+            data?.details === Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR ||
+            data?.details === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR;
+          if (codecIssue && escalateHevc()) return;
+          if (!data?.fatal) return;
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             try {
               hls.startLoad();
             } catch {}
           } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            // A fatal media error on the direct stream is often an undecodable codec too.
+            if (escalateHevc()) return;
             try {
               hls.recoverMediaError();
             } catch {
@@ -294,7 +383,33 @@ export default function PlaybackPlayer({
       disposed = true;
       cleanup();
     };
-  }, [hlsUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effHls]);
+
+  // MediaMTX live-HLS timelines can start at a NON-ZERO PTS (e.g. 10s) — the <video>
+  // defaults to currentTime=0, which sits BEFORE the buffered range, so it stalls on a
+  // black frame even though segments download fine. Snap into the buffer once data lands
+  // (no-op for VOD recordings whose timeline already starts at 0, and for legit forward
+  // seeks where currentTime is AHEAD of the buffer, not behind it).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !effHls) return undefined;
+    const snap = () => {
+      try {
+        if (v.buffered && v.buffered.length && v.currentTime < v.buffered.start(0) - 0.3) {
+          v.currentTime = v.buffered.start(0) + 0.05;
+        }
+      } catch {}
+    };
+    v.addEventListener("loadeddata", snap);
+    v.addEventListener("canplay", snap);
+    v.addEventListener("waiting", snap);
+    return () => {
+      v.removeEventListener("loadeddata", snap);
+      v.removeEventListener("canplay", snap);
+      v.removeEventListener("waiting", snap);
+    };
+  }, [effHls]);
 
   // ── Transport → <video> ──────────────────────────────────────────────────
   const isPlaying = controlled ? playing : localPlaying;
@@ -345,14 +460,23 @@ export default function PlaybackPlayer({
     [load, windowEnd],
   );
 
-  // Controlled: follow the parent's shared seek target. NVR sources reload from the seek
-  // instant; our own recordings just seek the seekable <video>.
+  // Controlled + OUR recording: seek the seekable <video> on any shared seek-target change.
   useEffect(() => {
-    if (!controlled || seekMs == null) return;
-    if (sourceFn) reloadFrom(seekMs);
-    else seekToMs(seekMs);
+    if (!controlled || sourceFn || seekMs == null) return;
+    seekToMs(seekMs);
+  }, [controlled, sourceFn, seekMs, seekToMs]);
+
+  // Controlled + NVR replay: re-request the replay from the target ONLY on an explicit user
+  // scrub (seekNonce bump), never on the auto-settled initial seekMs. The linear replay
+  // can't random-seek the <video>; the initial session (from the load effect) plays as-is.
+  const lastNonceRef = useRef(0);
+  useEffect(() => {
+    if (!controlled || !sourceFn) return;
+    if (seekNonce === lastNonceRef.current) return; // ignore the initial value / non-scrub renders
+    lastNonceRef.current = seekNonce;
+    if (seekMs != null) reloadFrom(seekMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [controlled, seekMs, seekToMs, reloadFrom]);
+  }, [controlled, sourceFn, seekNonce]);
 
   // Deep-link seek (jump-to-recording): once the HLS session for the target day
   // is attached, seek to the requested instant. Fires once per initialSeek value.
@@ -395,11 +519,37 @@ export default function PlaybackPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowStart, onClock, sourceFn]);
 
+  // The WASM (h265web) decoder couldn't init → fall through to the /h264 ffmpeg transcode
+  // (re-enables the <video>/hls.js path on the transcoded variant). If there's no transcode
+  // URL to fall back to, surface the error.
+  const onWasmError = useCallback(() => {
+    useH265Ref.current = false;
+    setUseH265(false);
+    if (toH264Hls(hlsUrl)) {
+      transcodedRef.current = true;
+      setTranscoded(true);
+    } else {
+      setVideoError(true);
+    }
+  }, [hlsUrl]);
+
+  // Time base the WASM player maps its PTS against. Our recordings anchor at windowStart
+  // (seekable window); an NVR replay is a LINEAR stream whose anchor moves on each
+  // re-request (reloadFrom), so its base is the current anchor. A rebuild always follows
+  // an anchor change (new hlsUrl → H265WebPlayer remounts), so this is fresh at render.
+  const h265Base = sourceFn && anchorRef.current != null ? anchorRef.current : windowStart;
+
   // ── Standalone controls ──────────────────────────────────────────────────
   const onScrubSeek = (ms) => {
     // NVR footage: re-request the replay from here (linear stream can't random-seek).
     if (sourceFn) {
       reloadFrom(ms);
+      return;
+    }
+    // WASM (h265web) path: the canvas player owns the transport, seek via its prop.
+    if (useH265) {
+      setCurrent(ms);
+      setH265Seek(ms);
       return;
     }
     if (!localPlaying) setCurrent(ms);
@@ -447,8 +597,24 @@ export default function PlaybackPlayer({
   if (controlled) {
     return (
       <div className={`relative overflow-hidden rounded-lg bg-black ${className}`}>
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video ref={videoRef} className="h-full w-full object-contain" playsInline muted />
+        {useH265 && hlsUrl ? (
+          // HEVC via WASM decode (no server transcode). Follows the shared clock via props.
+          <H265WebPlayer
+            url={hlsUrl}
+            playing={isPlaying}
+            speed={rate}
+            muted
+            // NVR replay is linear — a seek re-requests the stream (seekNonce → reloadFrom →
+            // new url → remount), so don't player-seek it. Our recordings are seekable.
+            seekMs={sourceFn ? null : seekMs}
+            windowStart={h265Base}
+            onTime={(ms) => onClock?.(ms)}
+            onError={onWasmError}
+          />
+        ) : (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video ref={videoRef} className="h-full w-full object-contain" playsInline muted />
+        )}
         {(loading || (!hlsUrl && !error)) && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white/80">
             <Icon icon="svg-spinners:180-ring" className="text-xl" />
@@ -469,8 +635,24 @@ export default function PlaybackPlayer({
     <div className={`overflow-hidden rounded-xl border border-card-border bg-card ${className}`}>
       {/* Video area */}
       <div className="relative aspect-video w-full bg-black">
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video ref={videoRef} className="h-full w-full object-contain" playsInline muted />
+        {useH265 && hlsUrl ? (
+          // HEVC via in-browser WASM decode (h265web.js) — no server transcode.
+          <H265WebPlayer
+            url={hlsUrl}
+            playing={localPlaying}
+            speed={localSpeed}
+            muted
+            // NVR footage: scrub goes through reloadFrom (new url → remount), so h265Seek
+            // stays null for it; our recordings player-seek within the window.
+            seekMs={sourceFn ? null : h265Seek}
+            windowStart={h265Base}
+            onTime={(ms) => setCurrent(ms)}
+            onError={onWasmError}
+          />
+        ) : (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video ref={videoRef} className="h-full w-full object-contain" playsInline muted />
+        )}
 
         {/* Time overlay */}
         {hlsUrl && !videoError && (

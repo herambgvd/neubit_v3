@@ -31,7 +31,7 @@ from kernel.errors import AppError
 
 from app.vms.common.nvr_client import NvrClient, NvrUnavailable
 from app.vms.live.service import LiveService
-from app.vms.models import Camera, Recording
+from app.vms.models import Camera, Recording, StoragePool
 
 log = logging.getLogger("vision.recording_service")
 
@@ -97,6 +97,11 @@ class RecordingService:
         camera.retention_days = body.retention_days
         camera.record_substream = body.record_substream
         camera.audio_enabled = body.audio_enabled
+        # Per-camera storage pool — only overwrite when the field is present in the
+        # request (None means "leave as-is" isn't distinguishable here, so the body
+        # always carries the intended pool; empty string clears it to the default).
+        if body.storage_pool_id is not None:
+            camera.storage_pool_id = body.storage_pool_id or None
         actor_id = _actor_id(actor)
         if actor_id:
             camera.updated_by = actor_id
@@ -132,6 +137,25 @@ class RecordingService:
         camera = await self._camera(camera_id)
         return self._config_public(camera, recording_now=False)
 
+    async def active_recordings(self) -> dict:
+        """The set of camera_ids ACTUALLY recording right now (live nvr state, not the
+        per-camera policy mode). Drives the UI's real "● Recording" indicator. Degrades
+        to available=False (unknown) if the nvr data-plane is unreachable."""
+        try:
+            targets = await self.nvr.recording_status()
+        except NvrUnavailable:
+            return {"available": False, "camera_ids": []}
+        tenant = str(self.scope.tenant_id) if self.scope.tenant_id else None
+        cam_ids: set[str] = set()
+        for t in targets:
+            # Tenant-scope the view (superadmin sees all; a tenant sees only its own).
+            if tenant and str(t.get("tenant_id") or "") not in ("", tenant):
+                continue
+            cid = t.get("camera_id")
+            if cid:
+                cam_ids.add(str(cid))
+        return {"available": True, "camera_ids": sorted(cam_ids)}
+
     # ── manual start / stop ─────────────────────────────────────────────
     async def start(self, camera_id: str, *, actor, trigger: str = "manual"):
         camera = await self._camera(camera_id)
@@ -154,16 +178,27 @@ class RecordingService:
             "trigger_type": None,
         }
 
+    async def _record_dir_for(self, camera: Camera) -> str | None:
+        """The recordings root for THIS camera = its assigned storage pool's path
+        (enterprise VMS per-camera storage). None → the nvr's default recordings volume."""
+        pool_id = getattr(camera, "storage_pool_id", None)
+        if not pool_id:
+            return None
+        pool = await self.db.get(StoragePool, pool_id)
+        path = (getattr(pool, "path", None) or "").strip() if pool else None
+        return path or None
+
     async def _drive_start(self, camera: Camera, *, trigger: str) -> dict:
         """Derive RTSP + ask the nvr to start recording. Raises 502 on failure."""
         profile = self._record_profile(camera)
         rtsp_url = await self._rtsp_for(camera, profile)
         if not rtsp_url:
             raise RecordingUpstreamError("camera has no reachable RTSP stream to record")
+        record_dir = await self._record_dir_for(camera)
         try:
             return await self.nvr.start_recording(
                 camera_id=camera.id, profile=profile, rtsp_url=rtsp_url,
-                trigger=trigger, audio=bool(camera.audio_enabled),
+                trigger=trigger, audio=bool(camera.audio_enabled), record_dir=record_dir,
             )
         except NvrUnavailable as exc:
             raise RecordingUpstreamError(exc.message) from exc
@@ -315,6 +350,7 @@ class RecordingService:
             retention_days=camera.retention_days,
             record_substream=camera.record_substream,
             audio_enabled=bool(camera.audio_enabled),
+            storage_pool_id=getattr(camera, "storage_pool_id", None),
             recording_now=recording_now,
         )
 

@@ -589,11 +589,25 @@ class CameraService:
         driver = get_driver(brand)
         creds = Credentials(username=username or "admin", password=password or "", port=port or 80)
 
-        # One enumeration to enrich stream-uris (best-effort; may be empty).
+        # One enumeration to enrich stream-uris (best-effort; may be empty). Index it by
+        # EVERY stable key so a per-channel spec matches regardless of which identifier the
+        # caller sent — source/profile token (most stable), the ONVIF channel_number hint,
+        # or the sequential channel index. Matching ONLY by ch.channel (1,2,3…) missed
+        # single-channel maps (idx=0) → cameras created with NO MediaProfiles → no stream.
         enum_by_ch: dict[int, Any] = {}
+        enum_by_num: dict[int, Any] = {}
+        enum_by_token: dict[str, Any] = {}
         try:
             for ch in await driver.enumerate_channels(host, creds):
                 enum_by_ch[ch.channel] = ch
+                if getattr(ch, "channel_number", None) is not None:
+                    enum_by_num.setdefault(ch.channel_number, ch)
+                if getattr(ch, "source_token", None):
+                    enum_by_token.setdefault(str(ch.source_token), ch)
+                for prof in (getattr(ch, "main", None), getattr(ch, "sub", None)):
+                    tok = getattr(prof, "profile_token", None)
+                    if tok:
+                        enum_by_token.setdefault(str(tok), ch)
         except Exception as exc:  # noqa: BLE001
             log.info("bulk-add enumerate failed (%s): %s", host, exc)
         finally:
@@ -616,9 +630,31 @@ class CameraService:
                 scoped(select(Camera), Camera, self.scope).where(Camera.name == name)
             )
             if dup is not None:
-                raise ConflictError(f"a camera named '{name}' already exists")
+                # NVR channels routinely share generic names ("Channel 1") across
+                # different recorders, so mapping a second NVR must not hard-fail on
+                # a name clash — auto-disambiguate with an NVR-scoped suffix. Only the
+                # explicit single-camera add path keeps the hard error (user typed it).
+                if spec.nvr_id:
+                    stem = name
+                    n = 2
+                    while dup is not None:
+                        name = f"{stem} ({n})"
+                        dup = await self.db.scalar(
+                            scoped(select(Camera), Camera, self.scope).where(Camera.name == name)
+                        )
+                        n += 1
+                else:
+                    raise ConflictError(f"a camera named '{name}' already exists")
 
-            probe_ch = enum_by_ch.get(ch_no) or enum_by_ch.get(idx)
+            # Match the enumerated channel by token (stable) → channel_number → sequential
+            # index. This is what populates MediaProfiles; a miss = a camera with no stream.
+            probe_ch = (
+                (enum_by_token.get(str(spec.profile_token)) if spec.profile_token else None)
+                or (enum_by_num.get(spec.channel_number) if spec.channel_number is not None else None)
+                or enum_by_ch.get(ch_no)
+                or enum_by_ch.get(idx + 1)
+                or enum_by_ch.get(idx)
+            )
             profile_token = spec.profile_token or (
                 probe_ch.main.profile_token if (probe_ch and probe_ch.main) else None
             )
@@ -678,16 +714,47 @@ class CameraService:
         finally:
             await driver.aclose()
 
-    async def configure(self, camera_id: str, section: str, payload: dict) -> dict:
+    # ONVIF read-sections whose result we persist on the camera row so the UI serves
+    # them instantly (no auto re-probe on every tab open); the operator re-reads on
+    # demand via ``refresh=True`` (the panel's ↻/Reload). Writes always hit the device
+    # AND refresh the cache with the echoed current state.
+    _CACHEABLE_SECTIONS = {"imaging", "io", "encoder", "osd"}
+
+    async def configure(
+        self, camera_id: str, section: str, payload: dict, *, refresh: bool = False
+    ) -> dict:
         row = await self._row(camera_id)
+        is_read = not payload
+        cacheable = section in self._CACHEABLE_SECTIONS
+
+        # Serve a cached read instantly unless the caller forced a refresh.
+        if cacheable and is_read and not refresh:
+            cached = (row.onvif_capabilities or {}).get(section)
+            if cached:
+                return cached
+
         host = row.onvif_host or (row.network_info or {}).get("ip")
         if not host:
             raise DriverError("camera has no reachable host configured")
         driver = get_driver(row.brand)
+        # For an NVR channel, imaging is per video-source — pass the channel index so the
+        # driver targets THIS channel's source, not the recorder's first one.
+        channel = row.nvr_channel_number if row.nvr_id else None
         try:
-            return await driver.configure(host, self._creds_for(row), section, payload)
+            result = await driver.configure(
+                host, self._creds_for(row), section, payload, channel=channel
+            )
         finally:
             await driver.aclose()
+
+        # Persist the live result (both reads and writes echo the current device state)
+        # so the next tab open is instant.
+        if cacheable and isinstance(result, dict):
+            caps = dict(row.onvif_capabilities or {})
+            caps[section] = result
+            row.onvif_capabilities = caps
+            await self.db.commit()
+        return result
 
     async def get_local_config(self, camera_id: str, section: str) -> dict:
         """Return a locally-persisted config section (motion/privacy/onvif-events)."""

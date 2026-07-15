@@ -61,7 +61,7 @@ log = logging.getLogger("vision.drivers.onvif")
 
 # Common ONVIF service ports across vendors (gvd_nvr ONVIF_PROBE_PORTS, verbatim).
 # Order matters — 80 first since ~99% of cameras serve there.
-ONVIF_PROBE_PORTS = (80, 8080, 8000, 8899, 2020, 8081, 8443, 443)
+ONVIF_PROBE_PORTS = (80, 81, 82, 8080, 8000, 8899, 2020, 8081, 8181, 8443, 443, 34567)
 
 # ── Optional SDK imports — gracefully degrade if not installed (gvd_nvr pattern) ──
 try:
@@ -407,10 +407,14 @@ def _recording_span(search, recording, token: str) -> tuple[str, str] | None:
     return None
 
 
-def _rewrite_replay_window(url: str, start_time: str | None, end_time: str | None) -> str:
-    """Rewrite starttime/endtime query params in an NVR replay RTSP URI to the requested
-    window, so HLS/RTSP playback starts at the right instant."""
-    if not (start_time or end_time):
+def _rewrite_replay_window(
+    url: str, start_time: str | None, end_time: str | None, subtype: int | None = None
+) -> str:
+    """Rewrite starttime/endtime (and optionally subtype) query params in an NVR replay
+    RTSP URI. ``subtype`` override is needed because this NVR's ``GetReplayUri`` returns
+    ``subtype=0`` (main) for BOTH the main and sub recording tokens — so to actually play
+    the H.264 sub stream we must force ``subtype=1`` in the URL ourselves."""
+    if not (start_time or end_time or subtype is not None):
         return url
     p = urlparse(url)
     q = parse_qs(p.query)
@@ -418,6 +422,8 @@ def _rewrite_replay_window(url: str, start_time: str | None, end_time: str | Non
         q["starttime"] = [_nvr_time(start_time)]
     if end_time and _nvr_time(end_time):
         q["endtime"] = [_nvr_time(end_time)]
+    if subtype is not None:
+        q["subtype"] = [str(subtype)]
     return urlunparse(p._replace(query=urlencode(q, doseq=True)))
 
 
@@ -984,6 +990,18 @@ class OnvifDriver(CameraDriver):
                 if cmd.action == "delete_preset":
                     ptz.RemovePreset({"ProfileToken": token, "PresetToken": cmd.preset_token})
                     return None
+                if cmd.action == "get_status":
+                    st = ptz.GetStatus({"ProfileToken": token})
+                    pos = getattr(st, "Position", None)
+                    pt = getattr(pos, "PanTilt", None) if pos is not None else None
+                    zm = getattr(pos, "Zoom", None) if pos is not None else None
+                    mv = getattr(st, "MoveStatus", None)
+                    return {
+                        "pan": getattr(pt, "x", None) if pt is not None else None,
+                        "tilt": getattr(pt, "y", None) if pt is not None else None,
+                        "zoom": getattr(zm, "x", None) if zm is not None else None,
+                        "moving": str(getattr(mv, "PanTilt", "") or getattr(mv, "Zoom", "") or "IDLE"),
+                    }
                 raise DriverError(f"unknown PTZ action: {cmd.action}")
             except DriverError:
                 raise
@@ -994,7 +1012,13 @@ class OnvifDriver(CameraDriver):
 
     # ── configuration (imaging / io / ntp / …) ────────────────────────────────
     async def configure(
-        self, host: str, creds: Credentials, section: str, payload: dict[str, Any]
+        self,
+        host: str,
+        creds: Credentials,
+        section: str,
+        payload: dict[str, Any],
+        *,
+        channel: int | None = None,
     ) -> dict[str, Any]:
         """Read (empty payload) or write an ONVIF config ``section``. Ported from
         gvd_nvr imaging + I/O + system-time services. Raises ``DriverError`` on
@@ -1019,9 +1043,13 @@ class OnvifDriver(CameraDriver):
         def _run() -> dict[str, Any]:
             cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
             if section == "imaging":
-                return self._configure_imaging(cam, payload, write)
+                return self._configure_imaging(cam, payload, write, channel=channel)
             if section == "io":
                 return self._configure_io(cam, payload, write)
+            if section == "encoder":
+                return self._configure_encoder(cam, payload, write, channel=channel)
+            if section == "osd":
+                return self._configure_osd(cam, payload, write, channel=channel)
             if section == "ntp":
                 return self._configure_ntp(cam, payload, write)
             if section == "privacy_masks":
@@ -1037,9 +1065,32 @@ class OnvifDriver(CameraDriver):
         except Exception as exc:  # noqa: BLE001
             raise DriverError(f"configure({section}) failed for {host}: {exc}") from None
 
-    def _configure_imaging(self, cam: Any, payload: dict[str, Any], write: bool) -> dict[str, Any]:
+    def _imaging_vs_token(self, media: Any, channel: int | None) -> str:
+        """Resolve the ONVIF VideoSourceToken for a specific NVR channel.
+
+        A multi-channel NVR exposes one VideoSource per channel (``VideoSourceToken_0``,
+        ``_1``, …). Imaging is per-source, so we must target the channel's own source —
+        matching the same numeric index the recording/stream tokens use
+        (== ``Camera.nvr_channel_number``) — not blindly the first source. Falls back to
+        positional index, then the first source (a standalone camera).
+        """
+        sources = media.GetVideoSources() or []
+        if not sources:
+            raise DriverError("device exposes no video sources")
+        if channel is not None:
+            want = f"VideoSourceToken_{channel}"
+            for vs in sources:
+                if str(vs.token) == want:
+                    return vs.token
+            if 0 <= channel < len(sources):
+                return sources[channel].token
+        return sources[0].token
+
+    def _configure_imaging(
+        self, cam: Any, payload: dict[str, Any], write: bool, *, channel: int | None = None
+    ) -> dict[str, Any]:
         media = cam.create_media_service()
-        vs_token = media.GetVideoSources()[0].token
+        vs_token = self._imaging_vs_token(media, channel)
         imaging = cam.create_imaging_service()
         current = imaging.GetImagingSettings({"VideoSourceToken": vs_token})
         if write:
@@ -1050,28 +1101,75 @@ class OnvifDriver(CameraDriver):
                 ("sharpness", "Sharpness", float),
                 ("ir_cut_filter", "IrCutFilter", str),
             ):
-                if key in payload and hasattr(current, attr):
+                if payload.get(key) is not None and hasattr(current, attr):
                     setattr(current, attr, cast(payload[key]))
             if "wide_dynamic_range" in payload and getattr(current, "WideDynamicRange", None):
-                wdr = payload["wide_dynamic_range"]
+                wdr = payload["wide_dynamic_range"] or {}
                 current.WideDynamicRange.Mode = wdr.get("mode", "OFF")
-                if "level" in wdr:
+                if wdr.get("level") is not None:
                     current.WideDynamicRange.Level = float(wdr["level"])
             imaging.SetImagingSettings(
                 {"VideoSourceToken": vs_token, "ImagingSettings": current, "ForcePersistence": True}
             )
             current = imaging.GetImagingSettings({"VideoSourceToken": vs_token})
-        return {
+
+        wdr_obj = getattr(current, "WideDynamicRange", None)
+        out: dict[str, Any] = {
             "video_source_token": vs_token,
             "brightness": getattr(current, "Brightness", None),
             "contrast": getattr(current, "Contrast", None),
             "color_saturation": getattr(current, "ColorSaturation", None),
             "sharpness": getattr(current, "Sharpness", None),
             "ir_cut_filter": str(getattr(current, "IrCutFilter", "")) or None,
+            "wide_dynamic_range": {
+                "mode": str(getattr(wdr_obj, "Mode", "")) or None,
+                "level": getattr(wdr_obj, "Level", None),
+            }
+            if wdr_obj is not None
+            else None,
+            "supported": {
+                "brightness": hasattr(current, "Brightness"),
+                "contrast": hasattr(current, "Contrast"),
+                "color_saturation": hasattr(current, "ColorSaturation"),
+                "sharpness": hasattr(current, "Sharpness"),
+                "wide_dynamic_range": wdr_obj is not None,
+                "ir_cut_filter": hasattr(current, "IrCutFilter"),
+            },
         }
+        # Slider ranges (min/max) from GetOptions — best-effort so the UI can bound the
+        # inputs; a device that doesn't advertise options just gets no ranges.
+        try:
+            opts = imaging.GetOptions({"VideoSourceToken": vs_token})
+
+            def _rng(node):
+                if node is None:
+                    return None
+                mn, mx = getattr(node, "Min", None), getattr(node, "Max", None)
+                return {"min": mn, "max": mx} if mn is not None and mx is not None else None
+
+            out["ranges"] = {
+                "brightness": _rng(getattr(opts, "Brightness", None)),
+                "contrast": _rng(getattr(opts, "Contrast", None)),
+                "color_saturation": _rng(getattr(opts, "ColorSaturation", None)),
+                "sharpness": _rng(getattr(opts, "Sharpness", None)),
+            }
+            wdr_opts = getattr(opts, "WideDynamicRange", None)
+            if wdr_opts is not None:
+                out["ranges"]["wide_dynamic_range_modes"] = [str(m) for m in (getattr(wdr_opts, "Mode", None) or [])]
+            ircut = getattr(opts, "IrCutFilterModes", None)
+            if ircut:
+                out["ranges"]["ir_cut_filter_modes"] = [str(m) for m in ircut]
+        except Exception as exc:  # noqa: BLE001 — options are optional
+            log.debug("GetOptions failed for %s: %s", vs_token, exc)
+            out["ranges"] = {}
+        return out
 
     def _configure_io(self, cam: Any, payload: dict[str, Any], write: bool) -> dict[str, Any]:
         dm = cam.devicemgmt
+        # A relay toggle IS an explicit operator action — surface its failure. But the
+        # READ side (enumerate) must stay graceful: many cameras/NVRs simply expose no
+        # relay/digital-I/O ONVIF service and fault on GetRelayOutputs ("get system config
+        # failed") — that's "no I/O", not an error. So each read is best-effort → empty.
         if write:
             dm.SetRelayOutputState(
                 {
@@ -1080,14 +1178,17 @@ class OnvifDriver(CameraDriver):
                 }
             )
         outputs = []
-        for out in dm.GetRelayOutputs() or []:
-            outputs.append(
-                {
-                    "token": str(out.token),
-                    "mode": str(getattr(out.Properties, "Mode", "")),
-                    "idle_state": str(getattr(out.Properties, "IdleState", "")),
-                }
-            )
+        try:
+            for out in dm.GetRelayOutputs() or []:
+                outputs.append(
+                    {
+                        "token": str(out.token),
+                        "mode": str(getattr(out.Properties, "Mode", "")),
+                        "idle_state": str(getattr(out.Properties, "IdleState", "")),
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001 — device exposes no relay outputs
+            log.debug("GetRelayOutputs unsupported on this device: %s", exc)
         inputs = []
         try:
             for inp in dm.GetDigitalInputs() or []:
@@ -1095,6 +1196,163 @@ class OnvifDriver(CameraDriver):
         except Exception:  # noqa: BLE001
             pass
         return {"relay_outputs": outputs, "digital_inputs": inputs}
+
+    # ── video encoder (resolution / fps / bitrate / GOP) ──────────────────────
+    def _profile_for_role(self, service: Any, is_media2: bool, role: str) -> Any | None:
+        """Pick the profile for a role (main=highest-res, sub=next, third=…)."""
+        profiles = self._list_profiles(service, is_media2)
+        if not profiles:
+            return None
+
+        def _width(p: Any) -> int:
+            try:
+                return int(self._enc_of(p).Resolution.Width)
+            except Exception:  # noqa: BLE001
+                return 0
+
+        ordered = sorted(profiles, key=_width, reverse=True)
+        idx = {"main": 0, "sub": 1, "third": 2}.get(role, 0)
+        return ordered[min(idx, len(ordered) - 1)]
+
+    def _configure_encoder(
+        self, cam: Any, payload: dict[str, Any], write: bool, *, channel: int | None = None
+    ) -> dict[str, Any]:
+        """Read/write the VideoEncoderConfiguration (resolution/fps/bitrate/GOP/codec) of
+        the ``main`` (default) or ``sub`` stream. ONVIF SetVideoEncoderConfiguration —
+        many NVR channels reject writes; that surfaces as a DriverError (graceful)."""
+        media2 = self._media2_service(cam)
+        service = media2 or self._media1_service(cam)
+        if service is None:
+            raise DriverError("device has no ONVIF media service")
+        is_media2 = media2 is not None
+        role = (payload.get("role") if payload else None) or "main"
+        prof = self._profile_for_role(service, is_media2, role)
+        if prof is None:
+            raise DriverError("device exposes no media profiles")
+        enc = self._enc_of(prof)
+        if enc is None:
+            raise DriverError("profile has no VideoEncoderConfiguration")
+
+        if write:
+            res = payload.get("resolution")
+            if res and "x" in str(res) and getattr(enc, "Resolution", None) is not None:
+                w, h = str(res).lower().split("x")
+                enc.Resolution.Width, enc.Resolution.Height = int(w), int(h)
+            rc = getattr(enc, "RateControl", None)
+            if rc is not None:
+                if payload.get("fps") is not None:
+                    rc.FrameRateLimit = int(payload["fps"])
+                if payload.get("bitrate") is not None:
+                    rc.BitrateLimit = int(payload["bitrate"])
+            if payload.get("gov_length") is not None:
+                h264 = getattr(enc, "H264", None)
+                if h264 is not None:
+                    h264.GovLength = int(payload["gov_length"])
+                elif hasattr(enc, "GovLength"):
+                    enc.GovLength = int(payload["gov_length"])
+            if is_media2:
+                service.SetVideoEncoderConfiguration({"Configuration": enc})
+            else:
+                service.SetVideoEncoderConfiguration({"Configuration": enc, "ForcePersistence": True})
+            prof = self._profile_for_role(service, is_media2, role)
+            enc = self._enc_of(prof)
+
+        res_obj = getattr(enc, "Resolution", None)
+        rc = getattr(enc, "RateControl", None)
+        h264 = getattr(enc, "H264", None)
+        out: dict[str, Any] = {
+            "role": role,
+            "codec": self._norm_codec(getattr(enc, "Encoding", None)),
+            "resolution": (
+                f"{int(res_obj.Width)}x{int(res_obj.Height)}" if res_obj is not None else None
+            ),
+            "fps": int(getattr(rc, "FrameRateLimit", 0)) or None if rc is not None else None,
+            "bitrate": int(getattr(rc, "BitrateLimit", 0)) or None if rc is not None else None,
+            "gov_length": int(getattr(h264, "GovLength", 0)) or None
+            if h264 is not None
+            else (int(getattr(enc, "GovLength", 0)) or None),
+        }
+        # Options (allowed resolutions + fps/bitrate ranges) — best-effort.
+        try:
+            tok = getattr(enc, "token", None) or getattr(enc, "_token", None)
+            opts = service.GetVideoEncoderConfigurationOptions(
+                {"ConfigurationToken": tok, "ProfileToken": getattr(prof, "token", None)}
+                if is_media2
+                else {"ConfigurationToken": tok}
+            )
+            resolutions: list[str] = []
+            node = getattr(opts, "H264", None) or getattr(opts, "JPEG", None) or opts
+            for r in getattr(node, "ResolutionsAvailable", None) or []:
+                resolutions.append(f"{int(r.Width)}x{int(r.Height)}")
+            frng = getattr(node, "FrameRateRange", None)
+            out["options"] = {
+                "resolutions": resolutions,
+                "fps": {"min": getattr(frng, "Min", None), "max": getattr(frng, "Max", None)}
+                if frng is not None
+                else None,
+            }
+        except Exception as exc:  # noqa: BLE001 — options optional
+            log.debug("GetVideoEncoderConfigurationOptions failed: %s", exc)
+            out["options"] = {}
+        return out
+
+    # ── OSD / text overlay (camera name + timestamp) ──────────────────────────
+    def _configure_osd(
+        self, cam: Any, payload: dict[str, Any], write: bool, *, channel: int | None = None
+    ) -> dict[str, Any]:
+        """Read/write OSD text + timestamp overlays via Media2 (Profile T). Read returns
+        the current OSD items; write updates the first text/datetime OSD. Graceful — a
+        device without Media2 OSD support raises DriverError → service records unsupported."""
+        media2 = self._media2_service(cam)
+        if media2 is None:
+            raise DriverError("device has no ONVIF Media2 (OSD) service")
+        prof = self._profile_for_role(media2, True, (payload.get("role") if payload else None) or "main")
+        vs_token = None
+        if prof is not None:
+            cfgs = getattr(prof, "Configurations", None)
+            vsc = getattr(cfgs, "VideoSource", None) if cfgs is not None else None
+            if isinstance(vsc, list):
+                vsc = vsc[0] if vsc else None
+            vs_token = getattr(vsc, "token", None) if vsc is not None else None
+
+        osds = list(media2.GetOSDs({}) or [])
+
+        def _text_of(o: Any) -> str | None:
+            tt = getattr(getattr(o, "TextString", None), "PlainText", None)
+            return str(tt) if tt else None
+
+        def _type_of(o: Any) -> str:
+            return str(getattr(getattr(o, "TextString", None), "Type", "") or "")
+
+        if write:
+            want_text = payload.get("text")
+            want_dt = payload.get("show_datetime")
+            for o in osds:
+                ts = getattr(o, "TextString", None)
+                if ts is None:
+                    continue
+                typ = _type_of(o)
+                if want_text is not None and typ in ("Plain", ""):
+                    ts.PlainText = str(want_text)
+                    ts.Type = "Plain"
+                    media2.SetOSD({"OSD": o})
+                if want_dt is not None and typ in ("DateAndTime", "Date", "Time"):
+                    ts.Type = "DateAndTime" if want_dt else "Plain"
+                    if not want_dt:
+                        ts.PlainText = getattr(ts, "PlainText", "") or ""
+                    media2.SetOSD({"OSD": o})
+            osds = list(media2.GetOSDs({}) or [])
+
+        items = []
+        for o in osds:
+            items.append(
+                {
+                    "token": str(getattr(o, "token", "")),
+                    "type": _type_of(o),
+                    "text": _text_of(o),
+                }
+            )
+        return {"video_source_token": vs_token, "osds": items, "supported": True}
 
     def _configure_ntp(self, cam: Any, payload: dict[str, Any], write: bool) -> dict[str, Any]:
         from datetime import datetime
@@ -1324,6 +1582,71 @@ class OnvifDriver(CameraDriver):
             return FleetOpResult(ok=True, detail=f"password changed for {user}", data={"user": user})
         except Exception as exc:  # noqa: BLE001
             return FleetOpResult(ok=False, detail=f"set_password failed: {exc}")
+
+    # ── ONVIF user management (GetUsers / CreateUsers / DeleteUsers) ──────────
+    async def list_users(self, host: str, creds: Credentials) -> FleetOpResult:
+        """ONVIF ``GetUsers`` — the device's account list (username + level)."""
+        if not _HAS_ONVIF:
+            return FleetOpResult(ok=False, supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return FleetOpResult(ok=False, detail="device unreachable")
+
+        def _run() -> list[dict[str, str]]:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+            out = []
+            for u in cam.devicemgmt.GetUsers() or []:
+                out.append(
+                    {
+                        "username": str(getattr(u, "Username", "")),
+                        "level": str(getattr(u, "UserLevel", "") or ""),
+                    }
+                )
+            return out
+
+        try:
+            users = await asyncio.to_thread(_run)
+            return FleetOpResult(ok=True, detail=f"{len(users)} user(s)", data={"users": users})
+        except Exception as exc:  # noqa: BLE001
+            return FleetOpResult(ok=False, supported=False, detail=f"GetUsers failed: {exc}")
+
+    async def add_user(
+        self, host: str, creds: Credentials, *, user: str, password: str, level: str = "User"
+    ) -> FleetOpResult:
+        """ONVIF ``CreateUsers`` — add a device account at ``level``
+        (Administrator|Operator|User|Anonymous)."""
+        if not _HAS_ONVIF:
+            return FleetOpResult(ok=False, supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return FleetOpResult(ok=False, detail="device unreachable")
+
+        def _run() -> None:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+            cam.devicemgmt.CreateUsers(
+                {"User": [{"Username": user, "Password": password, "UserLevel": level}]}
+            )
+
+        try:
+            await asyncio.to_thread(_run)
+            return FleetOpResult(ok=True, detail=f"user {user} created", data={"user": user})
+        except Exception as exc:  # noqa: BLE001
+            return FleetOpResult(ok=False, supported=True, detail=f"CreateUsers failed: {exc}")
+
+    async def delete_user(self, host: str, creds: Credentials, *, user: str) -> FleetOpResult:
+        """ONVIF ``DeleteUsers`` — remove a device account by username."""
+        if not _HAS_ONVIF:
+            return FleetOpResult(ok=False, supported=False, detail="python-onvif-zeep not installed")
+        if not await _tcp_reachable(host, creds.port):
+            return FleetOpResult(ok=False, detail="device unreachable")
+
+        def _run() -> None:
+            cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
+            cam.devicemgmt.DeleteUsers({"Username": [user]})
+
+        try:
+            await asyncio.to_thread(_run)
+            return FleetOpResult(ok=True, detail=f"user {user} deleted", data={"user": user})
+        except Exception as exc:  # noqa: BLE001
+            return FleetOpResult(ok=False, supported=True, detail=f"DeleteUsers failed: {exc}")
 
     async def backup_config(self, host: str, creds: Credentials) -> ConfigBackup:
         """ONVIF ``GetSystemBackup`` — returns the device's backup files (concatenated).
@@ -1792,13 +2115,22 @@ class OnvifDriver(CameraDriver):
                 cam = ONVIFCamera(host, creds.port, creds.username, creds.password)
                 recording, _search = _attach_profileg(cam)
                 token = recording_token
+                # Prefer the SUB stream (H.264, browser-decodable) over MAIN (often
+                # H.265/HEVC, which browsers can't play) so footage plays regardless of the
+                # main-stream codec. want_subtype forces the RTSP subtype (GetReplayUri
+                # always returns subtype=0, so we override it to 1 for the sub stream).
+                want_subtype = 0
                 if not token and recording is not None:
                     try:
                         recs = recording.GetRecordings() or []
                     except Exception:  # noqa: BLE001
                         recs = []
-                    toks = _tokens_for_channel(recs, channel, stream="main")
-                    token = toks[0] if toks else None
+                    sub = _tokens_for_channel(recs, channel, stream="sub")
+                    if sub:
+                        token, want_subtype = sub[0], 1
+                    else:
+                        main = _tokens_for_channel(recs, channel, stream="main")
+                        token, want_subtype = (main[0] if main else None), 0
                 if not token:
                     return None
                 try:
@@ -1816,7 +2148,7 @@ class OnvifDriver(CameraDriver):
                 url = getattr(uri, "Uri", None) or (uri if isinstance(uri, str) else None)
                 if not url:
                     return None
-                url = _rewrite_replay_window(url, start_time, end_time)
+                url = _rewrite_replay_window(url, start_time, end_time, subtype=want_subtype)
                 return _inject_creds(url, creds.username, creds.password)
             except Exception as exc:  # noqa: BLE001
                 log.warning("[%s] GetReplayUri failed: %s", host, exc)

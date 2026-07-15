@@ -17,6 +17,7 @@ Discipline mirrors the camera/group services:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -328,6 +329,26 @@ class StorageService:
         pct = None
         if pool.max_size_bytes:
             pct = round(used / pool.max_size_bytes * 100.0, 2)
+
+        # Real volume stats — cross-platform (Windows drive letters + Linux mounts).
+        # This is the true free/used signal for the operator, independent of RAID type;
+        # on a Windows hardware-RAID node (mdadm N/A) it is the primary storage-health
+        # surface. Best-effort: an unreachable path / remote pool yields no disk stats.
+        disk_total = disk_used = disk_free = None
+        disk_pct = None
+        disk_ok = False
+        path = (pool.path or "").strip()
+        if path:
+            try:
+                import shutil
+
+                du = await asyncio.to_thread(shutil.disk_usage, path)
+                disk_total, disk_used, disk_free = du.total, du.used, du.free
+                disk_pct = round(du.used / du.total * 100.0, 2) if du.total else None
+                disk_ok = True
+            except Exception as exc:  # noqa: BLE001 — path gone / remote / permission
+                log.info("pool_usage disk stat failed for %s (%s): %s", pool.id, path, exc)
+
         return StoragePoolUsage(
             pool_id=pool.id,
             pool_type=pool.pool_type,
@@ -335,6 +356,11 @@ class StorageService:
             bytes_used=used,
             max_size_bytes=pool.max_size_bytes,
             percent_used=pct,
+            disk_total_bytes=disk_total,
+            disk_used_bytes=disk_used,
+            disk_free_bytes=disk_free,
+            disk_percent_used=disk_pct,
+            disk_reachable=disk_ok,
         )
 
     # ── TierRule CRUD ───────────────────────────────────────────────────

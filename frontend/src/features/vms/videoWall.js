@@ -18,6 +18,9 @@ export const LAYOUTS = [
   { key: "3x4", label: "3×4", cols: 4, rows: 3, capacity: 12, icon: "grid-3x4" },
   { key: "4x4", label: "4×4", cols: 4, rows: 4, capacity: 16, icon: "grid-4" },
   { key: "5x5", label: "5×5", cols: 5, rows: 5, capacity: 25, icon: "grid-5" },
+  { key: "6x6", label: "6×6", cols: 6, rows: 6, capacity: 36, icon: "grid-6" },
+  { key: "7x7", label: "7×7", cols: 7, rows: 7, capacity: 49, icon: "grid-7" },
+  { key: "8x8", label: "8×8", cols: 8, rows: 8, capacity: 64, icon: "grid-8" },
   // ── Spotlight (asymmetric): one hero tile + a strip of small tiles. ──────
   // 1+5: hero spans a 3×3 region top-left, 5 small tiles wrap the right/bottom.
   {

@@ -155,6 +155,9 @@ class PlaybackService:
             camera_id=camera.id,
             session_id=row.id,
             mode="playback",
+            # Bounded review session — long TTL avoids the HLS variant/segment 401 when
+            # the default 5-min token expires mid-view (baked into the master playlist).
+            ttl_seconds=6 * 3600,
         )
         row.token_hash = token_hash(token)
         row.expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)

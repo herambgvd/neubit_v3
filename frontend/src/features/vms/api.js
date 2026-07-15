@@ -87,8 +87,24 @@ export const vms = {
 
     // Config sub-resources (ONVIF-backed) ──────────────────────────────
     ptz: (id, body) => unwrap(api.post(`${CAMERAS}/${id}/ptz`, body)),
+    // GET current ONVIF imaging settings + ranges (served from the persisted value;
+    // { refresh:true } re-probes the device); PATCH pushes changes to the device.
+    getImaging: (id, { refresh = false } = {}) =>
+      unwrap(api.get(`${CAMERAS}/${id}/imaging${refresh ? "?refresh=true" : ""}`)),
     setImaging: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/imaging`, body)),
+    // GET enumerates ONVIF relay outputs + digital inputs (persisted; { refresh:true }
+    // re-enumerates from the device); PATCH toggles a relay.
+    getIo: (id, { refresh = false } = {}) =>
+      unwrap(api.get(`${CAMERAS}/${id}/io${refresh ? "?refresh=true" : ""}`)),
     setIo: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/io`, body)),
+    // Video encoder (resolution/fps/bitrate/GOP) — persisted; { refresh:true } re-reads.
+    getEncoder: (id, { refresh = false } = {}) =>
+      unwrap(api.get(`${CAMERAS}/${id}/encoder${refresh ? "?refresh=true" : ""}`)),
+    setEncoder: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/encoder`, body)),
+    // OSD / text overlay — persisted; { refresh:true } re-reads.
+    getOsd: (id, { refresh = false } = {}) =>
+      unwrap(api.get(`${CAMERAS}/${id}/osd${refresh ? "?refresh=true" : ""}`)),
+    setOsd: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/osd`, body)),
     getMotionConfig: (id) => unwrap(api.get(`${CAMERAS}/${id}/motion-config`)),
     setMotionConfig: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/motion-config`, body)),
 
@@ -213,7 +229,10 @@ export const vms = {
     // POST /nvrs/discover { network?, brand? }.
     discover: (body = {}) => unwrap(api.post(`${NVRS}/discover`, body)),
     // GET /nvrs/{id}/channels — enumerate a SAVED NVR's channels (creds off the row).
-    channels: (id) => unwrap(api.get(`${NVRS}/${id}/channels`)),
+    // Served from the cached list on the NVR row; pass { refresh:true } to force a
+    // live ONVIF re-enumeration (the ↻ button).
+    channels: (id, { refresh = false } = {}) =>
+      unwrap(api.get(`${NVRS}/${id}/channels${refresh ? "?refresh=true" : ""}`)),
     // POST /nvrs/channels { host, port, username, password, brand? } — UNSAVED host.
     probeChannels: (body) => unwrap(api.post(`${NVRS}/channels`, body)),
     // POST /nvrs/{id}/map-channels { channels: [{ channel_number, name?, add }] }.
@@ -518,7 +537,8 @@ export const vms = {
   deviceMgmt: {
     // GET /vms/cameras/{id}/device-info → { manufacturer?, model?, firmware?,
     //   serial?, hardware_id?, ... } (brand-dependent; sparse on unsupported brands).
-    info: (id) => unwrap(api.get(`${CAMERAS}/${id}/device-info`)),
+    info: (id, { refresh = false } = {}) =>
+      unwrap(api.get(`${CAMERAS}/${id}/device-info${refresh ? "?refresh=true" : ""}`)),
     // POST /vms/cameras/{id}/reboot → { ok, supported, detail }.
     reboot: (id) => unwrap(api.post(`${CAMERAS}/${id}/reboot`, {})),
     // POST /vms/cameras/{id}/ntp { server } → { ok, supported, detail }.
@@ -526,6 +546,11 @@ export const vms = {
     // POST /vms/cameras/{id}/password { user?, new_password } → { ok, supported, detail }.
     password: (id, { user, new_password } = {}) =>
       unwrap(api.post(`${CAMERAS}/${id}/password`, { user, new_password })),
+    // ONVIF device accounts: GET list, POST add, DELETE remove.
+    users: (id) => unwrap(api.get(`${CAMERAS}/${id}/users`)),
+    addUser: (id, { user, password, level } = {}) =>
+      unwrap(api.post(`${CAMERAS}/${id}/users`, { user, password, level })),
+    deleteUser: (id, username) => unwrap(api.delete(`${CAMERAS}/${id}/users/${encodeURIComponent(username)}`)),
     // POST /vms/cameras/{id}/config-backup → the device config as a binary blob
     //   (fetched as a blob so the Bearer header is sent, then saved by the caller).
     configBackup: (id) =>
@@ -593,6 +618,9 @@ export const vms = {
     start: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/recording/start`, {})),
     // POST /cameras/{id}/recording/stop — stop recording now.
     stop: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/recording/stop`, {})),
+    // GET /recording/active → { available, camera_ids } — which cameras are ACTUALLY
+    // recording right now (live nvr state, not the policy mode). Drives the ● indicator.
+    active: () => unwrap(api.get(`/vms/recording/active`)),
   },
 
   // ── Storage (P3-B) — pools + tiering ────────────────────────────────────

@@ -392,7 +392,13 @@ class LuminaDriver(CameraDriver):
 
     # ── configuration (v2 platform wrappers /API/ChannelConfig/*) ─────────────
     async def configure(
-        self, host: str, creds: Credentials, section: str, payload: dict[str, Any]
+        self,
+        host: str,
+        creds: Credentials,
+        section: str,
+        payload: dict[str, Any],
+        *,
+        channel: int | None = None,
     ) -> dict[str, Any]:
         """Read/write config via Lumina's ``/API/...`` JSON-envelope control surface
         (platform ``client.py`` + ``wrappers.py`` + ``capabilities.py``). Raises

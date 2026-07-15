@@ -15,7 +15,6 @@ import { DataTable } from "@/components/common";
 import { titleize } from "@/lib/format";
 import { STATUS_PRESETS, RECORDING_MODES } from "../constants";
 import StatusBadge, { StatusDot } from "./StatusBadge";
-import CodecBadge from "./CodecBadge";
 
 const HEALTH_TONE = {
   online: "text-emerald-500",
@@ -195,7 +194,6 @@ export default function CameraTable({
               <div className="min-w-0">
                 <p className="flex items-center gap-1.5 truncate font-medium text-foreground">
                   <span className="truncate">{c.name}</span>
-                  <CodecBadge camera={c} />
                 </p>
                 <p className="truncate font-mono text-[11px] text-muted">
                   {cameraIp(c) || "—"}

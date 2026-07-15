@@ -11,7 +11,6 @@ import { titleize } from "@/lib/format";
 import { vms } from "../api";
 import { RECORDING_MODES } from "../constants";
 import StatusBadge, { StatusDot } from "./StatusBadge";
-import CodecBadge from "./CodecBadge";
 
 // Fetches the camera's snapshot as an authed blob → object URL (same pattern as
 // SnapshotModal/MotionSearchModal — a plain <img src> wouldn't carry the bearer
@@ -101,9 +100,6 @@ function Tile({ camera, health, siteName, selected, onToggleSelect, onLive, onSn
             {titleize(camera.brand)} · {siteName || "Unassigned"}
             {rec ? ` · ${rec.label}` : ""}
           </p>
-          <div className="mt-1">
-            <CodecBadge camera={camera} />
-          </div>
         </div>
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
           <button type="button" title="Go live" onClick={() => onLive?.(camera)} className="rounded p-1 text-muted hover:bg-hover hover:text-foreground">

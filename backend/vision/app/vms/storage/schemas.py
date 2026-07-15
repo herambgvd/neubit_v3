@@ -166,6 +166,16 @@ class StoragePoolUsage(BaseModel):
     bytes_used: int
     max_size_bytes: Optional[int] = None
     percent_used: Optional[float] = None  # null when capacity is unlimited
+    # Actual filesystem stats of the pool's volume (cross-platform via
+    # shutil.disk_usage — works on Windows drive letters + Linux mounts). The true
+    # "is the disk full?" signal, independent of RAID type; on a Windows hardware-RAID
+    # node (where mdadm is N/A) this is the primary storage-health surface. None when
+    # the path is unreachable / not a local volume (NFS/SMB/S3).
+    disk_total_bytes: Optional[int] = None
+    disk_used_bytes: Optional[int] = None
+    disk_free_bytes: Optional[int] = None
+    disk_percent_used: Optional[float] = None
+    disk_reachable: bool = False
 
 
 # ── TierRule ─────────────────────────────────────────────────────────────────

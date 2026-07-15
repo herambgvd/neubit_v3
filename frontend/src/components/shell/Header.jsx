@@ -43,7 +43,7 @@ function Brand() {
         <img src={logo} alt={data?.app_name || "Logo"} className="h-6 max-w-[150px] object-contain" />
       ) : (
         <>
-          <div className="h-6 w-6 rounded-md bg-white flex items-center justify-center text-black font-bold text-xs">
+          <div className="h-6 w-6 rounded-md bg-foreground flex items-center justify-center text-background font-bold text-xs">
             N
           </div>
           <span className="font-semibold text-foreground tracking-tight text-[15px]">{name}</span>

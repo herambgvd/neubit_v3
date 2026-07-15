@@ -136,7 +136,7 @@ type Active struct {
 //
 // Graceful: a down MediaMTX / bad RTSP returns an error the handler maps to a 502
 // — never a crash.
-func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, profile, rtspURL, trigger string, redundant bool) (Active, error) {
+func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, profile, rtspURL, trigger string, redundant bool, recordDir string) (Active, error) {
 	if profile == "" {
 		profile = "main"
 	}
@@ -154,7 +154,15 @@ func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, pro
 	if err != nil {
 		return Active{}, err
 	}
-	recPath := recordPathTemplate(s.dir)
+	// Per-camera storage: record into the camera's assigned pool dir when provided
+	// (enterprise VMS — spread cameras across RAID virtual drives), else the default
+	// recordings volume. The chosen dir is baked into record_path so the tracker +
+	// playback + reconcile all resolve segments from the same place.
+	dir := s.dir
+	if strings.TrimSpace(recordDir) != "" {
+		dir = recordDir
+	}
+	recPath := recordPathTemplate(dir)
 	if err := s.mtx.SetRecord(ctx, node, name, true, mediamtx.RecordOpts{
 		RecordPath:      recPath,
 		SegmentDuration: s.segT,
@@ -307,7 +315,7 @@ func (s *Supervisor) StartEventClip(ctx context.Context, tenantID, cameraID, pro
 	}
 	// Event clips are short single-copy recordings — redundancy is for continuous
 	// footage, not motion bursts, so redundant=false here.
-	act, err := s.StartRecording(ctx, tenantID, cameraID, profile, rtspURL, trigger, false)
+	act, err := s.StartRecording(ctx, tenantID, cameraID, profile, rtspURL, trigger, false, "")
 	if err != nil {
 		return Active{}, err
 	}
@@ -466,13 +474,28 @@ func (s *Supervisor) reconcileSecondary(ctx context.Context, primaryID, tenant, 
 // the next one) OR its size has been stable since the last tick. Graceful: a
 // missing dir / unreadable file is skipped.
 func (s *Supervisor) trackSegments(ctx context.Context) {
-	// Walk <dir>/cameras/<tenant>/<cam>/<profile>/*.mp4. We use the on-disk tree
+	// Walk <root>/cameras/<tenant>/<cam>/<profile>/*.mp4. We use the on-disk tree
 	// rather than the MediaMTX API as the source of truth for size/mtime (the API
 	// only reports start), but a failed walk is non-fatal.
-	root := s.dir
-	entries, err := collectSegments(root)
-	if err != nil {
-		return // dir not present yet (no recording has started) — normal
+	//
+	// Multi-pool: footage lives under the DEFAULT dir AND under any non-default
+	// storage-pool root a camera records to (enterprise VMS spreads cameras across
+	// RAID drives). A pool root may be OUTSIDE the default dir (e.g. a RAID mount
+	// /mnt/raid3), so walking only s.dir would never index that pool's segments.
+	// Collect every distinct root: the default dir + each active target's pool root
+	// (the prefix of record_path before "/%path"). parsePath then locates the
+	// `cameras/` marker at any depth, so nested-under-default pools also work.
+	roots := s.segmentRoots(ctx)
+	var entries []segFile
+	for _, root := range roots {
+		got, err := collectSegments(root)
+		if err != nil {
+			continue // root not present yet (no recording there) — normal
+		}
+		entries = append(entries, got...)
+	}
+	if len(entries) == 0 {
+		return // nothing recorded yet — normal
 	}
 	// Group by path dir so we can tell which is the newest (still-writing) segment.
 	byDir := map[string][]segFile{}
@@ -503,6 +526,48 @@ func (s *Supervisor) trackSegments(ctx context.Context) {
 			s.emitSegment(ctx, f, files, i, now)
 		}
 	}
+}
+
+// segmentRoots returns every on-disk root the segment tracker must scan: the
+// default recordings dir plus each distinct pool root a currently-active recording
+// target writes to. A pool root is the record_path prefix before the "/%path"
+// template marker (e.g. record_path "/recordings/poolB/%path/%Y-..." → root
+// "/recordings/poolB"). This makes indexing pool-agnostic even when a pool is a
+// separate mount outside the default dir. Graceful: a DB error falls back to just
+// the default dir (default-pool footage still indexes).
+func (s *Supervisor) segmentRoots(ctx context.Context) []string {
+	seen := map[string]bool{s.dir: true}
+	roots := []string{s.dir}
+	rows, err := s.db.Query(ctx,
+		`SELECT DISTINCT record_path FROM recording_targets WHERE active = true`)
+	if err != nil {
+		return roots
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var rp string
+		if err := rows.Scan(&rp); err != nil {
+			continue
+		}
+		root := recordRootOf(rp)
+		if root == "" || seen[root] {
+			continue
+		}
+		seen[root] = true
+		roots = append(roots, root)
+	}
+	return roots
+}
+
+// recordRootOf extracts the on-disk pool root from a MediaMTX record_path template
+// by taking everything before the "/%path" marker (the recordPathTemplate always
+// inserts "/%path" right after the pool dir). Returns "" if the marker is absent.
+func recordRootOf(recordPath string) string {
+	i := strings.Index(recordPath, "/%path")
+	if i < 0 {
+		return ""
+	}
+	return recordPath[:i]
 }
 
 // emitSegment publishes ONE NATS segment event for a finalized segment, deduped
@@ -635,14 +700,26 @@ func parseSegmentStart(name string) time.Time {
 }
 
 // parsePath derives (tenant, camera, profile) from a segment file path laid out as
-// <dir>/cameras/<tenant>/<camera>/<profile>/<segment>.mp4 (the recordPath
+// <root>/cameras/<tenant>/<camera>/<profile>/<segment>.mp4 (the recordPath
 // template). Returns ok=false if the layout does not match.
+//
+// Multi-pool: <root> is NOT necessarily the default recordings dir — a camera on a
+// non-default storage pool records under <pool_path>/cameras/... (e.g.
+// /recordings/poolB/cameras/... or a RAID mount /mnt/raid3/cameras/...). The scan
+// walks the default dir recursively (pool dirs nested under it in dev) AND any extra
+// pool roots, so a segment's `cameras/` marker may appear at any depth. Rather than
+// assume it sits immediately after `dir`, LOCATE the `cameras/` segment anywhere in
+// the path and read the four components after it. This makes indexing pool-agnostic
+// (the prior `parts[0]=="cameras"` check silently dropped every non-default-pool
+// segment → its recordings were never indexed → playback 404'd).
 func parsePath(p, dir string) (tenant, camera, profile string, ok bool) {
 	rel := strings.TrimPrefix(p, strings.TrimRight(dir, "/")+"/")
 	parts := strings.Split(rel, "/")
-	// cameras / <tenant> / <camera> / <profile> / <segment>
-	if len(parts) >= 5 && parts[0] == "cameras" {
-		return parts[1], parts[2], parts[3], true
+	// Find the "cameras" marker; the four fields after it are tenant/cam/profile/seg.
+	for i, seg := range parts {
+		if seg == "cameras" && len(parts)-i >= 5 {
+			return parts[i+1], parts[i+2], parts[i+3], true
+		}
 	}
 	return "", "", "", false
 }

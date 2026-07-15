@@ -83,6 +83,12 @@ pathDefaults:
   sourceOnDemandCloseAfter: 120s
   rtspTransport: tcp
   record: no
+  # recordPath MUST be set at the defaults level so the PLAYBACK server (/list,/get)
+  # can locate on-disk segments for a camera path even when that path is idle (no
+  # active live/record) — otherwise, after recording stops and the on-demand path is
+  # reaped, playback of historical footage returns 400 (path unknown). Matches the
+  # template the nvr sets per-path on record. %path = cameras/<tenant>/<cam>/<profile>.
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
 
 # ── H265→H264 live-view transcode (on demand) ──
 # Chrome/Chromium WebRTC cannot decode H265/HEVC, so a WHEP POST for an HEVC
@@ -99,6 +105,17 @@ pathDefaults:
 #   $MTX_PATH = full matched path  → cameras/<t>/<c>/<profile>/h264
 # Audio is dropped (-an): G711 doesn't WebRTC-negotiate cleanly; opus can come later.
 paths:
+  # Playback template for recorded camera paths. When a camera is idle (no live/record)
+  # the nvr's dynamic path is gone, so the playback server has no path to /list — this
+  # static regex gives every recorded path a recordPath so historical footage plays back
+  # even when the camera is stopped/manual. Listed BEFORE the live paths the nvr creates
+  # via the API (those take precedence for an active source); this only supplies the
+  # record location for playback. No source → never pulls RTSP; not on-demand.
+  "~^cameras/.+/(main|sub|third)$":
+    source: publisher
+    sourceOnDemand: no
+    record: no
+    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
   "~^(.+)/h264$":
     # ffmpeg publishes INTO this path, so the source is "publisher" (not an RTSP
     # pull). Override the pathDefaults sourceOnDemand (invalid on a publisher path

@@ -72,21 +72,35 @@ class RaidService:
     """Wrap ``mdadm`` for read-only RAID inspection. Never raises to the caller."""
 
     def probe_available(self) -> dict:
-        """Availability status without raising — safe to call anywhere."""
+        """Availability status without raising — safe to call anywhere.
+
+        ``kind`` tells the UI HOW to present storage health: ``software_raid`` = the
+        native mdadm array view (Linux); ``hardware_raid`` = a controller-managed array
+        (Windows / RAID card) where the OS sees ready-made volumes — the controller owns
+        parity/rebuild, so we monitor per-VOLUME free-space + reachability (the storage
+        pool cards' disk stats) rather than md arrays."""
         if not _is_linux():
             return {
                 "available": False,
+                "kind": "hardware_raid",
                 "reason": (
-                    f"RAID inspection requires Linux; this host is {platform.system()}. "
-                    "On macOS / Windows (Docker Desktop) software-RAID is not present."
+                    f"Software-RAID (mdadm) inspection is Linux-only; this host is "
+                    f"{platform.system()}. On a hardware-RAID appliance (Windows / RAID "
+                    "controller) the array is managed by the controller — per-volume "
+                    "capacity + health is shown on each storage pool."
                 ),
             }
         if not _mdadm_available():
             return {
                 "available": False,
-                "reason": "mdadm is not installed on this host (apt install mdadm).",
+                "kind": "hardware_raid",
+                "reason": (
+                    "mdadm not present — if this is a hardware-RAID appliance the array "
+                    "is controller-managed; per-volume health is on each storage pool. "
+                    "For Linux software RAID: apt install mdadm."
+                ),
             }
-        return {"available": True}
+        return {"available": True, "kind": "software_raid"}
 
     async def list_arrays(self) -> list[dict]:
         """Enumerate active md arrays with derived health. ``[]`` if unavailable."""

@@ -474,7 +474,13 @@ class HikvisionDriver(CameraDriver):
 
     # ── configuration (operator action) ──────────────────────────────────────
     async def configure(
-        self, host: str, creds: Credentials, section: str, payload: dict[str, Any]
+        self,
+        host: str,
+        creds: Credentials,
+        section: str,
+        payload: dict[str, Any],
+        *,
+        channel: int | None = None,
     ) -> dict[str, Any]:
         """Read/write a config section over ISAPI. Raises ``DriverError`` on failure.
 

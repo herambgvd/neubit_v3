@@ -197,6 +197,73 @@ func (c *Client) SetRecord(ctx context.Context, node Node, name string, on bool,
 	return nil
 }
 
+// recordPathPatch is a minimal PATCH body carrying ONLY recordPath. It deliberately
+// omits source/sourceOnDemand so patching an EXISTING path (a live RTSP path, or a
+// leftover) rebinds its record location WITHOUT clobbering its source — patching
+// source:publisher onto a live RTSP path corrupts it (MediaMTX then rejects the next
+// live re-provision with "'sourceOnDemand' is useless when source is 'publisher'").
+type recordPathPatch struct {
+	RecordPath string `json:"recordPath"`
+}
+
+// playbackAddConfig is the ADD body for the case where NO path config exists yet
+// (the on-demand live path was reaped after recording stopped, leaving only the
+// static regex). A bare recordPath ADD is rejected — MediaMTX requires a source — so
+// this uses source:publisher (a passive, never-pulls path). A later live ADD→PATCH
+// with a full RTSP config overrides publisher cleanly, so this does not block live.
+type playbackAddConfig struct {
+	Source         string `json:"source"`
+	SourceOnDemand bool   `json:"sourceOnDemand"`
+	Record         bool   `json:"record"`
+	RecordPath     string `json:"recordPath"`
+}
+
+// EnsurePlaybackPath makes the MediaMTX playback server (:9996) resolve `name`'s
+// recorded segments from `recordPath` (the camera's per-pool template, e.g.
+// `/recordings/poolB/%path/%Y-%m-%d_%H-%M-%S-%f`). This is the multi-pool playback
+// fix: the playback server derives a path's segment directory from the recordPath of
+// the path config matching the requested `?path=`. Without an explicit config the only
+// match is the static regex (root `/recordings/`), so footage on a non-default pool is
+// invisible. Binding the pool's recordPath makes /list + /get resolve the correct
+// drive — for ANY operator pool at ANY absolute path.
+//
+// Strategy (surgical — must NOT regress live streaming):
+//   - PATCH recordPath ONLY. If the path exists (live RTSP path, or a leftover), this
+//     rebinds its record location while preserving its source, so a subsequent live
+//     re-provision is unaffected.
+//   - If the path does not exist (404), ADD a passive publisher path carrying the
+//     recordPath. A later live provision overrides publisher via its own ADD→PATCH.
+//
+// Graceful: an unreachable MediaMTX returns an error the caller surfaces as 502.
+func (c *Client) EnsurePlaybackPath(ctx context.Context, node Node, name, recordPath string) error {
+	patch, _ := json.Marshal(recordPathPatch{RecordPath: recordPath})
+	status, pbody, err := c.do(ctx, node, http.MethodPatch, "/v3/config/paths/patch/"+name, patch)
+	if err != nil {
+		return fmt.Errorf("mediamtx bind playback recordPath %q: %w", name, err)
+	}
+	if status == http.StatusOK || status == http.StatusCreated {
+		return nil
+	}
+	if status == http.StatusNotFound {
+		// No path config yet — add a passive publisher path bound to the recordPath.
+		add, _ := json.Marshal(playbackAddConfig{
+			Source:         "publisher",
+			SourceOnDemand: false,
+			Record:         false,
+			RecordPath:     recordPath,
+		})
+		astatus, abody, aerr := c.do(ctx, node, http.MethodPost, "/v3/config/paths/add/"+name, add)
+		if aerr != nil {
+			return fmt.Errorf("mediamtx add playback path %q: %w", name, aerr)
+		}
+		if astatus != http.StatusOK && astatus != http.StatusCreated {
+			return fmt.Errorf("mediamtx add playback path %q: status %d: %s", name, astatus, string(abody))
+		}
+		return nil
+	}
+	return fmt.Errorf("mediamtx bind playback recordPath %q: status %d: %s", name, status, string(pbody))
+}
+
 // RecordingSegment is one finalized recording segment as reported by MediaMTX's
 // /v3/recordings/get/<name> API. `Start` is the segment's start time (RFC3339);
 // MediaMTX does not report end/size in this API, so the segment tracker derives

@@ -65,11 +65,21 @@ export default function ScrubBar({
   const span = Math.max(1, windowEnd - windowStart);
 
   // How many hour gridlines fit — cap the labels so they don't crowd.
+  // Snap ticks to LOCAL hour boundaries (not UTC): the labels render in local time,
+  // so aligning on UTC hours makes them land at :30 in half-hour-offset zones (e.g.
+  // IST +5:30 → "00:30, 03:30…"). Ceil windowStart up to the next local :00.
   const hours = useMemo(() => {
     const out = [];
-    const startHour = Math.ceil(windowStart / HOUR_MS) * HOUR_MS;
-    const step = span > 12 * HOUR_MS ? 3 * HOUR_MS : span > 4 * HOUR_MS ? 2 * HOUR_MS : HOUR_MS;
-    for (let t = startHour; t <= windowEnd; t += step) out.push(t);
+    const d0 = new Date(windowStart);
+    d0.setMinutes(0, 0, 0);
+    if (d0.getTime() < windowStart) d0.setHours(d0.getHours() + 1);
+    const stepH = span > 12 * HOUR_MS ? 3 : span > 4 * HOUR_MS ? 2 : 1;
+    for (let t = d0.getTime(); t <= windowEnd; ) {
+      out.push(t);
+      const d = new Date(t);
+      d.setHours(d.getHours() + stepH); // local-hour step (DST-safe)
+      t = d.getTime();
+    }
     return out;
   }, [windowStart, windowEnd, span]);
 

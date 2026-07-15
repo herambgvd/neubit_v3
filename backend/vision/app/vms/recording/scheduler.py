@@ -137,7 +137,8 @@ class RecordingScheduler:
                 return
 
     async def run_cycle(self, *, now: datetime | None = None) -> int:
-        """One pass: evaluate every schedule-mode camera, drive transitions.
+        """One pass: drive schedule-window transitions AND ensure continuous cameras
+        are recording.
 
         Returns the number of cameras whose recording state was TOGGLED this cycle
         (handy for tests). ``now`` is injectable for deterministic tests.
@@ -145,7 +146,8 @@ class RecordingScheduler:
         now = now or datetime.now(timezone.utc)
         toggled = 0
         async with self._sessionmaker() as db:
-            cams = (
+            # ── schedule mode: open/close weekly windows on transition ──────────
+            sched = (
                 await db.execute(
                     select(Camera).where(
                         Camera.recording_mode == "schedule",
@@ -153,16 +155,46 @@ class RecordingScheduler:
                     )
                 )
             ).scalars().all()
-
-            for cam in cams:
+            for cam in sched:
                 desired = window_open(cam.recording_schedule or {}, now)
                 prev = self._state.get(cam.id)
                 if prev == desired:
-                    continue  # no transition
+                    continue
                 if await self._drive(db, cam, desired):
                     self._state[cam.id] = desired
                     toggled += 1
+
+            # ── continuous mode: ensure it's recording (self-healing) ───────────
+            # Any camera set to continuous — via the recording tab, bulk, onboarding, or
+            # channel map — should be recording without a separate click, and should
+            # resume after an nvr restart. We start any continuous+enabled camera that
+            # isn't already in the nvr's active recording set. Idempotent + best-effort.
+            cont = (
+                await db.execute(
+                    select(Camera).where(
+                        Camera.recording_mode == "continuous",
+                        Camera.is_enabled.is_(True),
+                    )
+                )
+            ).scalars().all()
+            if cont:
+                active = await self._active_camera_ids()
+                for cam in cont:
+                    if cam.id in active:
+                        continue  # already recording
+                    if await self._drive(db, cam, True):
+                        toggled += 1
         return toggled
+
+    async def _active_camera_ids(self) -> set[str]:
+        """The set of camera_ids the nvr is actively recording (best-effort, all
+        tenants). Empty set on an unreachable nvr → we simply (re)assert starts."""
+        nvr = NvrClient(bearer=mint_service_token(tenant_id=None))
+        try:
+            targets = await nvr.recording_status()
+        except NvrUnavailable:
+            return set()
+        return {str(t.get("camera_id")) for t in targets if t.get("camera_id")}
 
     async def _drive(self, db: AsyncSession, cam: Camera, on: bool) -> bool:
         """Call the nvr start/stop for a transition. Returns True on success.
@@ -173,16 +205,19 @@ class RecordingScheduler:
         tenant = str(cam.tenant_id) if cam.tenant_id else None
         nvr = NvrClient(bearer=mint_service_token(tenant_id=tenant))
         profile = "sub" if cam.record_substream else "main"
+        trigger = "continuous" if cam.recording_mode == "continuous" else "schedule"
         try:
             if on:
                 rtsp = await _rtsp_for(db, cam, profile)
                 if not rtsp:
                     log.info("scheduler: camera %s has no RTSP — skip open", cam.id)
                     return False
+                record_dir = await _record_dir_for(db, cam)
                 await nvr.start_recording(
-                    camera_id=cam.id, profile=profile, rtsp_url=rtsp, trigger="schedule"
+                    camera_id=cam.id, profile=profile, rtsp_url=rtsp, trigger=trigger,
+                    audio=bool(cam.audio_enabled), record_dir=record_dir,
                 )
-                log.info("scheduler: window OPEN → recording camera %s", cam.id)
+                log.info("scheduler: recording ON camera %s (%s)", cam.id, trigger)
             else:
                 await nvr.stop_recording(camera_id=cam.id, profile=profile)
                 log.info("scheduler: window CLOSE → stop camera %s", cam.id)
@@ -199,3 +234,16 @@ async def _rtsp_for(db: AsyncSession, cam: Camera, profile: str) -> str | None:
 
     live = LiveService(db, Scope(tenant_id=cam.tenant_id, is_superadmin=True), bearer=None)
     return await live._rtsp_source_for(cam, profile)
+
+
+async def _record_dir_for(db: AsyncSession, cam: Camera) -> str | None:
+    """The camera's assigned storage-pool path (per-camera storage), or None for the
+    nvr's default recordings volume — so scheduler/auto starts honor the pool too."""
+    pool_id = getattr(cam, "storage_pool_id", None)
+    if not pool_id:
+        return None
+    from app.vms.models import StoragePool
+
+    pool = await db.get(StoragePool, pool_id)
+    path = (getattr(pool, "path", None) or "").strip() if pool else None
+    return path or None

@@ -49,8 +49,10 @@ from .schemas import (
     ConfigResult,
     DiscoverBody,
     DiscoverResponse,
+    EncoderBody,
     ImagingBody,
     IoBody,
+    OsdBody,
     MotionConfigBody,
     MotionZonesBody,
     OnvifEventsBody,
@@ -311,6 +313,21 @@ async def apply_stream_policy(
     return StreamPolicyResult(**await svc.apply_stream_policy(camera_id, force=force))
 
 
+@router.get("/cameras/{camera_id}/imaging", response_model=ConfigResult)
+async def read_imaging(
+    camera_id: str,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    refresh: bool = False,
+    _actor: Principal = Depends(require_permission(PERM_READ)),
+) -> ConfigResult:
+    """Read this camera's ONVIF imaging settings (brightness/contrast/WDR/day-night) +
+    ranges. Served from the value persisted on the camera row; ?refresh=true re-probes."""
+    try:
+        return ConfigResult(**await svc.configure(camera_id, "imaging", {}, refresh=refresh))
+    except DriverError as exc:
+        raise _driver_err(exc)
+
+
 @router.patch("/cameras/{camera_id}/imaging", response_model=ConfigResult)
 async def configure_imaging(
     camera_id: str,
@@ -319,7 +336,24 @@ async def configure_imaging(
     _actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
     try:
-        return ConfigResult(**await svc.configure(camera_id, "imaging", body.model_dump()))
+        return ConfigResult(
+            **await svc.configure(camera_id, "imaging", body.model_dump(exclude_none=True))
+        )
+    except DriverError as exc:
+        raise _driver_err(exc)
+
+
+@router.get("/cameras/{camera_id}/io", response_model=ConfigResult)
+async def read_io(
+    camera_id: str,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    refresh: bool = False,
+    _actor: Principal = Depends(require_permission(PERM_READ)),
+) -> ConfigResult:
+    """Enumerate this camera's ONVIF relay outputs + digital inputs. Served from the
+    value persisted on the camera row; ?refresh=true re-enumerates from the device."""
+    try:
+        return ConfigResult(**await svc.configure(camera_id, "io", {}, refresh=refresh))
     except DriverError as exc:
         raise _driver_err(exc)
 
@@ -333,6 +367,68 @@ async def configure_io(
 ) -> ConfigResult:
     try:
         return ConfigResult(**await svc.configure(camera_id, "io", body.model_dump()))
+    except DriverError as exc:
+        raise _driver_err(exc)
+
+
+# ── Video encoder (resolution / fps / bitrate / GOP) ─────────────────────────
+@router.get("/cameras/{camera_id}/encoder", response_model=ConfigResult)
+async def read_encoder(
+    camera_id: str,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    refresh: bool = False,
+    _actor: Principal = Depends(require_permission(PERM_READ)),
+) -> ConfigResult:
+    """Read the camera's video-encoder config (resolution/fps/bitrate/GOP/codec) + the
+    allowed options. Served from the persisted value; ?refresh=true re-reads the device."""
+    try:
+        return ConfigResult(**await svc.configure(camera_id, "encoder", {}, refresh=refresh))
+    except DriverError as exc:
+        raise _driver_err(exc)
+
+
+@router.patch("/cameras/{camera_id}/encoder", response_model=ConfigResult)
+async def configure_encoder(
+    camera_id: str,
+    body: EncoderBody,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+) -> ConfigResult:
+    try:
+        return ConfigResult(
+            **await svc.configure(camera_id, "encoder", body.model_dump(exclude_none=True))
+        )
+    except DriverError as exc:
+        raise _driver_err(exc)
+
+
+# ── OSD / text overlay ───────────────────────────────────────────────────────
+@router.get("/cameras/{camera_id}/osd", response_model=ConfigResult)
+async def read_osd(
+    camera_id: str,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    refresh: bool = False,
+    _actor: Principal = Depends(require_permission(PERM_READ)),
+) -> ConfigResult:
+    """Read the camera's OSD / on-screen text overlays. Served from the persisted value;
+    ?refresh=true re-reads the device."""
+    try:
+        return ConfigResult(**await svc.configure(camera_id, "osd", {}, refresh=refresh))
+    except DriverError as exc:
+        raise _driver_err(exc)
+
+
+@router.patch("/cameras/{camera_id}/osd", response_model=ConfigResult)
+async def configure_osd(
+    camera_id: str,
+    body: OsdBody,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+) -> ConfigResult:
+    try:
+        return ConfigResult(
+            **await svc.configure(camera_id, "osd", body.model_dump(exclude_none=True))
+        )
     except DriverError as exc:
         raise _driver_err(exc)
 

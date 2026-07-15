@@ -29,7 +29,12 @@ const DAY_MS = 86_400_000;
 const SPEEDS = [0.5, 1, 2, 4, 8, 16];
 const MAX_TILES = 16;
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// LOCAL calendar date (not UTC) — toISOString() would roll to the wrong day near
+// local midnight in offset zones (e.g. 00:30 IST is still the previous UTC day).
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const dayStartMs = (d) => new Date(`${d}T00:00:00`).getTime();
 const iso = (ms) => new Date(ms).toISOString();
 const readout = (ms) =>
@@ -70,6 +75,7 @@ export default function UnifiedPlayback({ onExportRange }) {
   const [speed, setSpeed] = useState(1);
   const [clock, setClock] = useState(dayStartMs(todayStr())); // shared epoch ms
   const [seekMs, setSeekMs] = useState(null);
+  const [seekNonce, setSeekNonce] = useState(0); // bumped ONLY on an explicit user scrub
   const [focusKey, setFocusKey] = useState(null); // tile expanded to full player
   const [pickerKind, setPickerKind] = useState("camera"); // 'camera' | 'nvr'
 
@@ -106,7 +112,7 @@ export default function UnifiedPlayback({ onExportRange }) {
     if (t) {
       const d = new Date(t);
       if (!Number.isNaN(d.getTime())) {
-        setDay(d.toISOString().slice(0, 10));
+        setDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
         const ms = d.getTime();
         setClock(ms);
         setSeekMs(ms);
@@ -240,6 +246,7 @@ export default function UnifiedPlayback({ onExportRange }) {
     setPlaying(false);
     setClock(ms);
     setSeekMs(ms);
+    setSeekNonce((n) => n + 1); // explicit user scrub → NVR tiles re-request the replay
   }, []);
   const skip = (sec) => onScrub(Math.max(windowStart, Math.min(windowEnd, clock + sec * 1000)));
 
@@ -461,6 +468,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                     playing={playing}
                     speed={speed}
                     seekMs={seekMs}
+                    seekNonce={seekNonce}
                     windowStart={windowStart}
                     windowEnd={windowEnd}
                     className="h-full"

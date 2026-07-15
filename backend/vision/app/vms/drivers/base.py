@@ -374,11 +374,21 @@ class CameraDriver(abc.ABC):
     # ── configuration (explicit operator action — MAY raise DriverError) ──────
     @abc.abstractmethod
     async def configure(
-        self, host: str, creds: Credentials, section: str, payload: dict[str, Any]
+        self,
+        host: str,
+        creds: Credentials,
+        section: str,
+        payload: dict[str, Any],
+        *,
+        channel: int | None = None,
     ) -> dict[str, Any]:
         """Read (empty payload) or write a config ``section`` (imaging / io /
         motion_config / privacy_masks / ntp / …). Returns the resulting/current
-        settings dict. Raises ``DriverError`` on write failure or unsupported section."""
+        settings dict. Raises ``DriverError`` on write failure or unsupported section.
+
+        ``channel`` selects the NVR video-source index (== ``Camera.nvr_channel_number``)
+        so per-channel sections (imaging) target the right source on a multi-channel NVR;
+        ``None`` = first/only source (a standalone camera)."""
 
     # ── event topic map (control-side; ingestion worker = Go nvr P5) ──────────
     @abc.abstractmethod
@@ -504,6 +514,20 @@ class CameraDriver(abc.ABC):
         password op fans this out across a fleet. # LIVE-VALIDATE: user-id resolution +
         auth-after-change."""
         return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: set_password not supported")
+
+    async def list_users(self, host: str, creds: Credentials) -> FleetOpResult:
+        """List device accounts (ONVIF ``GetUsers`` / brand equivalent). Graceful default."""
+        return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: list_users not supported")
+
+    async def add_user(
+        self, host: str, creds: Credentials, *, user: str, password: str, level: str = "User"
+    ) -> FleetOpResult:
+        """Create a device account (ONVIF ``CreateUsers`` / brand equivalent). Graceful."""
+        return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: add_user not supported")
+
+    async def delete_user(self, host: str, creds: Credentials, *, user: str) -> FleetOpResult:
+        """Delete a device account (ONVIF ``DeleteUsers`` / brand equivalent). Graceful."""
+        return FleetOpResult(ok=False, supported=False, detail=f"{self.brand}: delete_user not supported")
 
     async def backup_config(self, host: str, creds: Credentials) -> ConfigBackup:
         """Export the device configuration as a blob (Hik ISAPI

@@ -37,6 +37,10 @@ class RecordingConfigBody(BaseModel):
     # G6: retain the audio track in the recording when the source carries one
     # (false = record video only). Passed to the nvr on start-recording.
     audio_enabled: bool = False
+    # Per-camera storage pool (enterprise VMS): which storage pool this camera's
+    # recordings land on. None = the default recordings volume. Sent as the nvr
+    # record_dir on start so segments physically land on the pool's path.
+    storage_pool_id: Optional[str] = None
 
 
 class RecordingConfigPublic(BaseModel):
@@ -48,6 +52,7 @@ class RecordingConfigPublic(BaseModel):
     retention_days: int
     record_substream: bool
     audio_enabled: bool = False
+    storage_pool_id: Optional[str] = None
     # Whether the nvr is recording this camera right now (best-effort; may be
     # stale if the nvr is unreachable — the field is advisory).
     recording_now: bool = False

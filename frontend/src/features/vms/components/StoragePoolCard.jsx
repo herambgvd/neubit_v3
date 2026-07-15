@@ -22,9 +22,16 @@ export default function StoragePoolCard({ pool, onEdit, onDelete }) {
   });
   const usage = usageQ.data || {};
 
-  const capacity = usage.capacity_bytes ?? pool.max_size_bytes ?? 0;
-  const used = usage.used_bytes ?? 0;
-  const usedPct = capacity > 0 ? Math.min(100, (used / capacity) * 100) : 0;
+  // Prefer the REAL volume stats (cross-platform disk_usage — Windows drive / Linux
+  // mount); fall back to recorded-bytes vs configured max for remote pools (NAS/S3)
+  // where the local filesystem view isn't the truth.
+  const hasDisk = usage.disk_reachable && usage.disk_total_bytes > 0;
+  const capacity = hasDisk ? usage.disk_total_bytes : usage.capacity_bytes ?? pool.max_size_bytes ?? 0;
+  const used = hasDisk ? usage.disk_used_bytes : usage.bytes_used ?? usage.used_bytes ?? 0;
+  const free = hasDisk ? usage.disk_free_bytes : capacity > 0 ? capacity - used : 0;
+  const usedPct = hasDisk
+    ? usage.disk_percent_used ?? 0
+    : capacity > 0 ? Math.min(100, (used / capacity) * 100) : 0;
   const barColor = usedPct > 90 ? "bg-red-500" : usedPct > 70 ? "bg-amber-500" : "bg-blue-500";
 
   const isObject = pool.pool_type === "s3";
@@ -97,6 +104,7 @@ export default function StoragePoolCard({ pool, onEdit, onDelete }) {
           </div>
           <div className="flex justify-between text-[11px] text-muted">
             <span>{fmtBytes(used)} used</span>
+            {hasDisk && <span className="text-foreground">{fmtBytes(free)} free</span>}
             <span>{fmtBytes(capacity)} total</span>
           </div>
         </>

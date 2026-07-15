@@ -17,8 +17,8 @@ import { Button, ConfirmDialog } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
+import DeviceUsers from "./DeviceUsers";
 import { vms } from "../api";
-import CodecBadge from "./CodecBadge";
 
 // Turn a { ok, supported, detail } op result into a toast. `supported === false`
 // means the brand driver has no such op — surface it as an info, not an error.
@@ -66,14 +66,31 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }) {
   const restoreInput = useRef(null);
 
   // ── Device info (firmware / model) ────────────────────────────────────
+  // Device identity is static, so the backend caches it on the camera row — this query
+  // is served from that cache and does NOT re-probe the device on every tab open. The
+  // "Refresh" button forces a live re-read (?refresh=true).
   const infoQ = useQuery({
     queryKey: ["vms-device-info", cameraId],
     queryFn: () => vms.deviceMgmt.info(cameraId),
     enabled: canRead,
     retry: false,
-    staleTime: 30_000,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
   const info = infoQ.data || {};
+  const [refreshingInfo, setRefreshingInfo] = useState(false);
+  const refreshInfo = async () => {
+    setRefreshingInfo(true);
+    try {
+      const fresh = await vms.deviceMgmt.info(cameraId, { refresh: true });
+      qc.setQueryData(["vms-device-info", cameraId], fresh);
+    } catch (e) {
+      toast.error(apiError(e, "Could not refresh device info"));
+    } finally {
+      setRefreshingInfo(false);
+    }
+  };
 
   // Pull the best-known fields out of a brand-dependent shape.
   const infoRows = useMemo(
@@ -186,7 +203,18 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }) {
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Device info</h4>
-          <CodecBadge camera={cam} />
+          <button
+            type="button"
+            onClick={refreshInfo}
+            disabled={refreshingInfo}
+            title="Re-read device info from the camera"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+          >
+            <Icon
+              icon={refreshingInfo ? "svg-spinners:180-ring" : "heroicons-outline:arrow-path"}
+              className="text-xs"
+            />
+          </button>
         </div>
         <div className="rounded-lg border border-card-border bg-hover/30 px-3 py-2">
           {infoQ.isLoading ? (
@@ -305,6 +333,12 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }) {
             </div>
           </div>
 
+          {/* ONVIF device accounts */}
+          <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2.5">
+            <p className="mb-2 text-sm text-foreground">Device accounts</p>
+            <DeviceUsers cameraId={cameraId} />
+          </div>
+
           {/* Config backup / restore */}
           <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2.5">
             <p className="mb-1.5 text-sm text-foreground">Configuration</p>
@@ -342,15 +376,14 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }) {
             </p>
           </div>
 
-          {/* Web streaming codec policy — force the sub-stream to H.264 */}
+          {/* Web streaming policy — optimise the browser stream (no codec detail exposed) */}
           <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-sm text-foreground">Web streaming profile</p>
-              <CodecBadge camera={cam} showDash />
+              <p className="text-sm text-foreground">Web streaming</p>
             </div>
             <p className="mt-1 mb-2 text-[11px] text-muted">
-              Forces the sub-stream to H.264 so browsers play it directly — no transcoding. The main
-              stream stays H.265 for recording.
+              Optimises this camera for smooth, direct playback in the browser without
+              re-processing. Recording quality is unaffected.
             </p>
             <div className="flex justify-end">
               <Button
@@ -360,7 +393,7 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }) {
                 disabled={!canManage || pending}
                 onClick={() => streamPolicy.mutate()}
               >
-                {streamPolicy.isPending ? "Applying…" : "Apply web profile (H.264)"}
+                {streamPolicy.isPending ? "Optimising…" : "Optimise for web"}
               </Button>
             </div>
           </div>
