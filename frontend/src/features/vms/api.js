@@ -434,6 +434,22 @@ export const vms = {
       create: (body) => unwrap(api.post(REPORT_SCHEDULES, body)),
       update: (id, body) => unwrap(api.patch(`${REPORT_SCHEDULES}/${id}`, body)),
       remove: (id) => unwrap(api.delete(`${REPORT_SCHEDULES}/${id}`)),
+      // GET /vms/report-schedules/{id}/runs?limit=&offset= → { items: ReportRunPublic[],
+      //   total } (newest-first). ReportRunPublic: { id, schedule_id, name, kind,
+      //   export_format, window{from,to}, status: done|error, output_size, error,
+      //   computed_at, notified_at }.
+      runs: (id, params = {}) => unwrap(api.get(`${REPORT_SCHEDULES}/${id}/runs${qs(params)}`)),
+      // GET /vms/report-schedules/{id}/runs/{runId}/download → the report FILE
+      //   (CSV/PDF/JSON) as a blob (fetched so the Bearer header is sent, then saved
+      //   by the caller). Content-Disposition is set server-side.
+      runDownloadBlob: (id, runId) =>
+        api
+          .get(`${REPORT_SCHEDULES}/${id}/runs/${runId}/download`, { responseType: "blob" })
+          .then((r) => r.data),
+      // POST /vms/report-schedules/{id}/run-now → the created ReportRunPublic (fires
+      //   the report immediately; does NOT change the schedule's cadence). Returns 201
+      //   even when the run's status is "error" — inspect `status`.
+      runNow: (id) => unwrap(api.post(`${REPORT_SCHEDULES}/${id}/run-now`, {})),
     },
   },
 
