@@ -72,7 +72,10 @@ export default function AppLayout({ children }) {
   const contained =
     pathname === "/devices/cameras" ||
     pathname === "/devices/nvr" ||
-    pathname === "/access-control";
+    pathname === "/access-control" ||
+    // Unified Playback is a control-room surface (source rail + synchronized grid +
+    // master timeline) — the PAGE must not scroll; it fills the bounded pane via h-full.
+    pathname === "/playback";
 
   const mainClass = immersiveWall
     ? "flex-1 min-h-0 w-full overflow-hidden"

@@ -52,7 +52,7 @@ export const configTabs = [
   { title: "Activity", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
   { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
   // VMS enterprise surfaces (P6-C/P6-D).
-  { title: "ONVIF Server", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage" },
+  { title: "External Access", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
   { title: "Security", icon: "heroicons-outline:shield-exclamation", link: "/config/security", perm: "security.manage" },
   // neubit_v3-only admin pages (no neubit_v2 config equivalent) — kept so they stay reachable.
   { title: "API Keys", icon: "heroicons-outline:key", link: "/api-keys", perm: "apikey.manage" },

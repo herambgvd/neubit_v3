@@ -89,6 +89,10 @@ export default function PlaybackPlayer({
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
   const seekingRef = useRef(false);
+  // NVR replay only: the wall-clock instant the CURRENT session starts from. Our own
+  // recordings serve a seekable window (anchor = windowStart); an NVR replay is a
+  // linear stream from its starttime, so its anchor moves each time we re-request it.
+  const anchorRef = useRef(null);
 
   // The visible window. Standalone: the whole selected day. Controlled: the
   // parent-provided shared window (falls back to the day).
@@ -207,6 +211,7 @@ export default function PlaybackPlayer({
   useEffect(() => {
     if (!cameraId) return;
     setVideoError(false);
+    anchorRef.current = windowStart;
     load({ from: iso(windowStart), to: iso(windowEnd) });
     return () => clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -328,11 +333,26 @@ export default function PlaybackPlayer({
     [windowStart],
   );
 
-  // Controlled: follow the parent's shared seek target.
+  // NVR replay: a seek RE-REQUESTS the replay from the target instant (that becomes the
+  // new anchor). The <video> can't random-seek a linear replay beyond the pulled region.
+  const reloadFrom = useCallback(
+    (ms) => {
+      anchorRef.current = ms;
+      setCurrent(ms);
+      load({ from: iso(ms), to: iso(windowEnd) });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [load, windowEnd],
+  );
+
+  // Controlled: follow the parent's shared seek target. NVR sources reload from the seek
+  // instant; our own recordings just seek the seekable <video>.
   useEffect(() => {
     if (!controlled || seekMs == null) return;
-    seekToMs(seekMs);
-  }, [controlled, seekMs, seekToMs]);
+    if (sourceFn) reloadFrom(seekMs);
+    else seekToMs(seekMs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlled, seekMs, seekToMs, reloadFrom]);
 
   // Deep-link seek (jump-to-recording): once the HLS session for the target day
   // is attached, seek to the requested instant. Fires once per initialSeek value.
@@ -364,16 +384,24 @@ export default function PlaybackPlayer({
     if (!v) return undefined;
     const onTime = () => {
       if (seekingRef.current) return;
-      const ms = windowStart + v.currentTime * 1000;
+      // NVR replay position maps from the (moving) anchor; our recordings from windowStart.
+      const base = sourceFn && anchorRef.current != null ? anchorRef.current : windowStart;
+      const ms = base + v.currentTime * 1000;
       setCurrent(ms);
       onClock?.(ms);
     };
     v.addEventListener("timeupdate", onTime);
     return () => v.removeEventListener("timeupdate", onTime);
-  }, [windowStart, onClock]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowStart, onClock, sourceFn]);
 
   // ── Standalone controls ──────────────────────────────────────────────────
   const onScrubSeek = (ms) => {
+    // NVR footage: re-request the replay from here (linear stream can't random-seek).
+    if (sourceFn) {
+      reloadFrom(ms);
+      return;
+    }
     if (!localPlaying) setCurrent(ms);
     seekToMs(ms);
   };

@@ -135,7 +135,10 @@ class LiveService:
         if not host:
             return None
         rtsp_port = (camera.network_info or {}).get("rtsp_port") or 554
-        channel = camera.nvr_channel_number or 1
+        # NOTE: channel 0 is a VALID NVR channel index — use an explicit None check,
+        # never `or 1` (that would silently rewrite channel 0 → 1 and pull the wrong
+        # feed; it hid a real bug where a channel-0 camera streamed the wrong source).
+        channel = camera.nvr_channel_number if camera.nvr_channel_number is not None else 1
         # sub-stream is channel*100+2, main is *01 (Hik convention) — coarse fallback.
         sub = 2 if profile == "sub" else 1
         stream_path = f"/Streaming/Channels/{channel:d}0{sub:d}"
