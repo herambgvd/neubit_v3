@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@iconify/react";
+import { toast } from "sonner";
 
 import { useAuth } from "@/lib/auth";
 
@@ -14,15 +15,13 @@ export default function SectionTabs({ tabs }) {
   const pathname = usePathname();
   const { can, user, hasModule } = useAuth();
 
-  // `superadmin: true` tabs are VENDOR-ONLY (e.g. External Access) — hidden unless
-  // the signed-in user is the platform super-admin, even if they hold the perm.
-  // Module-gated tabs also require the tenant to have that module enabled.
+  // Visibility is by PERMISSION (+ vendor-only super-admin tabs). Module licensing does
+  // NOT hide a tab — an unlicensed module renders LOCKED (greyed + lock + "access denied"
+  // toast on click) so operators can see what their plan could unlock.
   const visible = tabs.filter(
     (t) =>
       t.disabled ||
-      ((!t.module || hasModule(t.module)) &&
-        (!t.superadmin || !!user?.is_superadmin) &&
-        (!t.perm || can(t.perm))),
+      ((!t.superadmin || !!user?.is_superadmin) && (!t.perm || can(t.perm))),
   );
 
   return (
@@ -43,6 +42,23 @@ export default function SectionTabs({ tabs }) {
                   Soon
                 </span>
               </span>
+            );
+          }
+          if (t.module && !hasModule(t.module)) {
+            return (
+              <button
+                key={t.title}
+                type="button"
+                title="Not enabled for your organization"
+                onClick={() =>
+                  toast.error(`Access denied — “${t.title}” isn't enabled for your organization`)
+                }
+                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-muted/40 cursor-not-allowed select-none"
+              >
+                <Icon icon={t.icon} className="text-base shrink-0" />
+                {t.title}
+                <Icon icon="heroicons-outline:lock-closed" className="text-xs shrink-0" />
+              </button>
             );
           }
           const active = pathname === t.link || pathname.startsWith(`${t.link}/`);
