@@ -26,11 +26,14 @@ from app.db import Base
 from app.vms.common import media_token
 from app.vms.common.nvr_client import NvrUnavailable
 from app.vms.models import Camera, Recording, VmsEvent
+from kernel.errors import ValidationError
+
 from app.vms.playback.service import (
     PlaybackNotFound,
     PlaybackService,
     PlaybackUpstreamError,
     day_window,
+    parse_month_window,
 )
 
 TENANT = uuid.uuid4()
@@ -100,16 +103,21 @@ async def camera(db):
     return cam
 
 
-async def _add_recording(db, camera_id, start, end, *, profile="main", tenant=TENANT):
+async def _add_recording(
+    db, camera_id, start, end, *, profile="main", tenant=TENANT, trigger="continuous"
+):
     rec = Recording(
         tenant_id=tenant,
         camera_id=camera_id,
         profile=profile,
-        path=f"/recordings/cameras/{tenant}/{camera_id}/{profile}/{start.isoformat()}.mp4",
+        path=(
+            f"/recordings/cameras/{tenant}/{camera_id}/{profile}/"
+            f"{trigger}-{start.isoformat()}.mp4"
+        ),
         start_time=start,
         end_time=end,
         duration=((end - start).total_seconds() if end else None),
-        trigger_type="continuous",
+        trigger_type=trigger,
     )
     db.add(rec)
     await db.commit()
@@ -262,6 +270,83 @@ async def test_timeline_open_segment_runs_to_window_end(db, camera):
     assert tl.coverage[0].start == _dt(10, 30) and tl.coverage[0].end == _dt(11, 0)
 
 
+async def test_timeline_coverage_carries_trigger_type(db, camera):
+    # Backward-compat + Task 2: a single continuous block still has start/end AND now
+    # a trigger_type tag for the scrub-bar colouring.
+    await _add_recording(db, camera.id, _dt(10, 0), _dt(10, 1), trigger="continuous")
+    tl = await _svc(db, _StubNvr()).timeline(camera.id, _dt(10, 0), _dt(11, 0))
+    assert len(tl.coverage) == 1
+    assert tl.coverage[0].start == _dt(10, 0) and tl.coverage[0].end == _dt(10, 1)
+    assert tl.coverage[0].trigger_type == "continuous"
+    # Gaps carry no trigger (None) — only coverage is typed.
+    assert all(g.trigger_type is None for g in tl.gaps)
+
+
+async def test_timeline_different_triggers_stay_separate_spans(db, camera):
+    # Continuous then a motion clip (disjoint in time) → two differently-typed spans,
+    # NOT one merged block (the whole point of Task 2).
+    await _add_recording(db, camera.id, _dt(10, 0), _dt(10, 1), trigger="continuous")
+    await _add_recording(db, camera.id, _dt(10, 2), _dt(10, 3), trigger="motion")
+
+    tl = await _svc(db, _StubNvr()).timeline(camera.id, _dt(10, 0), _dt(10, 10))
+
+    assert len(tl.coverage) == 2
+    # Sorted by start: continuous first, motion second.
+    assert tl.coverage[0].trigger_type == "continuous"
+    assert tl.coverage[0].start == _dt(10, 0) and tl.coverage[0].end == _dt(10, 1)
+    assert tl.coverage[1].trigger_type == "motion"
+    assert tl.coverage[1].start == _dt(10, 2) and tl.coverage[1].end == _dt(10, 3)
+
+
+async def test_timeline_adjacent_same_trigger_still_merges(db, camera):
+    # Two touching motion segments still coalesce into ONE motion span.
+    await _add_recording(db, camera.id, _dt(10, 0), _dt(10, 1), trigger="motion")
+    await _add_recording(db, camera.id, _dt(10, 1), _dt(10, 2), trigger="motion")
+
+    tl = await _svc(db, _StubNvr()).timeline(camera.id, _dt(10, 0), _dt(10, 10))
+
+    assert len(tl.coverage) == 1
+    assert tl.coverage[0].start == _dt(10, 0) and tl.coverage[0].end == _dt(10, 2)
+    assert tl.coverage[0].trigger_type == "motion"
+
+
+async def test_timeline_adjacent_different_triggers_do_not_merge(db, camera):
+    # Touching but different-typed segments (continuous 10:00-10:01, motion 10:01-10:02)
+    # must NOT merge — different trigger starts a new span even when touching.
+    await _add_recording(db, camera.id, _dt(10, 0), _dt(10, 1), trigger="continuous")
+    await _add_recording(db, camera.id, _dt(10, 1), _dt(10, 2), trigger="motion")
+
+    tl = await _svc(db, _StubNvr()).timeline(camera.id, _dt(10, 0), _dt(10, 10))
+
+    assert len(tl.coverage) == 2
+    assert tl.coverage[0].trigger_type == "continuous"
+    assert tl.coverage[1].trigger_type == "motion"
+    # No phantom gap between them (they touch); only the tail gap remains.
+    assert len(tl.gaps) == 1
+    assert tl.gaps[0].start == _dt(10, 2) and tl.gaps[0].end == _dt(10, 10)
+
+
+async def test_timeline_overlapping_different_triggers_kept_separate(db, camera):
+    # Overlap rule: a motion clip (10:20-10:40) inside a continuous block (10:00-11:00)
+    # is kept as a SEPARATE typed span (lossless) — NOT clipped/merged. Union of spans
+    # covers [10:00-11:00] so there is NO phantom gap despite the overlap.
+    await _add_recording(db, camera.id, _dt(10, 0), _dt(11, 0), trigger="continuous")
+    await _add_recording(db, camera.id, _dt(10, 20), _dt(10, 40), trigger="motion")
+
+    tl = await _svc(db, _StubNvr()).timeline(camera.id, _dt(10, 0), _dt(11, 0))
+
+    assert len(tl.coverage) == 2
+    # Sorted by start: the continuous span (10:00) precedes the motion span (10:20).
+    assert tl.coverage[0].trigger_type == "continuous"
+    assert tl.coverage[0].start == _dt(10, 0) and tl.coverage[0].end == _dt(11, 0)
+    assert tl.coverage[1].trigger_type == "motion"
+    assert tl.coverage[1].start == _dt(10, 20) and tl.coverage[1].end == _dt(10, 40)
+    # No phantom gap from the overlap — the union fully covers the window.
+    assert tl.gaps == []
+    # total counts BOTH spans (continuous 3600s + motion 1200s) — the separate-spans model.
+    assert tl.total_seconds == 3600.0 + 1200.0
+
+
 def test_day_window():
     start, end = day_window(datetime(2026, 7, 9))
     assert start == _dt(0, 0) and end == datetime(2026, 7, 10, tzinfo=timezone.utc)
@@ -311,3 +396,87 @@ async def test_timeline_markers_tenant_scoped(db, camera):
     await _add_event(db, camera.id, _dt(10, 15), tenant=OTHER_TENANT)
     tl = await _svc(db, _StubNvr()).timeline(camera.id, _dt(10, 0), _dt(11, 0))
     assert tl.markers == []
+
+
+# ── recording-days calendar (Task 1) ────────────────────────────────────────
+
+
+def _dtd(day, h=0, m=0):
+    """A UTC datetime on a given day-of-July-2026 (recording-days tests span days)."""
+    return datetime(2026, 7, day, h, m, tzinfo=timezone.utc)
+
+
+async def test_recording_days_buckets_distinct_local_days(db, camera):
+    # Footage on the 14th and 16th (UTC), 15th empty → days {14, 16} in UTC (tz=0).
+    await _add_recording(db, camera.id, _dtd(14, 8), _dtd(14, 9))
+    await _add_recording(db, camera.id, _dtd(14, 20), _dtd(14, 21))  # same day, deduped
+    await _add_recording(db, camera.id, _dtd(16, 1), _dtd(16, 2))
+    out = await _svc(db, _StubNvr()).recording_days_camera(camera.id, "2026-07", 0)
+    assert out.year == 2026 and out.month == 7
+    assert out.days == [14, 16]
+
+
+async def test_recording_days_segment_spanning_midnight_marks_both(db, camera):
+    # A segment 23:30 on the 14th → 00:30 on the 15th (UTC) marks BOTH days.
+    await _add_recording(db, camera.id, _dtd(14, 23, 30), _dtd(15, 0, 30))
+    out = await _svc(db, _StubNvr()).recording_days_camera(camera.id, "2026-07", 0)
+    assert out.days == [14, 15]
+
+
+async def test_recording_days_tz_shift_moves_day(db, camera):
+    # 23:00Z on the 14th is 04:30 on the 15th in IST (+330) → day 15, not 14.
+    await _add_recording(db, camera.id, _dtd(14, 23, 0), _dtd(14, 23, 30))
+    out = await _svc(db, _StubNvr()).recording_days_camera(camera.id, "2026-07", 330)
+    assert out.days == [15]
+
+
+async def test_recording_days_prev_month_utc_counts_as_day1_local(db, camera):
+    # 20:00Z on Jun-30 is 01:30 on Jul-1 in IST → shows as day 1 of July.
+    await _add_recording(
+        db,
+        camera.id,
+        datetime(2026, 6, 30, 20, 0, tzinfo=timezone.utc),
+        datetime(2026, 6, 30, 20, 30, tzinfo=timezone.utc),
+    )
+    out = await _svc(db, _StubNvr()).recording_days_camera(camera.id, "2026-07", 330)
+    assert out.days == [1]
+
+
+async def test_recording_days_open_segment_runs_to_now_window(db, camera):
+    # An open segment (no end) still marks its start day (clamped to the window).
+    await _add_recording(db, camera.id, _dtd(20, 10), None)
+    out = await _svc(db, _StubNvr()).recording_days_camera(camera.id, "2026-07", 0)
+    assert 20 in out.days
+
+
+async def test_recording_days_empty_month_is_empty_list(db, camera):
+    out = await _svc(db, _StubNvr()).recording_days_camera(camera.id, "2026-07", 0)
+    assert out.days == []
+
+
+async def test_recording_days_tenant_isolation(db, camera):
+    await _add_recording(db, camera.id, _dtd(14, 8), _dtd(14, 9))
+    with pytest.raises(NotFoundError):
+        await _svc(db, _StubNvr(), tenant=OTHER_TENANT).recording_days_camera(
+            camera.id, "2026-07", 0
+        )
+
+
+@pytest.mark.parametrize("bad", ["2026", "2026-13", "2026-00", "07-2026", "not-a-month", ""])
+async def test_recording_days_bad_month_raises(db, camera, bad):
+    with pytest.raises(ValidationError):
+        await _svc(db, _StubNvr()).recording_days_camera(camera.id, bad, 0)
+
+
+def test_parse_month_window_december_wraps_year():
+    year, mon, win_from, win_to = parse_month_window("2026-12", 0)
+    assert (year, mon) == (2026, 12)
+    assert win_from == datetime(2026, 12, 1, tzinfo=timezone.utc)
+    assert win_to == datetime(2027, 1, 1, tzinfo=timezone.utc)
+
+
+def test_parse_month_window_tz_shifts_utc_window():
+    # IST month window starts 5:30 BEFORE UTC midnight of the 1st.
+    _, _, win_from, win_to = parse_month_window("2026-07", 330)
+    assert win_from == datetime(2026, 6, 30, 18, 30, tzinfo=timezone.utc)
+    assert win_to == datetime(2026, 7, 31, 18, 30, tzinfo=timezone.utc)

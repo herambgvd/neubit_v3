@@ -29,7 +29,12 @@ from app.db import get_db
 from app.vms.common.core_audit import fire_and_forget_video_audit
 from app.vms.groups.acl import enforce_camera_privilege
 
-from .schemas import PlaybackStartBody, RecordedPlaybackPublic, TimelineResponse
+from .schemas import (
+    PlaybackStartBody,
+    RecordedPlaybackPublic,
+    RecordingDaysResponse,
+    TimelineResponse,
+)
 from .service import PlaybackService, day_window
 
 PERM_VIEW = "vms.playback.view"
@@ -84,6 +89,35 @@ async def start_playback(
         },
     )
     return session
+
+
+@router.get(
+    "/cameras/{camera_id}/recording-days",
+    response_model=RecordingDaysResponse,
+)
+async def get_recording_days(
+    camera_id: str,
+    svc: Annotated[PlaybackService, Depends(get_playback_service)],
+    month: str = Query(..., description="YYYY-MM (calendar month to scan)"),
+    tz_offset_minutes: int = Query(
+        0,
+        ge=-14 * 60,
+        le=14 * 60,
+        description="Operator tz offset from UTC in minutes (e.g. 330 for IST); "
+        "days are grouped in this LOCAL tz. Default 0 = UTC.",
+    ),
+    actor: Principal = Depends(require_permission(PERM_VIEW)),
+) -> RecordingDaysResponse:
+    """Which days of ``month`` have recorded footage for this camera (calendar red-marks).
+
+    Buckets recordings into LOCAL day-of-month ints (a segment spanning midnight marks
+    both days). Bad ``month`` → 4xx via ``ValidationError``.
+    """
+    # Per-camera ACL: exposing a camera's recording days is a playback-grade read.
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="playback"
+    )
+    return await svc.recording_days_camera(camera_id, month, tz_offset_minutes)
 
 
 @router.get(

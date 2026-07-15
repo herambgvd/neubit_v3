@@ -50,12 +50,34 @@ class RecordedPlaybackPublic(BaseModel):
     expires_at: datetime
 
 
+class RecordingDaysResponse(BaseModel):
+    """Which days of a month have recorded footage — the calendar's red-mark set.
+
+    ``days`` is the sorted, unique set of LOCAL day-of-month ints (1..31) that have
+    at least one recording covering them (grouped in the operator's tz — see the
+    router's ``tz_offset_minutes``). Empty ``days`` = a month with no footage.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    year: int
+    month: int  # 1..12
+    days: List[int] = Field(default_factory=list)
+
+
 class TimelineSegment(BaseModel):
-    """A contiguous [start, end] block on the scrub bar (coverage or gap)."""
+    """A contiguous [start, end] block on the scrub bar (coverage or gap).
+
+    ``trigger_type`` (Task 2) tags a COVERAGE block with the recording trigger that
+    produced it (``continuous | schedule | motion | event | manual``) so the scrub bar
+    can colour bars by type (CTOCAM/Lumina-style). It is ``None`` for gaps and for
+    NVR-footage coverage (that path has no per-segment trigger). Optional → clients
+    that only read ``start``/``end`` are unaffected.
+    """
 
     model_config = ConfigDict(extra="ignore")
     start: datetime
     end: datetime
+    trigger_type: Optional[str] = None
 
 
 class TimelineMarker(BaseModel):

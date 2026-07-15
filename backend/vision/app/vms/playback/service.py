@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, assert_owned, scoped
-from kernel.errors import AppError, NotFoundError
+from kernel.errors import AppError, NotFoundError, ValidationError
 
 from app.vms.common.media_token import mint_media_token, token_hash
 from app.vms.common.nvr_client import NvrClient, NvrUnavailable
@@ -183,24 +183,63 @@ class PlaybackService:
             expires_at=row.expires_at,
         )
 
+    # ── recording-days calendar (which days of a month have footage) ────
+    async def recording_days_camera(
+        self, camera_id: str, month: str, tz_offset_minutes: int
+    ):
+        """Days of ``month`` (YYYY-MM) that have recorded footage for a camera, LOCAL tz.
+
+        Resolves the UTC window that spans the month IN THE OPERATOR'S TZ, fetches the
+        overlapping Recording rows (tenant-scoped), and buckets each recording's LOCAL
+        coverage into day-of-month ints. A segment spanning local midnight marks BOTH
+        days; the set is clamped to the month + returned sorted+unique.
+        """
+        year, mon, win_from, win_to = parse_month_window(month, tz_offset_minutes)
+        # Ownership (+ tenant scope) enforced identically to timeline/playback.
+        camera = await self._camera(camera_id)
+        recs = await self._recordings_in_window(camera.id, win_from, win_to)
+
+        tz = timezone(timedelta(minutes=tz_offset_minutes))
+        days: set[int] = set()
+        for r in recs:
+            rs = _aware(r.start_time)
+            # Open segment (no end) is treated as running to the window end.
+            re = _aware(r.end_time) or win_to
+            _mark_local_days(rs, re, win_from, win_to, tz, year, mon, days)
+
+        from .schemas import RecordingDaysResponse
+
+        return RecordingDaysResponse(year=year, month=mon, days=sorted(days))
+
     # ── timeline (scrub-bar coverage + gaps) ────────────────────────────
     async def timeline(
         self, camera_id: str, from_: datetime, to: datetime, profile: str | None = None
     ):
         """Coverage blocks + gaps + event markers for the scrub bar.
 
-        Recording [start, end] intervals are clamped to [from, to], merged into
-        contiguous coverage blocks (touching/overlapping segments coalesce), and the
-        holes between them within the window become gaps. Event MARKERS (P5-B) are the
-        VmsEvent rows whose ``occurred_at`` falls in [from, to] — a tick per device/system
-        event so the scrub bar shows motion/tamper/… where they happened.
+        Recording [start, end] intervals are clamped to [from, to] and merged into
+        coverage blocks — but merging is now grouped BY ``trigger_type`` (Task 2): only
+        touching/overlapping segments of the SAME trigger coalesce, so a camera that
+        recorded continuous then a motion clip yields two differently-typed spans (the
+        scrub bar colours bars by type, CTOCAM/Lumina-style) rather than one merged
+        block. Each coverage span carries its ``trigger_type``; spans are sorted by
+        start. The holes between coverage (across ALL types) within the window become
+        gaps. Event MARKERS (P5-B) are the VmsEvent rows whose ``occurred_at`` falls in
+        [from, to] — a tick per device/system event so the scrub bar shows
+        motion/tamper/… where they happened.
+
+        Overlap rule: if two DIFFERENT-typed spans overlap in time (e.g. a motion clip
+        recorded inside a continuous block), they are kept as SEPARATE typed spans — the
+        frontend layers/prioritises them. We do NOT clip or merge across types here (the
+        simpler, lossless choice); gaps are computed from the union of all spans so an
+        overlap never produces a phantom gap.
         """
         camera = await self._camera(camera_id)
         recs = await self._recordings_in_window(camera.id, from_, to, profile)
         markers = await self._event_markers(camera.id, from_, to)
 
-        # Build clamped [start, end] intervals (skip zero/negative after clamping).
-        intervals: list[tuple[datetime, datetime]] = []
+        # Build clamped [start, end, trigger] intervals (skip zero/negative after clamp).
+        intervals: list[tuple[datetime, datetime, str]] = []
         for r in recs:
             rs = _aware(r.start_time)
             # Open segment (no end) is treated as running to the window end.
@@ -208,29 +247,40 @@ class PlaybackService:
             s = max(rs, from_)
             e = min(re, to)
             if e > s:
-                intervals.append((s, e))
+                intervals.append((s, e, r.trigger_type))
 
-        intervals.sort(key=lambda iv: iv[0])
-        coverage: list[tuple[datetime, datetime]] = []
-        for s, e in intervals:
-            if coverage and s <= coverage[-1][1]:
-                # Overlaps/touches the last block → extend it.
-                if e > coverage[-1][1]:
-                    coverage[-1] = (coverage[-1][0], e)
+        # Merge WITHIN each trigger group: touching/overlapping same-type segments
+        # coalesce; a different trigger never extends another's block.
+        by_trigger: dict[str, list[tuple[datetime, datetime]]] = {}
+        for s, e, trig in sorted(intervals, key=lambda iv: iv[0]):
+            blocks = by_trigger.setdefault(trig, [])
+            if blocks and s <= blocks[-1][1]:
+                if e > blocks[-1][1]:
+                    blocks[-1] = (blocks[-1][0], e)
             else:
-                coverage.append((s, e))
+                blocks.append((s, e))
 
-        # Gaps: the holes between coverage blocks within [from, to].
+        # Flatten to typed spans, sorted by start (stable within equal starts).
+        coverage: list[tuple[datetime, datetime, str]] = sorted(
+            ((s, e, trig) for trig, blocks in by_trigger.items() for s, e in blocks),
+            key=lambda sp: sp[0],
+        )
+
+        # Gaps: the holes between coverage within [from, to], computed from the UNION
+        # of all typed spans (overlaps across types must not create a phantom gap).
+        union = sorted(((s, e) for s, e, _ in coverage), key=lambda iv: iv[0])
         gaps: list[tuple[datetime, datetime]] = []
         cursor = from_
-        for s, e in coverage:
+        for s, e in union:
             if s > cursor:
                 gaps.append((cursor, s))
             cursor = max(cursor, e)
         if cursor < to:
             gaps.append((cursor, to))
 
-        total = sum((e - s).total_seconds() for s, e in coverage)
+        # total_seconds = summed recorded duration; a same-window overlap (continuous +
+        # motion) counts both spans' seconds, matching the "separate spans" model.
+        total = sum((e - s).total_seconds() for s, e, _ in coverage)
 
         from .schemas import TimelineMarker, TimelineResponse, TimelineSegment
 
@@ -238,7 +288,10 @@ class PlaybackService:
             camera_id=camera.id,
             from_=from_,
             to=to,
-            coverage=[TimelineSegment(start=s, end=e) for s, e in coverage],
+            coverage=[
+                TimelineSegment(start=s, end=e, trigger_type=trig)
+                for s, e, trig in coverage
+            ],
             gaps=[TimelineSegment(start=s, end=e) for s, e in gaps],
             markers=[
                 TimelineMarker(
@@ -275,3 +328,65 @@ def day_window(day: datetime) -> tuple[datetime, datetime]:
     """Return the [00:00, 24:00) UTC window for a given day (date part only)."""
     start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
     return start, start + timedelta(days=1)
+
+
+def parse_month_window(
+    month: str, tz_offset_minutes: int
+) -> tuple[int, int, datetime, datetime]:
+    """Validate ``YYYY-MM`` + return ``(year, month, win_from_utc, win_to_utc)``.
+
+    The window is the [month-start 00:00, next-month-start 00:00) span IN THE OPERATOR'S
+    LOCAL tz, expressed in UTC — so a recording at 23:00Z on the last day of the prior
+    month (which is day 1 locally for +ve offsets) is correctly pulled in. Raises
+    ``ValidationError`` (bad format / out-of-range) so the router surfaces a 4xx, not 500.
+    """
+    try:
+        year_s, mon_s = month.split("-")
+        year, mon = int(year_s), int(mon_s)
+    except (ValueError, AttributeError) as exc:
+        raise ValidationError("invalid 'month' — expected YYYY-MM") from exc
+    if len(mon_s) != 2 or not (1 <= mon <= 12) or year < 1970 or year > 9999:
+        raise ValidationError("invalid 'month' — expected YYYY-MM")
+
+    tz = timezone(timedelta(minutes=tz_offset_minutes))
+    local_start = datetime(year, mon, 1, tzinfo=tz)
+    # First day of the NEXT month (December wraps to January of the next year).
+    if mon == 12:
+        local_end = datetime(year + 1, 1, 1, tzinfo=tz)
+    else:
+        local_end = datetime(year, mon + 1, 1, tzinfo=tz)
+    return year, mon, local_start.astimezone(timezone.utc), local_end.astimezone(timezone.utc)
+
+
+def _mark_local_days(
+    start: datetime,
+    end: datetime,
+    win_from: datetime,
+    win_to: datetime,
+    tz: timezone,
+    year: int,
+    month: int,
+    out: set[int],
+) -> None:
+    """Add every LOCAL day-of-month a recording [start, end] covers, clamped to the window.
+
+    Clamps [start, end] to the month window, converts to the operator's tz, then walks
+    each covered local calendar day (a range spanning midnight marks both). Only days
+    whose (year, month) match the requested month are added — a segment straddling the
+    month boundary contributes only its in-month days.
+    """
+    s = max(start, win_from)
+    e = min(end, win_to)
+    if e <= s:
+        return
+    ls = s.astimezone(tz)
+    # ``win_to`` is exclusive (next-month 00:00 local); a segment ending exactly there
+    # covers up to but not including that day, so step back one microsecond for the
+    # last-covered day (avoids marking day-1 of the following month).
+    le = (e - timedelta(microseconds=1)).astimezone(tz)
+    cursor = ls.date()
+    last = le.date()
+    while cursor <= last:
+        if cursor.year == year and cursor.month == month:
+            out.add(cursor.day)
+        cursor += timedelta(days=1)
