@@ -65,6 +65,21 @@ function toH264Hls(url) {
   }
 }
 
+// WHEP transcode variant: insert "/h264" before the trailing "/whep" so MediaMTX runs
+// ffmpeg on demand and republishes an H.264 stream (Chrome WebRTC can't decode HEVC).
+// The "?token=" is preserved. Returns null when it isn't a plain WHEP endpoint.
+function toTranscodedWhep(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://x");
+    if (!/\/whep$/.test(u.pathname) || /\/h264\/whep$/.test(u.pathname)) return null;
+    u.pathname = u.pathname.replace(/\/whep$/, "/h264/whep");
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 export default function PlaybackPlayer({
   cameraId,
   cameraName,
@@ -110,6 +125,7 @@ export default function PlaybackPlayer({
 
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
+  const pcRef = useRef(null); // WHEP RTCPeerConnection (NVR-footage WebRTC path)
   const seekingRef = useRef(false);
   // NVR replay only: the wall-clock instant the CURRENT session starts from. Our own
   // recordings serve a seekable window (anchor = windowStart); an NVR replay is a
@@ -223,20 +239,24 @@ export default function PlaybackPlayer({
   }, [coverage]);
 
   // ── Playback session ────────────────────────────────────────────────────
-  const { hlsUrl, loading, error, load, clear } = usePlaybackSession(cameraId, {
+  const { hlsUrl, webrtcUrl, loading, error, load, clear } = usePlaybackSession(cameraId, {
     profile,
     sourceFn,
     enabled: !!cameraId,
   });
 
-  // H.265/HEVC handling. hls.js (Chrome/Firefox) can't decode HEVC, so on a codec-incompatible
-  // error we ESCALATE in two stages:
-  //   1. WASM decode in the browser via h265web.js (`useH265`) — NO server transcode, the
-  //      preferred path (offloads zero CPU to the server).
-  //   2. If the WASM decoder can't init (old browser / no SIMD), fall through to the /h264
-  //      ffmpeg transcode variant (`transcoded`) — the last-resort compatibility path.
-  // H.264 streams never trip either stage, so they stay on the plain hls.js/<video> path at
-  // zero cost. Both reset on every new session URL.
+  // Playback decode path.
+  //
+  // NVR footage (`sourceFn`) is served from the third-party recorder and is very often
+  // H.265. The robust transport for it is WebRTC/WHEP (same MediaMTX path exposes a
+  // `webrtcUrl`) — codec-proof (H.264 plays direct; H.265 falls back to an on-demand
+  // ffmpeg transcode) and free of HLS relative-URL fragility. So NVR footage plays over
+  // WHEP FIRST; only if WHEP can't establish does it drop to the hls.js/WASM ladder.
+  //
+  // Our OWN recordings are H.264 → the lightweight native hls.js/<video> path plays them at
+  // zero CPU; if one is ever HEVC, an hls.js codec error escalates to the WASM decoder.
+  const preferWhep = !!sourceFn && !!webrtcUrl;
+  const [whepActive, setWhepActive] = useState(preferWhep);
   const [useH265, setUseH265] = useState(false);
   const useH265Ref = useRef(false);
   const [h265Seek, setH265Seek] = useState(null); // WASM-path scrub target (epoch ms)
@@ -249,10 +269,12 @@ export default function PlaybackPlayer({
     transcodedRef.current = transcoded;
   }, [transcoded]);
   useEffect(() => {
+    setWhepActive(preferWhep);
     setUseH265(false);
     setH265Seek(null);
     setTranscoded(false);
-  }, [hlsUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hlsUrl, webrtcUrl]);
   const effHls = useMemo(
     () => (transcoded && toH264Hls(hlsUrl) ? toH264Hls(hlsUrl) : hlsUrl),
     [transcoded, hlsUrl],
@@ -277,9 +299,9 @@ export default function PlaybackPlayer({
   // ── HLS attach ───────────────────────────────────────────────────────────
   useEffect(() => {
     const video = videoRef.current;
-    // In WASM (h265web) mode the <video>/hls.js path is inactive — the canvas player owns
-    // the stream, so skip attaching hls.js entirely.
-    if (!video || !effHls || useH265) return undefined;
+    // hls.js is inactive when the WASM canvas player owns the stream (useH265) or when
+    // NVR footage is playing over WHEP/WebRTC (whepActive) — skip attaching entirely.
+    if (!video || !effHls || useH265 || whepActive) return undefined;
     let disposed = false;
     setVideoError(false);
 
@@ -384,7 +406,109 @@ export default function PlaybackPlayer({
       cleanup();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effHls]);
+  }, [effHls, whepActive, useH265]);
+
+  // ── WHEP / WebRTC attach (NVR footage) ─────────────────────────────────────
+  // The recorder's replay is registered as a MediaMTX path that exposes a WHEP endpoint.
+  // We POST an SDP offer and pipe the returned MediaStream into the <video>. H.264 plays
+  // direct; on an HEVC negotiation failure (400) we retry ONCE against the "/h264"
+  // transcode variant (ffmpeg on demand). If WHEP can't be established at all, we drop to
+  // the hls.js/WASM ladder (setWhepActive(false)). Re-runs on each new session (webrtcUrl).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !whepActive || !webrtcUrl) return undefined;
+    let disposed = false;
+    const abort = new AbortController();
+    setVideoError(false);
+
+    const cleanup = () => {
+      try {
+        abort.abort();
+      } catch {}
+      if (pcRef.current) {
+        try {
+          pcRef.current.close();
+        } catch {}
+        pcRef.current = null;
+      }
+      try {
+        video.srcObject = null;
+      } catch {}
+    };
+
+    // WHEP couldn't be established → fall back to the hls.js / WASM ladder.
+    const giveUp = () => {
+      if (disposed) return;
+      setWhepActive(false);
+    };
+
+    const negotiate = async (url, transcodedOnce = false) => {
+      if (disposed) return;
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+      pcRef.current = pc;
+      pc.addTransceiver("video", { direction: "recvonly" });
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.ontrack = (evt) => {
+        if (disposed || !evt.streams[0]) return;
+        video.srcObject = evt.streams[0];
+        setVideoError(false);
+        if (controlled ? playing : localPlaying) video.play().catch(() => {});
+      };
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === "complete") return resolve();
+          const check = () => {
+            if (pc.iceGatheringState === "complete") {
+              pc.removeEventListener("icegatheringstatechange", check);
+              resolve();
+            }
+          };
+          pc.addEventListener("icegatheringstatechange", check);
+          setTimeout(resolve, 3_000);
+        });
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/sdp" },
+          body: pc.localDescription.sdp,
+          signal: abort.signal,
+        });
+        if (disposed) return;
+        // 400 = HEVC negotiation failed (Chrome can't decode) → transcode variant once.
+        if (res.status === 400 && !transcodedOnce) {
+          const h264 = toTranscodedWhep(url);
+          try {
+            pc.close();
+          } catch {}
+          if (h264) return negotiate(h264, true);
+          return giveUp();
+        }
+        if (!res.ok) {
+          try {
+            pc.close();
+          } catch {}
+          return giveUp();
+        }
+        const answer = await res.text();
+        if (disposed) return;
+        await pc.setRemoteDescription({ type: "answer", sdp: answer });
+      } catch (e) {
+        if (disposed || e?.name === "AbortError") return;
+        try {
+          pc.close();
+        } catch {}
+        giveUp();
+      }
+    };
+
+    negotiate(webrtcUrl);
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webrtcUrl, whepActive]);
 
   // MediaMTX live-HLS timelines can start at a NON-ZERO PTS (e.g. 10s) — the <video>
   // defaults to currentTime=0, which sits BEFORE the buffered range, so it stalls on a

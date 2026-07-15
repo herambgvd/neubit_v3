@@ -327,7 +327,15 @@ export default function UnifiedPlayback({ onExportRange }) {
                     // (== nvr_channel_number == RecordingToken index). Label with name.
                     const val = String(c.nvr_channel_number);
                     const ch = { value: val, label: c.name || `Channel ${val}` };
-                    const label = c.name || `Channel ${val}`;
+                    // The NVR is already chosen in the dropdown above, so strip the
+                    // redundant "<nvr name> - " prefix (it caused the "…Chann…" truncation)
+                    // → clean per-channel label. A CH-number chip stays always visible.
+                    const raw = c.name || `Channel ${val}`;
+                    const clean =
+                      pickNvrName && raw.startsWith(pickNvrName)
+                        ? raw.slice(pickNvrName.length).replace(/^\s*[-·:]\s*/, "").trim() ||
+                          `Channel ${val}`
+                        : raw;
                     const added = hasTile(`nvr:${pickNvrId}:${val}`);
                     return (
                       <button
@@ -335,10 +343,13 @@ export default function UnifiedPlayback({ onExportRange }) {
                         type="button"
                         disabled={added || sources.length >= MAX_TILES}
                         onClick={() => addTile(nvrTile(pickNvrId, ch, pickNvrName))}
+                        title={c.name || `Channel ${val}`}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover disabled:opacity-40"
                       >
-                        <Icon icon="heroicons:server-stack" className="shrink-0 text-sm text-muted" />
-                        <span className="truncate">{label}</span>
+                        <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[11px] font-semibold tabular-nums text-muted">
+                          {val}
+                        </span>
+                        <span className="truncate">{clean}</span>
                         <Icon
                           icon={added ? "heroicons-outline:check" : "heroicons-outline:plus"}
                           className="ml-auto shrink-0 text-sm text-muted"
