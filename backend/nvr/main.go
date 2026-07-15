@@ -173,6 +173,11 @@ func main() {
 	// so 401-without-token is demonstrable on the very first route.
 	r.Route(cfg.APIPrefix+"/nvr", func(api chi.Router) {
 		api.Use(httpx.RequireAuth(verifier))
+		// The whole NVR data-plane is the tenant's "vms" module + needs an unexpired
+		// license (super-admins bypass both). Module off → 403 FEATURE_DISABLED;
+		// past-grace license → 403 LICENSE_EXPIRED. Mirrors the Python vision gate.
+		api.Use(httpx.RequireFeature("vms"))
+		api.Use(httpx.RequireActiveLicense())
 
 		// whoami — proves cross-language JWT verification (a core-minted token
 		// verifies here identically to the Python vision service).

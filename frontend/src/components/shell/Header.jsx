@@ -216,7 +216,7 @@ function NavEntry({ item, pathname }) {
 }
 
 export default function Header() {
-  const { user, logout, can, reload } = useAuth();
+  const { user, logout, can, hasModule, reload } = useAuth();
   const { theme, toggle } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
@@ -245,8 +245,14 @@ export default function Header() {
   // Close it on navigation.
   useEffect(() => setOpenUser(false), [pathname]);
 
-  // Disabled placeholders + the Config section always show; real links are perm-gated.
-  const items = menuItems.filter((m) => m.disabled || m.section || !m.perm || can(m.perm));
+  // Disabled placeholders always show ("Soon"). Real items need their module enabled
+  // for the tenant (if module-gated) AND — for a link — the permission; section
+  // entries skip the perm check (they open a sub-tab bar).
+  const items = menuItems.filter(
+    (m) =>
+      m.disabled ||
+      ((!m.module || hasModule(m.module)) && (m.section || !m.perm || can(m.perm))),
+  );
   const displayName = user?.full_name || user?.email;
 
   async function onPickAvatar(e) {

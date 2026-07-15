@@ -51,9 +51,11 @@ def base_routers() -> list[APIRouter]:
     from .sites import routers as sites_routers
     from .system import system_router
     from .tags import routers as tags_routers
+    from .tenancy.entitlements import router as features_router
 
     return [
         auth_router,
+        features_router,
         admin_router,
         billing_router,
         alerts_router,

@@ -41,6 +41,38 @@ function AnnouncementBanner() {
   );
 }
 
+// Per-tenant license banner: warns when the tenant's license is in its grace
+// window or has expired (resolved from GET /features via the auth context).
+// Super-admins are always "active", so they never see it.
+function LicenseBanner() {
+  const { licenseState } = useAuth();
+  if (licenseState === "grace") {
+    return (
+      <div className="shrink-0 bg-amber-500/10 border-b border-amber-500/20 text-amber-500">
+        <div className="w-full px-6 lg:px-8 py-2 flex items-center gap-2 text-[13px]">
+          <Icon icon="heroicons-outline:exclamation-triangle" className="text-base shrink-0" />
+          <span className="truncate">
+            Your license is in its grace period — renew soon to avoid interruption.
+          </span>
+        </div>
+      </div>
+    );
+  }
+  if (licenseState === "expired") {
+    return (
+      <div className="shrink-0 bg-red-500/10 border-b border-red-500/20 text-red-500">
+        <div className="w-full px-6 lg:px-8 py-2 flex items-center gap-2 text-[13px]">
+          <Icon icon="heroicons-outline:x-circle" className="text-base shrink-0" />
+          <span className="truncate">
+            Your license has expired. Some features may be unavailable — contact your administrator.
+          </span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
 // Auth-guarded application shell: horizontal top nav + full-width content.
 export default function AppLayout({ children }) {
   const { status } = useAuth();
@@ -90,6 +122,7 @@ export default function AppLayout({ children }) {
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
       {isStreamingRoute(pathname) && <SectionTabs tabs={streamTabs} />}
       <AnnouncementBanner />
+      <LicenseBanner />
       <main className={mainClass}>{children}</main>
       <Footer />
       <CommandPalette />

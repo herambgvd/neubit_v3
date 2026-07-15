@@ -15,20 +15,20 @@
 // ── Top horizontal nav (domain surfaces) ─────────────────────────────
 export const menuItems = [
   { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "neubit.read" },
-  { title: "Dashboard", icon: "heroicons-outline:chart-bar", link: "/dashboard", perm: "vms.camera.read" },
+  { title: "Dashboard", icon: "heroicons-outline:chart-bar", link: "/dashboard", perm: "vms.camera.read", module: "vms" },
   // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
   // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
   { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices" },
   // Streaming is a SECTION: the video surfaces — Video Wall (live), Recordings,
   // Playback. (Devices stays a pure onboarding zone; viewing lives here.)
-  { title: "Streaming", icon: "heroicons:signal", section: "streaming" },
+  { title: "Streaming", icon: "heroicons:signal", section: "streaming", module: "vms" },
   // "Incidents" = the PSIM alarm/incident surface (SOP-driven, cross-domain incidents
   // live here, like neubit_v2). Named distinctly from Streaming → "Camera events" (the
   // raw device-level event feed) to remove the "Events vs Camera events" confusion.
   // Route stays /events. Workflow config lives under Config → Workflow.
   { title: "Incidents", icon: "heroicons:calendar-days", link: "/events", perm: "neubit.read" },
-  { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true },
-  { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true },
+  { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true, module: "nms" },
+  { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true, module: "octosense" },
   // Config is a SECTION: clicking it enters the Config sub-tab bar (first enabled tab).
   { title: "Config", icon: "heroicons-outline:cog-6-tooth", section: "config" },
 ];
@@ -43,11 +43,11 @@ export const configTabs = [
   { title: "Roles", icon: "heroicons-outline:shield-check", link: "/roles", perm: "role.read" },
   { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
   { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", perm: "neubit.read" },
-  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage" },
+  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
   { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", perm: "neubit.read" },
-  { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read" },
-  { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read" },
-  { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read" },
+  { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
+  { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
+  { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
   { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
   { title: "Activity", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
   { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
@@ -64,9 +64,9 @@ export const configTabs = [
 
 // ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──
 export const deviceTabs = [
-  { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read" },
-  { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read" },
-  { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read" },
+  { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read", module: "access" },
+  { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read", module: "vms" },
+  { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read", module: "vms" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).
@@ -84,15 +84,15 @@ export function isDevicesRoute(pathname) {
 // ── Streaming sub-tab bar — the video-viewing surfaces (VMS) ──────────────
 //   Video Wall (live), Recordings, Playback, Camera events. Onboarding stays under Devices.
 export const streamTabs = [
-  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read" },
+  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read", module: "vms" },
   // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
   // shared state across every operator + display client. Distinct from the
   // single-operator "Video Wall" live-grid above.
-  { title: "Wall Console", icon: "heroicons:tv", link: "/wall", perm: "vms.wall.view" },
-  { title: "Recordings", icon: "heroicons:film", link: "/recordings", perm: "neubit.read" },
-  { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read" },
-  { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read" },
-  { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view" },
+  { title: "Wall Console", icon: "heroicons:tv", link: "/wall", perm: "vms.wall.view", module: "vms" },
+  { title: "Recordings", icon: "heroicons:film", link: "/recordings", perm: "neubit.read", module: "vms" },
+  { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read", module: "vms" },
+  { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read", module: "vms" },
+  { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view", module: "vms" },
 ];
 
 // The route the Streaming top-nav item jumps to (first enabled stream tab).

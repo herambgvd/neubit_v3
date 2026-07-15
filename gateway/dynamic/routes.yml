@@ -19,29 +19,34 @@ http:
       service: ingest
       entryPoints: [web]
       priority: 110
+      middlewares: [api-protected]
     workflow:
       rule: "PathPrefix(`/api/v1/workflow`)"
       service: workflow
       entryPoints: [web]
       priority: 110
+      middlewares: [api-protected]
     access:
       # Access-control API — instance CRUD + reconcile + mirror reads under /api/v1/access.
       rule: "PathPrefix(`/api/v1/access`)"
       service: access
       entryPoints: [web]
       priority: 110
+      middlewares: [api-protected]
     vision:
       # VMS control-plane — cameras/NVR/discovery/config/health under /api/v1/vms.
       rule: "PathPrefix(`/api/v1/vms`)"
       service: vision
       entryPoints: [web]
       priority: 110
+      middlewares: [api-protected]
     nvr:
       # VMS data-plane (Go) — data-plane status/ops under /api/v1/nvr.
       rule: "PathPrefix(`/api/v1/nvr`)"
       service: nvr
       entryPoints: [web]
       priority: 110
+      middlewares: [api-protected]
     onvif-server:
       # P6-C ONVIF server — OUR VMS answering as an ONVIF device so external
       # VMS/recorders (Milestone/Genetec/NVRs) discover + pull our streams/recordings.
@@ -108,6 +113,7 @@ http:
       service: core
       entryPoints: [web]
       priority: 100
+      middlewares: [core-protected]
     admin:
       rule: "Host(`admin.localhost`)"
       service: admin-frontend

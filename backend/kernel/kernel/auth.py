@@ -36,12 +36,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import jwt
-from fastapi import Depends
+from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.sql import Select
 
 from .config import get_settings
-from .errors import ForbiddenError, NotFoundError, UnauthorizedError
+from .errors import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 
 WILDCARD = "*"
 
@@ -57,6 +57,14 @@ class Principal:
     tenant_id: uuid.UUID | None
     is_superadmin: bool
     permissions: list[str] = field(default_factory=list)
+    # Tenant entitlements baked into the token by core (empty for super-admins, who
+    # bypass). ``features`` is {module_key: bool}; ``limits`` is {resource: number}.
+    # ``license_state`` is "active" | "grace" | "expired" (super-admins/on missing
+    # claim → "active", i.e. fail-open on license so a rollout never locks users out).
+    features: dict = field(default_factory=dict)
+    limits: dict = field(default_factory=dict)
+    license_state: str = "active"
+    tenant_status: str = "active"  # "active" | "suspended"
 
     def grants(self, permission: str) -> bool:
         return (
@@ -64,6 +72,24 @@ class Principal:
             or WILDCARD in self.permissions
             or permission in self.permissions
         )
+
+    def feature_enabled(self, key: str) -> bool:
+        """Whether the caller's tenant has module ``key`` enabled (super-admin → always)."""
+        return self.is_superadmin or bool(self.features.get(key))
+
+    def limit(self, name: str, default=None):
+        """A tenant quota value (super-admin → ``default``, i.e. unlimited)."""
+        return default if self.is_superadmin else self.limits.get(name, default)
+
+    @property
+    def license_expired(self) -> bool:
+        """True only when the tenant's license is past its grace window (super-admin → never)."""
+        return not self.is_superadmin and self.license_state == "expired"
+
+    @property
+    def tenant_suspended(self) -> bool:
+        """True when the caller's tenant is suspended by a super-admin (super-admin → never)."""
+        return not self.is_superadmin and self.tenant_status == "suspended"
 
 
 def verify_token(token: str) -> Principal:
@@ -86,16 +112,33 @@ def verify_token(token: str) -> Principal:
         tenant_id=uuid.UUID(str(tid)) if tid else None,
         is_superadmin=bool(payload.get("is_superadmin", False)),
         permissions=list(payload.get("permissions") or []),
+        features=dict(payload.get("features") or {}),
+        limits=dict(payload.get("limits") or {}),
+        license_state=str(payload.get("license_state") or "active"),
+        tenant_status=str(payload.get("tenant_status") or "active"),
     )
 
 
 async def get_principal(
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    x_tenant_id: str | None = Header(default=None, alias="X-Tenant-Id"),
 ) -> Principal:
-    """FastAPI dependency: the authenticated caller (Bearer JWT)."""
+    """FastAPI dependency: the authenticated caller (Bearer JWT).
+
+    Defense-in-depth: when the gateway's ForwardAuth injected a trusted
+    ``X-Tenant-Id`` (strip-identity removes any client-supplied one first), it MUST
+    match the JWT's tenant claim — a mismatch means header tampering and is rejected.
+    The JWT stays the authority; the header is only an extra edge cross-check. A
+    request with no such header (a direct/in-cluster call) is unaffected.
+    """
     if cred is None:
         raise UnauthorizedError("missing bearer token")
-    return verify_token(cred.credentials)
+    principal = verify_token(cred.credentials)
+    if x_tenant_id and (
+        principal.tenant_id is None or str(principal.tenant_id) != x_tenant_id
+    ):
+        raise UnauthorizedError("tenant header/token mismatch")
+    return principal
 
 
 def require_permission(*permissions: str):
@@ -108,6 +151,78 @@ def require_permission(*permissions: str):
         return principal
 
     return _dep
+
+
+# --- Entitlement enforcement (Phase 3) -------------------------------------
+def require_feature(*keys: str):
+    """Dependency factory: the caller's tenant must have ALL of ``keys`` enabled.
+
+    Gate a whole service/router behind its module, e.g. on ``include_router``:
+
+        app.include_router(r, dependencies=[Depends(require_feature("vms"))])
+
+    Super-admins bypass. A tenant without the module gets 403 FEATURE_DISABLED.
+    (Reads the token claim — a satellite authorises locally, no round-trip to core.)
+    """
+
+    async def _dep(principal: Principal = Depends(get_principal)) -> Principal:
+        missing = [k for k in keys if not principal.feature_enabled(k)]
+        if missing:
+            raise ForbiddenError(
+                f"the '{', '.join(missing)}' module is not enabled for this tenant",
+                code="FEATURE_DISABLED",
+            )
+        return principal
+
+    return _dep
+
+
+def require_tenant_access():
+    """Dependency: block when the caller's tenant can't operate — it is SUSPENDED by
+    a super-admin, or its license is EXPIRED (past grace).
+
+    ``grace`` is allowed (the UI warns). Suspended → 403 TENANT_SUSPENDED; expired →
+    403 LICENSE_EXPIRED. Super-admins bypass. Core already blocks both at login; this
+    closes the window where a token minted before the change keeps working. Apply
+    alongside ``require_feature`` on a service's protected routers.
+    """
+
+    async def _dep(principal: Principal = Depends(get_principal)) -> Principal:
+        if principal.tenant_suspended:
+            raise ForbiddenError(
+                "the tenant is suspended — contact support",
+                code="TENANT_SUSPENDED",
+            )
+        if principal.license_expired:
+            raise ForbiddenError(
+                "the tenant's license has expired — renew to continue",
+                code="LICENSE_EXPIRED",
+            )
+        return principal
+
+    return _dep
+
+
+# Back-compat alias: the gate now covers suspension too, but services wired it under
+# the original name. Both resolve to the same combined tenant-access check.
+require_active_license = require_tenant_access
+
+
+def enforce_limit(principal: Principal, resource: str, current: int) -> None:
+    """Raise CONFLICT if creating one more ``resource`` would exceed the tenant quota.
+
+    Call before a create, passing the live count from the service's own DB:
+
+        enforce_limit(principal, "max_cameras", await count_cameras(scope))
+
+    A missing/negative limit means unlimited; super-admins are always unlimited.
+    """
+    cap = principal.limit(resource)
+    if isinstance(cap, (int, float)) and cap >= 0 and current >= cap:
+        raise ConflictError(
+            f"{resource} quota reached ({int(cap)})",
+            code="LIMIT_EXCEEDED",
+        )
 
 
 # --- Tenant scope (copied from core tenancy/scope.py semantics) ------------

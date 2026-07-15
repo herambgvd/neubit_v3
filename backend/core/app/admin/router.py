@@ -238,7 +238,13 @@ async def impersonate_tenant(
     super-admin can open the tenant's operator console. Audited."""
     svc = TenantService(db)
     admin = await svc.primary_admin(tenant_id)
-    token = create_access_token(admin)
+    from ..tenancy.entitlements import token_entitlements
+
+    features, limits, license_state, tenant_status = await token_entitlements(db, admin)
+    token = create_access_token(
+        admin, features=features, limits=limits,
+        license_state=license_state, tenant_status=tenant_status,
+    )
     await audit_record(
         db, actor=actor, action="tenant.impersonate", target_type="tenant",
         target_id=str(tenant_id), meta={"as_user": admin.email},

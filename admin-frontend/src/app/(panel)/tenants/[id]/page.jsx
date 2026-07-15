@@ -377,6 +377,33 @@ function LicenseCard({ tenant, onSaved }) {
           )}
         </div>
 
+        {/* Effective modules preview — what the tenant's operator console will
+            actually show for the CURRENT toggle state (same resolution the
+            operator's GET /features uses: a module is on iff its flag is truthy).
+            Confirms a toggle takes effect before/after saving. */}
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
+            <Blocks className="h-3.5 w-3.5" /> Operator will see
+          </div>
+          {(() => {
+            const enabledNames = [
+              ...catalog.filter((m) => features[m.key]).map((m) => m.name || m.key),
+              ...extraFeatureKeys.filter((k) => features[k]).map((k) => humanizeKey(k)),
+            ];
+            return enabledNames.length === 0 ? (
+              <p className="text-xs text-muted">No modules enabled — the console shows core admin only.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {enabledNames.map((n) => (
+                  <span key={n} className="inline-flex items-center rounded-md border border-success/20 bg-success/10 px-2 py-0.5 text-xs text-success">
+                    {n}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+
         {/* Quota limits — structured key/number rows (replaces raw JSON). */}
         <div>
           <div className="mb-2 flex items-center justify-between">

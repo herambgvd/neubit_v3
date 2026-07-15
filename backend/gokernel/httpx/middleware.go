@@ -86,6 +86,16 @@ func RequireAuth(v *auth.Verifier) func(http.Handler) http.Handler {
 				kerr.Write(w, err)
 				return
 			}
+			// Defense-in-depth: a gateway-injected X-Tenant-Id (strip-identity removes
+			// any client one first) MUST match the JWT tenant claim; a mismatch is
+			// tampering → reject. Absent header (direct call) is unaffected. JWT stays
+			// the authority; the header is only an edge cross-check.
+			if hdr := r.Header.Get("X-Tenant-Id"); hdr != "" {
+				if principal.TenantID == nil || principal.TenantID.String() != hdr {
+					kerr.Write(w, kerr.Unauthorized("tenant header/token mismatch"))
+					return
+				}
+			}
 			ctx := context.WithValue(r.Context(), principalKey, principal)
 			ctx = context.WithValue(ctx, scopeKey, auth.ScopeOf(principal))
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -112,6 +122,63 @@ func RequirePermission(perms ...string) func(http.Handler) http.Handler {
 			}
 			if len(missing) > 0 {
 				kerr.Write(w, kerr.Forbidden("missing permission(s): "+strings.Join(missing, ", ")))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireFeature gates a route: the caller's tenant must have ALL listed modules
+// enabled (super-admin bypasses). Module off → 403 FEATURE_DISABLED. The Go analogue
+// of the Python require_feature() dependency. Apply after RequireAuth.
+func RequireFeature(keys ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p, ok := PrincipalFrom(r.Context())
+			if !ok {
+				kerr.Write(w, kerr.Unauthorized("missing bearer token"))
+				return
+			}
+			var missing []string
+			for _, k := range keys {
+				if !p.FeatureEnabled(k) {
+					missing = append(missing, k)
+				}
+			}
+			if len(missing) > 0 {
+				fe := kerr.Forbidden("the '" + strings.Join(missing, ", ") + "' module is not enabled for this tenant")
+				fe.Code = "FEATURE_DISABLED"
+				kerr.Write(w, fe)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireActiveLicense blocks when the caller's tenant can't operate — it is
+// SUSPENDED (403 TENANT_SUSPENDED) or its license is EXPIRED past grace (403
+// LICENSE_EXPIRED). Grace is allowed; super-admin bypasses. The Go analogue of the
+// Python require_tenant_access() (aliased require_active_license) dependency.
+func RequireActiveLicense() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p, ok := PrincipalFrom(r.Context())
+			if !ok {
+				kerr.Write(w, kerr.Unauthorized("missing bearer token"))
+				return
+			}
+			if p.TenantSuspended() {
+				se := kerr.Forbidden("the tenant is suspended — contact support")
+				se.Code = "TENANT_SUSPENDED"
+				kerr.Write(w, se)
+				return
+			}
+			if p.LicenseExpired() {
+				le := kerr.Forbidden("the tenant's license has expired — renew to continue")
+				le.Code = "LICENSE_EXPIRED"
+				kerr.Write(w, le)
 				return
 			}
 			next.ServeHTTP(w, r)

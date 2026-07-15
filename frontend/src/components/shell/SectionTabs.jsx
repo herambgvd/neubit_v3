@@ -12,14 +12,17 @@ import { useAuth } from "@/lib/auth";
 // Scrolls horizontally when it overflows.
 export default function SectionTabs({ tabs }) {
   const pathname = usePathname();
-  const { can, user } = useAuth();
+  const { can, user, hasModule } = useAuth();
 
   // `superadmin: true` tabs are VENDOR-ONLY (e.g. External Access) — hidden unless
   // the signed-in user is the platform super-admin, even if they hold the perm.
+  // Module-gated tabs also require the tenant to have that module enabled.
   const visible = tabs.filter(
     (t) =>
       t.disabled ||
-      ((!t.superadmin || !!user?.is_superadmin) && (!t.perm || can(t.perm))),
+      ((!t.module || hasModule(t.module)) &&
+        (!t.superadmin || !!user?.is_superadmin) &&
+        (!t.perm || can(t.perm))),
   );
 
   return (

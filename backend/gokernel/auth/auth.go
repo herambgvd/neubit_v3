@@ -29,6 +29,26 @@ type Principal struct {
 	TenantID     *uuid.UUID // nil for platform super-admins
 	IsSuperadmin bool
 	Permissions  []string
+	// Tenant entitlements baked into the token by core (empty for super-admins,
+	// who bypass). Features is {module_key: bool}; Limits is {resource: number}.
+	// LicenseState is "active"|"grace"|"expired" (super-admins / missing claim →
+	// "active", fail-open on license). Mirrors the Python Principal.
+	Features     map[string]bool
+	Limits       map[string]float64
+	LicenseState string
+	TenantStatus string // "active" | "suspended"
+}
+
+// LicenseExpired is true only when the tenant's license is past its grace window
+// (super-admins → never). Same rule as the Python Principal.license_expired.
+func (p *Principal) LicenseExpired() bool {
+	return !p.IsSuperadmin && p.LicenseState == "expired"
+}
+
+// TenantSuspended is true when the caller's tenant is suspended by a super-admin
+// (super-admins → never). Same rule as the Python Principal.tenant_suspended.
+func (p *Principal) TenantSuspended() bool {
+	return !p.IsSuperadmin && p.TenantStatus == "suspended"
 }
 
 // Grants reports whether the caller holds a permission (super-admin or "*" grant
@@ -43,6 +63,25 @@ func (p *Principal) Grants(permission string) bool {
 		}
 	}
 	return false
+}
+
+// FeatureEnabled reports whether the caller's tenant has module key enabled
+// (super-admin → always). Same rule as the Python Principal.feature_enabled().
+func (p *Principal) FeatureEnabled(key string) bool {
+	if p.IsSuperadmin {
+		return true
+	}
+	return p.Features[key]
+}
+
+// Limit returns a tenant quota value and whether it was set (super-admin → unset,
+// i.e. unlimited). Same semantics as the Python Principal.limit().
+func (p *Principal) Limit(name string) (float64, bool) {
+	if p.IsSuperadmin {
+		return 0, false
+	}
+	v, ok := p.Limits[name]
+	return v, ok
 }
 
 // Scope is the caller's tenancy scope, resolved from the Principal.
@@ -61,10 +100,14 @@ func ScopeOf(p *Principal) Scope {
 
 // claims is the raw JWT payload shape the Python core mints.
 type claims struct {
-	Type         string   `json:"type"`
-	TenantID     *string  `json:"tenant_id"`
-	IsSuperadmin bool     `json:"is_superadmin"`
-	Permissions  []string `json:"permissions"`
+	Type         string             `json:"type"`
+	TenantID     *string            `json:"tenant_id"`
+	IsSuperadmin bool               `json:"is_superadmin"`
+	Permissions  []string           `json:"permissions"`
+	Features     map[string]bool    `json:"features"`
+	Limits       map[string]float64 `json:"limits"`
+	LicenseState string             `json:"license_state"`
+	TenantStatus string             `json:"tenant_status"`
 	jwt.RegisteredClaims
 }
 
@@ -114,10 +157,30 @@ func (v *Verifier) Verify(token string) (*Principal, error) {
 	if perms == nil {
 		perms = []string{}
 	}
+	features := c.Features
+	if features == nil {
+		features = map[string]bool{}
+	}
+	limits := c.Limits
+	if limits == nil {
+		limits = map[string]float64{}
+	}
+	licenseState := c.LicenseState
+	if licenseState == "" {
+		licenseState = "active"
+	}
+	tenantStatus := c.TenantStatus
+	if tenantStatus == "" {
+		tenantStatus = "active"
+	}
 	return &Principal{
 		UserID:       uid,
 		TenantID:     tid,
 		IsSuperadmin: c.IsSuperadmin,
 		Permissions:  perms,
+		Features:     features,
+		Limits:       limits,
+		LicenseState: licenseState,
+		TenantStatus: tenantStatus,
 	}, nil
 }

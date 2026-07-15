@@ -12,19 +12,33 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | authed | anon
+  // The caller's effective entitlements from GET /features (modules/limits/license
+  // state), resolved from their tenant. null until loaded (nav treats that as
+  // permissive so it doesn't flash-hide during the fetch).
+  const [entitlements, setEntitlements] = useState(null);
 
   const loadMe = useCallback(async () => {
     if (!tokens.access) {
       setStatus("anon");
+      setEntitlements(null);
       return;
     }
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
       setStatus("authed");
+      // Load entitlements alongside identity; a failure here must not break auth,
+      // so it degrades to null (permissive nav, no license banner).
+      try {
+        const feat = await api.get("/features");
+        setEntitlements(feat.data);
+      } catch {
+        setEntitlements(null);
+      }
     } catch {
       tokens.clear();
       setUser(null);
+      setEntitlements(null);
       setStatus("anon");
     }
   }, []);
@@ -65,6 +79,7 @@ export function AuthProvider({ children }) {
     }
     tokens.clear();
     setUser(null);
+    setEntitlements(null);
     setStatus("anon");
   }, []);
 
@@ -77,8 +92,36 @@ export function AuthProvider({ children }) {
     [user]
   );
 
+  // Module entitlement check: whether the caller's tenant has module `key` on.
+  // Permissive when entitlements aren't loaded yet (avoids flash-hiding real nav)
+  // and for keys not in the catalog (only known domain modules gate the nav).
+  const hasModule = useCallback(
+    (key) => {
+      if (!key) return true;
+      if (!entitlements?.modules) return true;
+      const mod = entitlements.modules.find((m) => m.key === key);
+      return mod ? !!mod.enabled : true;
+    },
+    [entitlements]
+  );
+
+  const licenseState = entitlements?.license_state || null;
+
   return (
-    <AuthContext.Provider value={{ user, status, login, loginMfa, logout, can, reload: loadMe }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        status,
+        login,
+        loginMfa,
+        logout,
+        can,
+        hasModule,
+        entitlements,
+        licenseState,
+        reload: loadMe,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
