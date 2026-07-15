@@ -59,6 +59,14 @@ function gridDims(n) {
 //   cameraId real camera id | synthetic `${nvrId}:${channel}` for nvr tiles
 //   nvrId/channel present only for nvr tiles
 const cameraTile = (c) => ({ key: `cam:${c.id}`, kind: "camera", name: c.name, cameraId: c.id });
+
+// Split a camera name like "NVR 45.64.11.69 - Channel 1" into a clear channel label
+// (primary) + its source (muted subtitle) so the sidebar rows don't truncate to "…Chann…".
+// Falls back to the whole name as primary when there's no "<source> - <channel>" shape.
+const splitCamName = (name = "") => {
+  const m = name.match(/^(.*\S)\s*[-·]\s*(.+)$/);
+  return m ? { primary: m[2].trim(), secondary: m[1].trim() } : { primary: name, secondary: null };
+};
 const nvrTile = (nvrId, ch, nvrName) => ({
   key: `nvr:${nvrId}:${ch.value}`,
   kind: "nvr",
@@ -207,6 +215,9 @@ export default function UnifiedPlayback({ onExportRange }) {
     if (firstCoverageMs != null && !playing) {
       setClock(firstCoverageMs);
       setSeekMs(firstCoverageMs);
+      // Pull any live NVR tiles to this instant too, so the picture matches the clock
+      // (their real-time WHEP replays can't seek — only a re-pull moves them).
+      setSeekNonce((n) => n + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstCoverageMs]);
@@ -235,7 +246,16 @@ export default function UnifiedPlayback({ onExportRange }) {
   // ── Source add / remove ──────────────────────────────────────────────────
   const hasTile = (key) => sources.some((s) => s.key === key);
   const addTile = (tile) => {
-    setSources((s) => (hasTile(tile.key) || s.length >= MAX_TILES ? s : [...s, tile]));
+    if (hasTile(tile.key)) return;
+    setSources((s) => (s.length >= MAX_TILES ? s : [...s, tile]));
+    // Resync: NVR tiles are real-time WHEP replays that can't seek, so line every tile
+    // (the new one + all existing) up to the SAME footage-instant by re-pulling them from
+    // the shared clock at the same moment. The new tile's initial load reads this seekMs;
+    // existing tiles re-pull on the seekNonce bump.
+    const syncMs = clock ?? firstCoverageMs ?? windowStart;
+    setClock(syncMs);
+    setSeekMs(syncMs);
+    setSeekNonce((n) => n + 1);
   };
   const removeTile = (key) => {
     setSources((s) => s.filter((x) => x.key !== key));
@@ -293,19 +313,32 @@ export default function UnifiedPlayback({ onExportRange }) {
                 {cameras.length ? "All cameras added." : "No cameras."}
               </p>
             ) : (
-              availableCameras.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  disabled={sources.length >= MAX_TILES}
-                  onClick={() => addTile(cameraTile(c))}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover disabled:opacity-40"
-                >
-                  <Icon icon="heroicons-outline:video-camera" className="shrink-0 text-sm text-muted" />
-                  <span className="truncate">{c.name}</span>
-                  <Icon icon="heroicons-outline:plus" className="ml-auto shrink-0 text-sm text-muted" />
-                </button>
-              ))
+              availableCameras.map((c) => {
+                const { primary, secondary } = splitCamName(c.name);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={sources.length >= MAX_TILES}
+                    onClick={() => addTile(cameraTile(c))}
+                    title={c.name}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover disabled:opacity-40"
+                  >
+                    {c.nvr_channel_number != null && (
+                      <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[11px] font-semibold tabular-nums text-muted">
+                        {c.nvr_channel_number}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{primary}</span>
+                      {secondary && (
+                        <span className="block truncate text-[11px] text-muted">{secondary}</span>
+                      )}
+                    </span>
+                    <Icon icon="heroicons-outline:plus" className="ml-auto shrink-0 text-sm text-muted" />
+                  </button>
+                );
+              })
             )
           ) : (
             <div className="space-y-2">

@@ -281,11 +281,19 @@ export default function PlaybackPlayer({
   );
 
   // Load a session for the current window whenever the window changes.
+  // For a CONTROLLED NVR tile (synchronized multi-cam), the replay is a linear WHEP stream
+  // that can't seek — so it must be PULLED from the shared clock instant, not the window
+  // start, or every tile plays a different footage-time. We anchor the initial pull at the
+  // parent's seekMs (the shared clock) when present; a later scrub re-pulls via seekNonce.
   useEffect(() => {
     if (!cameraId) return;
     setVideoError(false);
-    anchorRef.current = windowStart;
-    load({ from: iso(windowStart), to: iso(windowEnd) });
+    const from =
+      controlled && sourceFn && seekMs != null
+        ? Math.min(Math.max(seekMs, windowStart), windowEnd)
+        : windowStart;
+    anchorRef.current = from;
+    load({ from: iso(from), to: iso(windowEnd) });
     return () => clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId, windowStart, windowEnd, !!sourceFn]);
@@ -593,7 +601,10 @@ export default function PlaybackPlayer({
   // Controlled + NVR replay: re-request the replay from the target ONLY on an explicit user
   // scrub (seekNonce bump), never on the auto-settled initial seekMs. The linear replay
   // can't random-seek the <video>; the initial session (from the load effect) plays as-is.
-  const lastNonceRef = useRef(0);
+  // Init to the mount-time nonce so a tile that mounts with a non-zero nonce (added into an
+  // already-scrubbed session) does NOT double-load — its initial load effect already pulled
+  // from the shared clock. Only a SUBSEQUENT bump (scrub / add-resync) re-pulls.
+  const lastNonceRef = useRef(seekNonce);
   useEffect(() => {
     if (!controlled || !sourceFn) return;
     if (seekNonce === lastNonceRef.current) return; // ignore the initial value / non-scrub renders
