@@ -30,6 +30,9 @@ services:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ../backend/core/app:/app/app
+      # Mount migrations too so newly-added Alembic revisions apply on restart
+      # (the start command runs `alembic upgrade` before uvicorn).
+      - ../backend/core/migrations:/app/migrations
     command: bash -c "alembic upgrade 0001 && alembic stamp head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"
 
   vision:
@@ -37,5 +40,6 @@ services:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ../backend/vision/app:/app/app
+      - ../backend/vision/migrations:/app/migrations
       - ../backend/kernel:/opt/kernel
     command: bash -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
