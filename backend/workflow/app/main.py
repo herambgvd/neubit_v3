@@ -48,6 +48,12 @@ async def lifespan(app: FastAPI):
     global _correlation, _notify
     await bus.connect()
     await bus.publish(subject(None, "workflow", "startup"), {"service": "workflow"})
+    # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
+    from kernel.lifecycle import subscribe_tenant_offboard
+
+    from app.db import database
+
+    await subscribe_tenant_offboard(bus, database, durable="workflow-offboard")
     inline = os.getenv("VE_WORKFLOW_INLINE_CORRELATION", "").lower() in ("1", "true", "yes")
     if inline:
         from app.workflow.correlation import CorrelationEngine

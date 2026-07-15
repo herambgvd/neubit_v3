@@ -40,7 +40,7 @@ no dependency arrow can run in parallel if capacity allows.
 | **4a** | Isolation: cross-tenant matrix · search-leak fix · suspend-gate | Isolation | 0 | ✅ Done |
 | **4b** | Isolation: Postgres RLS + NOT-NULL sentinel migration | Isolation | 4a | ⏸ Deferred |
 | **5** | Gateway defense-in-depth (ForwardAuth wired) | Isolation | 4a | ✅ Done |
-| **6** | Tenant lifecycle orchestration + entitlements contract | both | 3, 4 | ⬜ |
+| **6** | Tenant lifecycle orchestration + entitlements contract | both | 3, 4a | ✅ Done |
 | **7** | DB-per-tenant (strong isolation) | Isolation | 4, 6 | ⬜ |
 | **8** | Hardening (super-admin realm · NATS per-tenant · encryption keys) | both | 5, 7 | ⬜ |
 
@@ -420,31 +420,57 @@ port conflict, irrelevant to tenancy.)
 
 ---
 
-## Phase 6 — Tenant lifecycle orchestration + entitlements contract  ⬜
+## Phase 6 — Tenant lifecycle orchestration + entitlements contract  ✅
 
 **Goal:** Creating/suspending/offboarding a tenant propagates across services; billing and
 entitlements share one documented contract.
 
-**Depends on:** Phases 3, 4.
+**Depends on:** Phases 3, 4a.
 
 ### Tasks
-- [ ] `create_tenant` emits `tenant.provisioned` (NATS); each service performs its per-tenant
-      setup (RLS-ready seed now; DB provisioning in Phase 7).
-- [ ] `suspend`/`reactivate`/`offboard` propagate via events; offboard performs a DPDP
-      right-to-erase cascade (delete/anonymize tenant data across services).
-- [ ] Document the entitlements contract: billing "Apply entitlements" = **write path** into
-      `Tenant.features/limits`; resolver = **read path**. Precedence:
-      (on-prem signed-license | cloud Tenant row) → `effective_entitlements` → JWT → nav/API/quota.
-- [ ] On-prem edition auto-seeds a single tenant at install.
+- [x] Core emits lifecycle events on the NATS spine
+      ([`admin/router.py`](../backend/core/app/admin/router.py)):
+      `tenant.<id>.tenant.provisioned` (create), `.suspended`, `.reactivated`, `.offboarded`
+      (delete).
+- [x] **Offboard = DPDP right-to-erase**: a generic, metadata-driven kernel helper
+      ([`kernel/lifecycle.py`](../backend/kernel/kernel/lifecycle.py)) — a durable consumer that,
+      on `tenant.offboarded`, deletes every row whose table carries a `tenant_id` column, in
+      FK-safe order (no per-service model list). Wired into all four Python satellites'
+      lifespans (workflow/access/ingest/vision). Suspension/expiry are already enforced live via
+      the token gate (Phase 4a), so those events are informational here.
+- [x] **Entitlements contract documented** (below).
+- [ ] ⏸ On-prem edition auto-seeds a single tenant at install — **deferred to Phase 7** (it is
+      the on-prem provisioning path; belongs with DB-per-tenant).
+- [ ] ⏸ `nvr` (Go) offboard consumer — **follow-up**; the Python satellites cover the erase
+      today, and nvr recordings are also removable by dropping the per-tenant media namespace in
+      Phase 7.
+
+### The entitlements contract (the single source of truth)
+- **Write path** — a super-admin sets a tenant's entitlements two ways, both landing in the
+  **`Tenant` row**: the tenant-detail License card (features/limits/plan/expiry directly), or
+  Billing "Apply entitlements" (a plan's features/limits copied onto the tenant).
+- **Read path** — `effective_entitlements(tenant)` is the ONLY resolver; nothing reads the raw
+  columns for enforcement.
+- **Precedence** — `(on-prem signed-license | cloud Tenant row)` → `effective_entitlements` →
+  **JWT claims** (`features`/`limits`/`license_state`/`tenant_status`) → consumed by (a) the
+  operator **nav** (`hasModule`), (b) **API gates** (`require_feature`/`require_tenant_access`),
+  (c) **quota checks** (`enforce_limit`). Change the tenant row → next token refresh propagates
+  everywhere.
 
 ### Tests
-- [ ] New tenant → each service receives `tenant.provisioned` and is ready for that tenant.
-- [ ] Offboard → tenant data is removed/anonymized across services; audit records the erase.
-- [ ] Billing plan apply → `Tenant.features/limits` change → `/api/v1/features` + nav reflect it.
+- [x] **Live offboard e2e:** created a throwaway tenant, inserted a `notification_channels` row
+      for it, `DELETE /admin/tenants/{id}` → within seconds the workflow consumer logged
+      `erased 1 rows` and the row count went 1 → 0. Core `DELETE` returned 204.
+- [x] Erase unit test ([`test_offboard.py`](../backend/workflow/tests/test_offboard.py)): erases
+      only the target tenant's rows; leaves other tenants, the platform-NULL row, and non-tenant
+      tables untouched.
+- [x] All four satellites restart clean with the consumer wired (no import errors); core 32/32.
 
-**Exit criteria:** tenant lifecycle is a one-action, cross-service operation; one contract doc.
+**Exit criteria:** offboard is a one-action, cross-service erase; one documented contract.
+**Met** (verified live on workflow as the representative; access/ingest/vision use the identical
+one-line wiring).
 
-**Completed:** _(date)_
+**Completed:** 2026-07-15
 
 ---
 

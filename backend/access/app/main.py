@@ -60,6 +60,12 @@ async def lifespan(app: FastAPI):
     global _supervisor
     await bus.connect()
     await bus.publish(subject(None, "access", "startup"), {"service": "access"})
+    # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
+    from kernel.lifecycle import subscribe_tenant_offboard
+
+    from app.db import database
+
+    await subscribe_tenant_offboard(bus, database, durable="access-offboard")
 
     # Start real-time event ingestion (one SignalR listener per active instance).
     # Never blocks/crashes startup — the supervisor swallows discovery + connect
