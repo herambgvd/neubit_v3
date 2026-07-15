@@ -19,15 +19,19 @@ from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Principal, Scope, get_scope, require_permission
+from kernel.errors import AppError
 
 from app.db import get_db
 
 from .computations import REPORT_KINDS
 from .render import PdfUnavailable, to_csv, to_pdf
 from .schemas import (
+    ReportRunList,
+    ReportRunPublic,
     ReportScheduleCreate,
     ReportScheduleList,
     ReportSchedulePublic,
@@ -108,6 +112,72 @@ async def delete_schedule(
 ) -> Response:
     await svc.delete_schedule(sid)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── ReportRun history + download + run-now ───────────────────────────────
+
+
+@router.get(
+    "/report-schedules/{schedule_id}/runs",
+    response_model=ReportRunList,
+    dependencies=[Depends(require_permission(PERM_VIEW))],
+)
+async def list_schedule_runs(
+    schedule_id: str,
+    svc: Annotated[ReportService, Depends(get_report_service)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ReportRunList:
+    """This schedule's run history, newest-first (tenant-scoped; 404 if not owned)."""
+    rows = await svc.list_runs(schedule_id, limit=limit, offset=offset)
+    return ReportRunList(items=[ReportRunPublic.from_row(r) for r in rows], total=len(rows))
+
+
+@router.get(
+    "/report-schedules/{schedule_id}/runs/{run_id}/download",
+    dependencies=[Depends(require_permission(PERM_VIEW))],
+)
+async def download_schedule_run(
+    schedule_id: str,
+    run_id: str,
+    svc: Annotated[ReportService, Depends(get_report_service)],
+) -> FileResponse:
+    """Stream a persisted run's rendered artefact (csv/pdf/json). 404 if gone / not owned.
+
+    Mirrors the clip-export download: the service resolves the tenant-scoped path (404 on
+    missing/other-tenant/absent-file), and we return the file with the right media type +
+    a ``<name>-<kind>-<date>.<ext>`` download filename.
+    """
+    path, media_type, filename = await svc.resolve_run_download(schedule_id, run_id)
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@router.post(
+    "/report-schedules/{schedule_id}/run-now",
+    response_model=ReportRunPublic,
+    status_code=status.HTTP_201_CREATED,
+)
+async def run_schedule_now_endpoint(
+    schedule_id: str,
+    svc: Annotated[ReportService, Depends(get_report_service)],
+    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> ReportRunPublic:
+    """Fire a schedule IMMEDIATELY → its created ReportRun. Does NOT touch ``next_run_at``.
+
+    Delegates to the same reusable entrypoint the scheduler loop uses. A compute failure
+    still persists an ``error`` ReportRun (surfaced as the 201 body so the caller sees why);
+    only a total persist failure (no run at all) is a clean 500.
+    """
+    run = await svc.run_now(schedule_id)
+    if run is None:
+        # Even the error-row persist failed (very rare) — a clean 500, not a 404 (the
+        # schedule was found; producing/recording the run is what failed).
+        raise AppError(
+            "report run could not be produced",
+            code="REPORT_RUN_FAILED",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return ReportRunPublic.from_row(run)
 
 
 # ── ad-hoc report reads ──────────────────────────────────────────────────

@@ -105,3 +105,45 @@ class ReportSchedulePublic(BaseModel):
 class ReportScheduleList(BaseModel):
     items: list[ReportSchedulePublic]
     total: int
+
+
+class ReportRunPublic(BaseModel):
+    """One PERSISTED run in a schedule's history (the download rides a separate endpoint).
+
+    Deliberately OMITS ``output_path`` — the on-disk artefact location is internal; the
+    file is fetched via ``…/runs/{run_id}/download`` (tenant-scoped), never by raw path.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    schedule_id: Optional[str] = None
+    name: str
+    kind: str
+    export_format: str
+    window: dict[str, Any]
+    status: str
+    output_size: int = 0
+    error: Optional[str] = None
+    computed_at: datetime
+    notified_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, row) -> "ReportRunPublic":
+        return cls.model_validate({
+            "id": row.id,
+            "schedule_id": row.schedule_id,
+            "name": row.name,
+            "kind": row.kind,
+            "export_format": row.export_format,
+            "window": row.window or {},
+            "status": row.status,
+            "output_size": row.output_size,
+            "error": row.error,
+            "computed_at": row.computed_at,
+            "notified_at": row.notified_at,
+        })
+
+
+class ReportRunList(BaseModel):
+    items: list[ReportRunPublic]
+    total: int

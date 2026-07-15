@@ -261,3 +261,224 @@ async def test_scheduler_fires_and_notifies(db, seeded, monkeypatch):
     if nr.tzinfo is None:
         nr = nr.replace(tzinfo=timezone.utc)
     assert nr > _dt(9, 0)
+
+
+# ── persistence: ReportRun rows + on-disk artefacts ─────────────────────────────
+async def test_fire_persists_report_run_and_file(db, seeded, monkeypatch, tmp_path):
+    from app.vms.models import ReportRun
+    from app.vms.reports import scheduler as sched_mod
+
+    # Point the downloads volume at a temp dir so the artefact is written under it.
+    monkeypatch.setenv("VE_DOWNLOADS_DIR", str(tmp_path))
+    monkeypatch.setattr("app.vms.common.events.bus", _FakeBus())
+
+    row = ReportSchedule(
+        tenant_id=TENANT, name="Daily", kind="event-stats", cadence="daily",
+        export_format="csv", recipients=["ops@x.com"], channel="email", enabled=True,
+        hour_utc=6, next_run_at=_dt(8, 0),
+    )
+    db.add(row)
+    await db.commit()
+
+    sm = async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False)
+    fired = await sched_mod.ReportScheduler(sm).run_cycle(now=_dt(9, 0))
+    assert fired == 1
+
+    runs = (await db.execute(__import__("sqlalchemy").select(ReportRun))).scalars().all()
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.status == "done"
+    assert run.schedule_id == row.id
+    assert run.output_path and run.output_size > 0
+    assert run.notified_at is not None
+    # The file exists on disk with the recorded size.
+    import os
+
+    assert os.path.isfile(run.output_path)
+    assert os.path.getsize(run.output_path) == run.output_size
+    assert run.output_path.startswith(str(tmp_path))
+
+
+async def test_compute_error_persists_error_run(db, seeded, monkeypatch, tmp_path):
+    from app.vms.models import ReportRun
+    from app.vms.reports import scheduler as sched_mod
+
+    monkeypatch.setenv("VE_DOWNLOADS_DIR", str(tmp_path))
+    monkeypatch.setattr("app.vms.common.events.bus", _FakeBus())
+
+    # Force compute to blow up.
+    async def _boom(*a, **k):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(sched_mod, "compute_report", _boom)
+
+    row = ReportSchedule(
+        tenant_id=TENANT, name="Daily", kind="event-stats", cadence="daily",
+        export_format="csv", recipients=["ops@x.com"], channel="email", enabled=True,
+        hour_utc=6, next_run_at=_dt(8, 0),
+    )
+    db.add(row)
+    await db.commit()
+
+    sm = async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False)
+    fired = await sched_mod.ReportScheduler(sm).run_cycle(now=_dt(9, 0))
+    assert fired == 0  # a compute error does not count as fired
+
+    runs = (await db.execute(__import__("sqlalchemy").select(ReportRun))).scalars().all()
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.status == "error"
+    assert "kaboom" in (run.error or "")
+    assert run.output_path is None and run.output_size == 0
+    # The schedule recorded the error + advanced.
+    updated = await db.get(ReportSchedule, row.id)
+    await db.refresh(updated)
+    assert "kaboom" in (updated.last_error or "")
+
+
+async def test_render_once_bytes_reused_for_file_and_attachment(db, seeded):
+    from app.vms.reports import scheduler as sched_mod
+
+    scheduler = sched_mod.ReportScheduler(None)
+    report = await computations.compute_event_stats(db, _scope(), _dt(9, 0), _dt(12, 0), None)
+
+    data, mime, ext = scheduler._render_report("csv", report)
+    assert isinstance(data, bytes) and data
+    assert mime == "text/csv" and ext == "csv"
+
+    # The inline attachment base64 must decode back to the SAME bytes (small report).
+    att = scheduler._inline_attachment(
+        ReportSchedule(name="x", kind="event-stats", export_format="csv"), data, mime, ext
+    )["attachment"]
+    import base64 as _b64
+
+    assert att["truncated"] is False
+    assert _b64.b64decode(att["content_b64"]) == data
+
+
+async def test_inline_attachment_truncates_but_disk_keeps_full(db, seeded):
+    from app.vms.reports import scheduler as sched_mod
+
+    scheduler = sched_mod.ReportScheduler(None)
+    big = b"x" * (sched_mod._MAX_INLINE_BYTES + 500)
+    att = scheduler._inline_attachment(
+        ReportSchedule(name="x", kind="event-stats", export_format="csv"),
+        big, "text/csv", "csv",
+    )["attachment"]
+    import base64 as _b64
+
+    assert att["truncated"] is True
+    # Inline payload is capped; the full bytes are what get written to disk (len unchanged).
+    assert len(_b64.b64decode(att["content_b64"])) == sched_mod._MAX_INLINE_BYTES
+    assert len(big) > sched_mod._MAX_INLINE_BYTES
+
+
+# ── history + download + run-now (Task 2) ────────────────────────────────────────
+async def _make_schedule(db, tenant=TENANT, kind="event-stats"):
+    svc = ReportService(db, _scope(tenant))
+    return await svc.create_schedule(
+        ReportScheduleCreate(name="Daily", kind=kind, cadence="daily", export_format="csv"),
+        actor=_Actor(),
+    )
+
+
+async def test_run_now_creates_run_without_advancing_next_run(db, seeded, monkeypatch, tmp_path):
+    from app.vms.models import ReportRun
+
+    monkeypatch.setenv("VE_DOWNLOADS_DIR", str(tmp_path))
+    monkeypatch.setattr("app.vms.common.events.bus", _FakeBus())
+
+    sched = await _make_schedule(db)
+    before = sched.next_run_at
+
+    svc = ReportService(db, _scope())
+    run = await svc.run_now(sched.id)
+    assert run is not None
+    assert run.status == "done"
+    assert run.schedule_id == sched.id
+    assert run.tenant_id == TENANT
+    assert run.output_path and run.output_size > 0
+
+    # next_run_at is UNCHANGED (run-now must not touch schedule bookkeeping).
+    fresh = await db.get(ReportSchedule, sched.id)
+    await db.refresh(fresh)
+    assert fresh.next_run_at == before
+    assert fresh.run_count == 0  # run-now is not a scheduled fire
+
+    # The run is persisted + queryable via list_runs.
+    rows = await svc.list_runs(sched.id)
+    assert len(rows) == 1 and rows[0].id == run.id
+
+
+async def test_list_runs_scoped_to_schedule_and_tenant(db, seeded, monkeypatch, tmp_path):
+    monkeypatch.setenv("VE_DOWNLOADS_DIR", str(tmp_path))
+    monkeypatch.setattr("app.vms.common.events.bus", _FakeBus())
+
+    sched_a = await _make_schedule(db)
+    sched_b = await _make_schedule(db)
+    svc = ReportService(db, _scope())
+    await svc.run_now(sched_a.id)
+    await svc.run_now(sched_a.id)
+    await svc.run_now(sched_b.id)
+
+    # list_runs returns ONLY the requested schedule's runs.
+    runs_a = await svc.list_runs(sched_a.id)
+    assert len(runs_a) == 2 and all(r.schedule_id == sched_a.id for r in runs_a)
+    # newest-first.
+    assert runs_a[0].computed_at >= runs_a[1].computed_at
+
+    # Another tenant cannot enumerate this schedule's runs (404 on the schedule check).
+    with pytest.raises(NotFoundError):
+        await ReportService(db, _scope(OTHER)).list_runs(sched_a.id)
+
+
+async def test_run_download_resolves_file_and_404s(db, seeded, monkeypatch, tmp_path):
+    monkeypatch.setenv("VE_DOWNLOADS_DIR", str(tmp_path))
+    monkeypatch.setattr("app.vms.common.events.bus", _FakeBus())
+
+    sched = await _make_schedule(db)
+    svc = ReportService(db, _scope())
+    run = await svc.run_now(sched.id)
+
+    # Resolves to the on-disk artefact with a csv media type + sensible filename.
+    path, media_type, filename = await svc.resolve_run_download(sched.id, run.id)
+    import os
+
+    assert os.path.isfile(path)
+    assert media_type == "text/csv"
+    assert filename.endswith(".csv") and sched.kind in filename
+    # The bytes are the rendered report (non-empty CSV).
+    with open(path, "rb") as fh:
+        assert fh.read()
+
+    # A missing run → 404.
+    with pytest.raises(NotFoundError):
+        await svc.resolve_run_download(sched.id, "no-such-run")
+    # A run that belongs to ANOTHER schedule → 404 (not resolvable via this schedule).
+    other = await _make_schedule(db)
+    with pytest.raises(NotFoundError):
+        await svc.resolve_run_download(other.id, run.id)
+    # Another tenant → 404.
+    with pytest.raises(NotFoundError):
+        await ReportService(db, _scope(OTHER)).resolve_run_download(sched.id, run.id)
+
+
+async def test_run_download_404_when_file_absent(db, seeded, monkeypatch, tmp_path):
+    monkeypatch.setenv("VE_DOWNLOADS_DIR", str(tmp_path))
+    monkeypatch.setattr("app.vms.common.events.bus", _FakeBus())
+
+    sched = await _make_schedule(db)
+    svc = ReportService(db, _scope())
+    run = await svc.run_now(sched.id)
+
+    # Delete the artefact off disk → download 404s (mirrors export's vanished-file rule).
+    import os
+
+    os.remove(run.output_path)
+    with pytest.raises(NotFoundError):
+        await svc.resolve_run_download(sched.id, run.id)
+
+
+async def test_run_now_missing_schedule_404(db, seeded):
+    with pytest.raises(NotFoundError):
+        await ReportService(db, _scope()).run_now("no-such-schedule")
