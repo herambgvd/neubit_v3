@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kernel.auth import Principal, Scope, get_scope, require_permission
 
 from app.db import get_db
+from app.vms.common.core_audit import fire_and_forget_video_audit
+from app.vms.groups.acl import enforce_camera_privilege
 
 from .schemas import ExportJobPublic, ExportStartBody, ExportVerifyResult
 from .service import ExportService
@@ -53,8 +55,27 @@ async def start_export(
     svc: Annotated[ExportService, Depends(get_export_service)],
     actor: Principal = Depends(require_permission(PERM_EXPORT)),
 ) -> ExportJobPublic:
+    # Per-camera ACL: role gate passed; now the fine-grained export grant (if any).
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="export"
+    )
     row = await svc.create(
         camera_id, body.from_, body.to, body.format, actor=actor, watermark=body.watermark
+    )
+    # Tamper-evident trail: record WHO requested this evidence export (DPDP/GDPR). The
+    # job is created (access granted) before we audit, so we only trail real access.
+    # Fire-and-forget — the audit POST runs in the background, adding ZERO latency to
+    # (and never failing) the export response.
+    fire_and_forget_video_audit(
+        action="vms.export.request",
+        camera_id=camera_id,
+        principal=actor,
+        meta={
+            "from": body.from_.isoformat(),
+            "to": body.to.isoformat(),
+            "format": body.format,
+            "job_id": row.id,
+        },
     )
     return ExportJobPublic.from_row(row)
 

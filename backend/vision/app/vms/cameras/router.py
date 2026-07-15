@@ -33,6 +33,7 @@ from kernel.auth import Principal, Scope, get_scope, require_permission
 from kernel.auth import _bearer  # raw bearer credentials (forwarded to nvr for snapshot ensure)
 
 from app.db import get_db
+from app.vms.groups.acl import enforce_camera_privilege
 
 from app.vms.drivers import DriverError, PtzCommand
 from .schemas import (
@@ -303,13 +304,17 @@ async def ptz_camera(
 async def apply_stream_policy(
     camera_id: str,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
     force: bool = Query(False, description="Re-assert H.264 even if the sub stream is already H.264"),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> StreamPolicyResult:
     """Push the SUB (web-viewing) stream to H.264 at the device so live view plays with
     zero transcode. Graceful per brand (never 502) — the result envelope carries the
     outcome (applied / already_h264 / unsupported / unreachable / failed). The H.265→H.264
     transcode fallback stays as a safety net for devices that can't be reconfigured."""
+    # Per-camera ACL: reconfiguring the device stream codec is a config WRITE.
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return StreamPolicyResult(**await svc.apply_stream_policy(camera_id, force=force))
 
 
@@ -333,8 +338,12 @@ async def configure_imaging(
     camera_id: str,
     body: ImagingBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
+    # Per-camera ACL: device-config WRITE requires the fine-grained config grant (if any).
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     try:
         return ConfigResult(
             **await svc.configure(camera_id, "imaging", body.model_dump(exclude_none=True))
@@ -363,8 +372,11 @@ async def configure_io(
     camera_id: str,
     body: IoBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     try:
         return ConfigResult(**await svc.configure(camera_id, "io", body.model_dump()))
     except DriverError as exc:
@@ -392,8 +404,11 @@ async def configure_encoder(
     camera_id: str,
     body: EncoderBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     try:
         return ConfigResult(
             **await svc.configure(camera_id, "encoder", body.model_dump(exclude_none=True))
@@ -423,8 +438,11 @@ async def configure_osd(
     camera_id: str,
     body: OsdBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     try:
         return ConfigResult(
             **await svc.configure(camera_id, "osd", body.model_dump(exclude_none=True))
@@ -450,8 +468,11 @@ async def put_motion_config(
     camera_id: str,
     body: MotionConfigBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return ConfigResult(**await svc.put_local_config(camera_id, "motion_config", body.model_dump()))
 
 
@@ -472,8 +493,11 @@ async def put_privacy_masks(
     camera_id: str,
     body: PrivacyMasksBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return ConfigResult(**await svc.put_local_config(camera_id, "privacy_masks", body.masks))
 
 
@@ -494,8 +518,11 @@ async def put_motion_zones(
     camera_id: str,
     body: MotionZonesBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return ConfigResult(**await svc.put_local_config(camera_id, "motion_zones", body.zones))
 
 
@@ -516,8 +543,11 @@ async def put_onvif_events(
     camera_id: str,
     body: OnvifEventsBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONFIG)),
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
 ) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return ConfigResult(
         **await svc.put_local_config(camera_id, "onvif_events", body.model_dump())
     )

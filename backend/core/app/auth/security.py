@@ -100,6 +100,11 @@ def create_access_token(user, sid: str | None = None) -> str:
         "tenant_id": str(user.tenant_id) if getattr(user, "tenant_id", None) else None,
         "is_superadmin": bool(getattr(user, "is_superadmin", False)),
         "permissions": permissions,
+        # ``role_id`` is the caller's role id, baked in like ``permissions`` so a
+        # satellite service can resolve ROLE-subject per-camera ACL grants (keyed
+        # on core subject ids "role:<id>") without a round-trip to core. Super-admins
+        # may hold no role → None. Core itself ignores this claim.
+        "role_id": str(user.role_id) if getattr(user, "role_id", None) else None,
     }
     return _encode(user.id, "access", ttl, sid=sid, extra=extra)
 

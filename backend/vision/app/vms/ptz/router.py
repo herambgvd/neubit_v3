@@ -21,6 +21,7 @@ from kernel.auth import Principal, Scope, get_scope, require_permission
 
 from app.db import get_db
 from app.vms.drivers import DriverError
+from app.vms.groups.acl import enforce_camera_privilege
 
 from .schemas import (
     PatrolCreate,
@@ -60,8 +61,11 @@ async def ptz_move(
     camera_id: str,
     body: PtzMoveBody,
     svc: Annotated[PtzService, Depends(get_ptz_service)],
-    _actor: Principal = Depends(require_permission(PERM_PTZ)),
+    actor: Principal = Depends(require_permission(PERM_PTZ)),
 ) -> PtzResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="ptz"
+    )
     try:
         result = await svc.move(
             camera_id, mode=body.mode, pan=body.pan, tilt=body.tilt, zoom=body.zoom, speed=body.speed
@@ -75,8 +79,11 @@ async def ptz_move(
 async def ptz_stop(
     camera_id: str,
     svc: Annotated[PtzService, Depends(get_ptz_service)],
-    _actor: Principal = Depends(require_permission(PERM_PTZ)),
+    actor: Principal = Depends(require_permission(PERM_PTZ)),
 ) -> PtzResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="ptz"
+    )
     try:
         result = await svc.stop(camera_id)
     except DriverError as exc:
@@ -89,8 +96,11 @@ async def ptz_zoom(
     camera_id: str,
     body: PtzZoomBody,
     svc: Annotated[PtzService, Depends(get_ptz_service)],
-    _actor: Principal = Depends(require_permission(PERM_PTZ)),
+    actor: Principal = Depends(require_permission(PERM_PTZ)),
 ) -> PtzResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="ptz"
+    )
     try:
         result = await svc.zoom(camera_id, direction=body.direction, speed=body.speed)
     except DriverError as exc:
@@ -103,8 +113,11 @@ async def ptz_focus(
     camera_id: str,
     body: PtzFocusBody,
     svc: Annotated[PtzService, Depends(get_ptz_service)],
-    _actor: Principal = Depends(require_permission(PERM_PTZ)),
+    actor: Principal = Depends(require_permission(PERM_PTZ)),
 ) -> PtzResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="ptz"
+    )
     try:
         result = await svc.focus(camera_id, direction=body.direction, speed=body.speed)
     except DriverError as exc:

@@ -26,6 +26,8 @@ from kernel.auth import _bearer
 from kernel.errors import ValidationError
 
 from app.db import get_db
+from app.vms.common.core_audit import fire_and_forget_video_audit
+from app.vms.groups.acl import enforce_camera_privilege
 
 from .schemas import PlaybackStartBody, RecordedPlaybackPublic, TimelineResponse
 from .service import PlaybackService, day_window
@@ -60,15 +62,33 @@ async def start_playback(
     svc: Annotated[PlaybackService, Depends(get_playback_service)],
     actor: Principal = Depends(require_permission(PERM_VIEW)),
 ) -> RecordedPlaybackPublic:
-    return await svc.start_playback(
+    # Per-camera ACL: role gate passed; now the fine-grained playback grant (if any).
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="playback"
+    )
+    session = await svc.start_playback(
         camera_id, body.from_, body.to, body.profile, actor=actor
     )
+    # Tamper-evident trail: record WHO viewed this recorded window (DPDP/GDPR). The
+    # session is issued (access granted) before we audit, so we only trail real access.
+    # Fire-and-forget — the audit POST runs in the background, adding ZERO latency to
+    # (and never failing) the playback response.
+    fire_and_forget_video_audit(
+        action="vms.playback.view",
+        camera_id=camera_id,
+        principal=actor,
+        meta={
+            "from": body.from_.isoformat(),
+            "to": body.to.isoformat(),
+            "profile": body.profile,
+        },
+    )
+    return session
 
 
 @router.get(
     "/cameras/{camera_id}/timeline",
     response_model=TimelineResponse,
-    dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def get_timeline(
     camera_id: str,
@@ -77,8 +97,13 @@ async def get_timeline(
     from_: datetime | None = Query(None, alias="from"),
     to: datetime | None = Query(None),
     profile: str | None = Query(None, max_length=16),
+    actor: Principal = Depends(require_permission(PERM_VIEW)),
 ) -> TimelineResponse:
     """Coverage + gaps for a whole ``day`` OR an explicit ``from``/``to`` window."""
+    # Per-camera ACL: the scrub-bar exposes a camera's recording coverage → playback grant.
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="playback"
+    )
     if day:
         try:
             d = datetime.strptime(day, "%Y-%m-%d")
