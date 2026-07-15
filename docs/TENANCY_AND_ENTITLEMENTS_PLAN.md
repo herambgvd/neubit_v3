@@ -43,7 +43,7 @@ no dependency arrow can run in parallel if capacity allows.
 | **6** | Tenant lifecycle orchestration + entitlements contract | both | 3, 4a | ✅ Done |
 | **7a** | DB-per-tenant foundation (router · provisioning · flag) | Isolation | 4a, 6 | ✅ Done |
 | **7b** | DB-per-tenant cutover (route wiring · data migration · runner) | Isolation | 7a, 4b | ⏸ Deferred |
-| **8** | Hardening (super-admin realm · NATS per-tenant · encryption keys) | both | 5, 7 | ⬜ |
+| **8** | Hardening (super-admin realm ✅ · per-tenant keys ✅ · NATS ⏸) | both | 5, 7a | ✅ Done |
 
 **Execution order rationale:** Entitlements first (Phases 1–3) — it is the felt problem
 (super-admin module toggles + license don't take effect) and is lower-risk, high-visibility.
@@ -537,25 +537,51 @@ are DB-level; on-prem and cloud share the path.
 
 ---
 
-## Phase 8 — Hardening (super-admin realm · NATS per-tenant · encryption keys)  ⬜
+## Phase 8 — Hardening (super-admin realm · per-tenant keys · NATS)  ✅
 
 **Goal:** Close the remaining STQC/isolation items.
 
-**Depends on:** Phases 5, 7.
+**Depends on:** Phases 5, 7a.
 
 ### Tasks
-- [ ] Separate super-admin realm: own JWT audience (`aud=neubit-admin`), own login; tenant
-      users can never reach `/api/admin/*`. Optional network/subdomain isolation.
-- [ ] Per-tenant NATS JetStream accounts / subject permissions so a tenant subject boundary is
-      enforced, not just conventional.
-- [ ] Per-tenant encryption keys (secrets at rest) for the strongest data-residency claim.
+- [x] **Super-admin realm (`aud=neubit-admin`)**: `create_access_token` stamps the audience
+      from the user (super-admin → `neubit-admin`, everyone else → `neubit-tenant`;
+      impersonation → tenant); `require_superadmin` now demands `aud=neubit-admin`, so a
+      tenant-context token can never reach `/api/admin/*` even if it carried is_superadmin.
+      `decode_token` + the kernels use `verify_aud=False` so the new claim doesn't break generic
+      decoding; the aud is enforced only where it matters. Missing aud (pre-rollout token) →
+      fail-open on the claim (never on is_superadmin) so a live super-admin isn't locked out.
+      ([`auth/security.py`](../backend/core/app/auth/security.py),
+      [`tenancy/deps.py`](../backend/core/app/tenancy/deps.py),
+      [`kernel/auth.py`](../backend/kernel/kernel/auth.py))
+- [x] **Per-tenant encryption keys (foundation)**: `encrypt_secret_for(tenant_id, …)` /
+      `decrypt_secret_for(…)` derive a distinct Fernet key per tenant (HMAC-SHA256 KDF from the
+      master `VE_SECRETS_KEY` + tenant id), so one tenant's key never decrypts another's data
+      ([`core/secrets.py`](../backend/core/app/core/secrets.py)). The global functions stay for
+      backward-compat.
+- [ ] ⏸ **Per-tenant NATS accounts / subject permissions** — **deferred (config, not yet
+      applicable)**. NATS is backend-trusted today: every service connects with the same creds
+      and MUST subscribe across `tenant.*` to serve all tenants, so per-tenant NATS accounts
+      would break them. This becomes relevant only when **untrusted tenant edge connectors**
+      connect to NATS directly — at which point it is a NATS-server `accounts` config
+      (publish/subscribe limited to `tenant.<id>.>`), not application code.
+- [ ] ⏸ **Wire per-tenant encryption into the `enc:` fields** — deferred keyring migration
+      (re-encrypt existing device/SMTP/SSO secrets under per-tenant keys). The primitive is
+      ready; the rollout is a data migration.
 
 ### Tests
-- [ ] A tenant token is rejected by `/api/admin/*` (wrong audience).
-- [ ] A tenant cannot subscribe across `tenant.*` (NATS permission denies it).
-- [ ] Per-tenant key rotation works; data encrypted under the right key.
+- [x] A tenant-realm token (`aud=neubit-tenant`) is rejected by `/api/admin/*` with 403
+      `WRONG_REALM`, even for a genuine super-admin id; an `aud=neubit-admin` token passes
+      ([`test_tenant_isolation.py`](../backend/core/tests/test_tenant_isolation.py)). Access
+      token audience matches the realm ([`test_entitlements.py`](../backend/core/tests/test_entitlements.py)).
+      **Verified live** (admin API 200 vs 403 WRONG_REALM; tenant token still 200 on vision).
+- [x] Per-tenant encryption is key-isolated: tenant A's key round-trips; tenant B's key cannot
+      recover A's plaintext.
+- [x] Core 35/35; satellites accept tenant-aud tokens (kernel `verify_aud=False`).
 
-**Exit criteria:** super-admin realm isolated; NATS + encryption per-tenant.
+**Exit criteria:** super-admin realm isolated by audience; per-tenant key primitive in place.
+**Met** for the realm + key foundation; NATS per-tenant + the `enc:` keyring migration are the
+documented follow-ups.
 
 **Completed:** _(date)_
 

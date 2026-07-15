@@ -135,6 +135,39 @@ async def test_global_search_is_tenant_scoped(app, world):
         assert "b-user@x.io" in seen
 
 
+async def test_admin_api_requires_admin_realm(app, world):
+    """The /admin API demands the admin audience — a tenant-realm token is rejected
+    even for a genuine super-admin (Phase 8 realm isolation)."""
+    import datetime as dt
+
+    import jwt as _jwt
+
+    from app.core.config import get_settings
+
+    sa = world["sa"]
+    async with _client(app) as c:
+        # Correct realm (create_access_token stamps aud=neubit-admin for a super-admin).
+        ok = await c.get(f"{PREFIX}/admin/tenants", headers=_auth(sa))
+        assert ok.status_code == 200
+        # Same super-admin id, but a tenant-realm token → 403.
+        now = dt.datetime.now(dt.timezone.utc)
+        wrong = _jwt.encode(
+            {
+                "sub": str(sa.id),
+                "type": "access",
+                "aud": "neubit-tenant",
+                "iat": now,
+                "exp": now + dt.timedelta(hours=1),
+            },
+            get_settings().jwt_secret,
+            algorithm="HS256",
+        )
+        bad = await c.get(
+            f"{PREFIX}/admin/tenants", headers={"Authorization": f"Bearer {wrong}"}
+        )
+        assert bad.status_code == 403
+
+
 async def test_user_create_is_forced_into_actor_tenant(app, world, db):
     """A tenant-admin passing another tenant's id is IGNORED — the new user lands
     in the admin's own tenant (never cross-tenant provisioning)."""

@@ -165,3 +165,24 @@ async def test_access_token_defaults_to_empty_entitlements(db, admin_role):
     assert payload["limits"] == {}
     assert payload["license_state"] == "active"
     assert payload["tenant_status"] == "active"
+
+
+async def test_access_token_audience_matches_realm(db, admin_role):
+    """Super-admins get the admin realm audience; everyone else the tenant realm."""
+    superadmin = await make_user(db, "sa-aud@acme.com", admin_role, superadmin=True)
+    tenant_user = await make_user(db, "tu-aud@acme.com", admin_role)
+    assert decode_token(create_access_token(superadmin))["aud"] == "neubit-admin"
+    assert decode_token(create_access_token(tenant_user))["aud"] == "neubit-tenant"
+
+
+def test_per_tenant_encryption_is_key_isolated():
+    """A tenant's secret is encrypted under its OWN key — another tenant's key can't
+    recover it (Phase 8 per-tenant encryption keys)."""
+    from app.core.secrets import decrypt_secret_for, encrypt_secret_for
+
+    tenant_a = "11111111-1111-1111-1111-111111111111"
+    tenant_b = "22222222-2222-2222-2222-222222222222"
+    cipher = encrypt_secret_for(tenant_a, "smtp-password")
+
+    assert decrypt_secret_for(tenant_a, cipher) == "smtp-password"  # own key round-trips
+    assert decrypt_secret_for(tenant_b, cipher) != "smtp-password"  # B cannot decrypt A's

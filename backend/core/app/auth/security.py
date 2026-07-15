@@ -30,6 +30,14 @@ _ph = PasswordHasher()
 
 REFRESH_TTL = dt.timedelta(days=30)
 
+# Token audiences — the super-admin realm is isolated from tenant users at the token
+# level (STQC "separate realm"): a super-admin's access token is stamped
+# ``aud=neubit-admin`` and the /admin API demands it, so a tenant-context token
+# (``aud=neubit-tenant``) can never reach cross-tenant admin even if it somehow
+# carried is_superadmin. The audience is derived from the user at mint time.
+AUD_ADMIN = "neubit-admin"
+AUD_TENANT = "neubit-tenant"
+
 
 # --- Passwords -------------------------------------------------------------
 def hash_password(plaintext: str) -> str:
@@ -118,6 +126,9 @@ def create_access_token(
         "limits": dict(limits or {}),
         "license_state": license_state or "active",
         "tenant_status": tenant_status or "active",
+        # Realm isolation: super-admins get the admin audience, everyone else the
+        # tenant audience (impersonation mints a tenant-admin → tenant audience).
+        "aud": AUD_ADMIN if bool(getattr(user, "is_superadmin", False)) else AUD_TENANT,
     }
     return _encode(user.id, "access", ttl, sid=sid, extra=extra)
 
@@ -187,8 +198,15 @@ def generate_reset_token() -> tuple[str, str]:
 
 
 def decode_token(token: str) -> dict:
-    """Decode + verify signature/expiry. Raises jwt.PyJWTError on failure."""
-    return jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
+    """Decode + verify signature/expiry. Raises jwt.PyJWTError on failure.
+
+    ``verify_aud=False``: the ``aud`` claim is present on access tokens but is checked
+    explicitly where it matters (the /admin API demands ``neubit-admin``), so generic
+    decoding must not fail just because an audience is present.
+    """
+    return jwt.decode(
+        token, get_settings().jwt_secret, algorithms=["HS256"], options={"verify_aud": False}
+    )
 
 
 # --- API keys --------------------------------------------------------------

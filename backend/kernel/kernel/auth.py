@@ -98,7 +98,12 @@ def verify_token(token: str) -> Principal:
     Raises UnauthorizedError on any signature/expiry/type problem.
     """
     try:
-        payload = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
+        payload = jwt.decode(
+            token,
+            get_settings().jwt_secret,
+            algorithms=["HS256"],
+            options={"verify_aud": False},  # aud is checked by core's admin realm, not here
+        )
     except jwt.PyJWTError:
         raise UnauthorizedError("invalid or expired token")
     if payload.get("type") != "access":
