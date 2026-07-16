@@ -129,6 +129,8 @@ export const DEFAULT_CAMERA_FORM = {
   post_buffer_seconds: 5,
   anr_enabled: false,
   audio_enabled: false,
+  // recorder (media node) — "" = Auto / default node
+  media_node_id: "",
   // ptz
   ptz_capable: false,
   // placement

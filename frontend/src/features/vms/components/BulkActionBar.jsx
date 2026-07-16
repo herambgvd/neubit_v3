@@ -13,16 +13,18 @@ import { Button, Select } from "@/components/ui/kit";
 export default function BulkActionBar({
   count,
   groups = [],
+  nodes = [],
   onAction,
   onDeviceAction,
   canManageDevices = false,
   onClear,
   pending,
 }) {
-  // null | group | retention | device | ntp | password
+  // null | group | retention | node | device | ntp | password
   const [mode, setMode] = useState(null);
   const [groupId, setGroupId] = useState("");
   const [retention, setRetention] = useState(30);
+  const [nodeId, setNodeId] = useState(""); // "" = pick prompt; "__auto" = unassign
   const [ntpServer, setNtpServer] = useState("");
   const [pwUser, setPwUser] = useState("");
   const [pwNew, setPwNew] = useState("");
@@ -63,6 +65,30 @@ export default function BulkActionBar({
           />
           <span className="text-xs text-muted">days</span>
           <Button variant="primary" className="!px-2.5 !py-1.5 !text-xs" disabled={pending} onClick={() => onAction({ action: "retention", retention_days: Number(retention) })}>
+            Apply
+          </Button>
+          <Button variant="ghost" className="!px-2 !py-1.5 !text-xs" onClick={reset}>Cancel</Button>
+        </div>
+      ) : mode === "node" ? (
+        <div className="flex items-center gap-1.5">
+          <Select
+            value={nodeId}
+            onChange={(e) => setNodeId(e.target.value)}
+            options={[
+              { value: "", label: "Choose recorder…" },
+              { value: "__auto", label: "Unassign (Auto)" },
+              ...nodes.map((n) => ({ value: n.id, label: n.name })),
+            ]}
+            className="!h-8 !py-1 w-48"
+          />
+          <Button
+            variant="primary"
+            className="!px-2.5 !py-1.5 !text-xs"
+            disabled={!nodeId || pending}
+            onClick={() =>
+              onAction({ action: "assign_node", media_node_id: nodeId === "__auto" ? null : nodeId })
+            }
+          >
             Apply
           </Button>
           <Button variant="ghost" className="!px-2 !py-1.5 !text-xs" onClick={reset}>Cancel</Button>
@@ -120,6 +146,9 @@ export default function BulkActionBar({
           </Button>
           <Button variant="ghost" icon="heroicons-outline:clock" className="!px-2.5 !py-1.5 !text-xs" onClick={() => setMode("retention")}>
             Retention
+          </Button>
+          <Button variant="ghost" icon="heroicons:cpu-chip" className="!px-2.5 !py-1.5 !text-xs" onClick={() => setMode("node")}>
+            Recorder
           </Button>
           {canManageDevices && (
             <Button variant="ghost" icon="heroicons-outline:wrench-screwdriver" className="!px-2.5 !py-1.5 !text-xs" onClick={() => setMode("device")}>

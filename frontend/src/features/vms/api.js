@@ -243,6 +243,27 @@ export const vms = {
     refresh: (id) => unwrap(api.post(`${NVRS}/${id}/refresh`, {})),
   },
 
+  // ── Media nodes (recorders) — independent recorder machines ─────────────
+  // A MediaNode is a standalone recorder box (its own MediaMTX + storage) that
+  // cameras are pinned to via `media_node_id`; unassigned cameras record on the
+  // default/"Auto" node. Tenant-scoped. Public shape: { id, name, api_url,
+  // hls_base, webrtc_base, rtsp_base, label, capacity_channels, used_channels,
+  // status ("online"|"offline"|"draining"|"error"|"unknown"), last_heartbeat }.
+  //   GET    /vms/media-nodes → { items }
+  //   GET    /vms/media-nodes/{id} → node
+  //   POST   /vms/media-nodes { name, api_url, hls_base?, webrtc_base?, rtsp_base?,
+  //            label?, capacity_channels? } → node (may carry `warning` if the box
+  //            was unreachable at create time — saved anyway).
+  //   PATCH  /vms/media-nodes/{id} — any subset incl. status (allow "draining").
+  //   DELETE /vms/media-nodes/{id} — 409/400 with an error if cameras still assigned.
+  mediaNodes: {
+    list: (params = {}) => unwrap(api.get(`/vms/media-nodes${qs(params)}`)),
+    get: (id) => unwrap(api.get(`/vms/media-nodes/${id}`)),
+    create: (body) => unwrap(api.post("/vms/media-nodes", body)),
+    update: (id, body) => unwrap(api.patch(`/vms/media-nodes/${id}`, body)),
+    remove: (id) => unwrap(api.delete(`/vms/media-nodes/${id}`)),
+  },
+
   // Camera groups — a named set of cameras shown in a grid `layout`
   // ("1x1|2x2|3x3|4x3|4x4|6x4|6x5|6x6|8x8"). Groups are the unit a Pattern
   // rotates through on the video wall. Public shape: { id, name, description,

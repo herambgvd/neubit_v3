@@ -67,6 +67,9 @@ export const deviceTabs = [
   { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read" },
   { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read" },
   { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read" },
+  // Recorders = our own MediaNode registry (independent recorder machines cameras
+  // are pinned to). Distinct from NVR (3rd-party onboarded recorders).
+  { title: "Recorders", icon: "heroicons:cpu-chip", link: "/devices/recorders", perm: "neubit.read" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).
