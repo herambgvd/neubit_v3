@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-base text-gray-200 antialiased;
+  margin: 0;
+}
+
+/* Slim, dark scrollbars so long lists feel native to the control-room theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #26262b transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #26262b;
+  border-radius: 4px;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-1 focus:ring-accent/60 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent-dim;
+  }
+  .btn-ghost {
+    @apply btn border border-border bg-transparent text-gray-300 hover:bg-elevated;
+  }
+  .input {
+    @apply w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-gray-100 placeholder:text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40;
+  }
+  .card {
+    @apply rounded-lg border border-border bg-surface;
+  }
+}

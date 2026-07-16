@@ -1,0 +1,10 @@
+# Node deps + local build caches.
+node_modules/
+.vite/
+*.local
+
+# The repo-root .gitignore excludes dist/ globally, but the box-served UI's built
+# dist/ MUST be committed so `go:embed dist` always has a working UI to embed.
+# Re-include it (and its contents) here.
+!dist/
+!dist/**

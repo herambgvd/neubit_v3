@@ -40,6 +40,7 @@ import (
 	"github.com/neubit/nvr/internal/sqlitestore"
 	"github.com/neubit/nvr/internal/streams"
 	"github.com/neubit/nvr/internal/supervisor"
+	"github.com/neubit/nvr/webui"
 )
 
 const serviceName = "nvr"
@@ -400,6 +401,15 @@ func runSQLiteNode(runCtx, bootCtx context.Context, cfg *config.Settings) {
 				})
 		})
 	})
+
+	// --- Box-served web UI (embedded static SPA) --------------------------------
+	// Only in autonomous-node mode does this binary also serve the operator console:
+	// the built Vite/React SPA is embedded (webui.Handler) and mounted at the site
+	// root with an index.html SPA fallback. It is registered AFTER the /api/v1/nvr
+	// routes + public /health above, so those keep their handlers and only unmatched
+	// (client-side route) paths fall through to the UI. The postgres boot in main()
+	// never mounts it — central mode has no box-local UI.
+	r.Mount("/", webui.Handler())
 
 	addr := ":" + strconv.Itoa(cfg.Port)
 	log.Printf("listening on %s (env=%s, store=sqlite)", addr, cfg.Env)
