@@ -35,4 +35,14 @@ type Store interface {
 	// GetNodeIdentity returns the single node_identity row, or ErrNotFound if the
 	// node has not been bootstrapped yet.
 	GetNodeIdentity(ctx context.Context) (NodeIdentity, error)
+
+	// --- local users + sessions (Task 3.1) ---
+	CreateLocalUser(ctx context.Context, u LocalUser) error
+	GetLocalUserByName(ctx context.Context, username string) (LocalUser, error)
+	GetLocalUserByID(ctx context.Context, id string) (LocalUser, error)
+	CountLocalUsers(ctx context.Context) (int, error)
+	UpdateLocalUser(ctx context.Context, u LocalUser) error
+	CreateSession(ctx context.Context, s LocalSession) error
+	GetSessionByTokenHash(ctx context.Context, tokenHash string) (LocalSession, error)
+	RevokeSession(ctx context.Context, id string) error
 }

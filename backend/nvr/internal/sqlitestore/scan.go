@@ -14,6 +14,17 @@ import (
 // rfc renders a time as RFC3339 UTC TEXT.
 func rfc(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
+// nowUTC is the store's clock (second precision matches the RFC3339 TEXT format).
+func nowUTC() time.Time { return time.Now().UTC() }
+
+// b2i maps a bool to SQLite's INTEGER 0/1 boolean representation.
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // nullRFC renders a nullable timestamp as a query arg (nil → SQL NULL).
 func nullRFC(t *time.Time) any {
 	if t == nil {
