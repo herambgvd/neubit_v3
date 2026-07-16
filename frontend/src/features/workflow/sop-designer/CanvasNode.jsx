@@ -19,7 +19,7 @@ export default function CanvasNode({ state, selected, onPointerDown, onPointerUp
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onDoubleClick={(e) => { e.stopPropagation(); onEdit(); }}
-      className="absolute rounded-xl border bg-card shadow-sm transition-shadow"
+      className="absolute rounded-xl border bg-card shadow-sm transition-shadow pointer-events-auto"
       style={{
         left: state.position_x ?? 0,
         top: state.position_y ?? 0,
