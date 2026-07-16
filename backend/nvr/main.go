@@ -31,7 +31,9 @@ import (
 	"github.com/neubit/gokernel/httpx"
 
 	"github.com/neubit/nvr/internal/anr"
+	"github.com/neubit/nvr/internal/estate"
 	"github.com/neubit/nvr/internal/identity"
+	"github.com/neubit/nvr/internal/localauth"
 	"github.com/neubit/nvr/internal/mediamtx"
 	"github.com/neubit/nvr/internal/playback"
 	"github.com/neubit/nvr/internal/recording"
@@ -328,45 +330,68 @@ func runSQLiteNode(runCtx, bootCtx context.Context, cfg *config.Settings) {
 		_ = bus.Publish(events.Subject(nil, serviceName, "startup"), map[string]any{"service": serviceName, "mode": "node"})
 	}
 
+	// --- Local auth (standalone-console login over the node's own users) --------
+	// The estate API authenticates local sessions through this service; it also
+	// backs the /estate/auth/login|logout endpoints in a later stage.
+	localAuth := localauth.NewService(nodeStore, localauth.Config{})
+
 	// --- HTTP: chi + shared middleware; /health public, /api/v1/nvr JWT-gated ----
 	verifier := auth.NewVerifier(cfg.JWTSecret)
 	r := httpx.NewRouter(cfg)
 	httpx.Health(r, serviceName, cfg.Env)
 
 	r.Route(cfg.APIPrefix+"/nvr", func(api chi.Router) {
-		api.Use(httpx.RequireAuth(verifier))
-		api.Use(httpx.RequireFeature("vms"))
-		api.Use(httpx.RequireActiveLicense())
-
-		api.Get("/whoami", func(w http.ResponseWriter, req *http.Request) {
-			p, ok := httpx.MustPrincipal(w, req)
-			if !ok {
-				return
-			}
-			var tid any
-			if p.TenantID != nil {
-				tid = p.TenantID.String()
-			}
-			httpx.JSON(w, http.StatusOK, map[string]any{
-				"user_id":       p.UserID.String(),
-				"tenant_id":     tid,
-				"is_superadmin": p.IsSuperadmin,
-				"permissions":   p.Permissions,
-				"service":       serviceName,
-			})
+		// Estate management API (/api/v1/nvr/estate/*) — node-authoritative CRUD over
+		// the embedded SQLite estate, behind its OWN dual-mode auth (local session /
+		// central JWT / node credential; estate.Mount adds the /estate prefix and
+		// applies localauth.Authenticate). Mounted here, OUTSIDE the central-JWT
+		// Group below, so a standalone local session (no central token) can drive it.
+		// This whole path only exists in sqlite mode; the postgres boot in main()
+		// never reaches it.
+		estate.Mount(api, &estate.Deps{
+			DB:       nodeStore,
+			Auth:     localAuth,
+			NodeName: res.Identity.Name,
 		})
 
-		api.With(httpx.RequirePermission("vms.camera.read")).
-			Get("/status", func(w http.ResponseWriter, _ *http.Request) {
+		// The existing internal /nvr/* endpoints stay gated by the central JWT +
+		// vms feature/license, scoped to this Group so the estate mount above is
+		// unaffected.
+		api.Group(func(api chi.Router) {
+			api.Use(httpx.RequireAuth(verifier))
+			api.Use(httpx.RequireFeature("vms"))
+			api.Use(httpx.RequireActiveLicense())
+
+			api.Get("/whoami", func(w http.ResponseWriter, req *http.Request) {
+				p, ok := httpx.MustPrincipal(w, req)
+				if !ok {
+					return
+				}
+				var tid any
+				if p.TenantID != nil {
+					tid = p.TenantID.String()
+				}
 				httpx.JSON(w, http.StatusOK, map[string]any{
-					"service": serviceName,
-					"plane":   "data",
-					"phase":   "node-agent-core",
-					"store":   "sqlite",
-					"nats":    bus.IsConnected(),
-					"node":    res.Identity.ID,
+					"user_id":       p.UserID.String(),
+					"tenant_id":     tid,
+					"is_superadmin": p.IsSuperadmin,
+					"permissions":   p.Permissions,
+					"service":       serviceName,
 				})
 			})
+
+			api.With(httpx.RequirePermission("vms.camera.read")).
+				Get("/status", func(w http.ResponseWriter, _ *http.Request) {
+					httpx.JSON(w, http.StatusOK, map[string]any{
+						"service": serviceName,
+						"plane":   "data",
+						"phase":   "node-agent-core",
+						"store":   "sqlite",
+						"nats":    bus.IsConnected(),
+						"node":    res.Identity.ID,
+					})
+				})
+		})
 	})
 
 	addr := ":" + strconv.Itoa(cfg.Port)
