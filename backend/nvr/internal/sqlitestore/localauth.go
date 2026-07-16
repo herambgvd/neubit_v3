@@ -77,6 +77,27 @@ func (d *DB) CountLocalUsers(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// ListLocalUsers returns every standalone-console account, oldest first (stable
+// order for the admin management screen).
+func (d *DB) ListLocalUsers(ctx context.Context) ([]store.LocalUser, error) {
+	rows, err := d.ro.QueryContext(ctx,
+		`SELECT `+localUserCols+` FROM local_users ORDER BY created_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]store.LocalUser, 0)
+	for rows.Next() {
+		u, err := d.scanLocalUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // UpdateLocalUser writes mutable fields (login bookkeeping, role, active, password).
 func (d *DB) UpdateLocalUser(ctx context.Context, u store.LocalUser) error {
 	res, err := d.rw.ExecContext(ctx, `
@@ -89,6 +110,19 @@ func (d *DB) UpdateLocalUser(ctx context.Context, u store.LocalUser) error {
 		u.FailedLoginCount, nullRFC(u.LockedUntil), b2i(u.MustChangePassword), nullRFC(u.LastLoginAt),
 		rfc(u.UpdatedAt), u.ID,
 	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+// DeleteLocalUser removes an account (its sessions cascade). ErrNotFound if the
+// id is unknown.
+func (d *DB) DeleteLocalUser(ctx context.Context, id string) error {
+	res, err := d.rw.ExecContext(ctx, `DELETE FROM local_users WHERE id=?`, id)
 	if err != nil {
 		return err
 	}

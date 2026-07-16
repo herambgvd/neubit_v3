@@ -32,12 +32,21 @@ type Deps struct {
 func Mount(r chi.Router, d *Deps) {
 	auth := localauth.NewAuthenticator(d.Auth, nil, d.DB)
 	r.Route("/estate", func(rr chi.Router) {
-		rr.Use(auth.Authenticate)
-		mountNode(rr, d)
-		mountCameras(rr, d)
-		mountNvrs(rr, d)
-		mountRecording(rr, d)
-		mountStorage(rr, d)
-		mountPtz(rr, d)
+		// Local login/logout precede a session (login) or only need the raw bearer
+		// to revoke (logout), so they sit OUTSIDE the dual-mode Authenticate gate.
+		mountAuthPublic(rr, d)
+
+		// Everything else requires an authenticated caller (local session / central
+		// JWT / node credential).
+		rr.Group(func(g chi.Router) {
+			g.Use(auth.Authenticate)
+			mountNode(g, d)
+			mountAuth(g, d) // /local-users management (admin local role only)
+			mountCameras(g, d)
+			mountNvrs(g, d)
+			mountRecording(g, d)
+			mountStorage(g, d)
+			mountPtz(g, d)
+		})
 	})
 }
