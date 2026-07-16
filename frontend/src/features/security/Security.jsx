@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 
-import { EmptyState, PageHeader } from "@/components/ui/kit";
+import { EmptyState } from "@/components/ui/kit";
 import { useAuth } from "@/lib/auth";
 import PolicyCard from "./components/PolicyCard";
 import DirectoryCard from "./components/DirectoryCard";
@@ -32,11 +32,6 @@ export default function SecurityPage() {
 
   return (
     <div className="pb-8">
-      <PageHeader
-        title="Security"
-        subtitle="Enterprise authentication & governance — 2FA enforcement, directory & SSO integration, and four-eyes approvals."
-      />
-
       {/* Personal 2FA pointer — enrollment lives in My account. */}
       <div className="mb-4 flex items-center gap-3 rounded-xl border border-card-border bg-card px-4 py-3">
         <Icon icon="heroicons-outline:device-phone-mobile" className="text-lg text-muted" />

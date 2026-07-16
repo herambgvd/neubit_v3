@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { Button, PageHeader, Spinner } from "@/components/ui/kit";
+import { Button, Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import BrandingEditor from "./components/BrandingEditor";
 import BrandingPreview from "./components/BrandingPreview";
@@ -64,7 +64,6 @@ export default function BrandingPage() {
   if (branding.isLoading) {
     return (
       <div>
-        <PageHeader title="Branding" subtitle="White-label the look of your deployment." />
         <div className="flex justify-center py-16">
           <Spinner />
         </div>
@@ -74,19 +73,15 @@ export default function BrandingPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Branding"
-        subtitle="White-label the app name, colors, and logo shown to your users."
-        actions={
-          <Button
-            icon="heroicons-outline:check"
-            disabled={save.isPending}
-            onClick={() => save.mutate(form)}
-          >
-            {save.isPending ? "Saving…" : "Save"}
-          </Button>
-        }
-      />
+      <div className="mb-4 flex items-center justify-end">
+        <Button
+          icon="heroicons-outline:check"
+          disabled={save.isPending}
+          onClick={() => save.mutate(form)}
+        >
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <BrandingEditor

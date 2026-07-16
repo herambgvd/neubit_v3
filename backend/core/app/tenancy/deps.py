@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.deps import get_current_user
 from ..auth.models import User
-from ..auth.security import decode_token
+from ..auth.security import AUD_ADMIN, decode_token
 from ..core.config import get_settings
 from ..core.errors import ForbiddenError
 from ..db.base import get_db
@@ -25,8 +25,17 @@ from ..db.base import get_db
 _optional_bearer = HTTPBearer(auto_error=False)
 
 
-async def require_superadmin(user: User = Depends(get_current_user)) -> User:
+async def require_superadmin(
+    user: User = Depends(get_current_user),
+    cred: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
+) -> User:
     """Allow only platform super-admins through (403 otherwise).
+
+    Realm isolation (STQC): beyond ``is_superadmin`` on the live row, the token must
+    carry the admin audience (``aud=neubit-admin``) — a tenant-context token can never
+    reach the cross-tenant admin API even if it somehow carried is_superadmin. The
+    audience is stamped at mint time from the user, so a genuine super-admin login
+    always satisfies it.
 
     Optional hardening: when ``VE_REQUIRE_SUPERADMIN_2FA`` is on, a super-admin must
     have TOTP 2FA enrolled — otherwise they get 403 SUPERADMIN_2FA_REQUIRED and must
@@ -35,6 +44,16 @@ async def require_superadmin(user: User = Depends(get_current_user)) -> User:
     """
     if not user.is_superadmin:
         raise ForbiddenError("super-admin privileges required")
+    # Enforce the admin audience. Tokens minted before this rollout carry no aud →
+    # treated as admin-realm for a genuine super-admin (fail-open on the claim only,
+    # never on is_superadmin) so a live super-admin isn't locked out mid-session.
+    if cred is not None:
+        try:
+            aud = decode_token(cred.credentials).get("aud")
+        except jwt.PyJWTError:
+            aud = None
+        if aud is not None and aud != AUD_ADMIN:
+            raise ForbiddenError("wrong token realm for the admin API", code="WRONG_REALM")
     if get_settings().require_superadmin_2fa and not getattr(user, "totp_enabled", False):
         raise ForbiddenError(
             "2FA is required for super-admins — enrol via /auth/me/2fa before continuing",

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
 
 import { adminApi, apiError } from "@/lib/api";
+import { Card, PageHeader, Skeleton } from "@/components/ui";
 
 export default function ProfilePage() {
   const { data, isLoading, isError, error } = useQuery({
@@ -13,42 +14,41 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-lg">
-      <h1 className="text-xl font-semibold tracking-tight text-white">Profile</h1>
-      <p className="mt-1 text-sm text-slate-400">Your super-admin account.</p>
+      <PageHeader title="Profile" description="Your super-admin account." />
 
-      <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+      <Card className="p-6">
         {isLoading ? (
-          <div className="h-24 animate-pulse rounded-lg bg-white/5" />
+          <Skeleton className="h-24 rounded-lg" />
         ) : isError ? (
-          <p className="text-sm text-red-300">{apiError(error, "Could not load profile")}</p>
+          <p className="text-sm text-danger">{apiError(error, "Could not load profile")}</p>
         ) : (
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-lg font-bold text-black">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-foreground text-lg font-bold text-background">
                 {(data?.full_name || data?.email || "?").slice(0, 1).toUpperCase()}
               </div>
               <div>
-                <div className="text-lg font-semibold text-white">{data?.full_name || "—"}</div>
-                <div className="text-sm text-slate-400">{data?.email}</div>
+                <div className="text-lg font-semibold text-foreground">{data?.full_name || "—"}</div>
+                <div className="text-sm text-muted">{data?.email}</div>
               </div>
             </div>
-            <div className="flex items-center gap-2 rounded-lg border border-cyan-400/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">
+            <div className="flex items-center gap-2 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-accent">
               <ShieldCheck className="h-4 w-4" />
               Platform super-admin — full cross-tenant access.
             </div>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">Role</dt>
-                <dd className="text-slate-200">{data?.role?.name || "—"}</dd>
+                <dt className="text-xs uppercase tracking-wide text-muted">Role</dt>
+                <dd className="text-foreground">{data?.role?.name || "—"}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">Status</dt>
-                <dd className="text-slate-200">{data?.is_active ? "Active" : "Disabled"}</dd>
+                <dt className="text-xs uppercase tracking-wide text-muted">Status</dt>
+                <dd className="text-foreground">{data?.is_active ? "Active" : "Disabled"}</dd>
               </div>
             </dl>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

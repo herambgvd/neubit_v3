@@ -17,6 +17,8 @@ import {
   isDevicesRoute,
   STREAMING_ENTRY,
   isStreamingRoute,
+  tabsForSection,
+  firstEnabledLink,
 } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/components/theme";
@@ -152,11 +154,30 @@ function NotificationsBell() {
 // Config section entry (jumps into the Config sub-tab bar). Sits inline after the
 // logo (neubit_v2 arrangement); active state is a soft pill so it reads cleanly on a
 // single header row.
-function NavEntry({ item, pathname }) {
+function NavEntry({ item, pathname, locked, sectionHref }) {
   const pill = (active) =>
     `flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] transition ${
       active ? "bg-hover text-foreground font-medium" : "text-muted hover:text-foreground hover:bg-hover"
     }`;
+
+  // Module not licensed for this tenant — shown but LOCKED: greyed, a lock icon, and
+  // an "access denied" toast on click (never navigates). Discoverable, not hidden.
+  if (locked && !item.disabled) {
+    return (
+      <button
+        type="button"
+        title="Not enabled for your organization"
+        onClick={() =>
+          toast.error(`Access denied — “${item.title}” isn't enabled for your organization`)
+        }
+        className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] text-muted/40 cursor-not-allowed select-none"
+      >
+        <Icon icon={item.icon} className="text-base shrink-0" />
+        {item.title}
+        <Icon icon="heroicons-outline:lock-closed" className="text-xs shrink-0" />
+      </button>
+    );
+  }
 
   // Feature not built yet — greyed, non-interactive, with a "Soon" pill.
   if (item.disabled) {
@@ -175,30 +196,30 @@ function NavEntry({ item, pathname }) {
     );
   }
 
-  // Config section: link to the first config tab; active across the whole section.
+  // Config section: opens the FIRST tab the caller can actually use (not a locked one).
   if (item.section === "config") {
     return (
-      <Link href={CONFIG_ENTRY} className={pill(isConfigRoute(pathname))}>
+      <Link href={sectionHref || CONFIG_ENTRY} className={pill(isConfigRoute(pathname))}>
         <Icon icon={item.icon} className="text-base shrink-0" />
         {item.title}
       </Link>
     );
   }
 
-  // Devices section: link to the first device tab; active across the whole section.
+  // Devices section: jump to the first usable device tab (skips locked ones).
   if (item.section === "devices") {
     return (
-      <Link href={DEVICES_ENTRY} className={pill(isDevicesRoute(pathname))}>
+      <Link href={sectionHref || DEVICES_ENTRY} className={pill(isDevicesRoute(pathname))}>
         <Icon icon={item.icon} className="text-base shrink-0" />
         {item.title}
       </Link>
     );
   }
 
-  // Streaming section: link to the video wall; active across the whole section.
+  // Streaming section: jump to the first usable stream tab.
   if (item.section === "streaming") {
     return (
-      <Link href={STREAMING_ENTRY} className={pill(isStreamingRoute(pathname))}>
+      <Link href={sectionHref || STREAMING_ENTRY} className={pill(isStreamingRoute(pathname))}>
         <Icon icon={item.icon} className="text-base shrink-0" />
         {item.title}
       </Link>
@@ -216,7 +237,7 @@ function NavEntry({ item, pathname }) {
 }
 
 export default function Header() {
-  const { user, logout, can, reload } = useAuth();
+  const { user, logout, can, hasModule, reload } = useAuth();
   const { theme, toggle } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
@@ -245,7 +266,9 @@ export default function Header() {
   // Close it on navigation.
   useEffect(() => setOpenUser(false), [pathname]);
 
-  // Disabled placeholders + the Config section always show; real links are perm-gated.
+  // Visibility is by PERMISSION only (+ "Soon" placeholders). Module licensing does
+  // NOT hide an item — an unlicensed module renders LOCKED (see NavEntry) so operators
+  // can see what their plan could unlock and get an "access denied" toast on click.
   const items = menuItems.filter((m) => m.disabled || m.section || !m.perm || can(m.perm));
   const displayName = user?.full_name || user?.email;
 
@@ -295,7 +318,21 @@ export default function Header() {
               The Config section opens the sub-tab bar below the header. */}
           <nav className="nav-scroll flex items-center justify-center gap-1 min-w-0 overflow-x-auto">
             {items.map((m) => (
-              <NavEntry key={m.title} item={m} pathname={pathname} />
+              <NavEntry
+                key={m.title}
+                item={m}
+                pathname={pathname}
+                locked={!!m.module && !hasModule(m.module)}
+                sectionHref={
+                  m.section
+                    ? firstEnabledLink(tabsForSection(m.section), {
+                        can,
+                        hasModule,
+                        isSuperadmin: !!user?.is_superadmin,
+                      })
+                    : undefined
+                }
+              />
             ))}
           </nav>
 

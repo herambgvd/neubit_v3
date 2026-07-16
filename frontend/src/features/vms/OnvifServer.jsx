@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Input, PageHeader, Toggle } from "@/components/ui/kit";
+import { Button, Input, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -120,17 +120,13 @@ export default function OnvifServerPage() {
 
   return (
     <div className="pb-8">
-      <PageHeader
-        title="External Access"
-        subtitle="Expose your cameras to external systems (Milestone, Genetec, a city command center, …) over ONVIF Profile S. This node acts as an ONVIF device other VMS can discover and pull."
-        actions={
-          canManage && (
-            <Button variant="primary" icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
-              {save.isPending ? "Saving…" : "Save changes"}
-            </Button>
-          )
-        }
-      />
+      <div className="mb-4 flex items-center justify-end">
+        {canManage && (
+          <Button variant="primary" icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        )}
+      </div>
 
       {/* Status banner */}
       <div

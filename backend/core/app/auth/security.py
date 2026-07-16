@@ -30,6 +30,14 @@ _ph = PasswordHasher()
 
 REFRESH_TTL = dt.timedelta(days=30)
 
+# Token audiences — the super-admin realm is isolated from tenant users at the token
+# level (STQC "separate realm"): a super-admin's access token is stamped
+# ``aud=neubit-admin`` and the /admin API demands it, so a tenant-context token
+# (``aud=neubit-tenant``) can never reach cross-tenant admin even if it somehow
+# carried is_superadmin. The audience is derived from the user at mint time.
+AUD_ADMIN = "neubit-admin"
+AUD_TENANT = "neubit-tenant"
+
 
 # --- Passwords -------------------------------------------------------------
 def hash_password(plaintext: str) -> str:
@@ -75,7 +83,15 @@ def _encode(
     return jwt.encode(payload, get_settings().jwt_secret, algorithm="HS256")
 
 
-def create_access_token(user, sid: str | None = None) -> str:
+def create_access_token(
+    user,
+    sid: str | None = None,
+    *,
+    features: dict | None = None,
+    limits: dict | None = None,
+    license_state: str | None = None,
+    tenant_status: str | None = None,
+) -> str:
     ttl = dt.timedelta(minutes=get_settings().jwt_ttl_minutes)
     # Multi-tenancy claims: which tenant the caller is scoped to (None for
     # super-admins) and whether they hold the platform super-admin role. These
@@ -89,6 +105,12 @@ def create_access_token(user, sid: str | None = None) -> str:
     # gets their role's permission set. Core itself ignores this claim — it still
     # loads permissions fresh from the role each request (deps.require_permission),
     # so the additive claim never changes core's own behaviour.
+    #
+    # ``features``/``limits`` are the caller's tenant entitlements (empty for
+    # super-admins, who bypass), baked in for the same reason: a satellite service
+    # gates modules + quotas locally off the token. They are resolved by the caller
+    # (auth service / impersonation) via tenancy.entitlements.token_entitlements and
+    # passed in here — security.py stays DB-free.
     role = getattr(user, "role", None)
     if bool(getattr(user, "is_superadmin", False)):
         permissions = ["*"]
@@ -105,6 +127,13 @@ def create_access_token(user, sid: str | None = None) -> str:
         # on core subject ids "role:<id>") without a round-trip to core. Super-admins
         # may hold no role → None. Core itself ignores this claim.
         "role_id": str(user.role_id) if getattr(user, "role_id", None) else None,
+        "features": dict(features or {}),
+        "limits": dict(limits or {}),
+        "license_state": license_state or "active",
+        "tenant_status": tenant_status or "active",
+        # Realm isolation: super-admins get the admin audience, everyone else the
+        # tenant audience (impersonation mints a tenant-admin → tenant audience).
+        "aud": AUD_ADMIN if bool(getattr(user, "is_superadmin", False)) else AUD_TENANT,
     }
     return _encode(user.id, "access", ttl, sid=sid, extra=extra)
 
@@ -174,8 +203,15 @@ def generate_reset_token() -> tuple[str, str]:
 
 
 def decode_token(token: str) -> dict:
-    """Decode + verify signature/expiry. Raises jwt.PyJWTError on failure."""
-    return jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
+    """Decode + verify signature/expiry. Raises jwt.PyJWTError on failure.
+
+    ``verify_aud=False``: the ``aud`` claim is present on access tokens but is checked
+    explicitly where it matters (the /admin API demands ``neubit-admin``), so generic
+    decoding must not fail just because an audience is present.
+    """
+    return jwt.decode(
+        token, get_settings().jwt_secret, algorithms=["HS256"], options={"verify_aud": False}
+    )
 
 
 # --- API keys --------------------------------------------------------------

@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Card, ConfirmDialog, PageHeader, Spinner, Table } from "@/components/ui/kit";
+import { Button, Card, ConfirmDialog, Spinner, Table } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { buildApiKeyColumns } from "./components/ApiKeyColumns";
 import CreateApiKeyModal from "./components/CreateApiKeyModal";
@@ -78,11 +78,9 @@ export default function ApiKeysPage() {
 
   return (
     <div>
-      <PageHeader
-        title="API Keys"
-        subtitle="Programmatic access tokens for the inference API and integrations."
-        actions={<Button variant="success" icon="heroicons-outline:plus" onClick={() => setOpen(true)}>Create key</Button>}
-      />
+      <div className="mb-4 flex items-center justify-end">
+        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOpen(true)}>Create key</Button>
+      </div>
       <Card className="p-2">
         {keys.isLoading ? (
           <div className="flex justify-center py-16">

@@ -19,7 +19,14 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from kernel.auth import Principal, Scope, get_principal, get_scope
+from kernel.auth import (
+    Principal,
+    Scope,
+    get_principal,
+    get_scope,
+    require_active_license,
+    require_feature,
+)
 from kernel.config import get_settings
 from kernel.errors import register_error_handlers
 from kernel.events import subject
@@ -41,6 +48,13 @@ async def lifespan(app: FastAPI):
     global _correlation, _notify
     await bus.connect()
     await bus.publish(subject(None, "workflow", "startup"), {"service": "workflow"})
+    # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
+    from kernel.lifecycle import subscribe_tenant_offboard, subscribe_tenant_provisioned
+
+    from app.db import database
+
+    await subscribe_tenant_provisioned(bus, database, durable="workflow-provision")
+    await subscribe_tenant_offboard(bus, database, durable="workflow-offboard")
     inline = os.getenv("VE_WORKFLOW_INLINE_CORRELATION", "").lower() in ("1", "true", "yes")
     if inline:
         from app.workflow.correlation import CorrelationEngine
@@ -98,9 +112,11 @@ def create_app() -> FastAPI:
             "is_platform": scope.is_platform,
         }
 
-    # Mount the workflow REST API under the service api_prefix.
+    # Mount the workflow REST API under the service api_prefix, gated by the tenant's
+    # "workflow" module + an unexpired license (super-admins bypass).
+    workflow_gate = [Depends(require_feature("workflow")), Depends(require_active_license())]
     for r in workflow_routers:
-        app.include_router(r, prefix=settings.api_prefix)
+        app.include_router(r, prefix=settings.api_prefix, dependencies=workflow_gate)
 
     return app
 

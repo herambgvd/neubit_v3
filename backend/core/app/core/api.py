@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -214,7 +214,11 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(LicenseEnforcementMiddleware, allow_prefixes=allow_prefixes)
+    # Global license-expiry gate — on-prem/single-tenant only. In the cloud
+    # multi-tenant edition each tenant is gated per-request (kernel
+    # require_active_license), so this is disabled via VE_LICENSE_ENFORCE_GLOBAL=false.
+    if settings.license_enforce_global:
+        app.add_middleware(LicenseEnforcementMiddleware, allow_prefixes=allow_prefixes)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         GlobalRateLimitMiddleware,
@@ -237,6 +241,32 @@ def create_app(
     def metrics():
         return metrics_response()
 
+    # --- Gateway ForwardAuth target (internal; never routed to externally) --
+    # Traefik's forward-auth middleware calls this per request. It is an INJECTOR,
+    # not an enforcer: it always returns 200 and, only when a VALID access token is
+    # present, emits the trusted identity headers Traefik injects downstream
+    # (strip-identity removes any client-supplied ones first). It never rejects — so
+    # public routes (login, webhooks) still pass — and authoritative enforcement
+    # stays in each service's own JWT verification (JWT = authority, header = hint).
+    @app.get("/internal/auth/verify", include_in_schema=False)
+    def internal_auth_verify(request: Request):
+        from ..auth.security import decode_token
+
+        resp = Response(status_code=200)
+        header = request.headers.get("Authorization", "")
+        if header[:7].lower() == "bearer ":
+            try:
+                payload = decode_token(header[7:])
+                if payload.get("type") == "access":
+                    resp.headers["X-User-Id"] = str(payload.get("sub", ""))
+                    tid = payload.get("tenant_id")
+                    if tid:
+                        resp.headers["X-Tenant-Id"] = str(tid)
+                    resp.headers["X-Permissions"] = ",".join(payload.get("permissions") or [])
+            except Exception:
+                pass  # invalid/expired token → no headers; the service will 401 if protected
+        return resp
+
     # --- Versioned API (everything under settings.api_prefix) -------------
     for r in extra_routers:  # always-on: auth, licensing, audit, system, ...
         app.include_router(r, prefix=prefix)
@@ -246,16 +276,24 @@ def create_app(
         app.include_router(spec.router, prefix=f"{prefix}/modules/{spec.id}", tags=[spec.name])
     log.info("mounted modules: %s", [s.id for s in enabled])
 
-    @app.get(f"{prefix}/features", tags=["platform"])
-    def features() -> dict:
-        """Frontend calls this on load to build its nav from enabled modules."""
-        return {
-            "client": license.client,
-            "expires_at": license.expires_at.isoformat() if license.expires_at else None,
-            "modules": [spec.nav for spec in enabled],
-            "limits": {} if license._dev else license.limits,
-            "features": {} if license._dev else license.features,
-        }
+    # Legacy signed-license /features — the FALLBACK for on-prem/single-tenant
+    # scenario apps that carry no tenant-aware endpoint. The multi-tenant core
+    # registers its own tenant-aware /features (tenancy.entitlements.router) via
+    # extra_routers, which is included BEFORE this and therefore wins; so only add
+    # this signed-license version when nothing has claimed the path yet.
+    features_path = f"{prefix}/features"
+    if not any(getattr(r, "path", None) == features_path for r in app.routes):
+
+        @app.get(features_path, tags=["platform"])
+        def features() -> dict:
+            """Frontend calls this on load to build its nav from enabled modules."""
+            return {
+                "client": license.client,
+                "expires_at": license.expires_at.isoformat() if license.expires_at else None,
+                "modules": [spec.nav for spec in enabled],
+                "limits": {} if license._dev else license.limits,
+                "features": {} if license._dev else license.features,
+            }
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)
     def index() -> str:

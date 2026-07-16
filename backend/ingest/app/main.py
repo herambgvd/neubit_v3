@@ -16,7 +16,14 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from kernel.auth import Principal, Scope, get_principal, get_scope
+from kernel.auth import (
+    Principal,
+    Scope,
+    get_principal,
+    get_scope,
+    require_active_license,
+    require_feature,
+)
 from kernel.config import get_settings
 from kernel.errors import register_error_handlers
 from kernel.events import EventBus, subject
@@ -35,6 +42,13 @@ async def lifespan(app: FastAPI):
     await bus.connect()
     # Announce the service came up on the platform namespace (harmless if NATS off).
     await bus.publish(subject(None, "ingest", "startup"), {"service": "ingest"})
+    # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
+    from kernel.lifecycle import subscribe_tenant_offboard, subscribe_tenant_provisioned
+
+    from app.db import database
+
+    await subscribe_tenant_provisioned(bus, database, durable="ingest-provision")
+    await subscribe_tenant_offboard(bus, database, durable="ingest-offboard")
     yield
     await bus.close()
 
@@ -75,9 +89,17 @@ def create_app() -> FastAPI:
 
     # Give the authed router the live event bus (its replay endpoint re-publishes).
     bind_event_bus(bus)
-    # Authed config API (category + webhook CRUD) under the versioned prefix.
-    app.include_router(config_router, prefix=settings.api_prefix)
-    # PUBLIC receiver — NO JWT; mounted at the root so the URL is /ingest/hooks/{token}.
+    # Authed config API (category + webhook CRUD) under the versioned prefix — gated
+    # by the tenant's "workflow" module (ingest belongs to the workflow context) + an
+    # unexpired license (super-admins bypass).
+    app.include_router(
+        config_router,
+        prefix=settings.api_prefix,
+        dependencies=[Depends(require_feature("workflow")), Depends(require_active_license())],
+    )
+    # PUBLIC receiver — NO JWT (per-webhook secret auth), so it is NOT feature-gated
+    # here: a device POST carries no principal. Tenant/entitlement enforcement for
+    # inbound events belongs on the webhook row, not this route.
     app.include_router(build_public_router(bus))
 
     return app

@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-prod"
     jwt_ttl_minutes: int = 60 * 12
 
+    # --- Refresh token cookie (httpOnly hardening) -------------------------
+    # The refresh token is delivered as an httpOnly cookie so JavaScript (and
+    # therefore XSS) can never read it. The short-lived access token stays in the
+    # SPA's memory and is sent as a Bearer header. See app/auth/cookies.py.
+    refresh_cookie_name: str = "nb_refresh"
+    # "lax" is correct when the admin UI and API share an origin (recommended).
+    # Use "none" only for a cross-site setup — it then also requires Secure.
+    refresh_cookie_samesite: str = "lax"
+    # Secure flag. Off in dev (plain HTTP); force on outside dev, or override.
+    refresh_cookie_secure: bool | None = None
+
     # Key used to derive the Fernet cipher that encrypts integration secrets
     # (SMTP / FCM / S3 credentials) stored in the DB. Rotate to re-key.
     secrets_key: str = "change-me-secret"
@@ -81,6 +92,13 @@ class Settings(BaseSettings):
     license_token_file: str | None = None
     license_public_key: str | None = None
     license_public_key_file: str | None = "license_pub.pem"
+    # Global (whole-deployment) license expiry enforcement — the single-tenant /
+    # on-prem model where one signed license gates the entire app. In the CLOUD
+    # multi-tenant edition each tenant is gated per-request instead (kernel
+    # require_active_license + per-tenant license_state), so turn this OFF there
+    # (VE_LICENSE_ENFORCE_GLOBAL=false) to avoid a global license blocking all
+    # tenants. Defaults True to preserve on-prem behaviour.
+    license_enforce_global: bool = True
 
     # --- Object storage (logos, exports, snapshots, clips) -----------------
     # Public base URL of the frontend — used to build links inside emails

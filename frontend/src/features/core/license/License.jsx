@@ -7,9 +7,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { PageHeader, Spinner } from "@/components/ui/kit";
+import { Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import LicenseOverview from "./components/LicenseOverview";
+import TenantEntitlements from "./components/TenantEntitlements";
 import UpdateLicensePanel from "./components/UpdateLicensePanel";
 
 export default function LicensePage() {
@@ -34,12 +35,11 @@ export default function LicensePage() {
   const lic = license.data;
 
   return (
-    <div>
-      <PageHeader
-        title="License"
-        subtitle="Review your license status and apply renewals."
-      />
+    <div className="space-y-6">
+      {/* The tenant's own plan/modules/limits (multi-tenant). */}
+      <TenantEntitlements />
 
+      {/* The platform / on-prem signed license (renew here). */}
       {license.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner />

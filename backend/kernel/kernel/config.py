@@ -27,6 +27,13 @@ class Settings(BaseSettings):
 
     # --- Databases (this service's OWN db) ---------------------------------
     database_url: str = "postgresql+asyncpg://neubit:neubit@localhost:5432/neubit"
+    # DB-per-tenant (strong isolation, ARCHITECTURE.md §10). OFF = the shared-DB +
+    # tenant_id row-scoping model (today's default; on-prem is naturally one tenant).
+    # ON = each tenant's operational data lives in its OWN physical database
+    # (``<base>_t_<tenant_hex>``): requests route by the JWT tenant claim, provisioning
+    # creates the DB, offboard drops it. Flipping this is a DELIBERATE cutover (needs a
+    # data migration of existing tenants) — never a hot toggle on a populated stack.
+    db_per_tenant: bool = False
     # Redis — Celery broker/result backend + realtime pub/sub.
     redis_url: str = "redis://localhost:6379/0"
     # NATS + JetStream event spine. Empty = events are no-ops (standalone).

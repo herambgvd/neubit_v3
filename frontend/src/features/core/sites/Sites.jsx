@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, PageHeader, Spinner } from "@/components/ui/kit";
+import { ConfirmDialog, Spinner } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
@@ -84,50 +84,48 @@ export default function SitesConfigPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const listStatus = (
-    <div className="flex items-center gap-3 text-xs">
-      <span className="flex items-center gap-1">
-        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-        <span className="text-muted">{active}</span>
-      </span>
-      <span className="flex items-center gap-1">
-        <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
-        <span className="text-muted">{inactive}</span>
-      </span>
+  const listActions = (
+    <div className="flex items-center gap-1">
+      <Link
+        href="/map"
+        title="Map view"
+        className="inline-flex h-7 items-center gap-1 rounded-md border border-card-border px-2 text-[12px] font-medium text-foreground transition hover:bg-hover"
+      >
+        <Icon icon="heroicons-outline:map" className="text-sm" /> Map
+      </Link>
+      <button
+        onClick={() => setMode("create")}
+        title="Add site"
+        className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+      >
+        <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+      </button>
     </div>
   );
 
   return (
     <div>
-      <PageHeader
-        title="Sites"
-        subtitle="Manage physical locations, floors and security zones."
-        actions={
-          <div className="flex items-center gap-2">
-            <Link
-              href="/map"
-              className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
-            >
-              <Icon icon="heroicons-outline:map" className="text-base" />
-              Map view
-            </Link>
-            <Button variant="success" icon="heroicons-outline:plus" onClick={() => setMode("create")}>
-              Add site
-            </Button>
-          </div>
-        }
-      />
-
       <MasterDetail
         aside={
           <ListPanel
             title="Sites"
             count={total}
-            action={listStatus}
+            action={listActions}
             search={q}
             onSearch={setQ}
             searchPlaceholder="Search by name or city…"
           >
+            <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                <span className="text-muted">{active} active</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
+                <span className="text-muted">{inactive} inactive</span>
+              </span>
+            </div>
+
             {sitesQ.isLoading ? (
               <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted">
                 <Spinner className="!h-4 !w-4" /> Loading…

@@ -17,11 +17,13 @@ export default function CategoryList({
   onSelect,
   catId,
   suppressSelected = false,
+  action,
 }) {
   return (
     <ListPanel
       title="Categories"
       count={total}
+      action={action}
       search={search}
       onSearch={onSearch}
       searchPlaceholder="Search categories…"

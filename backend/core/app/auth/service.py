@@ -148,7 +148,16 @@ class AuthService:
             )
         )
         await self.db.commit()
-        return create_access_token(user, sid=str(jti)), create_refresh_token(user, str(jti))
+        from ..tenancy.entitlements import token_entitlements
+
+        features, limits, license_state, tenant_status = await token_entitlements(self.db, user)
+        return (
+            create_access_token(
+                user, sid=str(jti), features=features, limits=limits,
+                license_state=license_state, tenant_status=tenant_status,
+            ),
+            create_refresh_token(user, str(jti)),
+        )
 
     async def refresh_access(self, refresh_token: str) -> str:
         try:
@@ -167,7 +176,13 @@ class AuthService:
         # Touch the session so "last active" stays fresh in the sessions list.
         row.last_used_at = _now()
         await self.db.commit()
-        return create_access_token(user, sid=str(row.id))
+        from ..tenancy.entitlements import token_entitlements
+
+        features, limits, license_state, tenant_status = await token_entitlements(self.db, user)
+        return create_access_token(
+            user, sid=str(row.id), features=features, limits=limits,
+            license_state=license_state, tenant_status=tenant_status,
+        )
 
     async def logout(self, refresh_token: str) -> None:
         """Revoke a single refresh token (idempotent; silently ignores bad tokens)."""

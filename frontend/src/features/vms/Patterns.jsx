@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, PageHeader } from "@/components/ui/kit";
+import { ConfirmDialog } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail, TabBar } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
@@ -146,16 +146,6 @@ export default function Patterns() {
 
   return (
     <div>
-      <PageHeader
-        title="Patterns"
-        subtitle="Define camera-group layouts and rotating patterns to play on the streaming video wall."
-        actions={
-          <Button variant="success" icon="heroicons-outline:plus" onClick={openCreate}>
-            {isPatternTab ? "New pattern" : "New camera group"}
-          </Button>
-        }
-      />
-
       <div className="mb-4">
         <TabBar tabs={TABS} active={tab} onChange={switchTab} />
       </div>
@@ -170,13 +160,22 @@ export default function Patterns() {
             onSearch={setSearch}
             searchPlaceholder={isPatternTab ? "Search patterns…" : "Search groups…"}
             action={
-              <button
-                onClick={invalidateActive}
-                title="Refresh"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
-              >
-                <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={invalidateActive}
+                  title="Refresh"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+                >
+                  <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
+                </button>
+                <button
+                  onClick={openCreate}
+                  title={isPatternTab ? "New pattern" : "New camera group"}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+                >
+                  <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+                </button>
+              </div>
             }
           >
             <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
@@ -198,12 +197,27 @@ export default function Patterns() {
             ) : listError ? (
               <div className="px-4 py-6 text-center text-xs text-red-500">{apiError(listError, "Failed to load")}</div>
             ) : filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-muted">
-                {items.length === 0
-                  ? isPatternTab
-                    ? "No patterns yet — click New pattern to create one."
-                    : "No camera groups yet — click New camera group to create one."
-                  : "No matches."}
+              <div className="px-4 py-12 text-center">
+                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
+                  <Icon
+                    icon={isPatternTab ? "heroicons:squares-2x2" : "heroicons-outline:video-camera"}
+                    className="text-lg text-muted"
+                  />
+                </div>
+                <div className="text-sm font-medium text-foreground">
+                  {search.trim()
+                    ? "No matches"
+                    : isPatternTab
+                      ? "No patterns yet"
+                      : "No camera groups yet"}
+                </div>
+                <div className="mt-0.5 text-xs text-muted">
+                  {search.trim()
+                    ? "Try a different keyword."
+                    : isPatternTab
+                      ? "Click Add to create your first pattern."
+                      : "Click Add to create your first camera group."}
+                </div>
               </div>
             ) : (
               <div className="space-y-0.5 px-2 py-2">

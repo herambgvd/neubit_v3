@@ -38,12 +38,25 @@ http:
         average: 100
         burst: 200
 
-    # Chain applied to all /api/* routes except the public auth endpoints.
+    # Chain for the SATELLITE services (workflow/access/vision/nvr/ingest). Strips any
+    # client identity headers, then forward-auth injects the trusted X-Tenant-Id/etc.
+    # from a valid token (it never rejects — public sub-paths like the ingest webhook
+    # still pass; the kernel cross-checks the injected header against the JWT).
     api-protected:
       chain:
         middlewares:
           - strip-identity
           - forward-auth
+          - sec-headers
+          - rate-limit
+
+    # Chain for CORE itself: strip-identity + hardening, but NO forward-auth — core is
+    # the auth target (avoid the self-hop + it self-verifies every request anyway), and
+    # its routers mix public (login/branding) with protected paths.
+    core-protected:
+      chain:
+        middlewares:
+          - strip-identity
           - sec-headers
           - rate-limit
 

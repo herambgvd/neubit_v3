@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { PageHeader, Spinner } from "@/components/ui/kit";
+import { Spinner } from "@/components/ui/kit";
 import { api } from "@/lib/api";
 import TemplateCard from "./components/TemplateCard";
 import PreviewModal from "./components/PreviewModal";
@@ -24,11 +24,6 @@ export default function EmailTemplatesPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Email Templates"
-        subtitle="Customize the transactional emails your platform sends, or revert them to defaults."
-      />
-
       {templates.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner />

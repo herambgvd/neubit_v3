@@ -22,7 +22,14 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from kernel.auth import Principal, Scope, get_principal, get_scope
+from kernel.auth import (
+    Principal,
+    Scope,
+    get_principal,
+    get_scope,
+    require_active_license,
+    require_feature,
+)
 from kernel.config import get_settings
 from kernel.errors import register_error_handlers
 from kernel.events import subject
@@ -58,6 +65,13 @@ async def lifespan(app: FastAPI):
     await bus.connect()
     # Announce startup on the same spine the Python + Go services use.
     await bus.publish(subject(None, "vms", "startup"), {"service": "vision"})
+    # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
+    from kernel.lifecycle import subscribe_tenant_offboard, subscribe_tenant_provisioned
+
+    from app.db import database
+
+    await subscribe_tenant_provisioned(bus, database, durable="vision-provision")
+    await subscribe_tenant_offboard(bus, database, durable="vision-offboard")
     # Background reachability sampler (all tenants): keeps camera/NVR status live +
     # writes the CameraHealth time-series + auto-purges it. Its own DB session per
     # cycle; bounded concurrency; graceful-on-unreachable (won't crash the app).
@@ -233,8 +247,13 @@ def create_app() -> FastAPI:
     # VMS REST routers (P1-D: camera onboarding — CRUD, ONVIF discovery/probe/
     # channels/bulk-add/snapshot, config sub-resources, groups + ACL). NVR
     # onboarding mounts alongside in P1-E.
+    # Every VMS route is gated by the tenant's "vms" module + an unexpired license
+    # (super-admins bypass both). Module off → 403 FEATURE_DISABLED; past-grace
+    # license → 403 LICENSE_EXPIRED. The ONVIF SOAP server below is NOT gated here
+    # (it authenticates by WS-Security, not the kernel JWT).
+    vms_gate = [Depends(require_feature("vms")), Depends(require_active_license())]
     for r in vms_routers:
-        app.include_router(r, prefix=settings.api_prefix)
+        app.include_router(r, prefix=settings.api_prefix, dependencies=vms_gate)
 
     # P6-C ONVIF SOAP server — mounted at the app ROOT (NOT under api_prefix): external
     # ONVIF clients hit ``http://<host>/onvif/device_service`` etc. Auth is WS-Security

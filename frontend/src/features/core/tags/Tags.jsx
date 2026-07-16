@@ -11,7 +11,7 @@ import { toast } from "sonner";
 
 import { Icon } from "@iconify/react";
 
-import { Button, ConfirmDialog, PageHeader } from "@/components/ui/kit";
+import { ConfirmDialog } from "@/components/ui/kit";
 import { MasterDetail, ListPanel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { tags as tagsApi } from "@/lib/api/tags";
@@ -62,23 +62,6 @@ export default function TagsConfigPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Tags"
-        subtitle="Color-coded labels you can attach across sites, zones and more."
-        actions={
-          <Button
-            variant="success"
-            icon="heroicons-outline:plus"
-            onClick={() => {
-              setSelectedId(null);
-              setMode("create");
-            }}
-          >
-            Add tag
-          </Button>
-        }
-      />
-
       <MasterDetail
         aside={
           <ListPanel
@@ -87,6 +70,18 @@ export default function TagsConfigPage() {
             search={q}
             onSearch={setQ}
             searchPlaceholder="Search tags…"
+            action={
+              <button
+                onClick={() => {
+                  setSelectedId(null);
+                  setMode("create");
+                }}
+                title="Add tag"
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+              >
+                <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+              </button>
+            }
           >
             <TagList
               items={filtered}

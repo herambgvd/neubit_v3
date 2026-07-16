@@ -16,6 +16,17 @@ module.exports = {
         muted: "var(--muted)",
         hover: "var(--hover)",
         field: "var(--field-border)",
+        accent: {
+          DEFAULT: "var(--accent)",
+          foreground: "var(--accent-foreground)",
+          hover: "var(--accent-hover)",
+        },
+        success: "var(--success)",
+        warning: "var(--warning)",
+        danger: {
+          DEFAULT: "var(--danger)",
+          foreground: "var(--danger-foreground)",
+        },
       },
     },
   },
