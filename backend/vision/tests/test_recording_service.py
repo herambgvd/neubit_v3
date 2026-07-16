@@ -24,7 +24,7 @@ from kernel.errors import NotFoundError
 
 from app.db import Base
 from app.vms.common.nvr_client import NvrUnavailable
-from app.vms.models import Camera, MediaProfile, Recording
+from app.vms.models import Camera, MediaNode, MediaProfile, Recording
 from app.vms.recording.service import RecordingService, RecordingUpstreamError
 from app.vms.recording.scheduler import window_open
 
@@ -40,12 +40,13 @@ class _Body:
     """Minimal RecordingConfigBody-shaped object for set_config."""
 
     def __init__(self, mode="continuous", schedule=None, retention_days=30,
-                 record_substream=False, audio_enabled=False):
+                 record_substream=False, audio_enabled=False, storage_pool_id=None):
         self.mode = mode
         self.schedule = schedule or {}
         self.retention_days = retention_days
         self.record_substream = record_substream
         self.audio_enabled = audio_enabled
+        self.storage_pool_id = storage_pool_id
 
 
 class _StubNvr:
@@ -56,7 +57,7 @@ class _StubNvr:
         self.started: list[dict] = []
         self.stopped: list[tuple[str, str]] = []
 
-    async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous", audio=False):
+    async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous", audio=False, record_dir=None):
         self.started.append(
             {"camera_id": camera_id, "profile": profile, "rtsp_url": rtsp_url,
              "trigger": trigger, "audio": audio}
@@ -154,6 +155,61 @@ async def test_persist_segment_dedupes_by_path(db, camera):
 async def test_persist_segment_missing_path_is_noop(db, camera):
     svc = _svc(db, _StubNvr())
     assert await svc.persist_segment(str(TENANT), {"camera_id": camera.id}) is None
+
+
+# ── footage locality: media_node_id stamping (MN-4) ─────────────────────────
+
+
+async def test_persist_segment_stamps_media_node_from_camera_current_node(db):
+    """A segment is stamped with the camera's CURRENT media_node_id (no payload node)."""
+    node = MediaNode(
+        id=str(uuid.uuid4()), tenant_id=TENANT, name="node-A", host="recorder-a",
+        api_url="http://recorder-a:8000", status="online",
+    )
+    db.add(node)
+    cam = Camera(
+        id=str(uuid.uuid4()), tenant_id=TENANT, name="NodeCam",
+        connection_type="rtsp", onvif_user="admin", media_node_id=node.id,
+    )
+    db.add(cam)
+    await db.commit()
+
+    svc = _svc(db, _StubNvr())
+    payload = {
+        "camera_id": cam.id, "profile": "main",
+        "path": f"/recordings/{cam.id}/main/seg-1.mp4",
+        "start": "2026-07-09T10:00:00+00:00", "size": 1, "duration": 60,
+    }
+    rec_id = await svc.persist_segment(str(TENANT), payload)
+    row = await db.get(Recording, rec_id)
+    assert row.media_node_id == node.id
+
+
+async def test_persist_segment_prefers_payload_node_id_over_camera(db, camera):
+    """An explicit ``media_node_id`` in the segment event wins over the camera's node."""
+    payload_node = str(uuid.uuid4())
+    svc = _svc(db, _StubNvr())
+    payload = {
+        "camera_id": camera.id, "profile": "main", "media_node_id": payload_node,
+        "path": f"/recordings/{camera.id}/main/seg-payload.mp4",
+        "start": "2026-07-09T10:00:00+00:00", "size": 1, "duration": 60,
+    }
+    rec_id = await svc.persist_segment(str(TENANT), payload)
+    row = await db.get(Recording, rec_id)
+    assert row.media_node_id == payload_node
+
+
+async def test_persist_segment_null_media_node_when_unassigned(db, camera):
+    """A camera with no media_node_id + no payload node → media_node_id stays NULL."""
+    svc = _svc(db, _StubNvr())
+    payload = {
+        "camera_id": camera.id, "profile": "main",
+        "path": f"/recordings/{camera.id}/main/seg-null.mp4",
+        "start": "2026-07-09T10:00:00+00:00", "size": 1, "duration": 60,
+    }
+    rec_id = await svc.persist_segment(str(TENANT), payload)
+    row = await db.get(Recording, rec_id)
+    assert row.media_node_id is None
 
 
 # ── recording-config PUT drives the nvr ────────────────────────────────────
@@ -294,7 +350,7 @@ async def test_scheduler_toggles_on_window_boundary(db, camera, monkeypatch):
         def __init__(self, *, bearer=None):
             pass
 
-        async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous", audio=False):
+        async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous", audio=False, record_dir=None):
             calls["start"].append((camera_id, trigger))
             return {}
 

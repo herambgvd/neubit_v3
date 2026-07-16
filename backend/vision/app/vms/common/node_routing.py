@@ -57,9 +57,38 @@ async def node_base_for_camera(
         if not node_id:
             return None  # unassigned → global VE_NVR_URL (single-node back-compat).
 
-        node = await db.get(MediaNode, node_id)
+        return await node_base_for_id(db, tenant_id, node_id)
+    except Exception as exc:  # noqa: BLE001 — routing must never raise; fall back soft.
+        log.info("node routing lookup failed (%s) → fall back to global nvr", exc)
+        return None
+
+
+async def node_base_for_id(
+    db: AsyncSession,
+    tenant_id: uuid.UUID | None,
+    media_node_id: str | None,
+) -> str | None:
+    """Return the Go-``nvr`` base URL for a ``MediaNode`` identified by ``media_node_id``.
+
+    The by-id sibling of :func:`node_base_for_camera` — used to route media calls to the
+    node that HOLDS a given piece of footage (a Recording's ``media_node_id``) rather than
+    a camera's current assignment. Same rules as the camera resolver:
+
+    * ``None`` / blank id → ``None`` (fall back to the global ``VE_NVR_URL``).
+    * a dangling id (node deleted), a cross-tenant node, a blank ``api_url``, or any lookup
+      error → ``None``. NEVER raises.
+
+    ``tenant_id`` is the caller's ``scope.tenant_id``. A node is usable when its
+    ``tenant_id`` is ``None`` (shared/platform) or equals the caller's tenant — mirroring
+    ``kernel.auth.owns`` read semantics for by-id media routing.
+    """
+    try:
+        if not media_node_id:
+            return None
+
+        node = await db.get(MediaNode, media_node_id)
         if node is None:
-            log.info("camera media_node_id=%s not found → fall back to global nvr", node_id)
+            log.info("media_node_id=%s not found → fall back to global nvr", media_node_id)
             return None
 
         # Tenant safety: a node owned by ANOTHER tenant must not be used. Platform
@@ -69,18 +98,18 @@ async def node_base_for_camera(
         if node_tenant is not None and node_tenant != tenant_id:
             log.info(
                 "media node %s belongs to another tenant → fall back to global nvr",
-                node_id,
+                media_node_id,
             )
             return None
 
         api_url = (getattr(node, "api_url", None) or "").strip()
         if not api_url:
-            log.info("media node %s has no api_url → fall back to global nvr", node_id)
+            log.info("media node %s has no api_url → fall back to global nvr", media_node_id)
             return None
         return api_url
     except Exception as exc:  # noqa: BLE001 — routing must never raise; fall back soft.
-        log.info("node routing lookup failed (%s) → fall back to global nvr", exc)
+        log.info("node routing (by id) lookup failed (%s) → fall back to global nvr", exc)
         return None
 
 
-__all__ = ["node_base_for_camera"]
+__all__ = ["node_base_for_camera", "node_base_for_id"]

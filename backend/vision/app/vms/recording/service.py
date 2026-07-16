@@ -309,11 +309,25 @@ class RecordingService:
             except (ValueError, TypeError):
                 tid = None
 
+        # Footage locality: stamp the recorder node that produced this segment so playback
+        # later routes to the machine that HOLDS the file (not the camera's future node).
+        # Source priority: (a) an explicit node id in the segment event if the Go nvr ever
+        # carries one; (b) else the camera's CURRENT media_node_id — accurate because the
+        # segment was just recorded by the camera's current node. None (single-node /
+        # unassigned) → stays NULL → playback falls back to the global VE_NVR_URL.
+        # NB: use only unambiguous *id* keys — a bare ``node`` in nvr payloads elsewhere is
+        # a MediaMTX node NAME, not a MediaNode id, so it is deliberately NOT consulted.
+        media_node_id = payload.get("media_node_id") or payload.get("node_id")
+        if not media_node_id:
+            cam = await self.db.get(Camera, camera_id)
+            media_node_id = getattr(cam, "media_node_id", None) if cam else None
+
         row = Recording(
             tenant_id=tid,
             camera_id=camera_id,
             profile=payload.get("profile") or "main",
             path=path,
+            media_node_id=media_node_id or None,
             start_time=_parse_dt(payload.get("start")) or _utcnow(),
             end_time=_parse_dt(payload.get("end")),
             duration=_as_float(payload.get("duration")),

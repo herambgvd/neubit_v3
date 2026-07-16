@@ -29,7 +29,7 @@ from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import AppError, NotFoundError, ValidationError
 
 from app.vms.common.media_token import mint_media_token, token_hash
-from app.vms.common.node_routing import node_base_for_camera
+from app.vms.common.node_routing import node_base_for_camera, node_base_for_id
 from app.vms.common.nvr_client import NvrClient, NvrUnavailable
 from app.vms.live.service import _append_token
 from app.vms.models import Camera, PlaybackSession, Recording, VmsEvent
@@ -85,6 +85,20 @@ class PlaybackService:
             return self.nvr
         return NvrClient(bearer=self.bearer, base_url=base)
 
+    async def _nvr_for_recording(self, camera, recording) -> NvrClient:
+        """An ``NvrClient`` bound to the node that HOLDS this recording's footage.
+
+        Routes by the RECORDING's ``media_node_id`` (the machine the file lives on) so old
+        footage stays reachable after the camera is reassigned to a different recorder.
+        FALLBACK — a recording with NULL ``media_node_id`` (pre-locality / single-node) or
+        an unresolvable node → ``_nvr_for(camera)`` (camera's current node / global
+        ``VE_NVR_URL``), i.e. exactly the previous behaviour."""
+        node_id = getattr(recording, "media_node_id", None)
+        base = await node_base_for_id(self.db, self.scope.tenant_id, node_id)
+        if base is None:
+            return await self._nvr_for(camera)
+        return NvrClient(bearer=self.bearer, base_url=base)
+
     # ── row helpers ─────────────────────────────────────────────────────
     async def _camera(self, camera_id: str) -> Camera:
         row = await self.db.get(Camera, camera_id)
@@ -130,10 +144,22 @@ class PlaybackService:
         if not recs:
             raise PlaybackNotFound("no recordings in the requested window")
 
+        # Footage locality: route to the node that HOLDS the footage, not the camera's
+        # CURRENT node. ``recs`` are ordered start_time.asc(), so ``recs[0]`` covers the
+        # START of the window — the segment the playback begins on. We resolve its
+        # ``media_node_id`` to the recorder base URL. FALLBACK: if that recording predates
+        # locality (media_node_id NULL) or the node can't be resolved, use the camera's
+        # current node / global VE_NVR_URL (``_nvr_for``) — single-node byte-identical.
+        #
+        # Playback sessions are TIME-KEYED: a seek starts a fresh start_playback with a new
+        # window, so each seek re-resolves the node from the recording at its new start.
+        # Seeking across a node boundary therefore naturally re-targets the correct
+        # machine — no cross-node merge is needed within one session.
+        nvr = await self._nvr_for_recording(camera, recs[0])
+
         from_iso = from_.astimezone(timezone.utc).isoformat()
         to_iso = to.astimezone(timezone.utc).isoformat()
         try:
-            nvr = await self._nvr_for(camera)
             pb = await nvr.playback_list(
                 camera_id=camera.id, profile=profile, from_=from_iso, to=to_iso
             )
