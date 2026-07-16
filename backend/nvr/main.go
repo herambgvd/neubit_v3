@@ -18,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -30,9 +31,11 @@ import (
 	"github.com/neubit/gokernel/httpx"
 
 	"github.com/neubit/nvr/internal/anr"
+	"github.com/neubit/nvr/internal/identity"
 	"github.com/neubit/nvr/internal/mediamtx"
 	"github.com/neubit/nvr/internal/playback"
 	"github.com/neubit/nvr/internal/recording"
+	"github.com/neubit/nvr/internal/sqlitestore"
 	"github.com/neubit/nvr/internal/streams"
 	"github.com/neubit/nvr/internal/supervisor"
 )
@@ -56,6 +59,24 @@ func main() {
 
 	bootCtx, cancel := context.WithTimeout(runCtx, 30*time.Second)
 	defer cancel()
+
+	// --- Store backend selection (NVR_STORE) ------------------------------------
+	// "postgres" (default): central mode — connect this service's own database
+	// (neubit_nvr), run its baseline migration, and drive the streaming/recording/
+	// ANR engines against the pool exactly as today. With NVR_STORE unset the boot
+	// path below is byte-for-byte the historical behaviour.
+	//
+	// "sqlite": autonomous-node mode — open the embedded SQLite estate (node.db) in
+	// this binary (no external DB process), migrate it, and first-boot bootstrap a
+	// node identity + crypto root + login-able admin. The pgx-bound engines are not
+	// started in this mode (they are repointed to the node store in a later phase),
+	// so the node comes up store-ready and serves its JWT-gated API + health.
+	storeBackend := env("NVR_STORE", "postgres")
+
+	if storeBackend == "sqlite" {
+		runSQLiteNode(runCtx, bootCtx, cfg)
+		return
+	}
 
 	// --- DB: this service's OWN database (neubit_nvr) + baseline migration -----
 	pool, err := db.Connect(bootCtx, cfg.NormalizedDSN())
@@ -240,6 +261,128 @@ func main() {
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("http server: %v", err)
+	}
+}
+
+// runSQLiteNode boots the service in autonomous-node mode (NVR_STORE=sqlite): the
+// full estate lives in an embedded SQLite file opened inside this binary — no
+// external Postgres, no central contact required. It migrates the estate, runs the
+// first-boot bootstrap (node identity + crypto root + login-able admin), and serves
+// the JWT-gated API + public health. The pgx-bound streaming/recording/ANR engines
+// are NOT started here; they are repointed to the node store in a later phase, so
+// the node comes up store-ready. This path is only reached with NVR_STORE=sqlite —
+// the default postgres boot in main() is untouched.
+func runSQLiteNode(runCtx, bootCtx context.Context, cfg *config.Settings) {
+	// --- Embedded SQLite estate (node.db) + migration ---------------------------
+	dbPath := env("VE_NODE_DB_PATH", "/data/node.db")
+	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			log.Fatalf("node db dir %q: %v", dir, err)
+		}
+	}
+	nodeStore, err := sqlitestore.Open(dbPath)
+	if err != nil {
+		log.Fatalf("sqlite open %q: %v", dbPath, err)
+	}
+	defer nodeStore.Close()
+
+	if err := nodeStore.Migrate(bootCtx); err != nil {
+		log.Fatalf("sqlite migration failed: %v", err)
+	}
+	log.Printf("sqlite estate ready at %s", dbPath)
+
+	// --- First-boot bootstrap (identity + secret root + bootstrap admin) --------
+	res, err := identity.Bootstrap(bootCtx, nodeStore, identity.Config{
+		NodeName:      env("VE_NODE_NAME", ""),
+		NodeSecret:    env("VE_NODE_SECRET", ""),
+		AdminUser:     env("VE_NODE_ADMIN_USER", ""),
+		AdminPassword: env("VE_NODE_ADMIN_PASSWORD", ""),
+	})
+	if err != nil {
+		log.Fatalf("node bootstrap failed: %v", err)
+	}
+	if res.AlreadyBootstrapped {
+		log.Printf("node already bootstrapped: id=%s name=%q state=%s",
+			res.Identity.ID, res.Identity.Name, res.Identity.EnrollState)
+	} else {
+		log.Printf("node bootstrapped: id=%s name=%q state=%s",
+			res.Identity.ID, res.Identity.Name, res.Identity.EnrollState)
+		// Surface generated secrets ONCE so the installer can capture them; they are
+		// never persisted in plaintext beyond this line.
+		if res.GeneratedNodeSecret != "" {
+			log.Printf("generated bootstrap node secret: %s", res.GeneratedNodeSecret)
+		}
+		if res.GeneratedAdminPassword != "" {
+			log.Printf("generated bootstrap admin password: %s", res.GeneratedAdminPassword)
+		}
+	}
+
+	// --- NATS event spine (best-effort; a standalone node runs without it) -------
+	bus := events.NewBus(serviceName, cfg.NATSURL)
+	if err := bus.Connect(); err != nil {
+		log.Printf("nats connect note (standalone continues without it): %v", err)
+	} else {
+		defer bus.Close()
+		_ = bus.Publish(events.Subject(nil, serviceName, "startup"), map[string]any{"service": serviceName, "mode": "node"})
+	}
+
+	// --- HTTP: chi + shared middleware; /health public, /api/v1/nvr JWT-gated ----
+	verifier := auth.NewVerifier(cfg.JWTSecret)
+	r := httpx.NewRouter(cfg)
+	httpx.Health(r, serviceName, cfg.Env)
+
+	r.Route(cfg.APIPrefix+"/nvr", func(api chi.Router) {
+		api.Use(httpx.RequireAuth(verifier))
+		api.Use(httpx.RequireFeature("vms"))
+		api.Use(httpx.RequireActiveLicense())
+
+		api.Get("/whoami", func(w http.ResponseWriter, req *http.Request) {
+			p, ok := httpx.MustPrincipal(w, req)
+			if !ok {
+				return
+			}
+			var tid any
+			if p.TenantID != nil {
+				tid = p.TenantID.String()
+			}
+			httpx.JSON(w, http.StatusOK, map[string]any{
+				"user_id":       p.UserID.String(),
+				"tenant_id":     tid,
+				"is_superadmin": p.IsSuperadmin,
+				"permissions":   p.Permissions,
+				"service":       serviceName,
+			})
+		})
+
+		api.With(httpx.RequirePermission("vms.camera.read")).
+			Get("/status", func(w http.ResponseWriter, _ *http.Request) {
+				httpx.JSON(w, http.StatusOK, map[string]any{
+					"service": serviceName,
+					"plane":   "data",
+					"phase":   "node-agent-core",
+					"store":   "sqlite",
+					"nats":    bus.IsConnected(),
+					"node":    res.Identity.ID,
+				})
+			})
+	})
+
+	addr := ":" + strconv.Itoa(cfg.Port)
+	log.Printf("listening on %s (env=%s, store=sqlite)", addr, cfg.Env)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	// Stop serving when the run context is cancelled (parity with main()).
+	go func() {
+		<-runCtx.Done()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutCtx)
+	}()
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("http server: %v", err)
 	}
