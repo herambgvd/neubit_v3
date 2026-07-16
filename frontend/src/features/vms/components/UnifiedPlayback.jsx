@@ -128,7 +128,9 @@ export default function UnifiedPlayback({ onExportRange }) {
   const [camSiteFilter, setCamSiteFilter] = useState(""); // "" = all sites
 
   // ── Rail composer state (drives the Search → load) ───────────────────────
-  const [stream, setStream] = useState("sub"); // 'main' | 'sub' — recorded profile
+  // Default to MAIN — that's the profile we record (sub is the live web/WHEP stream, not
+  // recorded), so a playback page must open on main or it shows "No footage" by default.
+  const [stream, setStream] = useState("main"); // 'main' | 'sub' — recorded profile
   const [eventFilter, setEventFilter] = useState(() => new Set(EVENT_TYPES)); // 3b: filters seekbar
   const [checked, setChecked] = useState([]); // ≤4 pending tile descriptors (pre-Search)
   // Calendar view month (independent of the selected day so paging doesn't re-load).
