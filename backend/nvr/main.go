@@ -348,11 +348,18 @@ func runSQLiteNode(runCtx, bootCtx context.Context, cfg *config.Settings) {
 		// Group below, so a standalone local session (no central token) can drive it.
 		// This whole path only exists in sqlite mode; the postgres boot in main()
 		// never reaches it.
-		estate.Mount(api, &estate.Deps{
+		estateDeps := &estate.Deps{
 			DB:       nodeStore,
 			Auth:     localAuth,
 			NodeName: res.Identity.Name,
-		})
+		}
+		estate.Mount(api, estateDeps)
+
+		// PUBLIC media-plane routes (/api/v1/nvr/media/verify) — the MediaMTX
+		// ForwardAuth hot path. Mounted OUTSIDE estate.Mount's auth middleware
+		// because it authorises off the stateless media token alone (no session /
+		// bearer, no DB); the estate Authenticator rejects media tokens by design.
+		estate.MountPublic(api, estateDeps)
 
 		// The existing internal /nvr/* endpoints stay gated by the central JWT +
 		// vms feature/license, scoped to this Group so the estate mount above is
