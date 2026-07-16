@@ -42,6 +42,18 @@ class MediaNode(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     host: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    # --- MN-1a: independent recorder-machine routing (Go nvr + MediaMTX bases). ---
+    # ``api_url`` is the recorder's Go-nvr base URL (e.g. http://recorder-2:8000) — the
+    # KEY routing field: control-plane heartbeat + (later) per-node stream routing target.
+    # It is nullable in the DB (already-deployed rows predate it), but REQUIRED on create.
+    api_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # MediaMTX media bases the recorder machine exposes (nullable — filled on onboarding).
+    hls_base: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    webrtc_base: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    rtsp_base: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Human location / region tag (e.g. "Tower-B basement", "us-east").
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     capacity_channels: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
