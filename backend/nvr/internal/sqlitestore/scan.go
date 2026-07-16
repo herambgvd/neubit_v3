@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -61,6 +62,23 @@ func strPtr(ns sql.NullString) *string {
 	}
 	s := ns.String
 	return &s
+}
+
+// intPtr converts a nullable INTEGER column to *int.
+func intPtr(ni sql.NullInt64) *int {
+	if !ni.Valid {
+		return nil
+	}
+	v := int(ni.Int64)
+	return &v
+}
+
+// placeholders returns "?,?,…" with n marks, for a positional INSERT.
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat("?,", n-1) + "?"
 }
 
 // jsonText renders a JSON column for storage; nil/empty falls back to def

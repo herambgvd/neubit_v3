@@ -45,4 +45,13 @@ type Store interface {
 	CreateSession(ctx context.Context, s LocalSession) error
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (LocalSession, error)
 	RevokeSession(ctx context.Context, id string) error
+
+	// --- cameras + media profiles (Task 2.1) ---
+	CreateCamera(ctx context.Context, c Camera) error
+	GetCamera(ctx context.Context, id string) (Camera, error)
+	ListCameras(ctx context.Context, f CameraFilter) ([]Camera, error)
+	UpdateCamera(ctx context.Context, c Camera) error
+	DeleteCamera(ctx context.Context, id string) error
+	UpsertMediaProfile(ctx context.Context, p MediaProfile) error
+	ListMediaProfiles(ctx context.Context, cameraID string) ([]MediaProfile, error)
 }
