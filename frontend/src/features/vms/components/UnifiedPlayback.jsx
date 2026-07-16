@@ -29,6 +29,7 @@ import { Icon } from "@iconify/react";
 
 import { Button, Select } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
+import { sites as sitesApi } from "@/lib/api/sites";
 import { vms } from "../api";
 import PlaybackPlayer from "./PlaybackPlayer";
 import PlaybackCalendar from "./PlaybackCalendar";
@@ -119,6 +120,12 @@ export default function UnifiedPlayback({ onExportRange }) {
   const [seekNonce, setSeekNonce] = useState(0); // bumped ONLY on an explicit user scrub
   const [focusKey, setFocusKey] = useState(null); // tile expanded to full player
   const [pickerKind, setPickerKind] = useState("camera"); // 'camera' | 'nvr'
+  // Recorded picker scaling (200+ cams): server-side search + site filter so the
+  // rail never renders a wall of checkboxes. `camSearch` is the raw input;
+  // `debouncedCamSearch` (250ms) is what the camera query actually keys on.
+  const [camSearch, setCamSearch] = useState("");
+  const [debouncedCamSearch, setDebouncedCamSearch] = useState("");
+  const [camSiteFilter, setCamSiteFilter] = useState(""); // "" = all sites
 
   // ── Rail composer state (drives the Search → load) ───────────────────────
   const [stream, setStream] = useState("sub"); // 'main' | 'sub' — recorded profile
@@ -153,37 +160,90 @@ export default function UnifiedPlayback({ onExportRange }) {
     setSelTo(null);
   }, [windowStart]);
 
+  // Debounce the Recorded-picker search into the query key (250ms) so typing
+  // doesn't fire a request per keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedCamSearch(camSearch.trim()), 250);
+    return () => clearTimeout(id);
+  }, [camSearch]);
+
   // ── Deep-link ?camera=<id>[&t=<iso>] → open that camera as the sole tile ──
   const deepHandled = useRef(false);
+  // Recorded cameras — filtered SERVER-SIDE by the rail's search + site filter so
+  // the list stays small at 200+ cameras. Selections live in `checked` (keyed by
+  // tile.key) independent of this list, so filtering away a checked camera and
+  // back preserves the selection.
+  // The filters apply ONLY to the Recorded picker: the NVR channel list + deep-link
+  // resolution both derive from `cameras`, so on the NVR picker we drop the filters
+  // to get the unfiltered set (a stale Recorded search must not narrow NVR channels).
+  const camFiltering = pickerKind === "camera";
+  const camQ = camFiltering ? debouncedCamSearch : "";
+  const camSite = camFiltering ? camSiteFilter : "";
   const camerasQ = useQuery({
-    queryKey: ["vms-cameras", "playback-picker"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
+    queryKey: ["vms-cameras", "playback-picker", camQ, camSite],
+    queryFn: () =>
+      vms.cameras.list({
+        q: camQ || undefined,
+        site_id: camSite || undefined,
+        limit: 200,
+      }),
     staleTime: 60_000,
   });
   const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
 
+  // Sites for the picker's site-filter dropdown + per-camera group headers. Same
+  // source Cameras.jsx uses (site_id → name).
+  const sitesQ = useQuery({
+    queryKey: ["sites-list"],
+    queryFn: () => sitesApi.list({ limit: 200 }),
+    staleTime: 60_000,
+    enabled: pickerKind === "camera",
+  });
+  const sites = useMemo(() => asItems(sitesQ.data), [sitesQ.data]);
+  const siteNames = useMemo(() => {
+    const m = {};
+    for (const s of sites) m[s.site_id] = s.name;
+    return m;
+  }, [sites]);
+
   useEffect(() => {
-    if (deepHandled.current || typeof window === "undefined" || cameras.length === 0) return;
+    if (deepHandled.current || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const camera = params.get("camera");
     const t = params.get("t");
     if (!camera) return;
-    const c = cameras.find((x) => x.id === camera);
-    if (!c) return;
-    deepHandled.current = true;
-    const tile = cameraTile(c);
-    setSources([tile]);
-    setChecked([tile]); // reflect the deep-linked source in the rail's multi-select
-    if (t) {
-      const d = new Date(t);
-      if (!Number.isNaN(d.getTime())) {
-        setDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
-        setCalView({ year: d.getFullYear(), month: d.getMonth() }); // page the calendar to it
-        const ms = d.getTime();
-        setClock(ms);
-        setSeekMs(ms);
+    // The picker list is now server-filtered + capped at 200, so the deep-linked
+    // camera may NOT be in it (large tenant / active filter). Resolve from the list
+    // when present, else fetch that one camera by id — the deep-link must always open.
+    let cancelled = false;
+    (async () => {
+      let c = cameras.find((x) => x.id === camera);
+      if (!c) {
+        try {
+          c = await vms.cameras.get(camera);
+        } catch {
+          return;
+        }
       }
-    }
+      if (cancelled || !c || deepHandled.current) return;
+      deepHandled.current = true;
+      const tile = cameraTile(c);
+      setSources([tile]);
+      setChecked([tile]); // reflect the deep-linked source in the rail's multi-select
+      if (t) {
+        const d = new Date(t);
+        if (!Number.isNaN(d.getTime())) {
+          setDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+          setCalView({ year: d.getFullYear(), month: d.getMonth() }); // page the calendar to it
+          const ms = d.getTime();
+          setClock(ms);
+          setSeekMs(ms);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [cameras]);
 
   // ── NVR picker data ──────────────────────────────────────────────────────
@@ -507,8 +567,28 @@ export default function UnifiedPlayback({ onExportRange }) {
   const tileSource = (s) =>
     s.kind === "nvr" ? (win) => vms.nvrFootage.playback(s.nvrId, s.channel, win) : null;
 
-  // ── Rail channel list — all recorded cameras (checkbox multi-select) ──────
+  // ── Rail channel list — recorded cameras (checkbox multi-select) ──────────
+  // Cameras arrive already filtered server-side (search + site). Group them by
+  // site for scannable sticky sub-headers; cameras with no placement site fall
+  // into an "Unassigned" group pinned to the end.
   const railCameras = cameras;
+  const camGroups = useMemo(() => {
+    const bySite = new Map(); // site_id → { name, cameras: [] }
+    let unassigned = null;
+    for (const c of railCameras) {
+      const sid = c.placement?.site_id;
+      if (sid) {
+        if (!bySite.has(sid)) bySite.set(sid, { key: sid, name: siteNames[sid] || "Site", cameras: [] });
+        bySite.get(sid).cameras.push(c);
+      } else {
+        if (!unassigned) unassigned = { key: "__unassigned", name: "Unassigned", cameras: [] };
+        unassigned.cameras.push(c);
+      }
+    }
+    const groups = Array.from(bySite.values()).sort((a, b) => a.name.localeCompare(b.name));
+    if (unassigned) groups.push(unassigned);
+    return groups;
+  }, [railCameras, siteNames]);
 
   return (
     <div className="flex h-full min-h-0 w-full gap-3">
@@ -637,50 +717,85 @@ export default function UnifiedPlayback({ onExportRange }) {
             )}
 
             {pickerKind === "camera" ? (
-              railCameras.length === 0 ? (
-                <p className="px-2 py-6 text-center text-xs text-muted">No cameras.</p>
-              ) : (
-                railCameras.map((c) => {
-                  const { primary, secondary } = splitCamName(c.name);
-                  const tile = cameraTile(c);
-                  const on = isChecked(tile.key);
-                  return (
-                    <label
-                      key={c.id}
-                      title={c.name}
-                      className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover ${
-                        !on && atCap ? "opacity-40" : ""
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={on}
-                        disabled={!on && atCap}
-                        onChange={() => toggleCheck(tile)}
-                      />
-                      <span
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
-                          on ? "border-foreground bg-foreground text-background" : "border-field"
-                        }`}
-                      >
-                        {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
-                      </span>
-                      {c.nvr_channel_number != null && (
-                        <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[11px] font-semibold tabular-nums text-muted">
-                          {c.nvr_channel_number}
-                        </span>
-                      )}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate">{primary}</span>
-                        {secondary && (
-                          <span className="block truncate text-[11px] text-muted">{secondary}</span>
-                        )}
-                      </span>
-                    </label>
-                  );
-                })
-              )
+              <div className="space-y-2">
+                {/* Server-side search + site filter keep the list navigable at 200+ cams. */}
+                <label className="relative block">
+                  <Icon
+                    icon="heroicons-outline:magnifying-glass"
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted"
+                  />
+                  <input
+                    value={camSearch}
+                    onChange={(e) => setCamSearch(e.target.value)}
+                    placeholder="Search cameras…"
+                    className="h-8 w-full rounded-lg border border-field bg-transparent pl-8 pr-3 text-[13px] text-foreground placeholder:text-muted outline-none focus:border-muted"
+                  />
+                </label>
+                <Select
+                  value={camSiteFilter}
+                  onChange={(e) => setCamSiteFilter(e.target.value)}
+                  options={[
+                    { value: "", label: "All sites" },
+                    ...sites.map((s) => ({ value: s.site_id, label: s.name })),
+                  ]}
+                  className="!h-8 !py-1"
+                />
+
+                {camerasQ.isLoading ? (
+                  <p className="px-2 py-6 text-center text-xs text-muted">Loading…</p>
+                ) : railCameras.length === 0 ? (
+                  <p className="px-2 py-6 text-center text-xs text-muted">No cameras.</p>
+                ) : (
+                  camGroups.map((g) => (
+                    <div key={g.key}>
+                      <p className="sticky top-0 z-10 bg-card px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted">
+                        {g.name}
+                        <span className="ml-1.5 text-muted/60">{g.cameras.length}</span>
+                      </p>
+                      {g.cameras.map((c) => {
+                        const { primary, secondary } = splitCamName(c.name);
+                        const tile = cameraTile(c);
+                        const on = isChecked(tile.key);
+                        return (
+                          <label
+                            key={c.id}
+                            title={c.name}
+                            className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover ${
+                              !on && atCap ? "opacity-40" : ""
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="sr-only"
+                              checked={on}
+                              disabled={!on && atCap}
+                              onChange={() => toggleCheck(tile)}
+                            />
+                            <span
+                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                                on ? "border-foreground bg-foreground text-background" : "border-field"
+                              }`}
+                            >
+                              {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
+                            </span>
+                            {c.nvr_channel_number != null && (
+                              <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[11px] font-semibold tabular-nums text-muted">
+                                {c.nvr_channel_number}
+                              </span>
+                            )}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate">{primary}</span>
+                              {secondary && (
+                                <span className="block truncate text-[11px] text-muted">{secondary}</span>
+                              )}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ))
+                )}
+              </div>
             ) : (
               <div className="space-y-2">
                 <Select
