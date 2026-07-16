@@ -1,6 +1,13 @@
 package store
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrNotFound is returned by Get* methods when the row does not exist, so callers
+// can distinguish "missing" from a real query error regardless of backend.
+var ErrNotFound = errors.New("store: not found")
 
 // Store is the persistence seam. Two backends implement it: pgstore (default,
 // wraps today's Postgres) and sqlitestore (the autonomous embedded-SQLite node).
@@ -22,4 +29,10 @@ type Store interface {
 	// UpsertRecordingSegment reports whether the row was newly inserted (the
 	// emit-once ledger semantics), via ON CONFLICT(path) DO NOTHING + RowsAffected.
 	UpsertRecordingSegment(ctx context.Context, seg RecordingSegment) (inserted bool, err error)
+
+	// --- node identity (Task 1.3) ---
+	UpsertNodeIdentity(ctx context.Context, id NodeIdentity) error
+	// GetNodeIdentity returns the single node_identity row, or ErrNotFound if the
+	// node has not been bootstrapped yet.
+	GetNodeIdentity(ctx context.Context) (NodeIdentity, error)
 }
