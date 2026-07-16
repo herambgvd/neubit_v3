@@ -16,7 +16,7 @@ import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, fmtRelative } from "@/lib/format";
 import { vms } from "./api";
-import StatusBadge from "./components/StatusBadge";
+import StatusBadge, { StatusDot } from "./components/StatusBadge";
 import AddRecorderModal from "./components/AddRecorderModal";
 
 export default function RecordersPage() {
@@ -200,8 +200,22 @@ function InfoCell({ label, value, mono = false }) {
 }
 
 function RecorderDetail({ node, onEdit, onDrain, onDelete }) {
-  const used = node.used_channels ?? 0;
   const cap = node.capacity_channels;
+
+  // Cameras pinned to THIS recorder (client-side filter — the list API has no
+  // media_node_id filter). Refetches so a fresh assignment shows up.
+  const camsQ = useQuery({
+    queryKey: ["vms-cameras", "for-recorder-detail"],
+    queryFn: () => vms.cameras.list({ limit: 500 }),
+    staleTime: 15_000,
+  });
+  const assigned = useMemo(
+    () => asItems(camsQ.data).filter((c) => c.media_node_id === node.id),
+    [camsQ.data, node.id],
+  );
+  // The true channel load is what we can actually count locally; fall back to the
+  // server's reported used_channels when cameras are still loading.
+  const used = camsQ.isSuccess ? assigned.length : node.used_channels ?? 0;
   const full = cap != null && used >= cap;
 
   return (
@@ -252,6 +266,34 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }) {
           <InfoCell label="WebRTC base" value={node.webrtc_base || "—"} mono />
           <InfoCell label="RTSP base" value={node.rtsp_base || "—"} mono />
         </div>
+
+        {/* Assigned cameras — what this recorder actually records */}
+        <div className="mb-2 mt-4 flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Assigned cameras</p>
+          <span className="rounded-full bg-hover px-1.5 text-[10px] font-semibold tabular-nums text-muted">{assigned.length}</span>
+        </div>
+        {camsQ.isLoading ? (
+          <p className="px-1 py-3 text-xs text-muted"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm" />Loading…</p>
+        ) : assigned.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-card-border px-3 py-4 text-center text-xs text-muted">
+            No cameras pinned to this recorder yet. On the Cameras page, open a camera → Recording → Recorder and select “{node.name}”.
+          </p>
+        ) : (
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {assigned.map((c) => (
+              <li key={c.id} className="flex items-center gap-2 rounded-lg border border-card-border bg-hover/40 px-3 py-1.5">
+                <StatusDot status={c.status} />
+                {c.nvr_channel_number != null && (
+                  <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[10px] font-semibold tabular-nums text-muted">
+                    {c.nvr_channel_number}
+                  </span>
+                )}
+                <span className="min-w-0 flex-1 truncate text-[13px] text-foreground" title={c.name}>{c.name}</span>
+                <span className="shrink-0 text-[10px] capitalize text-muted">{c.status}</span>
+              </li>
+            ))}
+          </ul>
+        )}
 
         <p className="mt-3 text-[11px] text-muted">
           Cameras pinned to this recorder record to its local storage. Drain before deleting, then reassign its cameras to another recorder.
