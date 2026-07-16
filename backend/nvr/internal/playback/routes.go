@@ -97,6 +97,22 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	name := mediamtx.PathName(tenant, cameraID, profile)
 
+	// Multi-pool playback: footage may live on a NON-default storage pool (a
+	// per-camera RAID drive). The MediaMTX playback server resolves a path's
+	// segments from the recordPath of the path config matching `?path=` — by
+	// default only the static regex (root `/recordings/`) matches, so non-default
+	// pool footage is invisible. If this camera has a recording target with a
+	// pool-baked recordPath, (re)assert an explicit path config carrying that
+	// recordPath so /list + /get resolve the correct drive. No target (default
+	// pool, or never recorded) → leave the default root in place. Best-effort: a
+	// patch failure is logged, not fatal — playback still tries the default root.
+	if recPath, rerr := h.sup.RecordPathFor(r.Context(), tenant, cameraID, profile); rerr == nil && recPath != "" {
+		if perr := h.mtx.EnsurePlaybackPath(r.Context(), node, name, recPath); perr != nil {
+			// Non-fatal: fall through to the default-root resolution below.
+			_ = perr
+		}
+	}
+
 	ranges, err := h.mtx.PlaybackList(r.Context(), node, name, from, to)
 	if err != nil {
 		// Playback server down / unreachable → 502 (never a 500 panic).

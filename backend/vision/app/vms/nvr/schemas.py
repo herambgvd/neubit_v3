@@ -61,6 +61,8 @@ class NvrPublic(BaseModel):
     has_credentials: bool = False
     channel_count: int
     status: str
+    # Persisted channel map (v2 parity) — the authoritative enumerated channel list.
+    channels: list[dict[str, Any]] = Field(default_factory=list)
     storage_info: dict[str, Any] = Field(default_factory=dict)
     capabilities: dict[str, Any] = Field(default_factory=dict)
     last_seen_at: Optional[datetime] = None
@@ -83,6 +85,7 @@ class NvrPublic(BaseModel):
                 "has_credentials": bool(row.enc_creds),
                 "channel_count": row.channel_count,
                 "status": row.status,
+                "channels": row.channels or [],
                 "storage_info": row.storage_info or {},
                 "capabilities": row.capabilities or {},
                 "last_seen_at": row.last_seen_at,

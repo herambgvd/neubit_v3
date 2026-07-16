@@ -514,6 +514,26 @@ class IoBody(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class EncoderBody(BaseModel):
+    """PATCH /cameras/{id}/encoder — resolution/fps/bitrate/GOP for a stream role."""
+
+    model_config = ConfigDict(extra="allow")
+    role: Optional[str] = None  # main | sub | third (default main)
+    resolution: Optional[str] = None  # "1920x1080"
+    fps: Optional[int] = None
+    bitrate: Optional[int] = None  # kbps
+    gov_length: Optional[int] = None
+
+
+class OsdBody(BaseModel):
+    """PATCH /cameras/{id}/osd — text overlay + timestamp toggle."""
+
+    model_config = ConfigDict(extra="allow")
+    role: Optional[str] = None
+    text: Optional[str] = None
+    show_datetime: Optional[bool] = None
+
+
 class MotionConfigBody(BaseModel):
     model_config = ConfigDict(extra="allow")
 

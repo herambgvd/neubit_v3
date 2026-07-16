@@ -9,7 +9,11 @@
 // P1-informational (the ONVIF-backed imaging/io/motion/privacy config endpoints are
 // wired in the detail view once a camera exists — see CameraConfigTabs there).
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
+
+import { vms } from "../api";
+import { asItems } from "@/lib/format";
 
 import { Field } from "@/components/common";
 import { Button, Toggle } from "@/components/ui/kit";
@@ -17,6 +21,10 @@ import { useAuth } from "@/lib/auth";
 import { CAMERA_BRANDS, CONNECTION_TYPES, RECORDING_MODES } from "../constants";
 import RecordingScheduleGrid from "./RecordingScheduleGrid";
 import RegionDrawModal from "./RegionDrawModal";
+import ImagingPanel from "./ImagingPanel";
+import IoPanel from "./IoPanel";
+import EncoderPanel from "./EncoderPanel";
+import OsdPanel from "./OsdPanel";
 
 function ToggleRow({ label, hint, checked, onChange }) {
   return (
@@ -55,6 +63,13 @@ export default function CameraConfigForm({
   manualPending = false,
 }) {
   const { can } = useAuth();
+  // Storage pools for the per-camera storage assignment (recording tab).
+  const poolsQ = useQuery({
+    queryKey: ["vms-storage-pools"],
+    queryFn: () => vms.storage.pools.list({ limit: 200 }),
+    staleTime: 60_000,
+  });
+  const storagePools = asItems(poolsQ.data);
   const canManageRegions = can("vms.config.manage");
   // Which region draw tool is open: null | "privacy" | "motion".
   const [regionTool, setRegionTool] = useState(null);
@@ -217,6 +232,23 @@ export default function CameraConfigForm({
           />
         </div>
 
+        {/* Per-camera storage — which pool (disk / RAID volume) this camera records to.
+            Enterprise VMS: spread cameras across pools for I/O balance + isolation. */}
+        <Field
+          label="Storage pool"
+          as="select"
+          value={form.storage_pool_id ?? ""}
+          onChange={(e) => set({ storage_pool_id: e.target.value })}
+          options={[
+            { value: "", label: "Default recordings volume" },
+            ...storagePools.map((p) => ({
+              value: p.id,
+              label: `${p.name}${p.path ? ` — ${p.path}` : ""}`,
+            })),
+          ]}
+          hint="New recordings for this camera land on the selected pool. Existing footage stays where it was."
+        />
+
         <div className="grid grid-cols-2 gap-3">
           <Field
             label="Pre-buffer (s)"
@@ -336,36 +368,30 @@ export default function CameraConfigForm({
   }
 
   if (tab === "imaging") {
-    return (
-      <div className="space-y-4">
+    // Before the camera exists (onboard modal) there's nothing to query — the imaging
+    // service is only reachable once it's saved. After onboarding, ImagingPanel reads
+    // + writes the live ONVIF imaging settings for this camera's video source.
+    if (!isEdit || !cameraId) {
+      return (
         <InfoNote>
-          {isEdit
-            ? "Imaging settings (brightness, contrast, WDR, day/night) are pushed to the camera over ONVIF."
-            : "Imaging is configured after the camera is onboarded — the ONVIF imaging service is queried live once it's reachable."}
+          Imaging is configured after the camera is onboarded — the ONVIF imaging service is
+          queried live once it&apos;s reachable.
         </InfoNote>
-        <div className="grid grid-cols-2 gap-3 opacity-60">
-          <Field label="Brightness" type="number" disabled placeholder="—" />
-          <Field label="Contrast" type="number" disabled placeholder="—" />
-          <Field label="Saturation" type="number" disabled placeholder="—" />
-          <Field label="Sharpness" type="number" disabled placeholder="—" />
-        </div>
-        <ToggleRow label="Wide Dynamic Range (WDR)" checked={false} onChange={() => {}} />
-      </div>
-    );
+      );
+    }
+    return <ImagingPanel cameraId={cameraId} cameraName={cameraName} />;
   }
 
   if (tab === "io") {
-    return (
-      <div className="space-y-4">
+    if (!isEdit || !cameraId) {
+      return (
         <InfoNote>
-          Digital inputs/outputs (relays, alarm contacts) are enumerated from the camera
-          over ONVIF after onboarding. Trigger rules bind in Workflow.
+          Digital inputs/outputs (relays, alarm contacts) are enumerated from the camera over
+          ONVIF once it&apos;s onboarded. Trigger rules bind in Workflow.
         </InfoNote>
-        <div className="rounded-lg border border-dashed border-card-border px-4 py-8 text-center text-xs text-muted">
-          No I/O ports enumerated yet.
-        </div>
-      </div>
-    );
+      );
+    }
+    return <IoPanel cameraId={cameraId} cameraName={cameraName} />;
   }
 
   // advanced
@@ -377,6 +403,20 @@ export default function CameraConfigForm({
         checked={!!form.ptz_capable}
         onChange={(v) => set({ ptz_capable: v })}
       />
+
+      {/* Live ONVIF encoder + OSD editors — only meaningful once the camera exists. */}
+      {isEdit && cameraId && (
+        <>
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Video encoder</p>
+            <EncoderPanel cameraId={cameraId} cameraName={cameraName} />
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">On-screen text (OSD)</p>
+            <OsdPanel cameraId={cameraId} cameraName={cameraName} />
+          </div>
+        </>
+      )}
 
       {/* Region draw tools — privacy masks + motion zones. Drawn over a snapshot;
           only meaningful once the camera exists (isEdit). */}

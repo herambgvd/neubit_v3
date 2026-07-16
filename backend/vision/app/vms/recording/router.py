@@ -59,6 +59,16 @@ async def get_recording_service(
 # ── config ──────────────────────────────────────────────────────────────
 
 
+@router.get("/recording/active", dependencies=[Depends(require_permission(PERM_VIEW))])
+async def active_recordings(
+    svc: Annotated[RecordingService, Depends(get_recording_service)],
+) -> dict:
+    """Camera ids that are ACTUALLY recording right now (live nvr state) — drives the
+    real per-camera recording indicator. `available=False` means the nvr is unreachable
+    (UI shows 'unknown' rather than a false OFF)."""
+    return await svc.active_recordings()
+
+
 @router.put("/cameras/{camera_id}/recording", response_model=RecordingConfigPublic)
 async def set_recording_config(
     camera_id: str,

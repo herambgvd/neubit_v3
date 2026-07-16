@@ -103,6 +103,27 @@ class NvrClient:
         except ValueError as exc:
             raise NvrUnavailable("nvr returned a non-JSON status response") from exc
 
+    async def recording_status(self, *, timeout: float | None = None) -> list[dict]:
+        """GET /recording/status → every ACTIVE recording target the nvr is running.
+
+        Returns a list of ``{tenant_id, camera_id, profile, trigger_type, ...}`` (the
+        live recording state, not the per-camera policy). Fails fast; raises
+        ``NvrUnavailable`` so the caller can degrade to 'unknown' rather than block."""
+        url = f"{self._base}/api/v1/nvr/recording/status"
+        t = timeout if timeout is not None else 3.0
+        try:
+            async with httpx.AsyncClient(timeout=t) as client:
+                resp = await client.get(url, headers=self._headers)
+        except httpx.HTTPError as exc:
+            raise NvrUnavailable(f"nvr recording status unreachable: {exc}") from exc
+        if resp.status_code >= 400:
+            raise NvrUnavailable(f"nvr recording status {resp.status_code}: {_err_detail(resp)}")
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise NvrUnavailable("nvr returned a non-JSON recording status") from exc
+        return data if isinstance(data, list) else data.get("items", []) or []
+
     # ── recording (P3-A) ────────────────────────────────────────────────
     async def start_recording(
         self,
@@ -112,6 +133,7 @@ class NvrClient:
         rtsp_url: str,
         trigger: str = "continuous",
         audio: bool = False,
+        record_dir: str | None = None,
     ) -> dict:
         """POST /recording/{camera_id}/{profile}/start → the active-target view.
 
@@ -124,6 +146,8 @@ class NvrClient:
         an unreachable nvr / MediaMTX upstream error (→ 502)."""
         url = f"{self._base}/api/v1/nvr/recording/{camera_id}/{profile}/start"
         payload = {"rtsp_url": rtsp_url, "trigger": trigger, "audio": audio}
+        if record_dir:
+            payload["record_dir"] = record_dir
         try:
             async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
                 resp = await client.post(url, json=payload, headers=self._headers)

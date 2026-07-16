@@ -67,6 +67,9 @@ type startRequest struct {
 	// Accepted here so the contract is explicit; carried as recording intent (no schema
 	// change). Optional; defaults false.
 	Audio bool `json:"audio"`
+	// RecordDir overrides the recordings root for THIS camera (per-camera storage
+	// pool — enterprise VMS). Empty = the default recordings volume.
+	RecordDir string `json:"record_dir"`
 }
 
 // start turns recording on for (camera, profile). Graceful: a bad/unreachable
@@ -105,7 +108,7 @@ func (h *handler) start(w http.ResponseWriter, r *http.Request) {
 		)
 	} else {
 		act, err = h.sup.StartRecording(
-			r.Context(), tenant, cameraID, profile, req.RTSPURL, req.Trigger, req.Redundant,
+			r.Context(), tenant, cameraID, profile, req.RTSPURL, req.Trigger, req.Redundant, req.RecordDir,
 		)
 	}
 	if err != nil {

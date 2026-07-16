@@ -21,7 +21,6 @@ import CameraConfigForm from "./CameraConfigForm";
 import DeviceMaintenance from "./DeviceMaintenance";
 import LivePlayer from "./LivePlayer";
 import StatusBadge from "./StatusBadge";
-import CodecBadge from "./CodecBadge";
 import { usePlacementFloorsZones } from "../hooks/usePlacementFloorsZones";
 
 const VIEW_TAB = { key: "view", label: "View", icon: "heroicons-outline:play-circle" };
@@ -32,6 +31,7 @@ export default function CameraDetailView({
   camera,
   sites = [],
   initialTab = "view",
+  recording = false,
   onUpdated,
   onDelete,
   onSnapshot,
@@ -53,9 +53,29 @@ export default function CameraDetailView({
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
   const update = useMutation({
-    mutationFn: () => vms.cameras.update(camera.id, toUpdateBody(form)),
+    mutationFn: async () => {
+      await vms.cameras.update(camera.id, toUpdateBody(form));
+      // When saving the Recording tab, ALSO drive the recorder so a mode change takes
+      // effect immediately — Continuous → recording starts now, a switch away stops it.
+      // No separate click needed. (The plain camera update only persists policy; the
+      // dedicated recording-config endpoint is what starts/stops the nvr.)
+      if (tab === "recording") {
+        await vms.recordingConfig.set(camera.id, {
+          mode: form.recording_mode,
+          schedule: form.recording_mode === "schedule" ? form.recording_schedule || {} : {},
+          retention_days: Number(form.retention_days) || 30,
+          record_substream: !!form.record_substream,
+          audio_enabled: !!form.audio_enabled,
+          storage_pool_id: form.storage_pool_id || "",
+        });
+      }
+    },
     onSuccess: () => {
-      toast.success("Camera updated");
+      toast.success(
+        tab === "recording" && form.recording_mode === "continuous"
+          ? "Saved — recording started"
+          : "Camera updated",
+      );
       onUpdated?.();
     },
     onError: (e) => toast.error(apiError(e, "Update failed")),
@@ -83,7 +103,9 @@ export default function CameraDetailView({
   };
 
   const cameraIp = camera.network_info?.ip || camera.onvif?.host || "—";
-  const showSave = tab !== "view" && tab !== "device";
+  // Imaging + I/O have their own device-push controls (ImagingPanel / IoPanel), so the
+  // camera-row Save is hidden there to avoid two competing save actions.
+  const showSave = tab !== "view" && tab !== "device" && tab !== "imaging" && tab !== "io";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -96,7 +118,6 @@ export default function CameraDetailView({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-sm font-semibold text-foreground">{camera.name}</h2>
-              <CodecBadge camera={camera} />
             </div>
             <p className="truncate font-mono text-[10px] text-muted">
               {cameraIp}
@@ -105,6 +126,14 @@ export default function CameraDetailView({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {recording && (
+            <span
+              title="This camera is recording"
+              className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-red-500"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> Recording
+            </span>
+          )}
           <StatusBadge status={camera.status} />
           <button
             type="button"

@@ -302,10 +302,47 @@ class NvrService:
         return out
 
     # ── channel enumeration (saved NVR + unsaved host) ───────────────────
-    async def enumerate_channels(self, nvr_id: str) -> list[dict]:
-        """Enumerate a SAVED NVR's channels (reads host/creds off the row). Never 500s."""
+    async def enumerate_channels(self, nvr_id: str, *, refresh: bool = False) -> list[dict]:
+        """Enumerate a SAVED NVR's channels (reads host/creds off the row). Never 500s.
+
+        The channel map is PERSISTED as first-class structured JSON on the NVR row
+        (``nvrs.channels``) — the authoritative, one-time enumerated list (neubit_v2
+        parity), NOT a transient cache. It's served instantly on every page load; a
+        live re-enumeration only runs when the caller passes ``refresh=True`` (the ↻
+        button) or when the row has no stored channels yet. Enumeration is a slow
+        chain of ONVIF calls, so this keeps the UI snappy and gives future
+        channel↔camera relationships a stable column to key off.
+        """
         row = await self._row(nvr_id)
-        return await self._enumerate(row.brand, row.host, self._creds_for(row))
+        stored = list(row.channels or [])
+        # One-time migration: lift any legacy capabilities['channels_cache'] into the
+        # new column so historic NVRs don't need a re-enumeration to populate it.
+        if not stored:
+            legacy = (row.capabilities or {}).get("channels_cache", {}).get("items")
+            if legacy:
+                stored = list(legacy)
+                row.channels = stored
+                row.channel_count = len(stored)
+                caps = dict(row.capabilities or {})
+                caps.pop("channels_cache", None)
+                row.capabilities = caps
+                await self.db.commit()
+
+        if not refresh and stored:
+            return stored
+
+        items = await self._enumerate(row.brand, row.host, self._creds_for(row))
+        # Only overwrite with a non-empty enumeration — a transient device blip
+        # (creds/network) returning [] must not wipe a good stored map.
+        if items:
+            row.channels = items
+            # TOTAL channels = the recorder's real channel count. Keep in sync so the
+            # NVR card / list ("N channel(s)") reflects it, not a stale probe value.
+            row.channel_count = len(items)
+            await self.db.commit()
+            return items
+        # enumeration failed → fall back to whatever we had stored (possibly empty)
+        return stored or items
 
     async def enumerate_channels_host(
         self, *, host: str, port: int, username: str, password: str, brand: str | None
@@ -354,10 +391,22 @@ class NvrService:
             if c.channel_number in existing:
                 skipped += 1
                 continue
+            # Camera name policy (neubit_v2 parity): always prefix the parent NVR
+            # name so channels with generic upstream labels ("Channel 1", "CH1") never
+            # collide across recorders — "{nvr.name} - {channel_label}", or
+            # "{nvr.name} - CH{n}" when the channel has no label. An already-prefixed
+            # label (re-map) isn't double-prefixed.
+            ch_label = (c.name or "").strip()
+            if ch_label and not ch_label.startswith(f"{row.name} -"):
+                cam_name = f"{row.name} - {ch_label}"
+            elif ch_label:
+                cam_name = ch_label
+            else:
+                cam_name = f"{row.name} - CH{c.channel_number}"
             to_add.append(
                 BulkAddChannel(
                     channel_number=c.channel_number,
-                    name=c.name or f"{row.name} — CH{c.channel_number}",
+                    name=cam_name,
                     profile_token=c.profile_token,
                     nvr_id=nvr_id,
                     site_id=c.site_id,
@@ -379,6 +428,25 @@ class NvrService:
                 actor=actor,
             )
             created_public = result.items
+
+            # Resolve status immediately instead of leaving the new channel-cameras on
+            # "connecting" until the next periodic health sample (~45s). They share the
+            # NVR's reachability, so a single quick TCP probe each flips them straight
+            # to online/offline. Best-effort — never block the map on it.
+            try:
+                from app.vms.health.service import sample_one
+
+                ids = [c.id for c in created_public]
+                if ids:
+                    fresh = (
+                        await self.db.execute(select(Camera).where(Camera.id.in_(ids)))
+                    ).scalars().all()
+                    for cam in fresh:
+                        await sample_one(self.db, cam)
+                    await self.db.commit()
+                    created_public = [await self.cameras._public(c) for c in fresh]
+            except Exception as exc:  # noqa: BLE001 — status refresh must not fail the map
+                log.info("post-map health sample skipped: %s", exc)
 
         await self.db.refresh(row)
         return MapChannelsResult(
@@ -502,9 +570,13 @@ class NvrService:
             return base
 
         # Prefer: register the NVR playback RTSP as a MediaMTX path → HLS/WebRTC + token.
-        # A synthetic camera key (``nvr:<id>:ch<n>:playback``) namespaces the path; the
-        # media token binds to it. If the nvr is down we return the raw RTSP (P4-C proxy).
-        pseudo_camera = f"nvr-{row.id}-ch{channel}-playback"
+        # A synthetic camera key namespaces the path; the media token binds to it. The key
+        # is **time-keyed** (by the window's from-instant) because an NVR replay is a linear
+        # stream pinned to its starttime — MediaMTX won't update an existing path's source,
+        # so a SEEK must land on a NEW path (fresh pull from the new instant). Idle on-demand
+        # paths auto-close, so old seek paths self-clean.
+        from_key = str(int(from_.timestamp())) if from_ else "0"
+        pseudo_camera = f"nvr-{row.id}-ch{channel}-pb{from_key}"
         client = NvrClient(bearer=self.bearer)
         try:
             ensured = await client.ensure_stream(
@@ -521,6 +593,10 @@ class NvrService:
             camera_id=pseudo_camera,
             session_id=pseudo_camera,
             mode="playback",
+            # NVR-footage playback is a bounded review session; a long TTL avoids the
+            # HLS variant/segment 401 when the default 5-min token expires mid-view
+            # (the browser bakes the token into the master playlist's child URLs).
+            ttl_seconds=6 * 3600,
         )
         base.hls_url = _append_token(ensured.get("hls_url"), token)
         base.webrtc_url = _append_token(ensured.get("webrtc_url"), token)

@@ -135,6 +135,35 @@ func (s *Supervisor) Assign(ctx context.Context, tenantID, cameraID, profile str
 	return s.leastLoaded(ctx)
 }
 
+// RecordPathFor returns the per-camera MediaMTX recordPath TEMPLATE stored on the
+// camera's recording target (the pool-baked template, e.g.
+// `/recordings/poolB/%path/%Y-%m-%d_%H-%M-%S-%f`). It is used by playback to point
+// the MediaMTX playback server at the RIGHT storage pool's on-disk root — footage on
+// a non-default pool is otherwise invisible to the single-root playback resolver.
+//
+// Returns ("", nil) when no recording target exists (camera never recorded, or the
+// target row was cleared): the caller then leaves the default `/recordings/` root in
+// place (the static regex path), which is correct for default-pool footage. Only an
+// unexpected DB error is returned — a missing row is the normal default-pool case.
+func (s *Supervisor) RecordPathFor(ctx context.Context, tenantID, cameraID, profile string) (string, error) {
+	if profile == "" {
+		profile = "main"
+	}
+	var recPath string
+	err := s.db.QueryRow(ctx,
+		`SELECT record_path FROM recording_targets
+		 WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3
+		 ORDER BY active DESC, updated_at DESC LIMIT 1`,
+		tenantID, cameraID, profile).Scan(&recPath)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("lookup record_path: %w", err)
+	}
+	return recPath, nil
+}
+
 // leastLoaded returns the healthy node with the fewest shards. Single-node
 // deployments always return that node.
 func (s *Supervisor) leastLoaded(ctx context.Context) (mediamtx.Node, error) {

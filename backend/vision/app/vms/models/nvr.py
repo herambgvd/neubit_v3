@@ -59,8 +59,17 @@ class NVR(Base):
     # Reversibly-encrypted credentials (enc:...); decrypted only to build a connector.
     enc_creds: Mapped[str | None] = mapped_column(String(1024))
 
-    # Declared/detected channel count of the appliance.
+    # Declared/detected TOTAL channel count of the appliance (the recorder's
+    # physical channel capacity — kept in sync with len(channels)).
     channel_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+
+    # Authoritative channel map (neubit_v2 parity): the one-time enumerated channel
+    # list persisted as structured JSON on the NVR row itself (NOT a transient cache
+    # tucked under ``capabilities``). Each item mirrors the driver's channel dict —
+    # {channel, channel_number, source_token, name, main{...}, sub{...}, snapshot_url,
+    # ptz_capable}. This is the stable source of truth the UI reads and that future
+    # channel↔camera relationships can key off. Re-enumeration (↻) refreshes it.
+    channels: Mapped[list] = mapped_column(JSON, nullable=False, server_default=text("'[]'"))
 
     # online | offline | connecting | error | unknown (plain string, no PG enum).
     status: Mapped[str] = mapped_column(

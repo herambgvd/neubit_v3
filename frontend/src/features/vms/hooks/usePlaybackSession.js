@@ -121,6 +121,10 @@ export function usePlaybackSession(
   return {
     session,
     hlsUrl: session?.hls_url || null,
+    // NVR-footage sessions also expose a WHEP (WebRTC) endpoint on the same MediaMTX
+    // path — the preferred NVR playback transport (codec-proof: H.264 direct, H.265 via
+    // on-demand transcode; no HLS relative-URL fragility).
+    webrtcUrl: session?.webrtc_url || null,
     ranges: session?.ranges || [],
     from: session?.from || windowRef.current?.from || null,
     to: session?.to || windowRef.current?.to || null,

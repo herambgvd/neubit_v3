@@ -47,6 +47,7 @@ from .schemas import (
     FleetOpPublic,
     NtpBody,
     PasswordBody,
+    UserAddBody,
 )
 from .service import DeviceMgmtService, device_info_dict, fleet_op_dict
 
@@ -121,8 +122,10 @@ async def bulk_fleet_op(
 async def get_device_info(
     camera_id: str,
     svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
+    refresh: bool = False,
 ) -> DeviceInfoPublic:
-    info = await svc.device_info(camera_id)
+    # Served from the identity cached on the camera row; ?refresh=true re-probes the device.
+    info = await svc.device_info(camera_id, refresh=refresh)
     return DeviceInfoPublic(**device_info_dict(info))
 
 
@@ -155,6 +158,40 @@ async def set_password(
     return FleetOpPublic(
         **fleet_op_dict(await svc.set_password(camera_id, user=body.user, new_password=body.new_password))
     )
+
+
+# ── ONVIF user management (list / add / delete device accounts) ──────────────
+@router.get("/cameras/{camera_id}/users", response_model=FleetOpPublic)
+async def list_users(
+    camera_id: str,
+    svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
+    _actor: Principal = Depends(require_permission(PERM_READ)),
+) -> FleetOpPublic:
+    return FleetOpPublic(**fleet_op_dict(await svc.list_users(camera_id)))
+
+
+@router.post("/cameras/{camera_id}/users", response_model=FleetOpPublic)
+async def add_user(
+    camera_id: str,
+    body: UserAddBody,
+    svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
+    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> FleetOpPublic:
+    return FleetOpPublic(
+        **fleet_op_dict(
+            await svc.add_user(camera_id, user=body.user, password=body.password, level=body.level)
+        )
+    )
+
+
+@router.delete("/cameras/{camera_id}/users/{username}", response_model=FleetOpPublic)
+async def delete_user(
+    camera_id: str,
+    username: str,
+    svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
+    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+) -> FleetOpPublic:
+    return FleetOpPublic(**fleet_op_dict(await svc.delete_user(camera_id, user=username)))
 
 
 @router.post("/cameras/{camera_id}/config-backup")

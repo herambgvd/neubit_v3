@@ -158,8 +158,11 @@ async def discover_nvrs(
 async def enumerate_nvr_channels(
     nvr_id: str,
     svc: Annotated[NvrService, Depends(get_nvr_service)],
+    refresh: bool = False,
 ) -> ChannelsResponse:
-    items = await svc.enumerate_channels(nvr_id)
+    # Served from the cached channel list on the NVR row unless ?refresh=true
+    # (the ↻ button) forces a live ONVIF re-enumeration.
+    items = await svc.enumerate_channels(nvr_id, refresh=refresh)
     return ChannelsResponse(items=items, total=len(items))
 
 

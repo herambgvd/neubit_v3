@@ -51,6 +51,15 @@ class PasswordBody(BaseModel):
     new_password: str = Field(min_length=1, max_length=255)
 
 
+class UserAddBody(BaseModel):
+    """POST /cameras/{id}/users — create an ONVIF device account."""
+
+    model_config = ConfigDict(extra="forbid")
+    user: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=255)
+    level: str = Field(default="User")  # Administrator | Operator | User
+
+
 class ConfigRestoreBody(BaseModel):
     """Restore body — the config blob is supplied base64-encoded (JSON-safe)."""
 

@@ -17,7 +17,6 @@ import { sites as sitesApi } from "@/lib/api/sites";
 import { vms } from "./api";
 import { BRAND_FILTERS, STATUS_FILTERS } from "./constants";
 import { StatusDot } from "./components/StatusBadge";
-import CodecBadge from "./components/CodecBadge";
 import CameraDetailView from "./components/CameraDetailView";
 import BulkActionBar from "./components/BulkActionBar";
 import OnboardCameraModal from "./components/OnboardCameraModal";
@@ -58,6 +57,18 @@ export default function CamerasPage() {
     queryFn: () => vms.health.latest(),
     refetchInterval: 30_000,
   });
+
+  // Which cameras are ACTUALLY recording right now (live nvr state) — polled so the
+  // ● Recording indicator reflects reality, not just the configured mode.
+  const recActiveQ = useQuery({
+    queryKey: ["vms-recording-active"],
+    queryFn: () => vms.recordingConfig.active(),
+    refetchInterval: 15_000,
+  });
+  const recordingIds = useMemo(
+    () => new Set(recActiveQ.data?.available ? recActiveQ.data.camera_ids || [] : []),
+    [recActiveQ.data],
+  );
 
   const groupsQ = useQuery({ queryKey: ["vms-groups"], queryFn: () => vms.groups.list(), staleTime: 60_000 });
   const groups = asItems(groupsQ.data);
@@ -253,6 +264,7 @@ export default function CamerasPage() {
                     key={c.id}
                     camera={c}
                     siteName={siteNames[c.placement?.site_id]}
+                    recording={recordingIds.has(c.id)}
                     selected={c.id === selectedId}
                     bulkChecked={selectedIds.has(c.id)}
                     onSelect={() => setSelectedId(c.id)}
@@ -271,6 +283,7 @@ export default function CamerasPage() {
               key={selected.id}
               camera={selected}
               sites={sites}
+              recording={recordingIds.has(selected.id)}
               onUpdated={invalidate}
               onDelete={askDelete}
               onSnapshot={(c) => setSnapTarget(c)}
@@ -325,7 +338,7 @@ export default function CamerasPage() {
 // Compact camera row for the left list — status dot + name + codec badge + a
 // meta line (ip · brand · site). Bulk-checkbox on the left; the row selects for
 // the detail pane. Selected row gets an accent border + hover fill.
-function CameraListItem({ camera, siteName, selected, bulkChecked, onSelect, onToggleBulk }) {
+function CameraListItem({ camera, siteName, recording, selected, bulkChecked, onSelect, onToggleBulk }) {
   return (
     <div
       role="button"
@@ -348,7 +361,6 @@ function CameraListItem({ camera, siteName, selected, bulkChecked, onSelect, onT
         <p className="flex items-center gap-1.5 truncate text-[13px] font-medium text-foreground">
           <StatusDot status={camera.status} />
           <span className="truncate">{camera.name}</span>
-          <CodecBadge camera={camera} />
         </p>
         <p className="truncate font-mono text-[10px] text-muted">
           {cameraIp(camera)}
@@ -356,6 +368,14 @@ function CameraListItem({ camera, siteName, selected, bulkChecked, onSelect, onT
           {siteName ? ` · ${siteName}` : ""}
         </p>
       </div>
+      {recording && (
+        <span
+          title="Recording"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-red-500"
+        >
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> REC
+        </span>
+      )}
     </div>
   );
 }

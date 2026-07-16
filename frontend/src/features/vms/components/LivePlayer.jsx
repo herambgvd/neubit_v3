@@ -176,12 +176,10 @@ function LivePlayer({
     // WebRTC — otherwise HLS(HEVC)→WebRTC→transcode-fail→HLS would loop forever.
     let webrtcExhausted = false;
     // Abort in-flight WHEP POST(s) on unmount so navigating away doesn't leave
-    // pending requests holding connections (that's what made leaving the wall
-    // feel slow). And remember the WHEP session resource (Location header) so we
-    // can DELETE it on teardown — ending the MediaMTX reader + reaping the
-    // on-demand source/transcode immediately instead of waiting for a timeout.
+    // pending requests holding connections (that's what made leaving the wall feel
+    // slow). Teardown itself is pc.close() (see cleanup) — MediaMTX ends the WebRTC
+    // session on PeerConnection close, so no explicit WHEP DELETE is needed.
     const whepAbort = new AbortController();
-    let whepResource = null;
 
     // ── connection-concurrency gate ────────────────────────────────────────
     // We hold ONE slot from `connectGate` while THIS connection is forming, and
@@ -207,13 +205,13 @@ function LivePlayer({
         // flags). The rejection is swallowed in sendOffer's catch below.
         whepAbort.abort(new DOMException("LivePlayer unmounted", "AbortError"));
       } catch {}
-      if (whepResource) {
-        // Fire-and-forget; keepalive lets it finish during page navigation.
-        try {
-          fetch(whepResource, { method: "DELETE", keepalive: true });
-        } catch {}
-        whepResource = null;
-      }
+      // NOTE: we deliberately DON'T fetch(DELETE) the WHEP session here. MediaMTX
+      // auto-terminates a WebRTC session the moment its PeerConnection closes (below),
+      // so pc.close() already reaps the reader promptly — WebRTC teardown is connection-
+      // state driven, not an RTSP-style timeout. An explicit DELETE only raced that
+      // auto-reap: the session was usually already gone → a 404 the browser logs at the
+      // network layer (JS can't swallow it), spamming the console on every unmount /
+      // StrictMode remount. pc.close() is the clean, quiet teardown.
       if (hlsRef.current) {
         try {
           hlsRef.current.stopLoad?.();
@@ -344,20 +342,11 @@ function LivePlayer({
             headers: { "Content-Type": "application/sdp" },
             body: pc.localDescription.sdp,
           });
-          // Unmounted while the POST was in flight → don't touch a torn-down pc;
-          // reap the just-created session so it doesn't linger.
-          if (disposed) {
-            try {
-              const loc = res.headers.get("Location");
-              if (loc) {
-                const resUrl = new URL(loc, window.location.origin);
-                const tok = new URL(url, window.location.origin).searchParams.get("token");
-                if (tok && !resUrl.searchParams.get("token")) resUrl.searchParams.set("token", tok);
-                fetch(resUrl.toString(), { method: "DELETE", keepalive: true }).catch(() => {});
-              }
-            } catch {}
-            return;
-          }
+          // Unmounted while the POST was in flight → don't touch a torn-down pc. The
+          // pc was already closed by cleanup(), so MediaMTX reaps this just-created
+          // WebRTC session on its own (connection-state driven). We do NOT DELETE it:
+          // the session is usually already gone → a console-spamming 404. Let it reap.
+          if (disposed) return;
 
           // 404 = MediaMTX has the path but the RTSP source isn't ready yet
           // (also the transcode ffmpeg spinning up) → keep retrying same url.
@@ -380,19 +369,6 @@ function LivePlayer({
             return;
           }
           if (!res.ok) throw new Error(`WHEP ${res.status}`);
-
-          // Remember the WHEP session resource so cleanup() can DELETE it (ends
-          // the MediaMTX reader immediately). Carry the media token for the
-          // ForwardAuth gate on the DELETE.
-          try {
-            const loc = res.headers.get("Location");
-            if (loc) {
-              const resUrl = new URL(loc, window.location.origin);
-              const tok = new URL(url, window.location.origin).searchParams.get("token");
-              if (tok && !resUrl.searchParams.get("token")) resUrl.searchParams.set("token", tok);
-              whepResource = resUrl.toString();
-            }
-          } catch {}
 
           // res.text() reads the body stream (also signal-bound) — swallow on the
           // raw promise so an abort during the read never floats unhandled either.
