@@ -28,7 +28,8 @@ class MediaNodeCreate(BaseModel):
     webrtc_base: Optional[str] = Field(default=None, max_length=512)
     rtsp_base: Optional[str] = Field(default=None, max_length=512)
     label: Optional[str] = Field(default=None, max_length=255)
-    capacity_channels: int = Field(default=0, ge=0)
+    # Default channel capacity of a recorder box (a sensible NVR-appliance limit).
+    capacity_channels: int = Field(default=128, ge=0)
     # Optional cosmetic host label (defaults to api_url's host if omitted server-side).
     host: Optional[str] = Field(default=None, max_length=255)
 
@@ -69,7 +70,13 @@ class MediaNodePublic(BaseModel):
     warning: Optional[str] = None
 
     @classmethod
-    def from_row(cls, row, *, warning: str | None = None) -> "MediaNodePublic":
+    def from_row(
+        cls, row, *, warning: str | None = None, used: int | None = None
+    ) -> "MediaNodePublic":
+        # ``used`` is the LIVE count of cameras pinned to this recorder (computed
+        # from ``Camera.media_node_id``); it's the source of truth for the UI's
+        # "N / capacity" — the stored ``used_channels`` is a best-effort heartbeat
+        # value and can lag. Capacity defaults to 128 channels when unset (0).
         return cls.model_validate(
             {
                 "id": row.id,
@@ -80,8 +87,8 @@ class MediaNodePublic(BaseModel):
                 "webrtc_base": row.webrtc_base,
                 "rtsp_base": row.rtsp_base,
                 "label": row.label,
-                "capacity_channels": row.capacity_channels,
-                "used_channels": row.used_channels,
+                "capacity_channels": row.capacity_channels or 128,
+                "used_channels": used if used is not None else row.used_channels,
                 "status": row.status,
                 "last_heartbeat": row.last_heartbeat,
                 "created_at": row.created_at,

@@ -296,15 +296,33 @@ class MediaNodeService:
 
         rows = (await self.db.execute(stmt)).scalars().all()
         total = int(await self.db.scalar(count_stmt) or 0)
+
+        # Live used-channel counts (cameras pinned per node) in ONE grouped query
+        # — the source of truth for "N / capacity" (stored used_channels can lag).
+        node_ids = [r.id for r in rows]
+        counts: dict[str, int] = {}
+        if node_ids:
+            res = await self.db.execute(
+                scoped(
+                    select(Camera.media_node_id, func.count()).select_from(Camera),
+                    Camera,
+                    self.scope,
+                )
+                .where(Camera.media_node_id.in_(node_ids))
+                .group_by(Camera.media_node_id)
+            )
+            counts = {nid: int(c) for nid, c in res.all()}
+
         return MediaNodeListResponse(
-            items=[MediaNodePublic.from_row(r) for r in rows],
+            items=[MediaNodePublic.from_row(r, used=counts.get(r.id, 0)) for r in rows],
             total=total,
             skip=skip,
             limit=limit,
         )
 
     async def get(self, node_id: str) -> MediaNodePublic:
-        return MediaNodePublic.from_row(await self._row(node_id))
+        row = await self._row(node_id)
+        return MediaNodePublic.from_row(row, used=await self._assigned_camera_count(node_id))
 
     async def update(self, node_id: str, body: MediaNodeUpdate) -> MediaNodePublic:
         row = await self._row(node_id)
