@@ -12,9 +12,18 @@ services:
   mediamtx-r1:
     image: bluenviron/mediamtx:latest-ffmpeg
     restart: unless-stopped
+    environment:
+      # Distinct WebRTC ICE port (default node owns 8189) so the browser can
+      # reach THIS recorder's media directly. On a real box this is unneeded
+      # (own IP); locally 3 MediaMTX can't share 8189.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8190"
+      MTX_WEBRTCLOCALTCPADDRESS: ":8190"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - recordings_r1:/recordings
+    ports:
+      - "8190:8190/udp"   # WebRTC ICE (recorder-1)
+      - "8190:8190/tcp"
     networks: [neubit]
 
   nvr-r1:
