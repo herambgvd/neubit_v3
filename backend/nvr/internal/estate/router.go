@@ -47,6 +47,7 @@ func Mount(r chi.Router, d *Deps) {
 			mountRecording(g, d)
 			mountStorage(g, d)
 			mountPtz(g, d)
+			mountLive(g, d) // node-issued live/playback/recordings (media tokens)
 		})
 	})
 }
