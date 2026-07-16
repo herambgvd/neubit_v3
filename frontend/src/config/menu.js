@@ -91,7 +91,7 @@ export function isDevicesRoute(pathname) {
 //   (Recordings folded into Playback — its calendar/timeline covers estate browse +
 //   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs = [
-  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read", module: "vms" },
+  { title: "Live", icon: "heroicons:signal", link: "/streaming", perm: "neubit.read", module: "vms" },
   // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
   // shared state across every operator + display client. Distinct from the
   // single-operator "Video Wall" live-grid above.
