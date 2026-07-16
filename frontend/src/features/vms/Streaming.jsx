@@ -174,6 +174,25 @@ export default function Streaming() {
   // groups whose cameras were deleted (robustness).
   const cameraIdSet = useMemo(() => new Set(cameras.map((c) => c.id)), [cameras]);
 
+  // Auto-prune tiles whose camera no longer exists (camera / NVR was deleted) so the
+  // wall never strands "camera not found" tiles pointing at gone ids. Gated on a
+  // SUCCESSFUL fetch — a transient load error or the pre-load mount must NOT clear the
+  // wall. Empties the cell (drag-target) rather than error-holding a dead id.
+  useEffect(() => {
+    if (!camerasQ.isSuccess) return;
+    setCells((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (c.cameraId && !cameraIdSet.has(c.cameraId)) {
+          changed = true;
+          return emptyCell();
+        }
+        return c;
+      });
+      return changed ? next : prev;
+    });
+  }, [camerasQ.isSuccess, cameraIdSet]);
+
   // ── layout / assignment ────────────────────────────────────────────────
   const changeLayout = useCallback((key) => {
     const next = getLayout(key);

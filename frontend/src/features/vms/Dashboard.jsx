@@ -469,7 +469,7 @@ function RecentAlarmsCard({ alarms }) {
       {recent.length === 0 ? (
         <EmptyRow icon="heroicons:check-circle" text="No alarms in the last 24 hours." />
       ) : (
-        <div className="divide-y divide-card-border/60">
+        <div className="max-h-80 divide-y divide-card-border/60 overflow-y-auto pr-1">
           {recent.map((e) => (
             <div key={e.id} className="flex items-center gap-3 py-2.5">
               <span
