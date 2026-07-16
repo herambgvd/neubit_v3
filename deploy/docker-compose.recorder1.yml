@@ -10,6 +10,7 @@
 #     up -d mediamtx-r1 nvr-r1
 services:
   mediamtx-r1:
+    container_name: neubit-v3-mediamtx-1
     image: bluenviron/mediamtx:latest-ffmpeg
     restart: unless-stopped
     environment:
@@ -27,6 +28,7 @@ services:
     networks: [neubit]
 
   nvr-r1:
+    container_name: neubit-v3-nvr-1
     image: neubit-v3-nvr:latest
     restart: unless-stopped
     env_file: .env

@@ -15,6 +15,7 @@
 # (see gateway/dynamic/routes.yml + middlewares.yml — media2-* entries).
 services:
   mediamtx-2:
+    container_name: neubit-v3-mediamtx-2
     image: bluenviron/mediamtx:latest-ffmpeg
     restart: unless-stopped
     environment:
@@ -32,6 +33,7 @@ services:
     networks: [neubit]
 
   nvr-2:
+    container_name: neubit-v3-nvr-2
     image: neubit-v3-nvr:latest        # reuse the already-built image (no rebuild)
     restart: unless-stopped
     env_file: .env
