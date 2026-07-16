@@ -29,6 +29,7 @@ from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import AppError, NotFoundError, ValidationError
 
 from app.vms.common.media_token import mint_media_token, token_hash
+from app.vms.common.node_routing import node_base_for_camera
 from app.vms.common.nvr_client import NvrClient, NvrUnavailable
 from app.vms.live.service import _append_token
 from app.vms.models import Camera, PlaybackSession, Recording, VmsEvent
@@ -70,7 +71,19 @@ class PlaybackService:
     def __init__(self, db: AsyncSession, scope: Scope, *, bearer: str | None = None) -> None:
         self.db = db
         self.scope = scope
+        self.bearer = bearer
         self.nvr = NvrClient(bearer=bearer)
+
+    async def _nvr_for(self, camera_or_id) -> NvrClient:
+        """An ``NvrClient`` bound to THIS camera's recorder-node base URL (MN-1b).
+
+        Unassigned camera / missing node → ``base_url=None`` → we return the shared
+        ``self.nvr`` (global ``VE_NVR_URL``) UNCHANGED — single-node deployments byte-
+        identical (and preserves ``self.nvr = stub`` test injection)."""
+        base = await node_base_for_camera(self.db, self.scope.tenant_id, camera_or_id)
+        if base is None:
+            return self.nvr
+        return NvrClient(bearer=self.bearer, base_url=base)
 
     # ── row helpers ─────────────────────────────────────────────────────
     async def _camera(self, camera_id: str) -> Camera:
@@ -120,7 +133,8 @@ class PlaybackService:
         from_iso = from_.astimezone(timezone.utc).isoformat()
         to_iso = to.astimezone(timezone.utc).isoformat()
         try:
-            pb = await self.nvr.playback_list(
+            nvr = await self._nvr_for(camera)
+            pb = await nvr.playback_list(
                 camera_id=camera.id, profile=profile, from_=from_iso, to=to_iso
             )
         except NvrUnavailable as exc:

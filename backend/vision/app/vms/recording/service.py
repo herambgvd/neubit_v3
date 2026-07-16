@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import AppError
 
+from app.vms.common.node_routing import node_base_for_camera
 from app.vms.common.nvr_client import NvrClient, NvrUnavailable
 from app.vms.live.service import LiveService
 from app.vms.models import Camera, Recording, StoragePool
@@ -65,9 +66,23 @@ class RecordingService:
         self.db = db
         self.scope = scope
         self.bearer = bearer
+        # GLOBAL/default client (``VE_NVR_URL``) — used only for the estate-wide
+        # ``recording_status`` probe. Every PER-CAMERA start/stop routes to the camera's
+        # assigned MediaNode via ``_nvr_for`` (MN-1b, single-node back-compat preserved).
         self.nvr = NvrClient(bearer=bearer)
         # Reuse the live service purely for its RTSP-source derivation (no session).
         self._live = LiveService(db, scope, bearer=bearer)
+
+    async def _nvr_for(self, camera_or_id) -> NvrClient:
+        """An ``NvrClient`` bound to THIS camera's recorder-node base URL (MN-1b).
+
+        Unassigned camera / missing node → ``base_url=None`` → we return the shared
+        ``self.nvr`` (global ``VE_NVR_URL``) UNCHANGED — single-node deployments byte-
+        identical (and preserves ``self.nvr = stub`` test injection)."""
+        base = await node_base_for_camera(self.db, self.scope.tenant_id, camera_or_id)
+        if base is None:
+            return self.nvr
+        return NvrClient(bearer=self.bearer, base_url=base)
 
     # ── row helpers ─────────────────────────────────────────────────────
     async def _camera(self, camera_id: str) -> Camera:
@@ -120,7 +135,8 @@ class RecordingService:
             else:
                 # Any non-continuous mode: stop an in-flight continuous recording so
                 # the switch is honoured (schedule windows / manual re-enable later).
-                await self.nvr.stop_recording(
+                nvr = await self._nvr_for(camera)
+                await nvr.stop_recording(
                     camera_id=camera.id, profile=self._record_profile(camera)
                 )
         except RecordingUpstreamError:
@@ -170,7 +186,8 @@ class RecordingService:
     async def stop(self, camera_id: str, *, actor):
         camera = await self._camera(camera_id)
         profile = self._record_profile(camera)
-        await self.nvr.stop_recording(camera_id=camera.id, profile=profile)
+        nvr = await self._nvr_for(camera)
+        await nvr.stop_recording(camera_id=camera.id, profile=profile)
         return {
             "camera_id": camera.id,
             "profile": profile,
@@ -195,8 +212,9 @@ class RecordingService:
         if not rtsp_url:
             raise RecordingUpstreamError("camera has no reachable RTSP stream to record")
         record_dir = await self._record_dir_for(camera)
+        nvr = await self._nvr_for(camera)
         try:
-            return await self.nvr.start_recording(
+            return await nvr.start_recording(
                 camera_id=camera.id, profile=profile, rtsp_url=rtsp_url,
                 trigger=trigger, audio=bool(camera.audio_enabled), record_dir=record_dir,
             )
