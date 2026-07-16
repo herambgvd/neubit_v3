@@ -112,6 +112,20 @@ http:
         prefixes:
           - "/media2/playback"
 
+    # RECORDER-1 (local 2-recorder test) — strip /media1/* prefixes.
+    media1-hls-strip:
+      stripPrefix:
+        prefixes:
+          - "/media1/hls"
+    media1-whep-strip:
+      stripPrefix:
+        prefixes:
+          - "/media1/whep"
+    media1-playback-strip:
+      stripPrefix:
+        prefixes:
+          - "/media1/playback"
+
     # MediaMTX's HLS muxer bounces the FIRST playlist request (no `cookieCheck=1`
     # query) with a 302 whose Location is ROOT-ABSOLUTE (`/<name>/index.m3u8?
     # cookieCheck=1&token=...`) — it is NOT subpath-aware and ignores
