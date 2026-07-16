@@ -164,9 +164,11 @@ async def test_channel_playback_registers_mediamtx_with_token(db, nvr, monkeypat
     assert out.hls_url and "token=" in out.hls_url
     assert out.token
     # The token is a media token in playback mode bound to the pseudo NVR-channel.
+    # The pseudo id is TIME-KEYED (…-pb<from-unix>) — an NVR replay is a linear stream
+    # pinned to its starttime, so a seek must land on a NEW MediaMTX path (fresh pull).
     claims = media_token.verify_media_token(out.token)
     assert claims["mode"] == "playback"
-    assert claims["camera_id"] == f"nvr-{nvr.id}-ch1-playback"
+    assert claims["camera_id"] == f"nvr-{nvr.id}-ch1-pb{int(frm.timestamp())}"
     # The nvr client was asked to register the NVR's playback RTSP.
     assert client.calls and client.calls[0]["profile"] == "playback"
     assert "Streaming/tracks/101" in client.calls[0]["rtsp_url"]
@@ -195,3 +197,66 @@ async def test_channel_playback_no_uri_is_empty_session(db, nvr, monkeypatch):
     )
     assert out.hls_url is None and out.rtsp_url is None and out.token is None
     assert out.ready is False
+
+
+# ── recording-days calendar (Task 1) ────────────────────────────────────────────────
+async def test_recording_days_groups_ranges_by_local_day(db, nvr, monkeypatch):
+    # Ranges on the 14th and 16th (UTC), plus a 14th→15th midnight-spanner → {14,15,16}.
+    driver = _StubDriver(
+        matches=[
+            {"channel": 1, "start_time": "2026-07-14T08:00:00Z", "end_time": "2026-07-14T09:00:00Z"},
+            {"channel": 1, "start_time": "2026-07-14T23:30:00Z", "end_time": "2026-07-15T00:30:00Z"},
+            {"channel": 1, "start_time": "2026-07-16T01:00:00Z", "end_time": "2026-07-16T02:00:00Z"},
+        ]
+    )
+    out = await _svc(db, driver, monkeypatch).recording_days_nvr(nvr.id, 1, "2026-07", 0)
+    assert out.year == 2026 and out.month == 7
+    assert out.days == [14, 15, 16]
+
+
+async def test_recording_days_tz_shift_moves_day(db, nvr, monkeypatch):
+    # 23:00Z on the 14th → 04:30 on the 15th in IST (+330) → day 15.
+    driver = _StubDriver(
+        matches=[{"channel": 1, "start_time": "2026-07-14T23:00:00Z", "end_time": "2026-07-14T23:30:00Z"}]
+    )
+    out = await _svc(db, driver, monkeypatch).recording_days_nvr(nvr.id, 1, "2026-07", 330)
+    assert out.days == [15]
+
+
+async def test_recording_days_unreachable_nvr_is_empty(db, nvr, monkeypatch):
+    # channel_recordings returns empty on an unreachable NVR → {days: []}, never 500.
+    driver = _StubDriver(matches=[])
+    out = await _svc(db, driver, monkeypatch).recording_days_nvr(nvr.id, 1, "2026-07", 0)
+    assert out.days == []
+
+
+async def test_recording_days_driver_raises_is_graceful(db, nvr, monkeypatch):
+    # A driver that blows up mid-search must still yield an empty calendar (never 500).
+    class _Boom(_StubDriver):
+        async def search_recordings(self, *a, **k):
+            raise RuntimeError("device timeout")
+
+    out = await _svc(db, _Boom(), monkeypatch).recording_days_nvr(nvr.id, 1, "2026-07", 0)
+    assert out.days == []
+
+
+async def test_recording_days_bad_month_raises_before_driver(db, nvr, monkeypatch):
+    from kernel.errors import ValidationError
+
+    # A driver that would fail the test if called — bad month must short-circuit first.
+    class _NeverCalled(_StubDriver):
+        async def search_recordings(self, *a, **k):
+            raise AssertionError("driver must not be reached on a bad month")
+
+    with pytest.raises(ValidationError):
+        await _svc(db, _NeverCalled(), monkeypatch).recording_days_nvr(nvr.id, 1, "2026-13", 0)
+
+
+async def test_recording_days_tenant_isolation(db, nvr, monkeypatch):
+    from kernel.errors import NotFoundError
+    import app.vms.nvr.service as mod
+
+    svc = NvrService(db, Scope(tenant_id=uuid.uuid4(), is_superadmin=False))
+    monkeypatch.setattr(mod, "get_driver", lambda brand: _StubDriver())
+    with pytest.raises(NotFoundError):
+        await svc.recording_days_nvr(nvr.id, 1, "2026-07", 0)

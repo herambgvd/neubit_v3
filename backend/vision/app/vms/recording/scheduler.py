@@ -29,6 +29,7 @@ from datetime import datetime, time as dtime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.vms.common.node_routing import node_base_for_camera
 from app.vms.common.nvr_client import NvrClient, NvrUnavailable
 from app.vms.common.service_token import mint_service_token
 from app.vms.models import Camera
@@ -203,7 +204,13 @@ class RecordingScheduler:
         next tick). Uses a minted service token scoped to the camera's tenant.
         """
         tenant = str(cam.tenant_id) if cam.tenant_id else None
-        nvr = NvrClient(bearer=mint_service_token(tenant_id=tenant))
+        # MN-1b: route to THIS camera's assigned recorder node; unassigned cameras
+        # resolve to None → NvrClient falls back to the global VE_NVR_URL (unchanged).
+        # Only pass ``base_url`` when a node resolved, so the single-node path constructs
+        # the client exactly as before (``NvrClient(bearer=...)``).
+        base = await node_base_for_camera(db, cam.tenant_id, cam)
+        token = mint_service_token(tenant_id=tenant)
+        nvr = NvrClient(bearer=token, base_url=base) if base else NvrClient(bearer=token)
         profile = "sub" if cam.record_substream else "main"
         trigger = "continuous" if cam.recording_mode == "continuous" else "schedule"
         try:

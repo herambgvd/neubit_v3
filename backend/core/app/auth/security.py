@@ -122,6 +122,11 @@ def create_access_token(
         "tenant_id": str(user.tenant_id) if getattr(user, "tenant_id", None) else None,
         "is_superadmin": bool(getattr(user, "is_superadmin", False)),
         "permissions": permissions,
+        # ``role_id`` is the caller's role id, baked in like ``permissions`` so a
+        # satellite service can resolve ROLE-subject per-camera ACL grants (keyed
+        # on core subject ids "role:<id>") without a round-trip to core. Super-admins
+        # may hold no role → None. Core itself ignores this claim.
+        "role_id": str(user.role_id) if getattr(user, "role_id", None) else None,
         "features": dict(features or {}),
         "limits": dict(limits or {}),
         "license_state": license_state or "active",

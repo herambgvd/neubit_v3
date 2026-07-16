@@ -33,6 +33,7 @@ from kernel.auth import _bearer
 from app.db import get_db
 
 from app.vms.cameras.schemas import ChannelsResponse, DiscoverResponse
+from app.vms.playback.schemas import RecordingDaysResponse
 from .schemas import (
     MapChannelsBody,
     MapChannelsResult,
@@ -52,6 +53,9 @@ from .service import NvrService
 # NVR reads + writes gate on vms.nvr.manage (camera.read also acceptable per plan; the
 # tenant-admin "*" wildcard grants both today). Kept simple: manage covers everything.
 PERM_MANAGE = "vms.nvr.manage"
+# The recording-days calendar is a playback-grade read (pairs with the camera calendar),
+# so it gates on the SAME view perm the playback router uses — not the manage perm.
+PERM_PLAYBACK_VIEW = "vms.playback.view"
 
 router = APIRouter(prefix="/vms", tags=["VMS NVR"])
 
@@ -240,6 +244,31 @@ async def nvr_channel_recordings(
     from_iso = from_.isoformat() if from_ else None
     to_iso = to.isoformat() if to else None
     return await svc.channel_recordings(nvr_id, channel, from_iso, to_iso)
+
+
+@router.get(
+    "/nvrs/{nvr_id}/channels/{channel}/recording-days",
+    response_model=RecordingDaysResponse,
+    dependencies=[Depends(require_permission(PERM_PLAYBACK_VIEW))],
+)
+async def nvr_channel_recording_days(
+    nvr_id: str,
+    channel: int,
+    svc: Annotated[NvrService, Depends(get_nvr_service)],
+    month: str = Query(..., description="YYYY-MM (calendar month to scan)"),
+    tz_offset_minutes: int = Query(
+        0,
+        ge=-14 * 60,
+        le=14 * 60,
+        description="Operator tz offset from UTC in minutes (e.g. 330 for IST); "
+        "days are grouped in this LOCAL tz. Default 0 = UTC.",
+    ),
+) -> RecordingDaysResponse:
+    """Which days of ``month`` have footage on this NVR channel (calendar red-marks).
+
+    Queries the NVR's OWN storage once for the whole month, then buckets each range into
+    LOCAL day-of-month ints. Graceful empty on an unreachable NVR; bad ``month`` → 4xx."""
+    return await svc.recording_days_nvr(nvr_id, channel, month, tz_offset_minutes)
 
 
 @router.post(

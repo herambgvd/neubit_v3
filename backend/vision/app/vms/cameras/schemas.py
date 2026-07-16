@@ -336,13 +336,18 @@ class CameraReorderBody(BaseModel):
 
 
 class CameraBulkBody(BaseModel):
-    """Bulk camera action (enable/disable/group/retention/delete; cap 200)."""
+    """Bulk camera action (enable/disable/group/retention/assign_node/delete; cap 200)."""
 
     model_config = ConfigDict(extra="forbid")
     camera_ids: list[str] = Field(min_length=1, max_length=200)
-    action: Literal["enable", "disable", "group", "retention", "delete"]
+    action: Literal["enable", "disable", "group", "retention", "assign_node", "delete"]
     group_id: Optional[str] = Field(default=None, max_length=36)
     retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
+    # ``assign_node``: the recorder-node to home every listed camera on. Non-null →
+    # validated against the tenant's usable nodes; null → unassign (fall back to the
+    # global VE_NVR_URL). The field is ALWAYS present in the request for assign_node
+    # (null is a meaningful value = unassign), so we can't distinguish "omitted".
+    media_node_id: Optional[str] = Field(default=None, max_length=36)
 
 
 # ── Discovery / onboarding request bodies (driver-backed) ─────────────────────────

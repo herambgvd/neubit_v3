@@ -9,7 +9,7 @@
 //
 // Reads gate on vms.playback.view; schedule writes on vms.config.manage. The gateway
 // routes /api/v1/vms/reports* → the vision service.
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import { asItems, fmtBytes, fmtDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
 import ReportScheduleModal from "./components/ReportScheduleModal";
+import ReportRunsPanel, { scheduleRunsKey } from "./components/ReportRunsPanel";
 
 const REPORT_KINDS = [
   { value: "camera-uptime", label: "Camera uptime", icon: "heroicons:signal", desc: "Online % per camera" },
@@ -51,6 +52,7 @@ export default function ReportsPage() {
   const [toDate, setToDate] = useState(todayStr());
   const [downloading, setDownloading] = useState(null); // "csv" | "pdf" | null
   const [scheduleModal, setScheduleModal] = useState(null); // {} to open
+  const [expanded, setExpanded] = useState(null); // schedule id whose run history is open
 
   // Cameras (optional narrowing + name lookup).
   const camerasQ = useQuery({
@@ -90,6 +92,24 @@ export default function ReportsPage() {
       qc.invalidateQueries({ queryKey: ["vms-report-schedules"] });
     },
     onError: (e) => toast.error(apiError(e, "Delete failed")),
+  });
+
+  // Run-now: fires the report immediately. The endpoint returns 201 with the
+  // created run even on a compute-error, so branch on run.status. Either way,
+  // refresh that schedule's run history and expand it so the result is visible.
+  const runNow = useMutation({
+    mutationFn: (id) => vms.reports.schedules.runNow(id),
+    onSuccess: (run, id) => {
+      if (run?.status === "error") {
+        toast.warning(run.error || "Report ran but failed to compute");
+      } else {
+        toast.success("Report generated");
+      }
+      setExpanded(id);
+      qc.invalidateQueries({ queryKey: scheduleRunsKey(id) });
+      qc.invalidateQueries({ queryKey: ["vms-report-schedules"] });
+    },
+    onError: (e) => toast.error(apiError(e, "Run failed")),
   });
 
   const download = async (fmt) => {
@@ -229,6 +249,7 @@ export default function ReportsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-card-border text-left text-[11px] uppercase tracking-wide text-muted">
+                  <th className="w-8 px-4 py-2.5" />
                   <th className="px-4 py-2.5 font-medium">Name</th>
                   <th className="px-4 py-2.5 font-medium">Report</th>
                   <th className="px-4 py-2.5 font-medium">Cadence</th>
@@ -240,52 +261,91 @@ export default function ReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {schedules.map((s) => (
-                  <tr key={s.id} className="border-b border-card-border/60 last:border-0">
-                    <td className="px-4 py-2.5 font-medium text-foreground">{s.name}</td>
-                    <td className="px-4 py-2.5 text-muted">
-                      {REPORT_KINDS.find((k) => k.value === s.kind)?.label || s.kind}
-                    </td>
-                    <td className="px-4 py-2.5 capitalize text-muted">{s.cadence}</td>
-                    <td className="px-4 py-2.5 uppercase text-muted">{s.export_format}</td>
-                    <td className="px-4 py-2.5 text-muted">{(s.recipients || []).length || "—"}</td>
-                    <td className="px-4 py-2.5 text-muted">{s.next_run_at ? fmtDateTime(s.next_run_at) : "—"}</td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
-                          s.enabled ? "bg-emerald-500/15 text-emerald-500" : "bg-hover text-muted"
+                {schedules.map((s) => {
+                  const isOpen = expanded === s.id;
+                  const colSpan = canManage ? 9 : 8;
+                  return (
+                    <Fragment key={s.id}>
+                      <tr
+                        className={`cursor-pointer border-b border-card-border/60 transition hover:bg-hover/40 last:border-0 ${
+                          isOpen ? "bg-hover/40" : ""
                         }`}
+                        onClick={() => setExpanded(isOpen ? null : s.id)}
                       >
-                        {s.enabled ? "Active" : "Paused"}
-                      </span>
-                      {s.last_error && (
-                        <span className="ml-1.5 text-[11px] text-red-500" title={s.last_error}>
-                          error
-                        </span>
+                        <td className="px-4 py-2.5 text-muted">
+                          <Icon
+                            icon="heroicons-solid:chevron-right"
+                            className={`text-sm transition-transform ${isOpen ? "rotate-90" : ""}`}
+                          />
+                        </td>
+                        <td className="px-4 py-2.5 font-medium text-foreground">{s.name}</td>
+                        <td className="px-4 py-2.5 text-muted">
+                          {REPORT_KINDS.find((k) => k.value === s.kind)?.label || s.kind}
+                        </td>
+                        <td className="px-4 py-2.5 capitalize text-muted">{s.cadence}</td>
+                        <td className="px-4 py-2.5 uppercase text-muted">{s.export_format}</td>
+                        <td className="px-4 py-2.5 text-muted">{(s.recipients || []).length || "—"}</td>
+                        <td className="px-4 py-2.5 text-muted">{s.next_run_at ? fmtDateTime(s.next_run_at) : "—"}</td>
+                        <td className="px-4 py-2.5">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                              s.enabled ? "bg-emerald-500/15 text-emerald-500" : "bg-hover text-muted"
+                            }`}
+                          >
+                            {s.enabled ? "Active" : "Paused"}
+                          </span>
+                          {s.last_error && (
+                            <span className="ml-1.5 text-[11px] text-red-500" title={s.last_error}>
+                              error
+                            </span>
+                          )}
+                        </td>
+                        {canManage && (
+                          <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              className="text-muted transition hover:text-foreground disabled:opacity-40"
+                              title="Run now"
+                              disabled={runNow.isPending && runNow.variables === s.id}
+                              onClick={() => runNow.mutate(s.id)}
+                            >
+                              <Icon
+                                icon={
+                                  runNow.isPending && runNow.variables === s.id
+                                    ? "svg-spinners:180-ring"
+                                    : "heroicons-outline:play"
+                                }
+                                className="text-base"
+                              />
+                            </button>
+                            <button
+                              className="ml-2 text-muted transition hover:text-foreground"
+                              title="Edit"
+                              onClick={() => setScheduleModal(s)}
+                            >
+                              <Icon icon="heroicons-outline:pencil-square" className="text-base" />
+                            </button>
+                            <button
+                              className="ml-2 text-muted transition hover:text-red-500"
+                              title="Delete"
+                              onClick={() => {
+                                if (window.confirm(`Delete schedule "${s.name}"?`)) deleteSchedule.mutate(s.id);
+                              }}
+                            >
+                              <Icon icon="heroicons-outline:trash" className="text-base" />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                      {isOpen && (
+                        <tr className="border-b border-card-border/60 last:border-0">
+                          <td colSpan={colSpan} className="bg-hover/20 p-0">
+                            <ReportRunsPanel schedule={s} />
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    {canManage && (
-                      <td className="px-4 py-2.5 text-right">
-                        <button
-                          className="text-muted transition hover:text-foreground"
-                          title="Edit"
-                          onClick={() => setScheduleModal(s)}
-                        >
-                          <Icon icon="heroicons-outline:pencil-square" className="text-base" />
-                        </button>
-                        <button
-                          className="ml-2 text-muted transition hover:text-red-500"
-                          title="Delete"
-                          onClick={() => {
-                            if (window.confirm(`Delete schedule "${s.name}"?`)) deleteSchedule.mutate(s.id);
-                          }}
-                        >
-                          <Icon icon="heroicons-outline:trash" className="text-base" />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -12,6 +12,7 @@ Claims consumed (minted by core's ``create_access_token``):
     tenant_id     tenant uuid str, or null for platform super-admins
     is_superadmin bool
     permissions   list[str] effective permission keys ("*" for Administrator)
+    role_id       caller's role uuid str, or null (e.g. super-admins with no role)
 
 Usage in a service route:
 
@@ -57,6 +58,10 @@ class Principal:
     tenant_id: uuid.UUID | None
     is_superadmin: bool
     permissions: list[str] = field(default_factory=list)
+    # The caller's role id, as an opaque core subject id (not uuid-parsed here).
+    # Present so we can resolve ROLE-subject per-camera ACL grants statelessly;
+    # None for a legacy token minted before the claim existed, or a role-less user.
+    role_id: str | None = None
     # Tenant entitlements baked into the token by core (empty for super-admins, who
     # bypass). ``features`` is {module_key: bool}; ``limits`` is {resource: number}.
     # ``license_state`` is "active" | "grace" | "expired" (super-admins/on missing
@@ -72,6 +77,16 @@ class Principal:
             or WILDCARD in self.permissions
             or permission in self.permissions
         )
+
+    def subjects(self) -> list[str]:
+        """The core subject ids this caller matches, for per-camera ACL resolution.
+
+        Format: "user:<uuid>" always; "role:<uuid>" when the token carries a role_id.
+        """
+        subs = [f"user:{self.user_id}"]
+        if self.role_id:
+            subs.append(f"role:{self.role_id}")
+        return subs
 
     def feature_enabled(self, key: str) -> bool:
         """Whether the caller's tenant has module ``key`` enabled (super-admin → always)."""
@@ -112,11 +127,15 @@ def verify_token(token: str) -> Principal:
     if not sub:
         raise UnauthorizedError("token missing subject")
     tid = payload.get("tenant_id")
+    # role_id is optional & opaque (a raw string, not uuid-parsed): a pre-change
+    # token simply omits it → None. Used only for role-subject ACL resolution.
+    role_id = payload.get("role_id")
     return Principal(
         user_id=uuid.UUID(str(sub)),
         tenant_id=uuid.UUID(str(tid)) if tid else None,
         is_superadmin=bool(payload.get("is_superadmin", False)),
         permissions=list(payload.get("permissions") or []),
+        role_id=str(role_id) if role_id else None,
         features=dict(payload.get("features") or {}),
         limits=dict(payload.get("limits") or {}),
         license_state=str(payload.get("license_state") or "active"),

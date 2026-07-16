@@ -38,6 +38,7 @@ from app.vms.common.media_token import (
     token_hash,
     verify_media_token,
 )
+from app.vms.common.node_routing import node_base_for_camera
 from app.vms.common.nvr_client import NvrClient, NvrUnavailable
 from app.vms.models import Camera, MediaProfile, PlaybackSession
 
@@ -76,9 +77,24 @@ class LiveService:
     def __init__(self, db: AsyncSession, scope: Scope, *, bearer: str | None = None) -> None:
         self.db = db
         self.scope = scope
+        self.bearer = bearer
         # The caller's JWT is forwarded to nvr so its ensure/drop authorize under
-        # the caller's own grants (shared-JWT service-to-service).
+        # the caller's own grants (shared-JWT service-to-service). ``self.nvr`` is the
+        # GLOBAL/default client (``VE_NVR_URL``) — used only for estate-wide calls; every
+        # PER-CAMERA op routes to the camera's assigned MediaNode via ``_nvr_for`` (MN-1b).
         self.nvr = NvrClient(bearer=bearer)
+
+    async def _nvr_for(self, camera_or_id) -> NvrClient:
+        """An ``NvrClient`` bound to THIS camera's recorder-node base URL (MN-1b).
+
+        Resolves the camera's ``media_node_id`` → ``MediaNode.api_url``. An unassigned
+        camera (or missing node) yields ``base_url=None`` → we return the shared
+        ``self.nvr`` (global ``VE_NVR_URL``) UNCHANGED — this keeps the single-node path
+        byte-identical (and preserves ``self.nvr = stub`` test injection)."""
+        base = await node_base_for_camera(self.db, self.scope.tenant_id, camera_or_id)
+        if base is None:
+            return self.nvr
+        return NvrClient(bearer=self.bearer, base_url=base)
 
     # ── row helpers ─────────────────────────────────────────────────────
     async def _camera(self, camera_id: str) -> Camera:
@@ -154,7 +170,8 @@ class LiveService:
             raise LiveUpstreamError("camera has no reachable RTSP stream to publish")
 
         try:
-            ensured = await self.nvr.ensure_stream(
+            nvr = await self._nvr_for(camera)
+            ensured = await nvr.ensure_stream(
                 camera_id=camera.id, rtsp_url=rtsp_url, profile=profile
             )
         except NvrUnavailable as exc:
@@ -204,10 +221,12 @@ class LiveService:
         """Release: best-effort nvr path DELETE + delete the session row."""
         row = await self._session(session_id)
         camera_id, profile = row.camera_id, row.profile
+        # Resolve the camera's node BEFORE deleting the session row (needs the camera).
+        nvr = await self._nvr_for(camera_id)
         await self.db.delete(row)
         await self.db.commit()
         # Best-effort teardown of the MediaMTX path (never blocks/raises the delete).
-        await self.nvr.drop_stream(camera_id=camera_id, profile=profile)
+        await nvr.drop_stream(camera_id=camera_id, profile=profile)
 
     # ── verify (Traefik ForwardAuth hot path) ───────────────────────────
     async def verify(self, token: str, *, check_camera: bool = False) -> dict:

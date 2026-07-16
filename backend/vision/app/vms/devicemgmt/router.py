@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kernel.auth import Principal, Scope, get_scope, require_permission
 
 from app.db import get_db
+from app.vms.groups.acl import enforce_camera_privilege
 
 from .schemas import (
     BULK_ACTIONS,
@@ -133,8 +134,12 @@ async def get_device_info(
 async def reboot_camera(
     camera_id: str,
     svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> FleetOpPublic:
+    # Per-camera ACL: device-config WRITE requires the fine-grained config grant (if any).
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return FleetOpPublic(**fleet_op_dict(await svc.reboot(camera_id)))
 
 
@@ -143,8 +148,11 @@ async def set_ntp(
     camera_id: str,
     body: NtpBody,
     svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> FleetOpPublic:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return FleetOpPublic(**fleet_op_dict(await svc.set_ntp(camera_id, body.server)))
 
 
@@ -153,8 +161,11 @@ async def set_password(
     camera_id: str,
     body: PasswordBody,
     svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> FleetOpPublic:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return FleetOpPublic(
         **fleet_op_dict(await svc.set_password(camera_id, user=body.user, new_password=body.new_password))
     )
@@ -175,8 +186,11 @@ async def add_user(
     camera_id: str,
     body: UserAddBody,
     svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> FleetOpPublic:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return FleetOpPublic(
         **fleet_op_dict(
             await svc.add_user(camera_id, user=body.user, password=body.password, level=body.level)
@@ -189,8 +203,11 @@ async def delete_user(
     camera_id: str,
     username: str,
     svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> FleetOpPublic:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     return FleetOpPublic(**fleet_op_dict(await svc.delete_user(camera_id, user=username)))
 
 
@@ -198,9 +215,12 @@ async def delete_user(
 async def config_backup(
     camera_id: str,
     svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> Response:
     """Export the device config → a binary download. 502 when the blob is unavailable."""
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     backup = await svc.backup_config(camera_id)
     if not backup.supported or not backup.blob:
         raise HTTPException(
@@ -219,8 +239,11 @@ async def config_restore(
     camera_id: str,
     body: ConfigRestoreBody,
     svc: Annotated[DeviceMgmtService, Depends(get_devicemgmt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> FleetOpPublic:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
     try:
         blob = base64.b64decode(body.blob_b64, validate=True)
     except Exception:  # noqa: BLE001 — bad base64 is a client error

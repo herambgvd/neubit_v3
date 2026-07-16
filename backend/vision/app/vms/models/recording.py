@@ -52,6 +52,9 @@ class Recording(Base):
         # Dedupe key: the nvr already dedupes by path, but a unique index makes the
         # consumer's insert idempotent even under at-least-once NATS redelivery.
         Index("ix_recordings_path", "path", unique=True),
+        # Footage-locality: playback routes by the RECORDING's node (the machine that
+        # holds the file), so this is scanned when resolving old footage after reassign.
+        Index("ix_recordings_media_node_id", "media_node_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
@@ -86,6 +89,14 @@ class Recording(Base):
     trigger_type: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'continuous'")
     )
+
+    # --- Footage locality: the recorder node (MediaNode) that produced this segment. ---
+    # The file physically lives on THIS node's disk. Playback/export route by this id (the
+    # node holding the footage), NOT the camera's CURRENT media_node_id — so old footage
+    # stays reachable after a camera is reassigned to a different recorder machine. NULL =
+    # single-node deployment / pre-locality row → fall back to the camera's node / global
+    # VE_NVR_URL (back-compat). Indexed in __table_args__.
+    media_node_id: Mapped[str | None] = mapped_column(String(36))
 
     # --- Storage pool + integrity (P3-B fills these; nullable from day 1). ---
     storage_pool_id: Mapped[str | None] = mapped_column(String(36), index=True)

@@ -73,6 +73,16 @@ export default function CamerasPage() {
   const groupsQ = useQuery({ queryKey: ["vms-groups"], queryFn: () => vms.groups.list(), staleTime: 60_000 });
   const groups = asItems(groupsQ.data);
 
+  // Media nodes (recorders) — for the per-camera "Recorder" label + the bulk
+  // "Assign to recorder" dropdown. Unassigned cameras (media_node_id null) → "Auto".
+  const nodesQ = useQuery({ queryKey: ["vms-media-nodes"], queryFn: () => vms.mediaNodes.list({ limit: 500 }), staleTime: 60_000 });
+  const nodes = asItems(nodesQ.data);
+  const nodeNames = useMemo(() => {
+    const m = {};
+    for (const n of nodes) m[n.id] = n.name;
+    return m;
+  }, [nodes]);
+
   const sitesQ = useQuery({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }), staleTime: 60_000 });
   const sites = asItems(sitesQ.data);
 
@@ -107,10 +117,15 @@ export default function CamerasPage() {
   });
 
   const bulk = useMutation({
-    mutationFn: ({ action, group_id, retention_days }) =>
-      vms.cameras.bulk({ camera_ids: Array.from(selectedIds), action, group_id, retention_days }),
+    // media_node_id is intentionally passed through even when null — that's how the
+    // "Unassign (Auto)" option clears the pin. The other actions ignore it.
+    mutationFn: ({ action, group_id, retention_days, media_node_id }) => {
+      const body = { camera_ids: Array.from(selectedIds), action, group_id, retention_days };
+      if (action === "assign_node") body.media_node_id = media_node_id ?? null;
+      return vms.cameras.bulk(body);
+    },
     onSuccess: (_d, vars) => {
-      toast.success(`Bulk ${vars.action} applied`);
+      toast.success(vars.action === "assign_node" ? "Recorder assigned" : `Bulk ${vars.action} applied`);
       setSelectedIds(new Set());
       invalidate();
     },
@@ -264,6 +279,7 @@ export default function CamerasPage() {
                     key={c.id}
                     camera={c}
                     siteName={siteNames[c.placement?.site_id]}
+                    nodeName={c.media_node_id ? nodeNames[c.media_node_id] : null}
                     recording={recordingIds.has(c.id)}
                     selected={c.id === selectedId}
                     bulkChecked={selectedIds.has(c.id)}
@@ -301,6 +317,7 @@ export default function CamerasPage() {
       <BulkActionBar
         count={selectedIds.size}
         groups={groups}
+        nodes={nodes}
         onAction={runBulk}
         onDeviceAction={runBulkDevice}
         canManageDevices={canManageDevices}
@@ -338,7 +355,7 @@ export default function CamerasPage() {
 // Compact camera row for the left list — status dot + name + codec badge + a
 // meta line (ip · brand · site). Bulk-checkbox on the left; the row selects for
 // the detail pane. Selected row gets an accent border + hover fill.
-function CameraListItem({ camera, siteName, recording, selected, bulkChecked, onSelect, onToggleBulk }) {
+function CameraListItem({ camera, siteName, nodeName, recording, selected, bulkChecked, onSelect, onToggleBulk }) {
   return (
     <div
       role="button"
@@ -366,6 +383,11 @@ function CameraListItem({ camera, siteName, recording, selected, bulkChecked, on
           {cameraIp(camera)}
           {camera.brand ? ` · ${titleize(camera.brand)}` : ""}
           {siteName ? ` · ${siteName}` : ""}
+        </p>
+        {/* Recorder (media node) the camera is pinned to — "Auto" when unassigned. */}
+        <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-muted/80">
+          <Icon icon="heroicons:cpu-chip" className="shrink-0 text-[10px]" />
+          <span className="truncate">{nodeName || "Auto"}</span>
         </p>
       </div>
       {recording && (

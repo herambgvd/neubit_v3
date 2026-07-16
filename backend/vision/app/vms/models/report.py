@@ -98,3 +98,56 @@ class ReportSchedule(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
+
+
+class ReportRun(Base):
+    """One PERSISTED run of a report — a history row + a rendered artefact on disk.
+
+    Every fired schedule (and, later, any ad-hoc "run now") lands a ``ReportRun``: the
+    scheduler renders the report to bytes ONCE, writes it under the downloads volume
+    (``output_path``), and records the run here so past reports have history + a
+    downloadable file (large reports that used to be truncated at the 256 KB inline cap
+    are now kept in full on disk). ``schedule_id`` is nullable so an ad-hoc run without a
+    schedule is representable; ``status`` is ``done`` | ``error`` (a compute failure still
+    records a row so failures surface in history).
+    """
+
+    __tablename__ = "report_runs"
+    __table_args__ = (
+        # History for a given schedule, newest-first; and a tenant-wide recency browse.
+        Index("ix_report_runs_schedule_computed", "schedule_id", "computed_at"),
+        Index("ix_report_runs_tenant_computed", "tenant_id", "computed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    # The owning ReportSchedule (NULL = ad-hoc / run-now without a schedule).
+    schedule_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # --- multi-tenancy: owning tenant (NULL = platform/super-admin/system). ---
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    # camera-uptime | recording-coverage | storage-usage | event-stats | health-summary
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    # daily | weekly | monthly (snapshot of the schedule's cadence; NULL for ad-hoc).
+    cadence: Mapped[str | None] = mapped_column(String(16))
+    # json | csv | pdf — the format the artefact was rendered to.
+    export_format: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default=text("'csv'")
+    )
+    # The rolling window the report covered: {"from": iso, "to": iso}.
+    window: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
+
+    # Path of the rendered artefact on the downloads volume (NULL on compute error).
+    output_path: Mapped[str | None] = mapped_column(String(1024))
+    output_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+
+    # done | error (plain string, no PG enum).
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'done'")
+    )
+    error: Mapped[str | None] = mapped_column(String(1024))
+
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

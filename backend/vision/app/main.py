@@ -49,6 +49,7 @@ from app.vms.health import HealthSampler
 from app.vms.motion_search import MotionSearchWorker
 from app.vms.ptz import get_cycler
 from app.vms.linkage import LinkageConsumer
+from app.vms.media_nodes import NodeHeartbeatMonitor
 from app.vms.onvif_server import advertiser as onvif_advertiser
 from app.vms.onvif_server import soap_router as onvif_soap_router
 from app.vms.recording import RecordingConsumer, RecordingScheduler
@@ -77,6 +78,15 @@ async def lifespan(app: FastAPI):
     sampler = HealthSampler(get_sessionmaker())
     await sampler.start()
     app.state.health_sampler = sampler
+
+    # MN-1a media-node heartbeat: ping each registered recorder machine's Go-nvr
+    # ``/api/v1/nvr/status`` on a cadence → refresh its ``status`` + ``last_heartbeat``
+    # (+ ``used_channels`` when self-reported). Its own DB session per cycle; bounded
+    # concurrency; graceful-on-unreachable (a down node → offline, never crashes the app;
+    # a ``draining`` node is left as the operator set it).
+    node_heartbeat = NodeHeartbeatMonitor(get_sessionmaker())
+    await node_heartbeat.start()
+    app.state.node_heartbeat = node_heartbeat
 
     # P3-A recording: consume the Go nvr's segment events → persist Recording rows,
     # and drive schedule-mode cameras' record windows (start/stop the nvr). Both own
@@ -193,6 +203,7 @@ async def lifespan(app: FastAPI):
     await raid_monitor.stop()
     await storage_worker.stop()
     await rec_scheduler.stop()
+    await node_heartbeat.stop()
     await sampler.stop()
     await bus.close()
 

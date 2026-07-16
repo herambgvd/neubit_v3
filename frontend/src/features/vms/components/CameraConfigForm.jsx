@@ -70,6 +70,13 @@ export default function CameraConfigForm({
     staleTime: 60_000,
   });
   const storagePools = asItems(poolsQ.data);
+  // Media nodes (recorders) for the per-camera recorder pin (recording tab).
+  const nodesQ = useQuery({
+    queryKey: ["vms-media-nodes"],
+    queryFn: () => vms.mediaNodes.list({ limit: 200 }),
+    staleTime: 60_000,
+  });
+  const mediaNodes = asItems(nodesQ.data);
   const canManageRegions = can("vms.config.manage");
   // Which region draw tool is open: null | "privacy" | "motion".
   const [regionTool, setRegionTool] = useState(null);
@@ -247,6 +254,23 @@ export default function CameraConfigForm({
             })),
           ]}
           hint="New recordings for this camera land on the selected pool. Existing footage stays where it was."
+        />
+
+        {/* Per-camera recorder (media node) — which recorder machine hosts this
+            camera's stream/recording. "Auto" = the default node. */}
+        <Field
+          label="Recorder"
+          as="select"
+          value={form.media_node_id ?? ""}
+          onChange={(e) => set({ media_node_id: e.target.value })}
+          options={[
+            { value: "", label: "Auto (default recorder)" },
+            ...mediaNodes.map((n) => ({
+              value: n.id,
+              label: `${n.name}${n.label ? ` — ${n.label}` : ""}`,
+            })),
+          ]}
+          hint="Pin this camera to a specific recorder machine. Leave on Auto to use the default node."
         />
 
         <div className="grid grid-cols-2 gap-3">

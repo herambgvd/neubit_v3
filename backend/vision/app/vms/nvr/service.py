@@ -33,7 +33,7 @@ Onboarding publishes on the NATS spine (``app.vms.common.events``):
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, or_, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,6 +74,22 @@ def _actor_id(actor) -> str | None:
     if actor is None:
         return None
     return str(getattr(actor, "user_id", "")) or None
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse a driver-reported ISO-8601 range bound to an aware-UTC datetime.
+
+    Tolerates a trailing ``Z`` (``fromisoformat`` rejects it on older stdlibs) and
+    coerces a naive result to UTC. Returns ``None`` on anything unparseable — the caller
+    skips it rather than 500ing (the calendar must be graceful).
+    """
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
 class NvrService:
@@ -533,6 +549,42 @@ class NvrService:
             total=len(items),
             reachable=(row.status == "online"),
         )
+
+    async def recording_days_nvr(
+        self, nvr_id: str, channel: int, month: str, tz_offset_minutes: int
+    ):
+        """Days of ``month`` (YYYY-MM) with footage on an NVR channel, in the operator tz.
+
+        Reuses ``channel_recordings`` ONCE for the whole-month UTC window, then expands
+        each returned range to the set of LOCAL day-of-month ints it covers (clamped to
+        the month; a range spanning midnight marks both days). Graceful: an unreachable
+        NVR yields ``channel_recordings`` empty → ``{days: []}`` (never a 500). Bad
+        ``month`` → ``ValidationError`` (a 4xx, raised BEFORE the driver is touched).
+        """
+        # Reuse the playback helpers so camera + NVR calendars group days identically.
+        from app.vms.playback.service import parse_month_window, _mark_local_days
+        from app.vms.playback.schemas import RecordingDaysResponse
+
+        year, mon, win_from, win_to = parse_month_window(month, tz_offset_minutes)
+        # Tenant ownership is asserted by channel_recordings' _row(); it also degrades
+        # to an empty item list on an unreachable NVR (never 500).
+        resp = await self.channel_recordings(
+            nvr_id, channel, win_from.isoformat(), win_to.isoformat()
+        )
+
+        tz = timezone(timedelta(minutes=tz_offset_minutes))
+        days: set[int] = set()
+        for item in resp.items:
+            start = _parse_iso(item.start)
+            if start is None:
+                continue  # a range with no parseable start can't be placed on a day
+            # No end (or unparseable) → treat as a point-in-time on its start day.
+            end = _parse_iso(item.end) or start
+            if end < start:
+                end = start
+            _mark_local_days(start, end, win_from, win_to, tz, year, mon, days)
+
+        return RecordingDaysResponse(year=year, month=mon, days=sorted(days))
 
     async def channel_playback(
         self, nvr_id: str, channel: int, from_, to

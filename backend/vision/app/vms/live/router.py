@@ -18,6 +18,7 @@ ensure/drop service call, so nvr authorizes under the caller's own grants.
 
 from __future__ import annotations
 
+import os
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
@@ -29,6 +30,8 @@ from kernel.auth import _bearer  # raw bearer credentials (forwarded to nvr)
 from kernel.errors import ForbiddenError
 
 from app.db import get_db
+from app.vms.common.core_audit import fire_and_forget_video_audit
+from app.vms.groups.acl import enforce_camera_privilege
 
 from .schemas import LiveStartBody, PlaybackSessionPublic
 from .service import LiveService
@@ -36,6 +39,21 @@ from .service import LiveService
 PERM_VIEW = "vms.live.view"
 
 router = APIRouter(prefix="/vms", tags=["VMS Live"])
+
+
+def _audit_live_view() -> bool:
+    """Whether live-session issue is audited (env ``VE_AUDIT_LIVE_VIEW``, default OFF).
+
+    Live view is very high-volume + low-sensitivity, so auditing every session issue
+    would flood the trail; it's opt-in. Set ``VE_AUDIT_LIVE_VIEW`` to ``1``/``true``/
+    ``yes``/``on`` to enable. Recorded playback + export are ALWAYS audited (unflagged).
+    """
+    return (os.environ.get("VE_AUDIT_LIVE_VIEW") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def _bearer_token(
@@ -66,8 +84,22 @@ async def start_live(
     body: LiveStartBody | None = None,
     actor: Principal = Depends(require_permission(PERM_VIEW)),
 ) -> PlaybackSessionPublic:
+    # Per-camera ACL: role gate passed; now the fine-grained view_live grant (if any).
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="view_live"
+    )
     profile = (body.profile if body else None) or "sub"
-    return await svc.start_live(camera_id, profile, actor=actor)
+    session = await svc.start_live(camera_id, profile, actor=actor)
+    # Live-view audit is OPTIONAL (high-volume, low-sensitivity) — only when the
+    # VE_AUDIT_LIVE_VIEW flag is on. Fire-and-forget; adds zero latency, never fails.
+    if _audit_live_view():
+        fire_and_forget_video_audit(
+            action="vms.live.view",
+            camera_id=camera_id,
+            principal=actor,
+            meta={"profile": profile},
+        )
+    return session
 
 
 @router.post(
@@ -80,6 +112,10 @@ async def renew_live(
     svc: Annotated[LiveService, Depends(get_live_service)],
     actor: Principal = Depends(require_permission(PERM_VIEW)),
 ) -> PlaybackSessionPublic:
+    # Per-camera ACL: re-minting a media token still requires the view_live grant.
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="view_live"
+    )
     return await svc.renew(session_id, actor=actor)
 
 

@@ -53,7 +53,7 @@ from .onvif_server import OnvifServerConfig
 from .pattern import CameraPattern
 from .ptz import PtzPatrol, PtzPreset
 from .recording import Recording
-from .report import ReportSchedule
+from .report import ReportRun, ReportSchedule
 from .storage import RaidArray, StoragePool, TierRule
 from .videowall import VideoWall, WallMonitor, WallPreset, WallTour
 
@@ -77,6 +77,7 @@ __all__ = [
     "LinkageRule",
     "LinkageFire",
     "ReportSchedule",
+    "ReportRun",
     "OnvifServerConfig",
     "VideoWall",
     "WallMonitor",

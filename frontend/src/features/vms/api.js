@@ -243,6 +243,27 @@ export const vms = {
     refresh: (id) => unwrap(api.post(`${NVRS}/${id}/refresh`, {})),
   },
 
+  // ── Media nodes (recorders) — independent recorder machines ─────────────
+  // A MediaNode is a standalone recorder box (its own MediaMTX + storage) that
+  // cameras are pinned to via `media_node_id`; unassigned cameras record on the
+  // default/"Auto" node. Tenant-scoped. Public shape: { id, name, api_url,
+  // hls_base, webrtc_base, rtsp_base, label, capacity_channels, used_channels,
+  // status ("online"|"offline"|"draining"|"error"|"unknown"), last_heartbeat }.
+  //   GET    /vms/media-nodes → { items }
+  //   GET    /vms/media-nodes/{id} → node
+  //   POST   /vms/media-nodes { name, api_url, hls_base?, webrtc_base?, rtsp_base?,
+  //            label?, capacity_channels? } → node (may carry `warning` if the box
+  //            was unreachable at create time — saved anyway).
+  //   PATCH  /vms/media-nodes/{id} — any subset incl. status (allow "draining").
+  //   DELETE /vms/media-nodes/{id} — 409/400 with an error if cameras still assigned.
+  mediaNodes: {
+    list: (params = {}) => unwrap(api.get(`/vms/media-nodes${qs(params)}`)),
+    get: (id) => unwrap(api.get(`/vms/media-nodes/${id}`)),
+    create: (body) => unwrap(api.post("/vms/media-nodes", body)),
+    update: (id, body) => unwrap(api.patch(`/vms/media-nodes/${id}`, body)),
+    remove: (id) => unwrap(api.delete(`/vms/media-nodes/${id}`)),
+  },
+
   // Camera groups — a named set of cameras shown in a grid `layout`
   // ("1x1|2x2|3x3|4x3|4x4|6x4|6x5|6x6|8x8"). Groups are the unit a Pattern
   // rotates through on the video wall. Public shape: { id, name, description,
@@ -379,6 +400,16 @@ export const vms = {
     //   { coverage:[{start,end}], gaps:[{start,end}], total_seconds }.
     timeline: (cameraId, params = {}) =>
       unwrap(api.get(`${CAMERAS}/${cameraId}/timeline${qs(params)}`)),
+    // GET /cameras/{id}/recording-days?month=YYYY-MM&tz_offset_minutes=330 →
+    //   { year, month, days:[14,15,…] } — days-of-month (LOCAL tz) that have footage.
+    //   Drives the playback calendar's footage marks. tz_offset_minutes is the
+    //   client's offset FROM UTC (= -getTimezoneOffset()).
+    recordingDays: (cameraId, { month, tzOffsetMinutes } = {}) =>
+      unwrap(
+        api.get(
+          `${CAMERAS}/${cameraId}/recording-days${qs({ month, tz_offset_minutes: tzOffsetMinutes })}`,
+        ),
+      ),
   },
 
   // ── Clip export (P4-B) — a job that concatenates the covered segments ────
@@ -434,6 +465,22 @@ export const vms = {
       create: (body) => unwrap(api.post(REPORT_SCHEDULES, body)),
       update: (id, body) => unwrap(api.patch(`${REPORT_SCHEDULES}/${id}`, body)),
       remove: (id) => unwrap(api.delete(`${REPORT_SCHEDULES}/${id}`)),
+      // GET /vms/report-schedules/{id}/runs?limit=&offset= → { items: ReportRunPublic[],
+      //   total } (newest-first). ReportRunPublic: { id, schedule_id, name, kind,
+      //   export_format, window{from,to}, status: done|error, output_size, error,
+      //   computed_at, notified_at }.
+      runs: (id, params = {}) => unwrap(api.get(`${REPORT_SCHEDULES}/${id}/runs${qs(params)}`)),
+      // GET /vms/report-schedules/{id}/runs/{runId}/download → the report FILE
+      //   (CSV/PDF/JSON) as a blob (fetched so the Bearer header is sent, then saved
+      //   by the caller). Content-Disposition is set server-side.
+      runDownloadBlob: (id, runId) =>
+        api
+          .get(`${REPORT_SCHEDULES}/${id}/runs/${runId}/download`, { responseType: "blob" })
+          .then((r) => r.data),
+      // POST /vms/report-schedules/{id}/run-now → the created ReportRunPublic (fires
+      //   the report immediately; does NOT change the schedule's cadence). Returns 201
+      //   even when the run's status is "error" — inspect `status`.
+      runNow: (id) => unwrap(api.post(`${REPORT_SCHEDULES}/${id}/run-now`, {})),
     },
   },
 
@@ -605,6 +652,15 @@ export const vms = {
     //   like a recorded/live session (hls_url carries "?token=").
     playback: (nvrId, channel, { from, to } = {}) =>
       unwrap(api.post(`${NVRS}/${nvrId}/channels/${channel}/playback`, { from, to })),
+    // GET /nvrs/{id}/channels/{ch}/recording-days?month=YYYY-MM&tz_offset_minutes=330 →
+    //   { year, month, days:[14,15,…] } — same shape as playback.recordingDays,
+    //   for a 3rd-party NVR channel's on-board storage. Drives the calendar marks.
+    recordingDays: (nvrId, channel, { month, tzOffsetMinutes } = {}) =>
+      unwrap(
+        api.get(
+          `${NVRS}/${nvrId}/channels/${channel}/recording-days${qs({ month, tz_offset_minutes: tzOffsetMinutes })}`,
+        ),
+      ),
   },
 
   // ── Per-camera recording config (P3-A) ──────────────────────────────────

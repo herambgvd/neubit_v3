@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DEV override — hot-reload for the Python backend services.
+#
+# `docker compose` auto-merges this file on top of docker-compose.yml for every
+# `up` / `build` run from this directory, so it's active in development WITHOUT
+# touching the production-clean base compose.
+#
+# What it does: bind-mounts each service's source over the image copy and runs
+# uvicorn with `--reload`, so editing a .py on the host reloads the worker in
+# place — no `docker compose build` needed for backend changes anymore.
+#
+# The images are editable installs (`uv pip install -e .`), so the mounted source
+# IS the imported package. vision also gets the shared `kernel` mounted (it's an
+# editable `-e /opt/kernel` install) so kernel edits hot-reload too.
+#
+# WATCHFILES_FORCE_POLLING: Docker Desktop (macOS) does NOT propagate host inotify
+# events across the bind-mount VM boundary, so watchfiles must POLL stat() mtimes
+# to see host edits. (Same class of issue as the Traefik file-watch on Docker mac.)
+#
+# NOTE: the uvicorn command is a SINGLE line on purpose — a YAML folded (`>`) block
+# with a more-indented continuation preserves the newline, and in `bash -c` that
+# newline terminates the uvicorn command early (dropping the --reload flags).
+#
+# To run WITHOUT hot-reload (prod-like), use the base file only:
+#   docker compose -f docker-compose.yml up -d
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  core:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/core/app:/app/app
+      # Mount migrations too so newly-added Alembic revisions apply on restart
+      # (the start command runs `alembic upgrade` before uvicorn).
+      - ../backend/core/migrations:/app/migrations
+    command: bash -c "alembic upgrade 0001 && alembic stamp head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"
+
+  vision:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/vision/app:/app/app
+      - ../backend/vision/migrations:/app/migrations
+      - ../backend/vision/tests:/app/tests
+      - ../backend/kernel:/opt/kernel
+    command: bash -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"

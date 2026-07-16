@@ -19,8 +19,8 @@ export const menuItems = [
   // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
   // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
   { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices" },
-  // Streaming is a SECTION: the video surfaces — Video Wall (live), Recordings,
-  // Playback. (Devices stays a pure onboarding zone; viewing lives here.)
+  // Streaming is a SECTION: the video surfaces — Video Wall (live), Playback.
+  // (Devices stays a pure onboarding zone; viewing lives here.)
   { title: "Streaming", icon: "heroicons:signal", section: "streaming", module: "vms" },
   // "Incidents" = the PSIM alarm/incident surface (SOP-driven, cross-domain incidents
   // live here, like neubit_v2). Named distinctly from Streaming → "Camera events" (the
@@ -67,6 +67,9 @@ export const deviceTabs = [
   { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read", module: "access" },
   { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read", module: "vms" },
   { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read", module: "vms" },
+  // Recorders = our own MediaNode registry (independent recorder machines cameras
+  // are pinned to). Distinct from NVR (3rd-party onboarded recorders).
+  { title: "Recorders", icon: "heroicons:cpu-chip", link: "/devices/recorders", perm: "neubit.read", module: "vms" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).
@@ -82,14 +85,15 @@ export function isDevicesRoute(pathname) {
 }
 
 // ── Streaming sub-tab bar — the video-viewing surfaces (VMS) ──────────────
-//   Video Wall (live), Recordings, Playback, Camera events. Onboarding stays under Devices.
+//   Video Wall (live), Playback, Camera events. Onboarding stays under Devices.
+//   (Recordings folded into Playback — its calendar/timeline covers estate browse +
+//   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs = [
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read", module: "vms" },
   // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
   // shared state across every operator + display client. Distinct from the
   // single-operator "Video Wall" live-grid above.
   { title: "Wall Console", icon: "heroicons:tv", link: "/wall", perm: "vms.wall.view", module: "vms" },
-  { title: "Recordings", icon: "heroicons:film", link: "/recordings", perm: "neubit.read", module: "vms" },
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read", module: "vms" },
   { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read", module: "vms" },
   { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view", module: "vms" },

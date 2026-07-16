@@ -115,8 +115,15 @@ export default function AppLayout({ children }) {
       ? "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3"
       : "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6";
 
+  // fixed inset-0: pin the shell to EXACTLY the viewport, immune to any parent
+  // height-collapse. `h-screen` (100vh) was resolving short in this SCSS/flex context
+  // (body h-full 100% chain), leaving the shell shorter than the viewport → footer
+  // mid-page with black below (the "UI break"). Fixed positioning takes the shell out
+  // of flow and sizes it to the viewport directly, so it can never render short.
+  // overflow-hidden: the body never scrolls — scrollable pages scroll INSIDE <main>
+  // (app-scroll / overflow-y-auto); contained/immersive pages clip.
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
       <Header />
       {isConfigRoute(pathname) && <SectionTabs tabs={configTabs} />}
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}

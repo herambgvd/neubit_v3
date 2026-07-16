@@ -22,9 +22,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, assert_owned, scoped
-from kernel.errors import ValidationError
+from kernel.errors import NotFoundError, ValidationError
 
-from app.vms.models import ReportSchedule
+from app.vms.models import ReportRun, ReportSchedule
 
 from .computations import compute_report
 from .schemas import ReportScheduleCreate, ReportScheduleUpdate
@@ -37,6 +37,14 @@ _CADENCE_DELTA = {
     "daily": timedelta(days=1),
     "weekly": timedelta(days=7),
     "monthly": timedelta(days=30),
+}
+
+# Rendered-artefact format → (media type, download extension). Mirrors the ad-hoc
+# export endpoint's csv/pdf mapping; json is the third persisted format.
+_RUN_MEDIA = {
+    "csv": ("text/csv", "csv"),
+    "pdf": ("application/pdf", "pdf"),
+    "json": ("application/json", "json"),
 }
 
 
@@ -155,3 +163,74 @@ class ReportService:
         row = await self._schedule(sid)
         await self.db.delete(row)
         await self.db.commit()
+
+    # ── ReportRun history + download + run-now ──────────────────────────
+    async def list_runs(
+        self, schedule_id: str, *, limit: int = 50, offset: int = 0
+    ) -> list[ReportRun]:
+        """This schedule's persisted runs, newest-first by ``computed_at`` (tenant-scoped).
+
+        Verifies the schedule exists + is owned FIRST (404 cross-tenant) so a caller can't
+        enumerate another tenant's runs by guessing a schedule id. The run query is itself
+        tenant-scoped (belt-and-braces).
+        """
+        await self._schedule(schedule_id)  # 404 if missing / cross-tenant
+        stmt = (
+            scoped(select(ReportRun), ReportRun, self.scope)
+            .where(ReportRun.schedule_id == schedule_id)
+            .order_by(ReportRun.computed_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def _run(self, schedule_id: str, run_id: str) -> ReportRun:
+        """Load a ReportRun tenant-scoped AND belonging to ``schedule_id`` (else 404)."""
+        row = await self.db.get(ReportRun, run_id)
+        assert_owned(row, self.scope, message="report run not found")
+        if row.schedule_id != schedule_id:
+            raise NotFoundError("report run not found")
+        return row
+
+    async def resolve_run_download(
+        self, schedule_id: str, run_id: str
+    ) -> tuple[str, str, str]:
+        """Return ``(path, media_type, filename)`` for a run whose artefact exists (else 404).
+
+        Mirrors ``ExportService.resolve_download``: tenant-scoped + belongs-to-schedule,
+        404 when there is no ``output_path`` (compute-error / never-written) or the file has
+        since vanished from the downloads volume.
+        """
+        import os
+
+        run = await self._run(schedule_id, run_id)
+        if not run.output_path:
+            raise NotFoundError("report run has no downloadable artefact")
+        if not os.path.exists(run.output_path):
+            raise NotFoundError("report artefact no longer available")
+        media_type, ext = _RUN_MEDIA.get(run.export_format, ("application/octet-stream", "bin"))
+        date = run.computed_at.strftime("%Y%m%d") if run.computed_at else "report"
+        filename = f"{run.name}-{run.kind}-{date}.{ext}"
+        return run.output_path, media_type, filename
+
+    async def run_now(self, schedule_id: str) -> ReportRun | None:
+        """Fire a schedule IMMEDIATELY (ad-hoc) → its created ReportRun (never advances next_run).
+
+        Loads the schedule (404 cross-tenant), then delegates to the SAME reusable
+        entrypoint the loop uses (``ReportScheduler.run_schedule_now``) so compute/render/
+        persist/notify are not duplicated. Commits the created run (``run_schedule_now``
+        only adds it to the session — the loop commits per-cycle; here the request commits).
+        Returns the run (``None`` only if even the error row failed to persist).
+        """
+        # Imported lazily to avoid a scheduler↔service import cycle (scheduler imports this
+        # module for cadence_window / compute_next_run).
+        from .scheduler import ReportScheduler
+
+        sched = await self._schedule(schedule_id)  # 404 if missing / cross-tenant
+        # ``run_schedule_now`` takes an explicit ``db`` — no per-scheduler session is used,
+        # so a session-less instance is fine (the loop passes its own cycle session too).
+        run = await ReportScheduler(None).run_schedule_now(self.db, sched, _utcnow())
+        await self.db.commit()
+        if run is not None:
+            await self.db.refresh(run)
+        return run

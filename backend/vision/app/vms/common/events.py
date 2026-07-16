@@ -175,3 +175,31 @@ async def emit_nvr_status(
     subj = subject(tid, "vms", "nvr.status")
     await (_bus or bus).publish(subj, {"tenant_id": tid, **payload})
     return subj
+
+
+async def emit_node_failover(
+    tenant_id: uuid.UUID | str | None,
+    event: str,
+    payload: dict,
+    *,
+    _bus: EventBus | None = None,
+) -> str:
+    """Publish ``tenant.<id>.vms.node.failover.<event>`` (DEF-A recorder-failover stream).
+
+    Cross-machine recorder failover: when a whole recorder machine (a ``MediaNode``) dies,
+    the heartbeat monitor reassigns its cameras to a healthy recorder and emits on this
+    subject for operator visibility (the realtime/console UIs subscribe ``tenant.*.vms.>``).
+
+    ``event`` is one of:
+      * ``reassigned`` — one camera moved off a dead node onto a healthy one
+        (payload ``{camera_id, from_node_id, to_node_id, node_name?}``).
+      * ``stranded``   — a dead node had cameras but NO healthy recorder exists for the
+        tenant, so its cameras stay put + recording stays down until a recorder recovers
+        (payload ``{node_id, stranded_cameras, reason}``).
+
+    Best-effort — never raises. Returns the targeted subject for logging.
+    """
+    tid = _tid(tenant_id)
+    subj = subject(tid, "vms", f"node.failover.{event}")
+    await (_bus or bus).publish(subj, {"tenant_id": tid, **payload})
+    return subj
