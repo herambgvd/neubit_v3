@@ -536,9 +536,25 @@ function TreeRow({ item, depth, features, toggle, moduleName }) {
   );
 }
 
+// Every module key the console-nav tree already places.
+function treeModuleKeys() {
+  const keys = new Set();
+  const walk = (items) =>
+    items.forEach((it) => {
+      if (it.module) keys.add(it.module);
+      if (it.children) walk(it.children);
+    });
+  MODULE_TREE.forEach((g) => walk(g.items));
+  return keys;
+}
+
 function ConsoleModuleTree({ features, toggle, catalog, extraKeys }) {
   const moduleName = (key) =>
     catalog.find((m) => m.key === key)?.name || humanizeKey(key);
+  const covered = treeModuleKeys();
+  // Catalog modules the fixed tree doesn't place (e.g. a super-admin-added module) —
+  // still get a toggle so EVERY module can be enabled/disabled here.
+  const additional = catalog.filter((m) => !covered.has(m.key));
   return (
     <div className="space-y-4">
       {MODULE_TREE.map((group) => (
@@ -553,7 +569,27 @@ function ConsoleModuleTree({ features, toggle, catalog, extraKeys }) {
           </div>
         </div>
       ))}
-      {/* Any tenant feature flag not represented in the tree above (legacy/custom). */}
+
+      {additional.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted/70">
+            Additional modules
+          </div>
+          <div className="divide-y divide-card-border rounded-lg border border-card-border">
+            {additional.map((m) => (
+              <FeatureRow
+                key={m.key}
+                title={m.name || m.key}
+                subtitle={m.description || m.category}
+                checked={!!features[m.key]}
+                onChange={(on) => toggle(m.key, on)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Any tenant feature flag not in the catalog at all (legacy/custom). */}
       {extraKeys.length > 0 && (
         <div>
           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted/70">

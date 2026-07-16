@@ -17,6 +17,8 @@ import {
   isDevicesRoute,
   STREAMING_ENTRY,
   isStreamingRoute,
+  tabsForSection,
+  firstEnabledLink,
 } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/components/theme";
@@ -152,7 +154,7 @@ function NotificationsBell() {
 // Config section entry (jumps into the Config sub-tab bar). Sits inline after the
 // logo (neubit_v2 arrangement); active state is a soft pill so it reads cleanly on a
 // single header row.
-function NavEntry({ item, pathname, locked }) {
+function NavEntry({ item, pathname, locked, sectionHref }) {
   const pill = (active) =>
     `flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] transition ${
       active ? "bg-hover text-foreground font-medium" : "text-muted hover:text-foreground hover:bg-hover"
@@ -194,30 +196,30 @@ function NavEntry({ item, pathname, locked }) {
     );
   }
 
-  // Config section: link to the first config tab; active across the whole section.
+  // Config section: opens the FIRST tab the caller can actually use (not a locked one).
   if (item.section === "config") {
     return (
-      <Link href={CONFIG_ENTRY} className={pill(isConfigRoute(pathname))}>
+      <Link href={sectionHref || CONFIG_ENTRY} className={pill(isConfigRoute(pathname))}>
         <Icon icon={item.icon} className="text-base shrink-0" />
         {item.title}
       </Link>
     );
   }
 
-  // Devices section: link to the first device tab; active across the whole section.
+  // Devices section: jump to the first usable device tab (skips locked ones).
   if (item.section === "devices") {
     return (
-      <Link href={DEVICES_ENTRY} className={pill(isDevicesRoute(pathname))}>
+      <Link href={sectionHref || DEVICES_ENTRY} className={pill(isDevicesRoute(pathname))}>
         <Icon icon={item.icon} className="text-base shrink-0" />
         {item.title}
       </Link>
     );
   }
 
-  // Streaming section: link to the video wall; active across the whole section.
+  // Streaming section: jump to the first usable stream tab.
   if (item.section === "streaming") {
     return (
-      <Link href={STREAMING_ENTRY} className={pill(isStreamingRoute(pathname))}>
+      <Link href={sectionHref || STREAMING_ENTRY} className={pill(isStreamingRoute(pathname))}>
         <Icon icon={item.icon} className="text-base shrink-0" />
         {item.title}
       </Link>
@@ -321,6 +323,15 @@ export default function Header() {
                 item={m}
                 pathname={pathname}
                 locked={!!m.module && !hasModule(m.module)}
+                sectionHref={
+                  m.section
+                    ? firstEnabledLink(tabsForSection(m.section), {
+                        can,
+                        hasModule,
+                        isSuperadmin: !!user?.is_superadmin,
+                      })
+                    : undefined
+                }
               />
             ))}
           </nav>

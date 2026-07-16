@@ -109,6 +109,27 @@ export function isStreamingRoute(pathname) {
 // The route the Config top-nav item jumps to (first enabled config tab).
 export const CONFIG_ENTRY = "/sites";
 
+// The tab list backing a top-nav section.
+export function tabsForSection(section) {
+  if (section === "devices") return deviceTabs;
+  if (section === "streaming") return streamTabs;
+  if (section === "config") return configTabs;
+  return [];
+}
+
+// The link a section should open: the FIRST tab the caller can actually use
+// (permission-allowed, module-licensed, not a "Soon"/vendor-only tab). If none are
+// usable it falls back to the first permission-allowed tab (so the section still
+// opens and shows its locked tabs), then to the first tab. Keeps a clicked section
+// from landing on a locked page when an accessible tab exists.
+export function firstEnabledLink(tabs, { can, hasModule, isSuperadmin }) {
+  const allowed = (t) =>
+    !t.disabled && (!t.superadmin || isSuperadmin) && (!t.perm || can(t.perm));
+  const usable = tabs.find((t) => allowed(t) && (!t.module || hasModule(t.module)));
+  const fallback = tabs.find(allowed);
+  return (usable || fallback || tabs[0])?.link;
+}
+
 // True when the current path belongs to the Config section (drives the sub-tab bar +
 // the "Config" top-nav active state). Matches any enabled config tab's route.
 export function isConfigRoute(pathname) {
