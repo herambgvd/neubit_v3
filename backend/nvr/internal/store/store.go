@@ -54,4 +54,51 @@ type Store interface {
 	DeleteCamera(ctx context.Context, id string) error
 	UpsertMediaProfile(ctx context.Context, p MediaProfile) error
 	ListMediaProfiles(ctx context.Context, cameraID string) ([]MediaProfile, error)
+
+	// --- nvrs (Task 2.2) ---
+	CreateNVR(ctx context.Context, n NVR) error
+	GetNVR(ctx context.Context, id string) (NVR, error)
+	ListNVRs(ctx context.Context) ([]NVR, error)
+	UpdateNVR(ctx context.Context, n NVR) error
+	DeleteNVR(ctx context.Context, id string) error
+
+	// --- recording targets + segments (Task 2.3) ---
+	UpsertRecordingTarget(ctx context.Context, t RecordingTarget) error
+	DeleteRecordingTarget(ctx context.Context, tenantID, cameraID, profile string) error
+	ListSegments(ctx context.Context, f SegmentFilter) ([]RecordingSegment, error)
+	LockSegment(ctx context.Context, path, lockedBy string) error
+	UnlockSegment(ctx context.Context, path string) error
+
+	// --- storage pools + tier rules + raid (Task 2.4) ---
+	CreateStoragePool(ctx context.Context, p StoragePool) error
+	GetStoragePool(ctx context.Context, id string) (StoragePool, error)
+	ListStoragePools(ctx context.Context) ([]StoragePool, error)
+	UpdateStoragePool(ctx context.Context, p StoragePool) error
+	DeleteStoragePool(ctx context.Context, id string) error
+	CreateTierRule(ctx context.Context, r TierRule) error
+	ListTierRules(ctx context.Context) ([]TierRule, error)
+	UpdateTierRule(ctx context.Context, r TierRule) error
+	DeleteTierRule(ctx context.Context, id string) error
+	UpsertRaidArray(ctx context.Context, a RaidArray) error
+	ListRaidArrays(ctx context.Context) ([]RaidArray, error)
+
+	// --- ptz (Task 2.5) ---
+	CreatePtzPreset(ctx context.Context, p PtzPreset) error
+	ListPtzPresets(ctx context.Context, cameraID string) ([]PtzPreset, error)
+	DeletePtzPreset(ctx context.Context, id string) error
+	CreatePtzPatrol(ctx context.Context, p PtzPatrol) error
+	ListPtzPatrols(ctx context.Context, cameraID string) ([]PtzPatrol, error)
+	UpdatePtzPatrol(ctx context.Context, p PtzPatrol) error
+	DeletePtzPatrol(ctx context.Context, id string) error
+
+	// --- media nodes + stream shards (Task 2.6) ---
+	UpsertMediaNode(ctx context.Context, n MediaNode) error
+	GetMediaNode(ctx context.Context, id string) (MediaNode, error)
+	ListStreamShards(ctx context.Context) ([]StreamShard, error)
+
+	// --- anr jobs (Task 2.6) ---
+	CreateAnrJob(ctx context.Context, j AnrJob) (int64, error)
+	UpdateAnrJob(ctx context.Context, j AnrJob) error
+	ListAnrJobs(ctx context.Context, cameraID string) ([]AnrJob, error)
+	ClaimAnrJob(ctx context.Context) (AnrJob, error)
 }

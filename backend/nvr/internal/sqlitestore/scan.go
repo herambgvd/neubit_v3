@@ -18,12 +18,29 @@ func rfc(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 // nowUTC is the store's clock (second precision matches the RFC3339 TEXT format).
 func nowUTC() time.Time { return time.Now().UTC() }
 
+// orNow defaults a zero timestamp to now (for upserts where the caller left
+// created/updated unset).
+func orNow(t time.Time) time.Time {
+	if t.IsZero() {
+		return nowUTC()
+	}
+	return t
+}
+
 // b2i maps a bool to SQLite's INTEGER 0/1 boolean representation.
 func b2i(b bool) int {
 	if b {
 		return 1
 	}
 	return 0
+}
+
+// defaultStr returns s, or def when s is empty.
+func defaultStr(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }
 
 // nullRFC renders a nullable timestamp as a query arg (nil → SQL NULL).
@@ -73,6 +90,24 @@ func intPtr(ni sql.NullInt64) *int {
 	return &v
 }
 
+// int64Ptr converts a nullable INTEGER column to *int64.
+func int64Ptr(ni sql.NullInt64) *int64 {
+	if !ni.Valid {
+		return nil
+	}
+	v := ni.Int64
+	return &v
+}
+
+// boolPtr converts a nullable INTEGER 0/1 column to *bool.
+func boolPtr(nb sql.NullBool) *bool {
+	if !nb.Valid {
+		return nil
+	}
+	v := nb.Bool
+	return &v
+}
+
 // placeholders returns "?,?,…" with n marks, for a positional INSERT.
 func placeholders(n int) string {
 	if n <= 0 {
@@ -86,6 +121,14 @@ func placeholders(n int) string {
 func jsonText(v json.RawMessage, def string) string {
 	if len(v) == 0 {
 		return def
+	}
+	return string(v)
+}
+
+// jsonTextOrNull renders a nullable JSON column as a query arg (nil/empty → SQL NULL).
+func jsonTextOrNull(v json.RawMessage) any {
+	if len(v) == 0 {
+		return nil
 	}
 	return string(v)
 }

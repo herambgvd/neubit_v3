@@ -9,7 +9,12 @@ import (
 	"fmt"
 
 	_ "modernc.org/sqlite" // pure-Go, CGO-free driver
+
+	"github.com/neubit/nvr/internal/store"
 )
+
+// *DB implements the full Store seam (compile-time guarantee).
+var _ store.Store = (*DB)(nil)
 
 // DB wraps two handles against the same node.db file: a single serialized writer
 // (SQLite is single-writer — MaxOpenConns(1) prevents SQLITE_BUSY on writes) and
