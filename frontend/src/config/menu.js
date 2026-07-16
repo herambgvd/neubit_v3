@@ -19,8 +19,8 @@ export const menuItems = [
   // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
   // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
   { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices" },
-  // Streaming is a SECTION: the video surfaces — Video Wall (live), Recordings,
-  // Playback. (Devices stays a pure onboarding zone; viewing lives here.)
+  // Streaming is a SECTION: the video surfaces — Video Wall (live), Playback.
+  // (Devices stays a pure onboarding zone; viewing lives here.)
   { title: "Streaming", icon: "heroicons:signal", section: "streaming" },
   // "Incidents" = the PSIM alarm/incident surface (SOP-driven, cross-domain incidents
   // live here, like neubit_v2). Named distinctly from Streaming → "Camera events" (the
@@ -82,14 +82,15 @@ export function isDevicesRoute(pathname) {
 }
 
 // ── Streaming sub-tab bar — the video-viewing surfaces (VMS) ──────────────
-//   Video Wall (live), Recordings, Playback, Camera events. Onboarding stays under Devices.
+//   Video Wall (live), Playback, Camera events. Onboarding stays under Devices.
+//   (Recordings folded into Playback — its calendar/timeline covers estate browse +
+//   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs = [
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read" },
   // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
   // shared state across every operator + display client. Distinct from the
   // single-operator "Video Wall" live-grid above.
   { title: "Wall Console", icon: "heroicons:tv", link: "/wall", perm: "vms.wall.view" },
-  { title: "Recordings", icon: "heroicons:film", link: "/recordings", perm: "neubit.read" },
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read" },
   { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read" },
   { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view" },

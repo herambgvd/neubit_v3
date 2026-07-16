@@ -379,6 +379,16 @@ export const vms = {
     //   { coverage:[{start,end}], gaps:[{start,end}], total_seconds }.
     timeline: (cameraId, params = {}) =>
       unwrap(api.get(`${CAMERAS}/${cameraId}/timeline${qs(params)}`)),
+    // GET /cameras/{id}/recording-days?month=YYYY-MM&tz_offset_minutes=330 →
+    //   { year, month, days:[14,15,…] } — days-of-month (LOCAL tz) that have footage.
+    //   Drives the playback calendar's footage marks. tz_offset_minutes is the
+    //   client's offset FROM UTC (= -getTimezoneOffset()).
+    recordingDays: (cameraId, { month, tzOffsetMinutes } = {}) =>
+      unwrap(
+        api.get(
+          `${CAMERAS}/${cameraId}/recording-days${qs({ month, tz_offset_minutes: tzOffsetMinutes })}`,
+        ),
+      ),
   },
 
   // ── Clip export (P4-B) — a job that concatenates the covered segments ────
@@ -621,6 +631,15 @@ export const vms = {
     //   like a recorded/live session (hls_url carries "?token=").
     playback: (nvrId, channel, { from, to } = {}) =>
       unwrap(api.post(`${NVRS}/${nvrId}/channels/${channel}/playback`, { from, to })),
+    // GET /nvrs/{id}/channels/{ch}/recording-days?month=YYYY-MM&tz_offset_minutes=330 →
+    //   { year, month, days:[14,15,…] } — same shape as playback.recordingDays,
+    //   for a 3rd-party NVR channel's on-board storage. Drives the calendar marks.
+    recordingDays: (nvrId, channel, { month, tzOffsetMinutes } = {}) =>
+      unwrap(
+        api.get(
+          `${NVRS}/${nvrId}/channels/${channel}/recording-days${qs({ month, tz_offset_minutes: tzOffsetMinutes })}`,
+        ),
+      ),
   },
 
   // ── Per-camera recording config (P3-A) ──────────────────────────────────

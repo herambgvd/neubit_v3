@@ -164,9 +164,11 @@ async def test_channel_playback_registers_mediamtx_with_token(db, nvr, monkeypat
     assert out.hls_url and "token=" in out.hls_url
     assert out.token
     # The token is a media token in playback mode bound to the pseudo NVR-channel.
+    # The pseudo id is TIME-KEYED (…-pb<from-unix>) — an NVR replay is a linear stream
+    # pinned to its starttime, so a seek must land on a NEW MediaMTX path (fresh pull).
     claims = media_token.verify_media_token(out.token)
     assert claims["mode"] == "playback"
-    assert claims["camera_id"] == f"nvr-{nvr.id}-ch1-playback"
+    assert claims["camera_id"] == f"nvr-{nvr.id}-ch1-pb{int(frm.timestamp())}"
     # The nvr client was asked to register the NVR's playback RTSP.
     assert client.calls and client.calls[0]["profile"] == "playback"
     assert "Streaming/tracks/101" in client.calls[0]["rtsp_url"]

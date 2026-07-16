@@ -14,6 +14,9 @@
 //   current                     — epoch ms, the playhead
 //   onSeek(ms)                  — click/drag (or click a marker) to a timestamp
 //   onBookmarkClick(bm)         — click a bookmark flag → seek + open its popover
+//   selectionStart/End          — epoch ms, an OPTIONAL clip-extract selection band
+//                                 (mark-in/out); both null → off (default, so the
+//                                 standalone PlaybackPlayer stays unaffected)
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { SEVERITY_PRESETS } from "../constants";
@@ -21,14 +24,70 @@ import { eventTypeLabel } from "../eventLib";
 
 const HOUR_MS = 3_600_000;
 
-// Coverage-block color by trigger, falling back to the neutral accent.
-const BLOCK_COLOR = {
-  continuous: "bg-blue-500/70",
-  schedule: "bg-indigo-500/70",
-  motion: "bg-emerald-500/70",
-  event: "bg-amber-500/70",
-  manual: "bg-foreground/40",
+// ── Shared timeline palette (single source of truth) ─────────────────────────
+// One color map drives BOTH the coverage bars here AND the legend swatches in
+// UnifiedPlayback, so the two never drift. Keyed by the CTOCAM/Lumina event-type
+// buckets the operator filters on: Normal / Motion / IO / PIR / AI / Alarm /
+// Manual / ANR. Each entry carries a Tailwind class (bar/checkbox fills, which
+// respect dark tokens) and a raw hex (SVG marker fills, inline styles).
+//
+// Trigger_type → legend bucket mapping (backend coverage `trigger_type`):
+//   continuous → Normal · motion → Motion · event → Alarm · manual → Manual.
+// IO / PIR / AI / ANR have no coverage trigger of their own — they surface via
+// event MARKERS' event_type (see legendKeyForEventType) — so their coverage bars
+// only appear if a backend ever tags a span with that trigger.
+export const TIMELINE_PALETTE = {
+  Normal: { cls: "bg-blue-500/70", hex: "#3b82f6", label: "Normal" },
+  Motion: { cls: "bg-emerald-500/70", hex: "#10b981", label: "Motion" },
+  IO: { cls: "bg-cyan-500/70", hex: "#06b6d4", label: "IO" },
+  PIR: { cls: "bg-violet-500/70", hex: "#8b5cf6", label: "PIR" },
+  AI: { cls: "bg-fuchsia-500/70", hex: "#d946ef", label: "AI" },
+  Alarm: { cls: "bg-amber-500/70", hex: "#f59e0b", label: "Alarm" },
+  Manual: { cls: "bg-foreground/40", hex: "#94a3b8", label: "Manual" },
+  ANR: { cls: "bg-indigo-500/70", hex: "#6366f1", label: "ANR" },
 };
+
+// The 8 legend buckets, in the reference NVR's order.
+export const LEGEND_TYPES = ["Normal", "Motion", "IO", "PIR", "AI", "Alarm", "Manual", "ANR"];
+
+// Coverage `trigger_type` (backend model) → legend bucket.
+export const TRIGGER_TO_LEGEND = {
+  continuous: "Normal",
+  schedule: "Normal",
+  motion: "Motion",
+  event: "Alarm",
+  manual: "Manual",
+};
+export const triggerToLegend = (t) => TRIGGER_TO_LEGEND[t] || "Normal";
+
+// Event-marker `event_type` (free-form string) → legend bucket, by keyword. Used
+// both to color/plot markers and to honor the event-type filter for markers.
+export const legendKeyForEventType = (et = "") => {
+  const s = String(et).toLowerCase();
+  // Order matters + the 2-letter tokens "ai"/"io" MUST be word-boundary matched —
+  // a bare `includes("io")` wrongly catches motion/intrusion/audio (all contain "io"),
+  // and `includes("ai")` catches main/email/detail. Check specific buckets first.
+  if (s.includes("motion")) return "Motion";
+  if (s.includes("pir")) return "PIR";
+  if (s.includes("anr") || s.includes("backfill")) return "ANR";
+  if (
+    /\bai\b/.test(s) || s.includes("analytic") || s.includes("detect") ||
+    s.includes("intrusion") || s.includes("line cross") || s.includes("tripwire") ||
+    s.includes("face") || s.includes("object") || s.includes("people") || s.includes("person")
+  )
+    return "AI";
+  if (/\bio\b/.test(s) || s.includes("i/o") || s.includes("input") || s.includes("relay") || s.includes("digital"))
+    return "IO";
+  if (s.includes("manual")) return "Manual";
+  if (s.includes("alarm") || s.includes("tamper") || s.includes("event")) return "Alarm";
+  return "Alarm"; // an unrecognized event is an "event" → Alarm bucket
+};
+
+// Coverage-block color by trigger, mapped through the shared palette so bars and
+// legend swatches always agree. Falls back to the neutral Normal accent.
+const BLOCK_COLOR = new Proxy(TIMELINE_PALETTE, {
+  get: (t, trigger) => (TIMELINE_PALETTE[triggerToLegend(trigger)] || TIMELINE_PALETTE.Normal).cls,
+});
 
 // Marker tick color by severity (falls back to info blue).
 const MARKER_FILL = {
@@ -53,6 +112,8 @@ export default function ScrubBar({
   current,
   onSeek,
   onBookmarkClick,
+  selectionStart = null,
+  selectionEnd = null,
   disabled = false,
 }) {
   const trackRef = useRef(null);
@@ -188,6 +249,19 @@ export default function ScrubBar({
     return out;
   }, [motionHits, windowStart, span]);
 
+  // Clip-extract selection band (mark-in / mark-out). Renders as an amber highlight
+  // spanning [min,max] of the two marks (echoing the evidence-lock band styling), so
+  // the operator SEES the section they're about to extract. Off unless both marks set.
+  const selectionBand = useMemo(() => {
+    if (selectionStart == null || selectionEnd == null) return null;
+    const s = Math.min(selectionStart, selectionEnd);
+    const e = Math.max(selectionStart, selectionEnd);
+    const left = Math.max(0, (s - windowStart) / span);
+    const right = Math.min(1, (e - windowStart) / span);
+    if (right <= left) return null;
+    return { leftPct: left * 100, widthPct: Math.max(0.4, (right - left) * 100) };
+  }, [selectionStart, selectionEnd, windowStart, span]);
+
   const posToMs = useCallback(
     (clientX) => {
       const rect = trackRef.current?.getBoundingClientRect();
@@ -274,6 +348,15 @@ export default function ScrubBar({
             </span>
           </div>
         ))}
+
+        {/* Clip-extract selection band (mark-in/out) — an amber highlight over the
+            section to be extracted, with in/out edge handles. Behind coverage bars. */}
+        {selectionBand && (
+          <div
+            className="pointer-events-none absolute bottom-0 top-0 z-[6] border-x-2 border-amber-400 bg-amber-400/20"
+            style={{ left: `${selectionBand.leftPct}%`, width: `${selectionBand.widthPct}%` }}
+          />
+        )}
 
         {/* Coverage blocks */}
         {blocks.map((b) => (

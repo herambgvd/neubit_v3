@@ -41,5 +41,6 @@ services:
     volumes:
       - ../backend/vision/app:/app/app
       - ../backend/vision/migrations:/app/migrations
+      - ../backend/vision/tests:/app/tests
       - ../backend/kernel:/opt/kernel
     command: bash -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
