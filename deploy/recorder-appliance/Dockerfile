@@ -20,7 +20,9 @@
 #     dockerfile: ../deploy/recorder-appliance/Dockerfile
 
 # ── build stage ──────────────────────────────────────────────────────
-FROM golang:1.22-alpine AS build
+# Go 1.25 — matches nvr/go.mod's `go 1.25.0` directive (a lower toolchain fails
+# with GOTOOLCHAIN download errors in an offline-ish build).
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 
 # Shared kernel first (own layer) so the path replace resolves, then the service.
