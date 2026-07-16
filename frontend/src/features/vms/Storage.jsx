@@ -105,8 +105,8 @@ export default function StoragePage() {
     });
 
   return (
-    <div className="pb-8">
-      <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-5" />
+    <div className="flex h-full min-h-0 flex-col">
+      <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-5 shrink-0" />
 
       {tab === "pools" ? (
         <PoolsTab
@@ -128,7 +128,9 @@ export default function StoragePage() {
           onDelete={askDeleteRule}
         />
       ) : (
-        <RaidTab query={raidQ} />
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-themed">
+          <RaidTab query={raidQ} />
+        </div>
       )}
 
       {poolModal && (
@@ -227,6 +229,8 @@ function PoolsTab({ pools, rules, poolNames, query, onAdd, onEdit, onDelete }) {
 
   return (
     <MasterDetail
+      fill
+      className="min-h-0 flex-1"
       aside={
         <ListPanel
           title="Pools"
@@ -461,6 +465,8 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
 
   return (
     <MasterDetail
+      fill
+      className="min-h-0 flex-1"
       aside={
         <ListPanel
           title="Tier Rules"

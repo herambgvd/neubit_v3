@@ -41,7 +41,7 @@ export default function LoginPage() {
         return;
       }
       toast.success("Signed in");
-      router.push("/home");
+      router.push("/dashboard");
     } catch (err) {
       const msg = apiError(err, "Login failed");
       setError(msg);
@@ -58,7 +58,7 @@ export default function LoginPage() {
     try {
       await loginMfa(mfaToken, code.trim());
       toast.success("Signed in");
-      router.push("/home");
+      router.push("/dashboard");
     } catch (err) {
       setError(apiError(err, "Invalid code"));
     } finally {

@@ -10,6 +10,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog, Select } from "@/components/ui/kit";
+import { EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, titleize } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -211,7 +212,7 @@ export default function CamerasPage() {
     <div className="flex h-full min-h-0 flex-col">
       {/* Two-card master/detail — fills the whole body (list actions live in the
           aside header, so no toolbar row eats vertical space). */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[22rem_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[24rem_1fr]">
         {/* ── Left: camera list ── */}
         <aside className="flex min-h-0 flex-col rounded-xl border border-card-border bg-card">
           <header className="flex shrink-0 items-center justify-between gap-2 border-b border-card-border px-3 py-2">
@@ -293,8 +294,8 @@ export default function CamerasPage() {
         </aside>
 
         {/* ── Right: inline detail ── */}
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
-          {selected ? (
+        {selected ? (
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
             <CameraDetailView
               key={selected.id}
               camera={selected}
@@ -304,13 +305,14 @@ export default function CamerasPage() {
               onDelete={askDelete}
               onSnapshot={(c) => setSnapTarget(c)}
             />
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted">
-              <Icon icon="heroicons-outline:video-camera" className="text-3xl text-muted/50" />
-              Select a camera to view details.
-            </div>
-          )}
-        </section>
+          </section>
+        ) : (
+          <EmptyDetail
+            icon="heroicons-outline:video-camera"
+            title="No camera selected"
+            subtitle="Choose a camera to view its details, streams and health."
+          />
+        )}
       </div>
 
       {/* Bulk-action bar (floats when cameras are selected) */}

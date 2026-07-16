@@ -39,7 +39,7 @@ function Brand() {
 
   return (
     // "/" is the public landing page; keep the in-app logo pointing at the authed dashboard.
-    <Link href="/home" className="flex items-center gap-2.5">
+    <Link href="/dashboard" className="flex items-center gap-2.5">
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logo} alt={data?.app_name || "Logo"} className="h-6 max-w-[150px] object-contain" />

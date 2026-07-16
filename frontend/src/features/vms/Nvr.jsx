@@ -72,7 +72,7 @@ export default function NvrPage() {
   const askDelete = (nvr) =>
     setConfirm({
       title: "Delete NVR",
-      message: `Remove ${nvr.name}? Its mapped channel-cameras remain but lose their recorder link. This cannot be undone.`,
+      message: `Remove ${nvr.name}? Its mapped channel-cameras remain but lose their NVR link. This cannot be undone.`,
       confirmLabel: "Delete",
       onConfirm: () => { remove.mutate(nvr.id); setConfirm(null); },
     });
@@ -85,7 +85,8 @@ export default function NvrPage() {
         gridCols="lg:grid-cols-[24rem_1fr]"
         aside={
           <ListPanel
-            title="Recorders"
+            title="NVRs"
+            icon="heroicons-outline:server-stack"
             count={nvrs.length}
             search={search}
             onSearch={setSearch}
@@ -114,7 +115,7 @@ export default function NvrPage() {
             ) : nvrsQ.isError ? (
               <div className="px-4 py-6 text-center text-xs text-red-500">{apiError(nvrsQ.error, "Failed to load NVRs")}</div>
             ) : filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-muted">{nvrs.length === 0 ? "No recorders yet — Add or Discover one." : "No matches."}</div>
+              <div className="px-4 py-6 text-center text-xs text-muted">{nvrs.length === 0 ? "No NVRs yet — Add or Discover one." : "No matches."}</div>
             ) : (
               <div className="space-y-1.5 px-3 py-2">
                 {filtered.map((n) => {
@@ -150,7 +151,7 @@ export default function NvrPage() {
             onDelete={askDelete}
           />
         ) : (
-          <EmptyDetail icon="heroicons-outline:server-stack" title="Select a recorder" subtitle="Choose an NVR to view health and channel mapping." />
+          <EmptyDetail icon="heroicons-outline:server-stack" title="Select an NVR" subtitle="Choose an NVR to view health and channel mapping." />
         )}
       </MasterDetail>
 

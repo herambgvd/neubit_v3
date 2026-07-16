@@ -22,7 +22,7 @@ export default function ImpersonatePage() {
       }
       tokens.set(access, null);
       // Drop the fragment from history, then hard-load the console.
-      window.location.replace("/home");
+      window.location.replace("/dashboard");
     } catch {
       setMsg("Could not start the session.");
     }

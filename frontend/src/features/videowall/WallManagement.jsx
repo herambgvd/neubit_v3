@@ -118,8 +118,10 @@ export default function WallManagement() {
     });
 
   return (
-    <div>
+    <div className="flex h-full min-h-0 flex-col">
       <MasterDetail
+        fill
+        className="min-h-0 flex-1"
         aside={
           <ListPanel
             title="Walls"
