@@ -59,8 +59,11 @@ from .schemas import (
 
 log = logging.getLogger("vision.media_nodes")
 
-# The Go ``nvr`` health/self-report path (relative to a node's ``api_url``).
-NODE_HEALTH_PATH = "/api/v1/nvr/status"
+# The Go ``nvr`` reachability path (relative to a node's ``api_url``). Uses the
+# PUBLIC ``/health`` liveness endpoint — the probe carries no JWT (node onboarding
+# is an infrastructure reachability check, not a tenant-scoped call), and
+# ``/api/v1/nvr/*`` is JWT-gated (would always 401 → falsely "offline").
+NODE_HEALTH_PATH = "/health"
 
 # Recording modes whose data-plane is driven IMMEDIATELY (so a DEF-A failover must resume
 # them on the new node). Mirrors ``cameras.service._IMMEDIATE_RECORDING_MODES`` +

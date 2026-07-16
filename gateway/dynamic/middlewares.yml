@@ -97,6 +97,21 @@ http:
         prefixes:
           - "/media/playback"
 
+    # NODE 2 (local multi-node test) — strip the /media2/* prefixes so mediamtx-2
+    # sees its native paths.
+    media2-hls-strip:
+      stripPrefix:
+        prefixes:
+          - "/media2/hls"
+    media2-whep-strip:
+      stripPrefix:
+        prefixes:
+          - "/media2/whep"
+    media2-playback-strip:
+      stripPrefix:
+        prefixes:
+          - "/media2/playback"
+
     # MediaMTX's HLS muxer bounces the FIRST playlist request (no `cookieCheck=1`
     # query) with a 302 whose Location is ROOT-ABSOLUTE (`/<name>/index.m3u8?
     # cookieCheck=1&token=...`) — it is NOT subpath-aware and ignores

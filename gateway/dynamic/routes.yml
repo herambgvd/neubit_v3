@@ -93,6 +93,34 @@ http:
       middlewares:
         - media-auth
         - media-playback-strip
+    # ── VMS media — NODE 2 (local multi-node test: mediamtx-2 / nvr-2) ──────
+    # Same media-auth ForwardAuth. WHEP + playback work per-node; HLS's
+    # root-absolute cookieCheck bounce is node-agnostic (rebounces to /media/hls),
+    # so node-2 HLS-fallback is a known gap — live uses WHEP, fine for the test.
+    media2-hls:
+      rule: "PathPrefix(`/media2/hls`)"
+      service: mediamtx2-hls
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media2-hls-strip
+    media2-whep:
+      rule: "PathPrefix(`/media2/whep`)"
+      service: mediamtx2-whep
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media2-whep-strip
+    media2-playback:
+      rule: "PathPrefix(`/media2/playback`)"
+      service: mediamtx2-playback
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media2-playback-strip
     # Catches MediaMTX's root-absolute HLS cookieCheck bounce (see
     # media-hls-rebounce) and 302s it back under /media/hls. Scoped as tightly as
     # possible: a `.m3u8` path carrying `?cookieCheck=1`, and NOT already prefixed.
@@ -165,6 +193,19 @@ http:
       loadBalancer:
         servers:
           - url: "http://mediamtx:9996"
+    # NODE 2 (local multi-node test) — point at mediamtx-2.
+    mediamtx2-hls:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-2:8888"
+    mediamtx2-whep:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-2:8889"
+    mediamtx2-playback:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-2:9996"
     frontend:
       loadBalancer:
         servers:
