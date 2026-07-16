@@ -1,0 +1,115 @@
+# Neubit v3 — STANDALONE RECORDER APPLIANCE.
+#
+# Two services, fully self-contained on ONE box: the Go `nvr` (autonomous SQLite
+# node + embedded operator web UI) and its `mediamtx` media node. NO Postgres,
+# NATS, Traefik, vision, or central — the recorder is complete on its own and
+# behaves identically on Windows (Docker Desktop) and Linux (Docker Engine).
+#
+# Media is token-gated by the node itself: mediamtx's native HTTP auth calls
+# nvr's /api/v1/nvr/media/verify (see mediamtx.yml), so live + recorded playback
+# work with no gateway in front.
+#
+# Bring up:   docker compose up -d      (reads .env — copy from .env.example first)
+# Open:       http://<recorder-host>:${VE_UI_PORT:-8080}
+
+name: neubit-recorder
+
+networks:
+  recorder:
+    name: neubit-recorder
+
+volumes:
+  # Embedded SQLite estate (node.db) — the node's authoritative store. Survives
+  # container recreation; back this up to preserve users/cameras/config.
+  nodedata:
+  # Recording store — MediaMTX writes fmp4 segments here, nvr scans + serves them.
+  # Both containers mount it at /recordings so on-disk paths match. For a large
+  # deployment, replace this named volume with a bind mount onto the recording disk
+  # (e.g.  - /mnt/recordings:/recordings).
+  recordings:
+
+services:
+
+  # ── nvr — standalone recorder core + operator UI (Go) ───────────────
+  nvr:
+    build:
+      # Context = the repo backend dir so the shared gokernel is COPYable (the
+      # module's `replace … => ../gokernel` resolves). Dockerfile lives here.
+      context: ../../backend
+      dockerfile: ../deploy/recorder-appliance/Dockerfile
+    restart: unless-stopped
+    # Optional so `docker compose config` + first boot work before the operator
+    # copies .env.example → .env; all vars below fall back to sane defaults.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Autonomous-node mode: embedded SQLite estate, bootstrap admin, no central.
+      NVR_STORE: sqlite
+      VE_APP_NAME: nvr
+      VE_PORT: "8000"
+      VE_NODE_DB_PATH: /data/node.db
+      VE_RECORDINGS_DIR: /recordings
+      # First-boot bootstrap identity + admin (from .env). If admin creds/secret are
+      # left blank the node GENERATES them once and prints them to the logs.
+      VE_NODE_NAME: ${VE_NODE_NAME:-recorder-01}
+      VE_NODE_SECRET: ${VE_NODE_SECRET:-}
+      VE_NODE_ADMIN_USER: ${VE_NODE_ADMIN_USER:-admin}
+      VE_NODE_ADMIN_PASSWORD: ${VE_NODE_ADMIN_PASSWORD:-}
+      # HMAC anchor for JWTs + node-issued media tokens (the SAME nvr process both
+      # issues and verifies them, and mediamtx delegates verification back to it).
+      # Set a stable value in .env so tokens survive restarts; blank falls back to
+      # the kernel's insecure "change-me-in-prod" default — do NOT ship blank.
+      VE_JWT_SECRET: ${VE_JWT_SECRET:-}
+      # MediaMTX wiring. Control + playback-list APIs are INTERNAL (docker DNS).
+      VE_MEDIAMTX_API_URL: http://mediamtx:9997
+      VE_MEDIAMTX_PLAYBACK_API_URL: http://mediamtx:9996
+      # Public browser-facing bases: NO gateway on the appliance, so these point
+      # DIRECTLY at the host-exposed MediaMTX ports. VE_MEDIA_ADVERTISE_HOST is the
+      # address a LAN browser uses to reach THIS box (its hostname or LAN IP) — set
+      # it in .env; localhost only works when browsing from the recorder itself.
+      VE_MEDIA_PUBLIC_HLS_BASE: http://${VE_MEDIA_ADVERTISE_HOST:-localhost}:${VE_HLS_PORT:-8888}
+      VE_MEDIA_PUBLIC_WHEP_BASE: http://${VE_MEDIA_ADVERTISE_HOST:-localhost}:${VE_WHEP_PORT:-8889}
+      VE_MEDIA_PUBLIC_PLAYBACK_BASE: http://${VE_MEDIA_ADVERTISE_HOST:-localhost}:${VE_PLAYBACK_PORT:-9996}
+      VE_MEDIAMTX_RTSP_BASE: rtsp://${VE_MEDIA_ADVERTISE_HOST:-localhost}:${VE_RTSP_PORT:-8554}
+      VE_MEDIA_NODE_ID: ${VE_MEDIA_NODE_ID:-mediamtx-0}
+      # Recording segment length + reconcile/scan tick.
+      VE_RECORD_SEGMENT_DURATION: ${VE_RECORD_SEGMENT_DURATION:-60s}
+      VE_RECORD_TICK_SEC: ${VE_RECORD_TICK_SEC:-15}
+      # Standalone node runs without NATS; federation stays off by default.
+      FEDERATION_ENABLED: ${FEDERATION_ENABLED:-false}
+    volumes:
+      - nodedata:/data
+      - recordings:/recordings
+    ports:
+      # Operator UI + node API. Open http://<recorder-host>:${VE_UI_PORT}.
+      - "${VE_UI_PORT:-8080}:8000"
+    networks: [recorder]
+    depends_on:
+      - mediamtx
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  # ── mediamtx — appliance media node ─────────────────────────────────
+  # latest-ffmpeg: bundles ffmpeg (required for the on-demand H265→H264 live-view
+  # transcode in mediamtx.yml). Gates its public surfaces via native HTTP auth →
+  # nvr /media/verify.
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    restart: unless-stopped
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - recordings:/recordings
+    ports:
+      - "${VE_RTSP_PORT:-8554}:8554"          # RTSP
+      - "${VE_HLS_PORT:-8888}:8888"           # HLS (browser live)
+      - "${VE_WHEP_PORT:-8889}:8889"          # WebRTC/WHEP signaling (browser live)
+      - "${VE_PLAYBACK_PORT:-9996}:9996"      # recorded fmp4 playback (browser)
+      - "${VE_WEBRTC_ICE_PORT:-8189}:8189/udp" # WebRTC ICE (UDP)
+      - "${VE_WEBRTC_ICE_PORT:-8189}:8189/tcp" # WebRTC ICE (TCP)
+      # NOTE: :9997 (control API) is deliberately NOT published — internal only.
+    networks: [recorder]

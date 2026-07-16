@@ -1,0 +1,121 @@
+# MediaMTX — STANDALONE RECORDER APPLIANCE media node.
+#
+# Ported from deploy/mediamtx.yml (the central dev config). The one real
+# difference: there is NO Traefik gateway in front on the appliance, so MediaMTX
+# gates public HLS/WebRTC/playback itself via its native HTTP auth — every media
+# request is authorised by THIS node's own /media/verify endpoint (node-issued
+# media token), central-independent. The Go `nvr` still drives paths at runtime
+# over the control API on :9997 (INTERNAL — never host-published).
+
+logLevel: info
+
+# ── Authentication (native HTTP auth → the node) ──
+# authMethod: http makes MediaMTX POST every access attempt (publish/read/playback)
+# to authHTTPAddress as a JSON body. It points at the node's own media-verify hot
+# path: the appliance nvr validates the node-issued media token (carried as
+# ?token=<t> in the browser's HLS/WHEP/playback URL, which MediaMTX forwards in the
+# request's `query`/`token` field) and answers 200/401. So live + recorded playback
+# are token-gated by THIS box with no gateway — fully standalone.
+#
+# The CONTROL API (:9997) and PLAYBACK server (:9996) are NOT host-published (see
+# the compose port list), so they stay internal to the appliance docker network;
+# only the browser-facing HLS/WHEP/playback surfaces are exposed, and those go
+# through this auth.
+authMethod: http
+authHTTPAddress: http://nvr:8000/api/v1/nvr/media/verify
+# Exclude the internal control + playback-list actions from the HTTP auth round-trip
+# (they are reached only by the co-located nvr over the private network, and the
+# node's verify only understands media tokens, not api/metrics calls).
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+# ── REST control API (INTERNAL — nvr adds/patches/deletes paths at runtime) ──
+api: yes
+apiAddress: :9997
+
+# ── Playback server (recorded fmp4 playback) ──
+# Serves recorded segments of a path as a seekable stream: GET /list?path=<name>
+# (recorded ranges) + GET /get?path=&start=&duration=&format=fmp4. The Go `nvr`
+# queries /list on this INTERNAL port; the browser-facing /get is host-published
+# (see compose) and token-gated by the SAME HTTP auth as live.
+playback: yes
+playbackAddress: :9996
+
+# ── Timeouts / buffers ──
+readTimeout: 30s
+writeTimeout: 30s
+readBufferCount: 2048
+
+# ── Protocol listeners ──
+rtspAddress: :8554
+rtmpAddress: :1935
+hlsAddress: :8888
+webrtcAddress: :8889
+
+# ── HLS ──
+# fmp4 supports H.265; alwaysRemux keeps the muxer hot between viewers so the next
+# reader doesn't pay a cold-start penalty (resume is immediate after navigation).
+hlsVariant: fmp4
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+hlsAlwaysRemux: yes
+
+# ── WebRTC ──
+# Advertise the recorder host as an extra ICE host candidate so a LAN browser can
+# reach the listener. Override VE_MEDIA_ADVERTISE_HOST via webrtcAdditionalHosts if
+# the box is reached by hostname/IP rather than localhost (see README).
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts: [localhost]
+webrtcICEServers2: []
+
+# ── CORS ──
+hlsAllowOrigins: ["*"]
+webrtcAllowOrigins: ["*"]
+
+# ── Path defaults ──
+# nvr sets sourceOnDemand per path via the API. Defaults here only cover any path
+# that bypasses the service; on-demand so an idle path does not pull RTSP.
+pathDefaults:
+  sourceOnDemand: yes
+  sourceOnDemandStartTimeout: 20s
+  sourceOnDemandCloseAfter: 120s
+  rtspTransport: tcp
+  record: no
+  # recordPath MUST be at the defaults level so the PLAYBACK server (/list,/get) can
+  # locate on-disk segments even for an idle path (after record stops + the on-demand
+  # path is reaped). Matches the template nvr sets per-path on record.
+  # %path = cameras/<tenant>/<cam>/<profile>.
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+
+# ── Paths ──
+paths:
+  # Playback template for recorded camera paths: when a camera is idle the nvr's
+  # dynamic path is gone, so give every recorded path a recordPath so historical
+  # footage plays back even when the camera is stopped/manual. No source → never
+  # pulls RTSP; listed before the live paths nvr creates via the API.
+  "~^cameras/.+/(main|sub|third)$":
+    source: publisher
+    sourceOnDemand: no
+    record: no
+    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  # On-demand H265→H264 live-view transcode: Chrome/Chromium WebRTC cannot decode
+  # HEVC, so a WHEP for an /h264 path republishes an H264 baseline variant on demand
+  # (ffmpeg reads the camera's real base path). H264 cameras never hit this.
+  "~^(.+)/h264$":
+    source: publisher
+    sourceOnDemand: no
+    runOnDemand: >
+      ffmpeg -nostdin -loglevel warning -rtsp_transport tcp
+      -analyzeduration 10M -probesize 10M -fflags +genpts+discardcorrupt
+      -i rtsp://127.0.0.1:8554/$G1
+      -vf scale=-2:480 -r 15
+      -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -level 3.1 -pix_fmt yuv420p -g 30 -an
+      -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/$MTX_PATH
+    runOnDemandRestart: no
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 20s
