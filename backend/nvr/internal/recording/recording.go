@@ -413,8 +413,21 @@ func (s *Supervisor) reconcile(ctx context.Context) {
 		if err != nil {
 			continue // no node — try next tick
 		}
-		// Best-effort: PATCH record on. MediaMTX ignores a no-op patch, so this is
-		// cheap + idempotent; it re-establishes the flag if MediaMTX dropped it.
+		// Self-heal: if MediaMTX dropped the PATH entirely (config churn from live
+		// ensure/reload, or a restart), a bare SetRecord 404s "path not found" forever.
+		// Re-provision the path from the shard's RTSP first (idempotent EnsurePath),
+		// then set record — mirrors reconcileSecondary. Missing shard → skip ensure and
+		// let SetRecord try (it's a no-op patch when the path already exists).
+		var rtsp string
+		if err := s.db.QueryRow(ctx,
+			`SELECT rtsp_url FROM stream_shards WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3`,
+			t.tenant, t.cam, t.profile).Scan(&rtsp); err == nil && rtsp != "" {
+			if err := s.mtx.EnsurePath(ctx, node, t.name, rtsp, nil); err != nil {
+				log.Printf("recording reconcile ensure %s: %v", t.name, err)
+			}
+		}
+		// PATCH record on. MediaMTX ignores a no-op patch, so this is cheap + idempotent;
+		// it re-establishes the record flag once the path exists.
 		if err := s.mtx.SetRecord(ctx, node, t.name, true, mediamtx.RecordOpts{
 			RecordPath:      t.recPath,
 			SegmentDuration: s.segT,
