@@ -176,7 +176,8 @@ async def bulk_cameras(
 ) -> BulkResult:
     result = await svc.bulk(
         body.camera_ids, body.action,
-        group_id=body.group_id, retention_days=body.retention_days, actor=actor,
+        group_id=body.group_id, retention_days=body.retention_days,
+        media_node_id=body.media_node_id, actor=actor,
     )
     return BulkResult(affected=result["affected"])
 

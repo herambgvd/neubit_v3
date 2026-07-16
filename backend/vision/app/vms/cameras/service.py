@@ -28,8 +28,8 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kernel.auth import Scope, assert_owned, scoped
-from kernel.errors import ConflictError, ValidationError
+from kernel.auth import Scope, assert_owned, owns, scoped
+from kernel.errors import ConflictError, NotFoundError, ValidationError
 
 from app.vms.common.crypto import decrypt_secret, encrypt_secret
 from app.vms.common.events import emit_camera_lifecycle, emit_camera_status
@@ -39,7 +39,7 @@ from app.vms.common.stream_policy import (
     needs_web_codec_enforcement,
 )
 from app.vms.drivers import Credentials, DriverError, PtzCommand, get_driver
-from app.vms.models import Camera, CameraACL, CameraGroup, MediaProfile
+from app.vms.models import Camera, CameraACL, CameraGroup, MediaNode, MediaProfile
 
 from app.vms.groups.schemas import CameraACLPublic
 from . import snapshot_frame
@@ -51,6 +51,11 @@ from .schemas import (
 )
 
 log = logging.getLogger("vision.service")
+
+# Recording modes whose data-plane is driven immediately (so a media-node CHANGE
+# must re-host them). Mirrors ``recording.service._IMMEDIATE_MODES``; schedule /
+# motion / event are (re)opened by the scheduler / P5 on the new node.
+_IMMEDIATE_RECORDING_MODES = {"continuous", "manual"}
 
 
 def _utcnow() -> datetime:
@@ -102,6 +107,71 @@ class CameraService:
             port=row.onvif_port or 80,
             rtsp_port=(row.network_info or {}).get("rtsp_port") or 554,
         )
+
+    # ── recorder-node assignment (media_node_id) ─────────────────────────
+    async def _validate_node_usable(self, node_id: str) -> None:
+        """Ensure ``node_id`` names a media node this tenant may home a camera on.
+
+        Usable = the node exists AND is owned by the caller (its tenant matches, or
+        it's a shared/NULL-tenant platform node) — mirrors ``kernel.auth.owns`` read
+        semantics, the same rule ``node_base_for_camera`` routes by. A missing or
+        cross-tenant node raises ``NotFoundError`` (NOT_FOUND, not FORBIDDEN — an id in
+        another tenant must stay indistinguishable from a non-existent one).
+
+        We do NOT reject an offline / draining node — assigning to a down recorder is
+        the operator's call (the UI surfaces node status); the camera comes up on that
+        node once it heartbeats. Only existence + tenant-usability are enforced here.
+        """
+        node = await self.db.get(MediaNode, node_id)
+        if node is None or not owns(node, self.scope):
+            raise NotFoundError("media node not found")
+
+    async def _rehost_recording(self, camera: Camera, old_node_id: str | None) -> None:
+        """Best-effort re-host after a camera's ``media_node_id`` CHANGED.
+
+        If the camera is actively recording (an immediate mode, enabled), stop the
+        recording on the OLD node and start it on the NEW node so footage keeps flowing
+        to the recorder that now fronts the camera. Wrapped so ANY failure (nvr down,
+        no RTSP derivable, driver error) is logged and swallowed — a re-host failure
+        must NEVER fail the PATCH/bulk that persisted the reassignment. The recording
+        scheduler / reconcile self-heals the data-plane on its next pass.
+
+        # KNOWN LIMITATION (footage locality): historical recordings written while the
+        # camera was on ``old_node_id`` still physically live on THAT node. Playback
+        # routes by the camera's CURRENT ``media_node_id`` (MN-1b ``node_base_for_camera``),
+        # so those old segments become unreachable via the normal per-camera path after a
+        # move. We do NOT migrate footage here (no data loss — the files are intact on the
+        # old recorder). FUTURE: route playback per-recording-node (persist the node a
+        # Recording was captured on and resolve the base URL from the segment, not the
+        # camera's live assignment).
+        """
+        if old_node_id == camera.media_node_id:
+            return
+        if not camera.is_enabled or camera.recording_mode not in _IMMEDIATE_RECORDING_MODES:
+            return
+        try:
+            from app.vms.common.nvr_client import NvrClient
+            from app.vms.recording.service import RecordingService
+
+            rec = RecordingService(self.db, self.scope, bearer=self.bearer)
+            profile = "sub" if camera.record_substream else "main"
+            # Stop on the OLD node. The camera row now points at the NEW node, so we
+            # resolve the OLD node's base URL directly (fall back to the global client
+            # when it was unassigned / its api_url is gone).
+            try:
+                old_base = None
+                if old_node_id:
+                    old = await self.db.get(MediaNode, old_node_id)
+                    old_base = (getattr(old, "api_url", None) or "").strip() or None
+                old_nvr = NvrClient(bearer=self.bearer, base_url=old_base) if old_base else rec.nvr
+                await old_nvr.stop_recording(camera_id=camera.id, profile=profile)
+            except Exception as exc:  # noqa: BLE001 — stop is best-effort
+                log.info("re-host stop on old node failed for camera %s: %s", camera.id, exc)
+            # Start on the NEW node (the camera row already carries the new assignment,
+            # so ``_drive_start`` routes to it via ``_nvr_for``).
+            await rec._drive_start(camera, trigger=camera.recording_mode)
+        except Exception as exc:  # noqa: BLE001 — a re-host failure must not fail the write
+            log.info("re-host recording failed for camera %s: %s", camera.id, exc)
 
     # ── probe-on-create (best-effort capability autofill) ────────────────
     async def _autofill_from_device(self, row: Camera) -> None:
@@ -313,6 +383,15 @@ class CameraService:
         prev_status = row.status
         data = body.model_dump(exclude_unset=True)
 
+        # Recorder-node reassignment: validate the target node BEFORE persisting, and
+        # capture the previous node so we can best-effort re-host recording after commit.
+        # ``media_node_id`` present in the payload (even set to null = unassign) is allowed;
+        # a non-null value must name a node this tenant may use (else NotFound/Validation).
+        old_node_id = row.media_node_id
+        node_reassigned = "media_node_id" in data and data["media_node_id"] != old_node_id
+        if node_reassigned and data["media_node_id"] is not None:
+            await self._validate_node_usable(data["media_node_id"])
+
         simple = {
             "name", "is_enabled", "brand", "driver", "connection_type",
             "nvr_id", "nvr_channel_number", "storage_pool_id", "media_node_id",
@@ -369,6 +448,11 @@ class CameraService:
         await self.db.commit()
         await self.db.refresh(row)
 
+        # Recorder moved → best-effort re-host active recording onto the new node
+        # (never fails the PATCH; footage-locality caveat documented in _rehost_recording).
+        if node_reassigned:
+            await self._rehost_recording(row, old_node_id)
+
         await self._publish_lifecycle(row, "updated")
         if row.status != prev_status:
             await self._publish_status(row)
@@ -383,7 +467,9 @@ class CameraService:
         await emit_camera_lifecycle(tenant_id, "deregistered", payload)
 
     # ── bulk + reorder ──────────────────────────────────────────────────
-    async def bulk(self, camera_ids: list[str], action: str, *, group_id, retention_days, actor):
+    async def bulk(
+        self, camera_ids: list[str], action: str, *, group_id, retention_days, media_node_id, actor
+    ):
         # Load only rows the caller owns (scoped + id filter).
         stmt = scoped(select(Camera), Camera, self.scope).where(Camera.id.in_(camera_ids))
         rows = list((await self.db.execute(stmt)).scalars().all())
@@ -400,6 +486,17 @@ class CameraService:
                 await emit_camera_lifecycle(tid, "deregistered", payload)
             return {"affected": affected}
 
+        # ``assign_node``: validate the target node ONCE up-front (same rule as PATCH),
+        # then home every owned camera on it. null = unassign (fall back to VE_NVR_URL).
+        # Track each camera's previous node so we can best-effort re-host after commit.
+        rehost_old: dict[str, str | None] = {}
+        if action == "assign_node":
+            if media_node_id is not None:
+                await self._validate_node_usable(media_node_id)
+            for r in rows:
+                if r.media_node_id != media_node_id:
+                    rehost_old[r.id] = r.media_node_id
+
         for r in rows:
             if action == "enable":
                 r.is_enabled = True
@@ -409,6 +506,8 @@ class CameraService:
                 if retention_days is None:
                     raise ValidationError("retention_days required for the retention action")
                 r.retention_days = retention_days
+            elif action == "assign_node":
+                r.media_node_id = media_node_id
             if actor_id:
                 r.updated_by = actor_id
             r.updated_at = _utcnow()
@@ -424,6 +523,15 @@ class CameraService:
             grp.updated_at = _utcnow()
 
         await self.db.commit()
+
+        # Best-effort re-host of every reassigned camera (never fails the bulk op;
+        # footage-locality caveat documented in _rehost_recording).
+        if action == "assign_node":
+            for r in rows:
+                if r.id in rehost_old:
+                    await self.db.refresh(r)
+                    await self._rehost_recording(r, rehost_old[r.id])
+
         for r in rows:
             await self._publish_lifecycle(r, "updated")
         return {"affected": affected}
