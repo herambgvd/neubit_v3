@@ -35,7 +35,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -45,6 +45,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError, ValidationError
 
+from app.vms.common.events import emit_node_failover
+from app.vms.common.service_token import mint_service_token
 from app.vms.models import Camera, MediaNode
 
 from .schemas import (
@@ -59,6 +61,12 @@ log = logging.getLogger("vision.media_nodes")
 
 # The Go ``nvr`` health/self-report path (relative to a node's ``api_url``).
 NODE_HEALTH_PATH = "/api/v1/nvr/status"
+
+# Recording modes whose data-plane is driven IMMEDIATELY (so a DEF-A failover must resume
+# them on the new node). Mirrors ``cameras.service._IMMEDIATE_RECORDING_MODES`` +
+# ``recording.service._IMMEDIATE_MODES``; schedule/motion/event are (re)opened by the
+# recording scheduler / P5 on the new node once it fronts the camera.
+_FAILOVER_RESUME_MODES = {"continuous", "manual"}
 
 
 def _utcnow() -> datetime:
@@ -89,6 +97,34 @@ def heartbeat_concurrency() -> int:
 
 def heartbeat_timeout_sec() -> float:
     return max(0.5, _env_float("VE_NODE_HEARTBEAT_TIMEOUT_SEC", 3.0))
+
+
+def failover_dead_sec() -> int:
+    """Seconds a node must be offline (by ``last_heartbeat`` age) before its cameras are
+    failed over to a healthy recorder. Default 90s — long enough to ride out a transient
+    network blip / a couple of missed heartbeats, short enough that recording resumes fast.
+    """
+    return max(0, _env_int("VE_NODE_FAILOVER_DEAD_SEC", 90))
+
+
+def _is_failover_eligible(node: MediaNode, *, now: datetime, dead_sec: int) -> bool:
+    """A node is FAILOVER-ELIGIBLE (its cameras should be moved to a healthy recorder) when
+    it is genuinely dead — ``status == 'offline'`` AND its last heartbeat is older than the
+    dead threshold. A NULL ``last_heartbeat`` on an offline node is treated as infinitely
+    old (eligible immediately). ``draining`` (an intentional operator drain, not a death) and
+    api_url-less nodes are NEVER eligible.
+    """
+    if node.status != "offline":
+        return False
+    if not (node.api_url or "").strip():
+        return False
+    last = node.last_heartbeat
+    if last is None:
+        return True  # offline + never/again heartbeated → age is effectively infinite
+    # last_heartbeat may be naive (SQLite drops tz); assume UTC for the age comparison.
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now - last) >= timedelta(seconds=dead_sec)
 
 
 def _health_url(api_url: str) -> str:
@@ -399,7 +435,188 @@ class NodeHeartbeatMonitor:
             if nodes:
                 await asyncio.gather(*(_guarded(n) for n in nodes))
             await db.commit()
+
+            # DEF-A: cross-machine recorder failover. Run AFTER the status refresh (a node
+            # that just went offline this cycle is now marked so) but as a bounded, wholly
+            # best-effort step — a failover error must never break the heartbeat loop.
+            try:
+                await self._failover_cycle(db, now=_utcnow())
+            except Exception as exc:  # noqa: BLE001 — failover must never kill the loop
+                log.warning("node failover step errored (skipped this cycle): %s", exc)
         return len(nodes)
+
+    # ── DEF-A: cross-machine recorder failover ───────────────────────────────
+    async def _failover_cycle(self, db: AsyncSession, *, now: datetime) -> int:
+        """Reassign the cameras of every DEAD recorder machine to a healthy recorder and
+        resume recording there, so recording doesn't stop when a whole node dies.
+
+        Distinct from the Go-side P6-A rebalance (intra-nvr, across MediaMTX nodes of ONE
+        nvr): this is cross-INDEPENDENT-nvr failover, orchestrated by vision.
+
+        Idempotent by construction: after a camera is moved off the dead node it no longer
+        matches ``media_node_id == dead.id``, so a re-run finds nothing to move — NO
+        per-node "already failed over" flag is needed. Returns the number of cameras moved
+        (handy for tests/logging).
+
+        NO auto-failback: when the dead node later returns online we do NOT move its cameras
+        back (that would thrash the data-plane). Its recovered footage stays playable via
+        DEF-B (recordings carry the producing node). Operators can manually reassign the
+        cameras back to the recovered recorder from the Recorders UI if they want locality.
+        """
+        dead_sec = failover_dead_sec()
+        nodes = (await db.execute(select(MediaNode))).scalars().all()
+        dead = [n for n in nodes if _is_failover_eligible(n, now=now, dead_sec=dead_sec)]
+        if not dead:
+            return 0
+
+        # Candidate healthy recorders = online nodes with an api_url (never offline/draining).
+        healthy = [
+            n for n in nodes if n.status == "online" and (n.api_url or "").strip()
+        ]
+        moved_total = 0
+        for node in dead:
+            moved = await self._failover_node(db, node, healthy, now=now)
+            moved_total += moved
+        return moved_total
+
+    async def _failover_node(
+        self, db: AsyncSession, dead: MediaNode, healthy: list[MediaNode], *, now: datetime
+    ) -> int:
+        """Reassign one dead node's cameras onto healthy recorders. Returns cameras moved."""
+        cams = (
+            await db.execute(select(Camera).where(Camera.media_node_id == dead.id))
+        ).scalars().all()
+        if not cams:
+            return 0
+
+        # Per-node live channel load, so we spread reassigned cameras across recorders
+        # (least-loaded first). Seed from ``used_channels`` (the heartbeat-reported count),
+        # then increment locally as we place cameras this cycle.
+        load: dict[str, int] = {n.id: int(n.used_channels or 0) for n in healthy}
+
+        moved = 0
+        for cam in cams:
+            target = self._pick_target(cam, healthy, load)
+            if target is None:
+                # No healthy recorder is tenant-usable for this camera → strand it (leave
+                # the assignment on the dead node; recording stays down until a recorder
+                # recovers). Alert once per stranded camera batch below.
+                continue
+            old_node_id = cam.media_node_id
+            cam.media_node_id = target.id
+            cam.updated_at = _utcnow()
+            # Persist the reassignment FIRST (so a resume failure can't lose it), then
+            # bump the local load so the next camera balances against this placement.
+            await db.commit()
+            load[target.id] = load.get(target.id, 0) + 1
+            moved += 1
+
+            # Best-effort: resume recording on the new node for immediate-mode cameras.
+            await self._resume_recording(db, cam)
+            # Operator-visible failover event + core audit trail per reassignment.
+            await self._emit_failover(cam, dead, target)
+
+        stranded = [c for c in cams if c.media_node_id == dead.id]
+        if stranded:
+            # Group the alert by tenant (a node can only hold one tenant's cameras in
+            # practice, but be defensive) — one "stranded" event per tenant.
+            by_tenant: dict[object, int] = {}
+            for c in stranded:
+                by_tenant[c.tenant_id] = by_tenant.get(c.tenant_id, 0) + 1
+            for tenant_id, count in by_tenant.items():
+                reason = (
+                    f"node {dead.id} dead, no healthy recorder for tenant "
+                    f"{tenant_id} — {count} camera(s) stranded"
+                )
+                log.warning("failover: %s", reason)
+                try:
+                    await emit_node_failover(
+                        tenant_id,
+                        "stranded",
+                        {"node_id": dead.id, "stranded_cameras": count, "reason": reason},
+                    )
+                except Exception as exc:  # noqa: BLE001 — an emit must not break the loop
+                    log.info("failover stranded-emit failed for node %s: %s", dead.id, exc)
+
+        if moved:
+            log.info(
+                "failover: node %s dead → moved %s camera(s) to %s",
+                dead.id, moved, sorted({c.media_node_id for c in cams if c.media_node_id != dead.id}),
+            )
+        return moved
+
+    @staticmethod
+    def _pick_target(
+        cam: Camera, healthy: list[MediaNode], load: dict[str, int]
+    ) -> MediaNode | None:
+        """Least-loaded ONLINE recorder that is tenant-usable for ``cam`` (its node tenant is
+        NULL/shared OR equals the camera's tenant) — never another tenant's private node, and
+        never the dead/draining/offline nodes (``healthy`` is already online-only). ``None``
+        when no usable target exists (→ the camera is stranded, an alert is emitted)."""
+        usable = [
+            n for n in healthy
+            if n.tenant_id is None or n.tenant_id == cam.tenant_id
+        ]
+        if not usable:
+            return None
+        return min(usable, key=lambda n: load.get(n.id, 0))
+
+    async def _resume_recording(self, db: AsyncSession, cam: Camera) -> None:
+        """Best-effort resume recording on the camera's NEW node (immediate modes only).
+
+        The camera row already carries the new ``media_node_id``, so ``_drive_start``
+        routes to the new recorder via ``_nvr_for``. Background caller → no request bearer,
+        so we mint a service token scoped to the camera's tenant (like the recording
+        scheduler). Wrapped so ANY nvr failure is logged and swallowed — the reassignment
+        is already persisted; the recording scheduler's continuous self-heal re-asserts the
+        start on a later pass if this resume didn't land."""
+        if not cam.is_enabled or cam.recording_mode not in _FAILOVER_RESUME_MODES:
+            return
+        try:
+            from app.vms.recording.service import RecordingService
+
+            tenant = str(cam.tenant_id) if cam.tenant_id else None
+            token = mint_service_token(tenant_id=tenant)
+            scope = Scope(tenant_id=cam.tenant_id, is_superadmin=True)
+            rec = RecordingService(db, scope, bearer=token)
+            await rec._drive_start(cam, trigger=cam.recording_mode)
+            log.info("failover: resumed recording for camera %s on node %s", cam.id, cam.media_node_id)
+        except Exception as exc:  # noqa: BLE001 — a resume failure must not break the loop
+            log.info("failover: recording resume failed for camera %s: %s", cam.id, exc)
+
+    async def _emit_failover(self, cam: Camera, dead: MediaNode, target: MediaNode) -> None:
+        """Emit the per-reassignment failover event + a core audit entry. Best-effort."""
+        try:
+            await emit_node_failover(
+                cam.tenant_id,
+                "reassigned",
+                {
+                    "camera_id": cam.id,
+                    "from_node_id": dead.id,
+                    "to_node_id": target.id,
+                    "node_name": target.name,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 — an emit must not break the loop
+            log.info("failover reassigned-emit failed for camera %s: %s", cam.id, exc)
+        # Video/infra audit trail (WHO/WHAT touched recording): the failover is a
+        # system-initiated recorder reassignment — record it to core's tamper-evident log
+        # for the same operational-forensics reason we audit playback/export.
+        try:
+            from app.vms.common.core_audit import report_video_audit
+            from kernel.auth import Principal
+
+            principal = Principal(
+                user_id=None, tenant_id=cam.tenant_id, is_superadmin=True, permissions=["*"]
+            )
+            await report_video_audit(
+                action="vms.recorder.failover",
+                camera_id=cam.id,
+                principal=principal,
+                meta={"from_node_id": dead.id, "to_node_id": target.id, "reason": "node_dead"},
+            )
+        except Exception as exc:  # noqa: BLE001 — auditing must never break the loop
+            log.info("failover audit failed for camera %s: %s", cam.id, exc)
 
 
 async def _heartbeat_one(node: MediaNode, *, timeout: float | None = None) -> None:
