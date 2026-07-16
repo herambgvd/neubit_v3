@@ -94,12 +94,12 @@ function WallTile({
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         onClick={() => onPickHere?.(index)}
-        className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-[#0a0a0b] transition ${
+        className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-black/90 transition ${
           dropActive
             ? "outline outline-2 outline-blue-500"
             : hinting
-              ? "outline-dashed outline-1 outline-white/20"
-              : "outline outline-1 outline-white/[0.04] hover:outline-white/10"
+              ? "outline-dashed outline-1 outline-white/30"
+              : "border border-white/15 hover:border-white/25"
         }`}
       >
         {/* Quiet centred glyph — always present, very faint. */}
@@ -142,11 +142,13 @@ function WallTile({
       onDrop={onDrop}
       onDoubleClick={() => onSpotlight?.(index)}
       className={`group relative min-h-0 overflow-hidden rounded-lg bg-black transition ${
-        dropActive ? "outline outline-2 outline-blue-500" : "outline outline-1 outline-white/[0.06]"
+        dropActive ? "outline outline-2 outline-blue-500" : "border border-white/15 hover:border-white/25"
       }`}
     >
-      {/* Status-coloured top edge */}
-      <div className={`absolute inset-x-0 top-0 z-20 h-[2px] ${edge}`} />
+      {/* Status-coloured top edge — sits just above the video INSIDE this tile
+          only (z-[1]); the tile lives in the wall's z-0 stacking context so this
+          never paints over the header account dropdown. */}
+      <div className={`pointer-events-none absolute inset-x-0 top-0 z-[1] h-[2px] ${edge}`} />
 
       {/* Player — full-bleed, minimal (the tile owns the overlays). */}
       <LivePlayer

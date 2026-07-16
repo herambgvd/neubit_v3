@@ -68,6 +68,14 @@ export default function WallToolbar({
           <span className="rounded bg-hover px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted">
             {liveCount}/{layout.capacity}
           </span>
+          <span className="hidden items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-emerald-500 sm:inline-flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            {onlineCount} online
+          </span>
+          <span className="hidden items-center gap-1 text-[10px] font-medium tabular-nums text-muted sm:inline-flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+            {liveCount} on wall
+          </span>
           {tour?.active && (
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-500">
               <Icon icon="svg-spinners:180-ring" className="text-xs" />

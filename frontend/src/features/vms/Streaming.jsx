@@ -549,7 +549,7 @@ export default function Streaming() {
           />
         )}
 
-        <main className="relative flex min-w-0 flex-1 flex-col bg-[#050506]">
+        <main className="relative z-0 flex min-w-0 flex-1 flex-col bg-background">
           {/* Grid — the hero. Full-bleed with tight gaps.
               The grid CONTAINER is the SAME element in both modes (only its
               template + children change) so the spotlighted tile — kept with its
