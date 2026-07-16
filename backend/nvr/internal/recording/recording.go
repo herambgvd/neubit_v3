@@ -42,6 +42,8 @@ import (
 	"github.com/neubit/gokernel/events"
 
 	"github.com/neubit/nvr/internal/mediamtx"
+	"github.com/neubit/nvr/internal/pgstore"
+	"github.com/neubit/nvr/internal/store"
 	"github.com/neubit/nvr/internal/supervisor"
 )
 
@@ -56,6 +58,7 @@ type Publisher interface {
 // registry (to ensure the live path + resolve the node) and the MediaMTX client.
 type Supervisor struct {
 	db   *pgxpool.Pool
+	st   store.Store // persistence seam — target/segment CRUD routes through here
 	mtx  *mediamtx.Client
 	sup  *supervisor.Supervisor
 	bus  Publisher
@@ -94,6 +97,7 @@ func New(db *pgxpool.Pool, mtx *mediamtx.Client, sup *supervisor.Supervisor, bus
 	}
 	return &Supervisor{
 		db:       db,
+		st:       pgstore.New(db),
 		mtx:      mtx,
 		sup:      sup,
 		bus:      bus,
@@ -201,21 +205,18 @@ func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, pro
 		}
 	}
 
-	if _, err := s.db.Exec(ctx, `
-		INSERT INTO recording_targets
-			(tenant_id, camera_id, profile, node_id, path_name, record_path, active, trigger_type, redundant, secondary_node_id)
-		VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9)
-		ON CONFLICT (tenant_id, camera_id, profile) DO UPDATE SET
-			node_id = EXCLUDED.node_id,
-			path_name = EXCLUDED.path_name,
-			record_path = EXCLUDED.record_path,
-			active = true,
-			trigger_type = EXCLUDED.trigger_type,
-			redundant = EXCLUDED.redundant,
-			secondary_node_id = EXCLUDED.secondary_node_id,
-			updated_at = now()`,
-		tenantID, cameraID, profile, node.ID, name, recPath, trigger, redundant, nullStr(secondaryID)); err != nil {
-		return Active{}, fmt.Errorf("persist recording target: %w", err)
+	nodeID := node.ID
+	var secondaryPtr *string
+	if secondaryID != "" {
+		secondaryPtr = &secondaryID
+	}
+	if err := s.st.UpsertRecordingTarget(ctx, store.RecordingTarget{
+		TenantID: tenantID, CameraID: cameraID, Profile: profile,
+		NodeID: &nodeID, PathName: name, RecordPath: recPath,
+		Active: true, TriggerType: trigger, Redundant: redundant,
+		SecondaryNodeID: secondaryPtr,
+	}); err != nil {
+		return Active{}, err
 	}
 	log.Printf("recording started: %s (node=%s, trigger=%s, redundant=%v)", name, node.ID, trigger, redundant)
 	_ = st // stream URLs unused here — recording only needs the path up
@@ -259,15 +260,6 @@ func (s *Supervisor) RebindRecording(ctx context.Context, tenantID, cameraID, pr
 		return
 	}
 	log.Printf("recording rebound after rebalance: %s → node %s", name, node.ID)
-}
-
-// nullStr converts an empty string to nil so a NULL is stored (rather than ”),
-// keeping secondary_node_id honest for "no secondary yet".
-func nullStr(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 // StopRecording turns recording OFF for (tenant, camera, profile): flips record
@@ -343,24 +335,41 @@ func (s *Supervisor) StartEventClip(ctx context.Context, tenantID, cameraID, pro
 
 // ListActive returns every active recording target (status endpoint).
 func (s *Supervisor) ListActive(ctx context.Context) ([]Active, error) {
-	rows, err := s.db.Query(ctx,
-		`SELECT camera_id, profile, coalesce(node_id,''), path_name, trigger_type, active,
-		        redundant, coalesce(secondary_node_id,'')
-		 FROM recording_targets WHERE active = true ORDER BY updated_at DESC`)
+	targets, err := s.st.ListRecordingTargets(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list recording targets: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-	out := []Active{}
-	for rows.Next() {
-		var a Active
-		if err := rows.Scan(&a.CameraID, &a.Profile, &a.Node, &a.PathName, &a.TriggerType, &a.Recording,
-			&a.Redundant, &a.SecondaryNode); err != nil {
-			return nil, err
+	// Active only, newest-updated first (mirrors the prior WHERE active=true ORDER
+	// BY updated_at DESC).
+	active := make([]store.RecordingTarget, 0, len(targets))
+	for _, t := range targets {
+		if t.Active {
+			active = append(active, t)
 		}
-		out = append(out, a)
 	}
-	return out, rows.Err()
+	sort.Slice(active, func(i, j int) bool { return active[i].UpdatedAt.After(active[j].UpdatedAt) })
+	out := []Active{}
+	for _, t := range active {
+		out = append(out, Active{
+			CameraID:      t.CameraID,
+			Profile:       t.Profile,
+			Node:          derefStr(t.NodeID),
+			PathName:      t.PathName,
+			TriggerType:   t.TriggerType,
+			Recording:     t.Active,
+			Redundant:     t.Redundant,
+			SecondaryNode: derefStr(t.SecondaryNodeID),
+		})
+	}
+	return out, nil
+}
+
+// derefStr returns *p or "" — mirrors the prior `coalesce(col,'')` scans.
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // Start launches the reconcile + segment-tracker loop; stops when ctx is done.
@@ -386,10 +395,7 @@ func (s *Supervisor) Start(ctx context.Context) {
 // actual state is the path config. Best-effort per target — one down node does
 // not stop the sweep.
 func (s *Supervisor) reconcile(ctx context.Context) {
-	rows, err := s.db.Query(ctx,
-		`SELECT tenant_id, camera_id, profile, coalesce(node_id,''), path_name, record_path,
-		        redundant, coalesce(secondary_node_id,'')
-		 FROM recording_targets WHERE active = true`)
+	all, err := s.st.ListRecordingTargets(ctx)
 	if err != nil {
 		log.Printf("recording reconcile: list targets: %v", err)
 		return
@@ -399,14 +405,16 @@ func (s *Supervisor) reconcile(ctx context.Context) {
 		redundant                                            bool
 	}
 	var targets []tgt
-	for rows.Next() {
-		var t tgt
-		if err := rows.Scan(&t.tenant, &t.cam, &t.profile, &t.node, &t.name, &t.recPath,
-			&t.redundant, &t.secondary); err == nil {
-			targets = append(targets, t)
+	for _, t := range all {
+		if !t.Active {
+			continue
 		}
+		targets = append(targets, tgt{
+			tenant: t.TenantID, cam: t.CameraID, profile: t.Profile,
+			node: derefStr(t.NodeID), name: t.PathName, recPath: t.RecordPath,
+			secondary: derefStr(t.SecondaryNodeID), redundant: t.Redundant,
+		})
 	}
-	rows.Close()
 
 	for _, t := range targets {
 		node, err := s.sup.Assign(ctx, t.tenant, t.cam, t.profile)
@@ -551,18 +559,15 @@ func (s *Supervisor) trackSegments(ctx context.Context) {
 func (s *Supervisor) segmentRoots(ctx context.Context) []string {
 	seen := map[string]bool{s.dir: true}
 	roots := []string{s.dir}
-	rows, err := s.db.Query(ctx,
-		`SELECT DISTINCT record_path FROM recording_targets WHERE active = true`)
+	targets, err := s.st.ListRecordingTargets(ctx)
 	if err != nil {
 		return roots
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var rp string
-		if err := rows.Scan(&rp); err != nil {
+	for _, t := range targets {
+		if !t.Active {
 			continue
 		}
-		root := recordRootOf(rp)
+		root := recordRootOf(t.RecordPath)
 		if root == "" || seen[root] {
 			continue
 		}
@@ -593,16 +598,15 @@ func (s *Supervisor) emitSegment(ctx context.Context, f segFile, siblings []segF
 		return
 	}
 	// Dedupe: try to claim this path. If it already exists, we've emitted it.
-	tag, err := s.db.Exec(ctx, `
-		INSERT INTO recording_segments (path, tenant_id, camera_id, profile, started_at)
-		VALUES ($1,$2,$3,$4,$5)
-		ON CONFLICT (path) DO NOTHING`,
-		f.path, tenant, cam, profile, f.start)
+	started := f.start
+	inserted, err := s.st.UpsertRecordingSegment(ctx, store.RecordingSegment{
+		Path: f.path, TenantID: tenant, CameraID: cam, Profile: profile, StartedAt: &started,
+	})
 	if err != nil {
 		log.Printf("segment dedupe insert %s: %v", f.path, err)
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	if !inserted {
 		return // already emitted
 	}
 

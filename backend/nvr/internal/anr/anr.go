@@ -45,6 +45,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/neubit/gokernel/events"
+
+	"github.com/neubit/nvr/internal/pgstore"
+	"github.com/neubit/nvr/internal/store"
 )
 
 // Publisher is the subset of the NATS bus the worker needs (Publish only) — an
@@ -86,6 +89,7 @@ type Config struct {
 // Engine owns the ANRJob ledger + gap detection + the request/result wiring.
 type Engine struct {
 	db  *pgxpool.Pool
+	st  store.Store // persistence seam — recording-target reads route through here
 	bus Publisher
 	src string
 	cfg Config
@@ -102,7 +106,7 @@ func New(db *pgxpool.Pool, bus Publisher, source string, cfg Config) *Engine {
 	if cfg.Tick <= 0 {
 		cfg.Tick = 30 * time.Second
 	}
-	return &Engine{db: db, bus: bus, src: source, cfg: cfg}
+	return &Engine{db: db, st: pgstore.New(db), bus: bus, src: source, cfg: cfg}
 }
 
 // Start launches the gap-detection sweep loop (stops when ctx is cancelled). Each
@@ -127,23 +131,19 @@ func (e *Engine) Start(ctx context.Context) {
 // sweep scans every active continuous recording target for a gap and opens a job
 // for each new one. Best-effort: a bad row / down NATS is logged, never fatal.
 func (e *Engine) sweep(ctx context.Context) {
-	rows, err := e.db.Query(ctx, `
-		SELECT rt.tenant_id, rt.camera_id, rt.profile, rt.record_path
-		FROM recording_targets rt
-		WHERE rt.active = true AND rt.trigger_type = 'continuous'`)
+	all, err := e.st.ListRecordingTargets(ctx)
 	if err != nil {
 		log.Printf("anr sweep: list targets: %v", err)
 		return
 	}
 	type tgt struct{ tenant, cam, profile, recPath string }
 	var targets []tgt
-	for rows.Next() {
-		var t tgt
-		if err := rows.Scan(&t.tenant, &t.cam, &t.profile, &t.recPath); err == nil {
-			targets = append(targets, t)
+	for _, rt := range all {
+		if !rt.Active || rt.TriggerType != "continuous" {
+			continue
 		}
+		targets = append(targets, tgt{tenant: rt.TenantID, cam: rt.CameraID, profile: rt.Profile, recPath: rt.RecordPath})
 	}
-	rows.Close()
 
 	for _, t := range targets {
 		gap, ok, err := e.DetectGap(ctx, t.tenant, t.cam, t.profile)

@@ -31,12 +31,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/neubit/nvr/internal/mediamtx"
+	"github.com/neubit/nvr/internal/pgstore"
+	"github.com/neubit/nvr/internal/store"
 )
 
 // Supervisor coordinates media nodes + shards. Construct with New, call
 // EnsureNode at boot to register the local node, then Start to run the reaper.
 type Supervisor struct {
 	db     *pgxpool.Pool
+	st     store.Store // persistence seam — shard/node CRUD routes through here
 	mtx    *mediamtx.Client
 	idleT  time.Duration
 	source string // service name, for logging
@@ -71,6 +74,7 @@ func New(db *pgxpool.Pool, mtx *mediamtx.Client, idleTTL time.Duration, source s
 	}
 	return &Supervisor{
 		db:        db,
+		st:        pgstore.New(db),
 		mtx:       mtx,
 		idleT:     idleTTL,
 		source:    source,
@@ -83,21 +87,14 @@ func New(db *pgxpool.Pool, mtx *mediamtx.Client, idleTTL time.Duration, source s
 // nvr calls this once at boot for its single local node; multi-node registration
 // is the same call per node in P6.
 func (s *Supervisor) EnsureNode(ctx context.Context, node mediamtx.Node) error {
-	_, err := s.db.Exec(ctx, `
-		INSERT INTO media_nodes (id, api_url, hls_base, webrtc_base, rtsp_base, healthy, last_seen_at, last_heartbeat)
-		VALUES ($1, $2, $3, $4, $5, true, now(), now())
-		ON CONFLICT (id) DO UPDATE SET
-			api_url = EXCLUDED.api_url,
-			hls_base = EXCLUDED.hls_base,
-			webrtc_base = EXCLUDED.webrtc_base,
-			rtsp_base = EXCLUDED.rtsp_base,
-			healthy = true,
-			last_seen_at = now(),
-			last_heartbeat = now(),
-			dead_since = NULL`,
-		node.ID, node.APIURL, node.HLSBase, node.WebRTCBase, node.RTSPBase)
-	if err != nil {
-		return fmt.Errorf("register media node %q: %w", node.ID, err)
+	if err := s.st.UpsertMediaNode(ctx, store.MediaNode{
+		ID:         node.ID,
+		APIURL:     node.APIURL,
+		HLSBase:    node.HLSBase,
+		WebRTCBase: node.WebRTCBase,
+		RTSPBase:   node.RTSPBase,
+	}); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	s.nodes[node.ID] = node
@@ -236,16 +233,11 @@ func (s *Supervisor) EnsureStream(ctx context.Context, tenantID, cameraID, profi
 	}
 
 	// Persist the shard (idempotent upsert).
-	if _, err := s.db.Exec(ctx, `
-		INSERT INTO stream_shards (tenant_id, camera_id, profile, node_id, path_name, rtsp_url)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (tenant_id, camera_id, profile) DO UPDATE SET
-			node_id = EXCLUDED.node_id,
-			path_name = EXCLUDED.path_name,
-			rtsp_url = EXCLUDED.rtsp_url,
-			updated_at = now()`,
-		tenantID, cameraID, profile, node.ID, name, rtspURL); err != nil {
-		return Stream{}, fmt.Errorf("persist shard: %w", err)
+	if err := s.st.UpsertStreamShard(ctx, store.StreamShard{
+		TenantID: tenantID, CameraID: cameraID, Profile: profile,
+		NodeID: node.ID, PathName: name, RTSPURL: rtspURL,
+	}); err != nil {
+		return Stream{}, err
 	}
 
 	st := Stream{
@@ -289,10 +281,8 @@ func (s *Supervisor) DropStream(ctx context.Context, tenantID, cameraID, profile
 		// Log but continue — a down node must not block shard cleanup.
 		log.Printf("drop stream %s: mediamtx delete note: %v", name, err)
 	}
-	if _, err := s.db.Exec(ctx,
-		`DELETE FROM stream_shards WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3`,
-		tenantID, cameraID, profile); err != nil {
-		return fmt.Errorf("drop shard: %w", err)
+	if err := s.st.DeleteStreamShard(ctx, tenantID, cameraID, profile); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	delete(s.idleSince, name)
@@ -303,23 +293,8 @@ func (s *Supervisor) DropStream(ctx context.Context, tenantID, cameraID, profile
 // ListStreams returns the live state of every active shard (name/node/readers),
 // merging the DB shard rows with the node's runtime path state.
 func (s *Supervisor) ListStreams(ctx context.Context) ([]Stream, error) {
-	rows, err := s.db.Query(ctx,
-		`SELECT tenant_id, camera_id, profile, node_id, path_name FROM stream_shards ORDER BY created_at`)
+	shards, err := s.st.ListStreamShards(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list shards: %w", err)
-	}
-	defer rows.Close()
-
-	type shard struct{ tenant, cam, profile, nodeID, name string }
-	var shards []shard
-	for rows.Next() {
-		var sh shard
-		if err := rows.Scan(&sh.tenant, &sh.cam, &sh.profile, &sh.nodeID, &sh.name); err != nil {
-			return nil, err
-		}
-		shards = append(shards, sh)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
@@ -327,27 +302,27 @@ func (s *Supervisor) ListStreams(ctx context.Context) ([]Stream, error) {
 	pathCache := map[string]map[string]mediamtx.PathInfo{}
 	out := make([]Stream, 0, len(shards))
 	for _, sh := range shards {
-		node, ok := s.node(sh.nodeID)
+		node, ok := s.node(sh.NodeID)
 		if !ok {
 			continue
 		}
-		if _, done := pathCache[sh.nodeID]; !done {
+		if _, done := pathCache[sh.NodeID]; !done {
 			m := map[string]mediamtx.PathInfo{}
 			if infos, err := s.mtx.ListPaths(ctx, node); err == nil {
 				for _, in := range infos {
 					m[in.Name] = in
 				}
 			}
-			pathCache[sh.nodeID] = m
+			pathCache[sh.NodeID] = m
 		}
 		st := Stream{
-			Name:      sh.name,
-			Node:      sh.nodeID,
-			HLSURL:    mediamtx.HLSURL(node, sh.name),
-			WebRTCURL: mediamtx.WHEPURL(node, sh.name),
-			RTSPURL:   mediamtx.RTSPURL(node, sh.name),
+			Name:      sh.PathName,
+			Node:      sh.NodeID,
+			HLSURL:    mediamtx.HLSURL(node, sh.PathName),
+			WebRTCURL: mediamtx.WHEPURL(node, sh.PathName),
+			RTSPURL:   mediamtx.RTSPURL(node, sh.PathName),
 		}
-		if info, ok := pathCache[sh.nodeID][sh.name]; ok {
+		if info, ok := pathCache[sh.NodeID][sh.PathName]; ok {
 			st.Ready = info.Ready
 			st.Readers = info.ReaderCount()
 		}
