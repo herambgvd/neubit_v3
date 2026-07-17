@@ -11,9 +11,11 @@
 // call 401s and self-heals via the cookie.
 import axios from "axios";
 
-// Same-origin with the admin UI (admin.localhost) so the refresh cookie is
-// first-party and SameSite=Lax works. Override with NEXT_PUBLIC_API_URL.
-const BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost") + "/api/v1";
+// Same-origin with the admin UI by default (empty base → "/api/v1" on whatever
+// host the panel is served from — admin.localhost, a LAN IP, or a domain), routed
+// by the gateway. Keeps the refresh cookie first-party (SameSite=Lax) and needs no
+// per-host rebuild. An explicit NEXT_PUBLIC_API_URL still overrides.
+const BASE = (process.env.NEXT_PUBLIC_API_URL || "") + "/api/v1";
 
 // In-memory access token. Deliberately NOT persisted.
 let accessToken = null;
