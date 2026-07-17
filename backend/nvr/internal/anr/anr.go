@@ -81,6 +81,13 @@ type Config struct {
 	RecordPathTemplate string
 	// Tick is the gap-detector sweep interval (default 30s).
 	Tick time.Duration
+	// RetryCooldown is how long a gap window that FAILED to backfill is left alone
+	// before ANR re-attempts it (default 1h). Without it, a permanently-unfillable
+	// gap — e.g. a camera with no onboard SD card, so the edge pull always fails —
+	// gets re-opened every Tick, storming failed jobs + alarms. The dedup unique
+	// index only covers queued|running, so a failed job never blocks a re-open on
+	// its own; this cooldown is what throttles the retry.
+	RetryCooldown time.Duration
 }
 
 // Engine owns the ANRJob ledger + gap detection + the request/result wiring.
@@ -101,6 +108,9 @@ func New(db *pgxpool.Pool, bus Publisher, source string, cfg Config) *Engine {
 	}
 	if cfg.Tick <= 0 {
 		cfg.Tick = 30 * time.Second
+	}
+	if cfg.RetryCooldown <= 0 {
+		cfg.RetryCooldown = time.Hour
 	}
 	return &Engine{db: db, bus: bus, src: source, cfg: cfg}
 }
@@ -222,6 +232,21 @@ func (e *Engine) DetectGap(ctx context.Context, tenant, cam, profile string) (Ga
 func (e *Engine) OpenJob(ctx context.Context, tenant, cam, profile string, from, to time.Time, recPath string) (int64, error) {
 	if profile == "" {
 		profile = "main"
+	}
+	// Cooldown: if this exact window recently FAILED (typically because the edge
+	// has no footage to pull — a camera with no SD card), don't immediately retry.
+	// ANR stays a live feature (it re-attempts after RetryCooldown), but a single
+	// unfillable gap no longer storms a new failed job every Tick.
+	var lastFail time.Time
+	if err := e.db.QueryRow(ctx, `
+		SELECT coalesce(completed_at, updated_at) FROM anr_jobs
+		WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3 AND gap_from=$4 AND gap_to=$5
+		  AND status='failed'
+		ORDER BY id DESC LIMIT 1`,
+		tenant, cam, profile, from, to).Scan(&lastFail); err == nil {
+		if time.Since(lastFail) < e.cfg.RetryCooldown {
+			return 0, nil // recently failed — back off until the cooldown elapses
+		}
 	}
 	var id int64
 	err := e.db.QueryRow(ctx, `

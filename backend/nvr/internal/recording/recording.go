@@ -201,10 +201,13 @@ func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, pro
 		}
 	}
 
+	// Pin the RTSP on the target so reconcile can self-heal a dropped path even
+	// after the live stream_shard is torn down (DropStream). Keep an existing
+	// non-empty value if this start passes a blank (don't clobber a good URL).
 	if _, err := s.db.Exec(ctx, `
 		INSERT INTO recording_targets
-			(tenant_id, camera_id, profile, node_id, path_name, record_path, active, trigger_type, redundant, secondary_node_id)
-		VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9)
+			(tenant_id, camera_id, profile, node_id, path_name, record_path, active, trigger_type, redundant, secondary_node_id, rtsp_url)
+		VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9,$10)
 		ON CONFLICT (tenant_id, camera_id, profile) DO UPDATE SET
 			node_id = EXCLUDED.node_id,
 			path_name = EXCLUDED.path_name,
@@ -213,8 +216,9 @@ func (s *Supervisor) StartRecording(ctx context.Context, tenantID, cameraID, pro
 			trigger_type = EXCLUDED.trigger_type,
 			redundant = EXCLUDED.redundant,
 			secondary_node_id = EXCLUDED.secondary_node_id,
+			rtsp_url = CASE WHEN EXCLUDED.rtsp_url <> '' THEN EXCLUDED.rtsp_url ELSE recording_targets.rtsp_url END,
 			updated_at = now()`,
-		tenantID, cameraID, profile, node.ID, name, recPath, trigger, redundant, nullStr(secondaryID)); err != nil {
+		tenantID, cameraID, profile, node.ID, name, recPath, trigger, redundant, nullStr(secondaryID), rtspURL); err != nil {
 		return Active{}, fmt.Errorf("persist recording target: %w", err)
 	}
 	log.Printf("recording started: %s (node=%s, trigger=%s, redundant=%v)", name, node.ID, trigger, redundant)
@@ -388,21 +392,21 @@ func (s *Supervisor) Start(ctx context.Context) {
 func (s *Supervisor) reconcile(ctx context.Context) {
 	rows, err := s.db.Query(ctx,
 		`SELECT tenant_id, camera_id, profile, coalesce(node_id,''), path_name, record_path,
-		        redundant, coalesce(secondary_node_id,'')
+		        redundant, coalesce(secondary_node_id,''), coalesce(rtsp_url,'')
 		 FROM recording_targets WHERE active = true`)
 	if err != nil {
 		log.Printf("recording reconcile: list targets: %v", err)
 		return
 	}
 	type tgt struct {
-		tenant, cam, profile, node, name, recPath, secondary string
-		redundant                                            bool
+		tenant, cam, profile, node, name, recPath, secondary, rtsp string
+		redundant                                                  bool
 	}
 	var targets []tgt
 	for rows.Next() {
 		var t tgt
 		if err := rows.Scan(&t.tenant, &t.cam, &t.profile, &t.node, &t.name, &t.recPath,
-			&t.redundant, &t.secondary); err == nil {
+			&t.redundant, &t.secondary, &t.rtsp); err == nil {
 			targets = append(targets, t)
 		}
 	}
@@ -414,14 +418,20 @@ func (s *Supervisor) reconcile(ctx context.Context) {
 			continue // no node — try next tick
 		}
 		// Self-heal: if MediaMTX dropped the PATH entirely (config churn from live
-		// ensure/reload, or a restart), a bare SetRecord 404s "path not found" forever.
-		// Re-provision the path from the shard's RTSP first (idempotent EnsurePath),
-		// then set record — mirrors reconcileSecondary. Missing shard → skip ensure and
-		// let SetRecord try (it's a no-op patch when the path already exists).
-		var rtsp string
+		// ensure/reload, a restart, or a live-viewer teardown that removed the shard),
+		// a bare SetRecord 404s "path not found" forever. Re-provision the path from a
+		// known RTSP first (idempotent EnsurePath), then set record. Prefer the live
+		// shard's RTSP (freshest); fall back to the RTSP pinned on the target, which
+		// survives shard/live teardown — without this, a record-only camera whose shard
+		// was reaped could never recover (the CH-51 silent-stop bug).
+		rtsp := t.rtsp
+		var shardRTSP string
 		if err := s.db.QueryRow(ctx,
 			`SELECT rtsp_url FROM stream_shards WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3`,
-			t.tenant, t.cam, t.profile).Scan(&rtsp); err == nil && rtsp != "" {
+			t.tenant, t.cam, t.profile).Scan(&shardRTSP); err == nil && shardRTSP != "" {
+			rtsp = shardRTSP
+		}
+		if rtsp != "" {
 			if err := s.mtx.EnsurePath(ctx, node, t.name, rtsp, nil); err != nil {
 				log.Printf("recording reconcile ensure %s: %v", t.name, err)
 			}
