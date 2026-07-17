@@ -22,6 +22,11 @@ services:
       - "${POOL2_DIR}:/pools/2"
       - "${POOL3_DIR}:/pools/3"
   nvr:
+    # The nvr image runs as a non-root user (uid 10001); Windows-drive (drvfs) bind
+    # mounts on Docker Desktop only grant writes to root, so run the nvr as root here
+    # for read/index/retention access to the pool disks. (mediamtx + vision already
+    # run as root.) POC-scoped; on a native-Linux host the drvfs quirk doesn't apply.
+    user: "0:0"
     volumes:
       - "${POOL1_DIR}:/pools/1"
       - "${POOL2_DIR}:/pools/2"
