@@ -605,7 +605,7 @@ export default function UnifiedPlayback({ onExportRange }) {
     <div className="flex h-full min-h-0 w-full gap-3 [transform:translateZ(0)]">
       {/* ── Composer rail ──────────────────────────────────────────────────
           Calendar → Stream → Event filters → Channel multi-select (≤4) → Search. */}
-      <aside className="flex w-64 shrink-0 flex-col rounded-xl border border-card-border bg-card [transform:translateZ(0)]">
+      <aside className="flex w-80 shrink-0 flex-col rounded-xl border border-card-border bg-card [transform:translateZ(0)]">
         {/* composer — calendar · stream · event filters · channel multi-select */}
         <div className="scroll-themed min-h-0 flex-1 overflow-y-auto p-3">
           {/* ── Month calendar (footage days marked) ── */}
@@ -776,7 +776,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                         <label
                           key={c.id}
                           title={c.name}
-                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg py-1.5 pl-2 pr-2 text-left text-[13px] text-foreground transition hover:bg-hover ${
+                          className={`flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover ${
                             !on && atCap ? "opacity-40" : ""
                           }`}
                         >
@@ -851,7 +851,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                                     </span>
                                   </button>
                                   {open && (
-                                    <div className="border-l border-card-border/60 pl-1.5">
+                                    <div className="grid grid-cols-2 gap-0.5 border-l border-card-border/60 pl-1.5">
                                       {g.cameras.map(renderCamRow)}
                                     </div>
                                   )}
