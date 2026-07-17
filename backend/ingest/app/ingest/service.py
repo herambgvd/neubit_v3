@@ -6,8 +6,9 @@ Two responsibilities, split by trust boundary:
   (every read through ``scoped``, every by-id fetch through ``assert_owned``);
   new rows are stamped with the caller's ``tenant_id``. Secrets are hashed here.
 
-* ``ReceiverService`` — the PUBLIC ``POST /ingest/hooks/{token}`` pipeline:
-  look up webhook by token (NOT tenant-scoped — the token IS the credential),
+* ``ReceiverService`` — the PUBLIC ``POST /ingest/hooks/{slug}`` pipeline:
+  look up webhook by slug (NOT tenant-scoped — the receiver carries no JWT, so
+  the globally-unique slug is its only key; it identifies, it does not authorize),
   verify per-webhook auth → validate JSON schema → apply JMESPath transform →
   PUBLISH a normalized event to NATS on ``tenant.<tid>.<domain>.event.received``.
   Failures raise the generic kernel errors (401/422) with no info leak.
@@ -45,15 +46,17 @@ from .schemas import (
     EventRuleCreate,
     EventRulePublic,
     EventRuleUpdate,
+    EventStatus,
     RotateSecretResponse,
     RuleTestResponse,
     WebhookCreate,
     WebhookPublic,
     WebhookTestResponse,
     WebhookUpdate,
+    receiver_url,
 )
 from .security import store_secret, verify_inbound
-from .transform import apply_transform, validate_payload
+from .transform import apply_transform, evaluate_lookup_expr, validate_payload
 
 
 def _utcnow() -> datetime:
@@ -93,6 +96,34 @@ def _actor_id(actor) -> str | None:
     return str(getattr(actor, "user_id", "")) or None
 
 
+def _validate_auth_inputs(
+    auth_type: str,
+    username: str | None,
+    secret: str | None,
+    *,
+    on_create: bool,
+) -> None:
+    """Reject an unusable auth configuration at create/update time.
+
+    Runs on BOTH paths: without it a PATCH can leave a webhook in a shape the
+    receiver rejects every request for (``basic`` with no username, ``hmac`` with
+    no secret) and the operator only finds out from the event log. The secret
+    checks are create-only because an update legitimately omits the secret to
+    mean "keep the stored one" — the caller checks the stored hash instead.
+    """
+    if auth_type == "none":
+        return
+    if auth_type == "basic":
+        if not username:
+            raise ValidationError("basic auth requires auth_username")
+        if on_create and not secret:
+            raise ValidationError("basic auth requires auth_secret (password) on create")
+        return
+    if auth_type in ("api_key", "bearer", "hmac"):
+        if on_create and not secret:
+            raise ValidationError(f"{auth_type} auth requires auth_secret on create")
+
+
 async def _load_rules(
     db: AsyncSession, webhook_id: str, *, only_enabled: bool = True
 ) -> list[IngestEventRule]:
@@ -129,7 +160,24 @@ class CategoryService:
             or 0
         )
 
+    async def _assert_name_free(self, name: str, *, exclude_id: str | None = None) -> None:
+        """409 on a duplicate category name within the caller's tenant.
+
+        Backs the unique index with a friendly error — a bare IntegrityError from
+        the constraint would surface as a 500.
+        """
+        stmt = scoped(
+            select(IngestCategory.id).where(IngestCategory.name == name),
+            IngestCategory,
+            self.scope,
+        )
+        if exclude_id:
+            stmt = stmt.where(IngestCategory.id != exclude_id)
+        if await self.db.scalar(stmt):
+            raise ConflictError(f"a category named {name!r} already exists")
+
     async def create(self, body: CategoryCreate, *, actor) -> CategoryPublic:
+        await self._assert_name_free(body.name)
         actor_id = _actor_id(actor)
         row = IngestCategory(
             tenant_id=self.scope.tenant_id,
@@ -172,6 +220,8 @@ class CategoryService:
         self, category_id: str, body: CategoryUpdate, *, actor
     ) -> CategoryPublic:
         row = await self._get_row(category_id)
+        if body.name is not None and body.name != row.name:
+            await self._assert_name_free(body.name, exclude_id=row.id)
         update = body.model_dump(exclude_none=True)
         actor_id = _actor_id(actor)
         if actor_id:
@@ -213,17 +263,13 @@ class WebhookService:
 
     async def create(self, body: WebhookCreate, *, actor) -> WebhookPublic:
         await self._assert_category(body.category_id)
-        token = body.token or secrets.token_urlsafe(24)
-        # Token is globally unique (it's the public URL credential).
-        existing = await self.db.scalar(select(Webhook).where(Webhook.token == token))
+        # The slug is globally unique — the receiver has no tenant hint to
+        # disambiguate with, so this check is NOT scoped to the caller's tenant.
+        existing = await self.db.scalar(select(Webhook).where(Webhook.slug == body.slug))
         if existing is not None:
-            raise ConflictError("token already in use")
+            raise ConflictError("slug already in use")
         at = body.auth_type.value
-        # api_key / bearer / hmac require a secret on create; basic requires user+secret.
-        if at in ("api_key", "bearer", "hmac") and not body.auth_secret:
-            raise ValidationError(f"{at} auth requires auth_secret")
-        if at == "basic" and not body.auth_username:
-            raise ValidationError("basic auth requires auth_username")
+        _validate_auth_inputs(at, body.auth_username, body.auth_secret, on_create=True)
         secret_stored = store_secret(at, body.auth_secret) if body.auth_secret else None
         # bearer/hmac never carry a username.
         auth_username = body.auth_username if at == "basic" else None
@@ -232,7 +278,7 @@ class WebhookService:
             tenant_id=self.scope.tenant_id,
             category_id=body.category_id,
             name=body.name,
-            token=token,
+            slug=body.slug,
             description=body.description,
             request_method=body.request_method.value,
             auth_type=at,
@@ -240,6 +286,7 @@ class WebhookService:
             auth_secret_hash=secret_stored,
             payload_schema=body.payload_schema or {},
             transform=body.transform or {},
+            device_lookup_expr=body.device_lookup_expr,
             event_type=body.event_type,
             is_active=body.is_active,
             created_by=actor_id,
@@ -286,13 +333,40 @@ class WebhookService:
         )
         if body.request_method is not None:
             update["request_method"] = body.request_method.value
+
         effective_auth = row.auth_type
         if body.auth_type is not None:
             effective_auth = body.auth_type.value
             update["auth_type"] = effective_auth
-        # Rotate the secret only when a new plaintext is supplied (stored per auth_type).
-        if body.auth_secret is not None:
-            update["auth_secret_hash"] = store_secret(effective_auth, body.auth_secret)
+
+        # "" and None both mean "keep the stored secret"; only a real string rotates.
+        # (Without the falsy check an empty string would be hashed and stored as a
+        # real — permanently unmatchable — secret.)
+        new_secret = body.auth_secret or None
+        effective_username = (
+            body.auth_username if body.auth_username is not None else row.auth_username
+        )
+        _validate_auth_inputs(
+            effective_auth, effective_username, new_secret, on_create=False
+        )
+
+        if effective_auth != "none":
+            type_changed = effective_auth != row.auth_type
+            if not new_secret:
+                if not row.auth_secret_hash:
+                    raise ValidationError(f"{effective_auth} auth requires auth_secret")
+                # store_secret encodes per type — hmac reversibly (enc:...), the rest
+                # as a one-way hash — so a stored secret cannot be reinterpreted
+                # under a different type. Demand a fresh one instead of silently
+                # leaving the receiver rejecting every request.
+                if type_changed and "hmac" in (effective_auth, row.auth_type):
+                    raise ValidationError(
+                        f"changing auth_type from {row.auth_type} to {effective_auth} "
+                        "requires a new auth_secret"
+                    )
+            else:
+                update["auth_secret_hash"] = store_secret(effective_auth, new_secret)
+
         # Canonicalize auth fields when the type changes.
         if effective_auth == "none":
             update["auth_username"] = None
@@ -317,32 +391,48 @@ class WebhookService:
     async def test(self, webhook_id: str, payload: Any) -> WebhookTestResponse:
         """Dry-run: validate + transform a sample payload. No publish, no log.
 
+        Mirrors ``ReceiverService.run_pipeline`` stage for stage — same rule
+        input (the RAW payload), same field_map precedence, same reject rules. A
+        dry-run that took a different path than the receiver would be worse than
+        no dry-run at all: it would confidently green-light a webhook that then
+        drops every delivery.
+
         Skips actual inbound auth (there's no request) but reports the auth_type
         so the operator knows what the live receiver will require.
         """
         row = await self._get_row(webhook_id)
 
         v = validate_payload(payload, row.payload_schema or {})
-        t = apply_transform(payload, row.transform or {})
-        transformed = t.value if t.ok else None
 
         category = await self.db.get(IngestCategory, row.category_id)
         cat_domain = (category.target_domain if category else None) or "ingest"
 
-        # Resolve which rule (if any) would win, and the emitted event_type.
         resolved_event_type = row.event_type or "ingest.event"
         matched_rule_id: str | None = None
         matched_rule_name: str | None = None
         domain = cat_domain
-        if transformed is not None:
-            rules = await _load_rules(self.db, row.id, only_enabled=True)
-            if rules:
-                rule, _results = match_first(transformed, rules)
-                if rule is not None:
-                    matched_rule_id = rule.id
-                    matched_rule_name = rule.name
-                    resolved_event_type = rule.event_type or resolved_event_type
-                    domain = (rule.target_domain or cat_domain)
+        field_map = row.transform or {}
+        reject_reason: str | None = None
+
+        rules = await _load_rules(self.db, row.id, only_enabled=True)
+        if rules:
+            rule, _results = match_first(payload, rules)
+            if rule is None:
+                reject_reason = "no rule matched this payload"
+            else:
+                matched_rule_id = rule.id
+                matched_rule_name = rule.name
+                resolved_event_type = rule.event_type or resolved_event_type
+                domain = rule.target_domain or cat_domain
+                field_map = rule.field_map or row.transform or {}
+
+        t = apply_transform(payload, field_map)
+        transformed = t.value if t.ok else None
+
+        if reject_reason is None and not v.ok:
+            reject_reason = "payload does not match the schema"
+        elif reject_reason is None and not t.ok:
+            reject_reason = "transform failed"
 
         tenant_id = str(row.tenant_id) if row.tenant_id else None
         would_subject = subject(tenant_id, domain, "event.received")
@@ -352,33 +442,34 @@ class WebhookService:
             schema_errors=v.errors[:20],
             transformed=transformed,
             transform_errors=t.errors[:20],
+            would_publish=reject_reason is None,
+            reject_reason=reject_reason,
             would_publish_subject=would_subject,
             auth_type=row.auth_type,
             resolved_event_type=resolved_event_type,
             matched_rule_id=matched_rule_id,
             matched_rule_name=matched_rule_name,
+            device_lookup_value=evaluate_lookup_expr(payload, row.device_lookup_expr),
+            resolved_device_id=None,  # no device registry in v3 yet
         )
 
-    async def rotate_secret(
-        self, webhook_id: str, *, rotate_auth_secret: bool, actor
-    ) -> RotateSecretResponse:
-        """Mint a new public token (and optionally a new auth secret).
+    async def rotate_secret(self, webhook_id: str, *, actor) -> RotateSecretResponse:
+        """Mint a fresh auth secret. Returned ONCE — only the hash is persisted.
 
-        The old token stops working immediately. The plaintext token/secret is
-        returned ONCE — only the hash is persisted.
+        The URL is deliberately untouched: the slug is an operator-chosen
+        identifier that integrators already hold, not a credential. Rotating the
+        credential is the useful half; re-minting the URL would just break every
+        sender. A webhook with auth_type="none" has no secret to rotate.
         """
         row = await self._get_row(webhook_id)
+        if row.auth_type == "none":
+            raise ValidationError(
+                "this webhook has no authentication configured — set an auth "
+                "type before rotating a secret"
+            )
 
-        # New globally-unique public token; retry on the vanishingly rare collision.
-        new_token = secrets.token_urlsafe(24)
-        while await self.db.scalar(select(Webhook).where(Webhook.token == new_token)):
-            new_token = secrets.token_urlsafe(24)
-        row.token = new_token
-
-        new_secret: str | None = None
-        if rotate_auth_secret and row.auth_type in ("api_key", "basic", "bearer", "hmac"):
-            new_secret = secrets.token_urlsafe(24)
-            row.auth_secret_hash = store_secret(row.auth_type, new_secret)
+        new_secret = secrets.token_urlsafe(24)
+        row.auth_secret_hash = store_secret(row.auth_type, new_secret)
 
         actor_id = _actor_id(actor)
         if actor_id:
@@ -389,8 +480,8 @@ class WebhookService:
         await self.db.refresh(row)
         return RotateSecretResponse(
             id=row.id,
-            token=row.token,
-            ingest_url=f"/ingest/hooks/{row.token}",
+            slug=row.slug,
+            ingest_url=receiver_url(row.slug),
             auth_secret=new_secret,
         )
 
@@ -526,6 +617,7 @@ class EventLogService:
         skip: int = 0,
         limit: int = 20,
         webhook_id: str | None = None,
+        status: str | None = None,
         auth_outcome: str | None = None,
         published: bool | None = None,
         since: datetime | None = None,
@@ -539,6 +631,8 @@ class EventLogService:
         def _filtered(s):
             if webhook_id:
                 s = s.where(IngestEventLog.webhook_id == webhook_id)
+            if status:
+                s = s.where(IngestEventLog.status == status)
             if auth_outcome:
                 s = s.where(IngestEventLog.auth_outcome == auth_outcome)
             if published is not None:
@@ -594,7 +688,7 @@ class EventLogService:
 
 
 class ReceiverService:
-    """Handles ``POST /ingest/hooks/{token}`` — NO JWT; the token is the lookup key.
+    """Handles ``POST /ingest/hooks/{slug}`` — NO JWT; the slug is the lookup key.
 
     Every inbound request produces exactly ONE ``IngestEventLog`` row (auth
     failures + unknown tokens included), written in the same session/txn as the
@@ -614,7 +708,7 @@ class ReceiverService:
         return log
 
     async def handle(
-        self, token: str, request: Request, payload: Any, raw_body: bytes = b""
+        self, slug: str, request: Request, payload: Any, raw_body: bytes = b""
     ) -> tuple[str, str | None]:
         """Run lookup → auth → validate → transform → publish, logging the outcome.
 
@@ -625,8 +719,9 @@ class ReceiverService:
         source_ip = _client_ip(request)
         raw_stored, raw_truncated = _cap_raw(payload)
 
-        webhook = await self.db.scalar(select(Webhook).where(Webhook.token == token))
-        # Unknown OR disabled → 401, indistinguishable (no info leak on token space).
+        webhook = await self.db.scalar(select(Webhook).where(Webhook.slug == slug))
+        # Unknown OR disabled → 401, indistinguishable: a caller can't use the
+        # response to tell a real-but-disabled webhook from one that never existed.
         if webhook is None or not webhook.is_active:
             await self._record(
                 IngestEventLog(
@@ -634,11 +729,12 @@ class ReceiverService:
                     webhook_id=webhook.id if webhook else None,
                     category_id=webhook.category_id if webhook else None,
                     source_ip=source_ip,
+                    status=EventStatus.REJECTED_AUTH.value,
                     auth_outcome="failed",
                     schema_outcome="skipped",
                     transform_outcome="skipped",
                     published=False,
-                    error="unknown or disabled webhook token",
+                    error="unknown or disabled webhook slug",
                     raw_payload=raw_stored,
                     raw_truncated=raw_truncated,
                 )
@@ -654,6 +750,7 @@ class ReceiverService:
                     webhook_id=webhook.id,
                     category_id=webhook.category_id,
                     source_ip=source_ip,
+                    status=EventStatus.REJECTED_METHOD.value,
                     auth_outcome="failed",
                     schema_outcome="skipped",
                     transform_outcome="skipped",
@@ -683,6 +780,7 @@ class ReceiverService:
                     webhook_id=webhook.id,
                     category_id=webhook.category_id,
                     source_ip=source_ip,
+                    status=EventStatus.REJECTED_AUTH.value,
                     auth_outcome="failed",
                     schema_outcome="skipped",
                     transform_outcome="skipped",
@@ -735,6 +833,7 @@ class ReceiverService:
             webhook_id=webhook.id,
             category_id=webhook.category_id,
             source_ip=source_ip,
+            status=EventStatus.ACCEPTED.value,
             auth_outcome="ok" if auth_ok else "failed",
             schema_outcome="skipped",
             transform_outcome="skipped",
@@ -748,45 +847,64 @@ class ReceiverService:
         v = validate_payload(payload, webhook.payload_schema or {})
         log.schema_outcome = "ok" if v.ok else "failed"
         if not v.ok:
+            log.status = EventStatus.REJECTED_SCHEMA.value
             log.error = "schema: " + "; ".join(v.errors[:10])
             return await self._record(log)
 
-        # 2. JMESPath transform (webhook-level).
-        t = apply_transform(payload, webhook.transform or {})
-        log.transform_outcome = "ok" if t.ok else "failed"
-        if not t.ok:
-            log.error = "transform: " + "; ".join(t.errors[:10])
-            return await self._record(log)
-        transformed = t.value or {}
-
-        # 3. Payload-driven routing. If the webhook has enabled rules, walk them
-        #    by priority; the FIRST match determines the emitted event_type (and
-        #    optional target_domain), and its field_map re-extracts the payload.
-        #    No rules (or no match) → fall back to the webhook's default.
+        # 2. Payload-driven routing. Rules are evaluated against the RAW payload:
+        #    that is the shape the operator wrote their paths against (they paste a
+        #    vendor sample into the rule builder), and the webhook transform may
+        #    well have dropped the very field a condition tests. The winning rule's
+        #    field_map REPLACES the webhook transform rather than chaining onto it
+        #    — a rule extracts from the vendor body, not from another extraction.
         category = await self.db.get(IngestCategory, webhook.category_id)
         cat_domain = (category.target_domain if category else None) or "ingest"
         domain = cat_domain
         event_type = webhook.event_type or "ingest.event"
+        field_map = webhook.transform or {}
 
         rules = await _load_rules(self.db, webhook.id, only_enabled=True)
         if rules:
-            rule, _results = match_first(transformed, rules)
-            if rule is not None:
-                log.matched_rule_id = rule.id
-                event_type = rule.event_type or event_type
-                if rule.target_domain:
-                    domain = rule.target_domain
-                # Apply the rule's field_map extraction (empty → keep transformed).
-                if rule.field_map:
-                    rt = apply_transform(transformed, rule.field_map)
-                    if rt.ok and rt.value is not None:
-                        transformed = rt.value
+            rule, _results = match_first(payload, rules)
+            if rule is None:
+                # A webhook that routes by rules has no route for an unmatched
+                # payload. Publishing it under the default type would emit an
+                # event no consumer is configured for, and the vendor would never
+                # learn its payload went nowhere.
+                log.status = EventStatus.NO_RULE_MATCH.value
+                log.error = "no rule matched this payload"
+                return await self._record(log)
+            log.matched_rule_id = rule.id
+            event_type = rule.event_type or event_type
+            if rule.target_domain:
+                domain = rule.target_domain
+            field_map = rule.field_map or webhook.transform or {}
+
+        # 3. JMESPath transform.
+        t = apply_transform(payload, field_map)
+        log.transform_outcome = "ok" if t.ok else "failed"
+        if not t.ok:
+            log.status = EventStatus.TRANSFORM_FAILED.value
+            log.error = "transform: " + "; ".join(t.errors[:10])
+            log.transformed_payload = t.value
+            return await self._record(log)
+        transformed = t.value or {}
 
         log.transformed_payload = transformed
         # Stash the resolved type so handle()/replay callers can read it.
         self._resolved_event_type = event_type
 
-        # 4. Resolve subject, then publish.
+        # 4. Device identity. v2 resolved this against its devices table here and
+        #    enriched the event with device_id/site_id/device_kind. v3 has no
+        #    device registry (see Webhook.device_lookup_expr), so the raw value
+        #    ships with the event for a downstream consumer to resolve. Note v2
+        #    also REJECTED (unresolved_device) when a lookup found no device —
+        #    not ported, since with no registry that would drop every delivery
+        #    from a webhook that configures a lookup.
+        lookup_value = evaluate_lookup_expr(payload, webhook.device_lookup_expr)
+        log.device_lookup_value = lookup_value[:256] if lookup_value else None
+
+        # 5. Resolve subject, then publish.
         tenant_id = str(webhook.tenant_id) if webhook.tenant_id else None
         event_id = str(uuid.uuid4())
         subj = subject(tenant_id, domain, "event.received")
@@ -799,19 +917,22 @@ class ReceiverService:
                 subj,
                 {
                     "webhook_id": webhook.id,
-                    "webhook_token": webhook.token,
+                    "webhook_slug": webhook.slug,
                     "category_id": webhook.category_id,
                     "event_type": event_type,
                     "ingest_event_id": event_id,
                     "matched_rule_id": log.matched_rule_id,
+                    "device_lookup_value": lookup_value,
                     "data": transformed,
                 },
             )
         except Exception as exc:  # noqa: BLE001 — publish failure must still be logged
+            log.status = EventStatus.PUBLISH_FAILED.value
             log.published = False
             log.error = f"publish failed: {exc}"
             return await self._record(log)
 
+        log.status = EventStatus.ACCEPTED.value
         log.published = True
         log.event_id = event_id
         return await self._record(log)

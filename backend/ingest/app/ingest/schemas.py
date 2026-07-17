@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from enum import Enum
@@ -9,7 +10,23 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+# v2's exact slug rule: lowercase alphanumeric with -/_ , 3-64 chars, must start
+# and end with an alphanumeric.
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
+_SLUG_ERROR = "slug must be lowercase alphanumeric with -/_ (3-64 chars)"
+
+# The receiver's public origin (e.g. "https://ingest.acme.com"), so the operator
+# UI can show a URL that is copy-pasteable straight into a vendor's config. This
+# is v2's ``settings.frontend_base_url`` under a service-scoped name. Unset → the
+# bare path, which the frontend resolves against its own origin. Kept local to
+# ingest rather than added to the shared kernel Settings: no other service
+# publishes an externally-callable URL today.
+_PUBLIC_BASE_URL = (os.environ.get("VE_INGEST_PUBLIC_BASE_URL") or "").rstrip("/")
+
+
+def receiver_url(slug: str) -> str:
+    """The public inbound URL for a webhook slug — absolute if configured."""
+    return f"{_PUBLIC_BASE_URL}/ingest/hooks/{slug}"
 
 
 class AuthType(str, Enum):
@@ -23,6 +40,24 @@ class AuthType(str, Enum):
 class InboundMethod(str, Enum):
     POST = "post"
     GET = "get"
+
+
+class EventStatus(str, Enum):
+    """The single-value verdict on an inbound delivery (v2's event-log status).
+
+    The operator UI filters on exactly these. ``UNRESOLVED_DEVICE`` is declared
+    but never written until v3 grows a device registry — see
+    ``Webhook.device_lookup_expr``.
+    """
+
+    ACCEPTED = "accepted"
+    REJECTED_AUTH = "rejected_auth"
+    REJECTED_SCHEMA = "rejected_schema"
+    REJECTED_METHOD = "rejected_method"
+    TRANSFORM_FAILED = "transform_failed"
+    NO_RULE_MATCH = "no_rule_match"
+    UNRESOLVED_DEVICE = "unresolved_device"
+    PUBLISH_FAILED = "publish_failed"
 
 
 # ── Category ────────────────────────────────────────────────────────
@@ -99,8 +134,8 @@ class WebhookCreate(BaseModel):
 
     category_id: str = Field(min_length=1, max_length=36)
     name: str = Field(min_length=1, max_length=128)
-    # Optional — server mints a secure random token if omitted.
-    token: Optional[str] = Field(default=None, min_length=8, max_length=64)
+    # The operator picks this — it IS the public URL's last segment.
+    slug: str = Field(min_length=3, max_length=64)
     description: Optional[str] = Field(default=None, max_length=1024)
     # "post" reads the request body; "get" reads query params.
     request_method: InboundMethod = InboundMethod.POST
@@ -112,18 +147,24 @@ class WebhookCreate(BaseModel):
 
     payload_schema: dict[str, Any] = Field(default_factory=dict)
     transform: dict[str, str] = Field(default_factory=dict)
+    # JMESPath naming the device-identifying value in the raw payload.
+    device_lookup_expr: Optional[str] = Field(default=None, max_length=512)
     event_type: str = Field(default="ingest.event", max_length=128)
     is_active: bool = True
 
-    @field_validator("token")
+    @field_validator("slug")
     @classmethod
-    def _token(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and not _TOKEN_RE.match(v):
-            raise ValueError("token must be 8-64 chars of [A-Za-z0-9_-]")
+    def _slug(cls, v: str) -> str:
+        if not _SLUG_RE.match(v):
+            raise ValueError(_SLUG_ERROR)
         return v
 
 
 class WebhookUpdate(BaseModel):
+    """Note: no ``slug``. It is the public URL an integrator has already been
+    given, so it is fixed at create time (v2 did the same) — ``extra="forbid"``
+    turns an attempt to change it into a 422 rather than a silent no-op."""
+
     model_config = ConfigDict(extra="forbid")
 
     category_id: Optional[str] = Field(default=None, min_length=1, max_length=36)
@@ -136,6 +177,7 @@ class WebhookUpdate(BaseModel):
     auth_secret: Optional[str] = Field(default=None, max_length=1024)
     payload_schema: Optional[dict[str, Any]] = None
     transform: Optional[dict[str, str]] = None
+    device_lookup_expr: Optional[str] = Field(default=None, max_length=512)
     event_type: Optional[str] = Field(default=None, max_length=128)
     is_active: Optional[bool] = None
 
@@ -145,7 +187,7 @@ class WebhookPublic(BaseModel):
     id: str
     category_id: str
     name: str
-    token: str
+    slug: str
     description: Optional[str] = None
     request_method: str = "post"
     auth_type: str
@@ -153,8 +195,10 @@ class WebhookPublic(BaseModel):
     has_secret: bool = False
     payload_schema: dict[str, Any] = Field(default_factory=dict)
     transform: dict[str, str] = Field(default_factory=dict)
+    device_lookup_expr: Optional[str] = None
     event_type: str
     is_active: bool
+    # Absolute when the service knows its public base URL, else the bare path.
     ingest_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -166,7 +210,7 @@ class WebhookPublic(BaseModel):
                 "id": row.id,
                 "category_id": row.category_id,
                 "name": row.name,
-                "token": row.token,
+                "slug": row.slug,
                 "description": row.description,
                 "request_method": getattr(row, "request_method", "post") or "post",
                 "auth_type": row.auth_type,
@@ -174,9 +218,10 @@ class WebhookPublic(BaseModel):
                 "has_secret": bool(row.auth_secret_hash),
                 "payload_schema": row.payload_schema or {},
                 "transform": row.transform or {},
+                "device_lookup_expr": row.device_lookup_expr,
                 "event_type": row.event_type,
                 "is_active": row.is_active,
-                "ingest_url": ingest_url or f"/ingest/hooks/{row.token}",
+                "ingest_url": ingest_url or receiver_url(row.slug),
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }
@@ -209,6 +254,7 @@ class EventLogSummary(BaseModel):
     category_id: Optional[str] = None
     received_at: datetime
     source_ip: Optional[str] = None
+    status: str
     auth_outcome: str
     schema_outcome: str
     transform_outcome: str
@@ -217,6 +263,8 @@ class EventLogSummary(BaseModel):
     error: Optional[str] = None
     event_id: Optional[str] = None
     matched_rule_id: Optional[str] = None
+    device_lookup_value: Optional[str] = None
+    resolved_device_id: Optional[str] = None
     is_replay: bool = False
 
     @classmethod
@@ -228,6 +276,7 @@ class EventLogSummary(BaseModel):
                 "category_id": row.category_id,
                 "received_at": row.received_at,
                 "source_ip": row.source_ip,
+                "status": row.status,
                 "auth_outcome": row.auth_outcome,
                 "schema_outcome": row.schema_outcome,
                 "transform_outcome": row.transform_outcome,
@@ -236,6 +285,8 @@ class EventLogSummary(BaseModel):
                 "error": row.error,
                 "event_id": row.event_id,
                 "matched_rule_id": getattr(row, "matched_rule_id", None),
+                "device_lookup_value": getattr(row, "device_lookup_value", None),
+                "resolved_device_id": getattr(row, "resolved_device_id", None),
                 "is_replay": row.is_replay,
             }
         )
@@ -257,6 +308,7 @@ class EventLogDetail(EventLogSummary):
                 "category_id": row.category_id,
                 "received_at": row.received_at,
                 "source_ip": row.source_ip,
+                "status": row.status,
                 "auth_outcome": row.auth_outcome,
                 "schema_outcome": row.schema_outcome,
                 "transform_outcome": row.transform_outcome,
@@ -265,6 +317,8 @@ class EventLogDetail(EventLogSummary):
                 "error": row.error,
                 "event_id": row.event_id,
                 "matched_rule_id": getattr(row, "matched_rule_id", None),
+                "device_lookup_value": getattr(row, "device_lookup_value", None),
+                "resolved_device_id": getattr(row, "resolved_device_id", None),
                 "is_replay": row.is_replay,
                 "raw_payload": row.raw_payload,
                 "raw_truncated": row.raw_truncated,
@@ -307,6 +361,11 @@ class WebhookTestResponse(BaseModel):
     schema_errors: list[str] = Field(default_factory=list)
     transformed: Optional[Any] = None
     transform_errors: list[str] = Field(default_factory=list)
+    # Whether the live receiver would accept + publish this sample. False also
+    # covers "the webhook has rules and none of them matched" — a case neither
+    # schema_valid nor transform_errors expresses.
+    would_publish: bool = True
+    reject_reason: Optional[str] = None
     would_publish_subject: Optional[str] = None
     auth_type: str
     # The event_type the live receiver would emit for this sample (rule-resolved).
@@ -314,6 +373,10 @@ class WebhookTestResponse(BaseModel):
     # The rule id/name that would win (None → webhook default event_type).
     matched_rule_id: Optional[str] = None
     matched_rule_name: Optional[str] = None
+    # What the webhook's device_lookup_expr pulled out of this sample.
+    device_lookup_value: Optional[str] = None
+    # Always None until v3 has a device registry — see Webhook.device_lookup_expr.
+    resolved_device_id: Optional[str] = None
 
 
 # ── Event rules ─────────────────────────────────────────────────────
@@ -431,15 +494,18 @@ class RuleTestResponse(BaseModel):
 
 class RotateSecretRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # Also mint a fresh auth secret (only meaningful for api_key / basic webhooks).
-    rotate_auth_secret: bool = False
 
 
 class RotateSecretResponse(BaseModel):
-    """Returned ONCE — the plaintext token/secret is never retrievable again."""
+    """Returned ONCE — the plaintext secret is never retrievable again.
+
+    Rotates the AUTH SECRET only. The URL is not touched: its slug is an
+    operator-chosen identifier, not a credential, so re-minting it would break
+    every integrator's config to no security benefit. To retire a URL, disable
+    or delete the webhook.
+    """
 
     id: str
-    token: str
+    slug: str
     ingest_url: str
-    # Present only when rotate_auth_secret was requested on an authed webhook.
-    auth_secret: Optional[str] = None
+    auth_secret: str

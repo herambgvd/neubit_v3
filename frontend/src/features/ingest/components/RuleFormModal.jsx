@@ -11,22 +11,31 @@
 // Sections:
 //   1. Details — name, event_type (emitted), target_domain, priority, enabled, description
 //   2. Match conditions — repeating {path, op, value} rows (ALL must hold)
-//   3. Fields to extract — repeating {outKey, jmespath} rows → field_map
+//   3. Fields to extract — guided builder (paste a sample) or raw rows → field_map
 //   4. Test — paste sample JSON → per-condition ✓/✗ + overall matched + extracted
-import { useState } from "react";
+//
+// Conditions and field_map both read the RAW payload — the same body the vendor
+// posts and the same one the receiver matches against (see run_pipeline). The
+// sample you paste in step 4 is therefore exactly what production will see.
+import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Modal, Spinner } from "@/components/ui/kit";
+import { Button, Modal } from "@/components/ui/kit";
 import { Field, FieldLabel, fieldClass } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
+import { clientSidePreview } from "../lib/rulePreview";
+import PayloadFieldsBuilder, {
+  fieldsToTransform,
+  transformToFields,
+} from "./PayloadFieldsBuilder";
 
 // Matcher operators — exact backend set.
 const OP_OPTIONS = [
-  { value: "exists", label: "is present" },
-  { value: "not_exists", label: "is missing" },
+  { value: "exists", label: "is present (non-empty)" },
+  { value: "not_exists", label: "is missing / empty" },
   { value: "equals", label: "equals" },
   { value: "not_equals", label: "does not equal" },
   { value: "contains", label: "contains" },
@@ -82,6 +91,13 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
     Object.entries(rule?.field_map || {}).map(([outKey, jmespath]) => ({ outKey, jmespath })),
   );
 
+  // Guided builder over the same field_map — paste a vendor sample and tick the
+  // fields instead of hand-typing every JMESPath.
+  const [builderMode, setBuilderMode] = useState(false);
+  const [builderFields, setBuilderFields] = useState(() =>
+    transformToFields(rule?.field_map),
+  );
+
   // ── live test ─────────────────────────────────────────────────
   const [sampleText, setSampleText] = useState("");
   const [jsonErr, setJsonErr] = useState("");
@@ -98,7 +114,8 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
         ...(OP_NEEDS_VALUE.has(c.op) ? { value: parseValue(c.value) } : {}),
       }));
 
-  // Build the { outKey: jmespath } field map.
+  // Build the { outKey: jmespath } field map. `fieldRows` stays the single source
+  // of truth — the guided builder writes into it, so both modes agree.
   const buildFieldMap = () => {
     const map = {};
     for (const r of fieldRows) {
@@ -106,6 +123,18 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
     }
     return map;
   };
+
+  function applyBuilderFields(nextFields) {
+    setBuilderFields(nextFields);
+    const map = fieldsToTransform(nextFields);
+    setFieldRows(Object.entries(map).map(([outKey, jmespath]) => ({ outKey, jmespath })));
+  }
+
+  function enterBuilderMode() {
+    // Carry any hand-typed rows in so switching modes never drops work.
+    setBuilderFields(transformToFields(buildFieldMap()));
+    setBuilderMode(true);
+  }
 
   const save = useMutation({
     mutationFn: (body) =>
@@ -118,9 +147,8 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
   });
 
   // Dry-run against the sample. The test endpoint honors the proposed
-  // match_conditions / field_map from the current draft, so you can preview
-  // edits before saving — but it anchors on an existing rule id, so a
-  // brand-new (never-saved) rule must be created first before it can be tested.
+  // match_conditions / field_map from the current draft, so edits preview before
+  // saving — but it anchors on an existing rule id.
   const test = useMutation({
     mutationFn: (payload) =>
       ingestApi.eventRules.test(rule.id, {
@@ -133,11 +161,24 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
   });
 
   function runTest() {
-    if (!isEdit) { toast.error("Create the rule first, then reopen it to test."); return; }
     let payload;
     try { payload = sampleText.trim() ? JSON.parse(sampleText) : {}; }
     catch (err) { setJsonErr(`Invalid sample JSON: ${err.message}`); return; }
     setJsonErr("");
+
+    // A rule that doesn't exist yet has no id to POST against — evaluate it in
+    // the browser instead. Writing a rule blind and only learning it never
+    // matches after saving is the exact loop this avoids.
+    if (!isEdit) {
+      setTestResult(
+        clientSidePreview(payload, {
+          conditions: buildConditions(),
+          fieldMap: buildFieldMap(),
+          eventType: eventType.trim(),
+        }),
+      );
+      return;
+    }
     test.mutate(payload);
   }
 
@@ -278,11 +319,41 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
 
         {/* ── Field map ────────────────────────────────────────── */}
         <section className="rounded-lg border border-card-border p-4 space-y-3">
-          <div>
-            <h4 className="text-sm font-semibold text-foreground">Fields to extract</h4>
-            <p className="text-[11px] text-muted/80">When this rule fires, each output key is filled from a JMESPath expression over the payload.</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-foreground">Fields to extract</h4>
+              <p className="text-[11px] text-muted/80">
+                When this rule fires, each output key is filled from a JMESPath expression
+                over the payload. For nested output, use keys like{" "}
+                <code className="font-mono">cap.event_info.description</code>.
+              </p>
+            </div>
+            <div className="inline-flex shrink-0 rounded-md border border-card-border p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setBuilderMode(false)}
+                className={`rounded px-2 py-0.5 transition ${!builderMode ? "bg-foreground text-background" : "text-muted hover:text-foreground"}`}
+              >
+                Manual
+              </button>
+              <button
+                type="button"
+                onClick={enterBuilderMode}
+                className={`rounded px-2 py-0.5 transition ${builderMode ? "bg-foreground text-background" : "text-muted hover:text-foreground"}`}
+              >
+                Guided
+              </button>
+            </div>
           </div>
-          {fieldRows.length === 0 ? (
+
+          {builderMode ? (
+            <PayloadFieldsBuilder
+              sampleText={sampleText}
+              onSampleTextChange={setSampleText}
+              fields={builderFields}
+              onFieldsChange={applyBuilderFields}
+            />
+          ) : fieldRows.length === 0 ? (
             <p className="text-[11px] text-muted/70">No fields mapped — matched events publish with an empty payload.</p>
           ) : (
             <div className="space-y-2">
@@ -322,25 +393,27 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
               ))}
             </div>
           )}
-          <Button
-            type="button"
-            variant="secondary"
-            icon="heroicons-outline:plus"
-            className="!px-3 !py-1.5 text-xs"
-            onClick={() => setFieldRows([...fieldRows, { outKey: "", jmespath: "" }])}
-          >
-            Add field
-          </Button>
+          {!builderMode && (
+            <Button
+              type="button"
+              variant="secondary"
+              icon="heroicons-outline:plus"
+              className="!px-3 !py-1.5 text-xs"
+              onClick={() => setFieldRows([...fieldRows, { outKey: "", jmespath: "" }])}
+            >
+              Add field
+            </Button>
+          )}
         </section>
 
         {/* ── Test ─────────────────────────────────────────────── */}
         <section className="rounded-lg border border-card-border p-4 space-y-3">
           <div>
-            <h4 className="text-sm font-semibold text-foreground">Test this rule</h4>
+            <h4 className="text-sm font-semibold text-foreground">Does this rule match the sample?</h4>
             <p className="text-[11px] text-muted/80">
               {isEdit
                 ? "Paste a sample payload — checks the current draft conditions + field map (no save needed)."
-                : "Save the rule first, then reopen it here to dry-run a sample payload."}
+                : "Checked in your browser until the rule is saved, so simple paths preview but full JMESPath (filters, functions) only resolves server-side."}
             </p>
           </div>
           <Field
@@ -359,9 +432,9 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
               icon="heroicons-outline:play"
               className="!px-3 !py-1.5 text-xs"
               onClick={runTest}
-              disabled={test.isPending || !isEdit}
+              disabled={test.isPending}
             >
-              {test.isPending ? "Testing…" : "Run test"}
+              {test.isPending ? "Testing…" : "Run check"}
             </Button>
             {testResult && (
               <span
@@ -372,7 +445,12 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
                 }`}
               >
                 <Icon icon={testResult.matched ? "heroicons-outline:check-circle" : "heroicons-outline:x-circle"} className="text-sm" />
-                {testResult.matched ? "Rule matches" : "Does NOT match"}
+                {testResult.matched ? "Rule matches" : "Rule does NOT match"}
+              </span>
+            )}
+            {testResult?._preview && (
+              <span className="text-[10px] rounded-full border border-card-border px-1.5 py-0.5 text-muted">
+                browser preview
               </span>
             )}
             {testResult?.event_type && (

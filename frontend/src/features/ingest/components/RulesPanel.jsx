@@ -18,7 +18,7 @@ import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
 import RuleFormModal from "./RuleFormModal";
 
-export default function RulesPanel({ webhookId }) {
+export default function RulesPanel({ webhookId, canManage }) {
   const qc = useQueryClient();
   const key = ["ingest-event-rules", webhookId];
   const q = useQuery({ queryKey: key, queryFn: () => ingestApi.eventRules.list(webhookId) });
@@ -50,13 +50,15 @@ export default function RulesPanel({ webhookId }) {
           priority order (lower first); the first match decides which fields to extract and what
           event type to tag the event as.
         </p>
-        <Button
-          icon="heroicons-outline:plus"
-          className="!px-3 !py-1.5 text-xs shrink-0"
-          onClick={() => { setEditing(null); setFormOpen(true); }}
-        >
-          New rule
-        </Button>
+        {canManage && (
+          <Button
+            icon="heroicons-outline:plus"
+            className="!px-3 !py-1.5 text-xs shrink-0"
+            onClick={() => { setEditing(null); setFormOpen(true); }}
+          >
+            New event type
+          </Button>
+        )}
       </div>
 
       {q.isLoading ? (
@@ -66,10 +68,11 @@ export default function RulesPanel({ webhookId }) {
       ) : rules.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-card-border py-10 text-center">
           <Icon icon="heroicons-outline:funnel" className="text-3xl text-muted mb-2 opacity-60" />
-          <p className="text-sm font-medium text-foreground">No event rules yet</p>
+          <p className="text-sm font-medium text-foreground">No event types yet</p>
           <p className="text-xs text-muted mt-1 max-w-sm">
-            Without rules, the webhook uses its flat field map for every payload. Add rules to
-            handle multiple event shapes from the same receiver URL.
+            Without rules, the webhook uses its flat output map for every payload. Add rules to
+            handle multiple event shapes from the same receiver URL — but note that once a
+            webhook has rules, a payload matching none of them is rejected rather than published.
           </p>
         </div>
       ) : (
@@ -78,6 +81,7 @@ export default function RulesPanel({ webhookId }) {
             <RuleRow
               key={r.id}
               rule={r}
+              canManage={canManage}
               onEdit={() => { setEditing(r); setFormOpen(true); }}
               onToggle={(enabled) => toggle.mutate({ id: r.id, enabled })}
               onDelete={() =>
@@ -107,8 +111,9 @@ export default function RulesPanel({ webhookId }) {
   );
 }
 
-function RuleRow({ rule, onEdit, onToggle, onDelete }) {
+function RuleRow({ rule, canManage, onEdit, onToggle, onDelete }) {
   const condCount = (rule.match_conditions || []).length;
+  const fieldCount = Object.keys(rule.field_map || {}).length;
   const summary = summarizeConditions(rule.match_conditions);
   return (
     <li className="flex items-center gap-3 px-3 py-2.5 hover:bg-hover">
@@ -126,32 +131,37 @@ function RuleRow({ rule, onEdit, onToggle, onDelete }) {
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
           <span className="font-mono truncate" title={summary.full}>{summary.short}</span>
           <span className="shrink-0">· {condCount} condition{condCount === 1 ? "" : "s"}</span>
+          <span className="shrink-0">· {fieldCount} field{fieldCount === 1 ? "" : "s"}</span>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => onToggle(!rule.enabled)}
-        title={rule.enabled ? "Disable" : "Enable"}
-        className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground shrink-0"
-      >
-        <Icon icon={rule.enabled ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-sm" />
-      </button>
-      <button
-        type="button"
-        onClick={onEdit}
-        title="Edit"
-        className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground shrink-0"
-      >
-        <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        title="Delete"
-        className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500 shrink-0"
-      >
-        <Icon icon="heroicons-outline:trash" className="text-sm" />
-      </button>
+      {canManage && (
+        <>
+          <button
+            type="button"
+            onClick={() => onToggle(!rule.enabled)}
+            title={rule.enabled ? "Disable" : "Enable"}
+            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground shrink-0"
+          >
+            <Icon icon={rule.enabled ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-sm" />
+          </button>
+          <button
+            type="button"
+            onClick={onEdit}
+            title="Edit"
+            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground shrink-0"
+          >
+            <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Delete"
+            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500 shrink-0"
+          >
+            <Icon icon="heroicons-outline:trash" className="text-sm" />
+          </button>
+        </>
+      )}
     </li>
   );
 }

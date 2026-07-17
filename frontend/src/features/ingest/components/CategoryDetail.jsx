@@ -5,7 +5,7 @@ import { Icon } from "@iconify/react";
 
 import WebhooksPanel from "./WebhooksPanel";
 
-export default function CategoryDetail({ category, catId, onEdit, onDelete }) {
+export default function CategoryDetail({ category, catId, onEdit, onDelete, canManage }) {
   return (
     <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
       <div className="flex flex-col flex-1 min-h-0">
@@ -19,17 +19,19 @@ export default function CategoryDetail({ category, catId, onEdit, onDelete }) {
               {category.description && <p className="mt-0.5 text-xs text-muted">{category.description}</p>}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover">
-              <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-            </button>
-            <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20">
-              <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
-            </button>
-          </div>
+          {canManage && (
+            <div className="flex items-center gap-2 shrink-0">
+              <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover">
+                <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
+              </button>
+              <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20">
+                <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
+              </button>
+            </div>
+          )}
         </header>
         <div className="flex-1 min-h-0 overflow-y-auto">
-          <WebhooksPanel category={category} catId={catId} />
+          <WebhooksPanel category={category} catId={catId} canManage={canManage} />
         </div>
       </div>
     </section>

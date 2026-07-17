@@ -49,6 +49,13 @@ async def lifespan(app: FastAPI):
 
     await subscribe_tenant_provisioned(bus, database, durable="ingest-provision")
     await subscribe_tenant_offboard(bus, database, durable="ingest-offboard")
+
+    # Optional brand seeds (VE_INGEST_AUTO_SEED). No-op when off; never raises.
+    from app.ingest.bootstrap import bootstrap_ingest_seeds
+
+    async with database.get_sessionmaker()() as db:
+        await bootstrap_ingest_seeds(db)
+
     yield
     await bus.close()
 

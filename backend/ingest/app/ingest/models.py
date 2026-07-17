@@ -47,6 +47,11 @@ class IngestCategory(Base):
     """A logical grouping of webhooks that names where their events route."""
 
     __tablename__ = "ingest_categories"
+    __table_args__ = (
+        # v2 held a global unique index on name; the tenant-scoped equivalent is
+        # unique per owning tenant (NULL tenant = the platform's own namespace).
+        Index("uq_ingest_categories_tenant_name", "tenant_id", "name", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     # --- multi-tenancy: the owning tenant (NULL = platform/super-admin/system). ---
@@ -94,9 +99,16 @@ class Webhook(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    # The opaque secret in the public URL: /ingest/hooks/{token}. Globally unique
-    # (unguessable) so the receiver can look a webhook up without a JWT/tenant hint.
-    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    # The operator-chosen path segment of the public URL: /ingest/hooks/{slug}
+    # (e.g. "face-detection"). Globally unique — the receiver takes no JWT, so
+    # the slug is the ONLY key it has to find the webhook, and it must therefore
+    # be unambiguous across tenants.
+    #
+    # Readable and guessable BY DESIGN (v2 parity): the URL identifies the
+    # webhook, it does not authenticate the caller. That job belongs to
+    # auth_type — which is why an auth_type="none" webhook is an open endpoint
+    # and the form warns about it.
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     description: Mapped[str | None] = mapped_column(String(1024))
 
     # "post" (read body) | "get" (read query params). Plain string (no PG enum).
@@ -111,7 +123,9 @@ class Webhook(Base):
     # For basic: the expected username (plaintext, non-secret).
     auth_username: Mapped[str | None] = mapped_column(String(128))
     # HASHED secret (api_key token / basic password) — never plaintext. NULL for "none".
-    auth_secret_hash: Mapped[str | None] = mapped_column(String(128))
+    # Sized for the widest producer: security.encrypt_secret (hmac) emits
+    # 4 + 32 + 1 + 2*len(plain) chars, and the schema admits a 1024-char secret.
+    auth_secret_hash: Mapped[str | None] = mapped_column(String(2048))
 
     # JSON Schema (Draft 2020-12). Empty {} accepts anything.
     payload_schema: Mapped[dict] = mapped_column(
@@ -119,6 +133,15 @@ class Webhook(Base):
     )
     # {target_field: "jmespath expression"} applied to the raw payload. Empty {} = passthrough.
     transform: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
+
+    # JMESPath into the RAW payload naming the value that identifies the sending
+    # device (e.g. "data.dev_net_info[0].mac"). v2 resolved this against its
+    # devices table's source_ref and enriched the event with device_id/site_id.
+    # v3 has no device registry yet (device identity is split across the vision /
+    # access services, each in its own DB, and cross-service HTTP is banned), so
+    # the extracted value is published as ``device_lookup_value`` for a
+    # downstream consumer to resolve. See ReceiverService.run_pipeline.
+    device_lookup_expr: Mapped[str | None] = mapped_column(String(512))
 
     # The event ``type`` stamped on the published envelope.
     event_type: Mapped[str] = mapped_column(
@@ -144,21 +167,39 @@ class IngestEventRule(Base):
     Ported 1:1 from neubit_v2's ``IngestEventRuleORM``. A webhook with at least
     one enabled rule uses the rule-based flow: walk rules by ``priority`` (ASC,
     then ``created_at`` ASC), evaluate each rule's ``match_conditions`` against
-    the transformed payload, and the FIRST matching rule wins — its ``field_map``
-    extraction is applied to the published payload and its ``event_type`` becomes
-    the emitted event type. A webhook with zero (enabled) rules falls back to the
-    webhook-level ``transform`` + default ``event_type`` (original v3 behavior).
+    the RAW payload, and the FIRST matching rule wins — its ``field_map``
+    REPLACES the webhook-level ``transform`` (it is not chained on top of it) and
+    its ``event_type`` becomes the emitted event type. A webhook with enabled
+    rules but no match REJECTS the delivery (v2's ``no_rule_match``) rather than
+    publishing an unrouted event. A webhook with zero enabled rules falls back to
+    the webhook-level ``transform`` + default ``event_type``.
+
+    Conditions read the RAW payload, not the transformed one: a vendor's sample
+    body is what an operator writes paths against, and the webhook ``transform``
+    may well have dropped the very field a condition tests. This also keeps the
+    rule-test endpoint honest — it evaluates the same input the receiver does.
 
     Unlike v2 (which stored a Kafka ``target_topic`` and a per-rule
-    ``workflow_id``), a v3 rule simply EMITS an ``event_type`` — SOP binding is
-    done downstream by workflow triggers matching on that type. ``target_domain``
-    is an optional per-rule override of the category's routing domain.
+    ``workflow_id``), a v3 rule simply EMITS an ``event_type``. SOP binding is
+    done downstream by workflow triggers matching on that type — see
+    ``backend/workflow/app/workflow/correlation.py``. (v2's ``workflow_id`` was
+    stamped onto the event and never read by anything.) ``target_domain`` is an
+    optional per-rule override of the category's routing domain.
 
     Tenant-scoped (``tenant_id`` mirrors the owning webhook). JSON columns are
     portable generic types; no PG enum (dodges the asyncpg add-column footgun).
     """
 
     __tablename__ = "ingest_event_rules"
+    __table_args__ = (
+        # Exactly the receiver's hot query: WHERE webhook_id ORDER BY priority, created_at.
+        Index(
+            "ix_ingest_event_rules_webhook_priority",
+            "webhook_id",
+            "priority",
+            "created_at",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     # --- multi-tenancy: the owning tenant (mirrors the webhook's tenant_id). ---
@@ -205,7 +246,7 @@ class IngestEventRule(Base):
 
 
 class IngestEventLog(Base):
-    """One row per inbound ``POST /ingest/hooks/{token}`` request — the audit trail.
+    """One row per inbound ``POST /ingest/hooks/{slug}`` request — the audit trail.
 
     Captures the outcome at each pipeline stage (auth → schema → transform →
     publish) so operators can see exactly what happened to every delivery,
@@ -217,11 +258,19 @@ class IngestEventLog(Base):
     Outcome columns are short plain strings (no DB enum — avoids the asyncpg
     add-column enum footgun): auth_outcome/schema_outcome/transform_outcome ∈
     {"ok","failed","skipped"} (auth is only ok/failed).
+
+    ``status`` is v2's single-value verdict, kept alongside the per-stage columns
+    because it names outcomes the stage columns cannot express — ``no_rule_match``
+    and ``rejected_method`` both look like a plain auth/schema pass otherwise —
+    and because the operator UI filters on exactly these eight values. The stage
+    columns stay authoritative for "where did it stop"; ``status`` answers "why".
     """
 
     __tablename__ = "ingest_event_logs"
     __table_args__ = (
         Index("ix_ingest_event_logs_tenant_received", "tenant_id", "received_at"),
+        # The per-webhook events tab: WHERE webhook_id ORDER BY received_at DESC.
+        Index("ix_ingest_event_logs_webhook_received", "webhook_id", "received_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
@@ -246,6 +295,10 @@ class IngestEventLog(Base):
     transform_outcome: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'skipped'")
     )
+    # The single-value verdict — one of the STATUS_* constants in service.py.
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'accepted'"), index=True
+    )
 
     published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), index=True
@@ -263,6 +316,15 @@ class IngestEventLog(Base):
     event_id: Mapped[str | None] = mapped_column(String(36))
     # The IngestEventRule that determined the emitted event_type (NULL = default/none).
     matched_rule_id: Mapped[str | None] = mapped_column(String(36))
+
+    # The value the webhook's device_lookup_expr pulled out of this payload
+    # (NULL when the webhook configures no lookup). Published for a downstream
+    # consumer to resolve; see Webhook.device_lookup_expr.
+    device_lookup_value: Mapped[str | None] = mapped_column(String(256))
+    # v2 resolved device_lookup_value against its devices table and stored the hit
+    # here. Always NULL until v3 grows a device registry — kept so the column (and
+    # the UI's "Resolved Device" row) is ready when resolution lands.
+    resolved_device_id: Mapped[str | None] = mapped_column(String(36))
     # True when this row was produced by a replay of an earlier log.
     is_replay: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), index=True

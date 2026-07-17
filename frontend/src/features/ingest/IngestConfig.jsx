@@ -6,28 +6,38 @@
 // decomposed components (CategoryList, CategoryDetail, CategoryFormModal).
 //
 //   • CSS-var theme → semantic tokens (foreground/muted/card/hover…).
-//   • The public receiver `/ingest/hooks/{token}` is server-only — displayed
+//   • The public receiver `/ingest/hooks/{slug}` is server-only — displayed
 //     read-only with a copy button; never called from the UI.
+//   • `canManage` (ingest.manage) is resolved once here and threaded down to
+//     every pane. The backend gates each mutating route on it regardless; this
+//     just stops the UI offering buttons that would 403.
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Icon } from "@iconify/react";
 
-import { ConfirmDialog } from "@/components/ui/kit";
+import { ConfirmDialog, EmptyState } from "@/components/ui/kit";
 import { MasterDetail, EmptyDetail } from "@/components/common";
 import { asItems, idOf } from "@/lib/format";
 import { apiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { ingest as ingestApi } from "./api";
+import { PERM_MANAGE, PERM_READ } from "./constants";
 import CategoryList from "./components/CategoryList";
 import CategoryDetail from "./components/CategoryDetail";
 import CategoryFormModal from "./components/CategoryFormModal";
 
 export default function IngestConfigPage() {
   const qc = useQueryClient();
+  const { can } = useAuth();
+  const canRead = can(PERM_READ);
+  const canManage = can(PERM_MANAGE);
+
   const catsQ = useQuery({
     queryKey: ["ingest-categories"],
     queryFn: () => ingestApi.categories.list({ limit: 100 }),
+    enabled: canRead,
   });
 
   const cats = useMemo(() => asItems(catsQ.data), [catsQ.data]);
@@ -69,6 +79,18 @@ export default function IngestConfigPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  // The nav entry is perm-hidden too, but a deep link shouldn't render an empty
+  // shell — say why there's nothing here.
+  if (!canRead) {
+    return (
+      <EmptyState
+        icon="heroicons-outline:lock-closed"
+        title="Ingest is restricted"
+        subtitle={`You need the ${PERM_READ} permission to view ingest configuration.`}
+      />
+    );
+  }
+
   return (
     <div>
       <MasterDetail
@@ -88,13 +110,15 @@ export default function IngestConfigPage() {
             catId={catId}
             suppressSelected={mode === "create"}
             action={
-              <button
-                onClick={() => setMode("create")}
-                title="Add category"
-                className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
-              >
-                <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
-              </button>
+              canManage ? (
+                <button
+                  onClick={() => setMode("create")}
+                  title="Add category"
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+                >
+                  <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+                </button>
+              ) : null
             }
           />
         }
@@ -109,12 +133,16 @@ export default function IngestConfigPage() {
           <CategoryDetail
             category={selected}
             catId={catId(selected)}
+            canManage={canManage}
             onEdit={() => setMode("edit")}
             onDelete={() =>
               setConfirm({
                 title: "Delete category?",
-                message: `Delete "${selected.name}" and all of its webhooks? This cannot be undone.`,
+                message:
+                  `Delete "${selected.name}"? Its ${selected.webhook_count ?? 0} webhook(s) ` +
+                  "will be removed too. This cannot be undone.",
                 confirmLabel: "Delete",
+                danger: true,
                 onConfirm: () => {
                   removeCat.mutate(catId(selected));
                   setConfirm(null);

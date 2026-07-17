@@ -119,6 +119,12 @@ services:
     env_file: .env
     environment:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_ingest
+      # The origin integrators point their devices at, used to build the webhook's
+      # copy-pasteable receiver URL. This is the GATEWAY (Traefik routes
+      # /ingest/hooks here), never the frontend dev server on :3000 — that origin
+      # would serve the operator UI instead of the receiver. Override per
+      # deployment with the real public hostname.
+      VE_INGEST_PUBLIC_BASE_URL: ${VE_INGEST_PUBLIC_BASE_URL:-http://localhost}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
