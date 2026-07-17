@@ -468,6 +468,26 @@ func (c *Client) PathState(ctx context.Context, node Node, name string) (PathInf
 	return info, true, nil
 }
 
+// PathConfigured reports whether a path exists in the MediaMTX CONFIG via
+// /v3/config/paths/get/<name>. This is the config-level existence check (distinct
+// from PathState's runtime /v3/paths/get) — SetRecord patches the config path, so
+// this is what tells the reconcile loop whether it must (re)add the path before
+// setting record. ok=false (nil err) when the path is not configured; err only on
+// a transport/status failure so the caller can decide conservatively.
+func (c *Client) PathConfigured(ctx context.Context, node Node, name string) (bool, error) {
+	status, _, err := c.do(ctx, node, http.MethodGet, "/v3/config/paths/get/"+name, nil)
+	if err != nil {
+		return false, fmt.Errorf("mediamtx path config %q: %w", name, err)
+	}
+	if status == http.StatusNotFound {
+		return false, nil
+	}
+	if status != http.StatusOK {
+		return false, fmt.Errorf("mediamtx path config %q: status %d", name, status)
+	}
+	return true, nil
+}
+
 // Healthy probes the node's control API (config global) — used by the supervisor
 // to mark a node up/down.
 func (c *Client) Healthy(ctx context.Context, node Node) bool {

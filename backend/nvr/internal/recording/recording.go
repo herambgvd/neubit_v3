@@ -417,23 +417,31 @@ func (s *Supervisor) reconcile(ctx context.Context) {
 		if err != nil {
 			continue // no node — try next tick
 		}
-		// Self-heal: if MediaMTX dropped the PATH entirely (config churn from live
-		// ensure/reload, a restart, or a live-viewer teardown that removed the shard),
-		// a bare SetRecord 404s "path not found" forever. Re-provision the path from a
-		// known RTSP first (idempotent EnsurePath), then set record. Prefer the live
-		// shard's RTSP (freshest); fall back to the RTSP pinned on the target, which
-		// survives shard/live teardown — without this, a record-only camera whose shard
-		// was reaped could never recover (the CH-51 silent-stop bug).
-		rtsp := t.rtsp
-		var shardRTSP string
-		if err := s.db.QueryRow(ctx,
-			`SELECT rtsp_url FROM stream_shards WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3`,
-			t.tenant, t.cam, t.profile).Scan(&shardRTSP); err == nil && shardRTSP != "" {
-			rtsp = shardRTSP
+		// Self-heal: if the MediaMTX path still EXISTS, just (re)assert record — a
+		// no-op patch, cheap + no config churn. Only when the path is MISSING (dropped
+		// by a live-viewer teardown that removed the shard, config reload, or a restart)
+		// do we re-add it from a known RTSP first, else SetRecord 404s "path not found"
+		// forever. Prefer the live shard's RTSP (freshest); fall back to the RTSP pinned
+		// on the target, which survives shard/live teardown — without that fallback a
+		// record-only camera whose shard was reaped could never recover (CH-51 bug).
+		configured := false
+		if ok, err := s.mtx.PathConfigured(ctx, node, t.name); err == nil {
+			configured = ok
 		}
-		if rtsp != "" {
-			if err := s.mtx.EnsurePath(ctx, node, t.name, rtsp, nil); err != nil {
-				log.Printf("recording reconcile ensure %s: %v", t.name, err)
+		// (When the config check itself errors — node hiccup — we can't be sure, so
+		// leave `configured=false` and attempt the ensure; EnsurePath is idempotent.)
+		if !configured {
+			rtsp := t.rtsp
+			var shardRTSP string
+			if err := s.db.QueryRow(ctx,
+				`SELECT rtsp_url FROM stream_shards WHERE tenant_id=$1 AND camera_id=$2 AND profile=$3`,
+				t.tenant, t.cam, t.profile).Scan(&shardRTSP); err == nil && shardRTSP != "" {
+				rtsp = shardRTSP
+			}
+			if rtsp != "" {
+				if err := s.mtx.EnsurePath(ctx, node, t.name, rtsp, nil); err != nil {
+					log.Printf("recording reconcile ensure %s: %v", t.name, err)
+				}
 			}
 		}
 		// PATCH record on. MediaMTX ignores a no-op patch, so this is cheap + idempotent;
