@@ -11,3 +11,15 @@
 -- shard's RTSP (fresh) but falls back to this pinned value when the shard is gone.
 ALTER TABLE recording_targets
     ADD COLUMN IF NOT EXISTS rtsp_url text NOT NULL DEFAULT '';
+
+-- Backfill existing active targets from their current live shard so cameras that
+-- are ALREADY recording get their RTSP pinned immediately on upgrade — otherwise
+-- they'd stay unprotected (rtsp_url='') until each was next (re)started.
+UPDATE recording_targets rt
+SET rtsp_url = ss.rtsp_url
+FROM stream_shards ss
+WHERE ss.tenant_id = rt.tenant_id
+  AND ss.camera_id = rt.camera_id
+  AND ss.profile   = rt.profile
+  AND ss.rtsp_url <> ''
+  AND rt.rtsp_url = '';
