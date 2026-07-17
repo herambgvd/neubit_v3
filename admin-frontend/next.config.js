@@ -13,6 +13,8 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Self-contained production build (see admin-frontend/Dockerfile).
+  output: "standalone",
   // Next 16 runs on Turbopack by default. No custom bundler rules are needed.
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

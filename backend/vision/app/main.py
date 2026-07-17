@@ -41,6 +41,7 @@ from kernel.events import subject
 # Go ``nvr`` service.
 from app.db import get_sessionmaker
 from app.vms import routers as vms_routers
+from app.vms import public_routers as vms_public_routers
 from app.vms.anr import AnrConsumer
 from app.vms.common.events import bus
 from app.vms.events import EventSupervisor
@@ -254,6 +255,12 @@ def create_app() -> FastAPI:
     vms_gate = [Depends(require_feature("vms")), Depends(require_active_license())]
     for r in vms_routers:
         app.include_router(r, prefix=settings.api_prefix, dependencies=vms_gate)
+
+    # PUBLIC media routes — NOT gated (no bearer / module / license). The Traefik
+    # ForwardAuth media hot path (GET /vms/media/verify) authorizes off the stateless
+    # media token, so it must stay reachable for HLS/WebRTC even without a session JWT.
+    for r in vms_public_routers:
+        app.include_router(r, prefix=settings.api_prefix)
 
     # P6-C ONVIF SOAP server — mounted at the app ROOT (NOT under api_prefix): external
     # ONVIF clients hit ``http://<host>/onvif/device_service`` etc. Auth is WS-Security

@@ -1,0 +1,81 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Neubit v3 — RECORDER-2 node, for a SEPARATE machine (Machine 2 / DL380 #2).
+#
+# This machine runs ONLY a recorder: its own MediaMTX + Go nvr. It has NO source
+# code — it pulls PRE-BUILT images and connects back to Machine 1 (central) by IP
+# for Postgres + NATS. It records its own ~75 cameras to its own RAID and serves
+# their live/playback media on THIS machine's IP.
+#
+# FILL these in a sibling `.env` (deploy/poc/recorder.env → copied to .env here):
+#   REGISTRY        e.g. registry.example.com/neubit   (or a local registry IP:5000)
+#   IMAGE_TAG       e.g. poc                            (the tag you pushed)
+#   CENTRAL_IP      Machine 1's LAN IP (Postgres + NATS live there)
+#   RECORDER_IP     THIS machine's LAN IP (browser + central reach media here)
+#   POSTGRES_PASSWORD  same as central
+#
+# Run on Machine 2 (Docker only, no codebase):
+#   docker compose --env-file recorder.env -f docker-compose.recorder2.yml pull
+#   docker compose --env-file recorder.env -f docker-compose.recorder2.yml up -d
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  mediamtx:
+    container_name: neubit-v3-mediamtx-2
+    image: bluenviron/mediamtx:latest-ffmpeg
+    restart: unless-stopped
+    environment:
+      # Advertise THIS machine's IP so the browser (tower) can reach the WebRTC
+      # media directly for ICE. Comma-separated, no brackets.
+      MTX_WEBRTCADDITIONALHOSTS: ${RECORDER_IP}
+      MTX_WEBRTCLOCALUDPADDRESS: ":8189"
+      MTX_WEBRTCLOCALTCPADDRESS: ":8189"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - recordings2:/recordings
+    ports:
+      - "8189:8189/udp"     # WebRTC ICE — MUST be open in the firewall
+      - "8189:8189/tcp"
+      - "8889:8889"         # WHEP (central gateway proxies /media2 here by RECORDER_IP)
+      - "8888:8888"         # HLS
+      - "9996:9996"         # playback server
+      - "9997:9997"         # control API (central → this node)
+      - "8554:8554"         # RTSP (optional)
+    networks: [recnet]
+
+  nvr:
+    container_name: neubit-v3-nvr-2
+    image: ${REGISTRY}/nvr:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      # Central owns the databases — reach them by Machine 1's IP.
+      VE_DATABASE_URL: postgresql+asyncpg://neubit:${POSTGRES_PASSWORD}@${CENTRAL_IP}:5432/neubit_nvr_2
+      VE_NATS_URL: nats://${CENTRAL_IP}:4222
+      VE_JWT_SECRET: ${VE_JWT_SECRET}
+      VE_APP_NAME: nvr-2
+      VE_PORT: "8000"
+      VE_MEDIA_NODE_ID: recorder-2
+      # This node's own MediaMTX (same machine).
+      VE_MEDIAMTX_API_URL: http://mediamtx:9997
+      VE_MEDIAMTX_PLAYBACK_API_URL: http://mediamtx:9996
+      VE_MEDIAMTX_RTSP_BASE: rtsp://mediamtx:8554
+      # Browser-facing media — routed through the CENTRAL gateway's /media2 prefix,
+      # which must point at THIS recorder's IP (see RUNBOOK step "central gateway").
+      VE_MEDIA_PUBLIC_HLS_BASE: http://${CENTRAL_IP}/media2/hls
+      VE_MEDIA_PUBLIC_WHEP_BASE: http://${CENTRAL_IP}/media2/whep
+      VE_MEDIA_PUBLIC_PLAYBACK_BASE: http://${CENTRAL_IP}/media2/playback
+      VE_RECORDINGS_DIR: /recordings
+      VE_RECORD_SEGMENT_DURATION: 60s
+      VE_RECORD_TICK_SEC: "15"
+    ports:
+      - "8000:8000"          # nvr control API — central reaches this at http://RECORDER_IP:8000
+    volumes:
+      - recordings2:/recordings
+    depends_on:
+      mediamtx: { condition: service_started }
+    networks: [recnet]
+
+volumes:
+  recordings2:
+
+networks:
+  recnet:
+    driver: bridge

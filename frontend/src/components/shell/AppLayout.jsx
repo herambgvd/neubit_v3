@@ -104,10 +104,22 @@ export default function AppLayout({ children }) {
   const contained =
     pathname === "/devices/cameras" ||
     pathname === "/devices/nvr" ||
+    pathname === "/devices/recorders" ||
     pathname === "/access-control" ||
     // Unified Playback is a control-room surface (source rail + synchronized grid +
     // master timeline) — the PAGE must not scroll; it fills the bounded pane via h-full.
-    pathname === "/playback";
+    pathname === "/playback" ||
+    // Config master/detail surfaces — same bounded, fill-the-pane layout as the device
+    // pages (list-aside + detail card, no page scroll). Keeps all mgmt screens consistent.
+    pathname === "/sites" ||
+    pathname === "/users" ||
+    pathname === "/roles" ||
+    pathname === "/tags" ||
+    pathname === "/config/patterns" ||
+    pathname === "/config/video-wall" ||
+    pathname === "/config/storage" ||
+    // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
+    pathname === "/map";
 
   const mainClass = immersiveWall
     ? "flex-1 min-h-0 w-full overflow-hidden"

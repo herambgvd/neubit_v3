@@ -59,8 +59,11 @@ from .schemas import (
 
 log = logging.getLogger("vision.media_nodes")
 
-# The Go ``nvr`` health/self-report path (relative to a node's ``api_url``).
-NODE_HEALTH_PATH = "/api/v1/nvr/status"
+# The Go ``nvr`` reachability path (relative to a node's ``api_url``). Uses the
+# PUBLIC ``/health`` liveness endpoint — the probe carries no JWT (node onboarding
+# is an infrastructure reachability check, not a tenant-scoped call), and
+# ``/api/v1/nvr/*`` is JWT-gated (would always 401 → falsely "offline").
+NODE_HEALTH_PATH = "/health"
 
 # Recording modes whose data-plane is driven IMMEDIATELY (so a DEF-A failover must resume
 # them on the new node). Mirrors ``cameras.service._IMMEDIATE_RECORDING_MODES`` +
@@ -293,15 +296,33 @@ class MediaNodeService:
 
         rows = (await self.db.execute(stmt)).scalars().all()
         total = int(await self.db.scalar(count_stmt) or 0)
+
+        # Live used-channel counts (cameras pinned per node) in ONE grouped query
+        # — the source of truth for "N / capacity" (stored used_channels can lag).
+        node_ids = [r.id for r in rows]
+        counts: dict[str, int] = {}
+        if node_ids:
+            res = await self.db.execute(
+                scoped(
+                    select(Camera.media_node_id, func.count()).select_from(Camera),
+                    Camera,
+                    self.scope,
+                )
+                .where(Camera.media_node_id.in_(node_ids))
+                .group_by(Camera.media_node_id)
+            )
+            counts = {nid: int(c) for nid, c in res.all()}
+
         return MediaNodeListResponse(
-            items=[MediaNodePublic.from_row(r) for r in rows],
+            items=[MediaNodePublic.from_row(r, used=counts.get(r.id, 0)) for r in rows],
             total=total,
             skip=skip,
             limit=limit,
         )
 
     async def get(self, node_id: str) -> MediaNodePublic:
-        return MediaNodePublic.from_row(await self._row(node_id))
+        row = await self._row(node_id)
+        return MediaNodePublic.from_row(row, used=await self._assigned_camera_count(node_id))
 
     async def update(self, node_id: str, body: MediaNodeUpdate) -> MediaNodePublic:
         row = await self._row(node_id)

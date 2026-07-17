@@ -145,12 +145,14 @@ export default function Patterns() {
   const activeCount = items.filter((i) => i.is_active !== false).length;
 
   return (
-    <div>
-      <div className="mb-4">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-4 shrink-0">
         <TabBar tabs={TABS} active={tab} onChange={switchTab} />
       </div>
 
       <MasterDetail
+        fill
+        className="min-h-0 flex-1"
         gridCols="lg:grid-cols-[24rem_1fr]"
         aside={
           <ListPanel

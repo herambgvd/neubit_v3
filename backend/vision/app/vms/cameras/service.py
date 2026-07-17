@@ -167,9 +167,20 @@ class CameraService:
                 await old_nvr.stop_recording(camera_id=camera.id, profile=profile)
             except Exception as exc:  # noqa: BLE001 — stop is best-effort
                 log.info("re-host stop on old node failed for camera %s: %s", camera.id, exc)
-            # Start on the NEW node (the camera row already carries the new assignment,
-            # so ``_drive_start`` routes to it via ``_nvr_for``).
-            await rec._drive_start(camera, trigger=camera.recording_mode)
+            # Re-assert the recording state on the NEW node. Only CONTINUOUS auto-follows
+            # the camera to its new recorder (the row already carries the new assignment,
+            # so ``_drive_start`` routes to it via ``_nvr_for``). MANUAL is operator-triggered
+            # — auto-starting it on a mere node MOVE would falsely mark an idle camera as
+            # recording (a lit "REC" badge on a manual camera). For manual we instead ensure
+            # the new node is NOT left with an active recording target.
+            if camera.recording_mode == "continuous":
+                await rec._drive_start(camera, trigger="continuous")
+            else:
+                try:
+                    new_nvr = await rec._nvr_for(camera)
+                    await new_nvr.stop_recording(camera_id=camera.id, profile=profile)
+                except Exception as exc:  # noqa: BLE001 — new-node stop is best-effort
+                    log.info("re-host stop on new node failed for camera %s: %s", camera.id, exc)
         except Exception as exc:  # noqa: BLE001 — a re-host failure must not fail the write
             log.info("re-host recording failed for camera %s: %s", camera.id, exc)
 

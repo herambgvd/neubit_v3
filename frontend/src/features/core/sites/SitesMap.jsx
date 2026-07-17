@@ -100,7 +100,7 @@ export default function SitesMapPage() {
         }
       />
 
-      <section className="sites-map-root relative min-h-0 flex-1 overflow-hidden rounded-xl border border-card-border bg-hover/40" style={{ minHeight: "60vh" }}>
+      <section className="sites-map-root relative min-h-0 flex-1 overflow-hidden rounded-xl border border-card-border bg-hover/40">
         <MapPopupStyleFix />
         {cfgQ.isLoading ? (
           <Loading />

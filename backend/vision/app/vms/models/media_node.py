@@ -55,7 +55,7 @@ class MediaNode(Base):
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     capacity_channels: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
+        Integer, nullable=False, server_default=text("128")
     )
     used_channels: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")

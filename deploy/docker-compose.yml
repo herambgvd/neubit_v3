@@ -277,6 +277,7 @@ services:
   # network by nvr, NEVER routed through the public Traefik gateway. Public
   # HLS/WebRTC token-auth is added at the Traefik ForwardAuth layer in P2-C.
   mediamtx:
+    container_name: neubit-v3-mediamtx-base
     # -ffmpeg variant bundles ffmpeg (the plain image is scratch-based, no ffmpeg).
     # Required for the on-demand H265→H264 live-view transcode path in mediamtx.yml
     # (browsers can't WebRTC-decode HEVC → we republish an H264 variant on demand).
@@ -308,6 +309,7 @@ services:
   # (neubit_nvr) + migrations. Built on the shared Go kernel so it shares the SAME
   # JWT + NATS envelope + error contract as the Python services.
   nvr:
+    container_name: neubit-v3-nvr-base
     build:
       context: ../backend
       dockerfile: nvr/Dockerfile
@@ -354,16 +356,12 @@ services:
 
   # ── operator console (Next.js) ──────────────────────────────────
   frontend:
+    # PRODUCTION by default: builds the standalone runner image (node server.js).
+    # The dev override adds the bind-mount + `npm run dev` for hot-reload.
     build: ../frontend
     env_file: .env
     depends_on: [core]
     ports: ["3000:3000"]
-    # Bind-mount source for hot reload (WATCHPACK_POLLING handles Docker Desktop mac).
-    # Anonymous volumes keep the container's linux node_modules + .next build cache.
-    volumes:
-      - ../frontend:/app
-      - /app/node_modules
-      - /app/.next
     networks: [neubit]
     labels:
       - traefik.enable=true
@@ -373,15 +371,9 @@ services:
 
   # ── super-admin panel (separate app) ────────────────────────────
   admin-frontend:
+    # PRODUCTION by default (standalone runner). API base is same-origin relative
+    # (served on admin.localhost → /api/v1 via the gateway), so no host is baked in.
+    # The dev override adds the bind-mount + `npm run dev` for hot-reload.
     build: ../admin-frontend
-    environment:
-      # Same origin as the admin UI itself (admin.localhost) so the httpOnly
-      # refresh cookie is first-party and SameSite=Lax works. Traefik's core
-      # router matches /api on any host, so this still reaches the backend.
-      NEXT_PUBLIC_API_URL: http://admin.localhost
     depends_on: [core]
-    volumes:
-      - ../admin-frontend:/app
-      - /app/node_modules
-      - /app/.next
     networks: [neubit]

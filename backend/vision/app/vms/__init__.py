@@ -32,6 +32,7 @@ from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
 from app.vms.linkage.router import router as linkage_router
 from app.vms.live.router import router as live_router
+from app.vms.live.router import public_router as live_public_router
 from app.vms.media_nodes.router import router as media_node_router
 from app.vms.motion_search.router import router as motion_search_router
 from app.vms.nvr.router import router as nvr_router
@@ -152,4 +153,10 @@ routers = [
     decoder_router,
 ]
 
-__all__ = ["routers"]
+# PUBLIC routers — mounted WITHOUT the VMS module/license gate (they authenticate off a
+# stateless media token / WS-Security, not a session bearer). Keep this list tiny.
+public_routers = [
+    live_public_router,  # GET /vms/media/verify — Traefik ForwardAuth hot path
+]
+
+__all__ = ["routers", "public_routers"]

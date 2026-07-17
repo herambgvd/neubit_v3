@@ -643,12 +643,12 @@ function LivePlayer({
   return (
     <div
       ref={containerRef}
-      className={`group relative overflow-hidden rounded-lg bg-black ${className}`}
+      className={`group relative overflow-hidden rounded-lg bg-background ${className}`}
       onMouseEnter={() => !minimal && setShowChrome(true)}
       onMouseLeave={() => !minimal && setShowChrome(false)}
     >
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <video ref={videoRef} className="h-full w-full object-contain" playsInline muted={isMuted} />
+      <video ref={videoRef} className="h-full w-full object-cover" playsInline muted={isMuted} />
 
       {/* Loading / warming-up overlay */}
       {busy && (

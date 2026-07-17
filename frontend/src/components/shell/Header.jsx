@@ -39,7 +39,7 @@ function Brand() {
 
   return (
     // "/" is the public landing page; keep the in-app logo pointing at the authed dashboard.
-    <Link href="/home" className="flex items-center gap-2.5">
+    <Link href="/dashboard" className="flex items-center gap-2.5">
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logo} alt={data?.app_name || "Logo"} className="h-6 max-w-[150px] object-contain" />
@@ -109,7 +109,7 @@ function NotificationsBell() {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-80 rounded-lg border border-card-border bg-card shadow-2xl z-30 overflow-hidden">
+        <div className="absolute right-0 mt-2 w-80 rounded-lg border border-card-border bg-card shadow-2xl z-[60] overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-card-border">
             <span className="text-sm font-semibold text-foreground">Notifications{unread.length > 0 ? ` · ${unread.length}` : ""}</span>
             {unread.length > 0 && (
@@ -304,7 +304,7 @@ export default function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-card-border bg-background/70 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-card-border bg-background/70 backdrop-blur">
       <div className="w-full px-6 lg:px-8">
         {/* Single row — logo + inline nav + account (neubit_v2 arrangement). */}
         <div className="h-14 flex items-center gap-4">
@@ -372,7 +372,7 @@ export default function Header() {
                 />
               </button>
               {openUser && (
-                <div className="absolute right-0 mt-2 w-56 rounded-lg border border-card-border bg-card shadow-2xl py-1 z-30">
+                <div className="absolute right-0 mt-2 w-56 rounded-lg border border-card-border bg-card shadow-2xl py-1 z-[60]">
                   <div className="flex items-center gap-3 px-4 py-3 border-b border-card-border">
                     <Avatar src={user?.avatar_url} name={displayName} size={36} />
                     <div className="min-w-0">

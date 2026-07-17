@@ -14,7 +14,8 @@
 
 // ── Top horizontal nav (domain surfaces) ─────────────────────────────
 export const menuItems = [
-  { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "neubit.read" },
+  // Hidden for now (coming later) — uncomment to restore in the top nav.
+  // { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "neubit.read" },
   { title: "Dashboard", icon: "heroicons-outline:chart-bar", link: "/dashboard", perm: "vms.camera.read", module: "vms" },
   // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
   // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
@@ -27,8 +28,9 @@ export const menuItems = [
   // raw device-level event feed) to remove the "Events vs Camera events" confusion.
   // Route stays /events. Workflow config lives under Config → Workflow.
   { title: "Incidents", icon: "heroicons:calendar-days", link: "/events", perm: "neubit.read" },
-  { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true, module: "nms" },
-  { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true, module: "octosense" },
+  // Hidden for now (coming later) — uncomment to restore in the top nav.
+  // { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true, module: "nms" },
+  // { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true, module: "octosense" },
   // Config is a SECTION: clicking it enters the Config sub-tab bar (first enabled tab).
   { title: "Config", icon: "heroicons-outline:cog-6-tooth", section: "config" },
 ];
@@ -89,7 +91,7 @@ export function isDevicesRoute(pathname) {
 //   (Recordings folded into Playback — its calendar/timeline covers estate browse +
 //   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs = [
-  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/streaming", perm: "neubit.read", module: "vms" },
+  { title: "Live", icon: "heroicons:signal", link: "/streaming", perm: "neubit.read", module: "vms" },
   // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
   // shared state across every operator + display client. Distinct from the
   // single-operator "Video Wall" live-grid above.

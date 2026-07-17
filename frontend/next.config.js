@@ -13,6 +13,10 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Self-contained production build: `next build` emits `.next/standalone` with a
+  // minimal `server.js` — the Docker runner stage ships that alone (no source, no
+  // dev tooling). See frontend/Dockerfile.
+  output: "standalone",
   // Next 16 runs on Turbopack by default. We have no custom bundler rules
   // (SVGs are rendered via @iconify at runtime, not imported as modules), so no
   // webpack/turbopack config is required.

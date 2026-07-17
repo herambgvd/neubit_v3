@@ -44,3 +44,31 @@ services:
       - ../backend/vision/tests:/app/tests
       - ../backend/kernel:/opt/kernel
     command: bash -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
+
+  # ── frontends: DEV hot-reload. The base compose builds the PRODUCTION standalone
+  # image (node server.js); here we build only the `deps` stage (has node_modules),
+  # bind-mount the source over it, and run `npm run dev`. So `docker compose up`
+  # (auto-merges this) = dev; `docker compose -f docker-compose.yml up` = production.
+  frontend:
+    build:
+      context: ../frontend
+      target: deps
+    command: npm run dev
+    environment:
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+  admin-frontend:
+    build:
+      context: ../admin-frontend
+      target: deps
+    command: npm run dev
+    environment:
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../admin-frontend:/app
+      - /app/node_modules
+      - /app/.next

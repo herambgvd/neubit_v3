@@ -40,6 +40,11 @@ PERM_VIEW = "vms.live.view"
 
 router = APIRouter(prefix="/vms", tags=["VMS Live"])
 
+# PUBLIC router — mounted WITHOUT the VMS module/license gate (no bearer). The media
+# ForwardAuth hot path authorizes off the stateless media token, not a session, so it
+# must stay reachable by Traefik/MediaMTX even when the caller has no JWT.
+public_router = APIRouter(prefix="/vms", tags=["VMS Media (public)"])
+
 
 def _audit_live_view() -> bool:
     """Whether live-session issue is audited (env ``VE_AUDIT_LIVE_VIEW``, default OFF).
@@ -132,7 +137,7 @@ async def release_live(
 # ── media-verify (Traefik ForwardAuth) — PUBLIC, token-authorized ───────
 
 
-@router.get("/media/verify", status_code=status.HTTP_200_OK)
+@public_router.get("/media/verify", status_code=status.HTTP_200_OK)
 async def media_verify(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],

@@ -1,0 +1,64 @@
+# DEV-ONLY cross-machine SIMULATION of recorder-2 as if it were on a separate box.
+# Runs on an ISOLATED network (recnet) with NO link to the `neubit` network, so it
+# CANNOT use docker-DNS (postgres/nats/mediamtx) — it must reach central via
+# host.docker.internal (our stand-in for the real LAN IP). This proves the exact
+# by-IP wiring a real Machine 2 needs. Remapped host ports (1xxxx) avoid clashes.
+#
+# Run from deploy/:
+#   docker compose -f sim-recorder2-remote.yml up -d
+services:
+  mediamtx-remote:
+    container_name: neubit-v3-mediamtx-remote
+    image: bluenviron/mediamtx:latest-ffmpeg
+    restart: unless-stopped
+    environment:
+      MTX_WEBRTCADDITIONALHOSTS: host.docker.internal   # advertise the "remote IP" for ICE
+      MTX_WEBRTCLOCALUDPADDRESS: ":18189"
+      MTX_WEBRTCLOCALTCPADDRESS: ":18189"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - sim_recordings2:/recordings
+    ports:
+      - "18189:18189/udp"
+      - "18189:18189/tcp"
+      - "18889:8889"   # WHEP  → central gateway /media2 will target host.docker.internal:18889
+      - "18888:8888"   # HLS
+      - "19996:9996"   # playback
+      - "19997:9997"   # control API
+    networks: [recnet]
+
+  nvr-remote:
+    container_name: neubit-v3-nvr-remote
+    image: neubit-v3-nvr:latest
+    restart: unless-stopped
+    environment:
+      # ── central reached BY IP (host.docker.internal), NOT docker DNS ──
+      VE_DATABASE_URL: postgresql+asyncpg://neubit:neubit@host.docker.internal:5432/neubit_nvr_2
+      VE_NATS_URL: nats://host.docker.internal:4222
+      VE_JWT_SECRET: dev-jwt-secret-change-me-to-a-long-random-string-32b
+      VE_APP_NAME: nvr-remote
+      VE_PORT: "8000"
+      VE_MEDIA_NODE_ID: recorder-2
+      # this node's own mediamtx (same isolated net)
+      VE_MEDIAMTX_API_URL: http://mediamtx-remote:9997
+      VE_MEDIAMTX_PLAYBACK_API_URL: http://mediamtx-remote:9996
+      VE_MEDIAMTX_RTSP_BASE: rtsp://mediamtx-remote:8554
+      # browser-facing media → through central gateway /media2 (host.docker.internal)
+      VE_MEDIA_PUBLIC_HLS_BASE: http://host.docker.internal/media2/hls
+      VE_MEDIA_PUBLIC_WHEP_BASE: http://host.docker.internal/media2/whep
+      VE_MEDIA_PUBLIC_PLAYBACK_BASE: http://host.docker.internal/media2/playback
+      VE_RECORDINGS_DIR: /recordings
+      VE_RECORD_SEGMENT_DURATION: 60s
+      VE_RECORD_TICK_SEC: "15"
+    ports:
+      - "18000:8000"   # nvr control API → central will call http://host.docker.internal:18000
+    volumes:
+      - sim_recordings2:/recordings
+    networks: [recnet]
+
+volumes:
+  sim_recordings2:
+
+networks:
+  recnet:
+    driver: bridge

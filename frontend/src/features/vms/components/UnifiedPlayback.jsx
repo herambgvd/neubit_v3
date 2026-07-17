@@ -126,9 +126,14 @@ export default function UnifiedPlayback({ onExportRange }) {
   const [camSearch, setCamSearch] = useState("");
   const [debouncedCamSearch, setDebouncedCamSearch] = useState("");
   const [camSiteFilter, setCamSiteFilter] = useState(""); // "" = all sites
+  // Recorded picker tree (Default › Site › Camera) — collapsed branch keys. Empty
+  // ⇒ all expanded. While searching we force-expand so every match is visible.
+  const [pbCollapsed, setPbCollapsed] = useState(() => new Set());
 
   // ── Rail composer state (drives the Search → load) ───────────────────────
-  const [stream, setStream] = useState("sub"); // 'main' | 'sub' — recorded profile
+  // Default to MAIN — that's the profile we record (sub is the live web/WHEP stream, not
+  // recorded), so a playback page must open on main or it shows "No footage" by default.
+  const [stream, setStream] = useState("main"); // 'main' | 'sub' — recorded profile
   const [eventFilter, setEventFilter] = useState(() => new Set(EVENT_TYPES)); // 3b: filters seekbar
   const [checked, setChecked] = useState([]); // ≤4 pending tile descriptors (pre-Search)
   // Calendar view month (independent of the selected day so paging doesn't re-load).
@@ -746,54 +751,112 @@ export default function UnifiedPlayback({ onExportRange }) {
                 ) : railCameras.length === 0 ? (
                   <p className="px-2 py-6 text-center text-xs text-muted">No cameras.</p>
                 ) : (
-                  camGroups.map((g) => (
-                    <div key={g.key}>
-                      <p className="sticky top-0 z-10 bg-card px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted">
-                        {g.name}
-                        <span className="ml-1.5 text-muted/60">{g.cameras.length}</span>
-                      </p>
-                      {g.cameras.map((c) => {
-                        const { primary, secondary } = splitCamName(c.name);
-                        const tile = cameraTile(c);
-                        const on = isChecked(tile.key);
-                        return (
-                          <label
-                            key={c.id}
-                            title={c.name}
-                            className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover ${
-                              !on && atCap ? "opacity-40" : ""
+                  (() => {
+                    // Tree: Default › Site › Camera (scales for many cameras). Search
+                    // (server-side) force-expands via pbSearching.
+                    const pbSearching = camSearch.trim().length > 0;
+                    const pbOpen = (k) => pbSearching || !pbCollapsed.has(k);
+                    const pbToggle = (k) =>
+                      setPbCollapsed((prev) => {
+                        const n = new Set(prev);
+                        n.has(k) ? n.delete(k) : n.add(k);
+                        return n;
+                      });
+                    const renderCamRow = (c) => {
+                      const { primary, secondary } = splitCamName(c.name);
+                      const tile = cameraTile(c);
+                      const on = isChecked(tile.key);
+                      return (
+                        <label
+                          key={c.id}
+                          title={c.name}
+                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg py-1.5 pl-2 pr-2 text-left text-[13px] text-foreground transition hover:bg-hover ${
+                            !on && atCap ? "opacity-40" : ""
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={on}
+                            disabled={!on && atCap}
+                            onChange={() => toggleCheck(tile)}
+                          />
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                              on ? "border-foreground bg-foreground text-background" : "border-field"
                             }`}
                           >
-                            <input
-                              type="checkbox"
-                              className="sr-only"
-                              checked={on}
-                              disabled={!on && atCap}
-                              onChange={() => toggleCheck(tile)}
-                            />
-                            <span
-                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
-                                on ? "border-foreground bg-foreground text-background" : "border-field"
-                              }`}
-                            >
-                              {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
+                            {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
+                          </span>
+                          {c.nvr_channel_number != null && (
+                            <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[11px] font-semibold tabular-nums text-muted">
+                              {c.nvr_channel_number}
                             </span>
-                            {c.nvr_channel_number != null && (
-                              <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[11px] font-semibold tabular-nums text-muted">
-                                {c.nvr_channel_number}
-                              </span>
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{primary}</span>
+                            {secondary && (
+                              <span className="block truncate text-[11px] text-muted">{secondary}</span>
                             )}
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate">{primary}</span>
-                              {secondary && (
-                                <span className="block truncate text-[11px] text-muted">{secondary}</span>
-                              )}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ))
+                          </span>
+                        </label>
+                      );
+                    };
+                    const rootOpen = pbOpen("__pb_root__");
+                    return (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => pbToggle("__pb_root__")}
+                          className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-hover"
+                        >
+                          <Icon
+                            icon="heroicons-mini:chevron-right"
+                            className={`shrink-0 text-sm text-muted transition-transform ${rootOpen ? "rotate-90" : ""}`}
+                          />
+                          <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-sm text-muted" />
+                          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">Default</span>
+                          <span className="shrink-0 rounded-full bg-hover px-1.5 text-[10px] font-semibold tabular-nums text-muted">
+                            {railCameras.length}
+                          </span>
+                        </button>
+                        {rootOpen && (
+                          <div className="mt-0.5 space-y-0.5 border-l border-card-border/60 pl-1.5">
+                            {camGroups.map((g) => {
+                              const open = pbOpen(g.key);
+                              return (
+                                <div key={g.key}>
+                                  <button
+                                    type="button"
+                                    onClick={() => pbToggle(g.key)}
+                                    className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-hover"
+                                  >
+                                    <Icon
+                                      icon="heroicons-mini:chevron-right"
+                                      className={`shrink-0 text-sm text-muted transition-transform ${open ? "rotate-90" : ""}`}
+                                    />
+                                    <Icon
+                                      icon={g.key === "__unassigned" ? "heroicons-outline:inbox" : "heroicons-outline:map-pin"}
+                                      className="shrink-0 text-sm text-muted"
+                                    />
+                                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{g.name}</span>
+                                    <span className="shrink-0 rounded-full bg-hover px-1.5 text-[10px] font-semibold tabular-nums text-muted">
+                                      {g.cameras.length}
+                                    </span>
+                                  </button>
+                                  {open && (
+                                    <div className="border-l border-card-border/60 pl-1.5">
+                                      {g.cameras.map(renderCamRow)}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             ) : (

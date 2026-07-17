@@ -21,7 +21,12 @@ export default function Footer() {
         <span>
           © {year} {name}. All rights reserved.
         </span>
-        <span className="hidden sm:inline">Powered by Neubit</span>
+        {/* Colorful GVD logo — same brand mark on both light and dark themes. */}
+        <img
+          src="/logo/gvd_logo_color.png"
+          alt="Genius Vision Digital"
+          className="hidden h-5 w-auto shrink-0 sm:inline-block"
+        />
       </div>
     </footer>
   );

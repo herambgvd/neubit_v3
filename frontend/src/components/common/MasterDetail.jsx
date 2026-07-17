@@ -26,7 +26,7 @@ export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_
     >
       {aside}
       {fill ? (
-        <div className="scroll-themed min-h-0 overflow-y-auto">{children}</div>
+        <div className="scroll-themed flex min-h-0 flex-col overflow-y-auto">{children}</div>
       ) : (
         children
       )}
@@ -36,6 +36,7 @@ export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_
 
 export function ListPanel({
   title,
+  icon,
   count,
   action,
   search,
@@ -48,6 +49,7 @@ export function ListPanel({
     <aside className={`flex min-h-0 flex-col rounded-xl border border-card-border bg-card ${className}`}>
       <header className="flex shrink-0 items-center justify-between border-b border-card-border px-3 py-2">
         <div className="flex items-center gap-2">
+          {icon && <Icon icon={icon} className="text-sm text-muted" />}
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{title}</span>
           {count != null && (
             <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] font-medium text-muted">{count}</span>

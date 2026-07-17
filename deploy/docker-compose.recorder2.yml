@@ -1,0 +1,66 @@
+# Isolated SECOND recorder node for LOCAL multi-node testing — additive, does NOT
+# touch the running default recorder (mediamtx / nvr).
+#
+# Each recorder = its own Go nvr + its own MediaMTX + its own DB + its own
+# recordings volume + its own node id. This mirrors the "each recorder machine is
+# an independent recorder" model and sidesteps the current global reconcile
+# (which has no node_id filter) by giving node-2 a SEPARATE neubit_nvr_2 DB, so
+# each nvr only ever sees its own recording_targets.
+#
+# Run (combined with the base + override so the shared network/volumes resolve):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#                  -f docker-compose.recorder2.yml up -d mediamtx-2 nvr-2
+#
+# Media for this node is browser-reachable under the /media2/* gateway prefix
+# (see gateway/dynamic/routes.yml + middlewares.yml — media2-* entries).
+services:
+  mediamtx-2:
+    container_name: neubit-v3-mediamtx-2
+    image: bluenviron/mediamtx:latest-ffmpeg
+    restart: unless-stopped
+    environment:
+      # Distinct WebRTC ICE port (default=8189, recorder-1=8190) so the browser
+      # can reach recorder-2's media directly (local-only concern; on a real box
+      # each recorder has its own IP).
+      MTX_WEBRTCLOCALUDPADDRESS: ":8191"
+      MTX_WEBRTCLOCALTCPADDRESS: ":8191"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - recordings2:/recordings          # own volume, same in-container path
+    ports:
+      - "8191:8191/udp"   # WebRTC ICE (recorder-2)
+      - "8191:8191/tcp"
+    networks: [neubit]
+
+  nvr-2:
+    container_name: neubit-v3-nvr-2
+    image: neubit-v3-nvr:latest        # reuse the already-built image (no rebuild)
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_nvr_2
+      VE_APP_NAME: nvr-2
+      VE_PORT: "8000"
+      # This node's own MediaMTX (internal DNS) + its own node id.
+      VE_MEDIA_NODE_ID: mediamtx-1
+      VE_MEDIAMTX_API_URL: http://mediamtx-2:9997
+      VE_MEDIAMTX_PLAYBACK_API_URL: http://mediamtx-2:9996
+      # Browser-facing bases routed through the gateway under /media2/* (token-gated
+      # by the SAME media-auth ForwardAuth → vision /media/verify).
+      VE_MEDIA_PUBLIC_HLS_BASE: http://localhost/media2/hls
+      VE_MEDIA_PUBLIC_WHEP_BASE: http://localhost/media2/whep
+      VE_MEDIA_PUBLIC_PLAYBACK_BASE: http://localhost/media2/playback
+      VE_MEDIAMTX_RTSP_BASE: rtsp://mediamtx-2:8554
+      VE_RECORDINGS_DIR: /recordings
+      VE_RECORD_SEGMENT_DURATION: 60s
+      VE_RECORD_TICK_SEC: "15"
+    volumes:
+      - recordings2:/recordings
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+      mediamtx-2: { condition: service_started }
+    networks: [neubit]
+
+volumes:
+  recordings2:

@@ -1,0 +1,58 @@
+# Isolated dedicated recorder "recorder-1" for the local 2-recorder 8/8 test.
+# Mirrors docker-compose.recorder2.yml — own Go nvr + own MediaMTX + own DB
+# (neubit_nvr_1) + own recordings volume + own node id. Media routed under the
+# /media1/* gateway prefix. Additive; does NOT touch the default recorder or
+# recorder-2.
+#
+# Run (with the base + override + recorder2 so the shared net/volumes resolve):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.recorder2.yml -f docker-compose.recorder1.yml \
+#     up -d mediamtx-r1 nvr-r1
+services:
+  mediamtx-r1:
+    container_name: neubit-v3-mediamtx-1
+    image: bluenviron/mediamtx:latest-ffmpeg
+    restart: unless-stopped
+    environment:
+      # Distinct WebRTC ICE port (default node owns 8189) so the browser can
+      # reach THIS recorder's media directly. On a real box this is unneeded
+      # (own IP); locally 3 MediaMTX can't share 8189.
+      MTX_WEBRTCLOCALUDPADDRESS: ":8190"
+      MTX_WEBRTCLOCALTCPADDRESS: ":8190"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - recordings_r1:/recordings
+    ports:
+      - "8190:8190/udp"   # WebRTC ICE (recorder-1)
+      - "8190:8190/tcp"
+    networks: [neubit]
+
+  nvr-r1:
+    container_name: neubit-v3-nvr-1
+    image: neubit-v3-nvr:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_nvr_1
+      VE_APP_NAME: nvr-r1
+      VE_PORT: "8000"
+      VE_MEDIA_NODE_ID: node-r1
+      VE_MEDIAMTX_API_URL: http://mediamtx-r1:9997
+      VE_MEDIAMTX_PLAYBACK_API_URL: http://mediamtx-r1:9996
+      VE_MEDIA_PUBLIC_HLS_BASE: http://localhost/media1/hls
+      VE_MEDIA_PUBLIC_WHEP_BASE: http://localhost/media1/whep
+      VE_MEDIA_PUBLIC_PLAYBACK_BASE: http://localhost/media1/playback
+      VE_MEDIAMTX_RTSP_BASE: rtsp://mediamtx-r1:8554
+      VE_RECORDINGS_DIR: /recordings
+      VE_RECORD_SEGMENT_DURATION: 60s
+      VE_RECORD_TICK_SEC: "15"
+    volumes:
+      - recordings_r1:/recordings
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+      mediamtx-r1: { condition: service_started }
+    networks: [neubit]
+
+volumes:
+  recordings_r1:

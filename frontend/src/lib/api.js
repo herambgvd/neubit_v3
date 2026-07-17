@@ -3,10 +3,13 @@
 // it routes to the "License Expired" screen so an admin can renew.
 import axios from "axios";
 
-// Derive the API host from wherever the UI is loaded — so accessing the app from
-// another machine on the LAN (http://<host-ip>:3000) hits that same host's :8000.
-const apiHost = typeof window !== "undefined" ? window.location.hostname : "localhost";
-const BASE = process.env.NEXT_PUBLIC_API_URL || `http://${apiHost}:8000`;
+// API base resolution — host-agnostic by default:
+//   • If NEXT_PUBLIC_API_URL is set, honour it (e.g. the admin panel → admin.localhost).
+//   • Otherwise use a SAME-ORIGIN RELATIVE base ("") → all calls hit "/api/v1" on the
+//     very host the operator opened (localhost, a LAN IP, or a domain), routed by the
+//     gateway. This means one build runs on ANY IP/host with no rebuild — the whole
+//     system "just works" on the server's IP without baking a hostname in.
+const BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 export const ACCESS_KEY = "vizor.access";
 export const REFRESH_KEY = "vizor.refresh";
