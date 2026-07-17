@@ -596,10 +596,16 @@ export default function UnifiedPlayback({ onExportRange }) {
   }, [railCameras, siteNames]);
 
   return (
-    <div className="flex h-full min-h-0 w-full gap-3">
+    // transform:translateZ(0) — pin this whole surface to its own GPU compositing
+    // layer. Fixes a Chrome scroll-repaint glitch where, after scrolling the channel
+    // rail + re-rendering (checking a box), the browser leaves stale white below the
+    // fold even though the DOM is full-height (verified: shell/main/aside all correct).
+    // Isolating the layer forces a clean repaint. No fixed-positioned descendants here
+    // (ExportDialog is a sibling), so this is safe.
+    <div className="flex h-full min-h-0 w-full gap-3 [transform:translateZ(0)]">
       {/* ── Composer rail ──────────────────────────────────────────────────
           Calendar → Stream → Event filters → Channel multi-select (≤4) → Search. */}
-      <aside className="flex w-64 shrink-0 flex-col rounded-xl border border-card-border bg-card">
+      <aside className="flex w-64 shrink-0 flex-col rounded-xl border border-card-border bg-card [transform:translateZ(0)]">
         {/* composer — calendar · stream · event filters · channel multi-select */}
         <div className="scroll-themed min-h-0 flex-1 overflow-y-auto p-3">
           {/* ── Month calendar (footage days marked) ── */}
