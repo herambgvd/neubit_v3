@@ -277,6 +277,12 @@ services:
     # (browsers can't WebRTC-decode HEVC → we republish an H264 variant on demand).
     image: bluenviron/mediamtx:latest-ffmpeg
     restart: unless-stopped
+    environment:
+      # Advertise the SERVER's reachable host(s) as WebRTC ICE candidates so a browser
+      # on ANOTHER machine (the tower) can reach the media UDP/TCP port — not just
+      # localhost. Comma-separated, NO brackets. Set MTX_WEBRTCADDITIONALHOSTS in .env
+      # to "<server-ip>,localhost"; falls back to localhost for a single-box setup.
+      MTX_WEBRTCADDITIONALHOSTS: ${MTX_WEBRTCADDITIONALHOSTS:-localhost}
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       # P3-A: MediaMTX native recording writes fmp4 segments here (record=yes on a
