@@ -666,16 +666,56 @@ type segFile struct {
 	start           time.Time
 }
 
+// dayFolderCutoff is the oldest day-folder date (YYYY-MM-DD, UTC) the segment
+// tracker still scans. Older day-folders are already indexed and are pruned from
+// the walk — see collectSegments. Kept as a small margin (3 days) so a date
+// rollover or a late-finalizing segment near the boundary is never missed.
+func dayFolderCutoff(now time.Time) string {
+	return now.UTC().AddDate(0, 0, -2).Format("2006-01-02")
+}
+
+// staleDayFolder reports whether dir name is a day-folder (exactly "YYYY-MM-DD")
+// strictly older than cutoff. Non-date dirs (…/cameras/<t>/<c>/<profile>) are never
+// stale — the walk must descend through them to reach the day-folders.
+func staleDayFolder(name, cutoff string) bool {
+	if len(name) != 10 || name[4] != '-' || name[7] != '-' {
+		return false
+	}
+	for i := 0; i < 10; i++ {
+		if i == 4 || i == 7 {
+			continue
+		}
+		if name[i] < '0' || name[i] > '9' {
+			return false
+		}
+	}
+	return name < cutoff
+}
+
 // collectSegments walks the recordings tree and returns every *.mp4 segment. A
 // non-existent root returns an error the caller treats as "no recordings yet".
+//
+// Scale: day-folders older than the cutoff are PRUNED from the walk (SkipDir).
+// Without this the tracker re-stats the ENTIRE retention history every tick — tens
+// of thousands of files on slow drvfs — which stalls indexing (new segments never
+// get indexed in time → the dashboard shows recording as idle). Old day-folders are
+// already indexed, so skipping them is safe; the flat-file fallback is unaffected
+// (a flat segment is not inside a YYYY-MM-DD dir).
 func collectSegments(root string) ([]segFile, error) {
 	if _, err := os.Stat(root); err != nil {
 		return nil, err
 	}
+	cutoff := dayFolderCutoff(time.Now())
 	var out []segFile
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
+		}
+		if d.IsDir() {
+			if staleDayFolder(d.Name(), cutoff) {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if !strings.HasSuffix(p, ".mp4") {
 			return nil

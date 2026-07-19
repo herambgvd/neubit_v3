@@ -94,3 +94,27 @@ func TestCollectSegments(t *testing.T) {
 		t.Fatalf("expected error for a missing recordings root")
 	}
 }
+
+func TestStaleDayFolder(t *testing.T) {
+	cutoff := "2026-07-17" // keep 07-17 and newer; prune older
+	cases := map[string]bool{
+		"2026-07-15":     true,  // older → stale
+		"2026-07-16":     true,  // older → stale
+		"2026-07-17":     false, // == cutoff → kept
+		"2026-07-18":     false, // newer → kept
+		"main":           false, // non-date dir → never stale (must descend)
+		"cameras":        false,
+		"2026-7-8":       false, // wrong shape → not a day-folder
+		"2026-07-1x":     false, // non-numeric → not a day-folder
+	}
+	for name, want := range cases {
+		if got := staleDayFolder(name, cutoff); got != want {
+			t.Errorf("staleDayFolder(%q, %q) = %v, want %v", name, cutoff, got, want)
+		}
+	}
+	// cutoff is 2 days back (UTC) → today's folder is always kept.
+	today := time.Now().UTC().Format("2006-01-02")
+	if staleDayFolder(today, dayFolderCutoff(time.Now())) {
+		t.Errorf("today's day-folder %q must never be pruned", today)
+	}
+}
