@@ -277,6 +277,17 @@ services:
     # (browsers can't WebRTC-decode HEVC → we republish an H264 variant on demand).
     image: bluenviron/mediamtx:latest-ffmpeg
     restart: unless-stopped
+    # The playback server (:9996) opens EVERY segment in a camera's recordPath dir
+    # concurrently when it lists/serves recorded ranges. A camera recording 24/7 at
+    # 60s segments accumulates thousands of files per day (3k+ after two days, ~86k
+    # over 30-day retention) — with the default 1024 fd cap the concurrent opens
+    # exhaust file descriptors and MediaMTX PANICS mid-request, resetting the whole
+    # process (drops every live stream too) and 502-ing playback. Raise the limit so
+    # a large recording dir lists without crashing. POC-observed root cause.
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
     environment:
       # Advertise the SERVER's reachable host(s) as WebRTC ICE candidates so a browser
       # on ANOTHER machine (the tower) can reach the media UDP/TCP port — not just
