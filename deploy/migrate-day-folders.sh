@@ -52,27 +52,31 @@ fi
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 
-moved=0
-flat=0
+[ "$APPLY" = "1" ] && printf 'Moving flat segments into day-folders (progress every 500)...\n'
 for root in $ROOTS; do
   [ -d "$root" ] || continue
-  # Flat segment = last path component looks like YYYY-MM-DD_<time>.mp4
-  find "$root" -type f -name '*.mp4' 2>/dev/null | while IFS= read -r f; do
-    b=$(basename "$f")
-    case "$b" in
-      [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.mp4)
-        d=$(dirname "$f")
-        day=$(printf '%s' "$b" | cut -c1-10)     # YYYY-MM-DD
-        rest=$(printf '%s' "$b" | cut -c12-)      # <time>.mp4  (drop "date_")
-        if [ "$APPLY" = "1" ]; then
-          mkdir -p "$d/$day"
-          mv "$f" "$d/$day/$rest"
-        else
-          printf 'FLAT %s  ->  %s/%s/%s\n' "$f" "$d" "$day" "$rest"
-        fi
-        ;;
-    esac
-  done
+  # Flat segment = last path component looks like YYYY-MM-DD_<time>.mp4. Uses pure
+  # shell parameter expansion (no basename/dirname/cut subprocesses per file) so the
+  # move is fast even across tens of thousands of files on a slow (drvfs) mount.
+  find "$root" -type f -name '*.mp4' 2>/dev/null | (
+    n=0
+    while IFS= read -r f; do
+      b=${f##*/}
+      case "$b" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.mp4)
+          d=${f%/*}; day=${b%%_*}; rest=${b#*_}   # dir / YYYY-MM-DD / <time>.mp4
+          if [ "$APPLY" = "1" ]; then
+            mkdir -p "$d/$day" && mv "$f" "$d/$day/$rest" || continue
+            n=$((n + 1))
+            [ $((n % 500)) -eq 0 ] && printf '  ...moved %s (in %s)\n' "$n" "$root"
+          else
+            printf 'FLAT %s  ->  %s/%s/%s\n' "$f" "$d" "$day" "$rest"
+          fi
+          ;;
+      esac
+    done
+    [ "$APPLY" = "1" ] && [ "$n" -gt 0 ] && printf '  moved %s from %s\n' "$n" "$root"
+  )
 done
 
 # Note: the per-file counters live in the subshell of the pipe; re-count for the summary.
