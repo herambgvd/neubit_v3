@@ -115,6 +115,16 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 
 	ranges, err := h.mtx.PlaybackList(r.Context(), node, name, from, to)
 	if err != nil {
+		// A fresh recordPath bind above can trigger a MediaMTX config reload that
+		// momentarily drops the playback server (:9996) — the "first playback of a
+		// camera 502s" symptom. Ride it out with one short retry before surfacing 502.
+		select {
+		case <-time.After(600 * time.Millisecond):
+		case <-r.Context().Done():
+		}
+		ranges, err = h.mtx.PlaybackList(r.Context(), node, name, from, to)
+	}
+	if err != nil {
 		// Playback server down / unreachable → 502 (never a 500 panic).
 		kerr.Write(w, &kerr.APIError{
 			Code:    "MEDIA_UPSTREAM",
