@@ -113,29 +113,16 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ranges, err := h.mtx.PlaybackList(r.Context(), node, name, from, to)
-	if err != nil {
-		// A fresh recordPath bind above can trigger a MediaMTX config reload that
-		// momentarily drops the playback server (:9996) — the "first playback of a
-		// camera 502s" symptom. Ride it out with one short retry before surfacing 502.
-		select {
-		case <-time.After(600 * time.Millisecond):
-		case <-r.Context().Done():
-		}
-		ranges, err = h.mtx.PlaybackList(r.Context(), node, name, from, to)
-	}
-	if err != nil {
-		// Playback server down / unreachable → 502 (never a 500 panic).
-		kerr.Write(w, &kerr.APIError{
-			Code:    "MEDIA_UPSTREAM",
-			Message: "media playback server unavailable: " + err.Error(),
-			Status:  http.StatusBadGateway,
-		})
-		return
-	}
-	if ranges == nil {
-		ranges = []mediamtx.PlaybackRange{}
-	}
+	// Deliberately DO NOT call MediaMTX's playback /list here. That endpoint opens EVERY
+	// segment in the camera's recordPath dir to compute the full-history timeline, which
+	// crashes/resets the whole MediaMTX process on a 24/7 camera's thousands-of-files dir
+	// (3k+ after two days, ~86k over 30-day retention) — taking every live stream down
+	// with it. That was the persistent playback 502. /list is NOT needed to PLAY: the
+	// caller passes an explicit [from,to] window that window() turns into the /get URL,
+	// and the scrub-bar coverage is served from the recordings DB (vision timeline), not
+	// from here. Return empty ranges; footage streams over the windowed /get path, which
+	// only touches the segments inside the requested window.
+	ranges := []mediamtx.PlaybackRange{}
 
 	// The /get URL plays the window [from, from+duration). When the caller gave an
 	// explicit window, use it; otherwise span the recorded ranges we found. With no
