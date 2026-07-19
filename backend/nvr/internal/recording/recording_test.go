@@ -75,7 +75,8 @@ func TestCollectSegments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	segs, err := collectSegments(root)
+	s := &Supervisor{dirMtime: map[string]time.Time{}, scanMark: map[string]string{}}
+	segs, err := s.collectSegments(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,9 +90,26 @@ func TestCollectSegments(t *testing.T) {
 		t.Fatalf("segment start should parse from the filename")
 	}
 
+	// Incremental: once the dir's watermark covers the file, a re-scan skips it.
+	s.scanMark[pathDir] = "2026-07-09_10-00-00-000000.mp4"
+	if again, _ := s.collectSegments(root); len(again) != 0 {
+		t.Fatalf("watermark should skip an already-emitted segment, got %d", len(again))
+	}
+
 	// A missing root is a graceful error (no recordings yet), not a panic.
-	if _, err := collectSegments(filepath.Join(root, "nope")); err == nil {
+	if _, err := s.collectSegments(filepath.Join(root, "nope")); err == nil {
 		t.Fatalf("expected error for a missing recordings root")
+	}
+}
+
+func TestIsDayFolder(t *testing.T) {
+	for name, want := range map[string]bool{
+		"2026-07-19": true, "2026-12-01": true,
+		"main": false, "cameras": false, "2026-7-9": false, "2026-07-1x": false, "": false,
+	} {
+		if got := isDayFolder(name); got != want {
+			t.Errorf("isDayFolder(%q) = %v, want %v", name, got, want)
+		}
 	}
 }
 

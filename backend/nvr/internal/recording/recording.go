@@ -68,6 +68,18 @@ type Supervisor struct {
 	// sizeSeen tracks (path→size) across ticks so a segment is treated as
 	// finalized only once its size is stable (no longer being written).
 	sizeSeen map[string]int64
+	// ── incremental-scan state (enterprise scale) ──────────────────────────
+	// The tracker must NOT re-stat the whole recordings tree every tick (53 cams ×
+	// 60s segments ≈ 76k files/day; stat-ing all of it on slow drvfs stalls
+	// indexing). Two watermarks make each tick O(new files):
+	//   dirMtime  — last-seen mtime of each DAY-folder. A day-folder's mtime only
+	//               changes when a segment file is created/removed in it, so an
+	//               unchanged day-folder has no new segments → skip it (no readdir).
+	//   scanMark  — highest segment FILENAME already emitted per directory. Segment
+	//               names are timestamp-ordered, so a lexical compare is a time
+	//               compare: skip the expensive Info()/stat for anything ≤ the mark.
+	dirMtime map[string]time.Time
+	scanMark map[string]string
 }
 
 // Config tunes the recording supervisor.
@@ -102,6 +114,8 @@ func New(db *pgxpool.Pool, mtx *mediamtx.Client, sup *supervisor.Supervisor, bus
 		segT:     cfg.SegmentDuration,
 		tick:     cfg.Tick,
 		sizeSeen: map[string]int64{},
+		dirMtime: map[string]time.Time{},
+		scanMark: map[string]string{},
 	}
 }
 
@@ -377,16 +391,36 @@ func (s *Supervisor) Start(ctx context.Context) {
 		t := time.NewTicker(s.tick)
 		defer t.Stop()
 		log.Printf("recording supervisor started (dir=%s, tick=%s, segment=%s)", s.dir, s.tick, s.segT)
+		var ticks uint64
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
 				s.reconcile(ctx)
+				// Backstop: every ~5 minutes forget the day-folder mtimes so the next
+				// scan re-descends every in-window day (the filename watermark still
+				// gates the stat, so this is a cheap readdir — it re-emits only genuinely
+				// missed segments). Catches anything the incremental fast path skipped
+				// (mtime granularity, a lost publish, a clock step).
+				ticks++
+				if s.tick > 0 && ticks%uint64(max64(1, int64((5*time.Minute)/s.tick))) == 0 {
+					s.mu.Lock()
+					s.dirMtime = map[string]time.Time{}
+					s.mu.Unlock()
+				}
 				s.trackSegments(ctx)
 			}
 		}
 	}()
+}
+
+// max64 returns the larger of two int64s (no generics dependency for one call site).
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // reconcile re-asserts record=on for every active target whose MediaMTX path has
@@ -523,7 +557,7 @@ func (s *Supervisor) trackSegments(ctx context.Context) {
 	roots := s.segmentRoots(ctx)
 	var entries []segFile
 	for _, root := range roots {
-		got, err := collectSegments(root)
+		got, err := s.collectSegments(root)
 		if err != nil {
 			continue // root not present yet (no recording there) — normal
 		}
@@ -538,7 +572,8 @@ func (s *Supervisor) trackSegments(ctx context.Context) {
 		byDir[f.dir] = append(byDir[f.dir], f)
 	}
 	now := time.Now()
-	for _, files := range byDir {
+	marks := map[string]string{} // dir → highest filename indexed this tick
+	for dir, files := range byDir {
 		sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
 		for i, f := range files {
 			isNewest := i == len(files)-1
@@ -558,8 +593,23 @@ func (s *Supervisor) trackSegments(ctx context.Context) {
 			if !finalized {
 				continue
 			}
-			s.emitSegment(ctx, f, files, i, now)
+			// Advance the dir's watermark only when the segment is INDEXED (emitted
+			// now or already in the ledger) — a transient DB error leaves it below the
+			// mark so the next scan retries it. Files are processed in ascending name
+			// order, so the last indexed name is the highest.
+			if s.emitSegment(ctx, f, files, i, now) {
+				marks[dir] = f.name
+			}
 		}
+	}
+	if len(marks) > 0 {
+		s.mu.Lock()
+		for dir, name := range marks {
+			if name > s.scanMark[dir] {
+				s.scanMark[dir] = name
+			}
+		}
+		s.mu.Unlock()
 	}
 }
 
@@ -607,12 +657,18 @@ func recordRootOf(recordPath string) string {
 
 // emitSegment publishes ONE NATS segment event for a finalized segment, deduped
 // by an insert into recording_segments (the PK on path makes the emit idempotent
-// across ticks + restarts). end/duration are derived from the next segment's
-// start (or the file mtime for the last segment).
-func (s *Supervisor) emitSegment(ctx context.Context, f segFile, siblings []segFile, idx int, now time.Time) {
+// across ticks + restarts). end/duration are derived from the next segment's start
+// (or the file mtime for the last segment).
+//
+// Returns true when the segment is INDEXED (freshly emitted OR already in the
+// ledger) — the caller then advances the dir watermark past it. Returns false on a
+// transient failure (DB / bus) so the next scan retries it; a lost publish also
+// ROLLS BACK the ledger claim so the ON CONFLICT no-op can't skip it forever. A
+// non-conforming path returns true (it is not a real segment — never retry it).
+func (s *Supervisor) emitSegment(ctx context.Context, f segFile, siblings []segFile, idx int, now time.Time) bool {
 	tenant, cam, profile, ok := parsePath(f.path, s.dir)
 	if !ok {
-		return
+		return true // not a segment path — don't re-stat it every tick
 	}
 	// Dedupe: try to claim this path. If it already exists, we've emitted it.
 	tag, err := s.db.Exec(ctx, `
@@ -622,10 +678,10 @@ func (s *Supervisor) emitSegment(ctx context.Context, f segFile, siblings []segF
 		f.path, tenant, cam, profile, f.start)
 	if err != nil {
 		log.Printf("segment dedupe insert %s: %v", f.path, err)
-		return
+		return false // transient DB error — retry next scan
 	}
 	if tag.RowsAffected() == 0 {
-		return // already emitted
+		return true // already emitted — indexed
 	}
 
 	// end = next sibling's start (this segment closed when the next opened); for
@@ -652,9 +708,14 @@ func (s *Supervisor) emitSegment(ctx context.Context, f segFile, siblings []segF
 	}
 	if err := s.bus.Publish(subj, payload); err != nil {
 		log.Printf("segment publish %s: %v", f.path, err)
-		return
+		// Roll back the ledger claim so the next scan re-attempts the publish —
+		// otherwise the ON CONFLICT no-op would skip this segment forever and vision
+		// (fed only by this event) would never index it.
+		_, _ = s.db.Exec(ctx, `DELETE FROM recording_segments WHERE path=$1`, f.path)
+		return false
 	}
 	log.Printf("recording segment emitted: %s (%.0fs, %d bytes)", f.path, duration, f.size)
+	return true
 }
 
 // segFile is one on-disk segment: absolute path, its dir, name, size, mtime, and
@@ -674,10 +735,10 @@ func dayFolderCutoff(now time.Time) string {
 	return now.UTC().AddDate(0, 0, -2).Format("2006-01-02")
 }
 
-// staleDayFolder reports whether dir name is a day-folder (exactly "YYYY-MM-DD")
-// strictly older than cutoff. Non-date dirs (…/cameras/<t>/<c>/<profile>) are never
-// stale — the walk must descend through them to reach the day-folders.
-func staleDayFolder(name, cutoff string) bool {
+// isDayFolder reports whether name is exactly a "YYYY-MM-DD" day-folder (the
+// recordPath's date component). Structural dirs (…/cameras/<t>/<c>/<profile>) and
+// the legacy flat root are NOT day-folders — the walk always descends through them.
+func isDayFolder(name string) bool {
 	if len(name) != 10 || name[4] != '-' || name[7] != '-' {
 		return false
 	}
@@ -689,45 +750,90 @@ func staleDayFolder(name, cutoff string) bool {
 			return false
 		}
 	}
-	return name < cutoff
+	return true
 }
 
-// collectSegments walks the recordings tree and returns every *.mp4 segment. A
-// non-existent root returns an error the caller treats as "no recordings yet".
+// staleDayFolder reports whether name is a day-folder strictly older than cutoff.
+func staleDayFolder(name, cutoff string) bool { return isDayFolder(name) && name < cutoff }
+
+// collectSegments INCREMENTALLY scans one recordings root for not-yet-indexed *.mp4
+// segments. This is the enterprise-scale replacement for a full-tree walk: at 53
+// cams × 60s segments a full walk re-stats ~76k files/DAY on slow drvfs every tick
+// and stalls indexing (recent segments miss the coverage window → the dashboard
+// shows recording idle though footage is being written). Three cheap prunes keep a
+// steady-state tick O(new files):
 //
-// Scale: day-folders older than the cutoff are PRUNED from the walk (SkipDir).
-// Without this the tracker re-stats the ENTIRE retention history every tick — tens
-// of thousands of files on slow drvfs — which stalls indexing (new segments never
-// get indexed in time → the dashboard shows recording as idle). Old day-folders are
-// already indexed, so skipping them is safe; the flat-file fallback is unaffected
-// (a flat segment is not inside a YYYY-MM-DD dir).
-func collectSegments(root string) ([]segFile, error) {
+//   1. Retention: day-folders older than the cutoff → SkipDir (already indexed).
+//   2. Quiescent days: a PAST day-folder whose mtime is unchanged since the last
+//      scan → SkipDir. A day-folder's mtime only moves when a segment file is
+//      created/removed in it, so an unchanged past day has no new segments. Today's
+//      day-folder is ALWAYS descended (so a finalizing/last segment is never missed).
+//   3. Seen files: within a scanned day-folder, a file whose name is ≤ the dir's
+//      watermark is already emitted → skip the expensive Info()/stat entirely
+//      (segment names are timestamp-ordered, so a lexical compare is a time compare).
+//
+// Correctness rests on the recording_segments ledger (emitSegment de-dupes via ON
+// CONFLICT) + a periodic backstop that clears dirMtime (see Start) to force a cheap
+// re-descend; the watermark keeps that backstop from re-stat-ing anything. The
+// legacy flat layout still works (a flat segment is not under a YYYY-MM-DD dir, so
+// prunes 1-2 don't apply and only the watermark gates its stat).
+func (s *Supervisor) collectSegments(root string) ([]segFile, error) {
 	if _, err := os.Stat(root); err != nil {
 		return nil, err
 	}
-	cutoff := dayFolderCutoff(time.Now())
+	now := time.Now()
+	cutoff := dayFolderCutoff(now)
+	today := now.UTC().Format("2006-01-02")
 	var out []segFile
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
 		}
 		if d.IsDir() {
-			if staleDayFolder(d.Name(), cutoff) {
-				return filepath.SkipDir
+			name := d.Name()
+			if !isDayFolder(name) {
+				return nil // structural dir → must descend to reach day-folders
 			}
-			return nil
+			if name < cutoff {
+				return filepath.SkipDir // retention-old — already indexed
+			}
+			if name < today {
+				// A past (but in-window) day: skip it while its mtime is unchanged.
+				if info, ierr := d.Info(); ierr == nil {
+					mt := info.ModTime()
+					s.mu.Lock()
+					last, seen := s.dirMtime[p]
+					unchanged := seen && last.Equal(mt)
+					if !unchanged {
+						s.dirMtime[p] = mt
+					}
+					s.mu.Unlock()
+					if unchanged {
+						return filepath.SkipDir
+					}
+				}
+			}
+			return nil // today (or a changed past day) → descend
 		}
 		if !strings.HasSuffix(p, ".mp4") {
 			return nil
 		}
-		info, err := d.Info()
-		if err != nil {
+		dir := filepath.Dir(p)
+		name := d.Name()
+		s.mu.Lock()
+		mark := s.scanMark[dir]
+		s.mu.Unlock()
+		if mark != "" && name <= mark {
+			return nil // already emitted — skip the drvfs stat
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
 			return nil
 		}
 		out = append(out, segFile{
 			path:  p,
-			dir:   filepath.Dir(p),
-			name:  d.Name(),
+			dir:   dir,
+			name:  name,
 			size:  info.Size(),
 			mtime: info.ModTime(),
 			start: parseSegmentStart(p),
