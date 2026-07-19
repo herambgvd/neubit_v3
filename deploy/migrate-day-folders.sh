@@ -32,7 +32,10 @@
 # Safe to run while recording continues: new writes are already day-foldered and do
 # not match the flat pattern, so only historical flat files are touched.
 # ─────────────────────────────────────────────────────────────────────────────
-set -eu
+# NOTE: intentionally NOT `set -e` — this is a best-effort bulk move; a single mv
+# hiccup (or a progress `[ cond ] && printf` that evaluates false) must not abort the
+# whole run before the remaining roots + the final summary. `set -u` catches typos.
+set -u
 
 ROOTS="/recordings /pools/1 /pools/2 /pools/3"
 
