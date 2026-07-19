@@ -110,7 +110,11 @@ func New(db *pgxpool.Pool, mtx *mediamtx.Client, sup *supervisor.Supervisor, bus
 // <dir>/cameras/<tenant>/<cam>/<profile>/<timestamp>. This lets the tracker derive
 // tenant/camera/profile straight from the on-disk path.
 func recordPathTemplate(dir string) string {
-	return strings.TrimRight(dir, "/") + "/%path/%Y-%m-%d_%H-%M-%S-%f"
+	// Day-foldered: segments land under a per-day subdir (%Y-%m-%d/) with a time-only
+	// filename. This keeps each directory to ONE day of files (~1440 segments) instead
+	// of an unbounded flat dir that grows to tens of thousands over the retention window
+	// — far cheaper to list/scan for playback + retrieval, and human-navigable on disk.
+	return strings.TrimRight(dir, "/") + "/%path/%Y-%m-%d/%H-%M-%S-%f"
 }
 
 // Active is the caller-facing view of one recording target.
@@ -686,32 +690,49 @@ func collectSegments(root string) ([]segFile, error) {
 			name:  d.Name(),
 			size:  info.Size(),
 			mtime: info.ModTime(),
-			start: parseSegmentStart(d.Name()),
+			start: parseSegmentStart(p),
 		})
 		return nil
 	})
 	return out, nil
 }
 
-// parseSegmentStart parses MediaMTX's %Y-%m-%d_%H-%M-%S-%f segment filename into a
-// start time. MediaMTX separates the microseconds with a '-' (not the '.' Go's
-// fractional layout expects), so the microsecond field is parsed by hand. Falls
-// back to zero on any parse failure (emitSegment then uses the mtime boundary).
-func parseSegmentStart(name string) time.Time {
-	base := strings.TrimSuffix(name, filepath.Ext(name))
+// parseSegmentStart derives a segment's start time from its PATH. Two on-disk layouts
+// are supported so the switch to day-folders doesn't orphan older footage:
+//   - day-foldered (current): …/<YYYY-MM-DD>/<HH-MM-SS-ffffff>.mp4 — date from the
+//     parent directory, time from the filename.
+//   - flat (legacy): …/<YYYY-MM-DD_HH-MM-SS-ffffff>.mp4 — full stamp in the filename.
+// Falls back to zero on any parse failure (emitSegment then uses the mtime boundary).
+func parseSegmentStart(p string) time.Time {
+	base := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+	// Legacy flat filename already carries the full "<date>_<time>" stamp.
+	if t, ok := parseStamp(base); ok {
+		return t
+	}
+	// Day-foldered: prepend the parent dir's date (YYYY-MM-DD) to the time-only name.
+	if t, ok := parseStamp(filepath.Base(filepath.Dir(p)) + "_" + base); ok {
+		return t
+	}
+	return time.Time{}
+}
+
+// parseStamp parses a "2006-01-02_15-04-05[-ffffff]" stamp (MediaMTX separates the
+// microseconds with '-', not the '.' Go's fractional layout expects, so the micros
+// are parsed by hand). ok=false when the string is not such a stamp.
+func parseStamp(s string) (time.Time, bool) {
 	// Fast path: no microseconds (…_15-04-05).
-	if t, err := time.Parse("2006-01-02_15-04-05", base); err == nil {
-		return t.UTC()
+	if t, err := time.Parse("2006-01-02_15-04-05", s); err == nil {
+		return t.UTC(), true
 	}
-	// With microseconds: split on the LAST '-' → "<...-05>" + "<micros>".
-	i := strings.LastIndex(base, "-")
+	// With microseconds: split on the LAST '-' → "<date_...-05>" + "<micros>".
+	i := strings.LastIndex(s, "-")
 	if i <= 0 {
-		return time.Time{}
+		return time.Time{}, false
 	}
-	head, frac := base[:i], base[i+1:]
+	head, frac := s[:i], s[i+1:]
 	t, err := time.Parse("2006-01-02_15-04-05", head)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, false
 	}
 	// frac is microseconds (up to 6 digits); pad/truncate to nanoseconds.
 	if len(frac) > 6 {
@@ -720,14 +741,14 @@ func parseSegmentStart(name string) time.Time {
 	var micros int
 	for _, r := range frac {
 		if r < '0' || r > '9' {
-			return t.UTC() // non-numeric frac → drop sub-second precision
+			return t.UTC(), true // non-numeric frac → drop sub-second precision
 		}
 		micros = micros*10 + int(r-'0')
 	}
 	for k := len(frac); k < 6; k++ {
 		micros *= 10
 	}
-	return t.Add(time.Duration(micros) * time.Microsecond).UTC()
+	return t.Add(time.Duration(micros) * time.Microsecond).UTC(), true
 }
 
 // parsePath derives (tenant, camera, profile) from a segment file path laid out as

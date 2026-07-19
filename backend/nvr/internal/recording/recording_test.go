@@ -30,10 +30,19 @@ func TestParsePath(t *testing.T) {
 }
 
 func TestParseSegmentStart(t *testing.T) {
-	got := parseSegmentStart("2026-07-09_10-30-15-123456.mp4")
 	want := time.Date(2026, 7, 9, 10, 30, 15, 123456000, time.UTC)
-	if !got.Equal(want) {
-		t.Fatalf("start parse: got %v want %v", got, want)
+	// Legacy flat filename (full stamp in the name).
+	if got := parseSegmentStart("2026-07-09_10-30-15-123456.mp4"); !got.Equal(want) {
+		t.Fatalf("flat parse: got %v want %v", got, want)
+	}
+	// Day-foldered path: date from the parent dir, time from the filename.
+	if got := parseSegmentStart("/pools/1/cameras/t/c/main/2026-07-09/10-30-15-123456.mp4"); !got.Equal(want) {
+		t.Fatalf("day-folder parse: got %v want %v", got, want)
+	}
+	// Second-precision (no micros) day-foldered path.
+	wantSec := time.Date(2026, 7, 9, 10, 30, 15, 0, time.UTC)
+	if got := parseSegmentStart("/x/main/2026-07-09/10-30-15.mp4"); !got.Equal(wantSec) {
+		t.Fatalf("day-folder sec parse: got %v want %v", got, wantSec)
 	}
 	// A non-conforming name → zero time (emit falls back to mtime).
 	if !parseSegmentStart("garbage.mp4").IsZero() {
@@ -42,11 +51,11 @@ func TestParseSegmentStart(t *testing.T) {
 }
 
 func TestRecordPathTemplate(t *testing.T) {
-	if got := recordPathTemplate("/recordings"); got != "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f" {
+	if got := recordPathTemplate("/recordings"); got != "/recordings/%path/%Y-%m-%d/%H-%M-%S-%f" {
 		t.Fatalf("record template: %q", got)
 	}
 	// Trailing slash normalised.
-	if got := recordPathTemplate("/recordings/"); got != "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f" {
+	if got := recordPathTemplate("/recordings/"); got != "/recordings/%path/%Y-%m-%d/%H-%M-%S-%f" {
 		t.Fatalf("record template (trailing slash): %q", got)
 	}
 }

@@ -177,7 +177,7 @@ func (c *Client) SetRecord(ctx context.Context, node Node, name string, on bool,
 	if on {
 		cfg.RecordPath = opts.RecordPath
 		if cfg.RecordPath == "" {
-			cfg.RecordPath = "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f"
+			cfg.RecordPath = "/recordings/%path/%Y-%m-%d/%H-%M-%S-%f"
 		}
 		cfg.RecordFormat = "fmp4"
 		cfg.RecordSegmentDuration = opts.SegmentDuration
