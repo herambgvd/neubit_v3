@@ -5,7 +5,7 @@
 // list on the left, a create/edit form or read-only detail on the right. Thin
 // orchestrator — owns selection/mode/confirm state + the list query and wires the
 // decomposed TagList / TagDetail / TagForm components.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -28,6 +28,8 @@ export default function TagsConfigPage() {
 
   const items = tagsQ.data?.items || [];
   const total = tagsQ.data?.total ?? items.length;
+  const active = items.filter((t) => t.is_active !== false).length;
+  const inactive = items.length - active;
 
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -46,6 +48,14 @@ export default function TagsConfigPage() {
     () => items.find((t) => t.tag_id === selectedId) || null,
     [items, selectedId],
   );
+
+  // Open on the first tag by default (and after a delete/search change), matching
+  // the other config modules. Skipped while creating/editing so the form stays put.
+  useEffect(() => {
+    if (mode === "view" && !selected && filtered[0]) {
+      setSelectedId(filtered[0].tag_id);
+    }
+  }, [filtered, selected, mode]);
 
   const remove = useMutation({
     mutationFn: (id) => tagsApi.remove(id),
@@ -85,6 +95,17 @@ export default function TagsConfigPage() {
               </button>
             }
           >
+            <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                <span className="text-muted">{active} active</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
+                <span className="text-muted">{inactive} inactive</span>
+              </span>
+            </div>
+
             <TagList
               items={filtered}
               loading={tagsQ.isLoading}
