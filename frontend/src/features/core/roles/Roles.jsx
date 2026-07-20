@@ -213,7 +213,7 @@ export default function RolesPage() {
           </ListPanel>
         }
       >
-        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
           {selectedRole ? (
             <RoleDetail
               key={selectedRole.id}

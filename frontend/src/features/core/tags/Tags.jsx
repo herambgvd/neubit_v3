@@ -99,7 +99,7 @@ export default function TagsConfigPage() {
           </ListPanel>
         }
       >
-        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
           {mode === "create" || editing ? (
             <TagForm
               key={editing ? editing.tag_id : "create"}

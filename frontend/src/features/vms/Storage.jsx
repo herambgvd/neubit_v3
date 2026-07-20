@@ -281,7 +281,7 @@ function PoolsTab({ pools, rules, poolNames, query, onAdd, onEdit, onDelete }) {
         </ListPanel>
       }
     >
-      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
         {selected ? (
           <StoragePoolDetail
             key={selected.id}
@@ -525,7 +525,7 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
         </ListPanel>
       }
     >
-      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
         {selected ? (
           <TierRuleDetail
             key={selected.id}

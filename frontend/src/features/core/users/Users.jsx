@@ -224,7 +224,7 @@ export default function UsersPage() {
           </ListPanel>
         }
       >
-        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
           {selected ? (
             <UserDetail
               key={selected.id}

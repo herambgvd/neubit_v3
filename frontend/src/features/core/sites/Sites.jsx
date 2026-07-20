@@ -163,7 +163,7 @@ export default function SitesConfigPage() {
           </ListPanel>
         }
       >
-        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
           {!selected ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
               <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">

@@ -91,8 +91,10 @@ export default function LinkageRulesPage() {
   );
 
   return (
-    <div>
+    <div className="flex h-full min-h-0 flex-col">
       <MasterDetail
+        fill
+        className="min-h-0 flex-1"
         aside={
           <ListPanel
             title="Linkage"
@@ -148,7 +150,7 @@ export default function LinkageRulesPage() {
           </ListPanel>
         }
       >
-        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
           {selected ? (
             <LinkageRuleDetail
               key={selected.id}

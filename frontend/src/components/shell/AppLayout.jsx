@@ -116,6 +116,7 @@ export default function AppLayout({ children }) {
     pathname === "/roles" ||
     pathname === "/tags" ||
     pathname === "/config/patterns" ||
+    pathname === "/config/linkage" ||
     pathname === "/config/video-wall" ||
     pathname === "/config/storage" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
