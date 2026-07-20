@@ -1,0 +1,38 @@
+# ── Physical recording disks → Neubit storage pools ─────────────────────────
+# Bind-mounts each recording disk into the media containers so a Neubit storage
+# pool can target it (a pool's `path` must exist INSIDE the container). The disk
+# paths are MACHINE-SPECIFIC, so they come from .env (POOL1_DIR/POOL2_DIR/POOL3_DIR)
+# — never hardcode a host path in the committed compose.
+#
+# 1. Create the host folders first (e.g. on Windows: mkdir E:\Recordings F:\Recordings G:\Recordings)
+# 2. Set POOL1_DIR/2/3 in deploy/.env (forward slashes: E:/Recordings)
+# 3. Bring the media services up WITH this file:
+#      docker compose -f docker-compose.yml -f docker-compose.storage.yml up -d \
+#        --force-recreate mediamtx nvr vision
+# 4. In the UI → Config → Storage → add one pool per disk with path
+#      /pools/1  /pools/2  /pools/3
+#    then assign cameras to a pool (per-camera Recording tab → Storage pool, or bulk).
+#
+# Compose MERGES volume lists across -f files, so these mounts are ADDED alongside
+# the base `recordings:/recordings` (which stays as the default pool).
+services:
+  mediamtx:
+    volumes:
+      - "${POOL1_DIR}:/pools/1"
+      - "${POOL2_DIR}:/pools/2"
+      - "${POOL3_DIR}:/pools/3"
+  nvr:
+    # The nvr image runs as a non-root user (uid 10001); Windows-drive (drvfs) bind
+    # mounts on Docker Desktop only grant writes to root, so run the nvr as root here
+    # for read/index/retention access to the pool disks. (mediamtx + vision already
+    # run as root.) POC-scoped; on a native-Linux host the drvfs quirk doesn't apply.
+    user: "0:0"
+    volumes:
+      - "${POOL1_DIR}:/pools/1"
+      - "${POOL2_DIR}:/pools/2"
+      - "${POOL3_DIR}:/pools/3"
+  vision:
+    volumes:
+      - "${POOL1_DIR}:/pools/1"
+      - "${POOL2_DIR}:/pools/2"
+      - "${POOL3_DIR}:/pools/3"

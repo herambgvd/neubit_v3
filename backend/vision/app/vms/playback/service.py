@@ -157,7 +157,23 @@ class PlaybackService:
         # machine — no cross-node merge is needed within one session.
         nvr = await self._nvr_for_recording(camera, recs[0])
 
-        from_iso = from_.astimezone(timezone.utc).isoformat()
+        # Snap the start to REAL footage. ``recs`` is start_time-ordered; recs[0] is the
+        # first recording overlapping [from, to]. If it begins AFTER ``from`` — the
+        # operator clicked in a coverage gap or before the day's first recording —
+        # MediaMTX /get would 404 (no segment at that exact instant), leaving the tile
+        # blank while the clock ticks. Begin playback at that recording's start instead
+        # so the picture lands on footage immediately; the player's own clock then tracks
+        # the real time. A click INSIDE a recording keeps the exact instant (mid-segment
+        # seek is fine).
+        eff_from = from_
+        first_start = getattr(recs[0], "start_time", None)
+        if first_start is not None:
+            if first_start.tzinfo is None:
+                first_start = first_start.replace(tzinfo=timezone.utc)
+            if first_start > from_:
+                eff_from = first_start
+
+        from_iso = eff_from.astimezone(timezone.utc).isoformat()
         to_iso = to.astimezone(timezone.utc).isoformat()
         try:
             pb = await nvr.playback_list(

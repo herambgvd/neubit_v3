@@ -592,26 +592,26 @@ export default function PlaybackPlayer({
     [load, windowEnd],
   );
 
-  // Controlled + OUR recording: seek the seekable <video> on any shared seek-target change.
-  useEffect(() => {
-    if (!controlled || sourceFn || seekMs == null) return;
-    seekToMs(seekMs);
-  }, [controlled, sourceFn, seekMs, seekToMs]);
-
-  // Controlled + NVR replay: re-request the replay from the target ONLY on an explicit user
-  // scrub (seekNonce bump), never on the auto-settled initial seekMs. The linear replay
-  // can't random-seek the <video>; the initial session (from the load effect) plays as-is.
-  // Init to the mount-time nonce so a tile that mounts with a non-zero nonce (added into an
-  // already-scrubbed session) does NOT double-load — its initial load effect already pulled
-  // from the shared clock. Only a SUBSEQUENT bump (scrub / add-resync) re-pulls.
+  // Controlled tiles follow the shared clock. Two cases:
+  //   • An EXPLICIT user scrub (seekNonce bump) RE-REQUESTS a fresh session from the
+  //     target instant — for BOTH NVR replays AND our own recordings. A day-window
+  //     recording is a long fMP4 that the browser can't reliably random-seek: setting
+  //     currentTime past the buffered region just FREEZES the frame (readout moves,
+  //     picture doesn't). Re-anchoring the session at the seek point makes it jump.
+  //   • A non-scrub settle (initial clock / day-change / first-coverage) seeks the
+  //     already-loaded <video> for our recording (target is near the window start, in
+  //     buffer); for NVR the initial load effect already pulled from the clock → no-op.
+  // lastNonceRef inits to the mount-time nonce so a tile mounted INTO an already-scrubbed
+  // session doesn't double-load — only a SUBSEQUENT bump re-pulls.
   const lastNonceRef = useRef(seekNonce);
   useEffect(() => {
-    if (!controlled || !sourceFn) return;
-    if (seekNonce === lastNonceRef.current) return; // ignore the initial value / non-scrub renders
+    if (!controlled || seekMs == null) return;
+    const scrubbed = seekNonce !== lastNonceRef.current;
     lastNonceRef.current = seekNonce;
-    if (seekMs != null) reloadFrom(seekMs);
+    if (scrubbed) reloadFrom(seekMs);
+    else if (!sourceFn) seekToMs(seekMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [controlled, sourceFn, seekNonce]);
+  }, [controlled, sourceFn, seekMs, seekNonce]);
 
   // Deep-link seek (jump-to-recording): once the HLS session for the target day
   // is attached, seek to the requested instant. Fires once per initialSeek value.

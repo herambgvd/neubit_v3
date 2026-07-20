@@ -30,10 +30,19 @@ func TestParsePath(t *testing.T) {
 }
 
 func TestParseSegmentStart(t *testing.T) {
-	got := parseSegmentStart("2026-07-09_10-30-15-123456.mp4")
 	want := time.Date(2026, 7, 9, 10, 30, 15, 123456000, time.UTC)
-	if !got.Equal(want) {
-		t.Fatalf("start parse: got %v want %v", got, want)
+	// Legacy flat filename (full stamp in the name).
+	if got := parseSegmentStart("2026-07-09_10-30-15-123456.mp4"); !got.Equal(want) {
+		t.Fatalf("flat parse: got %v want %v", got, want)
+	}
+	// Day-foldered path: date from the parent dir, time from the filename.
+	if got := parseSegmentStart("/pools/1/cameras/t/c/main/2026-07-09/10-30-15-123456.mp4"); !got.Equal(want) {
+		t.Fatalf("day-folder parse: got %v want %v", got, want)
+	}
+	// Second-precision (no micros) day-foldered path.
+	wantSec := time.Date(2026, 7, 9, 10, 30, 15, 0, time.UTC)
+	if got := parseSegmentStart("/x/main/2026-07-09/10-30-15.mp4"); !got.Equal(wantSec) {
+		t.Fatalf("day-folder sec parse: got %v want %v", got, wantSec)
 	}
 	// A non-conforming name → zero time (emit falls back to mtime).
 	if !parseSegmentStart("garbage.mp4").IsZero() {
@@ -42,11 +51,11 @@ func TestParseSegmentStart(t *testing.T) {
 }
 
 func TestRecordPathTemplate(t *testing.T) {
-	if got := recordPathTemplate("/recordings"); got != "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f" {
+	if got := recordPathTemplate("/recordings"); got != "/recordings/%path/%Y-%m-%d/%H-%M-%S-%f" {
 		t.Fatalf("record template: %q", got)
 	}
 	// Trailing slash normalised.
-	if got := recordPathTemplate("/recordings/"); got != "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f" {
+	if got := recordPathTemplate("/recordings/"); got != "/recordings/%path/%Y-%m-%d/%H-%M-%S-%f" {
 		t.Fatalf("record template (trailing slash): %q", got)
 	}
 }
@@ -66,7 +75,8 @@ func TestCollectSegments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	segs, err := collectSegments(root)
+	s := &Supervisor{dirMtime: map[string]time.Time{}, scanMark: map[string]string{}}
+	segs, err := s.collectSegments(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,8 +90,49 @@ func TestCollectSegments(t *testing.T) {
 		t.Fatalf("segment start should parse from the filename")
 	}
 
+	// Incremental: once the dir's watermark covers the file, a re-scan skips it.
+	s.scanMark[pathDir] = "2026-07-09_10-00-00-000000.mp4"
+	if again, _ := s.collectSegments(root); len(again) != 0 {
+		t.Fatalf("watermark should skip an already-emitted segment, got %d", len(again))
+	}
+
 	// A missing root is a graceful error (no recordings yet), not a panic.
-	if _, err := collectSegments(filepath.Join(root, "nope")); err == nil {
+	if _, err := s.collectSegments(filepath.Join(root, "nope")); err == nil {
 		t.Fatalf("expected error for a missing recordings root")
+	}
+}
+
+func TestIsDayFolder(t *testing.T) {
+	for name, want := range map[string]bool{
+		"2026-07-19": true, "2026-12-01": true,
+		"main": false, "cameras": false, "2026-7-9": false, "2026-07-1x": false, "": false,
+	} {
+		if got := isDayFolder(name); got != want {
+			t.Errorf("isDayFolder(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestStaleDayFolder(t *testing.T) {
+	cutoff := "2026-07-17" // keep 07-17 and newer; prune older
+	cases := map[string]bool{
+		"2026-07-15":     true,  // older → stale
+		"2026-07-16":     true,  // older → stale
+		"2026-07-17":     false, // == cutoff → kept
+		"2026-07-18":     false, // newer → kept
+		"main":           false, // non-date dir → never stale (must descend)
+		"cameras":        false,
+		"2026-7-8":       false, // wrong shape → not a day-folder
+		"2026-07-1x":     false, // non-numeric → not a day-folder
+	}
+	for name, want := range cases {
+		if got := staleDayFolder(name, cutoff); got != want {
+			t.Errorf("staleDayFolder(%q, %q) = %v, want %v", name, cutoff, got, want)
+		}
+	}
+	// cutoff is 2 days back (UTC) → today's folder is always kept.
+	today := time.Now().UTC().Format("2006-01-02")
+	if staleDayFolder(today, dayFolderCutoff(time.Now())) {
+		t.Errorf("today's day-folder %q must never be pruned", today)
 	}
 }

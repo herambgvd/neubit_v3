@@ -88,7 +88,7 @@ pathDefaults:
   # active live/record) — otherwise, after recording stops and the on-demand path is
   # reaped, playback of historical footage returns 400 (path unknown). Matches the
   # template the nvr sets per-path on record. %path = cameras/<tenant>/<cam>/<profile>.
-  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordPath: /recordings/%path/%Y-%m-%d/%H-%M-%S-%f
 
 # ── H265→H264 live-view transcode (on demand) ──
 # Chrome/Chromium WebRTC cannot decode H265/HEVC, so a WHEP POST for an HEVC
@@ -115,7 +115,7 @@ paths:
     source: publisher
     sourceOnDemand: no
     record: no
-    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+    recordPath: /recordings/%path/%Y-%m-%d/%H-%M-%S-%f
   "~^(.+)/h264$":
     # ffmpeg publishes INTO this path, so the source is "publisher" (not an RTSP
     # pull). Override the pathDefaults sourceOnDemand (invalid on a publisher path

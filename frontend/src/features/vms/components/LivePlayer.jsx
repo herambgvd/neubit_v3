@@ -648,7 +648,7 @@ function LivePlayer({
       onMouseLeave={() => !minimal && setShowChrome(false)}
     >
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <video ref={videoRef} className="h-full w-full object-cover" playsInline muted={isMuted} />
+      <video ref={videoRef} className="h-full w-full object-contain" playsInline muted={isMuted} />
 
       {/* Loading / warming-up overlay */}
       {busy && (

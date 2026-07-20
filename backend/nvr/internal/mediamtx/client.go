@@ -177,7 +177,7 @@ func (c *Client) SetRecord(ctx context.Context, node Node, name string, on bool,
 	if on {
 		cfg.RecordPath = opts.RecordPath
 		if cfg.RecordPath == "" {
-			cfg.RecordPath = "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f"
+			cfg.RecordPath = "/recordings/%path/%Y-%m-%d/%H-%M-%S-%f"
 		}
 		cfg.RecordFormat = "fmp4"
 		cfg.RecordSegmentDuration = opts.SegmentDuration
@@ -218,6 +218,30 @@ type playbackAddConfig struct {
 	RecordPath     string `json:"recordPath"`
 }
 
+// pathRecordPath reads the recordPath currently configured for a path via
+// /v3/config/paths/get/<name>. found=false (nil err) when the path is not
+// configured. Used to skip a redundant recordPath PATCH (which would trigger a
+// MediaMTX config reload) when the binding is already correct.
+func (c *Client) pathRecordPath(ctx context.Context, node Node, name string) (string, bool, error) {
+	status, body, err := c.do(ctx, node, http.MethodGet, "/v3/config/paths/get/"+name, nil)
+	if err != nil {
+		return "", false, err
+	}
+	if status == http.StatusNotFound {
+		return "", false, nil
+	}
+	if status != http.StatusOK {
+		return "", false, fmt.Errorf("mediamtx path config %q: status %d", name, status)
+	}
+	var cfg struct {
+		RecordPath string `json:"recordPath"`
+	}
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		return "", false, fmt.Errorf("mediamtx path config %q: decode: %w", name, err)
+	}
+	return cfg.RecordPath, true, nil
+}
+
 // EnsurePlaybackPath makes the MediaMTX playback server (:9996) resolve `name`'s
 // recorded segments from `recordPath` (the camera's per-pool template, e.g.
 // `/recordings/poolB/%path/%Y-%m-%d_%H-%M-%S-%f`). This is the multi-pool playback
@@ -236,6 +260,15 @@ type playbackAddConfig struct {
 //
 // Graceful: an unreachable MediaMTX returns an error the caller surfaces as 502.
 func (c *Client) EnsurePlaybackPath(ctx context.Context, node Node, name, recordPath string) error {
+	// Skip the write entirely when the path already resolves to this recordPath. Even a
+	// no-op PATCH makes MediaMTX RELOAD its config, which briefly drops the playback
+	// server (:9996) and 502s an immediately-following /list — the "first playback of a
+	// camera 502s, retry works" bug. The common case (an actively-recording camera)
+	// already carries the correct pool recordPath from SetRecord, so this check avoids
+	// the reload and the 502 outright.
+	if cur, found, gerr := c.pathRecordPath(ctx, node, name); gerr == nil && found && cur == recordPath {
+		return nil
+	}
 	patch, _ := json.Marshal(recordPathPatch{RecordPath: recordPath})
 	status, pbody, err := c.do(ctx, node, http.MethodPatch, "/v3/config/paths/patch/"+name, patch)
 	if err != nil {
@@ -466,6 +499,26 @@ func (c *Client) PathState(ctx context.Context, node Node, name string) (PathInf
 		return PathInfo{}, false, fmt.Errorf("mediamtx path state %q: decode: %w", name, err)
 	}
 	return info, true, nil
+}
+
+// PathConfigured reports whether a path exists in the MediaMTX CONFIG via
+// /v3/config/paths/get/<name>. This is the config-level existence check (distinct
+// from PathState's runtime /v3/paths/get) — SetRecord patches the config path, so
+// this is what tells the reconcile loop whether it must (re)add the path before
+// setting record. ok=false (nil err) when the path is not configured; err only on
+// a transport/status failure so the caller can decide conservatively.
+func (c *Client) PathConfigured(ctx context.Context, node Node, name string) (bool, error) {
+	status, _, err := c.do(ctx, node, http.MethodGet, "/v3/config/paths/get/"+name, nil)
+	if err != nil {
+		return false, fmt.Errorf("mediamtx path config %q: %w", name, err)
+	}
+	if status == http.StatusNotFound {
+		return false, nil
+	}
+	if status != http.StatusOK {
+		return false, fmt.Errorf("mediamtx path config %q: status %d", name, status)
+	}
+	return true, nil
 }
 
 // Healthy probes the node's control API (config global) — used by the supervisor

@@ -355,20 +355,27 @@ class RecordingService:
         return row.id
 
     async def _finalize_integrity(self, row: Recording, tid) -> None:
-        """Assign default pool + checksum a freshly-persisted segment (P3-B).
+        """Assign the default pool; DEFER the checksum to the storage worker (P3-B).
 
         Runs under a per-tenant scope (so the default pool is the recording's OWN
         tenant's), not the consumer's platform writer scope. Commits its own delta.
+
+        The SHA-256 is intentionally NOT computed here: reading the whole segment
+        file synchronously in the ingest consumer throttles it to a crawl — fine for
+        a trickle of live segments, catastrophic for a bulk re-index (thousands of
+        files) and unscalable at 75-150 cameras. The row is left ``unchecked``; the
+        storage worker verifies it later. Playback + coverage only need path +
+        start_time, which are already persisted before this runs.
         """
-        from app.vms.storage.service import StorageService, compute_integrity
+        from app.vms.storage.service import StorageService
 
         pool_scope = Scope(tenant_id=tid, is_superadmin=(tid is None))
         storage = StorageService(self.db, pool_scope)
         pool = await storage.ensure_default_pool()
         if pool is not None and row.storage_pool_id is None:
             row.storage_pool_id = pool.id
-        # Compute + store the checksum (missing file → ``unchecked`` for the worker).
-        await compute_integrity(self.db, pool_scope, row, missing_as_unchecked=True)
+        if not row.integrity_status:
+            row.integrity_status = "unchecked"
         await self.db.commit()
 
     # ── helpers ─────────────────────────────────────────────────────────
