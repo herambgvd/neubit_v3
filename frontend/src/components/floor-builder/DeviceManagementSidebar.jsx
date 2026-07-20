@@ -34,7 +34,18 @@ const TYPE_OPTIONS = [
   { value: "door", label: "Door" },
 ];
 
-function PaletteRow({ device, onDragStart }) {
+// Transparent 1×1 drag image. The browser's default is a snapshot of this full-width
+// row, which reads as a floating card over the floor plan; suppressing it lets the
+// canvas draw the real device glyph at the cursor instead. Module-level so it's
+// decoded long before any drag begins.
+const EMPTY_DRAG_IMAGE =
+  typeof Image !== "undefined"
+    ? Object.assign(new Image(), {
+        src: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+      })
+    : null;
+
+function PaletteRow({ device, isDragging, onDragStart, onDragEnd }) {
   return (
     <div
       draggable
@@ -49,9 +60,13 @@ function PaletteRow({ device, onDragStart }) {
           }),
         );
         e.dataTransfer.effectAllowed = "copy";
+        if (EMPTY_DRAG_IMAGE) e.dataTransfer.setDragImage(EMPTY_DRAG_IMAGE, 0, 0);
         onDragStart?.(device);
       }}
-      className="flex cursor-grab items-center gap-2 rounded-md border border-card-border bg-card px-2 py-1.5 text-sm transition hover:bg-hover active:cursor-grabbing"
+      onDragEnd={() => onDragEnd?.()}
+      className={`flex cursor-grab items-center gap-2 rounded-md border border-card-border bg-card px-2 py-1.5 text-sm transition hover:bg-hover active:cursor-grabbing ${
+        isDragging ? "opacity-40 ring-1 ring-blue-500/50" : ""
+      }`}
     >
       <Icon icon={iconForType(device.device_type)} className="shrink-0 text-sm text-muted" />
       <span className="flex-1 truncate text-foreground">{device.name}</span>
@@ -96,6 +111,8 @@ export function DeviceManagementSidebar({
   selectedDeviceId,
   onSelectDevice,
   onPaletteDragStart,
+  onPaletteDragEnd,
+  draggingDeviceId = null,
   onDeleteDevice,
 }) {
   const [search, setSearch] = useState("");
@@ -218,7 +235,13 @@ export function DeviceManagementSidebar({
                 Drag onto canvas to place
               </div>
               {available.map((d) => (
-                <PaletteRow key={d.device_id} device={d} onDragStart={onPaletteDragStart} />
+                <PaletteRow
+                  key={d.device_id}
+                  device={d}
+                  isDragging={draggingDeviceId === d.device_id}
+                  onDragStart={onPaletteDragStart}
+                  onDragEnd={onPaletteDragEnd}
+                />
               ))}
             </>
           )

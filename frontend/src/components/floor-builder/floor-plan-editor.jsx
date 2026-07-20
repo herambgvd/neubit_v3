@@ -99,6 +99,9 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
   const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  // Device currently being dragged out of the palette. dataTransfer is unreadable
+  // during dragover, so the canvas needs it out-of-band to draw a matching ghost.
+  const [draggingDevice, setDraggingDevice] = useState(null);
 
   const [history, setHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
@@ -563,6 +566,10 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
             onZoneCreate={onZoneCreate}
             onZoneUpdate={onZoneUpdate}
             onDeviceDrop={onDevicePaletteDrop}
+            onInvalidDrop={() =>
+              toast.error("Drop the device inside a zone — that spot isn't in one.")
+            }
+            dragPreview={draggingDevice}
             onDeviceMove={onDeviceMove}
             onDeviceRotate={onDeviceRotate}
             deviceRenderer={drawCameraPlacement}
@@ -585,6 +592,9 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
             placements={displayPlacements}
             selectedDeviceId={selectedDeviceId}
             onSelectDevice={(p) => setSelectedDeviceId(p.device_id)}
+            onPaletteDragStart={setDraggingDevice}
+            onPaletteDragEnd={() => setDraggingDevice(null)}
+            draggingDeviceId={draggingDevice?.device_id ?? null}
             onDeleteDevice={onDeviceDelete}
           />
         ) : (

@@ -93,6 +93,8 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
     onZoneUpdate, // (zoneId, { polygon }) => void
     onDeviceCreate, // (worldPt) => void
     onDeviceDrop, // ({ payload, point }) => void  — palette drag-drop
+    onInvalidDrop, // () => void — dropped outside every zone
+    dragPreview = null, // { device_id, device_type, name } — device currently dragged from the palette
     onDeviceMove, // (device, { x, y }) => void
     onDeviceRotate, // (device, rotation) => void
     onDeviceClick, // (device) => void  — single click without drag
@@ -120,6 +122,11 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   const [hoverRotationHandle, setHoverRotationHandle] = useState(false);
   const [hoverRotationFov, setHoverRotationFov] = useState(false);
   const [hoverDeviceId, setHoverDeviceId] = useState(null);
+
+  // Palette drag-drop feedback: where the cursor is, and whether that point is a
+  // legal drop (inside a zone). Drives the ghost glyph + the hovered-zone highlight.
+  // `null` whenever no palette drag is over the canvas.
+  const [dropHover, setDropHover] = useState(null); // { world: [x,y], zoneId, valid }
 
   // ── Imperative API ────────────────────────────────────────────────
   useImperativeHandle(
@@ -251,11 +258,16 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
       });
       ctx.closePath();
       const isSelected = zone.zone_id === selectedZoneId;
-      ctx.fillStyle = (zone.color || "#2563eb") + "33";
+      // While dragging a device from the palette, the zone under the cursor lights up
+      // (stronger fill + dashed outline) so the legal drop target is unmistakable.
+      const isDropTarget = dropHover?.zoneId && zone.zone_id === dropHover.zoneId;
+      ctx.fillStyle = (zone.color || "#2563eb") + (isDropTarget ? "55" : "33");
       ctx.fill();
-      ctx.lineWidth = isSelected ? 3 : 2;
+      ctx.lineWidth = isDropTarget ? 3 : isSelected ? 3 : 2;
       ctx.strokeStyle = zone.color || "#2563eb";
+      if (isDropTarget) ctx.setLineDash([8, 5]);
       ctx.stroke();
+      ctx.setLineDash([]);
 
       // Vertex handles when selected and editable
       if (isSelected && editorMode === EDITOR_MODES.ZONE_DRAW) {
@@ -335,6 +347,50 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
       ctx.lineWidth = 2;
       ctx.stroke();
     }
+
+    // Palette-drag ghost — the device is previewed at the cursor with the same glyph
+    // it will have once placed (cone included), so there's no surprise on drop. Over
+    // an illegal spot it turns into a red no-drop marker instead.
+    if (dropHover) {
+      const [gx, gy] = worldToScreen(dropHover.world[0], dropHover.world[1]);
+      ctx.save();
+      if (dropHover.valid) {
+        ctx.globalAlpha = 0.55;
+        if (deviceRenderer && dragPreview) {
+          deviceRenderer({
+            ctx,
+            device: {
+              ...dragPreview,
+              x: dropHover.world[0],
+              y: dropHover.world[1],
+              rotation: 0,
+            },
+            isSelected: false,
+            scale,
+            worldToScreen,
+          });
+        } else {
+          ctx.beginPath();
+          ctx.arc(gx, gy, 9, 0, Math.PI * 2);
+          ctx.fillStyle = "#2563eb";
+          ctx.fill();
+        }
+      } else {
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(gx, gy, 11, 0, Math.PI * 2);
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        // Slash through the circle — the universal "can't drop here".
+        const d = 11 * Math.SQRT1_2;
+        ctx.beginPath();
+        ctx.moveTo(gx - d, gy - d);
+        ctx.lineTo(gx + d, gy + d);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }, [
     imgEl,
     imgSize,
@@ -350,6 +406,8 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
     hoverWorld,
     worldToScreen,
     deviceRenderer,
+    dropHover,
+    dragPreview,
   ]);
 
   useEffect(() => {
@@ -617,14 +675,31 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
     setHoverRotationFov(false);
   }, [onDeviceMove, onDeviceRotate, onDeviceClick]);
 
-  const onDragOver = useCallback((e) => {
-    if (
-      e.dataTransfer.types.includes("application/x-neubit-device") ||
-      e.dataTransfer.types.includes("application/x-neubit-camera")
-    ) {
+  // dataTransfer.getData() is unreadable during dragover (protected mode), so the
+  // payload can't be inspected here — only its presence via `types`. The device
+  // itself arrives out-of-band as the `dragPreview` prop.
+  const onDragOver = useCallback(
+    (e) => {
+      if (
+        !e.dataTransfer.types.includes("application/x-neubit-device") &&
+        !e.dataTransfer.types.includes("application/x-neubit-camera")
+      )
+        return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-    }
+      const rect = containerRef.current.getBoundingClientRect();
+      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const zone = hitZone(world);
+      e.dataTransfer.dropEffect = zone ? "copy" : "none";
+      setDropHover({ world, zoneId: zone?.zone_id ?? null, valid: !!zone });
+    },
+    [screenToWorld, hitZone],
+  );
+
+  // Only clear when the pointer actually leaves the container — dragleave also fires
+  // when crossing onto the child <canvas>, which would flicker the ghost off.
+  const onDragLeave = useCallback((e) => {
+    if (e.relatedTarget && containerRef.current?.contains(e.relatedTarget)) return;
+    setDropHover(null);
   }, []);
 
   const onDrop = useCallback(
@@ -634,9 +709,14 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
         e.dataTransfer.getData("application/x-neubit-camera");
       if (!data) return;
       e.preventDefault();
+      setDropHover(null);
       const rect = containerRef.current.getBoundingClientRect();
       const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-      if (!pointInAnyZone(world, zones)) return;
+      // Devices must land in a zone. Say so rather than swallowing the drop.
+      if (!pointInAnyZone(world, zones)) {
+        onInvalidDrop?.();
+        return;
+      }
       let payload;
       try {
         payload = JSON.parse(data);
@@ -647,7 +727,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
         onDeviceDrop?.({ payload, point: { x: world[0], y: world[1] } });
       }
     },
-    [screenToWorld, onDeviceDrop, zones],
+    [screenToWorld, onDeviceDrop, onInvalidDrop, zones],
   );
 
   useEffect(() => {
@@ -684,9 +764,25 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
       onMouseUp={endDragOrPan}
       onMouseLeave={endDragOrPan}
       onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
       <canvas ref={canvasRef} className="block h-full w-full" />
+      {dropHover && (
+        <div
+          className={`pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm ${
+            dropHover.valid
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
+              : "border-red-500/40 bg-red-500/10 text-red-600"
+          }`}
+        >
+          {dropHover.valid
+            ? `Drop ${dragPreview?.name ?? "device"} in ${
+                zones.find((z) => z.zone_id === dropHover.zoneId)?.name ?? "this zone"
+              }`
+            : "Devices must be dropped inside a zone"}
+        </div>
+      )}
       {!floorplanUrl && (
         <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted shadow border border-card-border">
           Upload a floor plan to begin
