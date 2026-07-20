@@ -1,14 +1,18 @@
 "use client";
 
 // "Zones" tab body — lists a site's security zones with a floor filter and
-// add/edit/delete. Owns floors + zones queries, delete mutation, and the in-place
+// edit/delete. Owns floors + zones queries, delete mutation, and the in-place
 // ZoneForm. Zones show a color chip, type/threat pills, floor label, and tags.
+//
+// NO CREATE HERE — a zone is its polygon, so it's drawn in the floor-plan editor
+// (Floors tab → Open floor plan). This tab manages the metadata of zones that
+// already exist. See ZoneForm's header for why the create path was removed.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Spinner } from "@/components/ui/kit";
+import { ConfirmDialog, Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import TagPicker from "@/components/tags/TagPicker";
@@ -24,7 +28,6 @@ export default function ZonesPanel({ site }) {
   const floors = floorsQ.data?.items || [];
 
   const [floorFilter, setFloorFilter] = useState("");
-  const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const zonesQ = useQuery({
@@ -54,7 +57,8 @@ export default function ZonesPanel({ site }) {
         <div>
           <h3 className="text-sm font-semibold text-foreground">Zones</h3>
           <p className="text-xs text-muted">
-            {items.length} zone(s){floorFilter ? " on selected floor" : ` across ${floors.length} floor(s)`}.
+            {items.length} zone(s){floorFilter ? " on selected floor" : ` across ${floors.length} floor(s)`}
+            . Draw new zones in the floor plan editor.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -68,33 +72,15 @@ export default function ZonesPanel({ site }) {
               <option key={f.floor_id} value={f.floor_id} className="bg-card">{f.name}</option>
             ))}
           </select>
-          {!creating && !editing && (
-            <Button
-              variant="success"
-              icon="heroicons-outline:plus"
-              onClick={() => setCreating(true)}
-              disabled={floors.length === 0}
-              className="!px-3 !py-1.5 text-xs"
-            >
-              Add zone
-            </Button>
-          )}
         </div>
       </div>
 
-      {(creating || editing) && (
+      {editing && (
         <ZoneForm
-          site={site}
-          floors={floors}
           zone={editing}
-          defaultFloorId={floorFilter}
-          onCancel={() => {
-            setCreating(false);
-            setEditing(null);
-          }}
+          onCancel={() => setEditing(null)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["zones-list", site.site_id] });
-            setCreating(false);
             setEditing(null);
           }}
         />
@@ -106,7 +92,16 @@ export default function ZonesPanel({ site }) {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-card-border px-6 py-10 text-center text-sm text-muted">
-          No zones yet. {floors.length === 0 ? "Create a floor first." : "No zones available for this filter."}
+          {floors.length === 0
+            ? "No zones yet. Create a floor first."
+            : floorFilter
+              ? "No zones on this floor yet."
+              : "No zones yet."}
+          <div className="mt-1 text-xs">
+            Zones are drawn on the plan — open a floor from the{" "}
+            <strong className="text-foreground">Floors</strong> tab and use{" "}
+            <strong className="text-foreground">Zones → Draw</strong>.
+          </div>
         </div>
       ) : (
         <ul className="rounded-lg border border-card-border divide-y divide-card-border bg-card">
