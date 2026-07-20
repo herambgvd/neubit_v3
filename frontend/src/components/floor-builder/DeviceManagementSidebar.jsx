@@ -6,17 +6,14 @@
 //   • Available — the placeable-device inventory (drag onto the canvas to place).
 //   • On floor  — devices already placed (click to select, trash to remove).
 //
-// INVENTORY SOURCE: neubit_v2 pulled from vms (cameras/NVR), gates (access) and fire
-// (panels). In neubit_v3 only ACCESS-CONTROL exists today, so we wire the access
-// source only — controllers (device_type "access_control") + doors (device_type
-// "door"), both service "access_control". The source list + type filter are kept
-// structured so vms/fire drop in later (just add sources + inventory maps).
+// INVENTORY SOURCE: see useDeviceInventory — vms (cameras/NVRs) + access-control
+// (controllers/doors). The editor shares that hook so canvas labels resolve the same
+// names this list shows. The type filter keeps `panel` (fire) for when it lands.
 import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
-import { useQuery } from "@tanstack/react-query";
 
 import { ConfirmDialog, Input } from "@/components/ui/kit";
-import { accessInventory, vmsInventory } from "@/lib/api/deviceInventory";
+import { useDeviceInventory } from "@/components/floor-builder/useDeviceInventory";
 
 // Device-type → icon (heroicons via iconify).
 function iconForType(type) {
@@ -106,72 +103,8 @@ export function DeviceManagementSidebar({
   const [deviceTypeFilter, setDeviceTypeFilter] = useState("all");
   const [confirm, setConfirm] = useState(null);
 
-  // ── Inventory sources (access-control only for now) ──────────────────
-  const instancesQ = useQuery({
-    queryKey: ["floor-builder", "access-instances"],
-    queryFn: () => accessInventory.instances(),
-  });
-  const doorsQ = useQuery({
-    queryKey: ["floor-builder", "access-doors"],
-    queryFn: () => accessInventory.doors(),
-  });
-  // VMS sources — cameras + NVRs (VMS P1). Cameras carry service "vms" +
-  // device_type "camera" so the Map's cameraRenderer draws their FoV cone.
-  const camerasQ = useQuery({
-    queryKey: ["floor-builder", "vms-cameras"],
-    queryFn: () => vmsInventory.cameras(),
-  });
-  const nvrsQ = useQuery({
-    queryKey: ["floor-builder", "vms-nvrs"],
-    queryFn: () => vmsInventory.nvrs(),
-  });
-
-  const instances = instancesQ.data?.items ?? [];
-  const doors = doorsQ.data?.items ?? [];
-  const cameras = camerasQ.data?.items ?? [];
-  const nvrDevices = nvrsQ.data?.items ?? [];
-
-  const inventory = useMemo(() => {
-    // Access controllers/panels → placeable devices. Identifier field is `id`.
-    const instanceItems = instances.map((a) => ({
-      device_id: a.id,
-      name: a.name,
-      device_type: "access_control",
-      service: "access_control",
-      search_ip: a.base_url || "",
-    }));
-    // Doors → placeable devices. Identifier field is `id`.
-    const doorItems = doors.map((d) => ({
-      device_id: d.id,
-      name: d.name,
-      device_type: "door",
-      service: "access_control",
-      search_ip: "",
-    }));
-    // Cameras → placeable devices with a FoV cone on the floor plan.
-    const cameraItems = cameras.map((c) => ({
-      device_id: c.id,
-      name: c.name,
-      device_type: "camera",
-      service: "vms",
-      search_ip: c.network_info?.ip || c.onvif?.host || "",
-    }));
-    // NVRs → placeable server-glyph devices.
-    const nvrItems = nvrDevices.map((n) => ({
-      device_id: n.id,
-      name: n.name,
-      device_type: "nvr",
-      service: "vms",
-      search_ip: n.host || "",
-    }));
-    return [...cameraItems, ...nvrItems, ...instanceItems, ...doorItems];
-  }, [instances, doors, cameras, nvrDevices]);
-
-  const inventoryById = useMemo(() => {
-    const m = new Map();
-    for (const d of inventory) m.set(d.device_id, d);
-    return m;
-  }, [inventory]);
+  // ── Inventory sources (vms + access-control) ─────────────────────────
+  const { inventory, inventoryById, loading } = useDeviceInventory();
 
   const placedIds = useMemo(() => {
     const set = new Set();
@@ -204,8 +137,6 @@ export function DeviceManagementSidebar({
       );
     });
   }, [placements, inventoryById, deviceTypeFilter, search]);
-
-  const loading = instancesQ.isLoading || doorsQ.isLoading || camerasQ.isLoading || nvrsQ.isLoading;
 
   return (
     <aside className="flex w-72 shrink-0 flex-col rounded-lg border border-card-border bg-card">

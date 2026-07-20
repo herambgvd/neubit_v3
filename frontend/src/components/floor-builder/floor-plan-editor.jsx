@@ -22,6 +22,7 @@ import { drawCameraPlacement } from "@/components/floor-builder/cameraRenderer";
 import { FloorPlanCanvas } from "@/components/floor-builder/floor-plan-canvas";
 import { FloorPlanToolbar } from "@/components/floor-builder/floor-plan-toolbar";
 import { FloorUploadModal } from "@/components/floor-builder/floor-upload-modal";
+import { useDeviceInventory } from "@/components/floor-builder/useDeviceInventory";
 import { ZoneManagementSidebar } from "@/components/floor-builder/zone-management-sidebar";
 import { apiError } from "@/lib/api";
 import { sites } from "@/lib/api/sites";
@@ -114,14 +115,17 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
     setFloor(initialFloor);
   }
 
-  // Placements carry a `name` (from the register payload); fall back to id.
+  // Placement records are id-only (the backend stores no device name), so resolve the
+  // label from the inventory. `p.name` only survives for a device dropped this session;
+  // after a save+reload the join is the sole source of a real name.
+  const { inventoryById } = useDeviceInventory();
   const displayPlacements = useMemo(
     () =>
       placements.map((p) => ({
         ...p,
-        name: p.name || p.label || p.device_id,
+        name: inventoryById.get(p.device_id)?.name || p.name || p.label || p.device_id,
       })),
-    [placements],
+    [placements, inventoryById],
   );
 
   // ── Load zones + placements when floor changes ─────────────────────
