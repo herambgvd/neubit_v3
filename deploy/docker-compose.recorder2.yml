@@ -1,29 +1,54 @@
-# Isolated SECOND recorder node for LOCAL multi-node testing — additive, does NOT
-# touch the running default recorder (mediamtx / nvr).
+# SECOND recorder node — its own containers, additive. Does NOT touch the running
+# primary recorder (mediamtx / nvr).
 #
-# Each recorder = its own Go nvr + its own MediaMTX + its own DB + its own
-# recordings volume + its own node id. This mirrors the "each recorder machine is
-# an independent recorder" model and sidesteps the current global reconcile
-# (which has no node_id filter) by giving node-2 a SEPARATE neubit_nvr_2 DB, so
-# each nvr only ever sees its own recording_targets.
+# Each recorder is an INDEPENDENT recorder: its own Go nvr + its own MediaMTX + its
+# own database + its own recordings volume + its own node id. Giving node-2 a
+# separate `neubit_nvr_2` DB is what keeps the two apart — each nvr only ever sees
+# its own recording_targets, so the reconcile loops never fight over a camera.
 #
-# Run (combined with the base + override so the shared network/volumes resolve):
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+# ── PREREQUISITES (one-time) ────────────────────────────────────────────────
+#  1. Create this node's database (the initdb script only runs on a FRESH volume):
+#       docker compose exec -T postgres createdb -U neubit neubit_nvr_2
+#  2. Add the browser-reachable base to deploy/.env so media URLs are NOT localhost
+#     (a browser on another machine — the tower — must be able to reach them):
+#       PUBLIC_BASE=http://192.162.0.10
+#  3. The nvr image must already be built (this file reuses it, it does not build):
+#       docker compose -f docker-compose.yml -f docker-compose.storage.yml build nvr
+#
+# ── RUN ─────────────────────────────────────────────────────────────────────
+#   docker compose -f docker-compose.yml -f docker-compose.storage.yml \
 #                  -f docker-compose.recorder2.yml up -d mediamtx-2 nvr-2
 #
+# ── REGISTER (so cameras can be assigned to it) ─────────────────────────────
+#   UI → Devices → Recorders → Add, with API URL  http://nvr-2:8000
+#   Then assign cameras to it (per-camera or bulk). Only cameras assigned to this
+#   node record here; everything else stays on the primary recorder.
+#
 # Media for this node is browser-reachable under the /media2/* gateway prefix
-# (see gateway/dynamic/routes.yml + middlewares.yml — media2-* entries).
+# (gateway/dynamic/routes.yml + middlewares.yml — media2-* entries), token-gated by
+# the SAME media-auth ForwardAuth as the primary.
+#
+# NOTE: on a real SECOND MACHINE use deploy/poc/docker-compose.recorder2.yml
+# instead — that bundle points the node at the remote control-plane and mounts that
+# machine's own disks. This file is the same-box variant (own Docker volume).
 services:
   mediamtx-2:
     container_name: neubit-v3-mediamtx-2
     image: bluenviron/mediamtx:latest-ffmpeg
     restart: unless-stopped
+    # Same fd headroom as the primary: the playback server opens many segment files.
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
     environment:
-      # Distinct WebRTC ICE port (default=8189, recorder-1=8190) so the browser
-      # can reach recorder-2's media directly (local-only concern; on a real box
-      # each recorder has its own IP).
+      # Distinct WebRTC ICE port (primary=8189) so both recorders' media can be
+      # reached on this box. On a real second machine each has its own IP.
       MTX_WEBRTCLOCALUDPADDRESS: ":8191"
       MTX_WEBRTCLOCALTCPADDRESS: ":8191"
+      # Advertise the SERVER's IP as an ICE candidate so a browser on ANOTHER
+      # machine (the tower) can reach this node's media — not just localhost.
+      MTX_WEBRTCADDITIONALHOSTS: ${MTX_WEBRTCADDITIONALHOSTS:-localhost}
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - recordings2:/recordings          # own volume, same in-container path
@@ -36,20 +61,22 @@ services:
     container_name: neubit-v3-nvr-2
     image: neubit-v3-nvr:latest        # reuse the already-built image (no rebuild)
     restart: unless-stopped
-    env_file: .env
+    env_file: .env                      # shared secrets/NATS; overridden below
     environment:
+      # Own DB → own recording_targets/segments ledger (the node isolation).
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_nvr_2
       VE_APP_NAME: nvr-2
       VE_PORT: "8000"
-      # This node's own MediaMTX (internal DNS) + its own node id.
-      VE_MEDIA_NODE_ID: mediamtx-1
+      # This node's own MediaMTX (internal DNS) + its own DISTINCT node id.
+      VE_MEDIA_NODE_ID: mediamtx-2
       VE_MEDIAMTX_API_URL: http://mediamtx-2:9997
       VE_MEDIAMTX_PLAYBACK_API_URL: http://mediamtx-2:9996
-      # Browser-facing bases routed through the gateway under /media2/* (token-gated
-      # by the SAME media-auth ForwardAuth → vision /media/verify).
-      VE_MEDIA_PUBLIC_HLS_BASE: http://localhost/media2/hls
-      VE_MEDIA_PUBLIC_WHEP_BASE: http://localhost/media2/whep
-      VE_MEDIA_PUBLIC_PLAYBACK_BASE: http://localhost/media2/playback
+      # Browser-facing bases routed through the gateway under /media2/*. PUBLIC_BASE
+      # MUST be the server's reachable address (see prerequisites) — a localhost URL
+      # here breaks live/playback for every browser that is not on this box.
+      VE_MEDIA_PUBLIC_HLS_BASE: ${PUBLIC_BASE:-http://localhost}/media2/hls
+      VE_MEDIA_PUBLIC_WHEP_BASE: ${PUBLIC_BASE:-http://localhost}/media2/whep
+      VE_MEDIA_PUBLIC_PLAYBACK_BASE: ${PUBLIC_BASE:-http://localhost}/media2/playback
       VE_MEDIAMTX_RTSP_BASE: rtsp://mediamtx-2:8554
       VE_RECORDINGS_DIR: /recordings
       VE_RECORD_SEGMENT_DURATION: 60s
