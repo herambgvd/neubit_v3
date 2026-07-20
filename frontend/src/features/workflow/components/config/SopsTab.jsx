@@ -99,8 +99,8 @@ export default function SopsTab() {
   );
 
   return (
-    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" className="min-h-[60vh]">
-      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+    <MasterDetail fill aside={aside} gridCols="lg:grid-cols-[360px_1fr]" className="min-h-0 flex-1">
+      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
         {mode === "create" || mode === "edit" ? (
           <SopForm
             sop={mode === "edit" ? selected : null}

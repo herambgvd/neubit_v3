@@ -7,7 +7,7 @@ import WebhooksPanel from "./WebhooksPanel";
 
 export default function CategoryDetail({ category, catId, onEdit, onDelete, canManage }) {
   return (
-    <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+    <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
       <div className="flex flex-col flex-1 min-h-0">
         <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
           <div className="flex items-start gap-3 min-w-0">

@@ -27,17 +27,25 @@ const TABS = [
 export default function WorkflowConfigPage() {
   const [tab, setTab] = useState("sops");
 
-  return (
-    <div>
-      <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-4" />
+  // The five master/detail tabs fill the bounded pane and scroll internally (same
+  // contained layout as Sites / Users / Linkage). Threat levels + Simulator are plain
+  // stacked forms with no inner scroll container, so they get a scrolling wrapper —
+  // without it the bounded pane would clip them.
+  const masterDetailTab = tab !== "threat" && tab !== "simulator";
 
-      {tab === "sops" && <SopsTab />}
-      {tab === "triggers" && <TriggersTab />}
-      {tab === "formats" && <FormatsTab />}
-      {tab === "forms" && <FormsTab />}
-      {tab === "notifications" && <NotificationTemplatesTab />}
-      {tab === "threat" && <ThreatLevelsTab />}
-      {tab === "simulator" && <SimulatorTab />}
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-4 shrink-0" />
+
+      <div className={`min-h-0 flex-1 ${masterDetailTab ? "flex flex-col" : "app-scroll overflow-y-auto"}`}>
+        {tab === "sops" && <SopsTab />}
+        {tab === "triggers" && <TriggersTab />}
+        {tab === "formats" && <FormatsTab />}
+        {tab === "forms" && <FormsTab />}
+        {tab === "notifications" && <NotificationTemplatesTab />}
+        {tab === "threat" && <ThreatLevelsTab />}
+        {tab === "simulator" && <SimulatorTab />}
+      </div>
     </div>
   );
 }
