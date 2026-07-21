@@ -38,36 +38,38 @@ export default function SettingsGeneralPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-end">
-        <Button variant="primary" disabled={save.isPending || cfg.isLoading} onClick={() => save.mutate()}>
-          {save.isPending ? "Saving…" : "Save changes"}
-        </Button>
-      </div>
-
       {cfg.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner />
         </div>
       ) : (
-        <div className="space-y-6 max-w-2xl">
-          {groups.map((group) => (
-            <Card key={group} className="p-5">
-              <h2 className="text-sm font-semibold text-foreground mb-1">{group}</h2>
-              <div>
-                {catalog
-                  .filter((c) => c.group === group)
-                  .map((item) => (
-                    <SettingField
-                      key={item.key}
-                      item={item}
-                      value={values[item.key]}
-                      onChange={(v) => setValues((prev) => ({ ...prev, [item.key]: v }))}
-                    />
-                  ))}
-              </div>
-            </Card>
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {groups.map((group) => (
+              <Card key={group} className="p-5">
+                <h2 className="text-sm font-semibold text-foreground mb-1">{group}</h2>
+                <div>
+                  {catalog
+                    .filter((c) => c.group === group)
+                    .map((item) => (
+                      <SettingField
+                        key={item.key}
+                        item={item}
+                        value={values[item.key]}
+                        onChange={(v) => setValues((prev) => ({ ...prev, [item.key]: v }))}
+                      />
+                    ))}
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <div className="mt-6 flex items-center justify-end">
+            <Button variant="primary" disabled={save.isPending || cfg.isLoading} onClick={() => save.mutate()}>
+              {save.isPending ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </>
       )}
     </div>
   );
