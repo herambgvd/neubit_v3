@@ -180,17 +180,17 @@ export default function WallConsole({ wallId }) {
   // ── render ─────────────────────────────────────────────────────────────
   if (wallQ.isLoading) {
     return (
-      <div className="flex h-[60vh] items-center justify-center gap-2 text-muted">
+      <div className="flex h-[60vh] items-center justify-center gap-2 text-[#aec2e8]">
         <Spinner /> Loading wall…
       </div>
     );
   }
   if (wallQ.isError || !wall) {
     return (
-      <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-muted">
-        <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl" />
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-[#aec2e8]">
+        <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl text-[#fbbf24]" />
         <p>Wall not found or unavailable.</p>
-        <Link href="/wall" className="text-blue-500 hover:underline">
+        <Link href="/wall" className="text-[#67e8f9] hover:underline">
           Back to walls
         </Link>
       </div>
@@ -201,12 +201,15 @@ export default function WallConsole({ wallId }) {
   const cols = wall.cols || 1;
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col bg-background">
+    <div
+      className="flex h-[calc(100vh-3.5rem)] flex-col text-[#f2f6ff]"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       {/* Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-card-border bg-card/40 px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[rgba(160,150,245,.22)] bg-[rgba(10,18,40,.55)] px-3 py-2 backdrop-blur-sm">
         <Link
           href="/wall"
-          className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-muted transition hover:bg-hover hover:text-foreground"
+          className="inline-flex h-8 items-center gap-1 rounded-[8px] px-2 text-xs font-medium text-[#aec2e8] transition hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
         >
           <Icon icon="heroicons-outline:arrow-left" className="text-sm" />
           Walls
@@ -215,30 +218,35 @@ export default function WallConsole({ wallId }) {
           type="button"
           onClick={() => setRailOpen((o) => !o)}
           title="Toggle camera rail"
-          className="inline-flex h-8 items-center gap-1 rounded-lg border border-card-border bg-card px-2 text-xs font-medium text-foreground transition hover:bg-hover"
+          className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] px-2 text-xs font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         >
           <Icon icon={railOpen ? "heroicons-outline:chevron-left" : "heroicons-outline:bars-3"} className="text-sm" />
           Cameras
         </button>
 
         <div className="mx-1 flex min-w-0 items-center gap-2">
-          <Icon icon="heroicons:computer-desktop" className="shrink-0 text-base text-muted" />
-          <span className="truncate text-sm font-semibold text-foreground">{wall.name}</span>
-          <span className="shrink-0 rounded-full bg-hover px-2 py-0.5 text-[10px] font-medium text-muted">
+          <Icon icon="heroicons:computer-desktop" className="shrink-0 text-base text-[#67e8f9]" />
+          <span className="truncate text-sm font-semibold text-[#f2f6ff]">{wall.name}</span>
+          <span className="shrink-0 rounded-full border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.06)] px-2 py-0.5 font-mono text-[10px] text-[#9a92c8]">
             {monitors.length} monitor{monitors.length === 1 ? "" : "s"} · {rows}×{cols}
           </span>
         </div>
 
         <span
-          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-            connected ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium ${
+            connected
+              ? "border-[rgba(52,211,153,.45)] bg-[rgba(52,211,153,.1)] text-[#34d399]"
+              : "border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.1)] text-[#fbbf24]"
           }`}
           title={connected ? "Live shared state connected" : "Reconnecting to shared state…"}
         >
-          <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500"}`} />
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ background: connected ? "#34d399" : "#fbbf24", boxShadow: `0 0 5px ${connected ? "#34d399" : "#fbbf24"}` }}
+          />
           {connected ? "Synced" : "Sync…"}
         </span>
-        <span className="text-[11px] text-muted">{liveCount} live</span>
+        <span className="font-mono text-[11px] text-[#9a92c8]">{liveCount} live</span>
 
         <div className="ml-auto flex items-center gap-1.5">
           {control && (
@@ -263,13 +271,13 @@ export default function WallConsole({ wallId }) {
           />
         )}
 
-        <main className="relative min-w-0 flex-1 overflow-auto bg-[#050506] p-2">
+        <main className="relative min-w-0 flex-1 overflow-auto bg-[rgba(6,11,26,.6)] p-2">
           {monitors.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-muted">
-              <Icon icon="heroicons-outline:computer-desktop" className="text-4xl" />
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-[#aec2e8]">
+              <Icon icon="heroicons-outline:computer-desktop" className="text-4xl text-[#67e8f9]" />
               <p className="text-sm">This wall has no monitors yet.</p>
               {can("vms.wall.manage") && (
-                <Link href="/config/video-wall" className="text-blue-500 hover:underline">
+                <Link href="/config/video-wall" className="text-[#67e8f9] hover:underline">
                   Add monitors in Wall management →
                 </Link>
               )}
@@ -330,7 +338,7 @@ export default function WallConsole({ wallId }) {
           autoFocus
           onKeyDown={(e) => e.key === "Enter" && savePreset()}
         />
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-2 text-xs text-[#9a92c8]">
           Snapshots the wall's current live state ({liveCount} camera{liveCount === 1 ? "" : "s"}). Recall it in one click, or add it to a tour.
         </p>
       </Modal>
@@ -347,18 +355,18 @@ function PresetMenu({ presets, onApply, onSave }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-card-border bg-card px-2.5 text-xs font-medium text-foreground transition hover:bg-hover"
+        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] px-2.5 text-xs font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
       >
-        <Icon icon="heroicons-outline:bookmark" className="text-sm text-muted" />
+        <Icon icon="heroicons-outline:bookmark" className="text-sm text-[#9a92c8]" />
         Presets
         {presets.length > 0 && (
-          <span className="rounded-full bg-hover px-1.5 text-[9px] font-semibold text-muted">{presets.length}</span>
+          <span className="rounded-full border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.07)] px-1.5 font-mono text-[9px] font-semibold text-[#9a92c8]">{presets.length}</span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-xl border border-card-border bg-card py-1 shadow-2xl">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-sm">
           <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Presets</span>
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Presets</span>
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -366,16 +374,16 @@ function PresetMenu({ presets, onApply, onSave }) {
                 onSave?.();
                 setOpen(false);
               }}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-blue-500 transition hover:bg-blue-500/10"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.12)]"
             >
               <Icon icon="heroicons-mini:plus" className="text-xs" />
               Save current
             </button>
           </div>
           {presets.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-muted">No presets yet — arrange the wall and Save current.</div>
+            <div className="px-3 py-3 text-xs text-[#9a92c8]">No presets yet — arrange the wall and Save current.</div>
           ) : (
-            <ul className="max-h-72 overflow-y-auto border-t border-card-border pt-1">
+            <ul className="max-h-72 overflow-y-auto border-t border-[rgba(160,150,245,.22)] pt-1">
               {presets.map((p) => (
                 <li key={p.id}>
                   <button
@@ -385,11 +393,11 @@ function PresetMenu({ presets, onApply, onSave }) {
                       onApply(p);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-hover"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[rgba(150,180,245,.07)]"
                   >
-                    <Icon icon="heroicons-outline:bookmark" className="shrink-0 text-xs text-muted" />
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{p.name}</span>
-                    {p.is_default && <span className="text-[9px] text-muted">default</span>}
+                    <Icon icon="heroicons-outline:bookmark" className="shrink-0 text-xs text-[#9a92c8]" />
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#f2f6ff]">{p.name}</span>
+                    {p.is_default && <span className="font-mono text-[9px] text-[#9a92c8]">default</span>}
                   </button>
                 </li>
               ))}
@@ -411,22 +419,22 @@ function TourMenu({ tours, onToggle }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition ${
+        className={`inline-flex h-8 items-center gap-1.5 rounded-[8px] border px-2.5 text-xs font-medium transition ${
           running
-            ? "border-blue-500/40 bg-blue-500/10 text-blue-500"
-            : "border-card-border bg-card text-foreground hover:bg-hover"
+            ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+            : "border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         }`}
       >
         <Icon icon={running ? "heroicons-solid:play" : "heroicons-outline:arrow-path-rounded-square"} className="text-sm" />
         {running ? running.name : "Tours"}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-xl border border-card-border bg-card py-1 shadow-2xl">
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Tours</div>
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-sm">
+          <div className="px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Tours</div>
           {tours.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-muted">No tours — create one in Wall management.</div>
+            <div className="px-3 py-3 text-xs text-[#9a92c8]">No tours — create one in Wall management.</div>
           ) : (
-            <ul className="max-h-72 overflow-y-auto border-t border-card-border pt-1">
+            <ul className="max-h-72 overflow-y-auto border-t border-[rgba(160,150,245,.22)] pt-1">
               {tours.map((t) => (
                 <li key={t.id}>
                   <button
@@ -436,14 +444,14 @@ function TourMenu({ tours, onToggle }) {
                       onToggle(t);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-hover"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[rgba(150,180,245,.07)]"
                   >
                     <Icon
                       icon={t.is_running ? "heroicons-solid:stop" : "heroicons-solid:play"}
-                      className={`shrink-0 text-xs ${t.is_running ? "text-red-400" : "text-emerald-500"}`}
+                      className={`shrink-0 text-xs ${t.is_running ? "text-[#f87171]" : "text-[#34d399]"}`}
                     />
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{t.name}</span>
-                    <span className="text-[9px] text-muted">
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#f2f6ff]">{t.name}</span>
+                    <span className="font-mono text-[9px] text-[#9a92c8]">
                       {(t.preset_ids || []).length} · {t.dwell_seconds}s
                     </span>
                   </button>
