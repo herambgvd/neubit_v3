@@ -20,7 +20,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
@@ -252,43 +251,54 @@ export default function WorkflowPage() {
   };
 
   return (
-    <div>
-      <PageHeader
-        title={
-          <span className="inline-flex items-center gap-2.5">
-            Incidents
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-card-border px-2 py-0.5 text-[11px] font-normal text-muted"
-              title={connected ? "Live stream connected" : "Live stream connecting…"}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}
-              />
-              {connected ? "Live" : "Reconnecting…"}
-            </span>
+    <div
+      className="min-h-full text-[#f2f6ff]"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
+      {/* NeuBit command-console masthead */}
+      <div className="flex flex-wrap items-center gap-4 border-b border-[rgba(150,180,245,.22)] px-6 pb-4 pt-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.14)] text-[#fca5a5]">
+            <Icon icon="heroicons-solid:bell-alert" className="text-lg" />
           </span>
-        }
-        subtitle="Live alarm monitor — track and respond to incidents driven by standard operating procedures."
-        actions={
-          <div className="flex items-center gap-2">
-            <ViewToggle view={view} onChange={setView} />
-            <Link
-              href="/workflow-config"
-              className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
-            >
-              <Icon icon="heroicons-outline:cog-6-tooth" className="text-base" />
-              Configure
-            </Link>
-            <Link
-              href="/workflow-config"
-              className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
-            >
-              <Icon icon="heroicons-outline:clipboard-document-list" className="text-base" />
-              SOPs
-            </Link>
+          <div>
+            <h1 className="flex items-center gap-2.5 text-[19px] font-semibold tracking-[.3px] text-[#f2f6ff]">
+              Alarms
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.55)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[1.2px] text-[#aec2e8]"
+                title={connected ? "Live stream connected" : "Live stream connecting…"}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-[#22d3ee] animate-pulse shadow-[0_0_8px_#22d3ee]" : "bg-[#fbbf24]"}`}
+                />
+                {connected ? "Live" : "Reconnecting…"}
+              </span>
+            </h1>
+            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[1.6px] text-[#7e93bf]">
+              Live alarm monitor · track & respond to SOP-driven incidents
+            </p>
           </div>
-        }
-      />
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <ViewToggle view={view} onChange={setView} />
+          <Link
+            href="/workflow-config"
+            className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[rgba(150,180,245,.22)] px-3.5 text-sm font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+          >
+            <Icon icon="heroicons-outline:cog-6-tooth" className="text-base" />
+            Configure
+          </Link>
+          <Link
+            href="/workflow-config"
+            className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[rgba(150,180,245,.22)] px-3.5 text-sm font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+          >
+            <Icon icon="heroicons-outline:clipboard-document-list" className="text-base" />
+            SOPs
+          </Link>
+        </div>
+      </div>
+
+      <div className="px-6 py-5">
 
       <StatHeader
         criticalOpen={criticalOpen}
@@ -357,6 +367,7 @@ export default function WorkflowPage() {
           onPage={setPage}
         />
       )}
+      </div>
 
       {assignFor && (
         <AssignModal
