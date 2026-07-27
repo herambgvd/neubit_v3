@@ -19,23 +19,23 @@ const TABS = [
 export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onChangeThreat }) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
+      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 shrink-0">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb shrink-0">
             <Icon icon="heroicons-outline:building-office-2" className="text-2xl" />
           </span>
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-foreground truncate">{site.name}</h2>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted flex-wrap">
-              {site.location_code && <span className="font-mono">{site.location_code}</span>}
+            <h2 className="text-xl font-semibold text-nb-ink truncate">{site.name}</h2>
+            <div className="mt-0.5 flex items-center gap-2 text-xs text-nb-soft flex-wrap">
+              {site.location_code && <span className="font-mono text-nb-faint">{site.location_code}</span>}
               {site.site_type && (
-                <span className="rounded-full bg-blue-500/10 text-blue-500 px-2 py-0.5 font-medium capitalize">
+                <span className="rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb px-2 py-0.5 font-medium capitalize">
                   {capitalize(site.site_type)}
                 </span>
               )}
               <span
-                className={`rounded-full px-2 py-0.5 font-medium ${
-                  site.is_active !== false ? "bg-green-500/10 text-green-500" : "bg-hover text-muted"
+                className={`rounded-full px-2 py-0.5 font-medium border ${
+                  site.is_active !== false ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] text-nb-good" : "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint"
                 }`}
               >
                 {site.is_active !== false ? "Active" : "Inactive"}
@@ -50,20 +50,20 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
           <select
             value={site.threat_level || "normal"}
             onChange={(e) => onChangeThreat(e.target.value)}
-            className="h-8 rounded-md border border-field bg-transparent px-2 text-xs text-foreground outline-none focus:border-muted"
+            className="h-8 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 text-xs text-nb-ink outline-none focus:border-nb-blue"
             title="Set threat level"
           >
             {THREAT_LEVELS.map((t) => (
-              <option key={t} value={t} className="bg-card text-foreground">{capitalize(t)}</option>
+              <option key={t} value={t} className="bg-[#0e1734] text-nb-ink">{capitalize(t)}</option>
             ))}
           </select>
-          <button onClick={onClose} title="Close" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground">
+          <button onClick={onClose} title="Close" className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-muted hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb">
             <Icon icon="heroicons-outline:x-mark" className="text-base" />
           </button>
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover">
+          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted hover:border-nb-blue hover:text-nb-blueb">
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20">
+          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.2)]">
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>
         </div>

@@ -126,7 +126,7 @@ export default function StoragePoolModal({ pool, onClose, onSuccess }) {
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>
-          <Button variant="success" onClick={submit} disabled={save.isPending}>
+          <Button variant="primary" onClick={submit} disabled={save.isPending}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create pool"}
           </Button>
         </>
@@ -163,7 +163,7 @@ export default function StoragePoolModal({ pool, onClose, onSuccess }) {
         )}
 
         {isNas && (
-          <div className="space-y-3 rounded-lg border border-card-border bg-hover/40 p-3">
+          <div className="space-y-3 rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)] p-3">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Server / IP" required value={form.nas_server} onChange={(e) => set({ nas_server: e.target.value })} placeholder="192.168.1.50" error={errors.nas_server} />
               <Field label="Share / Export" value={form.nas_share} onChange={(e) => set({ nas_share: e.target.value })} placeholder="recordings" />
@@ -196,7 +196,7 @@ export default function StoragePoolModal({ pool, onClose, onSuccess }) {
         )}
 
         {isS3 && (
-          <div className="space-y-3 rounded-lg border border-card-border bg-hover/40 p-3">
+          <div className="space-y-3 rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)] p-3">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Endpoint" value={form.s3_endpoint} onChange={(e) => set({ s3_endpoint: e.target.value })} placeholder="https://minio:9000 (blank = AWS)" />
               <Field label="Bucket" required value={form.s3_bucket} onChange={(e) => set({ s3_bucket: e.target.value })} placeholder="nvr-cold" error={errors.s3_bucket} />
@@ -215,7 +215,7 @@ export default function StoragePoolModal({ pool, onClose, onSuccess }) {
                 hint={isEdit ? "Leave blank to keep stored." : undefined}
               />
               <div className="flex items-end pb-2">
-                <label className="flex items-center gap-2 text-sm text-foreground">
+                <label className="flex items-center gap-2 text-sm text-nb-soft">
                   <Toggle checked={!!form.s3_use_ssl} onChange={(v) => set({ s3_use_ssl: v })} />
                   Use TLS (https)
                 </label>
@@ -242,11 +242,11 @@ export default function StoragePoolModal({ pool, onClose, onSuccess }) {
         </div>
 
         <div className="flex flex-wrap gap-4">
-          <label className="flex items-center gap-2 text-sm text-foreground">
+          <label className="flex items-center gap-2 text-sm text-nb-soft">
             <Toggle checked={!!form.is_default} onChange={(v) => set({ is_default: v })} />
             Set as default pool
           </label>
-          <label className="flex items-center gap-2 text-sm text-foreground">
+          <label className="flex items-center gap-2 text-sm text-nb-soft">
             <Toggle checked={!!form.is_active} onChange={(v) => set({ is_active: v })} />
             Active
           </label>

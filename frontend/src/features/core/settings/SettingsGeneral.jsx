@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Card, Spinner } from "@/components/ui/kit";
+import { Card, Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import SettingField from "./components/SettingField";
 
@@ -37,11 +37,18 @@ export default function SettingsGeneralPage() {
   const groups = [...new Set(catalog.map((c) => c.group))];
 
   return (
-    <div>
+    <div
+      className="-mx-6 lg:-mx-8 -my-6 min-h-full px-6 lg:px-8 py-6 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       <div className="mb-4 flex items-center justify-end">
-        <Button variant="primary" disabled={save.isPending || cfg.isLoading} onClick={() => save.mutate()}>
+        <button
+          disabled={save.isPending || cfg.isLoading}
+          onClick={() => save.mutate()}
+          className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-50"
+        >
           {save.isPending ? "Saving…" : "Save changes"}
-        </Button>
+        </button>
       </div>
 
       {cfg.isLoading ? (
@@ -51,8 +58,8 @@ export default function SettingsGeneralPage() {
       ) : (
         <div className="space-y-6 max-w-2xl">
           {groups.map((group) => (
-            <Card key={group} className="p-5">
-              <h2 className="text-sm font-semibold text-foreground mb-1">{group}</h2>
+            <Card key={group} className="p-5 !border-nb-line !bg-[rgba(8,15,34,.5)]">
+              <h2 className="text-sm font-semibold text-nb-ink mb-1">{group}</h2>
               <div>
                 {catalog
                   .filter((c) => c.group === group)

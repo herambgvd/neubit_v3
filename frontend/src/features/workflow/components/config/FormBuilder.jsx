@@ -112,8 +112,8 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-    <form onSubmit={submit} className="rounded-lg border border-card-border bg-hover/40 p-4 space-y-4">
-      <h4 className="text-sm font-semibold text-foreground">{isEdit ? `Edit ${form.name}` : "New form"}</h4>
+    <form onSubmit={submit} className="rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-4 space-y-4">
+      <h4 className="text-sm font-semibold text-nb-ink">{isEdit ? `Edit ${form.name}` : "New form"}</h4>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field
           label="Name"
@@ -133,44 +133,44 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
 
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-medium uppercase tracking-wide text-muted">Fields</label>
+          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Fields</label>
           <button type="button" onClick={addField} className="text-xs text-blue-500 hover:underline">+ Add field</button>
         </div>
         {errors.fields && <p className="mb-2 text-xs text-red-500">{errors.fields}</p>}
         <div className="space-y-2">
           {fields.map((f, i) => (
-            <div key={i} className="rounded-lg border border-card-border bg-card">
+            <div key={i} className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
               <header className="flex items-center gap-2 px-2.5 py-2">
                 <button
                   type="button"
                   onClick={() => updateField(i, { _collapsed: !f._collapsed })}
                   title={f._collapsed ? "Expand" : "Collapse"}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink"
                 >
                   <Icon icon={f._collapsed ? "heroicons-outline:chevron-right" : "heroicons-outline:chevron-down"} className="text-sm" />
                 </button>
-                <span className="text-xs font-semibold text-foreground">Field {i + 1}</span>
-                <span className="text-xs text-muted truncate">{f.label || "(unnamed)"}</span>
+                <span className="text-xs font-semibold text-nb-ink">Field {i + 1}</span>
+                <span className="text-xs text-nb-faint truncate">{f.label || "(unnamed)"}</span>
                 <span className="ml-auto inline-flex items-center gap-0.5">
-                  <button type="button" onClick={() => moveField(i, i - 1)} disabled={i === 0} title="Move up" className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">
+                  <button type="button" onClick={() => moveField(i, i - 1)} disabled={i === 0} title="Move up" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink disabled:opacity-40 disabled:cursor-not-allowed">
                     <Icon icon="heroicons-outline:chevron-up" className="text-sm" />
                   </button>
-                  <button type="button" onClick={() => moveField(i, i + 1)} disabled={i === fields.length - 1} title="Move down" className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">
+                  <button type="button" onClick={() => moveField(i, i + 1)} disabled={i === fields.length - 1} title="Move down" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink disabled:opacity-40 disabled:cursor-not-allowed">
                     <Icon icon="heroicons-outline:chevron-down" className="text-sm" />
                   </button>
-                  <button type="button" onClick={() => removeField(i)} title="Delete field" className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500">
+                  <button type="button" onClick={() => removeField(i)} title="Delete field" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-red-500">
                     <Icon icon="heroicons-outline:x-mark" className="text-sm" />
                   </button>
                 </span>
               </header>
 
               {!f._collapsed && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 border-t border-card-border p-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 border-t border-nb-line p-2.5">
                   <Field label="Label" required value={f.label} onChange={(e) => updateField(i, { label: e.target.value })} placeholder="Field label" />
                   <div>
                     <FieldLabel>Type</FieldLabel>
                     <select value={f.type} onChange={(e) => updateField(i, { type: e.target.value })} className={fieldClass}>
-                      {FIELD_TYPES.map((t) => <option key={t} value={t} className="bg-card">{titleize(t)}</option>)}
+                      {FIELD_TYPES.map((t) => <option key={t} value={t} className="bg-[rgba(8,15,34,.5)]">{titleize(t)}</option>)}
                     </select>
                   </div>
                   <Field label="Placeholder" value={f.placeholder} onChange={(e) => updateField(i, { placeholder: e.target.value })} placeholder="Shown inside the input" />
@@ -182,7 +182,7 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
                   {FIELD_TYPES_WITH_PATTERN.has(f.type) && (
                     <Field containerClassName="md:col-span-2" label="Validation pattern (regex)" value={f.pattern} onChange={(e) => updateField(i, { pattern: e.target.value })} placeholder="^[A-Za-z0-9]+$" />
                   )}
-                  <label className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer md:col-span-2">
+                  <label className="flex items-center gap-1.5 text-xs text-nb-ink cursor-pointer md:col-span-2">
                     <input type="checkbox" checked={f.required} onChange={(e) => updateField(i, { required: e.target.checked })} /> Required
                   </label>
                 </div>
@@ -192,7 +192,7 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active</label>
+      <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active</label>
 
       <div className="flex items-center justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>

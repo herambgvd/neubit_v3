@@ -37,7 +37,10 @@ export default function WallList() {
   }
 
   return (
-    <div>
+    <div
+      className="-mx-4 lg:-mx-5 -my-3 min-h-full px-4 lg:px-5 py-3 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       <PageHeader
         title="Video walls"
         subtitle="Shared control-room display surfaces. Open a wall to drive its monitors."
@@ -53,7 +56,7 @@ export default function WallList() {
       />
 
       {wallsQ.isLoading ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-muted">
+        <div className="flex items-center justify-center gap-2 py-16 text-nb-soft">
           <Spinner /> Loading walls…
         </div>
       ) : walls.length === 0 ? (
@@ -77,27 +80,27 @@ export default function WallList() {
             <Link
               key={w.id}
               href={`/wall/${w.id}`}
-              className="group flex flex-col rounded-lg border border-card-border bg-card p-4 transition hover:border-muted hover:bg-hover"
+              className="group flex flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 transition hover:border-[rgba(96,165,250,.5)] hover:bg-[rgba(96,165,250,.06)]"
             >
               <div className="mb-3 flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb">
                   <Icon icon="heroicons:computer-desktop" className="text-lg" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-semibold text-foreground">{w.name}</span>
+                    <span className="truncate text-sm font-semibold text-nb-ink">{w.name}</span>
                     {!w.is_active && (
-                      <span className="rounded bg-hover px-1.5 py-0.5 text-[9px] font-medium text-muted">inactive</span>
+                      <span className="rounded border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[9px] font-medium text-nb-faint">inactive</span>
                     )}
                   </div>
-                  {w.description && <p className="mt-0.5 truncate text-xs text-muted">{w.description}</p>}
+                  {w.description && <p className="mt-0.5 truncate text-xs text-nb-soft">{w.description}</p>}
                 </div>
                 <Icon
                   icon="heroicons-outline:arrow-right"
-                  className="shrink-0 text-muted opacity-0 transition group-hover:opacity-100"
+                  className="shrink-0 text-nb-muted opacity-0 transition group-hover:opacity-100"
                 />
               </div>
-              <div className="mt-auto flex items-center gap-3 text-[11px] text-muted">
+              <div className="mt-auto flex items-center gap-3 text-[11px] text-nb-faint">
                 <span className="inline-flex items-center gap-1">
                   <Icon icon="heroicons-outline:squares-2x2" className="text-xs" />
                   {w.rows}×{w.cols} monitors

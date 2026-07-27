@@ -26,11 +26,11 @@ export default function FormSubmitTestModal({ open, onClose, fields, values }) {
 
         {errEntries.length > 0 && (
           <div>
-            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted">Errors</p>
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-nb-faint">Errors</p>
             <ul className="space-y-1.5">
               {errEntries.map(([key, msg]) => (
-                <li key={key} className="rounded-md border border-card-border bg-hover/40 px-3 py-2 text-xs">
-                  <code className="font-mono text-foreground">{key}</code>
+                <li key={key} className="rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2 text-xs">
+                  <code className="font-mono text-nb-ink">{key}</code>
                   <span className="ml-2 text-red-500">{msg}</span>
                 </li>
               ))}
@@ -39,17 +39,17 @@ export default function FormSubmitTestModal({ open, onClose, fields, values }) {
         )}
 
         <div>
-          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted">form_data (JSON)</p>
+          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-nb-faint">form_data (JSON)</p>
           {dataEntries.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-card-border px-4 py-6 text-sm text-muted">No values collected yet.</div>
+            <div className="rounded-lg border border-dashed border-nb-line px-4 py-6 text-sm text-nb-faint">No values collected yet.</div>
           ) : (
-            <pre className="max-h-72 overflow-auto rounded-lg border border-card-border bg-hover/40 p-3 text-xs font-mono text-foreground">
+            <pre className="max-h-72 overflow-auto rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-3 text-xs font-mono text-nb-ink">
               {JSON.stringify(formData, null, 2)}
             </pre>
           )}
         </div>
 
-        <p className="text-[11px] text-muted/70">
+        <p className="text-[11px] text-nb-faint/70">
           This payload is what would be passed to the transition&apos;s <code className="font-mono">form_data</code> when this form is attached to a workflow transition.
         </p>
       </div>

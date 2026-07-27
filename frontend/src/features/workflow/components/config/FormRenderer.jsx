@@ -18,11 +18,11 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
   if (field.type === "boolean" || field.type === "checkbox") {
     return (
       <div>
-        <label className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <label className="inline-flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
           <input id={id} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => set(e.target.checked)} />
           <span>{field.label || field.id}{required && <span className="ml-1 text-red-500">*</span>}</span>
         </label>
-        {field.help_text && <p className="mt-1 text-[11px] text-muted/70">{field.help_text}</p>}
+        {field.help_text && <p className="mt-1 text-[11px] text-nb-faint/70">{field.help_text}</p>}
         {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
       </div>
     );
@@ -48,17 +48,17 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
     case "select":
       control = (
         <select id={id} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-red-500" : ""}`}>
-          <option value="" className="bg-card">— select —</option>
-          {opts.map((o) => <option key={o.value} value={o.value} className="bg-card">{o.label}</option>)}
+          <option value="" className="bg-[rgba(8,15,34,.5)]">— select —</option>
+          {opts.map((o) => <option key={o.value} value={o.value} className="bg-[rgba(8,15,34,.5)]">{o.label}</option>)}
         </select>
       );
       break;
     case "radio":
       control = (
         <div className="mt-1 flex flex-col gap-1.5">
-          {opts.length === 0 && <span className="text-xs text-muted/70">No options</span>}
+          {opts.length === 0 && <span className="text-xs text-nb-faint/70">No options</span>}
           {opts.map((o) => (
-            <label key={o.value} className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            <label key={o.value} className="inline-flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
               <input type="radio" name={id} disabled={disabled} checked={value === o.value} onChange={() => set(o.value)} />
               <span>{o.label}</span>
             </label>
@@ -70,9 +70,9 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
       const arr = Array.isArray(value) ? value : [];
       control = (
         <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-field bg-transparent p-2">
-          {opts.length === 0 && <span className="text-xs text-muted/70 px-1">No options</span>}
+          {opts.length === 0 && <span className="text-xs text-nb-faint/70 px-1">No options</span>}
           {opts.map((o) => (
-            <label key={o.value} className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            <label key={o.value} className="inline-flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
               <input
                 type="checkbox"
                 disabled={disabled}
@@ -97,12 +97,12 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
               disabled={disabled}
               onClick={() => set(n === num ? 0 : n)}
               title={`${n} of 5`}
-              className={`text-lg leading-none ${n <= num ? "text-amber-400" : "text-muted/40"} hover:text-amber-400 disabled:cursor-not-allowed`}
+              className={`text-lg leading-none ${n <= num ? "text-amber-400" : "text-nb-faint/40"} hover:text-amber-400 disabled:cursor-not-allowed`}
             >
               ★
             </button>
           ))}
-          <span className="ml-1.5 text-xs text-muted">{num || "—"}/5</span>
+          <span className="ml-1.5 text-xs text-nb-faint">{num || "—"}/5</span>
         </div>
       );
       break;
@@ -115,7 +115,7 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
     <div>
       <FieldLabel required={required}>{field.label || field.id}</FieldLabel>
       {control}
-      {field.help_text && <p className="mt-1 text-[11px] text-muted/70">{field.help_text}</p>}
+      {field.help_text && <p className="mt-1 text-[11px] text-nb-faint/70">{field.help_text}</p>}
       {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
     </div>
   );

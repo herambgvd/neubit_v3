@@ -48,8 +48,8 @@ export default function ThreatLevelsTab() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[22rem_1fr] gap-4">
-      <form onSubmit={submit} className="rounded-xl border border-card-border bg-card p-5 space-y-4 h-fit">
-        <h3 className="text-sm font-semibold text-foreground">Set threat level</h3>
+      <form onSubmit={submit} className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] p-5 space-y-4 h-fit">
+        <h3 className="text-sm font-semibold text-nb-ink">Set threat level</h3>
         <Field
           as="select"
           label="Scope"
@@ -58,10 +58,10 @@ export default function ThreatLevelsTab() {
           options={[{ value: "", label: "Deployment-wide" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]}
         />
         <div>
-          <label className="text-xs font-medium uppercase tracking-wide text-muted">Level</label>
+          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Level</label>
           <div className="mt-1 grid grid-cols-2 gap-2">
             {THREAT_LEVELS.map((lv) => (
-              <button key={lv} type="button" onClick={() => setLevel(lv)} className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${level === lv ? `${THREAT_COLOR[lv]} border-transparent` : "border-card-border text-muted hover:bg-hover"}`}>{lv}</button>
+              <button key={lv} type="button" onClick={() => setLevel(lv)} className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${level === lv ? `${THREAT_COLOR[lv]} border-transparent` : "border-nb-line text-nb-faint hover:bg-[rgba(96,165,250,.06)]"}`}>{lv}</button>
             ))}
           </div>
         </div>
@@ -73,26 +73,26 @@ export default function ThreatLevelsTab() {
           onChange={(e) => setReason(e.target.value)}
           placeholder="Optional context for the change"
         />
-        <Button type="submit" variant="success" disabled={set.isPending} className="w-full">{set.isPending ? "Setting…" : "Set threat level"}</Button>
+        <button type="submit" disabled={set.isPending} className="w-full inline-flex items-center justify-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-50">{set.isPending ? "Setting…" : "Set threat level"}</button>
       </form>
 
-      <div className="rounded-xl border border-card-border bg-card overflow-hidden">
-        <header className="px-5 py-4 border-b border-card-border">
-          <h3 className="text-sm font-semibold text-foreground">Current posture</h3>
+      <div className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden">
+        <header className="px-5 py-4 border-b border-nb-line">
+          <h3 className="text-sm font-semibold text-nb-ink">Current posture</h3>
         </header>
         {q.isLoading ? (
-          <div className="px-5 py-8 flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Loading…</div>
+          <div className="px-5 py-8 flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Loading…</div>
         ) : levels.length === 0 ? (
-          <div className="px-5 py-12 text-center text-sm text-muted">No threat levels set. Everything is at normal posture.</div>
+          <div className="px-5 py-12 text-center text-sm text-nb-faint">No threat levels set. Everything is at normal posture.</div>
         ) : (
-          <ul className="divide-y divide-card-border">
+          <ul className="divide-y divide-nb-line">
             {levels.map((r) => (
               <li key={r.id} className="flex items-start gap-3 px-5 py-3">
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${THREAT_COLOR[r.level] || "bg-hover text-muted"}`}>{r.level}</span>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${THREAT_COLOR[r.level] || "bg-[rgba(10,18,40,.65)] text-nb-faint"}`}>{r.level}</span>
                 <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-medium text-foreground">{siteName(r.site_id)}</span>
-                  {r.reason && <span className="block text-[11px] text-muted">{r.reason}</span>}
-                  <span className="block text-[11px] text-muted/70">{r.set_by ? `by ${r.set_by} · ` : ""}{r.set_at ? new Date(r.set_at).toLocaleString() : ""}</span>
+                  <span className="block text-sm font-medium text-nb-ink">{siteName(r.site_id)}</span>
+                  {r.reason && <span className="block text-[11px] text-nb-soft">{r.reason}</span>}
+                  <span className="block text-[11px] text-nb-faint/70">{r.set_by ? `by ${r.set_by} · ` : ""}{r.set_at ? new Date(r.set_at).toLocaleString() : ""}</span>
                 </span>
               </li>
             ))}

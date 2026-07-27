@@ -28,7 +28,10 @@ export default function WorkflowConfigPage() {
   const [tab, setTab] = useState("sops");
 
   return (
-    <div>
+    <div
+      className="-mx-6 lg:-mx-8 -my-6 min-h-full px-6 lg:px-8 py-6 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-4" />
 
       {tab === "sops" && <SopsTab />}

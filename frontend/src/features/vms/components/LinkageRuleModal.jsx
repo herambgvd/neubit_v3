@@ -129,9 +129,9 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
       footer={
         <div className="flex items-center justify-between gap-3">
           {error ? (
-            <span className="text-[11px] text-red-500">{error}</span>
+            <span className="text-[11px] text-nb-crit">{error}</span>
           ) : (
-            <span className="text-[11px] text-muted">
+            <span className="text-[11px] text-nb-soft">
               {form.actions.length} action{form.actions.length === 1 ? "" : "s"}
             </span>
           )}
@@ -139,7 +139,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-card-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-hover hover:text-foreground"
+              className="rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-3 py-1.5 text-xs font-medium text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
             >
               Cancel
             </button>
@@ -147,7 +147,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
               type="button"
               onClick={submit}
               disabled={!canSave || saving}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-xs font-semibold text-background hover:opacity-90 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-1.5 text-xs font-semibold tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-40"
             >
               {saving && <Icon icon="svg-spinners:180-ring" className="text-sm" />}
               {rule ? "Save changes" : "Create rule"}
@@ -163,7 +163,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
             <Input label="Name" value={form.name} onChange={(e) => patch({ name: e.target.value })} placeholder="e.g. Record on lobby motion" />
             <div className="flex items-end gap-2 pb-1">
               <Toggle checked={form.is_active} onChange={(v) => patch({ is_active: v })} />
-              <span className="text-xs text-muted">{form.is_active ? "Active" : "Inactive"}</span>
+              <span className="text-xs text-nb-soft">{form.is_active ? "Active" : "Inactive"}</span>
             </div>
           </div>
           <Textarea label="Description" value={form.description} onChange={(e) => patch({ description: e.target.value })} rows={2} placeholder="Optional notes" />
@@ -235,7 +235,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
             />
           </div>
           <div className="mt-2">
-            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-muted">Active window</label>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Active window</label>
             <LinkageScheduleEditor value={form.schedule} onChange={(schedule) => patch({ schedule })} />
           </div>
         </Section>
@@ -247,7 +247,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
 function Section({ title, children }) {
   return (
     <section className="space-y-2">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-foreground">{title}</h4>
+      <h4 className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{title}</h4>
       {children}
     </section>
   );
@@ -256,7 +256,7 @@ function Section({ title, children }) {
 function Field({ label, children }) {
   return (
     <div>
-      <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">{label}</label>
+      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{label}</label>
       {children}
     </div>
   );
@@ -265,22 +265,22 @@ function Field({ label, children }) {
 function PickList({ items, selected, onToggle, empty, loading }) {
   if (loading) {
     return (
-      <div className="flex items-center gap-2 px-1 py-3 text-[11px] text-muted">
+      <div className="flex items-center gap-2 px-1 py-3 text-[11px] text-nb-soft">
         <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading…
       </div>
     );
   }
   if (!items.length) {
-    return <p className="px-1 py-3 text-[11px] text-muted">{empty}</p>;
+    return <p className="px-1 py-3 text-[11px] text-nb-soft">{empty}</p>;
   }
   return (
-    <div className="mt-1 grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-md border border-card-border bg-hover/30 p-2">
+    <div className="mt-1 grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] p-2">
       {items.map((it) => {
         const on = selected.includes(it.id);
         return (
           <label
             key={it.id}
-            className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-[11px] ${on ? "bg-foreground/10 text-foreground" : "text-muted hover:bg-hover"}`}
+            className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-[11px] ${on ? "bg-[rgba(96,165,250,.1)] text-nb-blueb" : "text-nb-soft hover:bg-[rgba(96,165,250,.06)]"}`}
           >
             <input type="checkbox" checked={on} onChange={() => onToggle(it.id)} />
             <span className="truncate">{it.label}</span>

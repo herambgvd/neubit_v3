@@ -25,19 +25,19 @@ export default function SopTriggersList({ sopId }) {
   return (
     <div className="px-6 py-5 space-y-3">
       <div>
-        <h3 className="text-sm font-semibold text-foreground">Triggers</h3>
-        <p className="text-xs text-muted">
+        <h3 className="text-sm font-semibold text-nb-ink">Triggers</h3>
+        <p className="text-xs text-nb-faint">
           Triggers that automatically raise an incident from this SOP. Manage them on the top-level <b>Triggers</b> tab.
         </p>
       </div>
       {q.isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Loading…</div>
+        <div className="flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Loading…</div>
       ) : items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-card-border px-6 py-10 text-center text-sm text-muted">
+        <div className="rounded-lg border border-dashed border-nb-line px-6 py-10 text-center text-sm text-nb-faint">
           No triggers attached to this SOP.
         </div>
       ) : (
-        <ul className="rounded-lg border border-card-border divide-y divide-card-border">
+        <ul className="rounded-lg border border-nb-line divide-y divide-nb-line">
           {items.map((t) => {
             const enabled = t.enabled !== false;
             return (
@@ -47,15 +47,15 @@ export default function SopTriggersList({ sopId }) {
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-foreground truncate">{t.name}</span>
-                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${enabled ? "bg-green-500/10 text-green-500" : "bg-hover text-muted"}`}>
+                    <span className="text-sm font-medium text-nb-ink truncate">{t.name}</span>
+                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${enabled ? "bg-green-500/10 text-green-500" : "bg-[rgba(96,165,250,.1)] text-nb-faint"}`}>
                       {enabled ? "Enabled" : "Disabled"}
                     </span>
                   </div>
-                  <div className="block text-[11px] text-muted font-mono truncate mt-0.5">
+                  <div className="block text-[11px] text-nb-faint font-mono truncate mt-0.5">
                     {t.event_source ? `${t.event_source}:` : ""}{t.event_type || "any"}
                   </div>
-                  <div className="block text-[10px] text-muted/70 truncate">
+                  <div className="block text-[10px] text-nb-faint/70 truncate">
                     fired {t.fire_count ?? 0}× · last {fmtRelative(t.last_fired_at)}
                   </div>
                 </div>

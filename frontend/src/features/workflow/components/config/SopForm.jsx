@@ -56,8 +56,8 @@ export default function SopForm({ sop, onCancel, onSaved }) {
 
   return (
     <form noValidate onSubmit={submit} className="flex flex-col flex-1 min-h-0">
-      <header className="px-6 py-5 border-b border-card-border">
-        <h2 className="text-lg font-semibold text-foreground">{isEdit ? `Edit ${sop.name}` : "Create SOP"}</h2>
+      <header className="px-6 py-5 border-b border-nb-line">
+        <h2 className="text-lg font-semibold text-nb-ink">{isEdit ? `Edit ${sop.name}` : "Create SOP"}</h2>
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field
@@ -116,17 +116,17 @@ export default function SopForm({ sop, onCancel, onSaved }) {
             placeholder='[{ "after_hours": 2, "to_priority": "high", "notify_role_ids": [] }]'
             className="font-mono text-xs"
           />
-          <p className="mt-1 text-[11px] text-muted">
+          <p className="mt-1 text-[11px] text-nb-faint">
             Array of objects: <code className="font-mono">{`{ after_hours, to_priority, notify_role_ids }`}</code>
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active
         </label>
       </div>
-      <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-card-border">
+      <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-nb-line">
         <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" variant="success" disabled={saving.isPending}>{saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create SOP"}</Button>
+        <button type="submit" disabled={saving.isPending} className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-50">{saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create SOP"}</button>
       </div>
     </form>
   );
