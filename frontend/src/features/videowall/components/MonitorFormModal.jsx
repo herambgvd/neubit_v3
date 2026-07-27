@@ -107,7 +107,7 @@ export default function MonitorFormModal({ open, monitor, decoders = [], default
               onChange={(e) => set("decoder_channel", e.target.value)}
             />
             {decoders.length === 0 && (
-              <p className="text-[11px] text-muted">No decoders registered yet — add one in the Decoders section first.</p>
+              <p className="text-[11px] text-[#9a92c8]">No decoders registered yet — add one in the Decoders section first.</p>
             )}
           </div>
         )}

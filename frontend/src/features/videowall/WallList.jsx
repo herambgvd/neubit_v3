@@ -53,7 +53,7 @@ export default function WallList() {
       />
 
       {wallsQ.isLoading ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-muted">
+        <div className="flex items-center justify-center gap-2 py-16 text-[#aec2e8]">
           <Spinner /> Loading walls…
         </div>
       ) : walls.length === 0 ? (
@@ -77,27 +77,27 @@ export default function WallList() {
             <Link
               key={w.id}
               href={`/wall/${w.id}`}
-              className="group flex flex-col rounded-lg border border-card-border bg-card p-4 transition hover:border-muted hover:bg-hover"
+              className="group flex flex-col rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] p-4 backdrop-blur-sm transition hover:border-[rgba(34,211,238,.5)] hover:bg-[rgba(34,211,238,.06)] hover:shadow-[0_0_22px_rgba(34,211,238,.18)]"
             >
               <div className="mb-3 flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[rgba(34,211,238,.35)] bg-[rgba(34,211,238,.12)] text-[#67e8f9]">
                   <Icon icon="heroicons:computer-desktop" className="text-lg" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-semibold text-foreground">{w.name}</span>
+                    <span className="truncate text-sm font-semibold text-[#f2f6ff]">{w.name}</span>
                     {!w.is_active && (
-                      <span className="rounded bg-hover px-1.5 py-0.5 text-[9px] font-medium text-muted">inactive</span>
+                      <span className="rounded border border-[rgba(160,150,245,.3)] bg-[rgba(150,180,245,.07)] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[.6px] text-[#9a92c8]">inactive</span>
                     )}
                   </div>
-                  {w.description && <p className="mt-0.5 truncate text-xs text-muted">{w.description}</p>}
+                  {w.description && <p className="mt-0.5 truncate text-xs text-[#aec2e8]">{w.description}</p>}
                 </div>
                 <Icon
                   icon="heroicons-outline:arrow-right"
-                  className="shrink-0 text-muted opacity-0 transition group-hover:opacity-100"
+                  className="shrink-0 text-[#67e8f9] opacity-0 transition group-hover:opacity-100"
                 />
               </div>
-              <div className="mt-auto flex items-center gap-3 text-[11px] text-muted">
+              <div className="mt-auto flex items-center gap-3 font-mono text-[11px] text-[#9a92c8]">
                 <span className="inline-flex items-center gap-1">
                   <Icon icon="heroicons-outline:squares-2x2" className="text-xs" />
                   {w.rows}×{w.cols} monitors

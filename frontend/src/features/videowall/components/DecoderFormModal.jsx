@@ -94,8 +94,8 @@ export default function DecoderFormModal({ open, decoder, onClose, onSubmit, bus
           onChange={(e) => set("channel_count", e.target.value)}
           hint="Number of decoder output channels"
         />
-        <label className="flex items-center justify-between rounded-md border border-card-border px-3 py-2">
-          <span className="text-sm text-foreground">Enabled</span>
+        <label className="flex items-center justify-between rounded-md border border-[rgba(160,150,245,.22)] px-3 py-2">
+          <span className="text-sm text-[#f2f6ff]">Enabled</span>
           <Toggle checked={form.is_enabled} onChange={(v) => set("is_enabled", v)} />
         </label>
       </div>

@@ -8,7 +8,7 @@ import { titleize } from "@/lib/format";
 import { INCIDENT_STATUSES, PRIORITIES, INCIDENT_SOURCES } from "../../constants";
 
 const selCls =
-  "h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted";
+  "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-none transition focus:border-[rgba(34,211,238,.5)]";
 
 export default function IncidentFilters({
   qInput,
@@ -34,20 +34,20 @@ export default function IncidentFilters({
       <label className="relative min-w-[220px] flex-1">
         <Icon
           icon="heroicons-outline:magnifying-glass"
-          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted"
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#7e93bf]"
         />
         <input
           value={qInput}
           onChange={(e) => onQInput(e.target.value)}
-          placeholder="Search incidents…"
-          className="h-9 w-full rounded-lg border border-field bg-transparent pl-8 pr-7 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
+          placeholder="camera · rule · plate…"
+          className="h-9 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] pl-8 pr-7 font-mono text-[12px] text-[#f2f6ff] placeholder:text-[#7e93bf] outline-none transition focus:border-[rgba(34,211,238,.5)]"
         />
         {qInput ? (
           <button
             type="button"
             onClick={() => onQInput("")}
             aria-label="Clear search"
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7e93bf] hover:text-[#67e8f9]"
           >
             <Icon icon="heroicons-outline:x-mark" className="text-sm" />
           </button>
@@ -91,12 +91,14 @@ export default function IncidentFilters({
       {hasFilter && (
         <button
           onClick={onClear}
-          className="inline-flex items-center gap-1 rounded-lg border border-card-border px-2.5 h-9 text-xs text-muted hover:bg-hover hover:text-foreground"
+          className="inline-flex h-9 items-center gap-1 rounded-[8px] border border-[rgba(150,180,245,.22)] px-2.5 text-xs text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         >
           <Icon icon="heroicons-outline:x-mark" className="text-sm" /> Clear
         </button>
       )}
-      <span className="ml-auto text-xs text-muted">{total} incident(s)</span>
+      <span className="ml-auto font-mono text-[11px] uppercase tracking-[1px] text-[#7e93bf]">
+        Showing <b className="text-[#f2f6ff]">{total}</b> incident(s)
+      </span>
     </div>
   );
 }

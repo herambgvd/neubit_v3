@@ -127,42 +127,42 @@ export default function BookmarkModal({
       }
     >
       <div className="space-y-4">
-        <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2 text-sm">
-          <span className="text-muted">Camera</span>{" "}
-          <span className="font-medium text-foreground">{cameraName || cameraId}</span>
+        <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2 text-sm">
+          <span className="text-[#aec2e8]">Camera</span>{" "}
+          <span className="font-medium text-[#f2f6ff]">{cameraName || cameraId}</span>
         </div>
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">Title</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">Title</span>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="What happened at this moment?"
             maxLength={255}
-            className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+            className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">At (start)</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">At (start)</span>
             <input
               type="datetime-local"
               value={startTs}
               onChange={(e) => setStartTs(e.target.value)}
-              className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
               Until (optional — range)
             </span>
             <input
               type="datetime-local"
               value={endTs}
               onChange={(e) => setEndTs(e.target.value)}
-              className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
             />
           </label>
         </div>
@@ -171,19 +171,19 @@ export default function BookmarkModal({
         )}
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">Note</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">Note</span>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={3}
             maxLength={4000}
             placeholder="Optional context…"
-            className="w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground outline-none focus:border-muted"
+            className="w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 py-2 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
             Tags (comma-separated)
           </span>
           <input
@@ -191,7 +191,7 @@ export default function BookmarkModal({
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="intrusion, review, incident-42"
-            className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+            className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
       </div>

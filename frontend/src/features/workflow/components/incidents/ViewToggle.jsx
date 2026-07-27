@@ -12,7 +12,7 @@ const OPTS = [
 
 export default function ViewToggle({ view = "board", onChange }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-md border border-card-border bg-card p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.55)] p-0.5">
       {OPTS.map((o) => {
         const active = view === o.key;
         return (
@@ -21,8 +21,10 @@ export default function ViewToggle({ view = "board", onChange }) {
             type="button"
             onClick={() => onChange?.(o.key)}
             aria-pressed={active}
-            className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
-              active ? "bg-hover text-foreground" : "text-muted hover:text-foreground"
+            className={`inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-sm font-medium transition ${
+              active
+                ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+                : "text-[#7e93bf] hover:text-[#aec2e8]"
             }`}
           >
             <Icon icon={o.icon} className="text-base" />

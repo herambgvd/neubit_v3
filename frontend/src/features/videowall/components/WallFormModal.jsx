@@ -85,11 +85,11 @@ export default function WallFormModal({ open, wall, onClose, onSubmit, busy }) {
           <Select label="Monitor rows" options={GRID_OPTS} value={String(form.rows)} onChange={(e) => set("rows", e.target.value)} />
           <Select label="Monitor columns" options={GRID_OPTS} value={String(form.cols)} onChange={(e) => set("cols", e.target.value)} />
         </div>
-        <p className="text-xs text-muted">
+        <p className="text-xs text-[#9a92c8]">
           Wall grid: {form.rows} × {form.cols} = {form.rows * form.cols} monitor slots. Add and place monitors in the Monitors tab.
         </p>
-        <label className="flex items-center justify-between rounded-md border border-card-border px-3 py-2">
-          <span className="text-sm text-foreground">Active</span>
+        <label className="flex items-center justify-between rounded-md border border-[rgba(160,150,245,.22)] px-3 py-2">
+          <span className="text-sm text-[#f2f6ff]">Active</span>
           <Toggle checked={form.is_active} onChange={(v) => set("is_active", v)} />
         </label>
       </div>

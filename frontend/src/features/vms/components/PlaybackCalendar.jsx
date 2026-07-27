@@ -55,19 +55,19 @@ export default function PlaybackCalendar({
         <button
           type="button"
           onClick={onPrevMonth}
-          className="rounded-md p-1 text-muted transition hover:bg-hover hover:text-foreground"
+          className="rounded-md p-1 text-[#aec2e8] transition hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9]"
           title="Previous month"
         >
           <Icon icon="heroicons-outline:chevron-left" className="text-sm" />
         </button>
-        <span className="text-[13px] font-medium text-foreground">
+        <span className="text-[13px] font-medium text-[#f2f6ff]">
           {MONTHS[viewMonth]} {viewYear}
         </span>
         <button
           type="button"
           onClick={onNextMonth}
           disabled={atCurrentMonth}
-          className="rounded-md p-1 text-muted transition hover:bg-hover hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+          className="rounded-md p-1 text-[#aec2e8] transition hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9] disabled:opacity-30 disabled:hover:bg-transparent"
           title="Next month"
         >
           <Icon icon="heroicons-outline:chevron-right" className="text-sm" />
@@ -75,7 +75,7 @@ export default function PlaybackCalendar({
       </div>
 
       {/* weekday row */}
-      <div className="grid grid-cols-7 gap-0.5 px-0.5 text-center text-[10px] font-medium text-muted">
+      <div className="grid grid-cols-7 gap-0.5 px-0.5 text-center font-mono text-[10px] font-medium uppercase tracking-[1px] text-[#7e93bf]">
         {WEEKDAYS.map((w, i) => (
           <span key={i} className="py-0.5">
             {w}
@@ -104,10 +104,10 @@ export default function PlaybackCalendar({
               onClick={() => onSelectDay(ds)}
               className={`relative flex h-7 items-center justify-center rounded-md text-[12px] tabular-nums transition ${
                 isSelected
-                  ? "bg-foreground font-semibold text-background"
+                  ? "bg-[rgba(34,211,238,.15)] font-semibold text-[#67e8f9] ring-1 ring-inset ring-[rgba(34,211,238,.5)]"
                   : isFuture
-                    ? "text-muted/40"
-                    : `text-foreground hover:bg-hover ${isToday ? "ring-1 ring-inset ring-card-border" : ""}`
+                    ? "text-[#7e93bf]/40"
+                    : `text-[#f2f6ff] hover:bg-[rgba(34,211,238,.08)] ${isToday ? "ring-1 ring-inset ring-[rgba(150,180,245,.22)]" : ""}`
               }`}
             >
               {d}

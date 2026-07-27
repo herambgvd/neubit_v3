@@ -100,28 +100,28 @@ export default function CameraRail({
           onDragEnd={() => onDragStateChange?.(false)}
           onClick={() => onPick?.(c)}
           title={c.status === "online" ? "Add to wall" : `${c.name} · ${c.status}`}
-          className={`group flex w-full items-center gap-2 rounded-lg py-1.5 pl-7 pr-2 text-left transition ${
-            onWall ? "bg-blue-500/[0.07] hover:bg-blue-500/10" : "hover:bg-hover"
+          className={`group flex w-full items-center gap-2 rounded-[7px] py-1.5 pl-7 pr-2 text-left transition ${
+            onWall ? "bg-[rgba(34,211,238,.08)] hover:bg-[rgba(34,211,238,.12)]" : "hover:bg-[rgba(150,180,245,.07)]"
           }`}
         >
           <Icon
             icon="heroicons-outline:bars-2"
-            className="shrink-0 cursor-grab text-sm text-muted/40 group-hover:text-muted"
+            className="shrink-0 cursor-grab text-sm text-[#7e93bf]/50 group-hover:text-[#aec2e8]"
           />
           <StatusDot status={c.status} />
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#cfd0f2] group-hover:text-[#f2f6ff]">
             {c.name}
           </span>
           {onWall ? (
             <Icon
               icon="heroicons-solid:tv"
-              className="shrink-0 text-sm text-blue-500"
+              className="shrink-0 text-sm text-[#22d3ee]"
               title="On wall"
             />
           ) : (
             <Icon
               icon="heroicons-mini:plus"
-              className="shrink-0 text-sm text-transparent group-hover:text-muted"
+              className="shrink-0 text-sm text-transparent group-hover:text-[#7e93bf]"
             />
           )}
         </button>
@@ -130,19 +130,19 @@ export default function CameraRail({
   };
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-card-border bg-card/50">
+    <aside className="flex w-64 shrink-0 flex-col border-r border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm">
       {/* Search (centered, label-free) */}
-      <div className="border-b border-card-border p-3">
+      <div className="border-b border-[rgba(150,180,245,.22)] p-3">
         <label className="relative block">
           <Icon
             icon="heroicons-outline:magnifying-glass"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#7e93bf]"
           />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search cameras…"
-            className="h-9 w-full rounded-lg border border-field bg-transparent px-8 text-center text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
+            className="h-9 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-8 text-center text-sm text-[#f2f6ff] placeholder:text-[#7e93bf] outline-none focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
       </div>
@@ -150,11 +150,11 @@ export default function CameraRail({
       {/* Camera tree — Default › Site › Camera */}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
+          <div className="flex items-center justify-center gap-2 py-10 text-xs text-[#aec2e8]">
             <Icon icon="svg-spinners:180-ring" className="text-base" /> Loading…
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-3 py-10 text-center text-xs text-muted">
+          <div className="px-3 py-10 text-center text-xs text-[#7e93bf]">
             No cameras match.
           </div>
         ) : (
@@ -163,23 +163,23 @@ export default function CameraRail({
             <button
               type="button"
               onClick={() => toggle(ROOT)}
-              className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-hover"
+              className="flex w-full items-center gap-1.5 rounded-[7px] px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
             >
               <Icon
                 icon="heroicons-mini:chevron-right"
-                className={`shrink-0 text-sm text-muted transition-transform ${rootOpen ? "rotate-90" : ""}`}
+                className={`shrink-0 text-sm text-[#7e93bf] transition-transform ${rootOpen ? "rotate-90" : ""}`}
               />
-              <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-sm text-muted" />
-              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
+              <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-sm text-[#aec2e8]" />
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#f2f6ff]">
                 Default
               </span>
-              <span className="shrink-0 rounded-full bg-hover px-1.5 text-[10px] font-semibold tabular-nums text-muted">
+              <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.1)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
                 {filtered.length}
               </span>
             </button>
 
             {rootOpen && (
-              <ul className="mt-0.5 space-y-0.5 border-l border-card-border/60 pl-1.5">
+              <ul className="mt-0.5 space-y-0.5 border-l border-[rgba(150,180,245,.15)] pl-1.5">
                 {sites.map((site) => {
                   const open = isOpen(site.id);
                   return (
@@ -187,25 +187,25 @@ export default function CameraRail({
                       <button
                         type="button"
                         onClick={() => toggle(site.id)}
-                        className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-hover"
+                        className="flex w-full items-center gap-1.5 rounded-[7px] px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
                       >
                         <Icon
                           icon="heroicons-mini:chevron-right"
-                          className={`shrink-0 text-sm text-muted transition-transform ${open ? "rotate-90" : ""}`}
+                          className={`shrink-0 text-sm text-[#7e93bf] transition-transform ${open ? "rotate-90" : ""}`}
                         />
                         <Icon
                           icon={site.id === NO_SITE ? "heroicons-outline:inbox" : "heroicons-outline:map-pin"}
-                          className="shrink-0 text-sm text-muted"
+                          className="shrink-0 text-sm text-[#aec2e8]"
                         />
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#cfd0f2]">
                           {site.name}
                         </span>
-                        <span className="shrink-0 rounded-full bg-hover px-1.5 text-[10px] font-semibold tabular-nums text-muted">
+                        <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.1)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
                           {site.cameras.length}
                         </span>
                       </button>
                       {open && (
-                        <ul className="space-y-0.5 border-l border-card-border/60 pl-1.5">
+                        <ul className="space-y-0.5 border-l border-[rgba(150,180,245,.15)] pl-1.5">
                           {site.cameras.map(renderCameraRow)}
                         </ul>
                       )}
@@ -218,7 +218,7 @@ export default function CameraRail({
         )}
       </div>
 
-      <div className="border-t border-card-border px-3 py-2 text-[10px] text-muted">
+      <div className="border-t border-[rgba(150,180,245,.22)] px-3 py-2 font-mono text-[10px] uppercase tracking-[1px] text-[#7e93bf]">
         Drag a camera onto a tile, or click to fill the next free tile.
       </div>
     </aside>

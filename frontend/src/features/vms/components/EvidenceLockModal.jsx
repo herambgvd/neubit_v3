@@ -96,28 +96,28 @@ export default function EvidenceLockModal({
           Recordings overlapping this range are protected from retention &amp; tiering
           deletion until the hold is released.
         </div>
-        <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2 text-sm">
-          <span className="text-muted">Camera</span>{" "}
-          <span className="font-medium text-foreground">{cameraName || cameraId}</span>
+        <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2 text-sm">
+          <span className="text-[#aec2e8]">Camera</span>{" "}
+          <span className="font-medium text-[#f2f6ff]">{cameraName || cameraId}</span>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">From</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">From</span>
             <input
               type="datetime-local"
               value={startTs}
               onChange={(e) => setStartTs(e.target.value)}
-              className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">To</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">To</span>
             <input
               type="datetime-local"
               value={endTs}
               onChange={(e) => setEndTs(e.target.value)}
-              className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
             />
           </label>
         </div>
@@ -126,7 +126,7 @@ export default function EvidenceLockModal({
         )}
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
             Case reference
           </span>
           <input
@@ -135,19 +135,19 @@ export default function EvidenceLockModal({
             onChange={(e) => setCaseRef(e.target.value)}
             placeholder="FIR-2026-0042"
             maxLength={255}
-            className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+            className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">Reason</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">Reason</span>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
             maxLength={2000}
             placeholder="Why is this footage being held as evidence?"
-            className="w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground outline-none focus:border-muted"
+            className="w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 py-2 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
       </div>
