@@ -18,7 +18,7 @@ import {
   useInView,
 } from "framer-motion";
 
-const ACCENT = "#10b981"; // emerald — the single restrained accent
+const ACCENT = "#22d3ee"; // teal — NeuBit command-console accent
 
 /* ------------------------------------------------------------------ */
 /* Shared live clock — one interval, shared across children via prop.  */
@@ -72,7 +72,7 @@ function VideoTile({ label, index, time }) {
         className="absolute inset-x-0 h-8"
         style={{
           background:
-            "linear-gradient(180deg, transparent, rgba(16,185,129,0.05), transparent)",
+            "linear-gradient(180deg, transparent, rgba(34,211,238,0.06), transparent)",
         }}
         animate={{ y: ["-20%", "260%"] }}
         transition={{ duration: 3 + (index % 4), repeat: Infinity, ease: "linear" }}
@@ -148,9 +148,9 @@ const EVENT_POOL = [
 ];
 
 const SEV_COLOR = {
-  amber: "#f59e0b",
-  red: "#ef4444",
-  emerald: "#10b981",
+  amber: "#fbbf24",
+  red: "#f87171",
+  emerald: "#22d3ee", // "ok/nominal" severity — teal on this console
 };
 
 function EventFeed({ time }) {
@@ -366,7 +366,7 @@ function StatusBar({ time }) {
         </div>
         <div
           className="flex items-center gap-1.5 rounded-full border px-2 py-0.5"
-          style={{ borderColor: "rgba(16,185,129,0.3)", background: "rgba(16,185,129,0.08)" }}
+          style={{ borderColor: "rgba(34,211,238,0.3)", background: "rgba(34,211,238,0.08)" }}
         >
           <motion.span
             className="h-1.5 w-1.5 rounded-full"
@@ -413,7 +413,7 @@ export default function ConsoleHero() {
         className="pointer-events-none absolute -inset-8 -z-10 opacity-60"
         style={{
           background:
-            "radial-gradient(600px 300px at 60% 40%, rgba(16,185,129,0.10), transparent 70%)",
+            "radial-gradient(600px 300px at 60% 40%, rgba(34,211,238,0.10), transparent 70%)",
         }}
       />
       <motion.div
