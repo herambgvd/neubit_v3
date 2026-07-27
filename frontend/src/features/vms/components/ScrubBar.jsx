@@ -38,7 +38,7 @@ const HOUR_MS = 3_600_000;
 // only appear if a backend ever tags a span with that trigger.
 export const TIMELINE_PALETTE = {
   Normal: { cls: "bg-blue-500/70", hex: "#3b82f6", label: "Normal" },
-  Motion: { cls: "bg-emerald-500/70", hex: "#10b981", label: "Motion" },
+  Motion: { cls: "bg-[rgba(34,211,238,.7)]", hex: "#22d3ee", label: "Motion" },
   IO: { cls: "bg-cyan-500/70", hex: "#06b6d4", label: "IO" },
   PIR: { cls: "bg-violet-500/70", hex: "#8b5cf6", label: "PIR" },
   AI: { cls: "bg-fuchsia-500/70", hex: "#d946ef", label: "AI" },
@@ -312,7 +312,7 @@ export default function ScrubBar({
         onMouseDown={onDown}
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
-        className={`relative h-14 w-full overflow-hidden rounded-lg border border-card-border bg-hover/40 ${
+        className={`relative h-14 w-full overflow-hidden rounded-[10px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.5)] ${
           disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
         }`}
       >
@@ -320,10 +320,10 @@ export default function ScrubBar({
         {hours.map((t) => (
           <div
             key={t}
-            className="absolute bottom-0 top-0 w-px bg-card-border/50"
+            className="absolute bottom-0 top-0 w-px bg-[rgba(150,180,245,.18)]"
             style={{ left: `${((t - windowStart) / span) * 100}%` }}
           >
-            <span className="absolute left-1 top-0.5 text-[9px] text-muted">
+            <span className="absolute left-1 top-0.5 font-mono text-[9px] text-[#7e93bf]">
               {new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}
             </span>
           </div>
@@ -368,7 +368,7 @@ export default function ScrubBar({
         ))}
 
         {blocks.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-[#7e93bf]">
             No coverage in this window
           </div>
         )}
@@ -488,7 +488,7 @@ export default function ScrubBar({
         {hover && !dragging && (
           <>
             <div
-              className="pointer-events-none absolute bottom-0 top-5 w-px bg-foreground/40"
+              className="pointer-events-none absolute bottom-0 top-5 w-px bg-[rgba(150,180,245,.4)]"
               style={{ left: `${hover.pct * 100}%` }}
             />
             <div
@@ -503,11 +503,11 @@ export default function ScrubBar({
         {/* Playhead */}
         {currentPct != null && (
           <div
-            className="pointer-events-none absolute bottom-0 top-0 z-10 w-0.5 bg-red-500"
+            className="pointer-events-none absolute bottom-0 top-0 z-10 w-0.5 bg-[#22d3ee] shadow-[0_0_7px_rgba(34,211,238,.8)]"
             style={{ left: `${currentPct}%` }}
           >
             <div
-              className={`absolute -top-1 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-red-500 shadow ${
+              className={`absolute -top-1 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-[#22d3ee] shadow-[0_0_6px_rgba(34,211,238,.9)] ${
                 dragging ? "scale-125" : ""
               }`}
             />

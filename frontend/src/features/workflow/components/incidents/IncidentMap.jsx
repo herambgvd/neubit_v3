@@ -304,7 +304,7 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
           </div>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -314,12 +314,12 @@ function IncidentRow({ it, onOpen, zoneName, sopName = {} }) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 rounded-lg border border-card-border bg-card px-2.5 py-2 text-left transition hover:bg-hover"
+      className="flex w-full items-center gap-2 rounded-[10px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 py-2 text-left transition hover:border-[rgba(34,211,238,.4)] hover:bg-[rgba(150,180,245,.07)]"
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium text-foreground">{incTitle(it)}</span>
-        <span className="block truncate text-[10px] text-muted">
+        <span className="block truncate text-xs font-medium text-[#f2f6ff]">{incTitle(it)}</span>
+        <span className="block truncate font-mono text-[10px] text-[#7e93bf]">
           {zoneName ? `${zoneName} · ` : ""}{fmtRelative(it.created_at)}
         </span>
       </span>
