@@ -33,11 +33,11 @@ export default function BulkActionBar({
 
   const reset = () => setMode(null);
   const inputCls =
-    "h-8 rounded-md border border-field bg-transparent px-2 text-sm text-foreground outline-none focus:border-muted";
+    "h-8 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 text-sm text-nb-ink placeholder:text-nb-faint outline-none focus:border-nb-blue";
 
   return (
-    <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-xl border border-card-border bg-card px-3 py-2 shadow-2xl">
-      <span className="inline-flex items-center gap-1.5 rounded-lg bg-hover px-2.5 py-1 text-xs font-medium text-foreground">
+    <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.85)] px-3 py-2 shadow-2xl backdrop-blur">
+      <span className="inline-flex items-center gap-1.5 rounded-lg border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] px-2.5 py-1 text-xs font-medium text-nb-blueb">
         <Icon icon="heroicons-outline:check-circle" className="text-sm" /> {count} selected
       </span>
 
@@ -63,7 +63,7 @@ export default function BulkActionBar({
             className={`${inputCls} w-24`}
             placeholder="days"
           />
-          <span className="text-xs text-muted">days</span>
+          <span className="text-xs text-nb-soft">days</span>
           <Button variant="primary" className="!px-2.5 !py-1.5 !text-xs" disabled={pending} onClick={() => onAction({ action: "retention", retention_days: Number(retention) })}>
             Apply
           </Button>
@@ -117,7 +117,7 @@ export default function BulkActionBar({
         </div>
       ) : mode === "device" ? (
         <div className="flex flex-wrap items-center gap-1">
-          <Button variant="ghost" icon="heroicons-outline:arrow-path" className="!px-2.5 !py-1.5 !text-xs !text-red-500" disabled={pending} onClick={() => onDeviceAction?.({ action: "reboot" })}>
+          <Button variant="ghost" icon="heroicons-outline:arrow-path" className="!px-2.5 !py-1.5 !text-xs !text-nb-crit" disabled={pending} onClick={() => onDeviceAction?.({ action: "reboot" })}>
             Reboot
           </Button>
           <Button variant="ghost" icon="heroicons-outline:clock" className="!px-2.5 !py-1.5 !text-xs" onClick={() => setMode("ntp")}>
@@ -155,13 +155,13 @@ export default function BulkActionBar({
               Device
             </Button>
           )}
-          <Button variant="ghost" icon="heroicons-outline:trash" className="!px-2.5 !py-1.5 !text-xs !text-red-500" disabled={pending} onClick={() => onAction({ action: "delete" })}>
+          <Button variant="ghost" icon="heroicons-outline:trash" className="!px-2.5 !py-1.5 !text-xs !text-nb-crit" disabled={pending} onClick={() => onAction({ action: "delete" })}>
             Delete
           </Button>
         </div>
       )}
 
-      <button type="button" onClick={onClear} className="ml-1 rounded p-1 text-muted hover:bg-hover hover:text-foreground" title="Clear selection">
+      <button type="button" onClick={onClear} className="ml-1 rounded p-1 text-nb-muted transition hover:bg-[rgba(96,165,250,.1)] hover:text-nb-blueb" title="Clear selection">
         <Icon icon="heroicons-outline:x-mark" className="text-sm" />
       </button>
     </div>

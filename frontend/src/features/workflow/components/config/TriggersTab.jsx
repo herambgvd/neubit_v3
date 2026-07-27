@@ -77,15 +77,15 @@ export default function TriggersTab() {
       onSearch={setSearch}
       searchPlaceholder="Search triggers…"
       action={
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => { setMode("create"); setSelectedId(null); }} className="!px-2.5 !py-1 text-xs">New</Button>
+        <button onClick={() => { setMode("create"); setSelectedId(null); }} className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"><Icon icon="heroicons-outline:plus" /> New</button>
       }
     >
       {q.isLoading ? (
-        <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Loading…</div>
+        <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Loading…</div>
       ) : filtered.length === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-muted">{search.trim() ? "No triggers match your search." : "No triggers yet."}</div>
+        <div className="px-4 py-12 text-center text-sm text-nb-faint">{search.trim() ? "No triggers match your search." : "No triggers yet."}</div>
       ) : (
-        <ul className="divide-y divide-card-border">
+        <ul className="divide-y divide-nb-line">
           {filtered.map((t) => {
             const isSel = trigId(t) === selectedId && mode !== "create";
             const enabled = t.enabled !== false;
@@ -93,21 +93,21 @@ export default function TriggersTab() {
               <li key={trigId(t)} className="relative">
                 <button
                   onClick={() => { setSelectedId(trigId(t)); setMode("view"); }}
-                  className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${isSel ? "bg-hover" : "hover:bg-hover"}`}
+                  className={`w-full flex items-start gap-3 rounded-[10px] px-4 py-3 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
                 >
-                  {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-amber-500" />}
-                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${enabled ? "bg-amber-500/10 text-amber-500" : "bg-hover text-muted"}`}>
+                  {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-warn" />}
+                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${enabled ? "bg-nb-warn/10 text-nb-warn" : "bg-[rgba(10,18,40,.65)] text-nb-faint"}`}>
                     <Icon icon="heroicons:bolt" className="text-base" />
                   </span>
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold text-foreground truncate">{t.name}</span>
-                      <span className={`shrink-0 text-[9px] rounded-full px-1.5 py-0.5 font-medium uppercase ${enabled ? "bg-green-500/10 text-green-500" : "bg-hover text-muted"}`}>{enabled ? "On" : "Off"}</span>
+                      <span className="text-sm font-semibold text-nb-ink truncate">{t.name}</span>
+                      <span className={`shrink-0 text-[9px] rounded-full px-1.5 py-0.5 font-medium uppercase ${enabled ? "bg-nb-good/10 text-nb-good" : "bg-[rgba(10,18,40,.65)] text-nb-faint"}`}>{enabled ? "On" : "Off"}</span>
                     </span>
-                    <span className="block text-[11px] text-muted font-mono truncate mt-0.5">
+                    <span className="block text-[11px] text-nb-faint font-mono truncate mt-0.5">
                       {t.event_source ? `${t.event_source}:` : ""}{t.event_type || "any"} → {sopName(t.sop_id)}
                     </span>
-                    <span className="block text-[10px] text-muted/70 truncate">fired {t.fire_count ?? 0}× · last {fmtRelative(t.last_fired_at)}</span>
+                    <span className="block text-[10px] text-nb-faint/70 truncate">fired {t.fire_count ?? 0}× · last {fmtRelative(t.last_fired_at)}</span>
                   </span>
                 </button>
               </li>
@@ -120,7 +120,7 @@ export default function TriggersTab() {
 
   return (
     <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" className="min-h-[60vh]">
-      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-0 flex flex-col">
+      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
         {mode === "create" || mode === "edit" ? (
           <div className="flex-1 min-h-0 overflow-y-auto p-5">
             <TriggerForm

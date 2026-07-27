@@ -28,15 +28,15 @@ export default function SopBuilder({ sop, onDelete, onSaved }) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
+      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-foreground truncate">{sop.name}</h2>
-          {sop.description && <p className="mt-0.5 text-xs text-muted">{sop.description}</p>}
-          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted flex-wrap">
+          <h2 className="text-lg font-semibold text-nb-ink truncate">{sop.name}</h2>
+          {sop.description && <p className="mt-0.5 text-xs text-nb-faint">{sop.description}</p>}
+          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-nb-faint flex-wrap">
             {typeof sop.version === "number" && <span className="font-mono">v{sop.version}</span>}
             <span className="rounded-full bg-blue-500/10 text-blue-500 px-2 py-0.5 capitalize">{titleize(sop.default_priority || "medium")}</span>
             {sop.sla_hours != null && <span className="rounded-full bg-blue-500/10 text-blue-500 px-2 py-0.5">SLA {sop.sla_hours}h</span>}
-            <span className={`rounded-full px-2 py-0.5 ${sop.is_active === false ? "bg-hover text-muted" : "bg-green-500/10 text-green-500"}`}>
+            <span className={`rounded-full px-2 py-0.5 ${sop.is_active === false ? "bg-[rgba(96,165,250,.1)] text-nb-faint" : "bg-green-500/10 text-green-500"}`}>
               {sop.is_active === false ? "Inactive" : "Active"}
             </span>
           </div>
@@ -44,7 +44,7 @@ export default function SopBuilder({ sop, onDelete, onSaved }) {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setTab("properties")}
-            className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover"
+            className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]"
           >
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
@@ -58,7 +58,7 @@ export default function SopBuilder({ sop, onDelete, onSaved }) {
       </header>
 
       {/* Underline sub-nav */}
-      <nav className="flex items-stretch border-b border-card-border px-2">
+      <nav className="flex items-stretch border-b border-nb-line px-2">
         {SUBTABS.map((t) => {
           const active = tab === t.key;
           return (
@@ -66,7 +66,7 @@ export default function SopBuilder({ sop, onDelete, onSaved }) {
               key={t.key}
               onClick={() => setTab(t.key)}
               className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition ${
-                active ? "border-foreground text-foreground" : "border-transparent text-muted hover:text-foreground"
+                active ? "border-foreground text-nb-ink" : "border-transparent text-nb-faint hover:text-nb-ink"
               }`}
             >
               <Icon icon={t.icon} className="text-base" />

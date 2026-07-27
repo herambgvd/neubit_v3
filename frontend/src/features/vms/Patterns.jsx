@@ -145,7 +145,10 @@ export default function Patterns() {
   const activeCount = items.filter((i) => i.is_active !== false).length;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       <div className="mb-4 shrink-0">
         <TabBar tabs={TABS} active={tab} onChange={switchTab} />
       </div>
@@ -166,14 +169,14 @@ export default function Patterns() {
                 <button
                   onClick={invalidateActive}
                   title="Refresh"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
                 >
                   <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
                 </button>
                 <button
                   onClick={openCreate}
                   title={isPatternTab ? "New pattern" : "New camera group"}
-                  className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+                  className="inline-flex h-7 items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
                 >
                   <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
                 </button>
@@ -182,38 +185,38 @@ export default function Patterns() {
           >
             <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
               <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                <span className="text-muted">{activeCount} active</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
+                <span className="text-nb-muted">{activeCount} active</span>
               </span>
               <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-muted" />
-                <span className="text-muted">{items.length - activeCount} inactive</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />
+                <span className="text-nb-muted">{items.length - activeCount} inactive</span>
               </span>
             </div>
 
             {listLoading ? (
-              <div className="px-4 py-6 text-center text-xs text-muted">
+              <div className="px-4 py-6 text-center text-xs text-nb-muted">
                 <Icon icon="svg-spinners:180-ring" className="mx-auto mb-1 text-base" />
                 Loading…
               </div>
             ) : listError ? (
-              <div className="px-4 py-6 text-center text-xs text-red-500">{apiError(listError, "Failed to load")}</div>
+              <div className="px-4 py-6 text-center text-xs text-nb-crit">{apiError(listError, "Failed to load")}</div>
             ) : filtered.length === 0 ? (
               <div className="px-4 py-12 text-center">
-                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
+                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)]">
                   <Icon
                     icon={isPatternTab ? "heroicons:squares-2x2" : "heroicons-outline:video-camera"}
-                    className="text-lg text-muted"
+                    className="text-lg text-nb-muted"
                   />
                 </div>
-                <div className="text-sm font-medium text-foreground">
+                <div className="text-sm font-medium text-nb-ink">
                   {search.trim()
                     ? "No matches"
                     : isPatternTab
                       ? "No patterns yet"
                       : "No camera groups yet"}
                 </div>
-                <div className="mt-0.5 text-xs text-muted">
+                <div className="mt-0.5 text-xs text-nb-muted">
                   {search.trim()
                     ? "Try a different keyword."
                     : isPatternTab

@@ -110,16 +110,16 @@ export default function CameraDetailView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-card-border px-4 py-2.5">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-nb-line px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-card-border bg-hover text-muted">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-nb-line bg-[rgba(96,165,250,.08)] text-nb-blueb">
             <Icon icon="heroicons-outline:video-camera" className="text-sm" />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="truncate text-sm font-semibold text-foreground">{camera.name}</h2>
+              <h2 className="truncate text-sm font-semibold text-nb-ink">{camera.name}</h2>
             </div>
-            <p className="truncate font-mono text-[10px] text-muted">
+            <p className="truncate font-mono text-[10px] text-nb-faint">
               {cameraIp}
               {camera.nvr_id ? " · NVR channel" : ""}
             </p>
@@ -129,9 +129,9 @@ export default function CameraDetailView({
           {recording && (
             <span
               title="This camera is recording"
-              className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-red-500"
+              className="inline-flex items-center gap-1 rounded-full border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.12)] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-nb-crit"
             >
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> Recording
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-nb-crit" /> Recording
             </span>
           )}
           <StatusBadge status={camera.status} />
@@ -139,7 +139,7 @@ export default function CameraDetailView({
             type="button"
             title="Snapshot"
             onClick={() => onSnapshot?.(camera)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons-outline:camera" className="text-base" />
           </button>
@@ -147,7 +147,7 @@ export default function CameraDetailView({
             type="button"
             title="Delete camera"
             onClick={() => onDelete?.(camera)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-card-border text-red-500 transition hover:bg-red-500/10"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-[rgba(248,113,113,.35)] text-nb-crit transition hover:bg-[rgba(248,113,113,.12)]"
           >
             <Icon icon="heroicons-outline:trash" className="text-base" />
           </button>
@@ -165,7 +165,7 @@ export default function CameraDetailView({
       <div className="flex min-h-0 flex-1 flex-col px-4 py-3">
         <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="mb-3 shrink-0" />
         {tab === "view" ? (
-          <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-card-border bg-black">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-nb-line bg-black">
             <LivePlayer
               cameraId={camera.id}
               cameraName={camera.name}

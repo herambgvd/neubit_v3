@@ -10,8 +10,8 @@ import { fmtLogin } from "../format";
 function InfoField({ label, children }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
-      <div className="mt-1 text-sm text-foreground">{children}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-faint">{label}</div>
+      <div className="mt-1 text-sm text-nb-ink">{children}</div>
     </div>
   );
 }
@@ -20,19 +20,21 @@ export default function UserDetail({ user, canManage, isSelf, onClose, onEdit, o
   const u = user;
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
+      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
           <Avatar src={u.avatar_url} name={u.full_name || u.email} size={48} />
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-foreground truncate">{u.full_name || u.email}</h2>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted flex-wrap">
+            <h2 className="text-xl font-semibold text-nb-ink truncate">{u.full_name || u.email}</h2>
+            <div className="mt-0.5 flex items-center gap-2 text-xs text-nb-soft flex-wrap">
               <span className="truncate">{u.email}</span>
               {u.role?.name && (
-                <span className="rounded-full bg-blue-500/10 text-blue-500 px-2 py-0.5 font-medium">{u.role.name}</span>
+                <span className="rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb px-2 py-0.5 font-medium">{u.role.name}</span>
               )}
               <span
-                className={`rounded-full px-2 py-0.5 font-medium ${
-                  u.is_active ? "bg-green-500/10 text-green-500" : "bg-hover text-muted"
+                className={`rounded-full px-2 py-0.5 font-medium border ${
+                  u.is_active
+                    ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good"
+                    : "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint"
                 }`}
               >
                 {u.is_active ? "Active" : "Disabled"}
@@ -44,14 +46,14 @@ export default function UserDetail({ user, canManage, isSelf, onClose, onEdit, o
           <button
             onClick={onClose}
             title="Close"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons-outline:x-mark" className="text-base" />
           </button>
           {canManage && (
             <button
               onClick={onEdit}
-              className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover"
+              className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
             >
               <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
             </button>
@@ -59,7 +61,7 @@ export default function UserDetail({ user, canManage, isSelf, onClose, onEdit, o
           {canManage && !isSelf && (
             <button
               onClick={onDelete}
-              className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20"
+              className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] px-2.5 py-1.5 text-xs text-nb-crit transition hover:bg-[rgba(248,113,113,.18)]"
             >
               <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
             </button>

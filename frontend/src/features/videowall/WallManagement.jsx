@@ -118,7 +118,10 @@ export default function WallManagement() {
     });
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       <MasterDetail
         fill
         className="min-h-0 flex-1"
@@ -131,7 +134,7 @@ export default function WallManagement() {
                 <Link
                   href="/wall"
                   title="Open console"
-                  className="inline-flex h-7 items-center gap-1 rounded-md border border-[rgba(160,150,245,.22)] px-2 text-[12px] font-medium text-[#f2f6ff] transition hover:bg-[rgba(150,180,245,.07)]"
+                  className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2 text-[12px] font-medium text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
                 >
                   <Icon icon="heroicons-outline:play" className="text-sm" /> Console
                 </Link>
@@ -139,7 +142,7 @@ export default function WallManagement() {
                   <button
                     onClick={() => setWallModal({})}
                     title="New wall"
-                    className="inline-flex h-7 items-center gap-1 rounded-md border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] px-2 text-[12px] font-medium text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.25)]"
+                    className="inline-flex h-7 items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
                   >
                     <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
                   </button>
@@ -148,16 +151,16 @@ export default function WallManagement() {
             }
           >
             {wallsQ.isLoading ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-xs text-[#aec2e8]">
+              <div className="flex items-center justify-center gap-2 py-10 text-xs text-nb-soft">
                 <Spinner /> Loading…
               </div>
             ) : walls.length === 0 ? (
               <div className="px-4 py-12 text-center">
-                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgba(34,211,238,.35)] bg-[rgba(34,211,238,.12)]">
-                  <Icon icon="heroicons:computer-desktop" className="text-lg text-[#67e8f9]" />
+                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)]">
+                  <Icon icon="heroicons:computer-desktop" className="text-lg text-nb-muted" />
                 </div>
-                <div className="text-sm font-medium text-[#f2f6ff]">No walls yet</div>
-                <div className="mt-0.5 text-xs text-[#aec2e8]">Click Add to create your first wall.</div>
+                <div className="text-sm font-medium text-nb-ink">No walls yet</div>
+                <div className="mt-0.5 text-xs text-nb-faint">Click Add to create your first wall.</div>
               </div>
             ) : (
               <ul className="p-2">
@@ -166,14 +169,14 @@ export default function WallManagement() {
                     <button
                       type="button"
                       onClick={() => setSelectedId(w.id)}
-                      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-                        selectedId === w.id ? "border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.1)]" : "border border-transparent hover:bg-[rgba(150,180,245,.07)]"
+                      className={`flex w-full items-center gap-2.5 rounded-[10px] border px-2.5 py-2 text-left transition ${
+                        selectedId === w.id ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
                       }`}
                     >
-                      <Icon icon="heroicons:computer-desktop" className={`text-base ${selectedId === w.id ? "text-[#67e8f9]" : "text-[#aec2e8]"}`} />
+                      <Icon icon="heroicons:computer-desktop" className={`text-base ${selectedId === w.id ? "text-nb-blueb" : "text-nb-muted"}`} />
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-sm font-medium text-[#f2f6ff]">{w.name}</span>
-                        <span className="text-[11px] text-[#aec2e8]">
+                        <span className="truncate text-sm font-medium text-nb-ink">{w.name}</span>
+                        <span className="text-[11px] text-nb-faint">
                           {w.rows}×{w.cols}
                           {!w.is_active && " · inactive"}
                         </span>
@@ -408,15 +411,15 @@ function WallDetail({
     });
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-sm">
+    <section className="flex min-h-0 flex-1 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
       {/* Detail header */}
-      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-[rgba(160,150,245,.22)] px-4 py-3">
+      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-nb-line px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="truncate text-base font-semibold text-[#f2f6ff]">{wall.name}</h2>
-            {!wall.is_active && <span className="rounded border border-[rgba(160,150,245,.3)] bg-[rgba(150,180,245,.07)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[.6px] text-[#9a92c8]">inactive</span>}
+            <h2 className="truncate text-base font-semibold text-nb-ink">{wall.name}</h2>
+            {!wall.is_active && <span className="rounded border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">inactive</span>}
           </div>
-          <p className="mt-0.5 text-xs text-[#aec2e8]">
+          <p className="mt-0.5 text-xs text-nb-soft">
             {wall.rows}×{wall.cols} monitor grid{wall.description ? ` · ${wall.description}` : ""}
           </p>
         </div>
@@ -425,7 +428,7 @@ function WallDetail({
             <Button variant="secondary" icon="heroicons-outline:pencil-square" onClick={onEditWall}>
               Edit
             </Button>
-            <Button variant="ghost" icon="heroicons-outline:trash" onClick={onDeleteWall} className="text-[#f87171] hover:text-[#fca5a5]">
+            <Button variant="ghost" icon="heroicons-outline:trash" onClick={onDeleteWall} className="text-nb-crit hover:text-red-400">
               Delete
             </Button>
           </div>
@@ -433,14 +436,14 @@ function WallDetail({
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-[rgba(160,150,245,.22)] px-3 pt-2">
+      <div className="flex gap-1 border-b border-nb-line px-3 pt-2">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setTab(t.key)}
             className={`inline-flex items-center gap-1.5 rounded-t-lg px-3 py-2 text-xs font-medium transition ${
-              tab === t.key ? "border-b-2 border-[#22d3ee] text-[#67e8f9]" : "text-[#aec2e8] hover:text-[#f2f6ff]"
+              tab === t.key ? "border-b-2 border-nb-blue text-nb-ink" : "text-nb-faint hover:text-nb-ink"
             }`}
           >
             <Icon icon={t.icon} className="text-sm" />
@@ -464,10 +467,10 @@ function WallDetail({
               const isDecoder = m.kind === "decoder";
               return (
                 <>
-                  <Icon icon={isDecoder ? "heroicons:cpu-chip" : "heroicons:computer-desktop"} className={`text-base ${isDecoder ? "text-amber-400" : "text-[#aec2e8]"}`} />
+                  <Icon icon={isDecoder ? "heroicons:cpu-chip" : "heroicons:computer-desktop"} className={`text-base ${isDecoder ? "text-nb-warn" : "text-nb-muted"}`} />
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-medium text-[#f2f6ff]">{m.name}</span>
-                    <span className="text-[11px] text-[#aec2e8]">
+                    <span className="truncate text-sm font-medium text-nb-ink">{m.name}</span>
+                    <span className="text-[11px] text-nb-faint">
                       slot {m.position} · {cap === 1 ? "single" : `${cap} cells`} · {isDecoder ? `decoder${m.decoder_id ? `: ${decoderById.get(m.decoder_id)?.name || "?"} ch${m.decoder_channel}` : ""}` : "browser"}
                     </span>
                   </span>
@@ -488,10 +491,10 @@ function WallDetail({
             canManage={canManage}
             renderRow={(p) => (
               <>
-                <Icon icon="heroicons-outline:bookmark" className="text-base text-[#aec2e8]" />
+                <Icon icon="heroicons-outline:bookmark" className="text-base text-nb-muted" />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium text-[#f2f6ff]">{p.name}</span>
-                  <span className="text-[11px] text-[#aec2e8]">
+                  <span className="truncate text-sm font-medium text-nb-ink">{p.name}</span>
+                  <span className="text-[11px] text-nb-faint">
                     {Object.values(p.state || {}).reduce((n, mon) => n + Object.values(mon || {}).filter(Boolean).length, 0)} cameras
                     {p.is_default ? " · default" : ""}
                   </span>
@@ -513,13 +516,13 @@ function WallDetail({
             onAdd={onAddTour}
             renderRow={(t) => (
               <>
-                <Icon icon="heroicons-outline:arrow-path-rounded-square" className={`text-base ${t.is_running ? "text-[#34d399]" : "text-[#aec2e8]"}`} />
+                <Icon icon="heroicons-outline:arrow-path-rounded-square" className={`text-base ${t.is_running ? "text-nb-blueb" : "text-nb-muted"}`} />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium text-[#f2f6ff]">
+                  <span className="truncate text-sm font-medium text-nb-ink">
                     {t.name}
-                    {t.is_running && <span className="ml-1.5 rounded border border-[rgba(52,211,153,.45)] bg-[rgba(52,211,153,.1)] px-1 font-mono text-[9px] font-semibold text-[#34d399]">RUNNING</span>}
+                    {t.is_running && <span className="ml-1.5 rounded border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-1 text-[9px] font-semibold text-nb-blueb">RUNNING</span>}
                   </span>
-                  <span className="text-[11px] text-[#aec2e8]">
+                  <span className="text-[11px] text-nb-faint">
                     {(t.preset_ids || []).length} presets · {t.dwell_seconds}s dwell
                   </span>
                 </span>
@@ -541,10 +544,10 @@ function WallDetail({
             onAdd={onAddDecoder}
             renderRow={(d) => (
               <>
-                <Icon icon="heroicons:cpu-chip" className={`text-base ${d.is_enabled ? "text-amber-400" : "text-[#aec2e8]"}`} />
+                <Icon icon="heroicons:cpu-chip" className={`text-base ${d.is_enabled ? "text-nb-warn" : "text-nb-muted"}`} />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium text-[#f2f6ff]">{d.name}</span>
-                  <span className="text-[11px] text-[#aec2e8]">
+                  <span className="truncate text-sm font-medium text-nb-ink">{d.name}</span>
+                  <span className="text-[11px] text-nb-faint">
                     {DECODER_BRANDS.find((b) => b.value === d.brand)?.label || d.brand} · {d.host}:{d.port} · {d.channel_count} ch
                     {d.is_enabled ? "" : " · disabled"}
                   </span>
@@ -558,7 +561,7 @@ function WallDetail({
                 type="button"
                 title="Test connection"
                 onClick={() => testDecoder(d)}
-                className="rounded p-1.5 text-[#aec2e8] transition hover:bg-[rgba(150,180,245,.07)] hover:text-[#f2f6ff]"
+                className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:signal" className="text-sm" />
               </button>
@@ -582,7 +585,7 @@ function TabList({ loading, items, emptyIcon, emptyText, addLabel, canManage, on
         </div>
       )}
       {loading ? (
-        <div className="flex items-center justify-center gap-2 py-10 text-xs text-[#aec2e8]">
+        <div className="flex items-center justify-center gap-2 py-10 text-xs text-nb-soft">
           <Spinner /> Loading…
         </div>
       ) : items.length === 0 ? (
@@ -601,18 +604,18 @@ function TabList({ loading, items, emptyIcon, emptyText, addLabel, canManage, on
       ) : (
         <ul className="space-y-1.5">
           {items.map((it) => (
-            <li key={it.id} className="flex items-center gap-2.5 rounded-lg border border-[rgba(160,150,245,.22)] bg-[rgba(6,11,26,.5)] px-3 py-2">
+            <li key={it.id} className="flex items-center gap-2.5 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2">
               {renderRow(it)}
               {canManage && (
                 <div className="flex shrink-0 items-center gap-0.5">
                   {extraAction && extraAction(it)}
                   {onEdit && (
-                    <button type="button" title="Edit" onClick={() => onEdit(it)} className="rounded p-1.5 text-[#aec2e8] transition hover:bg-[rgba(150,180,245,.07)] hover:text-[#f2f6ff]">
+                    <button type="button" title="Edit" onClick={() => onEdit(it)} className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb">
                       <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
                     </button>
                   )}
                   {onDelete && (
-                    <button type="button" title="Delete" onClick={() => onDelete(it)} className="rounded p-1.5 text-[#aec2e8] transition hover:bg-[rgba(248,113,113,.1)] hover:text-[#f87171]">
+                    <button type="button" title="Delete" onClick={() => onDelete(it)} className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit">
                       <Icon icon="heroicons-outline:trash" className="text-sm" />
                     </button>
                   )}

@@ -206,40 +206,43 @@ export default function CamerasPage() {
   };
 
   const fieldCls =
-    "h-8 w-full rounded-lg border border-field bg-transparent px-3 text-[13px] text-foreground placeholder:text-muted outline-none focus:border-muted";
+    "h-8 w-full rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 text-[13px] text-nb-ink placeholder:text-nb-faint outline-none focus:border-nb-blue";
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       {/* Two-card master/detail — fills the whole body (list actions live in the
           aside header, so no toolbar row eats vertical space). */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[24rem_1fr]">
         {/* ── Left: camera list ── */}
-        <aside className="flex min-h-0 flex-col rounded-xl border border-card-border bg-card">
-          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-card-border px-3 py-2">
+        <aside className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-nb-line px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
-              <Icon icon="heroicons-outline:video-camera" className="text-sm text-muted" />
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Cameras</span>
-              <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] font-medium text-muted">{statusCounts.total}</span>
+              <Icon icon="heroicons-outline:video-camera" className="text-sm text-nb-muted" />
+              <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Cameras</span>
+              <span className="rounded-full border border-nb-line bg-[rgba(10,18,40,.65)] px-1.5 py-0.5 font-mono text-[10px] font-medium text-nb-faint">{statusCounts.total}</span>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button
                 onClick={() => { invalidate(); healthQ.refetch(); }}
                 title="Refresh"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
               </button>
               <button
                 onClick={() => setDiscoverOpen(true)}
                 title="ONVIF discovery"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted hover:bg-hover hover:text-foreground"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:magnifying-glass" className="text-sm" />
               </button>
               <button
                 onClick={() => setOnboardOpen(true)}
                 title="Add camera"
-                className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+                className="inline-flex h-7 items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
               >
                 <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
               </button>
@@ -249,7 +252,7 @@ export default function CamerasPage() {
           {/* Filters + status counts */}
           <div className="shrink-0 space-y-1.5 px-2 pb-2 pt-2">
             <label className="relative block">
-              <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted" />
+              <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-faint" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or IP…" className={`${fieldCls} pl-8`} />
             </label>
             <div className="grid grid-cols-2 gap-1.5">
@@ -258,19 +261,19 @@ export default function CamerasPage() {
             </div>
             <Select value={siteFilter} onChange={(e) => setSiteFilter(e.target.value)} options={[{ value: "", label: "All sites" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]} className="!h-8 !py-1" />
             <div className="flex items-center gap-3 px-0.5 pt-0.5 text-[11px]">
-              <span className="flex items-center gap-1 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{statusCounts.online} online</span>
-              <span className="flex items-center gap-1 text-muted"><span className="h-1.5 w-1.5 rounded-full bg-muted" />{statusCounts.offline} offline</span>
+              <span className="flex items-center gap-1 text-nb-soft"><span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />{statusCounts.online} online</span>
+              <span className="flex items-center gap-1 text-nb-soft"><span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />{statusCounts.offline} offline</span>
             </div>
           </div>
 
           {/* List */}
           <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
             {camerasQ.isLoading ? (
-              <div className="px-2 py-8 text-center text-xs text-muted">Loading…</div>
+              <div className="px-2 py-8 text-center text-xs text-nb-faint">Loading…</div>
             ) : camerasQ.isError ? (
-              <div className="px-2 py-8 text-center text-xs text-red-500">{apiError(camerasQ.error, "Failed to load cameras")}</div>
+              <div className="px-2 py-8 text-center text-xs text-nb-crit">{apiError(camerasQ.error, "Failed to load cameras")}</div>
             ) : cameras.length === 0 ? (
-              <div className="px-2 py-8 text-center text-xs text-muted">
+              <div className="px-2 py-8 text-center text-xs text-nb-faint">
                 {search || status || brand || siteFilter ? "No cameras match." : "No cameras yet — click Add camera."}
               </div>
             ) : (
@@ -295,7 +298,7 @@ export default function CamerasPage() {
 
         {/* ── Right: inline detail ── */}
         {selected ? (
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
             <CameraDetailView
               key={selected.id}
               camera={selected}
@@ -364,8 +367,10 @@ function CameraListItem({ camera, siteName, nodeName, recording, selected, bulkC
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
-      className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition ${
-        selected ? "border-foreground bg-hover" : "border-transparent hover:bg-hover"
+      className={`flex cursor-pointer items-center gap-2 rounded-[10px] border px-2 py-1.5 transition ${
+        selected
+          ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
+          : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
       }`}
     >
       <input
@@ -373,21 +378,21 @@ function CameraListItem({ camera, siteName, nodeName, recording, selected, bulkC
         checked={bulkChecked}
         onChange={onToggleBulk}
         onClick={(e) => e.stopPropagation()}
-        className="accent-foreground"
+        className="accent-nb-blue"
         aria-label={`Select ${camera.name}`}
       />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 truncate text-[13px] font-medium text-foreground">
+        <p className="flex items-center gap-1.5 truncate text-[13px] font-medium text-nb-ink">
           <StatusDot status={camera.status} />
           <span className="truncate">{camera.name}</span>
         </p>
-        <p className="truncate font-mono text-[10px] text-muted">
+        <p className="truncate font-mono text-[10px] text-nb-faint">
           {cameraIp(camera)}
           {camera.brand ? ` · ${titleize(camera.brand)}` : ""}
           {siteName ? ` · ${siteName}` : ""}
         </p>
         {/* Recorder (media node) the camera is pinned to — "Auto" when unassigned. */}
-        <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-muted/80">
+        <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-nb-faint">
           <Icon icon="heroicons:cpu-chip" className="shrink-0 text-[10px]" />
           <span className="truncate">{nodeName || "Auto"}</span>
         </p>
@@ -395,9 +400,9 @@ function CameraListItem({ camera, siteName, nodeName, recording, selected, bulkC
       {recording && (
         <span
           title="Recording"
-          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-red-500"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.12)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-nb-crit"
         >
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> REC
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-nb-crit" /> REC
         </span>
       )}
     </div>

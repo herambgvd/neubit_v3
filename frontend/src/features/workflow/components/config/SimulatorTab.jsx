@@ -117,21 +117,21 @@ export default function SimulatorTab() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* ── Composer ─────────────────────────────────────────────── */}
-      <form onSubmit={submit} className="rounded-xl border border-card-border bg-card">
-        <header className="px-5 py-4 border-b border-card-border">
-          <h3 className="text-sm font-semibold text-foreground">Event composer</h3>
-          <p className="text-xs text-muted">Compose a synthetic event and run it through trigger + format matching.</p>
+      <form onSubmit={submit} className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+        <header className="px-5 py-4 border-b border-nb-line">
+          <h3 className="text-sm font-semibold text-nb-ink">Event composer</h3>
+          <p className="text-xs text-nb-faint">Compose a synthetic event and run it through trigger + format matching.</p>
         </header>
         <div className="px-5 py-4 space-y-4">
           <div>
-            <label className="text-xs font-medium uppercase tracking-wide text-muted">Presets</label>
+            <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Presets</label>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {PRESETS.map((p) => (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => applyPreset(p)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1.5 text-xs font-medium text-foreground transition hover:bg-hover"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs font-medium text-nb-soft transition hover:border-nb-blue hover:text-nb-blueb"
                 >
                   <Icon icon={p.icon} className="text-sm" /> {p.label}
                 </button>
@@ -177,11 +177,11 @@ export default function SimulatorTab() {
             error={errors.payload}
           />
 
-          <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-card-border bg-hover/40" : "border-amber-500/40 bg-amber-500/10"}`}>
+          <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-nb-line bg-[rgba(6,11,26,.5)]" : "border-nb-warn/40 bg-nb-warn/10"}`}>
             <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className="mt-0.5" />
             <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground">Dry run</span>
-              <span className="block text-[11px] text-muted">
+              <span className="block text-sm font-medium text-nb-ink">Dry run</span>
+              <span className="block text-[11px] text-nb-faint">
                 {dryRun
                   ? "Match only — no incident is created."
                   : "Live — a matching format/trigger will create a REAL incident."}
@@ -190,19 +190,20 @@ export default function SimulatorTab() {
           </label>
 
           <div className="flex items-center justify-end">
-            <Button type="submit" disabled={simulate.isPending} icon={dryRun ? "heroicons-outline:beaker" : "heroicons-outline:bolt"} variant={dryRun ? "primary" : "danger"} className="!px-3.5 !py-2 text-sm">
+            <button type="submit" disabled={simulate.isPending} className={`inline-flex items-center gap-1.5 rounded-[9px] border px-3.5 py-2 text-sm tracking-[.4px] transition disabled:opacity-50 ${dryRun ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] text-nb-tealb hover:shadow-[0_0_10px_rgba(34,211,238,.25)]" : "border-nb-crit/50 bg-nb-crit/10 text-nb-crit hover:shadow-[0_0_10px_rgba(248,113,113,.25)]"}`}>
+              <Icon icon={dryRun ? "heroicons-outline:beaker" : "heroicons-outline:bolt"} className="text-sm" />
               {simulate.isPending ? "Simulating…" : dryRun ? "Simulate" : "Run live"}
-            </Button>
+            </button>
           </div>
         </div>
       </form>
 
       {/* ── Result ───────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-card-border bg-card">
-        <header className="px-5 py-4 border-b border-card-border flex items-center justify-between">
+      <div className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+        <header className="px-5 py-4 border-b border-nb-line flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-foreground">Result</h3>
-            <p className="text-xs text-muted">What the event matched.</p>
+            <h3 className="text-sm font-semibold text-nb-ink">Result</h3>
+            <p className="text-xs text-nb-faint">What the event matched.</p>
           </div>
           {result && (
             <Badge color={result.dry_run ? "blue" : "amber"}>{result.dry_run ? "Dry run" : "Live"}</Badge>
@@ -210,10 +211,10 @@ export default function SimulatorTab() {
         </header>
         <div className="px-5 py-4">
           {simulate.isPending ? (
-            <div className="text-sm text-muted flex items-center gap-2"><Spinner className="!h-4 !w-4" /> Simulating…</div>
+            <div className="text-sm text-nb-faint flex items-center gap-2"><Spinner className="!h-4 !w-4" /> Simulating…</div>
           ) : !result ? (
-            <div className="py-10 text-center text-sm text-muted">
-              <Icon icon="heroicons-outline:beaker" className="mx-auto mb-2 text-2xl text-muted/60" />
+            <div className="py-10 text-center text-sm text-nb-faint">
+              <Icon icon="heroicons-outline:beaker" className="mx-auto mb-2 text-2xl text-nb-faint/60" />
               Run a simulation to see matches.
             </div>
           ) : (
@@ -237,29 +238,29 @@ function ResultPanel({ result }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted font-mono">
-        <span className="rounded bg-hover px-1.5 py-0.5">{result.event_type || "—"}</span>
-        {result.alert_code && <span className="rounded bg-hover px-1.5 py-0.5">code: {result.alert_code}</span>}
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-nb-faint font-mono">
+        <span className="rounded bg-[rgba(96,165,250,.1)] px-1.5 py-0.5">{result.event_type || "—"}</span>
+        {result.alert_code && <span className="rounded bg-[rgba(96,165,250,.1)] px-1.5 py-0.5">code: {result.alert_code}</span>}
       </div>
 
       {/* Matched triggers */}
       <section>
-        <h4 className="text-xs font-medium uppercase tracking-wide text-muted mb-1.5">Matched triggers ({triggers.length})</h4>
+        <h4 className="text-xs font-medium uppercase tracking-wide text-nb-faint mb-1.5">Matched triggers ({triggers.length})</h4>
         {triggers.length === 0 ? (
-          <p className="text-[11px] text-muted/70">No triggers matched.</p>
+          <p className="text-[11px] text-nb-faint/70">No triggers matched.</p>
         ) : (
-          <ul className="rounded-lg border border-card-border divide-y divide-card-border">
+          <ul className="rounded-lg border border-nb-line divide-y divide-nb-line">
             {triggers.map((t, i) => (
               <li key={t.trigger_id || i} className="flex items-center gap-2 px-3 py-2">
                 <Icon icon="heroicons:bolt" className="text-amber-500 text-sm shrink-0" />
                 <span className="flex-1 min-w-0">
-                  <span className="block text-sm text-foreground truncate">{t.name || t.trigger_id}</span>
-                  {t.sop_id && <span className="block text-[11px] text-muted font-mono truncate">→ SOP {t.sop_id}</span>}
+                  <span className="block text-sm text-nb-ink truncate">{t.name || t.trigger_id}</span>
+                  {t.sop_id && <span className="block text-[11px] text-nb-faint font-mono truncate">→ SOP {t.sop_id}</span>}
                 </span>
                 {t.would_create ? (
                   <Icon icon="heroicons-solid:check-circle" className="text-green-500 text-base shrink-0" title="Would create" />
                 ) : (
-                  <Icon icon="heroicons-outline:minus-circle" className="text-muted text-base shrink-0" title="Would not create" />
+                  <Icon icon="heroicons-outline:minus-circle" className="text-nb-faint text-base shrink-0" title="Would not create" />
                 )}
               </li>
             ))}
@@ -269,25 +270,25 @@ function ResultPanel({ result }) {
 
       {/* Matched format */}
       <section>
-        <h4 className="text-xs font-medium uppercase tracking-wide text-muted mb-1.5">Matched format</h4>
+        <h4 className="text-xs font-medium uppercase tracking-wide text-nb-faint mb-1.5">Matched format</h4>
         {!fmt ? (
-          <p className="text-[11px] text-muted/70">No alert format matched.</p>
+          <p className="text-[11px] text-nb-faint/70">No alert format matched.</p>
         ) : (
-          <div className="rounded-lg border border-card-border px-3 py-2.5 flex items-center gap-2">
+          <div className="rounded-lg border border-nb-line px-3 py-2.5 flex items-center gap-2">
             <Icon icon="heroicons-outline:swatch" className="text-blue-500 text-base shrink-0" />
             <span className="flex-1 min-w-0">
               <span className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-foreground">{fmt.name || fmt.alert_code}</span>
+                <span className="text-sm text-nb-ink">{fmt.name || fmt.alert_code}</span>
                 {fmt.sop_mode && <Badge color="blue">{fmt.sop_mode}</Badge>}
               </span>
-              <span className="block text-[11px] text-muted font-mono truncate">
+              <span className="block text-[11px] text-nb-faint font-mono truncate">
                 {fmt.alert_code}{fmt.sop_id ? ` → SOP ${fmt.sop_id}` : ""}
               </span>
             </span>
             {fmt.would_create ? (
               <Icon icon="heroicons-solid:check-circle" className="text-green-500 text-base shrink-0" title="Would create" />
             ) : (
-              <Icon icon="heroicons-outline:minus-circle" className="text-muted text-base shrink-0" title="Would not create" />
+              <Icon icon="heroicons-outline:minus-circle" className="text-nb-faint text-base shrink-0" title="Would not create" />
             )}
           </div>
         )}
@@ -296,14 +297,14 @@ function ResultPanel({ result }) {
       {/* Skipped */}
       {skipped.length > 0 && (
         <section>
-          <h4 className="text-xs font-medium uppercase tracking-wide text-muted mb-1.5">Skipped ({skipped.length})</h4>
-          <ul className="rounded-lg border border-card-border divide-y divide-card-border">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-nb-faint mb-1.5">Skipped ({skipped.length})</h4>
+          <ul className="rounded-lg border border-nb-line divide-y divide-nb-line">
             {skipped.map((s, i) => (
               <li key={i} className="flex items-start gap-2 px-3 py-2">
-                <Icon icon="heroicons-outline:no-symbol" className="text-muted text-sm shrink-0 mt-0.5" />
+                <Icon icon="heroicons-outline:no-symbol" className="text-nb-faint text-sm shrink-0 mt-0.5" />
                 <span className="min-w-0">
-                  <span className="block text-[11px] text-muted font-mono truncate">{s.trigger_id || s.format_id || "—"}</span>
-                  <span className="block text-xs text-foreground">{s.reason || "Skipped"}</span>
+                  <span className="block text-[11px] text-nb-faint font-mono truncate">{s.trigger_id || s.format_id || "—"}</span>
+                  <span className="block text-xs text-nb-ink">{s.reason || "Skipped"}</span>
                 </span>
               </li>
             ))}
@@ -318,7 +319,7 @@ function ResultPanel({ result }) {
           <ul className="space-y-1">
             {createdIds.map((id) => (
               <li key={id}>
-                <Link href={`/events/${id}`} className="inline-flex items-center gap-1.5 text-sm text-foreground hover:underline font-mono">
+                <Link href={`/events/${id}`} className="inline-flex items-center gap-1.5 text-sm text-nb-ink hover:underline font-mono">
                   <Icon icon="heroicons-outline:arrow-top-right-on-square" className="text-sm" /> {id}
                 </Link>
               </li>

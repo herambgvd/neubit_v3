@@ -30,10 +30,10 @@ export default function EditUserModal({ editing, onClose, form, setForm, roleOpt
           options={roleOptions}
           onChange={(e) => setForm({ ...form, role_id: e.target.value })}
         />
-        <div className="flex items-center justify-between rounded-lg border border-card-border px-3 py-2.5">
+        <div className="flex items-center justify-between rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5">
           <div>
-            <div className="text-sm font-medium text-foreground">Active</div>
-            <div className="text-xs text-muted">Disabled users cannot sign in.</div>
+            <div className="text-sm font-medium text-nb-ink">Active</div>
+            <div className="text-xs text-nb-faint">Disabled users cannot sign in.</div>
           </div>
           <Toggle
             checked={form.is_active}

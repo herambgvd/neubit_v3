@@ -123,23 +123,23 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
           />
           <label className="flex items-center gap-2 pb-2 text-sm">
             <Toggle checked={isActive} onChange={setIsActive} />
-            <span className="text-muted">Active</span>
+            <span className="text-nb-soft">Active</span>
           </label>
         </div>
 
         <div>
           <div className="flex items-center justify-between pb-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
+            <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">
               Camera groups in rotation
             </span>
-            <span className="text-[11px] text-muted">{groupIds.length} selected</span>
+            <span className="font-mono text-[11px] text-nb-faint">{groupIds.length} selected</span>
           </div>
           {groups.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-card-border px-3 py-6 text-center text-xs text-muted">
+            <div className="rounded-lg border border-dashed border-nb-line px-3 py-6 text-center text-xs text-nb-faint">
               No camera groups yet — create one from the Camera Groups tab first.
             </div>
           ) : (
-            <ul className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-card-border p-1.5">
+            <ul className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-nb-line p-1.5">
               {groups.map((g) => {
                 const checked = groupIds.includes(g.id);
                 return (
@@ -147,27 +147,27 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
                     <button
                       type="button"
                       onClick={() => toggleGroup(g.id)}
-                      className={`flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left transition ${
+                      className={`flex w-full items-center gap-2.5 rounded-[10px] border px-2.5 py-2 text-left transition ${
                         checked
-                          ? "border-blue-500/50 bg-blue-500/10"
-                          : "border-transparent hover:bg-hover"
+                          ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
+                          : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
                       }`}
                     >
                       <span
                         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                          checked ? "border-blue-500 bg-blue-500 text-white" : "border-card-border"
+                          checked ? "border-nb-blue bg-nb-blue text-white" : "border-nb-line"
                         }`}
                       >
                         {checked && <Icon icon="heroicons-mini:check" className="text-[11px]" />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-foreground">{g.name}</span>
-                        <span className="block text-[11px] text-muted">
+                        <span className="block truncate text-sm font-medium text-nb-ink">{g.name}</span>
+                        <span className="block font-mono text-[11px] text-nb-faint">
                           {(g.camera_ids || []).length} cameras · {getGroupLayout(g.layout).label}
                         </span>
                       </span>
                       {g.is_active === false && (
-                        <span className="shrink-0 rounded-full bg-hover px-1.5 py-0.5 text-[9px] font-semibold uppercase text-muted">
+                        <span className="shrink-0 rounded-full border border-nb-line px-1.5 py-0.5 text-[9px] font-semibold uppercase text-nb-faint">
                           Inactive
                         </span>
                       )}
@@ -177,7 +177,7 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
               })}
             </ul>
           )}
-          <p className="mt-1.5 text-[11px] text-muted/70">
+          <p className="mt-1.5 text-[11px] text-nb-faint">
             The wall cycles through these groups in order, dwelling {Number(seconds) || 0}s on each.
           </p>
         </div>

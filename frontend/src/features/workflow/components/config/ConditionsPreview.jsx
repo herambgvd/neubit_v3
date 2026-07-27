@@ -42,11 +42,11 @@ export default function ConditionsPreview({ conditions }) {
   );
 
   return (
-    <div className="rounded-lg border border-card-border bg-card">
+    <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-muted hover:text-foreground"
+        className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-nb-faint hover:text-nb-ink"
       >
         <span className="inline-flex items-center gap-1.5">
           <Icon icon="heroicons-outline:beaker" className="text-sm" /> Preview against sample payload
@@ -54,40 +54,40 @@ export default function ConditionsPreview({ conditions }) {
         <Icon icon={open ? "heroicons-outline:chevron-up" : "heroicons-outline:chevron-down"} className="text-sm" />
       </button>
       {open && (
-        <div className="grid grid-cols-1 gap-3 border-t border-card-border p-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 border-t border-nb-line p-3 md:grid-cols-2">
           <div>
-            <label className="text-[11px] font-medium uppercase tracking-wide text-muted">Sample payload (JSON)</label>
+            <label className="text-[11px] font-medium uppercase tracking-wide text-nb-faint">Sample payload (JSON)</label>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               spellCheck={false}
-              className="mt-1 h-44 w-full rounded-lg border border-field bg-transparent px-2.5 py-2 text-xs font-mono text-foreground outline-none focus:border-muted"
+              className="mt-1 h-44 w-full rounded-lg border border-field bg-transparent px-2.5 py-2 text-xs font-mono text-nb-ink outline-none focus:border-muted"
             />
             {parsed.err && <p className="mt-1 text-[11px] text-red-500">JSON error: {parsed.err}</p>}
           </div>
           <div className="min-w-0">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-muted">Result</label>
+            <label className="text-[11px] font-medium uppercase tracking-wide text-nb-faint">Result</label>
             {!result ? (
-              <p className="mt-2 text-[11px] text-muted/70">Fix the JSON to preview.</p>
+              <p className="mt-2 text-[11px] text-nb-faint/70">Fix the JSON to preview.</p>
             ) : (
               <div className="mt-1 space-y-2">
                 <div className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${result.allMatch ? "border-green-500/40 bg-green-500/10 text-green-500" : "border-red-500/40 bg-red-500/10 text-red-500"}`}>
                   {result.allMatch ? "Matched — all conditions pass." : "No match — a condition failed."}
                 </div>
                 {result.rows.length === 0 ? (
-                  <p className="text-[11px] text-muted/70">No conditions — fires on every matching event type.</p>
+                  <p className="text-[11px] text-nb-faint/70">No conditions — fires on every matching event type.</p>
                 ) : (
                   <ul className="space-y-1.5">
                     {result.rows.map((r, i) => (
-                      <li key={i} className="flex items-start gap-2 rounded-md border border-card-border bg-hover/40 px-2 py-1.5">
+                      <li key={i} className="flex items-start gap-2 rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-2 py-1.5">
                         <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${r.matched ? "bg-green-500/15 text-green-500" : "bg-red-500/15 text-red-500"}`}>
                           <Icon icon={r.matched ? "heroicons-outline:check" : "heroicons-outline:x-mark"} className="text-[10px]" />
                         </span>
                         <span className="min-w-0 text-[11px]">
-                          <span className="block truncate font-mono text-foreground">
+                          <span className="block truncate font-mono text-nb-ink">
                             {r.condition.path} {OP_LABEL[r.condition.op] || r.condition.op} {stringifyValue(r.condition.op, r.condition.value)}
                           </span>
-                          <span className="mt-0.5 block truncate text-[10px] text-muted">
+                          <span className="mt-0.5 block truncate text-[10px] text-nb-faint">
                             actual: <span className="font-mono">{r.actual === undefined ? "undefined" : JSON.stringify(r.actual)}</span>
                           </span>
                         </span>

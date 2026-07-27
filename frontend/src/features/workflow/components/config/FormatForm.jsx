@@ -60,8 +60,8 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-card-border bg-hover/40 p-4 space-y-4">
-      <h4 className="text-sm font-semibold text-foreground">{isEdit ? `Edit ${format.name}` : "Add alert format"}</h4>
+    <form onSubmit={submit} className="rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-4 space-y-4">
+      <h4 className="text-sm font-semibold text-nb-ink">{isEdit ? `Edit ${format.name}` : "Add alert format"}</h4>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field
@@ -122,7 +122,7 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
 
       {/* Colour — swatches + custom picker (compact, below Field's control API) */}
       <div>
-        <label className="text-xs font-medium uppercase tracking-wide text-muted">Colour</label>
+        <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Colour</label>
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           {SWATCHES.map((c) => (
             <button
@@ -130,22 +130,22 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
               type="button"
               onClick={() => setColorCode(c)}
               title={c}
-              className={`h-7 w-7 rounded-md border transition ${colorCode.toLowerCase() === c ? "ring-2 ring-offset-1 ring-offset-card ring-foreground border-transparent" : "border-card-border"}`}
+              className={`h-7 w-7 rounded-md border transition ${colorCode.toLowerCase() === c ? "ring-2 ring-offset-1 ring-offset-card ring-foreground border-transparent" : "border-nb-line"}`}
               style={{ background: c }}
             />
           ))}
-          <span className="mx-1 h-5 w-px bg-card-border" />
+          <span className="mx-1 h-5 w-px bg-[rgba(8,15,34,.5)]-border" />
           <input
             type="color"
             value={/^#[0-9a-fA-F]{6}$/.test(colorCode) ? colorCode : "#ef4444"}
             onChange={(e) => setColorCode(e.target.value)}
-            className="h-7 w-9 cursor-pointer rounded border border-card-border bg-transparent p-0.5"
+            className="h-7 w-9 cursor-pointer rounded border border-nb-line bg-transparent p-0.5"
             title="Custom colour"
           />
           <input
             value={colorCode}
             onChange={(e) => setColorCode(e.target.value)}
-            className="h-8 w-28 rounded-lg border border-field bg-transparent px-2.5 text-sm font-mono text-foreground outline-none focus:border-muted"
+            className="h-8 w-28 rounded-lg border border-field bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-none focus:border-muted"
             placeholder="#ef4444"
           />
         </div>
@@ -172,10 +172,10 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
       </div>
 
       <div className="flex flex-wrap items-center gap-5">
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
           <input type="checkbox" checked={alertSound} onChange={(e) => setAlertSound(e.target.checked)} /> Play alert sound
         </label>
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active
         </label>
       </div>

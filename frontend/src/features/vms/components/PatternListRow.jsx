@@ -33,24 +33,26 @@ export default function PatternListRow({
           onSelect(item);
         }
       }}
-      className={`group relative flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 outline-none transition ${
-        isSelected ? "bg-blue-500/10" : "hover:bg-hover"
+      className={`group relative flex cursor-pointer items-center gap-3 rounded-[10px] border px-2.5 py-2.5 outline-none transition ${
+        isSelected
+          ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
+          : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
       }`}
     >
-      {isSelected && <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-blue-500" />}
+      {isSelected && <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-nb-blue" />}
       <div className="relative shrink-0">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-hover text-muted">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-blueb">
           <Icon icon={icon} className="text-base" />
         </span>
         <span
-          className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-card ${
-            active ? "bg-emerald-500" : "bg-muted"
+          className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-[#0c1530] ${
+            active ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"
           }`}
         />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">{item.name}</div>
-        <div className="truncate text-xs text-muted">{meta}</div>
+        <div className="truncate text-sm font-medium text-nb-ink">{item.name}</div>
+        <div className="truncate text-xs font-mono text-nb-faint">{meta}</div>
       </div>
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
         <RowBtn
@@ -89,8 +91,8 @@ function RowBtn({ icon, title, onClick, danger }) {
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded text-muted transition ${
-        danger ? "hover:bg-red-500/10 hover:text-red-500" : "hover:bg-hover hover:text-foreground"
+      className={`inline-flex h-7 w-7 items-center justify-center rounded text-nb-muted transition ${
+        danger ? "hover:bg-[rgba(248,113,113,.1)] hover:text-nb-crit" : "hover:bg-[rgba(96,165,250,.1)] hover:text-nb-blueb"
       }`}
     >
       <Icon icon={icon} className="text-sm" />

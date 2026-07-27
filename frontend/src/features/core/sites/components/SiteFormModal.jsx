@@ -135,15 +135,15 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onCancel} />
-      <div className="relative w-full max-w-3xl rounded-xl bg-card border border-card-border shadow-2xl animate-modal-in flex flex-col max-h-[85vh]">
-        <div className="flex items-center justify-between border-b border-card-border px-5 py-4 shrink-0">
+      <div className="relative w-full max-w-3xl rounded-[14px] bg-[#0e1734] border border-nb-line shadow-2xl animate-modal-in flex flex-col max-h-[85vh] text-nb-ink">
+        <div className="flex items-center justify-between border-b border-nb-line px-5 py-4 shrink-0">
           <div>
-            <h3 className="text-base font-semibold text-foreground">{isEdit ? `Edit ${site?.name || "site"}` : "Create site"}</h3>
-            <p className="text-xs text-muted mt-0.5">
+            <h3 className="text-base font-semibold text-nb-ink">{isEdit ? `Edit ${site?.name || "site"}` : "Create site"}</h3>
+            <p className="text-xs text-nb-soft mt-0.5">
               {isEdit ? "Update location details and contact info." : "Add a new physical location."}
             </p>
           </div>
-          <button onClick={onCancel} className="text-muted hover:text-foreground transition">
+          <button onClick={onCancel} className="text-nb-muted hover:text-nb-blueb transition">
             <Icon icon="heroicons-outline:x-mark" className="text-xl" />
           </button>
         </div>
@@ -161,32 +161,32 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
                       if (errors.name) setErrors({});
                     }}
                     placeholder="Enter site name"
-                    className={`${fieldClass} ${errors.name ? "!border-red-500" : ""}`}
+                    className={`${fieldClass} ${errors.name ? "!border-nb-crit" : ""}`}
                   />
-                  {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
+                  {errors.name && <p className="mt-1 text-xs text-nb-crit">{errors.name}</p>}
                 </div>
                 <div>
                   <FieldLabel>Location code</FieldLabel>
                   <div className="mt-1 flex gap-2">
-                    <input value={locationCode} onChange={(e) => setLocationCode(e.target.value)} placeholder="Enter location code" className="h-10 flex-1 rounded-lg border border-field bg-transparent px-3 text-sm font-mono text-foreground outline-none focus:border-muted" />
+                    <input value={locationCode} onChange={(e) => setLocationCode(e.target.value)} placeholder="Enter location code" className="h-10 flex-1 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 text-sm font-mono text-nb-ink outline-none focus:border-nb-blue" />
                     {!isEdit && (
-                      <button type="button" onClick={() => setLocationCode(generateLocationCode(siteType))} className="inline-flex items-center justify-center rounded-lg border border-card-border px-3 text-xs font-medium text-muted hover:bg-hover">
+                      <button type="button" onClick={() => setLocationCode(generateLocationCode(siteType))} className="inline-flex items-center justify-center rounded-[9px] border border-nb-line bg-[rgba(10,18,40,.65)] px-3 text-xs font-medium text-nb-muted hover:border-nb-blue hover:text-nb-blueb">
                         Regenerate
                       </button>
                     )}
                   </div>
-                  {!isEdit && <p className="mt-1 text-[11px] text-muted/70">Auto-generated from site type. Edit or regenerate as you like.</p>}
+                  {!isEdit && <p className="mt-1 text-[11px] text-nb-faint">Auto-generated from site type. Edit or regenerate as you like.</p>}
                 </div>
                 <FSelect label="Site type" value={siteType} onChange={setSiteType}>
-                  {SITE_TYPES.map((t) => (<option key={t} value={t} className="bg-card">{capitalize(t)}</option>))}
+                  {SITE_TYPES.map((t) => (<option key={t} value={t} className="bg-[#0e1734]">{capitalize(t)}</option>))}
                 </FSelect>
                 <FSelect label="Threat level" value={threatLevel} onChange={setThreatLevel}>
-                  {THREAT_LEVELS.map((t) => (<option key={t} value={t} className="bg-card">{capitalize(t)}</option>))}
+                  {THREAT_LEVELS.map((t) => (<option key={t} value={t} className="bg-[#0e1734]">{capitalize(t)}</option>))}
                 </FSelect>
                 <FSelect label="Parent site" value={parentId} onChange={setParentId} full>
-                  <option value="" className="bg-card">No parent</option>
+                  <option value="" className="bg-[#0e1734]">No parent</option>
                   {parentChoices.map((s) => (
-                    <option key={s.site_id} value={s.site_id} className="bg-card">
+                    <option key={s.site_id} value={s.site_id} className="bg-[#0e1734]">
                       {s.name}{s.location_code ? ` · ${s.location_code}` : ""}
                     </option>
                   ))}
@@ -208,7 +208,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
                 <FInput label="Latitude" type="number" step="any" value={latitude} onChange={setLatitude} placeholder="Latitude" />
                 <FInput label="Longitude" type="number" step="any" value={longitude} onChange={setLongitude} placeholder="Longitude" />
               </div>
-              <p className="mt-2 text-[11px] text-muted/70">
+              <p className="mt-2 text-[11px] text-nb-faint">
                 Sites with coordinates appear as pins on the <b>Map view</b>.
               </p>
             </Section>
@@ -219,8 +219,8 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
                 <FInput label="Email" type="email" value={emailAddress} onChange={setEmailAddress} placeholder="Contact email address" />
                 <div>
                   <FieldLabel>Site image</FieldLabel>
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={onPickImage} className="mt-1 block w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground" />
-                  <p className="mt-1 text-[11px] text-muted">Allowed: PNG, JPEG, WEBP, SVG (max 8 MiB)</p>
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={onPickImage} className="mt-1 block w-full rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2 text-sm text-nb-ink" />
+                  <p className="mt-1 text-[11px] text-nb-faint">Allowed: PNG, JPEG, WEBP, SVG (max 8 MiB)</p>
                   <div className="mt-3">
                     <ImagePreviewCard
                       title="Preview"
@@ -239,11 +239,15 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
               </div>
             </Section>
           </div>
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-card-border shrink-0">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-nb-line shrink-0">
             <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-            <Button type="submit" variant="success" disabled={saving.isPending}>
+            <button
+              type="submit"
+              disabled={saving.isPending}
+              className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-50"
+            >
               {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create site"}
-            </Button>
+            </button>
           </div>
         </form>
       </div>
