@@ -6,8 +6,8 @@ import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import AuthShell from "@/components/AuthShell";
 
+import NeubitAuthShell from "./components/NeubitAuthShell";
 import { LoginForm } from "./components/LoginForm";
 import { MfaForm } from "./components/MfaForm";
 
@@ -67,16 +67,7 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthShell
-      productName="Neubit"
-      eyebrow={mfaToken ? "Two-Factor" : "Sign In"}
-      title={mfaToken ? "Verify it's you" : "Sign in to Neubit"}
-      subtitle={
-        mfaToken
-          ? "Enter the 6-digit code from your authenticator app to finish signing in."
-          : "Use your operator credentials to access the console."
-      }
-    >
+    <NeubitAuthShell>
       {mfaToken ? (
         <MfaForm
           code={code}
@@ -97,6 +88,6 @@ export default function LoginPage() {
           onSubmit={onSubmit}
         />
       )}
-    </AuthShell>
+    </NeubitAuthShell>
   );
 }
