@@ -97,6 +97,10 @@ export default function AppLayout({ children }) {
   // fills via h-full. Every other page keeps the padded, scrollable <main>.
   const immersiveWall = pathname === "/streaming";
 
+  // The NeuBit HOME metro launcher is a full-bleed, single-viewport surface (its own
+  // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.
+  const home = pathname === "/home";
+
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
   // becomes a bounded, overflow-hidden pane (keeps padding) that the page fills via
@@ -121,7 +125,7 @@ export default function AppLayout({ children }) {
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 
-  const mainClass = immersiveWall
+  const mainClass = immersiveWall || home
     ? "flex-1 min-h-0 w-full overflow-hidden"
     : contained
       ? "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3"

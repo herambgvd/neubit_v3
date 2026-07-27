@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
 import { Avatar } from "@/components/ui/kit";
+import MenuNavigator from "@/components/shell/MenuNavigator";
 import {
   menuItems,
   CONFIG_ENTRY,
@@ -310,7 +311,9 @@ export default function Header() {
         <div className="h-14 flex items-center gap-4">
           {/* Left / centre / right thirds so the nav sits dead-centre of the header:
               logo and account take equal flex, the nav is centred between them. */}
-          <div className="flex flex-1 min-w-0 items-center">
+          <div className="flex flex-1 min-w-0 items-center gap-3">
+            {/* Global ⊞ MENU navigator — jump to any section from any screen (Round-26a). */}
+            <MenuNavigator />
             <Brand />
           </div>
 

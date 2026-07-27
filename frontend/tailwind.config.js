@@ -31,6 +31,30 @@ module.exports = {
     },
     extend: {
       colors: {
+        // NeuBit command-console palette (Phase 0 VMS reskin). Navy/teal/violet tokens
+        // made available app-wide so the shell, HOME launcher, and (later) inner screens
+        // can adopt the NeuBit theme without re-deriving hexes. Mirrors the login shell.
+        nb: {
+          bg: "#0c1530",
+          bg2: "#0a1024",
+          panel: "#0e1734",
+          field: "#0b1228",
+          ink: "#f2f6ff",
+          muted: "#cfd0f2",
+          soft: "#aec2e8",
+          faint: "#9a92c8",
+          line: "rgba(160,150,245,.2)",
+          line2: "rgba(150,180,245,.42)",
+          teal: "#22d3ee",
+          tealb: "#67e8f9",
+          violet: "#a78bfa",
+          violetb: "#c4b5fd",
+          blue: "#60a5fa",
+          blueb: "#93c5fd",
+          good: "#34d399",
+          warn: "#fbbf24",
+          crit: "#f87171",
+        },
         // Semantic theme tokens (flip between light/dark via CSS vars in app/theme.css).
         background: "var(--background)",
         foreground: "var(--foreground)",
