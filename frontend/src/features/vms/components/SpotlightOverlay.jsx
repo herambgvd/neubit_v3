@@ -22,7 +22,7 @@ export default function SpotlightOverlay({ label, position, total, onPrev, onNex
           <Icon icon="heroicons-mini:chevron-left" className="text-base" />
         </button>
         <div className="flex items-center gap-1.5 px-2">
-          <Icon icon="heroicons-solid:viewfinder-circle" className="text-sm text-blue-400" />
+          <Icon icon="heroicons-solid:viewfinder-circle" className="text-sm text-[#67e8f9]" />
           <span className="max-w-[16rem] truncate text-xs font-medium">{label}</span>
           {total > 1 && (
             <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white/70">

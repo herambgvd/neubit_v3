@@ -30,26 +30,26 @@ export default function BookmarksPanel({
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
       {/* Bookmarks */}
-      <section className="rounded-xl border border-card-border bg-card">
-        <header className="flex items-center gap-2 border-b border-card-border px-4 py-3">
+      <section className="rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm">
+        <header className="flex items-center gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-3">
           <Icon icon="heroicons-outline:bookmark" className="text-base text-sky-400" />
-          <h3 className="text-sm font-semibold text-foreground">Bookmarks</h3>
-          <span className="ml-auto rounded-full bg-hover px-2 py-0.5 text-[11px] text-muted">
+          <h3 className="text-sm font-semibold text-[#f2f6ff]">Bookmarks</h3>
+          <span className="ml-auto rounded-full bg-[rgba(150,180,245,.08)] px-2 py-0.5 text-[11px] text-[#aec2e8]">
             {bookmarks.length}
           </span>
         </header>
         <div className="max-h-72 overflow-y-auto">
           {loading ? (
-            <p className="px-4 py-6 text-center text-xs text-muted">Loading…</p>
+            <p className="px-4 py-6 text-center text-xs text-[#aec2e8]">Loading…</p>
           ) : bookmarks.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-muted">
+            <p className="px-4 py-6 text-center text-xs text-[#aec2e8]">
               No bookmarks. Use “＋ Bookmark” to flag a moment.
             </p>
           ) : (
             bookmarks.map((b) => (
               <div
                 key={b.id}
-                className="group flex items-start gap-2 border-b border-card-border px-4 py-2.5 last:border-0 hover:bg-hover/40"
+                className="group flex items-start gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-2.5 last:border-0 hover:bg-[rgba(34,211,238,.08)]/40"
               >
                 <button
                   type="button"
@@ -57,16 +57,16 @@ export default function BookmarksPanel({
                   className="min-w-0 flex-1 text-left"
                   title="Seek to bookmark"
                 >
-                  <p className="truncate text-sm font-medium text-foreground">{b.title}</p>
-                  <p className="text-[11px] text-muted">
+                  <p className="truncate text-sm font-medium text-[#f2f6ff]">{b.title}</p>
+                  <p className="text-[11px] text-[#aec2e8]">
                     {timeLabel(b.start_ts)}
                     {b.end_ts ? ` – ${timeLabel(b.end_ts)}` : ""}
                   </p>
-                  {b.note && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted">{b.note}</p>}
+                  {b.note && <p className="mt-0.5 line-clamp-2 text-[11px] text-[#aec2e8]">{b.note}</p>}
                   {b.tags?.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {b.tags.map((t) => (
-                        <span key={t} className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-muted">
+                        <span key={t} className="rounded bg-[rgba(150,180,245,.08)] px-1.5 py-0.5 text-[10px] text-[#aec2e8]">
                           {t}
                         </span>
                       ))}
@@ -84,26 +84,26 @@ export default function BookmarksPanel({
       </section>
 
       {/* Evidence holds */}
-      <section className="rounded-xl border border-card-border bg-card">
-        <header className="flex items-center gap-2 border-b border-card-border px-4 py-3">
+      <section className="rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm">
+        <header className="flex items-center gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-3">
           <Icon icon="heroicons-outline:lock-closed" className="text-base text-amber-500" />
-          <h3 className="text-sm font-semibold text-foreground">Evidence holds</h3>
-          <span className="ml-auto rounded-full bg-hover px-2 py-0.5 text-[11px] text-muted">
+          <h3 className="text-sm font-semibold text-[#f2f6ff]">Evidence holds</h3>
+          <span className="ml-auto rounded-full bg-[rgba(150,180,245,.08)] px-2 py-0.5 text-[11px] text-[#aec2e8]">
             {locks.length}
           </span>
         </header>
         <div className="max-h-72 overflow-y-auto">
           {loading ? (
-            <p className="px-4 py-6 text-center text-xs text-muted">Loading…</p>
+            <p className="px-4 py-6 text-center text-xs text-[#aec2e8]">Loading…</p>
           ) : locks.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-muted">
+            <p className="px-4 py-6 text-center text-xs text-[#aec2e8]">
               No active holds on this camera.
             </p>
           ) : (
             locks.map((l) => (
               <div
                 key={l.id}
-                className="group flex items-start gap-2 border-b border-card-border px-4 py-2.5 last:border-0 hover:bg-hover/40"
+                className="group flex items-start gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-2.5 last:border-0 hover:bg-[rgba(34,211,238,.08)]/40"
               >
                 <button
                   type="button"
@@ -111,14 +111,14 @@ export default function BookmarksPanel({
                   className="min-w-0 flex-1 text-left"
                   title="Seek to hold start"
                 >
-                  <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+                  <p className="flex items-center gap-1.5 truncate text-sm font-medium text-[#f2f6ff]">
                     <Icon icon="heroicons-solid:shield-check" className="shrink-0 text-xs text-amber-500" />
                     {l.case_ref || "Legal hold"}
                   </p>
-                  <p className="text-[11px] text-muted">
+                  <p className="text-[11px] text-[#aec2e8]">
                     {fmtDateTime(l.start_ts)} → {timeLabel(l.end_ts)}
                   </p>
-                  {l.reason && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted">{l.reason}</p>}
+                  {l.reason && <p className="mt-0.5 line-clamp-2 text-[11px] text-[#aec2e8]">{l.reason}</p>}
                 </button>
                 {canLock && (
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
@@ -150,8 +150,8 @@ function IconBtn({ icon, title, onClick, danger }) {
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-hover ${
-        danger ? "text-muted hover:text-red-500" : "text-muted hover:text-foreground"
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-[rgba(34,211,238,.08)] ${
+        danger ? "text-[#aec2e8] hover:text-red-500" : "text-[#aec2e8] hover:text-[#67e8f9]"
       }`}
     >
       <Icon icon={icon} className="text-sm" />

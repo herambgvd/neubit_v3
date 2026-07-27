@@ -51,7 +51,7 @@ export default function PatternHud({
     >
       <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/10 bg-black/80 px-3 py-2 shadow-2xl backdrop-blur">
         <span className="inline-flex items-center gap-1.5 pl-1.5">
-          <Icon icon="heroicons-solid:squares-2x2" className="text-sm text-blue-400" />
+          <Icon icon="heroicons-solid:squares-2x2" className="text-sm text-[#67e8f9]" />
           <span className="max-w-[12rem] truncate text-xs font-semibold text-white">{patternName}</span>
         </span>
 
@@ -92,7 +92,7 @@ function HudBtn({ icon, title, onClick, disabled, accent, danger }) {
       disabled={disabled}
       className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition disabled:opacity-30 ${
         accent
-          ? "bg-blue-500/90 !text-white hover:bg-blue-400"
+          ? "bg-[rgba(34,211,238,.9)] !text-[#0c1530] hover:bg-[#67e8f9]"
           : danger
             ? "hover:bg-red-500/80 hover:text-white"
             : "hover:bg-white/15 hover:text-white"

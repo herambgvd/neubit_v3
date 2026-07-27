@@ -27,10 +27,10 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Patterns"
-        className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition ${
+        className={`inline-flex h-8 items-center gap-1.5 rounded-[8px] border px-2.5 text-xs font-medium transition ${
           active
-            ? "border-blue-500 bg-blue-500/10 text-blue-400"
-            : "border-card-border bg-card text-foreground hover:bg-hover"
+            ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+            : "border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] text-[#f2f6ff] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         }`}
       >
         <Icon icon="heroicons-outline:squares-2x2" className="text-sm" />
@@ -39,15 +39,15 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
           <Icon icon="svg-spinners:180-ring" className="text-xs" />
         ) : (
           patterns.length > 0 && (
-            <span className="rounded-full bg-hover px-1.5 text-[9px] font-semibold text-muted">{patterns.length}</span>
+            <span className="rounded-full bg-[rgba(150,180,245,.1)] px-1.5 text-[9px] font-semibold text-[#aec2e8]">{patterns.length}</span>
           )
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-card-border bg-card py-1 shadow-2xl">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] py-1 shadow-2xl backdrop-blur-sm">
           <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Patterns</span>
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Patterns</span>
             <div className="flex items-center gap-1">
               {active && (
                 <button
@@ -69,7 +69,7 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
                     onCreate();
                     setOpen(false);
                   }}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-blue-400 transition hover:bg-blue-500/10"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.12)]"
                 >
                   <Icon icon="heroicons-mini:plus" className="text-xs" />
                   New
@@ -79,11 +79,11 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
           </div>
 
           {loading ? (
-            <div className="px-3 py-3 text-center text-xs text-muted">
+            <div className="px-3 py-3 text-center text-xs text-[#aec2e8]">
               <Icon icon="svg-spinners:180-ring" className="mx-auto text-base" />
             </div>
           ) : patterns.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-muted">
+            <div className="px-3 py-3 text-xs text-[#aec2e8]">
               No patterns yet.{" "}
               {onCreate ? (
                 <button
@@ -92,13 +92,13 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
                     onCreate();
                     setOpen(false);
                   }}
-                  className="text-blue-400 hover:underline"
+                  className="text-[#67e8f9] hover:underline"
                 >
                   Create one here
                 </button>
               ) : (
                 <>
-                  <Link href="/config/patterns" className="text-blue-400 hover:underline">
+                  <Link href="/config/patterns" className="text-[#67e8f9] hover:underline">
                     Create one
                   </Link>{" "}
                   in Config → Patterns.
@@ -106,7 +106,7 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
               )}
             </div>
           ) : (
-            <ul className="max-h-72 overflow-y-auto border-t border-card-border pt-1">
+            <ul className="max-h-72 overflow-y-auto border-t border-[rgba(160,150,245,.22)] pt-1">
               {patterns.map((p) => {
                 const isActive = p.id === activeId;
                 return (
@@ -117,22 +117,22 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
                         onPlay?.(p);
                         setOpen(false);
                       }}
-                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-hover ${
-                        isActive ? "bg-blue-500/10" : ""
+                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-[rgba(150,180,245,.07)] ${
+                        isActive ? "bg-[rgba(34,211,238,.1)]" : ""
                       }`}
                     >
                       <Icon
                         icon={isActive ? "heroicons-solid:signal" : "heroicons-solid:play"}
-                        className={`shrink-0 text-sm ${isActive ? "text-blue-400" : "text-muted"}`}
+                        className={`shrink-0 text-sm ${isActive ? "text-[#67e8f9]" : "text-[#7e93bf]"}`}
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs font-semibold text-foreground">{p.name}</span>
-                        <span className="block text-[10px] text-muted">
+                        <span className="block truncate text-xs font-semibold text-[#f2f6ff]">{p.name}</span>
+                        <span className="block font-mono text-[10px] text-[#7e93bf]">
                           {(p.camera_group_ids || []).length} groups · {p.seconds || 0}s dwell
                         </span>
                       </span>
                       {p.is_active === false && (
-                        <span className="shrink-0 rounded-full bg-hover px-1.5 py-0.5 text-[9px] font-semibold uppercase text-muted">
+                        <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.1)] px-1.5 py-0.5 text-[9px] font-semibold uppercase text-[#7e93bf]">
                           Off
                         </span>
                       )}
@@ -142,10 +142,10 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
               })}
             </ul>
           )}
-          <div className="border-t border-card-border px-3 py-1.5">
+          <div className="border-t border-[rgba(160,150,245,.22)] px-3 py-1.5">
             <Link
               href="/config/patterns"
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted transition hover:text-foreground"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#7e93bf] transition hover:text-[#67e8f9]"
             >
               <Icon icon="heroicons-outline:cog-6-tooth" className="text-xs" />
               Manage patterns

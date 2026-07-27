@@ -5,7 +5,6 @@
 // Props-driven so IncidentList owns the data + selection + mutations.
 
 import { Icon } from "@iconify/react";
-import { Card, Spinner } from "@/components/ui/kit";
 
 import AlarmCard from "./AlarmCard";
 import { incId, sortForBoard } from "./lib";
@@ -37,33 +36,33 @@ export default function AlarmBoard({
 
   if (loading) {
     return (
-      <Card className="flex justify-center py-16">
-        <Spinner />
-      </Card>
+      <div className="flex justify-center rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] py-16 backdrop-blur-sm">
+        <Icon icon="svg-spinners:180-ring" className="text-2xl text-[#67e8f9]" />
+      </div>
     );
   }
 
   if (rows.length === 0) {
     return (
-      <Card className="flex flex-col items-center justify-center py-20 text-center">
-        <Icon icon="heroicons-outline:shield-check" className="mb-3 text-4xl text-muted opacity-60" />
-        <p className="font-medium text-foreground">No active alarms</p>
-        <p className="mt-1 text-sm text-muted">
+      <div className="flex flex-col items-center justify-center rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] py-20 text-center backdrop-blur-sm">
+        <Icon icon="heroicons-outline:shield-check" className="mb-3 text-4xl text-[#67e8f9] opacity-70" />
+        <p className="font-medium text-[#f2f6ff]">No active alarms</p>
+        <p className="mt-1 text-sm text-[#7e93bf]">
           {hasFilters ? "Try clearing filters." : "Incidents will appear here as they are raised."}
         </p>
-      </Card>
+      </div>
     );
   }
 
   return (
     <div>
       {/* Board toolbar */}
-      <div className="mb-2.5 flex items-center gap-2 px-0.5 text-xs text-muted">
-        <label className="inline-flex items-center gap-2">
-          <input type="checkbox" checked={allSelected} onChange={onToggleAll} aria-label="Select all" />
+      <div className="mb-2.5 flex items-center gap-2 px-0.5 font-mono text-[11px] uppercase tracking-[1px] text-[#7e93bf]">
+        <label className="inline-flex items-center gap-2 cursor-pointer hover:text-[#aec2e8]">
+          <input type="checkbox" checked={allSelected} onChange={onToggleAll} aria-label="Select all" className="accent-[#22d3ee]" />
           Select all on page
         </label>
-        <span className="ml-auto">{rows.length} shown</span>
+        <span className="ml-auto"><b className="text-[#f2f6ff]">{rows.length}</b> shown</span>
       </div>
 
       <div className="grid grid-cols-1 gap-2.5 xl:grid-cols-2">
@@ -87,7 +86,7 @@ export default function AlarmBoard({
       </div>
 
       {showPager && (
-        <div className="mt-3 flex items-center justify-between rounded-lg border border-card-border px-4 py-2.5 text-xs text-muted">
+        <div className="mt-3 flex items-center justify-between rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-4 py-2.5 font-mono text-[11px] text-[#aec2e8] backdrop-blur-sm">
           <span>
             {showingFrom}–{showingTo} of {total || rows.length}
           </span>
@@ -96,18 +95,18 @@ export default function AlarmBoard({
               type="button"
               disabled={page === 0}
               onClick={() => onPage?.(Math.max(0, page - 1))}
-              className="rounded-md border border-card-border px-2.5 py-1 hover:bg-hover hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+              className="rounded-[8px] border border-[rgba(150,180,245,.22)] px-2.5 py-1 transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:opacity-40 disabled:hover:border-[rgba(150,180,245,.22)] disabled:hover:text-[#aec2e8]"
             >
               Previous
             </button>
-            <span>
+            <span className="text-[#7e93bf]">
               Page {page + 1} of {totalPages}
             </span>
             <button
               type="button"
               disabled={page + 1 >= totalPages}
               onClick={() => onPage?.(page + 1)}
-              className="rounded-md border border-card-border px-2.5 py-1 hover:bg-hover hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+              className="rounded-[8px] border border-[rgba(150,180,245,.22)] px-2.5 py-1 transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:opacity-40 disabled:hover:border-[rgba(150,180,245,.22)] disabled:hover:text-[#aec2e8]"
             >
               Next
             </button>

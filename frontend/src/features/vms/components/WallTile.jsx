@@ -94,24 +94,24 @@ function WallTile({
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         onClick={() => onPickHere?.(index)}
-        className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-black/90 transition ${
+        className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-[11px] bg-black/90 transition ${
           dropActive
-            ? "outline outline-2 outline-blue-500"
+            ? "outline outline-2 outline-[#22d3ee]"
             : hinting
-              ? "outline-dashed outline-1 outline-white/30"
-              : "border border-white/15 hover:border-white/25"
+              ? "outline-dashed outline-1 outline-[rgba(34,211,238,.4)]"
+              : "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]"
         }`}
       >
         {/* Quiet centred glyph — always present, very faint. */}
         <Icon
           icon="heroicons:video-camera"
-          className={`text-white/[0.06] transition group-hover/empty:text-white/15 ${
+          className={`text-[rgba(103,232,249,.1)] transition group-hover/empty:text-[rgba(103,232,249,.3)] ${
             isHero ? "text-5xl" : "text-2xl"
           }`}
         />
         {/* Hint appears only on hover or while dragging. */}
         <div
-          className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 pb-2 text-[10px] font-medium text-white/50 transition-opacity ${
+          className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 pb-2 font-mono text-[10px] font-medium uppercase tracking-[1px] text-[#67e8f9]/70 transition-opacity ${
             hinting ? "opacity-100" : "opacity-0 group-hover/empty:opacity-100"
           }`}
         >
@@ -141,8 +141,8 @@ function WallTile({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDoubleClick={() => onSpotlight?.(index)}
-      className={`group relative min-h-0 overflow-hidden rounded-lg bg-black transition ${
-        dropActive ? "outline outline-2 outline-blue-500" : "border border-white/15 hover:border-white/25"
+      className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${
+        dropActive ? "outline outline-2 outline-[#22d3ee]" : "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]"
       }`}
     >
       {/* Status-coloured top edge — sits just above the video INSIDE this tile
@@ -163,7 +163,7 @@ function WallTile({
       {/* Bottom gradient info strip */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center gap-1.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 pb-1.5 pt-6">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${preset.dot}`} title={preset.label} />
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-white/90">{name}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-[.3px] text-[#d7f7e9]">{name}</span>
         {/* Site shows on the roomy hero tile; dense tiles stay to just the name.
             The state-aware LIVE badge is the player's own (top-left) — we don't
             duplicate it here so the strip never claims "live" while connecting. */}

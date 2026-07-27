@@ -42,16 +42,16 @@ const STATUS_ICON = {
 
 function SlaChip({ sla }) {
   if (!sla) {
-    return <span className="inline-flex items-center gap-1 text-[11px] text-muted"><Icon icon="heroicons-outline:clock" className="text-xs" />No SLA</span>;
+    return <span className="inline-flex items-center gap-1 font-mono text-[11px] text-[#7e93bf]"><Icon icon="heroicons-outline:clock" className="text-xs" />No SLA</span>;
   }
   const tone = {
-    ok: "text-emerald-500",
-    warn: "text-amber-500",
-    breach: "text-red-500",
-    done: "text-muted",
+    ok: "text-[#34d399]",
+    warn: "text-[#fbbf24]",
+    breach: "text-[#f87171]",
+    done: "text-[#7e93bf]",
   }[sla.tone];
   return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${tone}`}>
+    <span className={`inline-flex items-center gap-1 font-mono text-[11px] font-medium ${tone}`}>
       <Icon icon="heroicons-solid:clock" className="text-xs" />
       {sla.label}
     </span>
@@ -93,9 +93,9 @@ export default function AlarmCard({
 
   return (
     <div
-      className={`group relative flex overflow-hidden rounded-xl border bg-card transition hover:bg-hover ${
-        isNew ? "border-emerald-500/40 ring-1 ring-emerald-500/20" : "border-card-border"
-      } ${selected ? "!border-foreground" : ""}`}
+      className={`group relative flex overflow-hidden rounded-[13px] border bg-[rgba(150,180,245,.04)] backdrop-blur-sm transition hover:bg-[rgba(150,180,245,.07)] ${
+        isNew ? "border-[rgba(34,211,238,.5)] ring-1 ring-[rgba(34,211,238,.25)]" : "border-[rgba(150,180,245,.22)]"
+      } ${selected ? "!border-[rgba(34,211,238,.6)]" : ""}`}
     >
       {/* Severity band */}
       <span className={`w-1.5 shrink-0 ${s.band}`} aria-hidden />
@@ -108,7 +108,7 @@ export default function AlarmCard({
             checked={selected}
             onChange={() => onSelect(id)}
             aria-label="Select incident"
-            className="mt-0.5"
+            className="mt-0.5 accent-[#22d3ee]"
           />
         </label>
       )}
@@ -121,22 +121,22 @@ export default function AlarmCard({
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold text-foreground">{incTitle(it)}</span>
+              <span className="truncate text-sm font-semibold text-[#f2f6ff]">{incTitle(it)}</span>
               {isNew && (
-                <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-500">
+                <span className="shrink-0 rounded-full border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[1px] text-[#67e8f9]">
                   New
                 </span>
               )}
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[#aec2e8]">
               {sop && <span className="truncate">{sop}</span>}
-              {sop && <span className="opacity-40">·</span>}
+              {sop && <span className="text-[#7e93bf] opacity-60">·</span>}
               <span className="inline-flex items-center gap-0.5">
                 <Icon icon="heroicons-outline:map-pin" className="text-xs" />
                 {site || "No site"}
               </span>
-              <span className="opacity-40">·</span>
-              <span>{fmtRelative(it.created_at)}</span>
+              <span className="text-[#7e93bf] opacity-60">·</span>
+              <span className="font-mono text-[#7e93bf]">{fmtRelative(it.created_at)}</span>
             </div>
           </div>
           <Badge color={PRIORITY_COLOR[it.priority] || "neutral"}>{titleize(it.priority)}</Badge>
@@ -145,18 +145,18 @@ export default function AlarmCard({
         {/* Bottom row: status/state · SLA · assignee · quick actions */}
         <div className="flex items-center gap-2.5 pl-11">
           <Badge color={STATUS_COLOR[it.status] || "neutral"}>{titleize(it.status)}</Badge>
-          {state && <span className="truncate text-[11px] text-muted">{state}</span>}
-          <span className="opacity-40">·</span>
+          {state && <span className="truncate text-[11px] text-[#aec2e8]">{state}</span>}
+          <span className="text-[#7e93bf] opacity-60">·</span>
           <SlaChip sla={sla} />
 
           <span className="ml-auto inline-flex items-center gap-1.5 text-[11px]" title={assigneeName || "Unassigned"}>
             {assignedId || assigneeName ? (
               <>
                 <Avatar name={assigneeName || "?"} size={20} />
-                <span className="max-w-[8rem] truncate text-muted">{assigneeName || "Assigned"}</span>
+                <span className="max-w-[8rem] truncate text-[#aec2e8]">{assigneeName || "Assigned"}</span>
               </>
             ) : (
-              <span className="inline-flex items-center gap-1 text-muted">
+              <span className="inline-flex items-center gap-1 text-[#7e93bf]">
                 <Icon icon="heroicons-outline:user" className="text-xs" />
                 Unassigned
               </span>
@@ -174,14 +174,14 @@ export default function AlarmCard({
 
       {/* Quick actions rail (appears on hover; always visible on touch via group) */}
       {open && (onAck || onAssign) && (
-        <div className="flex shrink-0 flex-col items-stretch justify-center gap-1 border-l border-card-border p-2 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+        <div className="flex shrink-0 flex-col items-stretch justify-center gap-1 border-l border-[rgba(150,180,245,.22)] p-2 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
           {canAck && onAck && (
             <button
               type="button"
               onClick={(e) => { stop(e); onAck(it); }}
               disabled={actionPending}
               title="Acknowledge (activate)"
-              className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-card disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(150,180,245,.22)] px-2 py-1 font-mono text-[11px] font-medium uppercase tracking-[.5px] text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:opacity-40"
             >
               <Icon icon="heroicons-outline:check" className="text-xs" /> Ack
             </button>
@@ -192,7 +192,7 @@ export default function AlarmCard({
               onClick={(e) => { stop(e); onAssign(it); }}
               disabled={actionPending}
               title={assignedId ? "Reassign" : "Assign"}
-              className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-card disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(150,180,245,.22)] px-2 py-1 font-mono text-[11px] font-medium uppercase tracking-[.5px] text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:opacity-40"
             >
               <Icon icon="heroicons-outline:user-plus" className="text-xs" /> {assignedId ? "Reassign" : "Assign"}
             </button>
