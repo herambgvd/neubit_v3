@@ -27,7 +27,7 @@ export function PageHeader({ title, subtitle, actions }) {
 const VARIANTS = {
   // Primary inverts with the theme (black-on-white in light, white-on-black in dark).
   primary: "bg-foreground text-background hover:opacity-90",
-  success: "bg-green-600 hover:bg-green-500 text-white", // create actions
+  success: "bg-nb-teal text-[#062330] font-semibold hover:bg-nb-tealb", // create actions — NeuBit teal
   danger: "bg-red-600 hover:bg-red-500 text-white", // delete actions
   secondary: "bg-transparent border border-card-border text-foreground hover:bg-hover",
   ghost: "bg-transparent text-muted hover:text-foreground hover:bg-hover",
