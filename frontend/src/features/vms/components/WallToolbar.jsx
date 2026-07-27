@@ -16,12 +16,12 @@ function IconBtn({ icon, title, onClick, active = false, spinning = false, dange
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+      className={`inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border transition ${
         active
-          ? "border-blue-500 bg-blue-500/10 text-blue-500"
+          ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
           : danger
-            ? "border-card-border text-muted hover:bg-red-500/10 hover:text-red-500"
-            : "border-card-border text-muted hover:bg-hover hover:text-foreground"
+            ? "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(248,113,113,.5)] hover:bg-red-500/10 hover:text-[#f87171]"
+            : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
       }`}
     >
       <Icon icon={icon} className={`text-base ${spinning ? "animate-spin" : ""}`} />
@@ -54,7 +54,7 @@ export default function WallToolbar({
   const layout = getLayout(layoutKey);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-card-border bg-card px-3 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 backdrop-blur-sm">
       {/* Identity */}
       <div className="flex min-w-0 items-center gap-2">
         <IconBtn
@@ -63,21 +63,21 @@ export default function WallToolbar({
           onClick={onToggleRail}
         />
         <div className="flex min-w-0 items-center gap-2">
-          <Icon icon="heroicons-solid:signal" className="text-base text-blue-500" />
-          <span className="text-sm font-semibold text-foreground">Video Wall</span>
-          <span className="rounded bg-hover px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted">
+          <Icon icon="heroicons-solid:signal" className="text-base text-[#22d3ee]" />
+          <span className="text-sm font-semibold text-[#f2f6ff]">Video Wall</span>
+          <span className="rounded-[6px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-[#aec2e8]">
             {liveCount}/{layout.capacity}
           </span>
-          <span className="hidden items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-emerald-500 sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="hidden items-center gap-1 rounded-full border border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-[#34d399] sm:inline-flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#34d399]" />
             {onlineCount} online
           </span>
-          <span className="hidden items-center gap-1 text-[10px] font-medium tabular-nums text-muted sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+          <span className="hidden items-center gap-1 font-mono text-[10px] font-medium tabular-nums text-[#7e93bf] sm:inline-flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#22d3ee]" />
             {liveCount} on wall
           </span>
           {tour?.active && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-500">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.12)] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#fbbf24]">
               <Icon icon="svg-spinners:180-ring" className="text-xs" />
               Tour {tour.index + 1}/{tour.pages.length}
             </span>
@@ -99,14 +99,14 @@ export default function WallToolbar({
             title="Save the current wall as a reusable camera group"
             disabled={!canSaveGroup}
             onClick={onSaveGroup}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-card-border bg-card px-2.5 text-xs font-medium text-foreground transition hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 text-xs font-medium text-[#f2f6ff] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Icon icon="heroicons-outline:folder-plus" className="text-sm text-muted" />
+            <Icon icon="heroicons-outline:folder-plus" className="text-sm text-[#7e93bf]" />
             Save group
           </button>
         )}
 
-        <div className="mx-0.5 h-6 w-px bg-card-border" />
+        <div className="mx-0.5 h-6 w-px bg-[rgba(150,180,245,.22)]" />
 
         <IconBtn
           icon={allMuted ? "heroicons-outline:speaker-x-mark" : "heroicons-outline:speaker-wave"}
@@ -144,10 +144,10 @@ function TourControl({ tour, onStart, onStop, onInterval }) {
       <button
         type="button"
         onClick={active ? onStop : onStart}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-l-lg border px-2.5 text-xs font-medium transition ${
+        className={`inline-flex h-8 items-center gap-1.5 rounded-l-[8px] border px-2.5 text-xs font-medium transition ${
           active
-            ? "border-amber-500 bg-amber-500/10 text-amber-500"
-            : "border-card-border text-muted hover:bg-hover hover:text-foreground"
+            ? "border-[rgba(251,191,36,.5)] bg-[rgba(251,191,36,.12)] text-[#fbbf24]"
+            : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         }`}
       >
         <Icon icon={active ? "heroicons-solid:stop" : "heroicons-solid:play"} className="text-sm" />
@@ -157,18 +157,18 @@ function TourControl({ tour, onStart, onStop, onInterval }) {
         type="button"
         title="Tour interval"
         onClick={() => setOpen((o) => !o)}
-        className={`inline-flex h-8 items-center rounded-r-lg border-y border-r px-1.5 text-xs transition ${
+        className={`inline-flex h-8 items-center rounded-r-[8px] border-y border-r px-1.5 text-xs transition ${
           active
-            ? "border-amber-500 bg-amber-500/10 text-amber-500"
-            : "border-card-border text-muted hover:bg-hover hover:text-foreground"
+            ? "border-[rgba(251,191,36,.5)] bg-[rgba(251,191,36,.12)] text-[#fbbf24]"
+            : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         }`}
       >
-        <span className="tabular-nums">{seconds}s</span>
+        <span className="font-mono tabular-nums">{seconds}s</span>
         <Icon icon="heroicons-mini:chevron-down" className="ml-0.5 text-sm" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-40 rounded-lg border border-card-border bg-card p-2 shadow-2xl">
-          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-40 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] p-2 shadow-2xl backdrop-blur-sm">
+          <p className="px-1 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">
             Dwell per page
           </p>
           <div className="grid grid-cols-4 gap-1">
@@ -180,10 +180,10 @@ function TourControl({ tour, onStart, onStop, onInterval }) {
                   onInterval?.(s);
                   setOpen(false);
                 }}
-                className={`rounded-md border px-1 py-1.5 text-[11px] font-medium tabular-nums transition ${
+                className={`rounded-md border px-1 py-1.5 font-mono text-[11px] font-medium tabular-nums transition ${
                   seconds === s
-                    ? "border-blue-500 bg-blue-500/10 text-blue-500"
-                    : "border-card-border text-muted hover:bg-hover hover:text-foreground"
+                    ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+                    : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
                 }`}
               >
                 {s}s
