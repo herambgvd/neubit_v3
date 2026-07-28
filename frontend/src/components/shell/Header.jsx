@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -299,8 +299,10 @@ export default function Header() {
   // backdrop with just the home/menu icon, brand, status strip and account — the
   // screen carries its OWN section strip (mode tabs / segment toggle). Navigation to
   // other sections is via the ⊞/home menu navigator.
-  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit", "/sites", "/map"]);
+  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit", "/sites", "/map", "/general"]);
   const isHome = MINIMAL_ROUTES.has(pathname);
+  const isSystem = pathname === "/general";
+  const searchParamsView = useSearchParams().get("view");
   // The Users & Roles console carries its section strip (modtab + USERS/ROLES
   // segment + AUDIT) INSIDE the header, in place of the top nav.
   const usersRoles = pathname === "/users" || pathname === "/roles";
@@ -383,7 +385,7 @@ export default function Header() {
         <div className="h-14 flex items-center gap-4">
           {/* Left / centre / right thirds so the nav sits dead-centre of the header:
               logo and account take equal flex, the nav is centred between them. */}
-          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit || isSites ? "shrink-0" : "flex-1"}`}>
+          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit || isSites || isSystem ? "shrink-0" : "flex-1"}`}>
             {/* Global ⊞ MENU navigator — jump to any section from any screen (Round-26a). */}
             <MenuNavigator />
             <Brand />
@@ -393,6 +395,24 @@ export default function Header() {
           {usersRoles && (
             <div className="flex min-w-0 flex-1 items-center">
               <UsersRolesStrip active={pathname === "/roles" ? "roles" : "users"} />
+            </div>
+          )}
+
+          {/* System console: System modtab + Assurance/Settings segment toggle. */}
+          {isSystem && (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb">
+                <Icon icon="heroicons-outline:adjustments-horizontal" className="text-[14px]" />
+                System
+              </div>
+              <div className="flex gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]">
+                <Link href="/general?view=assurance" className={`flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${searchParamsView !== "settings" ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"}`}>
+                  <Icon icon="heroicons-outline:shield-check" className="text-[14px]" /> ASSURANCE
+                </Link>
+                <Link href="/general?view=settings" className={`flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${searchParamsView === "settings" ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"}`}>
+                  <Icon icon="heroicons-outline:cog-6-tooth" className="text-[14px]" /> SETTINGS
+                </Link>
+              </div>
             </div>
           )}
 

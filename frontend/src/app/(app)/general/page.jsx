@@ -1,1 +1,1 @@
-export { default } from "@/features/core/settings/SettingsGeneral";
+export { default } from "@/features/core/settings/System";

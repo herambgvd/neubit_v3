@@ -37,10 +37,7 @@ export default function SettingsGeneralPage() {
   const groups = [...new Set(catalog.map((c) => c.group))];
 
   return (
-    <div
-      className="-mx-6 lg:-mx-8 -my-6 min-h-full px-6 lg:px-8 py-6 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
+    <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-6 text-nb-ink">
       <div className="mb-4 flex items-center justify-end">
         <button
           disabled={save.isPending || cfg.isLoading}
