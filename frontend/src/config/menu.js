@@ -46,7 +46,8 @@ export const configTabs = [
   { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
   { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", perm: "neubit.read" },
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
-  { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", perm: "neubit.read" },
+  // Storage & Resilience removed — recording storage / retention / tiering / RAID are
+  // owned by the NVR recorder, not this VMS control plane.
   { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
   { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
   { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },

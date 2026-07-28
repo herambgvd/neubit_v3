@@ -43,8 +43,10 @@ from app.vms.playback.router import router as playback_router
 from app.vms.ptz.router import router as ptz_router
 from app.vms.recording.router import router as recording_router
 from app.vms.reports.router import router as reports_router
+# Storage pools/tier-rules/RAID (``/vms/storage/*``) are owned by the NVR — that
+# control-plane router is intentionally NOT mounted. Only the recording lock/verify
+# router (``/vms/recordings/{id}/lock|unlock|verify``) is kept (recording integrity).
 from app.vms.storage import rec_router as storage_rec_router
-from app.vms.storage import router as storage_router
 from app.vms.videowall.decoder_router import router as decoder_router
 from app.vms.videowall.router import router as videowall_router
 
@@ -98,7 +100,6 @@ routers = [
     reports_router,
     event_router,
     linkage_router,
-    storage_router,
     storage_rec_router,
     # Bookmarks (G3) — /vms/bookmarks (+ /{id}). Operator-marked moments/ranges in
     # recorded footage (title/note/tags). Distinct literal prefix (no collision with the

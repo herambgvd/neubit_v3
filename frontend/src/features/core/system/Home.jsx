@@ -242,7 +242,6 @@ export default function HomePage() {
   const confSystem = g([
     { icon: "heroicons:users", label: "Users & Roles", href: "/users", tone: "blue", perm: "user.read" },
     { icon: "heroicons:map-pin", label: "Sites", href: "/sites", tone: "blue", perm: "neubit.read" },
-    { icon: "heroicons:circle-stack", label: "Storage & Resilience", href: "/config/storage", tone: "blue", perm: "neubit.read" },
     { icon: "heroicons:adjustments-horizontal", label: "System", href: "/general", tone: "blue", perm: "settings.manage" },
     { icon: "heroicons:share", label: "Federation", soon: true },
   ]);

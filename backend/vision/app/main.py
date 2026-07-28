@@ -55,7 +55,8 @@ from app.vms.onvif_server import advertiser as onvif_advertiser
 from app.vms.onvif_server import soap_router as onvif_soap_router
 from app.vms.recording import RecordingConsumer, RecordingScheduler
 from app.vms.reports import ReportScheduler
-from app.vms.storage import RaidMonitor, RetentionTieringWorker
+# NOTE: storage retention/tiering + RAID monitoring are owned by the NVR, not this
+# VMS — their workers (RetentionTieringWorker, RaidMonitor) are intentionally NOT run.
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vision")
@@ -100,21 +101,12 @@ async def lifespan(app: FastAPI):
     await rec_scheduler.start()
     app.state.recording_scheduler = rec_scheduler
 
-    # P3-B storage: retention + tiering sweep. Deletes recordings past their camera's
-    # retention window / over a pool's capacity (NEVER touching locked ones) and moves
-    # aged recordings hot→cold per TierRule (local→S3/MinIO). Own DB session per cycle;
-    # graceful (unreachable pool / missing file → log + skip).
-    storage_worker = RetentionTieringWorker(get_sessionmaker())
-    await storage_worker.start()
-    app.state.storage_worker = storage_worker
-
-    # RAID compliance: poll software-RAID (mdadm) arrays → upsert health snapshot +
-    # fire a one-shot ``raid_degraded`` alert on a healthy→degraded transition so an
-    # operator swaps the failed disk before a second failure loses footage. Own DB
-    # session per poll; graceful (non-Linux host → reports unavailable + idles).
-    raid_monitor = RaidMonitor(get_sessionmaker())
-    await raid_monitor.start()
-    app.state.raid_monitor = raid_monitor
+    # Storage/retention/tiering + RAID health are OWNED BY THE NVR (the recorder
+    # data-plane that actually writes segments and sits on the disks). This VMS
+    # delegates recording to the NVR (VE_NVR_URL) and must NOT independently sweep,
+    # delete, tier or monitor the same /recordings volume — two movers on the same
+    # files is a data-loss race. So the RetentionTieringWorker + RaidMonitor are NOT
+    # started here (removed); the shared integrity helper stays for checksum-on-finalize.
 
     # P4-B clip export: drain queued ExportJobs → ffmpeg-concat the covered recorded
     # fmp4 segments into a single downloadable mp4 (in the downloads area on the
@@ -201,8 +193,6 @@ async def lifespan(app: FastAPI):
     await event_supervisor.stop()
     await motion_search_worker.stop()
     await export_worker.stop()
-    await raid_monitor.stop()
-    await storage_worker.stop()
     await rec_scheduler.stop()
     await node_heartbeat.stop()
     await sampler.stop()
