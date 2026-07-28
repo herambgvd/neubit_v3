@@ -12,6 +12,7 @@
 // coming-soon in this phase.
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
@@ -236,9 +237,19 @@ const MODES = [
   { id: "conf", label: "Configurations", glow: "rgba(96,165,250,.5)" },
 ];
 
+const MODE_IDS = MODES.map((m) => m.id);
+
 export default function HomePage() {
   const { can, hasModule } = useAuth();
-  const [mode, setMode] = useState("surv");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // The active mode is kept in the URL (?mode=…) so it survives a refresh and is
+  // shareable; falls back to Surveillance for a missing/unknown value.
+  const urlMode = searchParams.get("mode");
+  const mode = MODE_IDS.includes(urlMode) ? urlMode : "surv";
+  const setMode = (id) =>
+    router.replace(`/home?mode=${id}`, { scroll: false });
 
   const canVms = hasModule("vms");
   const canCam = canVms && can("vms.camera.read");
