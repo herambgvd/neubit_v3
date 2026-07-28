@@ -53,7 +53,7 @@ export default function SettingsGeneralPage() {
           <Spinner />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           {groups.map((group) => (
             <div key={group} className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4">
               <h2 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
