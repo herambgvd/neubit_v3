@@ -102,7 +102,11 @@ export default function AppLayout({ children }) {
   const home = pathname === "/home";
   // Minimal-chrome config surfaces (own segment strip, no Config sub-tab bar).
   const minimalConsole =
-    pathname === "/users" || pathname === "/roles" || pathname === "/audit";
+    pathname === "/users" ||
+    pathname === "/roles" ||
+    pathname === "/audit" ||
+    pathname === "/sites" ||
+    pathname === "/map";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>

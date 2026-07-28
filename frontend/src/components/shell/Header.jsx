@@ -299,12 +299,13 @@ export default function Header() {
   // backdrop with just the home/menu icon, brand, status strip and account — the
   // screen carries its OWN section strip (mode tabs / segment toggle). Navigation to
   // other sections is via the ⊞/home menu navigator.
-  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit"]);
+  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit", "/sites", "/map"]);
   const isHome = MINIMAL_ROUTES.has(pathname);
   // The Users & Roles console carries its section strip (modtab + USERS/ROLES
   // segment + AUDIT) INSIDE the header, in place of the top nav.
   const usersRoles = pathname === "/users" || pathname === "/roles";
   const isAudit = pathname === "/audit";
+  const isSites = pathname === "/sites" || pathname === "/map";
   const [openUser, setOpenUser] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
@@ -382,7 +383,7 @@ export default function Header() {
         <div className="h-14 flex items-center gap-4">
           {/* Left / centre / right thirds so the nav sits dead-centre of the header:
               logo and account take equal flex, the nav is centred between them. */}
-          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit ? "shrink-0" : "flex-1"}`}>
+          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit || isSites ? "shrink-0" : "flex-1"}`}>
             {/* Global ⊞ MENU navigator — jump to any section from any screen (Round-26a). */}
             <MenuNavigator />
             <Brand />
@@ -392,6 +393,24 @@ export default function Header() {
           {usersRoles && (
             <div className="flex min-w-0 flex-1 items-center">
               <UsersRolesStrip active={pathname === "/roles" ? "roles" : "users"} />
+            </div>
+          )}
+
+          {/* Sites console: Sites modtab + Sites/Map segment toggle. */}
+          {isSites && (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb">
+                <Icon icon="heroicons-outline:map-pin" className="text-[14px]" />
+                Sites
+              </div>
+              <div className="flex gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]">
+                <Link href="/sites" className={`flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${pathname === "/sites" ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"}`}>
+                  <Icon icon="heroicons-outline:list-bullet" className="text-[14px]" /> LIST
+                </Link>
+                <Link href="/map" className={`flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${pathname === "/map" ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"}`}>
+                  <Icon icon="heroicons-outline:map" className="text-[14px]" /> MAP
+                </Link>
+              </div>
             </div>
           )}
 
