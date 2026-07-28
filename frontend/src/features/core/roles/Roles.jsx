@@ -9,9 +9,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { ConfirmDialog, Spinner } from "@/components/ui/kit";
+import { Button, ConfirmDialog, Input, Modal, Spinner } from "@/components/ui/kit";
 import { MasterDetail, ListPanel } from "@/components/common";
 import { api, apiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import RoleListItem from "./components/RoleListItem";
 import RoleDetail from "./components/RoleDetail";
 import RoleFormModal from "./components/RoleFormModal";
@@ -20,12 +21,16 @@ const EMPTY = { name: "", description: "", permissions: [] };
 
 export default function RolesPage() {
   const qc = useQueryClient();
+  const { can } = useAuth();
+  const canManage = can("role.manage");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null); // the role being edited, or null when creating
   const [form, setForm] = useState(EMPTY);
   const [confirm, setConfirm] = useState(null);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
+  const [cloneSrc, setCloneSrc] = useState(null); // role being cloned, or null
+  const [cloneName, setCloneName] = useState("");
 
   const roles = useQuery({
     queryKey: ["roles"],
@@ -90,6 +95,22 @@ export default function RolesPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
+
+  const cloneRole = useMutation({
+    mutationFn: ({ id, name }) => api.post(`/auth/roles/${id}/clone`, { name }),
+    onSuccess: (res) => {
+      toast.success("Role cloned");
+      qc.invalidateQueries({ queryKey: ["roles"] });
+      setCloneSrc(null);
+      setCloneName("");
+      if (res?.data?.id) setSelectedId(res.data.id);
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  function openClone(role) {
+    setCloneName(`${role.name} (copy)`);
+    setCloneSrc(role);
+  }
 
   function openCreate() {
     setEditing(null);
@@ -223,9 +244,11 @@ export default function RolesPage() {
               role={selectedRole}
               groups={groups}
               catalogLoading={catalog.isLoading}
+              canManage={canManage}
               onClose={() => setSelectedId(null)}
               onEdit={() => openEdit(selectedRole)}
               onDelete={() => handleDelete(selectedRole)}
+              onClone={() => openClone(selectedRole)}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
@@ -256,6 +279,37 @@ export default function RolesPage() {
         onSave={save}
         saving={saving}
       />
+
+      <Modal
+        open={!!cloneSrc}
+        onClose={() => setCloneSrc(null)}
+        title={cloneSrc ? `Clone ${cloneSrc.name}` : "Clone role"}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCloneSrc(null)}>Cancel</Button>
+            <Button
+              variant="success"
+              disabled={cloneRole.isPending || !cloneName.trim()}
+              onClick={() => cloneRole.mutate({ id: cloneSrc.id, name: cloneName.trim() })}
+            >
+              {cloneRole.isPending ? "Cloning…" : "Create clone"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="rounded-[9px] border border-[rgba(96,165,250,.35)] bg-[rgba(96,165,250,.07)] px-3 py-2.5 text-xs text-nb-soft">
+            Copies all of <b className="text-nb-blueb">{cloneSrc?.name}</b>&rsquo;s permissions under a
+            new name — a fast starting point you can then trim down.
+          </div>
+          <Input
+            label="New role name"
+            value={cloneName}
+            onChange={(e) => setCloneName(e.target.value)}
+            placeholder="e.g. SOC Operator (night shift)"
+          />
+        </div>
+      </Modal>
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
     </div>
