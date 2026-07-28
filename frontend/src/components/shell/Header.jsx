@@ -309,7 +309,15 @@ export default function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-card-border bg-background/70 backdrop-blur">
+    <header
+      className={
+        isHome
+          ? // HOME launcher: no dark menu bar — the strip floats transparently
+            // over the navy launcher, matching the mockup.
+            "sticky top-0 z-40"
+          : "sticky top-0 z-40 border-b border-card-border bg-background/70 backdrop-blur"
+      }
+    >
       <div className="w-full px-6 lg:px-8">
         {/* Single row — logo + inline nav + account (neubit_v2 arrangement). */}
         <div className="h-14 flex items-center gap-4">
@@ -345,15 +353,17 @@ export default function Header() {
           </nav>
 
           <div className="flex flex-1 items-center justify-end gap-1">
-            <button
-              onClick={() => window.dispatchEvent(new Event("palette:open"))}
-              className="hidden sm:flex items-center gap-2 rounded-md border border-card-border text-muted hover:text-foreground hover:bg-hover transition px-2.5 py-1.5 mr-1"
-              aria-label="Search"
-            >
-              <Icon icon="heroicons-outline:magnifying-glass" className="text-base" />
-              <span className="text-xs">Search</span>
-              <kbd className="text-[10px] border border-card-border rounded px-1 py-0.5">⌘K</kbd>
-            </button>
+            {!isHome && (
+              <button
+                onClick={() => window.dispatchEvent(new Event("palette:open"))}
+                className="hidden sm:flex items-center gap-2 rounded-md border border-card-border text-muted hover:text-foreground hover:bg-hover transition px-2.5 py-1.5 mr-1"
+                aria-label="Search"
+              >
+                <Icon icon="heroicons-outline:magnifying-glass" className="text-base" />
+                <span className="text-xs">Search</span>
+                <kbd className="text-[10px] border border-card-border rounded px-1 py-0.5">⌘K</kbd>
+              </button>
+            )}
             <NotificationsBell />
             <div className="relative" ref={userRef}>
               <input

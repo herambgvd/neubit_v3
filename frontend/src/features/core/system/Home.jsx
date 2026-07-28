@@ -108,7 +108,7 @@ const MODES = [
 ];
 
 export default function HomePage() {
-  const { user, can, hasModule } = useAuth();
+  const { can, hasModule } = useAuth();
   const [mode, setMode] = useState("surv");
 
   const canVms = hasModule("vms");
@@ -179,19 +179,8 @@ export default function HomePage() {
       className="relative flex h-full min-h-0 w-full flex-col overflow-hidden text-[#f2f6ff]"
       style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
     >
-      {/* masthead line */}
-      <div className="flex items-center gap-3 px-8 pt-6 lg:px-[11%]">
-        <span className="text-[15px] font-bold tracking-[0.5px]">
-          Neu<i className="not-italic text-[#67e8f9]">Bit</i>
-        </span>
-        <span className="border-l border-[rgba(160,150,245,.2)] pl-3 font-mono text-[10px] tracking-[2px] text-[#9a92c8]">
-          VMS COMMAND
-        </span>
-        <span className="ml-auto font-mono text-[11px] text-[#9a92c8]">{user?.full_name || user?.email}</span>
-      </div>
-
-      {/* big typographic mode tabs */}
-      <div className="flex flex-wrap items-baseline gap-x-11 gap-y-2 px-8 pb-2 pt-8 lg:px-[11%]">
+      {/* big typographic mode tabs (branding lives in the transparent top strip) */}
+      <div className="flex flex-wrap items-baseline gap-x-11 gap-y-2 px-8 pb-2 pt-10 lg:px-[11%]">
         {MODES.map((m) => {
           const on = m.id === mode;
           return (
