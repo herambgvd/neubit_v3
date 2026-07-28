@@ -100,6 +100,8 @@ export default function AppLayout({ children }) {
   // The NeuBit HOME metro launcher is a full-bleed, single-viewport surface (its own
   // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.
   const home = pathname === "/home";
+  // Minimal-chrome config surfaces (own segment strip, no Config sub-tab bar).
+  const minimalConsole = pathname === "/users" || pathname === "/roles";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
@@ -144,7 +146,9 @@ export default function AppLayout({ children }) {
       style={home ? { background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" } : undefined}
     >
       <Header />
-      {isConfigRoute(pathname) && <SectionTabs tabs={configTabs} />}
+      {/* The Users & Roles console is minimal-chrome (its own segment strip), so the
+          Config sub-tab bar is suppressed there to match the VMS mockup. */}
+      {isConfigRoute(pathname) && !minimalConsole && <SectionTabs tabs={configTabs} />}
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
       {isStreamingRoute(pathname) && <SectionTabs tabs={streamTabs} />}
       <AnnouncementBanner />

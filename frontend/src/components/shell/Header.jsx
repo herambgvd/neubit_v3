@@ -293,10 +293,13 @@ export default function Header() {
   const { theme, toggle } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
-  // The HOME metro launcher is its own navigator (big mode tabs + tiles + the ⊞
-  // menu), so the inline top-nav is hidden there to match the mockup's minimal
-  // strip — only the ⊞ menu, brand, and account cluster remain.
-  const isHome = pathname === "/home";
+  // MINIMAL-chrome surfaces (the VMS console mockups): HOME plus the Users & Roles
+  // console. These hide the inline top-nav + Config sub-tabs and float over the navy
+  // backdrop with just the home/menu icon, brand, status strip and account — the
+  // screen carries its OWN section strip (mode tabs / segment toggle). Navigation to
+  // other sections is via the ⊞/home menu navigator.
+  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles"]);
+  const isHome = MINIMAL_ROUTES.has(pathname);
   const [openUser, setOpenUser] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);

@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 import { Spinner } from "@/components/ui/kit";
 import { MasterDetail, ListPanel } from "@/components/common";
+import UsersRolesStrip from "@/components/shell/UsersRolesStrip";
 import { api, apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { useAuth } from "@/lib/auth";
@@ -226,6 +227,7 @@ export default function UsersPage() {
       className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
       style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
     >
+      <UsersRolesStrip active="users" />
       <MasterDetail
         fill
         className="min-h-0 flex-1"
