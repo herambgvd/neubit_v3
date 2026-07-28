@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { Card, Spinner } from "@/components/ui/kit";
+import { Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import SettingField from "./components/SettingField";
 
@@ -53,10 +53,12 @@ export default function SettingsGeneralPage() {
           <Spinner />
         </div>
       ) : (
-        <div className="space-y-6 max-w-2xl">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {groups.map((group) => (
-            <Card key={group} className="p-5 !border-nb-line !bg-[rgba(8,15,34,.5)]">
-              <h2 className="text-sm font-semibold text-nb-ink mb-1">{group}</h2>
+            <div key={group} className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4">
+              <h2 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
+                {group}
+              </h2>
               <div>
                 {catalog
                   .filter((c) => c.group === group)
@@ -69,7 +71,7 @@ export default function SettingsGeneralPage() {
                     />
                   ))}
               </div>
-            </Card>
+            </div>
           ))}
         </div>
       )}
