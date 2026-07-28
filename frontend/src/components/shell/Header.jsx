@@ -242,6 +242,10 @@ export default function Header() {
   const { theme, toggle } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
+  // The HOME metro launcher is its own navigator (big mode tabs + tiles + the ⊞
+  // menu), so the inline top-nav is hidden there to match the mockup's minimal
+  // strip — only the ⊞ menu, brand, and account cluster remain.
+  const isHome = pathname === "/home";
   const [openUser, setOpenUser] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
@@ -318,8 +322,9 @@ export default function Header() {
           </div>
 
           {/* Main nav — centred; scrolls with a slim themed bar if it can't fit.
-              The Config section opens the sub-tab bar below the header. */}
-          <nav className="nav-scroll flex items-center justify-center gap-1 min-w-0 overflow-x-auto">
+              The Config section opens the sub-tab bar below the header. Hidden on
+              the HOME launcher (it navigates via its own mode tabs + tiles). */}
+          <nav className={`nav-scroll flex items-center justify-center gap-1 min-w-0 overflow-x-auto ${isHome ? "hidden" : ""}`}>
             {items.map((m) => (
               <NavEntry
                 key={m.title}
