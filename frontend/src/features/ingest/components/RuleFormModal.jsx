@@ -236,19 +236,19 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
           placeholder="Enter rule description (optional)"
           maxLength={1024}
         />
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-nb-soft">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="accent-nb-teal" />
           Enabled
         </label>
 
         {/* ── Match conditions ─────────────────────────────────── */}
-        <section className="rounded-lg border border-card-border p-4 space-y-3">
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
           <div>
-            <h4 className="text-sm font-semibold text-foreground">When should this rule fire?</h4>
-            <p className="text-[11px] text-muted/80">ALL conditions must hold. Most rules just need one: "this field is present."</p>
+            <h4 className="text-sm font-semibold text-nb-ink">When should this rule fire?</h4>
+            <p className="text-[11px] text-nb-faint">ALL conditions must hold. Most rules just need one: "this field is present."</p>
           </div>
           {conditions.length === 0 ? (
-            <p className="text-[11px] text-muted/70">No conditions — this rule matches any payload. Add one to make it specific.</p>
+            <p className="text-[11px] text-nb-faint">No conditions — this rule matches any payload. Add one to make it specific.</p>
           ) : (
             <div className="space-y-2">
               {conditions.map((c, i) => (
@@ -277,13 +277,13 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
         </section>
 
         {/* ── Field map ────────────────────────────────────────── */}
-        <section className="rounded-lg border border-card-border p-4 space-y-3">
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
           <div>
-            <h4 className="text-sm font-semibold text-foreground">Fields to extract</h4>
-            <p className="text-[11px] text-muted/80">When this rule fires, each output key is filled from a JMESPath expression over the payload.</p>
+            <h4 className="text-sm font-semibold text-nb-ink">Fields to extract</h4>
+            <p className="text-[11px] text-nb-faint">When this rule fires, each output key is filled from a JMESPath expression over the payload.</p>
           </div>
           {fieldRows.length === 0 ? (
-            <p className="text-[11px] text-muted/70">No fields mapped — matched events publish with an empty payload.</p>
+            <p className="text-[11px] text-nb-faint">No fields mapped — matched events publish with an empty payload.</p>
           ) : (
             <div className="space-y-2">
               {fieldRows.map((r, i) => (
@@ -313,7 +313,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
                   <button
                     type="button"
                     onClick={() => setFieldRows(fieldRows.filter((_, idx) => idx !== i))}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500 shrink-0"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit"
                     aria-label="Remove field"
                   >
                     <Icon icon="heroicons-outline:trash" className="text-sm" />
@@ -334,10 +334,10 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
         </section>
 
         {/* ── Test ─────────────────────────────────────────────── */}
-        <section className="rounded-lg border border-card-border p-4 space-y-3">
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
           <div>
-            <h4 className="text-sm font-semibold text-foreground">Test this rule</h4>
-            <p className="text-[11px] text-muted/80">
+            <h4 className="text-sm font-semibold text-nb-ink">Test this rule</h4>
+            <p className="text-[11px] text-nb-faint">
               {isEdit
                 ? "Paste a sample payload — checks the current draft conditions + field map (no save needed)."
                 : "Save the rule first, then reopen it here to dry-run a sample payload."}
@@ -367,8 +367,8 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
               <span
                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                   testResult.matched
-                    ? "bg-green-500/10 text-green-500 border-green-500/20"
-                    : "bg-red-500/10 text-red-500 border-red-500/20"
+                    ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good"
+                    : "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit"
                 }`}
               >
                 <Icon icon={testResult.matched ? "heroicons-outline:check-circle" : "heroicons-outline:x-circle"} className="text-sm" />
@@ -376,26 +376,26 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
               </span>
             )}
             {testResult?.event_type && (
-              <span className="ml-auto text-[11px] font-mono text-muted truncate">→ {testResult.event_type}</span>
+              <span className="ml-auto truncate font-mono text-[11px] text-nb-faint">→ {testResult.event_type}</span>
             )}
           </div>
 
           {testResult?.condition_results?.length ? (
-            <div className="rounded-lg border border-card-border divide-y divide-card-border">
+            <div className="divide-y divide-nb-line/50 rounded-[8px] border border-nb-line">
               {testResult.condition_results.map((r, i) => (
                 <div key={i} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Icon
                       icon={r.ok ? "heroicons-outline:check-circle" : "heroicons-outline:x-circle"}
-                      className={`text-sm shrink-0 ${r.ok ? "text-green-500" : "text-red-500"}`}
+                      className={`shrink-0 text-sm ${r.ok ? "text-nb-good" : "text-nb-crit"}`}
                     />
-                    <span className="font-mono text-foreground truncate">{r.path}</span>
-                    <span className="text-muted shrink-0">{r.op}</span>
+                    <span className="truncate font-mono text-nb-soft">{r.path}</span>
+                    <span className="shrink-0 text-nb-faint">{r.op}</span>
                     {r.expected !== undefined && r.expected !== null && (
-                      <span className="font-mono text-muted">{formatValue(r.expected)}</span>
+                      <span className="font-mono text-nb-faint">{formatValue(r.expected)}</span>
                     )}
                   </div>
-                  <span className="font-mono text-muted shrink-0">→ {formatValue(r.actual)}</span>
+                  <span className="shrink-0 font-mono text-nb-faint">→ {formatValue(r.actual)}</span>
                 </div>
               ))}
             </div>
@@ -404,7 +404,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
           {testResult?.extracted && (
             <div>
               <FieldLabel>Extracted output</FieldLabel>
-              <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all max-h-48 overflow-auto">
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-soft">
                 {JSON.stringify(testResult.extracted, null, 2)}
               </pre>
             </div>
@@ -432,7 +432,7 @@ function ConditionRow({ condition, onChange, onRemove }) {
         className={`${fieldClass} !mt-0 !h-9 text-xs`}
       >
         {OP_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value} className="bg-card">{o.label}</option>
+          <option key={o.value} value={o.value} className="bg-[#0b1228] text-nb-ink">{o.label}</option>
         ))}
       </select>
       {needsValue ? (
@@ -443,12 +443,12 @@ function ConditionRow({ condition, onChange, onRemove }) {
           className={`${fieldClass} !mt-0 !h-9 font-mono text-xs`}
         />
       ) : (
-        <div className="text-[11px] text-muted/60 px-1">(no value)</div>
+        <div className="px-1 text-[11px] text-nb-faint">(no value)</div>
       )}
       <button
         type="button"
         onClick={onRemove}
-        className="inline-flex h-9 w-9 items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500 shrink-0"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit"
         aria-label="Remove condition"
       >
         <Icon icon="heroicons-outline:trash" className="text-sm" />

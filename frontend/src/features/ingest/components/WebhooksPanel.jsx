@@ -42,12 +42,13 @@ export default function WebhooksPanel({ category, catId }) {
   });
 
   return (
-    <div className="px-6 py-5 space-y-4">
+    <div className="space-y-4 px-5 py-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Webhooks</h3>
-          <p className="text-xs text-muted">
-            {hooks.length} webhook(s) in <span className="font-medium">{category.name}</span>.
+          <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Webhooks</h3>
+          <p className="mt-0.5 text-[11.5px] text-nb-faint">
+            {hooks.length} webhook{hooks.length === 1 ? "" : "s"} in{" "}
+            <span className="font-medium text-nb-soft">{category.name}</span>.
           </p>
         </div>
         {!creating && !editing && (
@@ -75,49 +76,49 @@ export default function WebhooksPanel({ category, catId }) {
 
       {!creating && !editing &&
         (hooksQ.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted">
+          <div className="flex items-center gap-2 text-sm text-nb-soft">
             <Spinner className="!h-4 !w-4" /> Loading webhooks…
           </div>
         ) : hooks.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-card-border px-6 py-10 text-center text-sm text-muted">
-            No webhooks yet. Click <b>Add webhook</b> to create one.
+          <div className="rounded-[10px] border border-dashed border-nb-line px-6 py-10 text-center text-[12.5px] text-nb-faint">
+            No webhooks yet. Click <b className="text-nb-blueb">Add webhook</b> to create one.
           </div>
         ) : (
-          <ul className="rounded-lg border border-card-border divide-y divide-card-border bg-card">
+          <div className="space-y-2">
             {hooks.map((h) => (
-              <li key={hookId(h)} className="px-4 py-3 hover:bg-hover">
+              <div key={hookId(h)} className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3.5 py-3 transition hover:border-[rgba(150,180,245,.42)]">
                 <div className="flex items-start gap-3">
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-500/10 text-blue-500 shrink-0 border border-card-border">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[8px] border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] text-nb-blueb">
                     <Icon icon="heroicons-outline:bolt" className="text-base" />
                   </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-foreground">{h.name}</span>
-                      <span className={`text-[10px] rounded-full border px-1.5 py-0.5 font-medium ${AUTH_PILL[h.auth_type] || AUTH_PILL.none}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[13px] font-semibold text-nb-ink">{h.name}</span>
+                      <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${AUTH_PILL[h.auth_type] || AUTH_PILL.none}`}>
                         {authLabel(h.auth_type)}
                       </span>
-                      <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${h.is_active !== false ? "bg-green-500/10 text-green-500" : "bg-hover text-muted"}`}>
+                      <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${h.is_active !== false ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good" : "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint"}`}>
                         {h.is_active !== false ? "Active" : "Inactive"}
                       </span>
                     </div>
                     {h.token && (
-                      <div className="mt-1 flex items-center gap-2">
-                        <code className="text-[11px] font-mono text-muted truncate max-w-full">{receiverUrl(h.token)}</code>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <code className="max-w-full truncate font-mono text-[11px] text-nb-faint">{receiverUrl(h.token)}</code>
                         <button
                           onClick={() => copyToClipboard(receiverUrl(h.token))}
                           title="Copy receiver URL"
-                          className="inline-flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground shrink-0"
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-nb-faint transition hover:bg-white/5 hover:text-nb-blueb"
                         >
                           <Icon icon="heroicons-outline:clipboard-document" className="text-sm" />
                         </button>
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => setDetail(h)} title="Details" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-blue-500">
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button onClick={() => setDetail(h)} title="Details" className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-blueb">
                       <Icon icon="heroicons-outline:eye" className="text-sm" />
                     </button>
-                    <button onClick={() => setEditing(h)} title="Edit" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground">
+                    <button onClick={() => setEditing(h)} title="Edit" className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink">
                       <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
                     </button>
                     <button
@@ -133,15 +134,15 @@ export default function WebhooksPanel({ category, catId }) {
                         })
                       }
                       title="Delete"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-500 hover:bg-red-500/10"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-crit transition hover:bg-[rgba(248,113,113,.12)]"
                     >
                       <Icon icon="heroicons-outline:trash" className="text-sm" />
                     </button>
                   </div>
                 </div>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         ))}
 
       {detail && (

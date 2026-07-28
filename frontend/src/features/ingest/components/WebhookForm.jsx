@@ -139,10 +139,10 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
   const secretCfg = secretMeta[authType];
 
   return (
-    <form noValidate onSubmit={submit} className="rounded-lg border border-card-border bg-hover/40 p-4 space-y-4">
+    <form noValidate onSubmit={submit} className="space-y-4 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-foreground">{isEdit ? `Edit webhook · ${webhook.name}` : "Add webhook"}</h4>
-        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground">
+        <h4 className="text-[13px] font-semibold text-nb-ink">{isEdit ? `Edit webhook · ${webhook.name}` : "Add webhook"}</h4>
+        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink">
           <Icon icon="heroicons-outline:x-mark" className="text-sm" />
         </button>
       </div>
@@ -218,7 +218,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
             type="button"
             aria-label={showSecret ? "Hide secret" : "Show secret"}
             onClick={() => setShowSecret((v) => !v)}
-            className="absolute right-3 top-[30px] text-muted hover:text-foreground"
+            className="absolute right-3 top-[30px] text-nb-faint transition hover:text-nb-ink"
           >
             <Icon icon={showSecret ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="text-base" />
           </button>
@@ -228,21 +228,21 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
       {/* ── Transform (field map) ──────────────────────────────── */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium uppercase tracking-wide text-muted">
+          <label className="font-mono text-xs font-medium uppercase tracking-wide text-nb-muted">
             Transform (field map)
           </label>
-          <div className="inline-flex rounded-md border border-card-border p-0.5 text-xs">
+          <div className="inline-flex rounded-[8px] border border-nb-line p-0.5 text-xs">
             <button
               type="button"
               onClick={() => setBuilderMode(false)}
-              className={`rounded px-2 py-0.5 transition ${!builderMode ? "bg-foreground text-background" : "text-muted hover:text-foreground"}`}
+              className={`rounded-[6px] px-2 py-0.5 transition ${!builderMode ? "bg-[rgba(96,165,250,.15)] text-nb-blueb" : "text-nb-faint hover:text-nb-ink"}`}
             >
               Raw JSON
             </button>
             <button
               type="button"
               onClick={() => setBuilderMode(true)}
-              className={`rounded px-2 py-0.5 transition ${builderMode ? "bg-foreground text-background" : "text-muted hover:text-foreground"}`}
+              className={`rounded-[6px] px-2 py-0.5 transition ${builderMode ? "bg-[rgba(96,165,250,.15)] text-nb-blueb" : "text-nb-faint hover:text-nb-ink"}`}
             >
               Guided
             </button>
@@ -288,8 +288,8 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
         hint="Optional JSON Schema to validate the transformed payload."
       />
 
-      <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-        <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-nb-soft">
+        <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="accent-nb-teal" />
         Active
       </label>
 

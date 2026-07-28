@@ -86,7 +86,7 @@ export default function PayloadFieldsBuilder({
   const checkedCount = fields.filter((f) => f.checked).length;
 
   return (
-    <div className="space-y-4 rounded-lg border border-card-border bg-hover/30 p-3">
+    <div className="space-y-4 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-3">
       {/* Step 1 — sample */}
       <Step number={1} title="Paste an example event from your vendor">
         <textarea
@@ -98,7 +98,7 @@ export default function PayloadFieldsBuilder({
           spellCheck={false}
         />
         {parseError ? (
-          <div className="flex items-center gap-1 text-xs text-red-500">
+          <div className="flex items-center gap-1 text-xs text-nb-crit">
             <Icon icon="heroicons-outline:exclamation-circle" className="text-sm" />
             JSON error: {parseError}
           </div>
@@ -115,7 +115,7 @@ export default function PayloadFieldsBuilder({
             {fields.length === 0 ? "Find fields" : "Re-analyze"}
           </Button>
           {fields.length > 0 ? (
-            <span className="text-[11px] text-muted">
+            <span className="text-[11px] text-nb-faint">
               {fields.length} field{fields.length === 1 ? "" : "s"} found ·{" "}
               {checkedCount} kept
             </span>
@@ -132,7 +132,7 @@ export default function PayloadFieldsBuilder({
         >
           <div className="space-y-1.5">
             {/* Header row */}
-            <div className="grid grid-cols-[20px_1fr_1fr_110px] items-center gap-2 px-2 text-[10px] font-medium uppercase tracking-wide text-muted">
+            <div className="grid grid-cols-[20px_1fr_1fr_110px] items-center gap-2 px-2 text-[10px] font-medium uppercase tracking-wide text-nb-faint">
               <div></div>
               <div>Output key</div>
               <div>From payload</div>
@@ -142,7 +142,7 @@ export default function PayloadFieldsBuilder({
             {Object.entries(groups).map(([groupKey, groupFields]) => {
               const collapsed = collapsedGroups[groupKey];
               return (
-                <div key={groupKey} className="rounded-md border border-card-border bg-card">
+                <div key={groupKey} className="rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.5)]">
                   {/* Group header */}
                   <button
                     type="button"
@@ -157,17 +157,17 @@ export default function PayloadFieldsBuilder({
                           ? "heroicons-outline:chevron-right"
                           : "heroicons-outline:chevron-down"
                       }
-                      className="text-xs text-muted"
+                      className="text-xs text-nb-faint"
                     />
-                    <span className="font-mono text-[11px] text-muted">
+                    <span className="font-mono text-[11px] text-nb-soft">
                       {groupKey || "(root)"}
                     </span>
-                    <span className="text-[10px] text-muted/70">
+                    <span className="text-[10px] text-nb-faint">
                       {groupFields.filter((f) => f.checked).length} / {groupFields.length} kept
                     </span>
                   </button>
                   {!collapsed ? (
-                    <div className="border-t border-card-border">
+                    <div className="border-t border-nb-line">
                       {groupFields.map((field) => {
                         const i = fields.indexOf(field);
                         const preview = formatPreview(previewValue(sample, field.path));
@@ -199,12 +199,12 @@ function Step({ number, title, hint, children }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(96,165,250,.15)] text-[10px] font-bold text-nb-blueb">
           {number}
         </span>
         <div>
-          <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-          {hint ? <p className="text-[11px] text-muted">{hint}</p> : null}
+          <h4 className="text-sm font-semibold text-nb-ink">{title}</h4>
+          {hint ? <p className="text-[11px] text-nb-faint">{hint}</p> : null}
         </div>
       </div>
       <div className="ml-7 space-y-2">{children}</div>
@@ -215,7 +215,7 @@ function Step({ number, title, hint, children }) {
 function FieldRow({ field, preview, onCheck, onName }) {
   return (
     <label
-      className={`grid cursor-pointer grid-cols-[20px_1fr_1fr_110px] items-center gap-2 px-2 py-1.5 hover:bg-hover ${
+      className={`grid cursor-pointer grid-cols-[20px_1fr_1fr_110px] items-center gap-2 px-2 py-1.5 transition hover:bg-[rgba(96,165,250,.05)] ${
         !field.checked ? "opacity-60" : ""
       }`}
     >
@@ -223,19 +223,19 @@ function FieldRow({ field, preview, onCheck, onName }) {
         type="checkbox"
         checked={field.checked}
         onChange={(e) => onCheck(e.target.checked)}
-        className="h-3.5 w-3.5 cursor-pointer accent-foreground"
+        className="h-3.5 w-3.5 cursor-pointer accent-nb-teal"
       />
       <input
         value={field.name}
         onChange={(e) => onName(e.target.value)}
         disabled={!field.checked}
         onClick={(e) => e.stopPropagation()}
-        className="h-7 w-full rounded-md border border-field bg-transparent px-2 text-xs text-foreground outline-none focus:border-muted disabled:opacity-50"
+        className="h-7 w-full rounded-[7px] border border-nb-line bg-[rgba(0,0,0,.35)] px-2 text-xs text-nb-blueb outline-none focus:border-nb-teal disabled:opacity-50"
       />
-      <span className="truncate font-mono text-[11px] text-muted" title={field.path}>
+      <span className="truncate font-mono text-[11px] text-nb-faint" title={field.path}>
         {field.path}
       </span>
-      <span className="truncate font-mono text-[11px] text-foreground" title={String(preview)}>
+      <span className="truncate font-mono text-[11px] text-nb-soft" title={String(preview)}>
         {preview}
       </span>
     </label>

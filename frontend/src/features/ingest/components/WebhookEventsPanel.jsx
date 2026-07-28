@@ -39,29 +39,29 @@ export default function WebhookEventsPanel({ hookId }) {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  if (q.isLoading) return <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Loading events…</div>;
-  if (rows.length === 0) return <p className="text-sm text-muted py-6 text-center">No inbound events recorded yet.</p>;
+  if (q.isLoading) return <div className="flex items-center gap-2 text-sm text-nb-soft"><Spinner className="!h-4 !w-4" /> Loading events…</div>;
+  if (rows.length === 0) return <p className="py-6 text-center text-sm text-nb-faint">No inbound events recorded yet.</p>;
 
   return (
-    <ul className="rounded-lg border border-card-border divide-y divide-card-border">
+    <ul className="divide-y divide-nb-line/50 rounded-[10px] border border-nb-line">
       {rows.map((r) => {
         const open = expanded === r.id;
         return (
           <li key={r.id} className="text-sm">
-            <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-hover">
-              <button onClick={() => setExpanded(open ? null : r.id)} className="flex-1 flex items-center gap-2 text-left min-w-0">
-                <Icon icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"} className="text-muted text-sm shrink-0" />
-                <span className="text-xs text-muted font-mono shrink-0">{fmt(r.received_at)}</span>
-                <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${OUTCOME_PILL[r.auth_outcome] || OUTCOME_PILL.skipped}`}>auth {r.auth_outcome}</span>
-                <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${OUTCOME_PILL[r.schema_outcome] || OUTCOME_PILL.skipped}`}>schema {r.schema_outcome}</span>
+            <div className="flex items-center gap-2 px-3 py-2.5 transition hover:bg-[rgba(96,165,250,.05)]">
+              <button onClick={() => setExpanded(open ? null : r.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                <Icon icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"} className="shrink-0 text-sm text-nb-faint" />
+                <span className="shrink-0 font-mono text-xs text-nb-faint">{fmt(r.received_at)}</span>
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${OUTCOME_PILL[r.auth_outcome] || OUTCOME_PILL.skipped}`}>auth {r.auth_outcome}</span>
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${OUTCOME_PILL[r.schema_outcome] || OUTCOME_PILL.skipped}`}>schema {r.schema_outcome}</span>
                 {r.published ? (
-                  <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-green-500/10 text-green-500">published</span>
+                  <span className="rounded-full border border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] px-1.5 py-0.5 text-[10px] font-medium text-nb-good">published</span>
                 ) : (
-                  <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-hover text-muted">not published</span>
+                  <span className="rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">not published</span>
                 )}
-                {r.is_replay && <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-blue-500/10 text-blue-500">replay</span>}
+                {r.is_replay && <span className="rounded-full border border-[rgba(96,165,250,.35)] bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] font-medium text-nb-blueb">replay</span>}
               </button>
-              <button onClick={() => replay.mutate(r.id)} disabled={replay.isPending} title="Replay" className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-blue-500 shrink-0 disabled:opacity-50">
+              <button onClick={() => replay.mutate(r.id)} disabled={replay.isPending} title="Replay" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-blueb disabled:opacity-50">
                 <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
               </button>
             </div>

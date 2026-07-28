@@ -48,29 +48,29 @@ export default function WebhookTestPanel({ hookId }) {
       </div>
 
       {res && (
-        <div className="space-y-3 rounded-lg border border-card-border bg-hover/30 p-4">
+        <div className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-4">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted">Schema</span>
-            <span className={`text-[11px] rounded-full px-2 py-0.5 font-medium ${res.schema_valid ? OUTCOME_PILL.ok : OUTCOME_PILL.failed}`}>
+            <span className="text-xs text-nb-faint">Schema</span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${res.schema_valid ? OUTCOME_PILL.ok : OUTCOME_PILL.failed}`}>
               {res.schema_valid ? "Valid" : "Invalid"}
             </span>
             {res.would_publish_subject && (
-              <span className="ml-auto text-[11px] font-mono text-muted truncate">→ {res.would_publish_subject}</span>
+              <span className="ml-auto truncate font-mono text-[11px] text-nb-faint">→ {res.would_publish_subject}</span>
             )}
           </div>
           {Array.isArray(res.schema_errors) && res.schema_errors.length > 0 && (
-            <ul className="text-xs text-red-500 list-disc list-inside space-y-0.5">
+            <ul className="list-inside list-disc space-y-0.5 text-xs text-nb-crit">
               {res.schema_errors.map((er, i) => <li key={i}>{typeof er === "string" ? er : JSON.stringify(er)}</li>)}
             </ul>
           )}
           {Array.isArray(res.transform_errors) && res.transform_errors.length > 0 && (
-            <ul className="text-xs text-red-500 list-disc list-inside space-y-0.5">
+            <ul className="list-inside list-disc space-y-0.5 text-xs text-nb-crit">
               {res.transform_errors.map((er, i) => <li key={i}>{typeof er === "string" ? er : JSON.stringify(er)}</li>)}
             </ul>
           )}
           <div>
             <FieldLabel>Transformed output</FieldLabel>
-            <pre className="mt-1 rounded-lg border border-field bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all max-h-52 overflow-auto">
+            <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-soft">
               {res.transformed !== undefined && res.transformed !== null ? JSON.stringify(res.transformed, null, 2) : "—"}
             </pre>
           </div>

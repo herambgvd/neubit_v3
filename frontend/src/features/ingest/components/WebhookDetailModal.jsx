@@ -52,10 +52,10 @@ export default function WebhookDetailModal({ webhook, onClose, onChanged }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className="relative w-full max-w-2xl rounded-xl bg-card border border-card-border shadow-2xl animate-modal-in flex flex-col max-h-[85vh]">
-        <div className="flex items-center justify-between border-b border-card-border px-5 py-4 shrink-0">
-          <h3 className="text-base font-semibold text-foreground">{webhook.name}</h3>
-          <button onClick={onClose} className="text-muted hover:text-foreground transition">
+      <div className="relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.93)] shadow-2xl backdrop-blur-md animate-modal-in">
+        <div className="flex shrink-0 items-center justify-between border-b border-nb-line px-5 py-4">
+          <h3 className="text-base font-semibold text-nb-ink">{webhook.name}</h3>
+          <button onClick={onClose} className="text-nb-muted transition hover:text-nb-ink">
             <Icon icon="heroicons-outline:x-mark" className="text-xl" />
           </button>
         </div>
@@ -68,8 +68,8 @@ export default function WebhookDetailModal({ webhook, onClose, onChanged }) {
               <div>
                 <FieldLabel>Public receiver URL</FieldLabel>
                 <div className="mt-1 flex items-center gap-2">
-                  <code className="flex-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground break-all">{url}</code>
-                  <button onClick={() => copyToClipboard(url)} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-2 text-xs text-foreground hover:bg-hover shrink-0">
+                  <code className="flex-1 break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-blueb">{url}</code>
+                  <button onClick={() => copyToClipboard(url)} className="inline-flex shrink-0 items-center gap-1 rounded-[8px] border border-nb-line px-2.5 py-2 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb">
                     <Icon icon="heroicons-outline:clipboard-document" className="text-sm" /> Copy
                   </button>
                   <button
@@ -80,26 +80,26 @@ export default function WebhookDetailModal({ webhook, onClose, onChanged }) {
                       onConfirm: () => { rotate.mutate(); setConfirm(null); },
                     })}
                     disabled={rotate.isPending}
-                    className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-500 hover:bg-amber-500/20 shrink-0 disabled:opacity-50"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-[8px] border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.1)] px-2.5 py-2 text-xs text-nb-warn transition hover:bg-[rgba(251,191,36,.18)] disabled:opacity-50"
                   >
                     <Icon icon="heroicons-outline:arrow-path" className="text-sm" /> Rotate
                   </button>
                 </div>
-                <p className="mt-1 text-[11px] text-muted/70">Point your external system at this URL to POST events.</p>
+                <p className="mt-1 text-[11px] text-nb-faint">Point your external system at this URL to POST events.</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div><FieldLabel>Auth type</FieldLabel><p className="mt-1 text-sm text-foreground">{authLabel(webhook.auth_type)}</p></div>
-                <div><FieldLabel>Status</FieldLabel><p className="mt-1 text-sm text-foreground">{webhook.is_active !== false ? "Active" : "Inactive"}</p></div>
+                <div><FieldLabel>Auth type</FieldLabel><p className="mt-1 text-sm text-nb-soft">{authLabel(webhook.auth_type)}</p></div>
+                <div><FieldLabel>Status</FieldLabel><p className="mt-1 text-sm text-nb-soft">{webhook.is_active !== false ? "Active" : "Inactive"}</p></div>
               </div>
               <div>
                 <FieldLabel>Transform (field map)</FieldLabel>
-                <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+                <pre className="mt-1 whitespace-pre-wrap break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-soft">
                   {webhook.transform && Object.keys(webhook.transform).length ? JSON.stringify(webhook.transform, null, 2) : "—"}
                 </pre>
               </div>
               <div>
                 <FieldLabel>Schema (JSON)</FieldLabel>
-                <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all max-h-52 overflow-auto">
+                <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-soft">
                   {webhook.payload_schema && Object.keys(webhook.payload_schema).length ? JSON.stringify(webhook.payload_schema, null, 2) : "—"}
                 </pre>
               </div>
@@ -111,7 +111,7 @@ export default function WebhookDetailModal({ webhook, onClose, onChanged }) {
           {tab === "events" && <WebhookEventsPanel hookId={hookId} />}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-card-border shrink-0">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-nb-line px-6 py-4">
           <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
