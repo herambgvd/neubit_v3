@@ -11,7 +11,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...auth.deps import require_permission
+from ...auth.deps import get_current_user, require_permission
 from ...auth.models import User
 from ...core.errors import ValidationError
 from ...core.storage import get_storage
@@ -31,9 +31,13 @@ router = APIRouter(prefix="/sites", tags=["Sites"])
 
 async def _service(
     db: Annotated[AsyncSession, Depends(get_db)],
-    scope=Depends(get_scope),
+    scope: Annotated[Scope, Depends(get_scope)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> SiteService:
-    return SiteService(db, scope)
+    # A super-admin (platform scope) is never site-confined; a tenant user is limited
+    # to their User.site_ids (empty = all sites in the tenant).
+    site_ids = [] if scope.is_platform else list(user.site_ids or [])
+    return SiteService(db, scope, site_ids=site_ids)
 
 
 @router.get(
