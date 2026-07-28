@@ -1,46 +1,38 @@
 "use client";
 
-// A single role row in the master list (left pane). Icon, name + System pill,
-// description, and a permission-count line. Mirrors SiteListItem.
+// A single role card in the left library (matches the Users list style): role icon,
+// name + System pill, description sub-line, and a user-count dot on the right.
 import { Icon } from "@iconify/react";
-
-const permLabel = (role) => {
-  const perms = role.permissions || [];
-  if (perms.includes("*")) return "All permissions";
-  return `${perms.length} permission${perms.length === 1 ? "" : "s"}`;
-};
 
 export default function RoleListItem({ role, selected, onSelect }) {
   return (
-    <li className="relative">
-      <button
-        onClick={onSelect}
-        className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${
-          selected
-            ? "bg-[rgba(96,165,250,.1)]"
-            : "hover:bg-[rgba(96,165,250,.06)]"
-        }`}
-      >
-        {selected && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-blue" />}
-        <span className="inline-flex h-9 w-9 items-center justify-center rounded-[9px] border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-blueb shrink-0">
-          <Icon
-            icon={role.is_system ? "heroicons-outline:lock-closed" : "heroicons-outline:shield-check"}
-            className="text-base"
-          />
+    <button
+      onClick={onSelect}
+      className={`flex w-full items-center gap-2.5 rounded-[10px] border px-3 py-2.5 text-left transition ${
+        selected
+          ? "border-[rgba(96,165,250,.6)] bg-[rgba(96,165,250,.1)]"
+          : "border-nb-line bg-[rgba(6,11,26,.5)] hover:border-[rgba(150,180,245,.42)]"
+      }`}
+    >
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-blueb">
+        <Icon
+          icon={role.is_system ? "heroicons-outline:lock-closed" : "heroicons-outline:shield-check"}
+          className="text-base"
+        />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="truncate text-[12.5px] font-semibold text-nb-ink">{role.name}</span>
+          {role.is_system && (
+            <span className="rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-1.5 py-px text-[9px] font-medium text-nb-blueb">
+              System
+            </span>
+          )}
         </span>
-        <span className="flex-1 min-w-0">
-          <span className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-nb-ink truncate">{role.name}</span>
-            {role.is_system && (
-              <span className="text-[10px] rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb px-1.5 py-0.5 font-medium">
-                System
-              </span>
-            )}
-          </span>
-          {role.description && <span className="block text-xs text-nb-soft truncate">{role.description}</span>}
-          <span className="block text-[10px] font-mono text-nb-faint">{permLabel(role)}</span>
+        <span className="block truncate font-mono text-[10px] text-nb-faint">
+          {role.description || "—"}
         </span>
-      </button>
-    </li>
+      </span>
+    </button>
   );
 }

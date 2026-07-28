@@ -436,7 +436,7 @@ export default function Header() {
           </nav>
 
           <div className="flex flex-1 items-center justify-end gap-1">
-            {isHome && !usersRoles && <HomeStatusStrip />}
+            {pathname === "/home" && <HomeStatusStrip />}
             {usersRoles && can("audit.read") && (
               <Link
                 href="/audit"

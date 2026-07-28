@@ -10,18 +10,10 @@ import { EmptyState } from "@/components/ui/kit";
 export default function RoleDetail({ role, groups, catalogLoading, canManage, onClose, onEdit, onDelete, onClone }) {
   const granted = new Set(role.permissions || []);
   const all = granted.has("*");
-  // Role summary: total catalog capabilities, how many this role grants, and how
-  // many groups it touches — a quick least-privilege read, derived from real perms.
-  const allPerms = Object.values(groups).flat();
-  const totalCaps = allPerms.length;
-  const grantedCount = all ? totalCaps : allPerms.filter((p) => granted.has(p.key)).length;
-  const groupsTouched = Object.values(groups).filter((perms) =>
-    all ? perms.length : perms.some((p) => granted.has(p.key)),
-  ).length;
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
+      <header className="flex items-start justify-between gap-4 px-6 py-3.5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
           <span className="inline-flex h-12 w-12 items-center justify-center rounded-[11px] border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-blueb shrink-0">
             <Icon
@@ -65,15 +57,6 @@ export default function RoleDetail({ role, groups, catalogLoading, canManage, on
             />{" "}
             {role.is_system ? "View" : "Edit"}
           </button>
-          {canManage && (
-            <button
-              onClick={onClone}
-              title="Clone this role"
-              className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-2.5 py-1.5 text-xs text-nb-blueb transition hover:bg-[rgba(96,165,250,.16)]"
-            >
-              <Icon icon="heroicons-outline:document-duplicate" className="text-sm" /> Clone
-            </button>
-          )}
           {!role.is_system && (
             <button
               onClick={onDelete}
@@ -85,23 +68,7 @@ export default function RoleDetail({ role, groups, catalogLoading, canManage, on
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
-        {/* Role summary — least-privilege read from the live catalog */}
-        {!catalogLoading && totalCaps > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { k: "Capabilities granted", v: all ? "ALL" : `${grantedCount} / ${totalCaps}`, c: "text-nb-good" },
-              { k: "Areas touched", v: `${groupsTouched} / ${Object.keys(groups).length}`, c: "text-nb-blueb" },
-              { k: "Scope", v: all ? "Full control" : grantedCount === 0 ? "None" : "Scoped", c: "text-nb-tealb" },
-            ].map((s) => (
-              <div key={s.k} className="rounded-[11px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5">
-                <div className="text-[10px] uppercase tracking-wider text-nb-faint">{s.k}</div>
-                <div className={`mt-1 font-mono text-[15px] font-semibold ${s.c}`}>{s.v}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-faint">Description</div>
           <p className="mt-1 text-sm text-nb-ink">{role.description || "—"}</p>
