@@ -419,6 +419,16 @@ export default function Header() {
 
           <div className="flex flex-1 items-center justify-end gap-1">
             {isHome && !usersRoles && <HomeStatusStrip />}
+            {usersRoles && can("audit.read") && (
+              <Link
+                href="/audit"
+                title="Access change log — who / when / what, audit-signed"
+                className="mr-1 flex items-center gap-1.5 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-3 py-1.5 text-[12px] tracking-[.4px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                <Icon icon="heroicons-outline:clipboard-document-list" className="text-[15px]" />
+                Audit
+              </Link>
+            )}
             {!isHome && (
               <button
                 onClick={() => window.dispatchEvent(new Event("palette:open"))}

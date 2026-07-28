@@ -12,7 +12,7 @@ import { Avatar } from "@/components/ui/kit";
 
 function Section({ icon, children, note }) {
   return (
-    <div className="mb-3 mt-6 flex items-center gap-2 first:mt-0">
+    <div className="mb-2 mt-5 flex items-center gap-2 first:mt-0">
       <Icon icon={icon} className="text-sm text-nb-blueb" />
       <span className="text-[10.5px] font-semibold uppercase tracking-[1.4px] text-nb-faint">{children}</span>
       <span className="h-px flex-1 bg-nb-line/60" />
@@ -23,7 +23,7 @@ function Section({ icon, children, note }) {
 
 function Row({ label, children }) {
   return (
-    <div className="flex items-start gap-4 border-b border-nb-line/40 py-2.5 last:border-b-0">
+    <div className="flex items-start gap-4 border-b border-nb-line/40 py-1.5 last:border-b-0">
       <span className="w-[130px] shrink-0 pt-1.5 text-[11.5px] text-nb-faint">{label}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
@@ -103,7 +103,7 @@ export default function UserEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-3 border-b border-nb-line px-5 py-4">
+      <header className="flex items-center gap-3 border-b border-nb-line px-5 py-3">
         <Avatar src={u.avatar_url} name={u.full_name || u.email} size={44} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[17px] font-semibold text-nb-ink">{u.full_name || u.email}</h2>
@@ -131,7 +131,7 @@ export default function UserEditor({
         )}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
         {/* Identity */}
         <Section icon="heroicons-outline:user">Identity</Section>
         <Row label="Full name">

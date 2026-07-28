@@ -15,7 +15,7 @@ function Stat({ label, value, tone = "ink" }) {
     faint: "text-nb-faint",
   }[tone];
   return (
-    <div className="flex items-center justify-between border-b border-nb-line/40 py-2 last:border-b-0">
+    <div className="flex items-center justify-between border-b border-nb-line/40 py-1.5 last:border-b-0">
       <span className="text-[11.5px] text-nb-faint">{label}</span>
       <span className={`font-mono text-[11.5px] ${c}`}>{value}</span>
     </div>
@@ -45,7 +45,7 @@ export default function UserPosture({ user, canManage, busyAction, onClone, onFo
   const u = user;
   const locked = !!u.locked;
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3.5">
       <div className="mb-2 flex items-center gap-2">
         <Icon icon="heroicons-outline:key" className="text-sm text-nb-blueb" />
         <span className="text-[10.5px] font-semibold uppercase tracking-[1.4px] text-nb-muted">Security posture</span>
