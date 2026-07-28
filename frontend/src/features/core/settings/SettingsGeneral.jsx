@@ -35,6 +35,22 @@ export default function SettingsGeneralPage() {
 
   const catalog = cfg.data?.catalog || [];
   const groups = [...new Set(catalog.map((c) => c.group))];
+  // "Google Maps" carries the most fields → give it its own full-width row; the
+  // other groups sit three-across above it.
+  const WIDE = "Google Maps";
+  const topGroups = groups.filter((g) => g !== WIDE);
+  const wideGroup = groups.includes(WIDE) ? WIDE : null;
+  const fieldsOf = (group) => catalog.filter((c) => c.group === group);
+  const renderField = (item) => (
+    <SettingField
+      key={item.key}
+      item={item}
+      value={values[item.key]}
+      onChange={(v) => setValues((prev) => ({ ...prev, [item.key]: v }))}
+    />
+  );
+  const cardCls = "rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4";
+  const headCls = "mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted";
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-6 text-nb-ink">
@@ -53,26 +69,26 @@ export default function SettingsGeneralPage() {
           <Spinner />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          {groups.map((group) => (
-            <div key={group} className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4">
-              <h2 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
-                {group}
-              </h2>
-              <div>
-                {catalog
-                  .filter((c) => c.group === group)
-                  .map((item) => (
-                    <SettingField
-                      key={item.key}
-                      item={item}
-                      value={values[item.key]}
-                      onChange={(v) => setValues((prev) => ({ ...prev, [item.key]: v }))}
-                    />
-                  ))}
+        <div className="space-y-3">
+          {/* top row — three groups across */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {topGroups.map((group) => (
+              <div key={group} className={cardCls}>
+                <h2 className={headCls}>{group}</h2>
+                <div>{fieldsOf(group).map(renderField)}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* wide row — Google Maps, fields laid out horizontally */}
+          {wideGroup && (
+            <div className={cardCls}>
+              <h2 className={headCls}>{wideGroup}</h2>
+              <div className="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
+                {fieldsOf(wideGroup).map(renderField)}
               </div>
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>
