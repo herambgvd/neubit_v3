@@ -267,6 +267,7 @@ export default function UsersPage() {
               canManage={canManage}
               isSelf={selected.id === me?.id}
               sites={siteList}
+              roleOptions={roleOptions}
               sessionIdleMinutes={sessionIdle}
               busyAction={busyAction}
               onSave={(body) => saveEdit.mutate({ id: selected.id, ...body })}

@@ -45,6 +45,7 @@ export default function UserEditor({
   canManage,
   isSelf,
   sites = [],
+  roleOptions = [],
   sessionIdleMinutes,
   busyAction,
   onSave,
@@ -66,6 +67,7 @@ export default function UserEditor({
 
   const dirty =
     fullName !== (u.full_name || "") ||
+    roleId !== (u.role?.id || "") ||
     JSON.stringify([...siteIds].sort()) !== JSON.stringify([...(u.site_ids || [])].sort());
 
   const status = u.locked ? "locked" : u.is_active ? "active" : "disabled";
@@ -144,11 +146,30 @@ export default function UserEditor({
           <input className={`${inputCls} opacity-70`} value={u.email} readOnly />
         </Row>
         <Row label="Role">
-          <span className="inline-flex items-center gap-2 rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-3 py-1.5 text-[12px] text-nb-blueb">
-            <Icon icon="heroicons-outline:shield-check" className="text-[13px]" />
-            {u.role?.name || "—"}
-          </span>
-          <span className="ml-2 text-[11px] text-nb-faint">inherits its permissions</span>
+          {canManage ? (
+            <div className="flex items-center gap-2">
+              <span className="relative inline-flex items-center">
+                <Icon icon="heroicons-outline:shield-check" className="pointer-events-none absolute left-2.5 text-[13px] text-nb-blueb" />
+                <select
+                  value={roleId}
+                  disabled={isSelf}
+                  onChange={(e) => setRoleId(e.target.value)}
+                  className="appearance-none rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] py-1.5 pl-8 pr-7 text-[12px] text-nb-blueb outline-none focus:border-nb-teal disabled:opacity-60"
+                >
+                  {roleOptions.map((r) => (
+                    <option key={r.value} value={r.value} className="bg-[#0b1228] text-nb-ink">{r.label}</option>
+                  ))}
+                </select>
+                <Icon icon="heroicons-mini:chevron-down" className="pointer-events-none absolute right-2 text-[13px] text-nb-blueb" />
+              </span>
+              <span className="text-[11px] text-nb-faint">inherits its permissions</span>
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-2 rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-3 py-1.5 text-[12px] text-nb-blueb">
+              <Icon icon="heroicons-outline:shield-check" className="text-[13px]" />
+              {u.role?.name || "—"}
+            </span>
+          )}
         </Row>
         <Row label="Access scope">
           {sites.length === 0 ? (
