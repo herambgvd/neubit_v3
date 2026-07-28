@@ -101,7 +101,8 @@ export default function AppLayout({ children }) {
   // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.
   const home = pathname === "/home";
   // Minimal-chrome config surfaces (own segment strip, no Config sub-tab bar).
-  const minimalConsole = pathname === "/users" || pathname === "/roles";
+  const minimalConsole =
+    pathname === "/users" || pathname === "/roles" || pathname === "/audit";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
@@ -124,6 +125,8 @@ export default function AppLayout({ children }) {
     pathname === "/config/patterns" ||
     pathname === "/config/video-wall" ||
     pathname === "/config/storage" ||
+    // Audit console — bounded pane; the entries table scrolls internally.
+    pathname === "/audit" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 

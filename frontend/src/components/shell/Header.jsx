@@ -299,11 +299,12 @@ export default function Header() {
   // backdrop with just the home/menu icon, brand, status strip and account — the
   // screen carries its OWN section strip (mode tabs / segment toggle). Navigation to
   // other sections is via the ⊞/home menu navigator.
-  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles"]);
+  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit"]);
   const isHome = MINIMAL_ROUTES.has(pathname);
   // The Users & Roles console carries its section strip (modtab + USERS/ROLES
-  // segment + RBAC pill + AUDIT) INSIDE the header, in place of the top nav.
+  // segment + AUDIT) INSIDE the header, in place of the top nav.
   const usersRoles = pathname === "/users" || pathname === "/roles";
+  const isAudit = pathname === "/audit";
   const [openUser, setOpenUser] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
@@ -391,6 +392,23 @@ export default function Header() {
           {usersRoles && (
             <div className="flex min-w-0 flex-1 items-center">
               <UsersRolesStrip active={pathname === "/roles" ? "roles" : "users"} />
+            </div>
+          )}
+
+          {/* Audit log console: a back link + section modtab in the header. */}
+          {isAudit && (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Link
+                href="/users"
+                title="Back to Users & Roles"
+                className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                <Icon icon="heroicons-mini:chevron-left" className="text-[14px]" /> Users &amp; Roles
+              </Link>
+              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb">
+                <Icon icon="heroicons-outline:clipboard-document-list" className="text-[14px]" />
+                Audit Log
+              </div>
             </div>
           )}
 
