@@ -223,9 +223,11 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* GVD lockup */}
-      <div className="flex items-center justify-end gap-2 px-8 pb-3 font-mono text-[9px] tracking-[1.3px] text-[#9fb2d8] lg:px-[11%]">
-        <span>GENIUS VISION DIGITAL · GVD</span>
+      {/* GVD lockup — bottom-right corner: byline + the GVD logo mark */}
+      <div className="pointer-events-none absolute bottom-3 right-5 flex items-center gap-2 opacity-90">
+        <span className="font-mono text-[9px] tracking-[1.3px] text-[#9fb2d8]">GENIUS VISION DIGITAL</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo/gvd_logo_color.png" alt="GVD" className="h-[15px] w-auto object-contain" />
       </div>
     </div>
   );

@@ -45,14 +45,17 @@ function Brand() {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logo} alt={data?.app_name || "Logo"} className="h-6 max-w-[150px] object-contain" />
       ) : (
-        // Default: the NeuBit wordmark logo (matches the login/landing/mockup).
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src="/logo/neubit_logo.svg"
-          alt={name}
-          className="h-[22px] w-auto object-contain"
-          style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.6)) drop-shadow(0 0 6px rgba(34,211,238,.3))" }}
-        />
+        // Default: NeuBit wordmark — "Neu" white, "Bit" teal (matches login/landing
+        // /mockup), with the "Listen to your data" tagline.
+        <span className="flex flex-col leading-none">
+          <span className="text-[17px] font-bold tracking-[0.3px]">
+            <span className="text-[#f2f6ff]">Neu</span>
+            <span className="text-[#67e8f9]">Bit</span>
+          </span>
+          <span className="mt-0.5 font-mono text-[7px] uppercase tracking-[1.6px] text-[#9a92c8]">
+            Listen to your data
+          </span>
+        </span>
       )}
     </Link>
   );
