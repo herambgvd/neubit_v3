@@ -53,8 +53,8 @@ export default function SettingsGeneralPage() {
   const headCls = "mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted";
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-6 text-nb-ink">
-      <div className="mb-4 flex items-center justify-end">
+    <div className="flex min-h-0 flex-1 flex-col px-1 text-nb-ink">
+      <div className="mb-3 flex shrink-0 items-center justify-end">
         <button
           disabled={save.isPending || cfg.isLoading}
           onClick={() => save.mutate()}
@@ -69,20 +69,21 @@ export default function SettingsGeneralPage() {
           <Spinner />
         </div>
       ) : (
-        <div className="space-y-3">
-          {/* top row — three groups across */}
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        // Fill the whole pane: top groups take the upper half, Google Maps the lower.
+        <div className="flex min-h-0 flex-1 flex-col gap-3 pb-1">
+          {/* top row — three groups across, stretched to fill */}
+          <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {topGroups.map((group) => (
-              <div key={group} className={cardCls}>
+              <div key={group} className={`${cardCls} min-h-0 overflow-y-auto`}>
                 <h2 className={headCls}>{group}</h2>
                 <div>{fieldsOf(group).map(renderField)}</div>
               </div>
             ))}
           </div>
 
-          {/* wide row — Google Maps, fields laid out horizontally */}
+          {/* wide row — Google Maps, fields laid out horizontally, stretched to fill */}
           {wideGroup && (
-            <div className={cardCls}>
+            <div className={`${cardCls} flex min-h-0 flex-1 flex-col overflow-y-auto`}>
               <h2 className={headCls}>{wideGroup}</h2>
               <div className="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
                 {fieldsOf(wideGroup).map(renderField)}

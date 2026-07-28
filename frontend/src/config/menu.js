@@ -40,19 +40,12 @@ export const menuItems = [
 //   so nothing is lost. Enabled tabs map to real neubit_v3 routes; the rest are disabled
 //   placeholders until their feature ships.
 export const configTabs = [
-  { title: "Sites", icon: "heroicons:map-pin", link: "/sites", perm: "neubit.read" },
-  { title: "Users", icon: "heroicons-outline:users", link: "/users", perm: "user.read" },
-  { title: "Roles", icon: "heroicons-outline:shield-check", link: "/roles", perm: "role.read" },
   { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
-  { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", perm: "neubit.read" },
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
-  // Storage & Resilience removed — recording storage / retention / tiering / RAID are
-  // owned by the NVR recorder, not this VMS control plane.
   { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
   { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
   { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
   { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
-  { title: "Activity", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
   { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
   // VMS enterprise surfaces (P6-C/P6-D).
   { title: "External Access", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
