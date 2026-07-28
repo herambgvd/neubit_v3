@@ -139,7 +139,10 @@ export default function AppLayout({ children }) {
   // overflow-hidden: the body never scrolls — scrollable pages scroll INSIDE <main>
   // (app-scroll / overflow-y-auto); contained/immersive pages clip.
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
+    <div
+      className="fixed inset-0 flex flex-col overflow-hidden bg-background"
+      style={home ? { background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" } : undefined}
+    >
       <Header />
       {isConfigRoute(pathname) && <SectionTabs tabs={configTabs} />}
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
