@@ -16,17 +16,23 @@ export default function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="shrink-0 border-t border-card-border bg-background">
-      <div className="w-full px-6 lg:px-8 py-3 flex items-center justify-between text-xs text-muted">
-        <span>
+    <footer className="shrink-0 border-t border-[rgba(150,180,245,.14)] bg-[rgba(8,15,34,.55)] backdrop-blur">
+      <div className="w-full px-6 lg:px-8 py-2.5 flex items-center justify-between">
+        <span className="text-[11px] tracking-[.2px] text-nb-faint">
           © {year} {name}. All rights reserved.
         </span>
-        {/* Colorful GVD logo — same brand mark on both light and dark themes. */}
-        <img
-          src="/logo/gvd_logo_color.png"
-          alt="Genius Vision Digital"
-          className="hidden h-5 w-auto shrink-0 sm:inline-block"
-        />
+        {/* GVD lockup — right corner, matching the VMS console mockup. */}
+        <div className="flex items-center gap-2.5 opacity-80">
+          <span className="hidden text-[10px] font-medium uppercase tracking-[2.5px] text-[#9fb2d8] sm:inline">
+            Genius Vision Digital
+          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo/gvd_logo_color.png"
+            alt="Genius Vision Digital"
+            className="h-4 w-auto shrink-0"
+          />
+        </div>
       </div>
     </footer>
   );
