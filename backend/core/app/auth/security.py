@@ -127,6 +127,12 @@ def create_access_token(
         # on core subject ids "role:<id>") without a round-trip to core. Super-admins
         # may hold no role → None. Core itself ignores this claim.
         "role_id": str(user.role_id) if getattr(user, "role_id", None) else None,
+        # ``site_ids`` is the caller's SITE ACCESS SCOPE: the site ids this user may
+        # see. EMPTY = unrestricted (all sites in the tenant). Non-empty = the user
+        # is confined to exactly these sites — baked in so satellite services (vision)
+        # can filter camera/site-derived data locally off the token. Super-admins get
+        # [] (unrestricted) and bypass regardless.
+        "site_ids": list(getattr(user, "site_ids", None) or []),
         "features": dict(features or {}),
         "limits": dict(limits or {}),
         "license_state": license_state or "active",

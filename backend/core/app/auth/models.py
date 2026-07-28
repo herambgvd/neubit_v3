@@ -102,6 +102,12 @@ class User(Base):
     )
     # SHA-256 hashes of one-time recovery codes (consumed as they're used).
     mfa_recovery_codes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # --- site access scope (data-visibility RBAC) --------------------------
+    # The site ids this user may see. EMPTY list = UNRESTRICTED (every site in the
+    # tenant). Non-empty = the user is confined to exactly these sites — enforced at
+    # camera/site read time (core sites list + vision camera list, via the token's
+    # ``site_ids`` claim). Coarse, additive-safe: it only ever narrows visibility.
+    site_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # Eager-loaded with the user so permission checks never need a second query.
     role: Mapped[Role] = relationship(lazy="selectin")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

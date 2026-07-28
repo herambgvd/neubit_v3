@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kernel.auth import Principal, Scope, get_scope, require_permission
+from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
 from kernel.auth import _bearer  # raw bearer credentials (forwarded to nvr for snapshot ensure)
 
 from app.db import get_db
@@ -87,8 +87,12 @@ async def get_camera_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
     bearer: Annotated[Optional[str], Depends(_bearer_token)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> CameraService:
-    return CameraService(db, scope, bearer=bearer)
+    # Confine a site-scoped caller (non-superadmin with a non-empty site list) to
+    # their sites; an unrestricted caller / super-admin passes [] (sees everything).
+    site_ids = principal.site_ids if principal.site_scoped() else []
+    return CameraService(db, scope, bearer=bearer, site_ids=site_ids)
 
 
 def _driver_err(exc: DriverError) -> HTTPException:

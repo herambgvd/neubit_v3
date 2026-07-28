@@ -456,6 +456,7 @@ class AuthService:
             password_hash=hash_password(data.password),
             is_active=True if data.is_active is None else data.is_active,
             tenant_id=tenant_id,
+            site_ids=list(data.site_ids or []),
             # A tenant-admin can NEVER mint a super-admin. Only a bootstrap/seed path
             # (no scope) promotes explicitly elsewhere (seed_tenancy). Always False here.
             is_superadmin=False,
@@ -489,9 +490,122 @@ class AuthService:
             user.is_active = data.is_active
         if data.full_name is not None:
             user.full_name = data.full_name
+        if data.site_ids is not None:
+            user.site_ids = list(data.site_ids)
         await self.db.commit()
         await self.db.refresh(user)
         return user
+
+    # --- admin account actions (STQC / operational recovery) --------------
+    async def _admin_target(self, user_id: uuid.UUID, scope: Scope | None) -> User:
+        """Load a target user, enforcing tenant ownership (404 across tenants)."""
+        user = await self.db.get(User, user_id)
+        if user is None:
+            raise NotFoundError("user not found")
+        if scope is not None:
+            assert_owned(user, scope, message="user not found")
+        return user
+
+    async def admin_lock_user(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
+        """Manually lock an account: block sign-in until an admin unlocks it. Encoded
+        as a far-future ``locked_until`` (the same field auto-lockout uses), so the
+        existing login check enforces it with no new code path."""
+        user = await self._admin_target(user_id, scope)
+        user.locked_until = _now() + dt.timedelta(days=3650)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
+    async def admin_unlock_user(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
+        """Clear a lock (manual or brute-force) and reset the failed-attempt counter."""
+        user = await self._admin_target(user_id, scope)
+        user.locked_until = None
+        user.failed_login_count = 0
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
+    async def admin_reset_mfa(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
+        """Disable a user's TOTP second factor (lost-device recovery). If a security
+        policy requires 2FA, they'll be forced to re-enrol at next login."""
+        user = await self._admin_target(user_id, scope)
+        user.totp_enabled = False
+        user.totp_secret = None
+        user.mfa_recovery_codes = []
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
+    async def admin_revoke_sessions(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
+        """Force sign-out: revoke every live refresh token for the target user."""
+        user = await self._admin_target(user_id, scope)
+        await self.revoke_all_refresh(user.id)
+        return user
+
+    async def clone_user(self, user_id: uuid.UUID, data, scope: Scope | None = None) -> User:
+        """Create a new user inheriting the source's role, status and site scope.
+        Identity is fresh (new email/name); a random password is set — the new user
+        chooses their own via the emailed invite, so no credential is ever copied."""
+        src = await self._admin_target(user_id, scope)
+        if (await self.db.execute(select(User).where(User.email == data.email))).scalar_one_or_none():
+            raise ConflictError("email already registered")
+        import secrets as _secrets
+
+        user = User(
+            email=data.email,
+            full_name=data.full_name,
+            role_id=src.role_id,
+            password_hash=hash_password(_secrets.token_urlsafe(16) + "aA1!"),
+            is_active=src.is_active,
+            tenant_id=src.tenant_id,
+            site_ids=list(src.site_ids or []),
+            is_superadmin=False,
+        )
+        self.db.add(user)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
+    async def active_session_counts(self, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+        """Map user_id → count of live (non-revoked, unexpired) sessions, in one query."""
+        if not user_ids:
+            return {}
+        rows = (
+            await self.db.execute(
+                select(RefreshToken.user_id, func.count())
+                .where(
+                    RefreshToken.user_id.in_(user_ids),
+                    RefreshToken.revoked_at.is_(None),
+                    RefreshToken.expires_at > _now(),
+                )
+                .group_by(RefreshToken.user_id)
+            )
+        ).all()
+        return {uid: n for uid, n in rows}
+
+    # --- roles: clone -----------------------------------------------------
+    async def clone_role(self, role_id: uuid.UUID, name: str, scope: Scope | None = None) -> Role:
+        """Copy a role's permissions + description under a new name (own tenant)."""
+        src = await self.db.get(Role, role_id)
+        if src is None:
+            raise NotFoundError("role not found")
+        if scope is not None and not scope.is_platform and src.tenant_id not in (None, scope.tenant_id):
+            raise NotFoundError("role not found")
+        if await self._role_by_name(name):
+            raise ConflictError("a role with this name already exists")
+        tenant_id = None if scope is None or scope.is_platform else scope.tenant_id
+        # Never carry the wildcard into a custom clone (reserved for the system role).
+        perms = [p for p in (src.permissions or []) if p != WILDCARD]
+        role = Role(
+            name=name,
+            description=(src.description or None),
+            permissions=perms,
+            tenant_id=tenant_id,
+        )
+        self.db.add(role)
+        await self.db.commit()
+        await self.db.refresh(role)
+        return role
 
     def users_query(self, tenant_id: uuid.UUID | None = None):
         """Users list, optionally scoped to a single tenant.
