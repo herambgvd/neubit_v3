@@ -1,8 +1,9 @@
 "use client";
 
 import { Button, Input, Modal, Select, Toggle } from "@/components/ui/kit";
+import SiteScopeField from "./SiteScopeField";
 
-export default function EditUserModal({ editing, onClose, form, setForm, roleOptions, onSave, saving }) {
+export default function EditUserModal({ editing, onClose, form, setForm, roleOptions, sites = [], onSave, saving }) {
   return (
     <Modal
       open={!!editing}
@@ -29,6 +30,11 @@ export default function EditUserModal({ editing, onClose, form, setForm, roleOpt
           value={form.role_id}
           options={roleOptions}
           onChange={(e) => setForm({ ...form, role_id: e.target.value })}
+        />
+        <SiteScopeField
+          sites={sites}
+          value={form.site_ids || []}
+          onChange={(ids) => setForm({ ...form, site_ids: ids })}
         />
         <div className="flex items-center justify-between rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5">
           <div>

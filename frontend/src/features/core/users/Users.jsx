@@ -12,14 +12,17 @@ import { toast } from "sonner";
 import { Spinner } from "@/components/ui/kit";
 import { MasterDetail, ListPanel } from "@/components/common";
 import { api, apiError } from "@/lib/api";
+import { sites as sitesApi } from "@/lib/api/sites";
 import { useAuth } from "@/lib/auth";
 import UserListItem from "./components/UserListItem";
 import UserDetail from "./components/UserDetail";
 import AddUserModal from "./components/AddUserModal";
 import EditUserModal from "./components/EditUserModal";
 import DeleteUserModal from "./components/DeleteUserModal";
+import CloneUserModal from "./components/CloneUserModal";
 
-const EMPTY_CREATE = { email: "", password: "", full_name: "", role_id: "", send_invite: true };
+const EMPTY_CREATE = { email: "", password: "", full_name: "", role_id: "", send_invite: true, site_ids: [] };
+const EMPTY_CLONE = { email: "", full_name: "", send_invite: true };
 
 export default function UsersPage() {
   const qc = useQueryClient();
@@ -28,9 +31,12 @@ export default function UsersPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_CREATE);
   const [editing, setEditing] = useState(null); // user being edited, or null
-  const [editForm, setEditForm] = useState({ full_name: "", role_id: "", is_active: true });
+  const [editForm, setEditForm] = useState({ full_name: "", role_id: "", is_active: true, site_ids: [] });
   const [deleting, setDeleting] = useState(null); // user being deleted, or null
   const [delPassword, setDelPassword] = useState("");
+  const [cloning, setCloning] = useState(null); // source user for a clone, or null
+  const [cloneForm, setCloneForm] = useState(EMPTY_CLONE);
+  const [busyAction, setBusyAction] = useState(null); // "lock" | "unlock" | "revoke" | "resetmfa"
   const importRef = useRef(null);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -77,6 +83,20 @@ export default function UsersPage() {
     queryFn: () => api.get("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
   });
   const roleOptions = (roles.data?.items || []).map((r) => ({ value: r.id, label: r.name }));
+  const sitesQ = useQuery({
+    queryKey: ["sites", "scope-picker"],
+    queryFn: () => sitesApi.list({ page_size: 200 }),
+    staleTime: 60_000,
+  });
+  const siteList = useMemo(() => {
+    const d = sitesQ.data;
+    const arr = Array.isArray(d) ? d : d?.items || [];
+    return arr.map((s) => ({ site_id: s.site_id, name: s.name }));
+  }, [sitesQ.data]);
+  const siteNameOf = (ids) =>
+    (ids || [])
+      .map((id) => siteList.find((s) => s.site_id === id)?.name)
+      .filter(Boolean);
 
   const items = users.data?.items || [];
   const total = users.data?.total ?? items.length;
@@ -128,9 +148,42 @@ export default function UsersPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  // Admin recovery actions (lock/unlock/force sign-out/reset MFA) — each posts to a
+  // dedicated endpoint and refreshes the list. A single busyAction flag drives the
+  // spinner on whichever button is running.
+  const adminAction = useMutation({
+    mutationFn: ({ id, action }) => api.post(`/auth/users/${id}/${action}`),
+    onMutate: ({ key }) => setBusyAction(key),
+    onSuccess: (_d, vars) => {
+      toast.success(vars.done);
+      qc.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+    onSettled: () => setBusyAction(null),
+  });
+  const clone = useMutation({
+    mutationFn: ({ id, ...body }) => api.post(`/auth/users/${id}/clone`, body),
+    onSuccess: () => {
+      toast.success("User cloned");
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setCloning(null);
+      setCloneForm(EMPTY_CLONE);
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
   function openEdit(u) {
-    setEditForm({ full_name: u.full_name || "", role_id: u.role.id, is_active: u.is_active });
+    setEditForm({
+      full_name: u.full_name || "",
+      role_id: u.role.id,
+      is_active: u.is_active,
+      site_ids: u.site_ids || [],
+    });
     setEditing(u);
+  }
+  function openClone(u) {
+    setCloneForm({ ...EMPTY_CLONE, full_name: `${u.full_name || u.email} (copy)` });
+    setCloning(u);
   }
 
   const listActions = (
@@ -234,9 +287,16 @@ export default function UsersPage() {
               user={selected}
               canManage={canManage}
               isSelf={selected.id === me?.id}
+              siteNames={siteNameOf(selected.site_ids)}
+              busyAction={busyAction}
               onClose={() => setSelectedId(null)}
               onEdit={() => openEdit(selected)}
               onDelete={() => setDeleting(selected)}
+              onLock={() => adminAction.mutate({ id: selected.id, action: "lock", key: "lock", done: "Account locked" })}
+              onUnlock={() => adminAction.mutate({ id: selected.id, action: "unlock", key: "unlock", done: "Account unlocked" })}
+              onForceSignOut={() => adminAction.mutate({ id: selected.id, action: "revoke-sessions", key: "revoke", done: "Signed out everywhere" })}
+              onResetMfa={() => adminAction.mutate({ id: selected.id, action: "reset-mfa", key: "resetmfa", done: "MFA reset" })}
+              onClone={() => openClone(selected)}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
@@ -258,6 +318,7 @@ export default function UsersPage() {
         form={form}
         setForm={setForm}
         roleOptions={roleOptions}
+        sites={siteList}
         onCreate={() => create.mutate(form)}
         creating={create.isPending}
       />
@@ -268,8 +329,21 @@ export default function UsersPage() {
         form={editForm}
         setForm={setEditForm}
         roleOptions={roleOptions}
+        sites={siteList}
         onSave={() => saveEdit.mutate({ id: editing.id, ...editForm })}
         saving={saveEdit.isPending}
+      />
+
+      <CloneUserModal
+        source={cloning}
+        onClose={() => {
+          setCloning(null);
+          setCloneForm(EMPTY_CLONE);
+        }}
+        form={cloneForm}
+        setForm={setCloneForm}
+        onClone={() => clone.mutate({ id: cloning.id, ...cloneForm })}
+        cloning={clone.isPending}
       />
 
       <DeleteUserModal
