@@ -382,7 +382,7 @@ export default function Header() {
         <div className="h-14 flex items-center gap-4">
           {/* Left / centre / right thirds so the nav sits dead-centre of the header:
               logo and account take equal flex, the nav is centred between them. */}
-          <div className={`flex min-w-0 items-center gap-3 ${usersRoles ? "shrink-0" : "flex-1"}`}>
+          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit ? "shrink-0" : "flex-1"}`}>
             {/* Global ⊞ MENU navigator — jump to any section from any screen (Round-26a). */}
             <MenuNavigator />
             <Brand />
