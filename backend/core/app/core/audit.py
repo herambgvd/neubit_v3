@@ -21,9 +21,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import JSON, DateTime, String, Uuid, delete, func, select
+from sqlalchemy import JSON, DateTime, String, Uuid, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -118,6 +118,8 @@ audit_router = APIRouter(prefix="/audit", tags=["audit"])
 @audit_router.get("", response_model=Page[AuditLogOut])
 async def list_audit(
     params: PageParams = Depends(page_params),
+    action: str | None = Query(None, max_length=64),
+    q: str | None = Query(None, max_length=128),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission(CorePerm.AUDIT_READ)),
 ) -> Page[AuditLogOut]:
@@ -125,10 +127,18 @@ async def list_audit(
 
     Tenant-scoped: a tenant-admin only sees actions recorded under their own tenant;
     a super-admin sees the whole platform trail (incl. tenant_id NULL rows).
+
+    Optional filters: ``action`` matches an action category by PREFIX (e.g. ``user``
+    → ``user.*``); ``q`` is a free-text search over the actor email + action key.
     """
     from ..tenancy.scope import scope_of, scoped
 
     stmt = scoped(select(AuditLog).order_by(AuditLog.ts.desc()), AuditLog, scope_of(user))
+    if action:
+        stmt = stmt.where(AuditLog.action.ilike(f"{action}%"))
+    if q:
+        term = f"%{q}%"
+        stmt = stmt.where(or_(AuditLog.actor_email.ilike(term), AuditLog.action.ilike(term)))
     return await paginate(db, stmt, params, item_model=AuditLogOut)
 
 
