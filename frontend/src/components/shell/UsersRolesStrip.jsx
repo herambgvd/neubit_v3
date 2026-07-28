@@ -33,8 +33,8 @@ export default function UsersRolesStrip({ active }) {
 
   return (
     <div className="flex w-full items-center gap-2.5">
-      <div className="flex items-center gap-2 rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-3.5 py-1.5 text-[13px] tracking-[.5px] text-nb-blueb">
-        <Icon icon="heroicons-outline:users" className="text-[16px]" />
+      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-3 py-1.5 text-[12.5px] tracking-[.4px] text-nb-blueb">
+        <Icon icon="heroicons-outline:users" className="text-[15px]" />
         Users &amp; Roles
       </div>
 
@@ -49,7 +49,7 @@ export default function UsersRolesStrip({ active }) {
 
       <span className="flex-1" />
 
-      <span className="hidden items-center gap-1.5 rounded-[14px] border border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.07)] px-3 py-1.5 font-mono text-[11px] text-nb-good md:flex">
+      <span className="hidden items-center gap-1.5 whitespace-nowrap rounded-[14px] border border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.07)] px-3 py-1.5 font-mono text-[10.5px] tracking-[.3px] text-nb-good xl:flex">
         <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
         RBAC · IS 19319 · LEAST-PRIVILEGE
       </span>

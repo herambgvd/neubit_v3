@@ -418,7 +418,7 @@ export default function Header() {
           </nav>
 
           <div className="flex flex-1 items-center justify-end gap-1">
-            {isHome && <HomeStatusStrip />}
+            {isHome && !usersRoles && <HomeStatusStrip />}
             {!isHome && (
               <button
                 onClick={() => window.dispatchEvent(new Event("palette:open"))}
