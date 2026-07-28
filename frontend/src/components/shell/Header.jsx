@@ -39,18 +39,20 @@ function Brand() {
   const name = data?.name_in_header && data?.app_name ? data.app_name : "Neubit";
 
   return (
-    // "/" is the public landing page; keep the in-app logo pointing at the authed dashboard.
-    <Link href="/dashboard" className="flex items-center gap-2.5">
+    // The in-app logo points at the HOME launcher.
+    <Link href="/home" className="flex items-center gap-2.5">
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logo} alt={data?.app_name || "Logo"} className="h-6 max-w-[150px] object-contain" />
       ) : (
-        <>
-          <div className="h-6 w-6 rounded-md bg-foreground flex items-center justify-center text-background font-bold text-xs">
-            N
-          </div>
-          <span className="font-semibold text-foreground tracking-tight text-[15px]">{name}</span>
-        </>
+        // Default: the NeuBit wordmark logo (matches the login/landing/mockup).
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/logo/neubit_logo.svg"
+          alt={name}
+          className="h-[22px] w-auto object-contain"
+          style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.6)) drop-shadow(0 0 6px rgba(34,211,238,.3))" }}
+        />
       )}
     </Link>
   );

@@ -150,7 +150,9 @@ export default function AppLayout({ children }) {
       <AnnouncementBanner />
       <LicenseBanner />
       <main className={mainClass}>{children}</main>
-      <Footer />
+      {/* HOME renders its own GVD lockup; the copyright footer bar is hidden there
+          to match the mockup's minimal single-viewport launcher. */}
+      {!home && <Footer />}
       <CommandPalette />
       {/* App-wide operator popups (VMS linkage `popup` action → floating live camera). */}
       <VmsPopupHost />
