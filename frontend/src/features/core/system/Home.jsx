@@ -11,25 +11,14 @@
 // (never a broken link, never a faked number). Building Intelligence is entirely
 // coming-soon in this phase.
 
-import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 import { toast } from "sonner";
 
-/* Inline SVGs for the chrome (status strip + AI button) so they never depend on
-   the Iconify CDN — the launcher chrome must render even fully offline. */
-const S = { fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round" };
-const IconLock = (p) => (
-  <svg viewBox="0 0 24 24" {...S} {...p}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
-);
-const IconExpand = (p) => (
-  <svg viewBox="0 0 24 24" {...S} {...p}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
-);
-const IconCompress = (p) => (
-  <svg viewBox="0 0 24 24" {...S} {...p}><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>
-);
+/* Inline SVG for the AI button so it never depends on the Iconify CDN — the
+   launcher chrome must render even fully offline. */
 const IconSpark = (p) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M12 2l1.9 5.6L19.5 9l-4.4 3.2 1.6 5.8L12 14.9 7.3 18l1.6-5.8L4.5 9l5.6-1.4z" /></svg>
 );
@@ -167,53 +156,8 @@ function Group({ title, accent, tiles, soon }) {
   );
 }
 
-/* ── Minimal status strip (top-right): mode · clock · lock · fullscreen.
-   Honest: the mode is a static default label + a live clock; no fabricated
-   directory/license figures. */
-function StatusStrip() {
-  const [now, setNow] = useState("");
-  const [fs, setFs] = useState(false);
-
-  useEffect(() => {
-    const tick = () =>
-      setNow(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    const onFs = () => setFs(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onFs);
-    return () => document.removeEventListener("fullscreenchange", onFs);
-  }, []);
-
-  const toggleFs = () => {
-    if (document.fullscreenElement) document.exitFullscreen?.();
-    else document.documentElement.requestFullscreen?.();
-  };
-
-  const tiny =
-    "grid h-[30px] w-[30px] place-items-center rounded-[7px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#67e8f9]";
-
-  return (
-    <div className="flex items-center gap-2">
-      <span className="flex items-center gap-1.5 rounded-[14px] border border-[rgba(150,180,245,.22)] px-2.5 py-1 font-mono text-[10px] text-[#aec2e8]">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#34d399] shadow-[0_0_6px_#34d399]" />
-        <b className="tracking-[.6px]">BASELINE</b>
-      </span>
-      <span className="font-mono text-[13px] text-[#aec2e8]">{now}</span>
-      <button type="button" title="Lock console" className={tiny}>
-        <IconLock width="15" height="15" />
-      </button>
-      <button type="button" onClick={toggleFs} title={fs ? "Exit fullscreen" : "Fullscreen"} className={tiny}>
-        {fs ? <IconCompress width="15" height="15" /> : <IconExpand width="15" height="15" />}
-      </button>
-    </div>
-  );
-}
-
-/* ── Floating "NeuBit AI" button — placeholder for the coming AI assistant. */
+/* ── Floating "NeuBit AI" button — placeholder for the coming AI assistant.
+   Sits above the GVD lockup (raised off the very bottom edge). */
 function NeuBitAiButton() {
   return (
     <button
@@ -222,7 +166,7 @@ function NeuBitAiButton() {
         toast("NeuBit AI", { description: "The AI assistant is coming soon." })
       }
       title="NeuBit AI — coming soon"
-      className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full border border-[rgba(103,232,249,.4)] bg-[rgba(8,15,34,.7)] px-4 py-2.5 text-[13px] font-medium text-[#cfeffb] backdrop-blur-md transition hover:border-[#67e8f9] hover:shadow-[0_0_22px_rgba(34,211,238,.35)]"
+      className="fixed bottom-14 right-6 z-30 flex items-center gap-2 rounded-full border border-[rgba(103,232,249,.4)] bg-[rgba(8,15,34,.7)] px-4 py-2.5 text-[13px] font-medium text-[#cfeffb] backdrop-blur-md transition hover:border-[#67e8f9] hover:shadow-[0_0_22px_rgba(34,211,238,.35)]"
     >
       <IconSpark width="16" height="16" className="text-[#67e8f9]" />
       NeuBit AI
@@ -318,13 +262,8 @@ export default function HomePage() {
     >
       <Soul />
 
-      {/* status strip — top-right */}
-      <div className="relative z-10 flex items-center justify-end px-8 pt-5 lg:px-[11%]">
-        <StatusStrip />
-      </div>
-
-      {/* big typographic mode tabs */}
-      <div className="relative z-10 flex flex-wrap items-baseline gap-x-11 gap-y-2 px-8 pb-2 pt-6 lg:px-[11%]">
+      {/* big typographic mode tabs (status strip now lives in the header) */}
+      <div className="relative z-10 flex flex-wrap items-baseline gap-x-11 gap-y-2 px-8 pb-2 pt-10 lg:px-[11%]">
         {MODES.map((m) => {
           const on = m.id === mode;
           return (
@@ -364,10 +303,12 @@ export default function HomePage() {
       </div>
 
       {/* GVD lockup — bottom-right */}
-      <div className="pointer-events-none absolute bottom-3 right-5 z-10 flex items-center gap-2 opacity-90">
-        <span className="font-mono text-[9px] tracking-[1.3px] text-[#9fb2d8]">GENIUS VISION DIGITAL</span>
+      <div className="pointer-events-none absolute bottom-4 right-6 z-10 flex items-center gap-2.5 opacity-80">
+        <span className="text-[10px] font-medium uppercase tracking-[2.5px] text-[#9fb2d8]">
+          Genius Vision Digital
+        </span>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo/gvd_logo_color.png" alt="GVD" className="h-[15px] w-auto object-contain" />
+        <img src="/logo/gvd_logo_color.png" alt="GVD" className="h-4 w-auto object-contain" />
       </div>
 
       <NeuBitAiButton />

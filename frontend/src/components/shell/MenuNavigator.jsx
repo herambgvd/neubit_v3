@@ -128,7 +128,7 @@ export default function MenuNavigator() {
       aria-label="Open menu navigator"
       className="grid h-9 w-9 place-items-center rounded-[8px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.13)] text-[#67e8f9] transition hover:border-[rgba(34,211,238,.7)] hover:shadow-[0_0_16px_rgba(34,211,238,.3)]"
     >
-      <Icon icon="heroicons:squares-2x2" className="text-[18px]" />
+      <Icon icon="heroicons:home" className="text-[18px]" />
     </button>
   );
 

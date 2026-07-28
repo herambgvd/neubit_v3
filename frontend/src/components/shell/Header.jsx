@@ -61,6 +61,52 @@ function Brand() {
   );
 }
 
+/* HOME status strip — mode label + live clock + lock + fullscreen. Lives in the
+   header (right cluster) only on the launcher. Inline SVGs so the chrome renders
+   even offline. Honest: BASELINE is a static default-mode label + a real clock;
+   no fabricated directory/license figures. */
+const HSS = { fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round" };
+function HomeStatusStrip() {
+  const [now, setNow] = useState("");
+  const [fs, setFs] = useState(false);
+
+  useEffect(() => {
+    const tick = () => setNow(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    const onFs = () => setFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+  const toggleFs = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else document.documentElement.requestFullscreen?.();
+  };
+  const tiny =
+    "grid h-[30px] w-[30px] place-items-center rounded-[7px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#67e8f9]";
+
+  return (
+    <div className="mr-1 flex items-center gap-2">
+      <span className="flex items-center gap-1.5 rounded-[14px] border border-[rgba(150,180,245,.22)] px-2.5 py-1 font-mono text-[10px] text-[#aec2e8]">
+        <span className="h-1.5 w-1.5 rounded-full bg-[#34d399] shadow-[0_0_6px_#34d399]" />
+        <b className="tracking-[.6px]">BASELINE</b>
+      </span>
+      <span className="font-mono text-[13px] text-[#aec2e8]">{now}</span>
+      <button type="button" title="Lock console" className={tiny}>
+        <svg viewBox="0 0 24 24" width="15" height="15" {...HSS}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+      </button>
+      <button type="button" onClick={toggleFs} title={fs ? "Exit fullscreen" : "Fullscreen"} className={tiny}>
+        {fs
+          ? <svg viewBox="0 0 24 24" width="15" height="15" {...HSS}><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>
+          : <svg viewBox="0 0 24 24" width="15" height="15" {...HSS}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>}
+      </button>
+    </div>
+  );
+}
+
 function fmtTs(ts) {
   if (!ts) return "";
   const d = new Date(ts);
@@ -358,6 +404,7 @@ export default function Header() {
           </nav>
 
           <div className="flex flex-1 items-center justify-end gap-1">
+            {isHome && <HomeStatusStrip />}
             {!isHome && (
               <button
                 onClick={() => window.dispatchEvent(new Event("palette:open"))}
