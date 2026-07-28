@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { api, apiError } from "@/lib/api";
 import { Avatar } from "@/components/ui/kit";
 import MenuNavigator from "@/components/shell/MenuNavigator";
+import UsersRolesStrip from "@/components/shell/UsersRolesStrip";
 import {
   menuItems,
   CONFIG_ENTRY,
@@ -300,6 +301,9 @@ export default function Header() {
   // other sections is via the ⊞/home menu navigator.
   const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles"]);
   const isHome = MINIMAL_ROUTES.has(pathname);
+  // The Users & Roles console carries its section strip (modtab + USERS/ROLES
+  // segment + RBAC pill + AUDIT) INSIDE the header, in place of the top nav.
+  const usersRoles = pathname === "/users" || pathname === "/roles";
   const [openUser, setOpenUser] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
@@ -377,11 +381,18 @@ export default function Header() {
         <div className="h-14 flex items-center gap-4">
           {/* Left / centre / right thirds so the nav sits dead-centre of the header:
               logo and account take equal flex, the nav is centred between them. */}
-          <div className="flex flex-1 min-w-0 items-center gap-3">
+          <div className={`flex min-w-0 items-center gap-3 ${usersRoles ? "shrink-0" : "flex-1"}`}>
             {/* Global ⊞ MENU navigator — jump to any section from any screen (Round-26a). */}
             <MenuNavigator />
             <Brand />
           </div>
+
+          {/* Users & Roles console: its section strip lives here, in the header. */}
+          {usersRoles && (
+            <div className="flex min-w-0 flex-1 items-center">
+              <UsersRolesStrip active={pathname === "/roles" ? "roles" : "users"} />
+            </div>
+          )}
 
           {/* Main nav — centred; scrolls with a slim themed bar if it can't fit.
               The Config section opens the sub-tab bar below the header. Hidden on

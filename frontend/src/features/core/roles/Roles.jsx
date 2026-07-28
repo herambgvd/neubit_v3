@@ -11,7 +11,6 @@ import { toast } from "sonner";
 
 import { Button, ConfirmDialog, Input, Modal, Spinner } from "@/components/ui/kit";
 import { MasterDetail, ListPanel } from "@/components/common";
-import UsersRolesStrip from "@/components/shell/UsersRolesStrip";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import RoleListItem from "./components/RoleListItem";
@@ -182,7 +181,6 @@ export default function RolesPage() {
       className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
       style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
     >
-      <UsersRolesStrip active="roles" />
       <MasterDetail
         fill
         className="min-h-0 flex-1"

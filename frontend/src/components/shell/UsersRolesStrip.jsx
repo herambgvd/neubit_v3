@@ -32,7 +32,7 @@ export default function UsersRolesStrip({ active }) {
   const { can } = useAuth();
 
   return (
-    <div className="relative z-10 flex items-center gap-2.5 px-1 pb-3">
+    <div className="flex w-full items-center gap-2.5">
       <div className="flex items-center gap-2 rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-3.5 py-1.5 text-[13px] tracking-[.5px] text-nb-blueb">
         <Icon icon="heroicons-outline:users" className="text-[16px]" />
         Users &amp; Roles
