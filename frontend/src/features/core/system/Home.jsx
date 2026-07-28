@@ -17,6 +17,22 @@ import { Icon } from "@iconify/react";
 import Link from "next/link";
 import { toast } from "sonner";
 
+/* Inline SVGs for the chrome (status strip + AI button) so they never depend on
+   the Iconify CDN — the launcher chrome must render even fully offline. */
+const S = { fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round" };
+const IconLock = (p) => (
+  <svg viewBox="0 0 24 24" {...S} {...p}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+);
+const IconExpand = (p) => (
+  <svg viewBox="0 0 24 24" {...S} {...p}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+);
+const IconCompress = (p) => (
+  <svg viewBox="0 0 24 24" {...S} {...p}><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>
+);
+const IconSpark = (p) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M12 2l1.9 5.6L19.5 9l-4.4 3.2 1.6 5.8L12 14.9 7.3 18l1.6-5.8L4.5 9l5.6-1.4z" /></svg>
+);
+
 import { vms } from "@/features/vms/api";
 import { useAuth } from "@/lib/auth";
 
@@ -187,10 +203,10 @@ function StatusStrip() {
       </span>
       <span className="font-mono text-[13px] text-[#aec2e8]">{now}</span>
       <button type="button" title="Lock console" className={tiny}>
-        <Icon icon="heroicons-outline:lock-closed" className="text-[15px]" />
+        <IconLock width="15" height="15" />
       </button>
       <button type="button" onClick={toggleFs} title={fs ? "Exit fullscreen" : "Fullscreen"} className={tiny}>
-        <Icon icon={fs ? "heroicons-outline:arrows-pointing-in" : "heroicons-outline:arrows-pointing-out"} className="text-[15px]" />
+        {fs ? <IconCompress width="15" height="15" /> : <IconExpand width="15" height="15" />}
       </button>
     </div>
   );
@@ -207,7 +223,7 @@ function NeuBitAiButton() {
       title="NeuBit AI — coming soon"
       className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full border border-[rgba(103,232,249,.4)] bg-[rgba(8,15,34,.7)] px-4 py-2.5 text-[13px] font-medium text-[#cfeffb] backdrop-blur-md transition hover:border-[#67e8f9] hover:shadow-[0_0_22px_rgba(34,211,238,.35)]"
     >
-      <Icon icon="heroicons-solid:sparkles" className="text-[16px] text-[#67e8f9]" />
+      <IconSpark width="16" height="16" className="text-[#67e8f9]" />
       NeuBit AI
       <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-[#34d399] shadow-[0_0_6px_#34d399]" />
     </button>
