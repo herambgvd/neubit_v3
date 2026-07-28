@@ -13,15 +13,15 @@ import SelectMenu from "./SelectMenu";
 
 // Base control classes (shared so raw inputs match Field visually).
 export const fieldClass =
-  "mt-1 h-10 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted";
+  "mt-1 h-10 w-full rounded-lg border border-nb-line bg-nb-field px-3 text-sm text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
 export const areaClass =
-  "mt-1 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted";
+  "mt-1 w-full rounded-lg border border-nb-line bg-nb-field px-3 py-2 text-sm text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
 
 export function FieldLabel({ children, required, className = "" }) {
   return (
-    <label className={`text-xs font-medium uppercase tracking-wide text-muted ${className}`}>
+    <label className={`font-mono text-xs font-medium uppercase tracking-wide text-nb-muted ${className}`}>
       {children}
-      {required && <span className="ml-1 text-red-500">*</span>}
+      {required && <span className="ml-1 text-nb-crit">*</span>}
     </label>
   );
 }
@@ -37,7 +37,7 @@ export function Field({
   containerClassName = "",
   ...control
 }) {
-  const errCls = error ? "!border-red-500" : "";
+  const errCls = error ? "!border-nb-crit" : "";
   // Keep controlled inputs controlled. For a value-controlled input/textarea, force
   // a defined value ("") whenever the caller's value is null/undefined — even a
   // number field whose value momentarily becomes undefined (e.g. form re-hydrates
@@ -68,9 +68,9 @@ export function Field({
         <input {...control} className={`${fieldClass} ${errCls} ${className}`} />
       )}
       {error ? (
-        <p className="mt-1 text-xs text-red-500">{error}</p>
+        <p className="mt-1 text-xs text-nb-crit">{error}</p>
       ) : hint ? (
-        <p className="mt-1 text-[11px] text-muted/70">{hint}</p>
+        <p className="mt-1 text-[11px] text-nb-faint">{hint}</p>
       ) : null}
     </div>
   );

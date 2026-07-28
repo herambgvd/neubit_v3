@@ -31,7 +31,7 @@ function SortCaret({ dir }) {
   return (
     <Icon
       icon={dir === "asc" ? "heroicons-outline:chevron-up" : "heroicons-outline:chevron-down"}
-      className="text-xs text-foreground"
+      className="text-xs text-nb-teal"
     />
   );
 }
@@ -71,13 +71,13 @@ export default function DataTable({
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-card-border bg-card">
+    <div className="overflow-x-auto rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] backdrop-blur-sm">
       <table className="w-full text-sm">
         <thead>
           {table.getHeaderGroups().map((hg) => (
             <tr
               key={hg.id}
-              className="border-b border-card-border bg-hover text-left text-[11px] font-semibold uppercase tracking-wide text-muted"
+              className="border-b border-nb-line bg-white/[.03] text-left text-[11px] font-semibold uppercase tracking-wide text-nb-muted"
             >
               {hg.headers.map((header) => {
                 const canSort = header.column.getCanSort();
@@ -93,7 +93,7 @@ export default function DataTable({
                       <button
                         type="button"
                         onClick={header.column.getToggleSortingHandler()}
-                        className={`inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground ${
+                        className={`inline-flex items-center gap-1 uppercase tracking-wide hover:text-nb-ink ${
                           align === "right" ? "flex-row-reverse" : ""
                         }`}
                       >
@@ -121,13 +121,13 @@ export default function DataTable({
               <tr
                 key={row.id}
                 onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-                className={`border-b border-card-border transition last:border-0 hover:bg-hover ${
+                className={`border-b border-nb-line/60 transition last:border-0 hover:bg-white/5 ${
                   onRowClick ? "cursor-pointer" : ""
-                } ${row.getIsSelected() ? "bg-hover" : ""}`}
+                } ${row.getIsSelected() ? "bg-nb-teal/10" : ""}`}
               >
                 {row.getVisibleCells().map((cell) => {
                   const align = cell.column.columnDef.meta?.align;
-                  const cellCls = cell.column.columnDef.meta?.cellClassName || "px-4 py-3 text-foreground";
+                  const cellCls = cell.column.columnDef.meta?.cellClassName || "px-4 py-3 text-nb-ink";
                   return (
                     <td
                       key={cell.id}
