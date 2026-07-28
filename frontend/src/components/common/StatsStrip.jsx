@@ -18,11 +18,11 @@ export function StatsStrip({ stats = [], active, onSelect, className = "" }) {
             type="button"
             onClick={() => onSelect?.(s.key)}
             className={`rounded-xl border px-3 py-2.5 text-left transition ${
-              isActive ? "border-foreground bg-hover" : "border-card-border hover:bg-hover"
+              isActive ? "border-nb-teal bg-nb-teal/10" : "border-nb-line bg-[rgba(8,15,34,.5)] hover:bg-white/5"
             }`}
           >
-            <div className={`text-lg font-semibold ${s.color || "text-foreground"}`}>{s.count ?? 0}</div>
-            <div className="text-[11px] text-muted">{s.label}</div>
+            <div className={`text-lg font-semibold ${s.color || "text-nb-ink"}`}>{s.count ?? 0}</div>
+            <div className="text-[11px] text-nb-muted">{s.label}</div>
           </button>
         );
       })}
