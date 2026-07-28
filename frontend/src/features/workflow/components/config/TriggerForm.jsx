@@ -120,7 +120,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
           <Icon icon="heroicons-outline:beaker" className="text-sm" /> Test
         </button>
       </div>
-      {errors.event && <p className="text-xs text-red-500">{errors.event}</p>}
+      {errors.event && <p className="text-xs text-nb-crit">{errors.event}</p>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field
           containerClassName="md:col-span-2"
@@ -182,7 +182,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Conditions (all must match)</label>
-          <button type="button" onClick={() => setConditions((cs) => [...cs, { path: "", op: "eq", value: "" }])} className="text-xs text-blue-500 hover:underline">+ Add condition</button>
+          <button type="button" onClick={() => setConditions((cs) => [...cs, { path: "", op: "eq", value: "" }])} className="text-xs text-nb-blueb hover:underline">+ Add condition</button>
         </div>
         {conditions.length === 0 ? (
           <p className="text-[11px] text-nb-faint/70">No conditions — the trigger fires on any matching event type.</p>
@@ -195,7 +195,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
                   {TRIGGER_OPS.map((o) => <option key={o} value={o} className="bg-[rgba(8,15,34,.5)]">{OP_LABEL[o] || o}</option>)}
                 </select>
                 <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-field bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-muted" />
-                <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-red-500"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
+                <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
               </div>
             ))}
           </div>
@@ -213,7 +213,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
           {DEDUP_STRATEGIES.map((s) => {
             const active = dedupStrategy === s.value;
             return (
-              <label key={s.value} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-blue-500/50 bg-blue-500/10" : "border-nb-line bg-[rgba(8,15,34,.5)] hover:bg-[rgba(96,165,250,.1)]"}`}>
+              <label key={s.value} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-[rgba(96,165,250,.50)] bg-[rgba(96,165,250,.10)]" : "border-nb-line bg-[rgba(8,15,34,.5)] hover:bg-[rgba(96,165,250,.1)]"}`}>
                 <input type="radio" name="dedup-strategy" checked={active} onChange={() => setDedupStrategy(s.value)} className="mt-0.5" />
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-nb-ink">{s.label}</span>
@@ -295,7 +295,7 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
       {selectedUsers.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {selectedUsers.map((u) => (
-            <span key={uid(u)} className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs text-blue-500">
+            <span key={uid(u)} className="inline-flex items-center gap-1 rounded-full border border-[rgba(96,165,250,.30)] bg-[rgba(96,165,250,.10)] px-2.5 py-1 text-xs text-nb-blueb">
               {display(u)}
               <button type="button" onClick={() => onToggle(uid(u))} aria-label={`Remove ${display(u)}`}>×</button>
             </span>
@@ -319,7 +319,7 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
                 const checked = selectedIds.includes(uid(u));
                 return (
                   <li key={uid(u)}>
-                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-blue-500/10" : "hover:bg-[rgba(96,165,250,.1)]"}`}>
+                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-[rgba(96,165,250,.10)]" : "hover:bg-[rgba(96,165,250,.1)]"}`}>
                       <input type="checkbox" checked={checked} onChange={() => onToggle(uid(u))} />
                       <span className="flex-1 min-w-0">
                         <span className="block font-medium text-nb-ink truncate">{display(u)}</span>

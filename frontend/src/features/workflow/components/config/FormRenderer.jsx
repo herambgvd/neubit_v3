@@ -20,10 +20,10 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
       <div>
         <label className="inline-flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
           <input id={id} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => set(e.target.checked)} />
-          <span>{field.label || field.id}{required && <span className="ml-1 text-red-500">*</span>}</span>
+          <span>{field.label || field.id}{required && <span className="ml-1 text-nb-crit">*</span>}</span>
         </label>
         {field.help_text && <p className="mt-1 text-[11px] text-nb-faint/70">{field.help_text}</p>}
-        {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+        {error && <p className="mt-1 text-xs text-nb-crit">{error}</p>}
       </div>
     );
   }
@@ -31,23 +31,23 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
   let control;
   switch (field.type) {
     case "textarea":
-      control = <textarea id={id} rows={3} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} className={`${areaClass} ${error ? "!border-red-500" : ""}`} />;
+      control = <textarea id={id} rows={3} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} className={`${areaClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "number":
-      control = <input id={id} type="number" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} placeholder={field.placeholder || ""} className={`${fieldClass} ${error ? "!border-red-500" : ""}`} />;
+      control = <input id={id} type="number" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} placeholder={field.placeholder || ""} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "date":
-      control = <input id={id} type="date" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-red-500" : ""}`} />;
+      control = <input id={id} type="date" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "datetime":
-      control = <input id={id} type="datetime-local" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-red-500" : ""}`} />;
+      control = <input id={id} type="datetime-local" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "file":
-      control = <input id={id} type="file" disabled={disabled} onChange={(e) => set(e.target.files?.[0]?.name || "")} className={`${fieldClass} ${error ? "!border-red-500" : ""}`} />;
+      control = <input id={id} type="file" disabled={disabled} onChange={(e) => set(e.target.files?.[0]?.name || "")} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "select":
       control = (
-        <select id={id} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-red-500" : ""}`}>
+        <select id={id} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`}>
           <option value="" className="bg-[rgba(8,15,34,.5)]">— select —</option>
           {opts.map((o) => <option key={o.value} value={o.value} className="bg-[rgba(8,15,34,.5)]">{o.label}</option>)}
         </select>
@@ -97,7 +97,7 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
               disabled={disabled}
               onClick={() => set(n === num ? 0 : n)}
               title={`${n} of 5`}
-              className={`text-lg leading-none ${n <= num ? "text-amber-400" : "text-nb-faint/40"} hover:text-amber-400 disabled:cursor-not-allowed`}
+              className={`text-lg leading-none ${n <= num ? "text-nb-warn" : "text-nb-faint/40"} hover:text-nb-warn disabled:cursor-not-allowed`}
             >
               ★
             </button>
@@ -108,7 +108,7 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
       break;
     }
     default:
-      control = <input id={id} type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} pattern={pattern} className={`${fieldClass} ${error ? "!border-red-500" : ""}`} />;
+      control = <input id={id} type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} pattern={pattern} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
   }
 
   return (
@@ -116,7 +116,7 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
       <FieldLabel required={required}>{field.label || field.id}</FieldLabel>
       {control}
       {field.help_text && <p className="mt-1 text-[11px] text-nb-faint/70">{field.help_text}</p>}
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error && <p className="mt-1 text-xs text-nb-crit">{error}</p>}
     </div>
   );
 }

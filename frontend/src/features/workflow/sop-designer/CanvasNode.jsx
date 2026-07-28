@@ -19,7 +19,7 @@ export default function CanvasNode({ state, selected, onPointerDown, onPointerUp
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onDoubleClick={(e) => { e.stopPropagation(); onEdit(); }}
-      className="absolute rounded-xl border bg-card shadow-sm transition-shadow"
+      className="absolute rounded-xl border bg-[rgba(8,15,34,.5)]  transition-shadow"
       style={{
         left: state.position_x ?? 0,
         top: state.position_y ?? 0,
@@ -35,7 +35,7 @@ export default function CanvasNode({ state, selected, onPointerDown, onPointerUp
       <div className="pl-4 pr-3 py-2.5">
         <div className="flex items-start gap-2">
           <span className="mt-1 h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-          <span className="text-sm font-semibold text-foreground leading-snug break-words">{state.name || "Untitled"}</span>
+          <span className="text-sm font-semibold text-nb-ink leading-snug break-words">{state.name || "Untitled"}</span>
         </div>
         {badges.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
@@ -56,7 +56,7 @@ export default function CanvasNode({ state, selected, onPointerDown, onPointerUp
         type="button"
         title="Drag to connect"
         onPointerDown={onHandleDown}
-        className="absolute -right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full border-2 border-card bg-card text-muted hover:text-foreground flex items-center justify-center shadow"
+        className="absolute -right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full border-2 border-nb-line bg-[rgba(8,15,34,.5)] text-nb-muted hover:text-nb-ink flex items-center justify-center shadow"
         style={{ cursor: "crosshair", color }}
       >
         <Icon icon="heroicons-solid:plus" className="text-[11px]" />

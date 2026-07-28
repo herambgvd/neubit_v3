@@ -96,9 +96,9 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
         />
       )}
       <div>
-        <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Body <span className="text-red-500 ml-1">*</span></label>
-        <textarea rows={5} value={body} onChange={(e) => { setBody(e.target.value); if (errors.body) setErrors((p) => ({ ...p, body: undefined })); }} className={`mt-1 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm font-mono text-nb-ink placeholder:text-nb-faint outline-none focus:border-muted ${errors.body ? "!border-red-500" : ""}`} placeholder="Incident {{instance_name}} moved {{from_state}} → {{to_state}}." />
-        {errors.body && <p className="mt-1 text-xs text-red-500">{errors.body}</p>}
+        <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Body <span className="text-nb-crit ml-1">*</span></label>
+        <textarea rows={5} value={body} onChange={(e) => { setBody(e.target.value); if (errors.body) setErrors((p) => ({ ...p, body: undefined })); }} className={`mt-1 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm font-mono text-nb-ink placeholder:text-nb-faint outline-none focus:border-muted ${errors.body ? "!border-nb-crit" : ""}`} placeholder="Incident {{instance_name}} moved {{from_state}} → {{to_state}}." />
+        {errors.body && <p className="mt-1 text-xs text-nb-crit">{errors.body}</p>}
         <div className="mt-2 flex flex-wrap gap-1.5">
           <span className="text-[11px] text-nb-faint">Variables:</span>
           {TEMPLATE_VARS.map((v) => (

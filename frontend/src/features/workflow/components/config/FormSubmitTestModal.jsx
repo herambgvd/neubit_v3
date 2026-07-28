@@ -20,7 +20,7 @@ export default function FormSubmitTestModal({ open, onClose, fields, values }) {
       footer={<Button variant="secondary" onClick={onClose} className="!px-3 !py-1.5 text-xs">Close</Button>}
     >
       <div className="space-y-4">
-        <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${valid ? "border-green-500/40 bg-green-500/10 text-green-500" : "border-red-500/40 bg-red-500/10 text-red-500"}`}>
+        <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${valid ? "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good" : "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit"}`}>
           {valid ? "Valid — this form would submit." : `${errEntries.length} field(s) failed validation.`}
         </div>
 
@@ -31,7 +31,7 @@ export default function FormSubmitTestModal({ open, onClose, fields, values }) {
               {errEntries.map(([key, msg]) => (
                 <li key={key} className="rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2 text-xs">
                   <code className="font-mono text-nb-ink">{key}</code>
-                  <span className="ml-2 text-red-500">{msg}</span>
+                  <span className="ml-2 text-nb-crit">{msg}</span>
                 </li>
               ))}
             </ul>

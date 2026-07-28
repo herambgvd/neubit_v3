@@ -63,7 +63,7 @@ export default function ConditionsPreview({ conditions }) {
               spellCheck={false}
               className="mt-1 h-44 w-full rounded-lg border border-field bg-transparent px-2.5 py-2 text-xs font-mono text-nb-ink outline-none focus:border-muted"
             />
-            {parsed.err && <p className="mt-1 text-[11px] text-red-500">JSON error: {parsed.err}</p>}
+            {parsed.err && <p className="mt-1 text-[11px] text-nb-crit">JSON error: {parsed.err}</p>}
           </div>
           <div className="min-w-0">
             <label className="text-[11px] font-medium uppercase tracking-wide text-nb-faint">Result</label>
@@ -71,7 +71,7 @@ export default function ConditionsPreview({ conditions }) {
               <p className="mt-2 text-[11px] text-nb-faint/70">Fix the JSON to preview.</p>
             ) : (
               <div className="mt-1 space-y-2">
-                <div className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${result.allMatch ? "border-green-500/40 bg-green-500/10 text-green-500" : "border-red-500/40 bg-red-500/10 text-red-500"}`}>
+                <div className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${result.allMatch ? "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good" : "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit"}`}>
                   {result.allMatch ? "Matched — all conditions pass." : "No match — a condition failed."}
                 </div>
                 {result.rows.length === 0 ? (
@@ -80,7 +80,7 @@ export default function ConditionsPreview({ conditions }) {
                   <ul className="space-y-1.5">
                     {result.rows.map((r, i) => (
                       <li key={i} className="flex items-start gap-2 rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-2 py-1.5">
-                        <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${r.matched ? "bg-green-500/15 text-green-500" : "bg-red-500/15 text-red-500"}`}>
+                        <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${r.matched ? "bg-[rgba(52,211,153,.15)] text-nb-good" : "bg-[rgba(248,113,113,.15)] text-nb-crit"}`}>
                           <Icon icon={r.matched ? "heroicons-outline:check" : "heroicons-outline:x-mark"} className="text-[10px]" />
                         </span>
                         <span className="min-w-0 text-[11px]">

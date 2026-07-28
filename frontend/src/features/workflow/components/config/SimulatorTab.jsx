@@ -115,14 +115,14 @@ export default function SimulatorTab() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-2">
       {/* ── Composer ─────────────────────────────────────────────── */}
-      <form onSubmit={submit} className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
-        <header className="px-5 py-4 border-b border-nb-line">
+      <form onSubmit={submit} className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+        <header className="shrink-0 px-5 py-4 border-b border-nb-line">
           <h3 className="text-sm font-semibold text-nb-ink">Event composer</h3>
           <p className="text-xs text-nb-faint">Compose a synthetic event and run it through trigger + format matching.</p>
         </header>
-        <div className="px-5 py-4 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-themed px-5 py-4 space-y-4">
           <div>
             <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Presets</label>
             <div className="mt-1.5 flex flex-wrap gap-2">
@@ -199,8 +199,8 @@ export default function SimulatorTab() {
       </form>
 
       {/* ── Result ───────────────────────────────────────────────── */}
-      <div className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
-        <header className="px-5 py-4 border-b border-nb-line flex items-center justify-between">
+      <div className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+        <header className="shrink-0 px-5 py-4 border-b border-nb-line flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-nb-ink">Result</h3>
             <p className="text-xs text-nb-faint">What the event matched.</p>
@@ -209,7 +209,7 @@ export default function SimulatorTab() {
             <Badge color={result.dry_run ? "blue" : "amber"}>{result.dry_run ? "Dry run" : "Live"}</Badge>
           )}
         </header>
-        <div className="px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-themed px-5 py-4">
           {simulate.isPending ? (
             <div className="text-sm text-nb-faint flex items-center gap-2"><Spinner className="!h-4 !w-4" /> Simulating…</div>
           ) : !result ? (
@@ -252,13 +252,13 @@ function ResultPanel({ result }) {
           <ul className="rounded-lg border border-nb-line divide-y divide-nb-line">
             {triggers.map((t, i) => (
               <li key={t.trigger_id || i} className="flex items-center gap-2 px-3 py-2">
-                <Icon icon="heroicons:bolt" className="text-amber-500 text-sm shrink-0" />
+                <Icon icon="heroicons:bolt" className="text-nb-warn text-sm shrink-0" />
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm text-nb-ink truncate">{t.name || t.trigger_id}</span>
                   {t.sop_id && <span className="block text-[11px] text-nb-faint font-mono truncate">→ SOP {t.sop_id}</span>}
                 </span>
                 {t.would_create ? (
-                  <Icon icon="heroicons-solid:check-circle" className="text-green-500 text-base shrink-0" title="Would create" />
+                  <Icon icon="heroicons-solid:check-circle" className="text-nb-good text-base shrink-0" title="Would create" />
                 ) : (
                   <Icon icon="heroicons-outline:minus-circle" className="text-nb-faint text-base shrink-0" title="Would not create" />
                 )}
@@ -275,7 +275,7 @@ function ResultPanel({ result }) {
           <p className="text-[11px] text-nb-faint/70">No alert format matched.</p>
         ) : (
           <div className="rounded-lg border border-nb-line px-3 py-2.5 flex items-center gap-2">
-            <Icon icon="heroicons-outline:swatch" className="text-blue-500 text-base shrink-0" />
+            <Icon icon="heroicons-outline:swatch" className="text-nb-blueb text-base shrink-0" />
             <span className="flex-1 min-w-0">
               <span className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm text-nb-ink">{fmt.name || fmt.alert_code}</span>
@@ -286,7 +286,7 @@ function ResultPanel({ result }) {
               </span>
             </span>
             {fmt.would_create ? (
-              <Icon icon="heroicons-solid:check-circle" className="text-green-500 text-base shrink-0" title="Would create" />
+              <Icon icon="heroicons-solid:check-circle" className="text-nb-good text-base shrink-0" title="Would create" />
             ) : (
               <Icon icon="heroicons-outline:minus-circle" className="text-nb-faint text-base shrink-0" title="Would not create" />
             )}
@@ -314,8 +314,8 @@ function ResultPanel({ result }) {
 
       {/* Created incident (live) */}
       {createdIds.length > 0 && (
-        <section className="rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2.5">
-          <h4 className="text-xs font-medium uppercase tracking-wide text-green-500 mb-1.5">Incident created</h4>
+        <section className="rounded-lg border border-[rgba(52,211,153,.30)] bg-[rgba(52,211,153,.10)] px-3 py-2.5">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-nb-good mb-1.5">Incident created</h4>
           <ul className="space-y-1">
             {createdIds.map((id) => (
               <li key={id}>

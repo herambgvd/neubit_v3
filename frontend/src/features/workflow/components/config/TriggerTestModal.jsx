@@ -66,9 +66,9 @@ export default function TriggerTestModal({ open, trigger, onClose }) {
     : { tone: "bad", text: "No match — this trigger would NOT fire for this event." };
 
   const toneCls = {
-    ok: "border-green-500/40 bg-green-500/10 text-green-500",
-    warn: "border-amber-500/40 bg-amber-500/10 text-amber-500",
-    bad: "border-red-500/40 bg-red-500/10 text-red-500",
+    ok: "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good",
+    warn: "border-[rgba(251,191,36,.40)] bg-[rgba(251,191,36,.10)] text-nb-warn",
+    bad: "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit",
   };
 
   return (
@@ -109,11 +109,11 @@ export default function TriggerTestModal({ open, trigger, onClose }) {
             spellCheck={false}
             className="mt-1 h-52 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-xs font-mono text-nb-ink outline-none focus:border-muted"
           />
-          {parseError && <p className="mt-1 text-xs text-red-500">JSON error: {parseError}</p>}
+          {parseError && <p className="mt-1 text-xs text-nb-crit">JSON error: {parseError}</p>}
         </div>
 
         {run.isError && (
-          <p className="text-xs text-red-500 flex items-center gap-1.5">
+          <p className="text-xs text-nb-crit flex items-center gap-1.5">
             <Icon icon="heroicons-outline:exclamation-triangle" /> {apiError(run.error)}
           </p>
         )}

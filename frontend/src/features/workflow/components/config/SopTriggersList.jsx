@@ -42,13 +42,13 @@ export default function SopTriggersList({ sopId }) {
             const enabled = t.enabled !== false;
             return (
               <li key={idOf(t, "id", "trigger_id")} className="flex items-start gap-3 px-4 py-3">
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-amber-500/10 text-amber-500 shrink-0">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-[rgba(251,191,36,.10)] text-nb-warn shrink-0">
                   <Icon icon="heroicons:bolt" className="text-base" />
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-nb-ink truncate">{t.name}</span>
-                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${enabled ? "bg-green-500/10 text-green-500" : "bg-[rgba(96,165,250,.1)] text-nb-faint"}`}>
+                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${enabled ? "bg-[rgba(52,211,153,.10)] text-nb-good" : "bg-[rgba(96,165,250,.1)] text-nb-faint"}`}>
                       {enabled ? "Enabled" : "Disabled"}
                     </span>
                   </div>

@@ -99,7 +99,7 @@ export default function SopsTab() {
   );
 
   return (
-    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" className="min-h-[60vh]">
+    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" fill className="h-full">
       <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
         {mode === "create" || mode === "edit" ? (
           <SopForm

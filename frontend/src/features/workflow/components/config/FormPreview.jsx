@@ -56,7 +56,7 @@ export default function FormPreview({ name, description, fields }) {
   return (
     <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
       <header className="flex items-center gap-2 border-b border-nb-line px-4 py-2.5">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-violet-500/10 text-violet-500">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[rgba(96,165,250,.1)] text-nb-blueb">
           <Icon icon="heroicons-outline:eye" className="text-sm" />
         </span>
         <span className="text-xs font-semibold uppercase tracking-wider text-nb-faint">Live preview</span>

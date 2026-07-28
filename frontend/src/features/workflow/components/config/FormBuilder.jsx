@@ -134,9 +134,9 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Fields</label>
-          <button type="button" onClick={addField} className="text-xs text-blue-500 hover:underline">+ Add field</button>
+          <button type="button" onClick={addField} className="text-xs text-nb-blueb hover:underline">+ Add field</button>
         </div>
-        {errors.fields && <p className="mb-2 text-xs text-red-500">{errors.fields}</p>}
+        {errors.fields && <p className="mb-2 text-xs text-nb-crit">{errors.fields}</p>}
         <div className="space-y-2">
           {fields.map((f, i) => (
             <div key={i} className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
@@ -158,7 +158,7 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
                   <button type="button" onClick={() => moveField(i, i + 1)} disabled={i === fields.length - 1} title="Move down" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink disabled:opacity-40 disabled:cursor-not-allowed">
                     <Icon icon="heroicons-outline:chevron-down" className="text-sm" />
                   </button>
-                  <button type="button" onClick={() => removeField(i)} title="Delete field" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-red-500">
+                  <button type="button" onClick={() => removeField(i)} title="Delete field" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit">
                     <Icon icon="heroicons-outline:x-mark" className="text-sm" />
                   </button>
                 </span>
