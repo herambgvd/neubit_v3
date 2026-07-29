@@ -15,10 +15,10 @@ export default function NotFound() {
         </p>
         <div className="mt-6 flex items-center justify-center gap-2">
           <Link
-            href="/"
+            href="/home"
             className="rounded-md bg-foreground text-background hover:opacity-90 px-4 py-2 text-sm font-medium transition"
           >
-            Go to Dashboard
+            Go to Home
           </Link>
         </div>
       </div>
