@@ -27,16 +27,43 @@ class NodeUnavailable(Exception):
     """A federated recorder node could not be reached / answered non-2xx."""
 
 
-def _headers() -> dict:
+def _headers(credential: str | None) -> dict:
+    """Auth for an estate call. Prefer the node's per-node federation credential
+    (Phase-2, scoped) as X-Node-Credential; fall back to the ambient service JWT
+    (shared secret) when the node hasn't issued one yet."""
+    if credential:
+        return {"X-Node-Credential": credential}
     return {"Authorization": f"Bearer {mint_service_token()}"}
 
 
-async def list_estate_cameras(api_url: str) -> list[dict]:
+async def enroll_node(api_url: str) -> str:
+    """Bootstrap a per-node credential: mint the shared-secret superadmin JWT ONCE
+    to call the node's enrolment route, and return the scoped credential it issues.
+    Raises NodeUnavailable on failure (caller falls back to the shared JWT)."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/enroll"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(
+                url,
+                headers={"Authorization": f"Bearer {mint_service_token()}"},
+                params={"label": "neubit_v3 VMS"},
+            )
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    key = (r.json() or {}).get("credential")
+    if not key:
+        raise NodeUnavailable("enrolment returned no credential")
+    return key
+
+
+async def list_estate_cameras(api_url: str, credential: str | None = None) -> list[dict]:
     """GET {api_url}/api/v1/nvr/estate/cameras → the node's own camera list."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(), params={"limit": 500})
+            r = await c.get(url, headers=_headers(credential), params={"limit": 500})
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
@@ -44,7 +71,9 @@ async def list_estate_cameras(api_url: str) -> list[dict]:
     return list((r.json() or {}).get("items") or [])
 
 
-async def mint_estate_live(api_url: str, camera_id: str, *, profile: str | None = None) -> dict:
+async def mint_estate_live(
+    api_url: str, camera_id: str, *, profile: str | None = None, credential: str | None = None
+) -> dict:
     """POST {api_url}/api/v1/nvr/estate/cameras/{id}/live → node-issued live payload
     (hls_url / webrtc_url / token / expires_at). The node mints + authorises its own
     media token; the VMS just relays it to the browser."""
@@ -54,7 +83,7 @@ async def mint_estate_live(api_url: str, camera_id: str, *, profile: str | None 
         body["profile"] = profile
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(), json=body)
+            r = await c.post(url, headers=_headers(credential), json=body)
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:

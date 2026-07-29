@@ -81,7 +81,7 @@ async def federated_cameras(
     unreachable: list[dict] = []
     for n in nodes:
         try:
-            cams = await fed.list_estate_cameras(n.api_url)
+            cams = await fed.list_estate_cameras(n.api_url, credential=n.credential)
         except fed.NodeUnavailable as e:
             log.warning("federation: node %s unreachable: %s", n.name, e)
             unreachable.append({"node_id": str(n.id), "name": n.name, "error": str(e)})
@@ -110,7 +110,7 @@ async def federated_live(
     if node is None:
         raise NotFoundError("recorder node not found")
     try:
-        payload = await fed.mint_estate_live(node.api_url, camera_id, profile=profile)
+        payload = await fed.mint_estate_live(node.api_url, camera_id, profile=profile, credential=node.credential)
     except fed.NodeUnavailable as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
     payload["node_id"] = str(node.id)
