@@ -63,6 +63,17 @@ function qs(params = {}) {
 }
 
 export const vms = {
+  // ── Federation — node-authoritative cameras across recorder nodes ────────
+  // The VMS pulls each registered recorder's own cameras up + streams them THROUGH
+  // the node (the node owns them). GET cameras aggregates all online nodes; live
+  // mints a node-issued token for a federated camera.
+  federation: {
+    nodes: () => unwrap(api.get("/vms/federation/nodes")),
+    cameras: () => unwrap(api.get("/vms/federation/cameras")),
+    live: (nodeId, cameraId, profile) =>
+      unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/live${qs({ profile })}`)),
+  },
+
   // ── Operations / Health dashboard (G2) — one live rollup ────────────────
   // GET /vms/dashboard/summary → { cameras, recording, storage, nodes, alarms,
   //   nvrs, generated_at }. Read-only aggregation over existing camera/recording/
