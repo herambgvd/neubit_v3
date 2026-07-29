@@ -41,7 +41,6 @@ export const menuItems = [
 //   placeholders until their feature ships.
 export const configTabs = [
   { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
-  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
   { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
   // VMS enterprise surfaces (P6-C/P6-D).
   { title: "External Access", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },

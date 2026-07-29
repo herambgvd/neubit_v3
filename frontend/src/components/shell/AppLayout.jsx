@@ -111,7 +111,8 @@ export default function AppLayout({ children }) {
     pathname === "/workflow-config" ||
     pathname === "/ingest" ||
     pathname === "/config/security" ||
-    pathname === "/platform";
+    pathname === "/platform" ||
+    pathname === "/config/video-wall";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>

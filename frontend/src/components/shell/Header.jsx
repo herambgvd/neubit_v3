@@ -299,13 +299,14 @@ export default function Header() {
   // backdrop with just the home/menu icon, brand, status strip and account — the
   // screen carries its OWN section strip (mode tabs / segment toggle). Navigation to
   // other sections is via the ⊞/home menu navigator.
-  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config", "/ingest", "/config/security", "/platform"]);
+  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config", "/ingest", "/config/security", "/platform", "/config/video-wall"]);
   const isHome = MINIMAL_ROUTES.has(pathname);
   const isSystem = pathname === "/general";
   const isWorkflow = pathname === "/workflow-config";
   const isIngest = pathname === "/ingest";
   const isSecurity = pathname === "/config/security";
   const isPlatform = pathname === "/platform";
+  const isVideoWall = pathname === "/config/video-wall";
   const searchParamsView = useSearchParams().get("view");
   // The Users & Roles console carries its section strip (modtab + USERS/ROLES
   // segment + AUDIT) INSIDE the header, in place of the top nav.
@@ -389,7 +390,7 @@ export default function Header() {
         <div className="h-14 flex items-center gap-4">
           {/* Left / centre / right thirds so the nav sits dead-centre of the header:
               logo and account take equal flex, the nav is centred between them. */}
-          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit || isSites || isSystem || isWorkflow || isIngest || isSecurity || isPlatform ? "shrink-0" : "flex-1"}`}>
+          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit || isSites || isSystem || isWorkflow || isIngest || isSecurity || isPlatform || isVideoWall ? "shrink-0" : "flex-1"}`}>
             {/* Global ⊞ MENU navigator — jump to any section from any screen (Round-26a). */}
             <MenuNavigator />
             <Brand />
@@ -419,6 +420,23 @@ export default function Header() {
                 <Icon icon="heroicons-outline:arrow-down-on-square-stack" className="text-[14px]" />
                 Ingest
               </div>
+            </div>
+          )}
+
+          {/* Video Wall console: Video Wall modtab + a link to the live Wall Console. */}
+          {isVideoWall && (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb">
+                <Icon icon="heroicons-outline:computer-desktop" className="text-[14px]" />
+                Video Wall
+              </div>
+              <Link
+                href="/wall"
+                title="Open the live Wall Console"
+                className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                <Icon icon="heroicons-outline:tv" className="text-[14px]" /> LIVE WALL
+              </Link>
             </div>
           )}
 
