@@ -1,1 +1,6 @@
-export { default } from "@/features/core/api-keys/ApiKeys";
+import { redirect } from "next/navigation";
+
+// API Keys now live inside the Security console as its "API Keys" segment.
+export default function ApiKeysRedirect() {
+  redirect("/config/security?view=keys");
+}

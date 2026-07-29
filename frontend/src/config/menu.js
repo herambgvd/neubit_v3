@@ -48,9 +48,8 @@ export const configTabs = [
   // navigator), so they are not listed in this Config sub-tab bar.
   // VMS enterprise surfaces (P6-C/P6-D).
   { title: "External Access", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
-  { title: "Security", icon: "heroicons-outline:shield-exclamation", link: "/config/security", perm: "security.manage" },
-  // neubit_v3-only admin pages (no neubit_v2 config equivalent) — kept so they stay reachable.
-  { title: "API Keys", icon: "heroicons-outline:key", link: "/api-keys", perm: "apikey.manage" },
+  // Security is its own console (Policy + API Keys segments), reached via the ⊞ menu
+  // navigator — so it and API Keys are not listed in this sub-tab bar.
   { title: "Branding", icon: "heroicons-outline:swatch", link: "/branding", perm: "branding.manage" },
   { title: "Email Templates", icon: "heroicons-outline:envelope", link: "/email-templates", perm: "settings.manage" },
   { title: "System Health", icon: "heroicons-outline:heart", link: "/system-health", perm: "system.read" },

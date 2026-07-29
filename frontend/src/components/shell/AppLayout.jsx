@@ -109,7 +109,8 @@ export default function AppLayout({ children }) {
     pathname === "/map" ||
     pathname === "/general" ||
     pathname === "/workflow-config" ||
-    pathname === "/ingest";
+    pathname === "/ingest" ||
+    pathname === "/config/security";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
@@ -134,6 +135,7 @@ export default function AppLayout({ children }) {
     pathname === "/general" ||
     pathname === "/workflow-config" ||
     pathname === "/ingest" ||
+    pathname === "/config/security" ||
     // Audit console — bounded pane; the entries table scrolls internally.
     pathname === "/audit" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).

@@ -1,1 +1,1 @@
-export { default } from "@/features/security/Security";
+export { default } from "@/features/security/SecurityConsole";

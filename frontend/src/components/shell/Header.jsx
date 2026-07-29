@@ -299,11 +299,12 @@ export default function Header() {
   // backdrop with just the home/menu icon, brand, status strip and account — the
   // screen carries its OWN section strip (mode tabs / segment toggle). Navigation to
   // other sections is via the ⊞/home menu navigator.
-  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config", "/ingest"]);
+  const MINIMAL_ROUTES = new Set(["/home", "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config", "/ingest", "/config/security"]);
   const isHome = MINIMAL_ROUTES.has(pathname);
   const isSystem = pathname === "/general";
   const isWorkflow = pathname === "/workflow-config";
   const isIngest = pathname === "/ingest";
+  const isSecurity = pathname === "/config/security";
   const searchParamsView = useSearchParams().get("view");
   // The Users & Roles console carries its section strip (modtab + USERS/ROLES
   // segment + AUDIT) INSIDE the header, in place of the top nav.
@@ -387,7 +388,7 @@ export default function Header() {
         <div className="h-14 flex items-center gap-4">
           {/* Left / centre / right thirds so the nav sits dead-centre of the header:
               logo and account take equal flex, the nav is centred between them. */}
-          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit || isSites || isSystem || isWorkflow || isIngest ? "shrink-0" : "flex-1"}`}>
+          <div className={`flex min-w-0 items-center gap-3 ${usersRoles || isAudit || isSites || isSystem || isWorkflow || isIngest || isSecurity ? "shrink-0" : "flex-1"}`}>
             {/* Global ⊞ MENU navigator — jump to any section from any screen (Round-26a). */}
             <MenuNavigator />
             <Brand />
@@ -416,6 +417,24 @@ export default function Header() {
               <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb">
                 <Icon icon="heroicons-outline:arrow-down-on-square-stack" className="text-[14px]" />
                 Ingest
+              </div>
+            </div>
+          )}
+
+          {/* Security console: Security modtab + Policy/API-Keys segment toggle. */}
+          {isSecurity && (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb">
+                <Icon icon="heroicons-outline:shield-exclamation" className="text-[14px]" />
+                Security
+              </div>
+              <div className="flex gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]">
+                <Link href="/config/security?view=policy" className={`flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${searchParamsView !== "keys" ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"}`}>
+                  <Icon icon="heroicons-outline:lock-closed" className="text-[14px]" /> POLICY
+                </Link>
+                <Link href="/config/security?view=keys" className={`flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${searchParamsView === "keys" ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"}`}>
+                  <Icon icon="heroicons-outline:key" className="text-[14px]" /> API KEYS
+                </Link>
               </div>
             </div>
           )}
