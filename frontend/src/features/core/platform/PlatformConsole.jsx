@@ -9,6 +9,7 @@ import { useSearchParams } from "next/navigation";
 import Channels from "@/features/core/notifications/Channels";
 import Branding from "@/features/core/branding/Branding";
 import EmailTemplates from "@/features/core/email-templates/EmailTemplates";
+import Tags from "@/features/core/tags/Tags";
 import Health from "@/features/core/system-health/Health";
 import License from "@/features/core/license/License";
 
@@ -16,6 +17,7 @@ const VIEWS = {
   notifications: Channels,
   branding: Branding,
   templates: EmailTemplates,
+  tags: Tags,
   health: Health,
   license: License,
 };

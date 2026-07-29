@@ -15,7 +15,7 @@ import { createPortal } from "react-dom";
 
 import {
   menuItems,
-  configTabs,
+  configConsoles,
   deviceTabs,
   streamTabs,
 } from "@/config/menu";
@@ -108,7 +108,7 @@ export default function MenuNavigator() {
   ];
   const streaming = streamTabs.filter(allowed).map((t) => ({ ...t }));
   const devices = deviceTabs.filter(allowed).map((t) => ({ ...t }));
-  const config = configTabs.filter(allowed).map((t) => ({ ...t }));
+  const config = configConsoles.filter(allowed).map((t) => ({ ...t }));
 
   // Building Intelligence — Phase-0 coming-soon surfaces (no destinations).
   const intelligence = [

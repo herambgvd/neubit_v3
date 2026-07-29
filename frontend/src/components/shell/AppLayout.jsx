@@ -112,7 +112,9 @@ export default function AppLayout({ children }) {
     pathname === "/ingest" ||
     pathname === "/config/security" ||
     pathname === "/platform" ||
-    pathname === "/config/video-wall";
+    pathname === "/config/video-wall" ||
+    pathname === "/config/linkage" ||
+    pathname === "/config/onvif-server";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
@@ -133,6 +135,8 @@ export default function AppLayout({ children }) {
     pathname === "/roles" ||
     pathname === "/tags" ||
     pathname === "/config/patterns" ||
+    pathname === "/config/linkage" ||
+    pathname === "/config/onvif-server" ||
     pathname === "/config/video-wall" ||
     pathname === "/general" ||
     pathname === "/workflow-config" ||

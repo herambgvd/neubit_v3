@@ -31,22 +31,36 @@ export const menuItems = [
   // Hidden for now (coming later) — uncomment to restore in the top nav.
   // { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true, module: "nms" },
   // { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true, module: "octosense" },
-  // Config is a SECTION: clicking it enters the Config sub-tab bar (first enabled tab).
-  { title: "Config", icon: "heroicons-outline:cog-6-tooth", section: "config" },
+  // Config is no longer a top-nav section — every former Config surface is now its
+  // own minimal-chrome console reached from the ⊞ menu navigator + the Home
+  // Configurations launcher. The sub-tab bar is retired (configTabs is empty).
 ];
 
 // ── Config sub-tab bar (second horizontal bar) ───────────────────────
 //   neubit_v2 order first (Sites…System), then neubit_v3's existing admin pages appended
 //   so nothing is lost. Enabled tabs map to real neubit_v3 routes; the rest are disabled
 //   placeholders until their feature ships.
-export const configTabs = [
-  { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
-  { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
-  // VMS enterprise surfaces (P6-C/P6-D).
-  { title: "External Access", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
-  // Reformed into their own ⊞-menu consoles (not listed here): Users/Roles, Sites,
-  // Activity→Audit, Workflow, Ingest, System, Security(+API Keys), and the Platform
-  // console (Notifications, Branding, Email Templates, System Health, License).
+// Retired: every former Config surface is now its own minimal-chrome console
+// (reached via the ⊞ menu navigator + the Home Configurations launcher):
+// Users/Roles, Sites, Activity→Audit, Workflow, Ingest, System, Security(+API
+// Keys), Platform (Notifications/Branding/Email Templates/Tags/Health/License),
+// Video Wall, Linkage, External Access. The Config sub-tab bar no longer renders.
+export const configTabs = [];
+
+// The former Config surfaces, now standalone consoles — the ⊞ menu navigator's
+// "Configurations" column is built from THIS list (configTabs is retired).
+export const configConsoles = [
+  { title: "Users & Roles", icon: "heroicons-outline:users", link: "/users", perm: "user.read" },
+  { title: "Sites", icon: "heroicons-outline:map-pin", link: "/sites", perm: "neubit.read" },
+  { title: "Video Wall", icon: "heroicons-outline:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
+  { title: "Linkage", icon: "heroicons-outline:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
+  { title: "Workflow", icon: "heroicons-outline:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
+  { title: "Ingest", icon: "heroicons-outline:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
+  { title: "Security", icon: "heroicons-outline:shield-exclamation", link: "/config/security", perm: "security.manage" },
+  { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
+  { title: "Platform", icon: "heroicons-outline:squares-2x2", link: "/platform", perm: "settings.manage" },
+  { title: "Audit", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
+  { title: "External Access", icon: "heroicons-outline:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
 ];
 
 // ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──

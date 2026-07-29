@@ -1,1 +1,2 @@
-export { default } from "@/features/core/tags/Tags";
+import { redirect } from "next/navigation";
+export default function R() { redirect("/platform?view=tags"); }

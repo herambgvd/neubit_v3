@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
-import { menuItems, configTabs, deviceTabs, streamTabs } from "@/config/menu";
+import { menuItems, configConsoles, deviceTabs, streamTabs } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 
 // Human labels for the entity groups the /search endpoint returns (keyed by its
@@ -28,7 +28,7 @@ function navPages() {
     if (item.disabled || item.section || !item.link) continue;
     out.push(item);
   }
-  for (const t of [...configTabs, ...deviceTabs, ...streamTabs]) {
+  for (const t of [...configConsoles, ...deviceTabs, ...streamTabs]) {
     if (t.disabled || !t.link) continue;
     out.push(t);
   }
