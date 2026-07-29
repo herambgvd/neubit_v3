@@ -1,1 +1,2 @@
-export { default } from "@/features/core/license/License";
+import { redirect } from "next/navigation";
+export default function R() { redirect("/platform?view=license"); }

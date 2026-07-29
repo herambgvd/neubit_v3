@@ -43,17 +43,12 @@ export const configTabs = [
   { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
   { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
   { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
-  { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
-  // Workflow, Ingest and System are their own consoles (reached via the ⊞ menu
-  // navigator), so they are not listed in this Config sub-tab bar.
   // VMS enterprise surfaces (P6-C/P6-D).
   { title: "External Access", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
-  // Security is its own console (Policy + API Keys segments), reached via the ⊞ menu
-  // navigator — so it and API Keys are not listed in this sub-tab bar.
-  { title: "Branding", icon: "heroicons-outline:swatch", link: "/branding", perm: "branding.manage" },
   { title: "Email Templates", icon: "heroicons-outline:envelope", link: "/email-templates", perm: "settings.manage" },
-  { title: "System Health", icon: "heroicons-outline:heart", link: "/system-health", perm: "system.read" },
-  { title: "License", icon: "heroicons-outline:check-badge", link: "/license" },
+  // Reformed into their own ⊞-menu consoles (not listed here): Users/Roles, Sites,
+  // Activity→Audit, Workflow, Ingest, System, Security(+API Keys), and the Platform
+  // console (Notifications, Branding, System Health, License).
 ];
 
 // ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──
