@@ -38,6 +38,7 @@ from app.vms.motion_search.router import router as motion_search_router
 from app.vms.nvr.router import router as nvr_router
 from app.vms.onvif_server.router import config_router as onvif_server_router
 from app.vms.events.router import router as event_router
+from app.vms.federation.router import router as federation_router
 from app.vms.patterns.router import router as pattern_router
 from app.vms.playback.router import router as playback_router
 from app.vms.ptz.router import router as ptz_router
@@ -99,6 +100,7 @@ routers = [
     export_router,
     reports_router,
     event_router,
+    federation_router,
     linkage_router,
     storage_rec_router,
     # Bookmarks (G3) — /vms/bookmarks (+ /{id}). Operator-marked moments/ranges in
