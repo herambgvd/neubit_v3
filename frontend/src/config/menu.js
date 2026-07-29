@@ -45,10 +45,9 @@ export const configTabs = [
   { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
   // VMS enterprise surfaces (P6-C/P6-D).
   { title: "External Access", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
-  { title: "Email Templates", icon: "heroicons-outline:envelope", link: "/email-templates", perm: "settings.manage" },
   // Reformed into their own ⊞-menu consoles (not listed here): Users/Roles, Sites,
   // Activity→Audit, Workflow, Ingest, System, Security(+API Keys), and the Platform
-  // console (Notifications, Branding, System Health, License).
+  // console (Notifications, Branding, Email Templates, System Health, License).
 ];
 
 // ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──

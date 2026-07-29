@@ -433,6 +433,7 @@ export default function Header() {
                 {[
                   { v: "notifications", label: "NOTIFICATIONS", icon: "heroicons-outline:bell-alert" },
                   { v: "branding", label: "BRANDING", icon: "heroicons-outline:swatch" },
+                  { v: "templates", label: "EMAIL TEMPLATES", icon: "heroicons-outline:envelope" },
                   { v: "health", label: "HEALTH", icon: "heroicons-outline:heart" },
                   { v: "license", label: "LICENSE", icon: "heroicons-outline:check-badge" },
                 ].map((s) => {
