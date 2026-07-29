@@ -105,6 +105,14 @@ export default function SimulatorTab() {
     }
     if (Object.keys(next).length) { setErrors(next); return; }
     setErrors({});
+    // Live run (dry-run OFF) creates a REAL incident + fires SOP actions from a
+    // config screen — confirm before it happens.
+    if (!dryRun && !window.confirm(
+      "Run LIVE — this creates a real incident and fires the SOP's real actions " +
+      "(notifications, linkage, etc). Continue?"
+    )) {
+      return;
+    }
     simulate.mutate({
       event_type: eventType.trim(),
       payload,
