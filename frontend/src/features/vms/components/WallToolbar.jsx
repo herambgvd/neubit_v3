@@ -106,16 +106,11 @@ export default function WallToolbar({
         <div className="flex min-w-0 items-center gap-2">
           <Icon icon="heroicons-solid:signal" className="text-base text-[#22d3ee]" />
           <span className="text-sm font-semibold text-[#f2f6ff]">Video Wall</span>
-          <span className="rounded-[6px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-[#aec2e8]">
+          <span
+            title={`${liveCount} on wall · ${onlineCount} online`}
+            className="rounded-[6px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-[#aec2e8]"
+          >
             {liveCount}/{layout.capacity}
-          </span>
-          <span className="hidden items-center gap-1 rounded-full border border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-[#34d399] sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#34d399]" />
-            {onlineCount} online
-          </span>
-          <span className="hidden items-center gap-1 font-mono text-[10px] font-medium tabular-nums text-[#7e93bf] sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#22d3ee]" />
-            {liveCount} on wall
           </span>
           {tour?.active && (
             <span className="inline-flex items-center gap-1 rounded-full border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.12)] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#fbbf24]">
