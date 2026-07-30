@@ -150,7 +150,33 @@ export default function Streaming() {
     queryFn: () => vms.cameras.list({ limit: 500 }),
     refetchInterval: 20_000,
   });
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+  // Federated recorder cameras — cameras OWNED by registered NVR nodes, pulled up
+  // read-only and streamed THROUGH each node. Merged into the same wall so the
+  // camera tree shows recorders as top-level branches alongside local cameras.
+  const fedQ = useQuery({
+    queryKey: ["vms-wall-federation-cameras"],
+    queryFn: () => vms.federation.cameras(),
+    refetchInterval: 30_000,
+  });
+  const cameras = useMemo(() => {
+    const local = asItems(camerasQ.data);
+    // Each federated camera gets a composite id (`fed:<node>:<cam>`) so it never
+    // collides with a local camera id; real_id + node_id drive the node-issued
+    // live source (see WallTile). Grouped under its recorder in the rail via
+    // site_id/site_name = the node.
+    const fed = (fedQ.data?.items || []).map((c) => ({
+      id: `fed:${c.node_id}:${c.id}`,
+      real_id: c.id,
+      name: c.name,
+      status: c.status,
+      federated: true,
+      node_id: c.node_id,
+      node_name: c.node_name,
+      site_id: `nvr:${c.node_id}`,
+      site_name: c.node_name,
+    }));
+    return [...fed, ...local];
+  }, [camerasQ.data, fedQ.data]);
   const cameraById = useMemo(() => {
     const m = new Map();
     cameras.forEach((c) => m.set(c.id, c));
@@ -179,7 +205,7 @@ export default function Streaming() {
   // SUCCESSFUL fetch — a transient load error or the pre-load mount must NOT clear the
   // wall. Empties the cell (drag-target) rather than error-holding a dead id.
   useEffect(() => {
-    if (!camerasQ.isSuccess) return;
+    if (!camerasQ.isSuccess || !fedQ.isSuccess) return;
     setCells((prev) => {
       let changed = false;
       const next = prev.map((c) => {
@@ -191,7 +217,7 @@ export default function Streaming() {
       });
       return changed ? next : prev;
     });
-  }, [camerasQ.isSuccess, cameraIdSet]);
+  }, [camerasQ.isSuccess, fedQ.isSuccess, cameraIdSet]);
 
   // ── layout / assignment ────────────────────────────────────────────────
   const changeLayout = useCallback((key) => {
@@ -566,7 +592,7 @@ export default function Streaming() {
             mountedIds={mountedIds}
             onPick={pickCamera}
             onDragStateChange={setRailDragging}
-            isLoading={camerasQ.isLoading}
+            isLoading={camerasQ.isLoading || fedQ.isLoading}
             onlineCount={onlineCount}
             liveCount={liveCount}
           />

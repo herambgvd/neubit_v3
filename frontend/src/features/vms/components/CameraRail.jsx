@@ -52,23 +52,30 @@ export default function CameraRail({
     });
   }, [cameras, needle]);
 
-  // Group filtered cameras by site → sorted site nodes ("Unassigned" last).
+  // Group filtered cameras into branches: RECORDER nodes (federated cameras owned
+  // by an NVR) first, then local SITES, "Unassigned" last. Recorder branches carry
+  // kind:"recorder" so they render with a server glyph — the tree reads
+  //   Default › recorder-dev-01 › Channel 1 / Channel 2 …
   const sites = useMemo(() => {
-    const bySite = new Map();
+    const byGroup = new Map();
     filtered.forEach((c) => {
-      const key = c.site_id || NO_SITE;
-      if (!bySite.has(key)) {
-        bySite.set(key, {
+      const recorder = !!c.federated;
+      const key = recorder ? c.site_id : c.site_id || NO_SITE;
+      if (!byGroup.has(key)) {
+        byGroup.set(key, {
           id: key,
-          name: key === NO_SITE ? "Unassigned" : c.site_name || "Site",
+          kind: recorder ? "recorder" : "site",
+          name: key === NO_SITE ? "Unassigned" : c.site_name || (recorder ? "Recorder" : "Site"),
           cameras: [],
         });
       }
-      bySite.get(key).cameras.push(c);
+      byGroup.get(key).cameras.push(c);
     });
-    return [...bySite.values()].sort((a, b) => {
+    return [...byGroup.values()].sort((a, b) => {
       if (a.id === NO_SITE) return 1;
       if (b.id === NO_SITE) return -1;
+      // Recorders before local sites.
+      if (a.kind !== b.kind) return a.kind === "recorder" ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
   }, [filtered]);
@@ -194,8 +201,14 @@ export default function CameraRail({
                           className={`shrink-0 text-sm text-[#7e93bf] transition-transform ${open ? "rotate-90" : ""}`}
                         />
                         <Icon
-                          icon={site.id === NO_SITE ? "heroicons-outline:inbox" : "heroicons-outline:map-pin"}
-                          className="shrink-0 text-sm text-[#aec2e8]"
+                          icon={
+                            site.kind === "recorder"
+                              ? "heroicons-outline:server-stack"
+                              : site.id === NO_SITE
+                                ? "heroicons-outline:inbox"
+                                : "heroicons-outline:map-pin"
+                          }
+                          className={`shrink-0 text-sm ${site.kind === "recorder" ? "text-nb-blueb" : "text-[#aec2e8]"}`}
                         />
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#cfd0f2]">
                           {site.name}

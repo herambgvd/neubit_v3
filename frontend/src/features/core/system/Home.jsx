@@ -216,7 +216,6 @@ export default function HomePage() {
   // ── Surveillance — Watch / Act ──
   const survWatch = g([
     { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "neubit.read", module: "vms", count: cameraCount },
-    { icon: "heroicons:video-camera", label: "Recorder Cameras", href: "/recorder-cameras", tone: "teal", perm: "vms.camera.read", module: "vms" },
     { icon: "heroicons:tv", label: "Video Walls", href: "/wall", tone: "teal", perm: "vms.wall.view", module: "vms" },
     { icon: "heroicons:cpu-chip", label: "Fleet", href: "/devices/recorders", tone: "att", perm: "neubit.read", module: "vms" },
     { icon: "heroicons:heart", label: "Pulse", href: "/system-health", tone: "teal", perm: "system.read" },

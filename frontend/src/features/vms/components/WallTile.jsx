@@ -27,10 +27,11 @@
 // `onPickHere(index)`) so a single useCallback'd handler is shared by every tile
 // instead of a fresh per-render closure that captures `i`. The tile supplies its
 // own stable `index` when invoking them.
-import { memo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { useAuth } from "@/lib/auth";
+import { vms } from "../api";
 import LivePlayer from "./LivePlayer";
 import PtzOverlay from "./PtzOverlay";
 import { STATUS_PRESETS } from "../constants";
@@ -62,6 +63,25 @@ function WallTile({
   const rootRef = useRef(null);
   const [dropActive, setDropActive] = useState(false);
   const { can } = useAuth();
+
+  // Federated (recorder-owned) cameras stream THROUGH their node: mint/renew a
+  // node-issued live token via /vms/federation. Local VMS cameras use LivePlayer's
+  // default source (undefined). Stable per (node, real id) so the player doesn't
+  // re-attach on every wall render.
+  const fedNodeId = camera?.federated ? camera.node_id : null;
+  const fedRealId = camera?.federated ? camera.real_id : null;
+  const source = useMemo(() => {
+    if (!fedNodeId || !fedRealId) return undefined;
+    const mint = async (profile) => {
+      const s = await vms.federation.live(fedNodeId, fedRealId, profile);
+      return { ...s, ready: true };
+    };
+    return {
+      start: (_camId, profile) => mint(profile),
+      renew: () => mint("sub"),
+      release: async () => {},
+    };
+  }, [fedNodeId, fedRealId]);
 
   const onDragOver = (e) => {
     // Accept both a rail camera and another tile being dragged over.
@@ -153,9 +173,10 @@ function WallTile({
       {/* Player — full-bleed, minimal (the tile owns the overlays). */}
       <LivePlayer
         key={`${cameraId}:${profile}`}
-        cameraId={cameraId}
+        cameraId={camera?.federated ? camera.real_id : cameraId}
         cameraName={name}
         profile={profile}
+        source={source}
         minimal
         className="!rounded-none h-full w-full"
       />
