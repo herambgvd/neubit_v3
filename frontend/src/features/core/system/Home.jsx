@@ -11,6 +11,7 @@
 // (never a broken link, never a faked number). Building Intelligence is entirely
 // coming-soon in this phase.
 
+import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -76,7 +77,7 @@ function Soul() {
 }
 
 /* ── One metro tile ───────────────────────────────────────────────────── */
-function Tile({ icon, label, href, tone = "teal", count, soon }) {
+function Tile({ icon, label, href, tone = "teal", count, sub, soon }) {
   const toneRing = {
     teal: "hover:border-[rgba(34,211,238,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(34,211,238,.3)]",
     blue: "hover:border-[rgba(96,165,250,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(96,165,250,.3)]",
@@ -122,12 +123,17 @@ function Tile({ icon, label, href, tone = "teal", count, soon }) {
         className="absolute left-1/2 top-7 -translate-x-1/2 text-[58px] transition-transform duration-150 group-hover:scale-110"
         style={{ color: toneIcon[tone] }}
       />
-      <div className="absolute inset-x-3.5 bottom-3 flex items-baseline gap-2 text-[13px] tracking-[.3px] text-[#aec2e8] transition group-hover:text-[#f2f6ff]">
-        <span className="truncate">{label}</span>
-        {count != null && (
-          <span className="ml-auto font-mono text-[15px] font-bold" style={{ color: countColor[tone] }}>
-            {count}
-          </span>
+      <div className="absolute inset-x-3.5 bottom-3">
+        <div className="flex items-baseline gap-2 text-[13px] tracking-[.3px] text-[#aec2e8] transition group-hover:text-[#f2f6ff]">
+          <span className="truncate">{label}</span>
+          {count != null && (
+            <span className="ml-auto font-mono text-[15px] font-bold" style={{ color: countColor[tone] }}>
+              {count}
+            </span>
+          )}
+        </div>
+        {sub && (
+          <div className="mt-0.5 truncate font-mono text-[10px] tracking-[.3px] text-[#7e93bf]">{sub}</div>
         )}
       </div>
     </Link>
@@ -200,12 +206,30 @@ export default function HomePage() {
 
   const camCountQ = useQuery({
     queryKey: ["home-camera-count"],
-    queryFn: () => vms.cameras.list({ limit: 1 }),
+    queryFn: () => vms.cameras.list({ limit: 500 }),
     enabled: canCam,
     staleTime: 60_000,
     retry: false,
   });
-  const cameraCount = typeof camCountQ.data?.total === "number" ? camCountQ.data.total : undefined;
+  // Federated recorder-owned cameras aren't in vms.cameras — pull them so the Live
+  // tile counts every camera the wall can show (local + all NVR nodes).
+  const fedCamQ = useQuery({
+    queryKey: ["home-federation-cameras"],
+    queryFn: () => vms.federation.cameras(),
+    enabled: canCam,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const camStats = useMemo(() => {
+    const local = camCountQ.data?.items || [];
+    const fed = fedCamQ.data?.items || [];
+    const all = [...local, ...fed];
+    const online = all.filter((c) => c.status === "online").length;
+    return { total: all.length, online, offline: all.length - online };
+  }, [camCountQ.data, fedCamQ.data]);
+  const anyCamLoaded = camCountQ.isSuccess || fedCamQ.isSuccess;
+  const cameraCount = anyCamLoaded ? camStats.total : undefined;
+  const cameraSub = anyCamLoaded ? `${camStats.online} online · ${camStats.offline} off` : undefined;
 
   const gate = (t) => {
     const ok = (!t.perm || can(t.perm)) && (!t.module || hasModule(t.module));
@@ -215,7 +239,7 @@ export default function HomePage() {
 
   // ── Surveillance — Watch / Act ──
   const survWatch = g([
-    { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "neubit.read", module: "vms", count: cameraCount },
+    { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "neubit.read", module: "vms", count: cameraCount, sub: cameraSub },
     { icon: "heroicons:tv", label: "Video Walls", href: "/wall", tone: "teal", perm: "vms.wall.view", module: "vms" },
     { icon: "heroicons:cpu-chip", label: "Fleet", href: "/devices/recorders", tone: "att", perm: "neubit.read", module: "vms" },
     { icon: "heroicons:heart", label: "Pulse", href: "/system-health", tone: "teal", perm: "system.read" },
