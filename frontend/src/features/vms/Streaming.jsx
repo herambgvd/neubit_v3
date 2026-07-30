@@ -47,7 +47,9 @@ import {
 } from "./videoWall";
 import CameraRail from "./components/CameraRail";
 import WallTile from "./components/WallTile";
-import WallToolbar from "./components/WallToolbar";
+import WallToolbar, { QUALITY_LEVELS } from "./components/WallToolbar";
+import MapView from "./components/MapView";
+import PlayoutBar from "./components/PlayoutBar";
 import SpotlightOverlay from "./components/SpotlightOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
 import PatternPickerMenu from "./components/PatternPickerMenu";
@@ -60,6 +62,8 @@ const LS_LAYOUT = "neubit.vms.wall.layout";
 const LS_CELLS = "neubit.vms.wall.cells";
 const LS_SAVED = "neubit.vms.wall.saved";
 const LS_RAIL = "neubit.vms.wall.rail";
+const LS_VIEW = "neubit.vms.wall.view";
+const LS_QUALITY = "neubit.vms.wall.quality";
 
 const emptyCell = () => ({ cameraId: null });
 
@@ -113,6 +117,17 @@ export default function Streaming() {
     return Array.isArray(s) ? s : [];
   });
 
+  // View mode (grid | map | split) + global stream quality + DVR playout bar.
+  const [viewMode, setViewMode] = useState(() => {
+    const v = readLS(LS_VIEW, "grid");
+    return ["grid", "map", "split"].includes(v) ? v : "grid";
+  });
+  const [quality, setQuality] = useState(() => {
+    const qv = readLS(LS_QUALITY, "auto");
+    return QUALITY_LEVELS.some((l) => l.key === qv) ? qv : "auto";
+  });
+  const [playoutOpen, setPlayoutOpen] = useState(false);
+
   const [railOpen, setRailOpen] = useState(() => readLS(LS_RAIL, true) !== false);
   const [railDragging, setRailDragging] = useState(false);
   const [spotlight, setSpotlight] = useState(null); // tile index or null
@@ -143,6 +158,8 @@ export default function Streaming() {
   useEffect(() => writeLS(LS_CELLS, cells.map((c) => ({ cameraId: c.cameraId || null }))), [cells]);
   useEffect(() => writeLS(LS_SAVED, savedLayouts), [savedLayouts]);
   useEffect(() => writeLS(LS_RAIL, railOpen), [railOpen]);
+  useEffect(() => writeLS(LS_VIEW, viewMode), [viewMode]);
+  useEffect(() => writeLS(LS_QUALITY, quality), [quality]);
 
   // ── cameras ─────────────────────────────────────────────────────────────
   const camerasQ = useQuery({
@@ -507,6 +524,13 @@ export default function Streaming() {
 
   const hero = heroIndex(layout);
 
+  // Global quality override → forces the media profile (Auto defers to the
+  // per-tile grid heuristic). eco/balanced → sub-stream, high/turbo → main.
+  const qualityProfile = useMemo(
+    () => QUALITY_LEVELS.find((l) => l.key === quality)?.profile || null,
+    [quality],
+  );
+
   // Per-tile grid-area styles, memoised so each tile gets a REFERENTIALLY STABLE
   // `style` prop (tileStyle() builds a fresh {gridArea} object for spotlight
   // layouts each call — that alone would defeat WallTile's memo). Symmetric
@@ -532,7 +556,7 @@ export default function Streaming() {
       // Profile is derived from the GRID (not spotlight) so a tile's LivePlayer
       // key is stable across spotlight ↔ grid — the session is reused, not
       // restarted. The spotlight hero simply gets a bigger surface, same stream.
-      profile={tileProfile(layout.capacity, isHero)}
+      profile={qualityProfile || tileProfile(layout.capacity, isHero)}
       isHero={isHero || spotlightMode}
       spotlight={spotlightMode}
       railDragging={railDragging}
@@ -558,6 +582,13 @@ export default function Streaming() {
         onLayoutChange={changeLayout}
         liveCount={liveCount}
         onlineCount={onlineCount}
+        viewMode={viewMode}
+        onViewMode={setViewMode}
+        quality={quality}
+        onQuality={setQuality}
+        playoutOpen={playoutOpen}
+        onTogglePlayout={() => setPlayoutOpen((o) => !o)}
+        alarmCount={0}
         tour={tour}
         onStartTour={startTour}
         onStopTour={stopTour}
@@ -599,48 +630,70 @@ export default function Streaming() {
         )}
 
         <main className="relative z-0 flex min-w-0 flex-1 flex-col">
-          {/* Grid — the hero. Full-bleed with tight gaps.
-              The grid CONTAINER is the SAME element in both modes (only its
-              template + children change) so the spotlighted tile — kept with its
-              stable `tile-i` key — is preserved by React across grid↔spotlight,
-              reusing its LivePlayer session instead of remounting. In spotlight
-              mode every OTHER tile is omitted, so their players unmount and their
-              sessions release. */}
-          <div className="relative min-h-0 flex-1 overflow-hidden p-1.5">
-            <div
-              ref={gridRef}
-              className="grid h-full min-h-0 gap-1.5"
-              style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
-            >
-              {isSpotlightActive
-                ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
-                : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
-            </div>
-            {isSpotlightActive && (
-              <SpotlightOverlay
-                label={spotlightCam?.name || "Camera"}
-                position={filledIndexes.indexOf(spotlight) + 1}
-                total={filledIndexes.length}
-                onPrev={() => stepSpotlight(-1)}
-                onNext={() => stepSpotlight(1)}
-                onExit={() => setSpotlight(null)}
-              />
+          <div className="flex min-h-0 flex-1">
+            {/* Grid — the hero. Full-bleed with tight gaps. Hidden in MAP view;
+                shares the row with the map in SPLIT (grid gets slightly more).
+                The grid CONTAINER is the SAME element across grid↔spotlight (only
+                its template + children change) so the spotlighted tile — kept with
+                its stable `tile-i` key — is preserved by React, reusing its
+                LivePlayer session instead of remounting. */}
+            {viewMode !== "map" && (
+              <div
+                className={`relative min-h-0 overflow-hidden p-1.5 ${viewMode === "split" ? "flex-[1.15]" : "flex-1"}`}
+              >
+                <div
+                  ref={gridRef}
+                  className="grid h-full min-h-0 gap-1.5"
+                  style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
+                >
+                  {isSpotlightActive
+                    ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
+                    : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
+                </div>
+                {isSpotlightActive && (
+                  <SpotlightOverlay
+                    label={spotlightCam?.name || "Camera"}
+                    position={filledIndexes.indexOf(spotlight) + 1}
+                    total={filledIndexes.length}
+                    onPrev={() => stepSpotlight(-1)}
+                    onNext={() => stepSpotlight(1)}
+                    onExit={() => setSpotlight(null)}
+                  />
+                )}
+                {rotation.active && !isSpotlightActive && (
+                  <PatternHud
+                    patternName={activePattern?.name || "Pattern"}
+                    groupName={rotation.current?.name}
+                    index={rotation.index}
+                    total={rotation.total}
+                    paused={rotation.paused}
+                    seconds={rotation.seconds}
+                    onPrev={rotation.prev}
+                    onNext={rotation.next}
+                    onTogglePause={rotation.togglePause}
+                    onExit={exitPattern}
+                  />
+                )}
+              </div>
             )}
-            {rotation.active && !isSpotlightActive && (
-              <PatternHud
-                patternName={activePattern?.name || "Pattern"}
-                groupName={rotation.current?.name}
-                index={rotation.index}
-                total={rotation.total}
-                paused={rotation.paused}
-                seconds={rotation.seconds}
-                onPrev={rotation.prev}
-                onNext={rotation.next}
-                onTogglePause={rotation.togglePause}
-                onExit={exitPattern}
-              />
+
+            {/* Facility MAP — camera positions over a site map. Scaffold until
+                site geometry / camera coordinates exist (honest empty state). */}
+            {viewMode !== "grid" && (
+              <div className={`relative min-h-0 p-1.5 ${viewMode === "split" ? "flex-1 border-l border-[rgba(150,180,245,.15)]" : "flex-1"}`}>
+                <MapView cameras={cameras} onPick={(cam) => pickCamera(cam)} />
+              </div>
             )}
           </div>
+
+          {/* DVR playout transport (24h timeline + scrub). Wall-level, toggled
+              from the toolbar. Wired to the selected/first camera. */}
+          {playoutOpen && (
+            <PlayoutBar
+              camera={spotlightCam || cameraById.get(wallCameraIds[0]) || null}
+              onClose={() => setPlayoutOpen(false)}
+            />
+          )}
         </main>
       </div>
 

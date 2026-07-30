@@ -29,6 +29,25 @@ function IconBtn({ icon, title, onClick, active = false, spinning = false, dange
   );
 }
 
+// The three wall view modes (mockup: GRID / MAP / SPLIT). MAP overlays camera
+// positions on a facility map; SPLIT shows grid + map side by side.
+const VIEW_MODES = [
+  { key: "grid", label: "GRID", icon: "heroicons-outline:squares-2x2" },
+  { key: "map", label: "MAP", icon: "heroicons-outline:map" },
+  { key: "split", label: "SPLIT", icon: "heroicons-outline:view-columns" },
+];
+
+// Global stream-quality profiles (mockup top-bar). Maps to the media profile the
+// wall requests: eco/balanced favour the low-bandwidth sub-stream, high/turbo the
+// full main-stream. "auto" defers to the per-tile grid heuristic (tileProfile).
+export const QUALITY_LEVELS = [
+  { key: "auto", label: "Auto", icon: "heroicons-outline:sparkles", profile: null },
+  { key: "eco", label: "Eco", icon: "heroicons-outline:battery-50", profile: "sub" },
+  { key: "balanced", label: "Balanced", icon: "heroicons-outline:signal", profile: "sub" },
+  { key: "high", label: "High", icon: "heroicons-outline:film", profile: "main" },
+  { key: "turbo", label: "Turbo", icon: "heroicons-outline:bolt", profile: "main" },
+];
+
 export default function WallToolbar({
   railOpen,
   onToggleRail,
@@ -36,6 +55,13 @@ export default function WallToolbar({
   onLayoutChange,
   liveCount,
   onlineCount,
+  viewMode = "grid",
+  onViewMode,
+  quality = "auto",
+  onQuality,
+  playoutOpen,
+  onTogglePlayout,
+  alarmCount = 0,
   tour,
   onStartTour,
   onStopTour,
@@ -52,6 +78,7 @@ export default function WallToolbar({
   refreshing,
 }) {
   const layout = getLayout(layoutKey);
+  const gridMode = viewMode !== "map"; // grid or split show the layout picker
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 backdrop-blur-sm">
@@ -83,17 +110,40 @@ export default function WallToolbar({
             </span>
           )}
         </div>
+
+        {/* GRID / MAP / SPLIT view segment (mockup) */}
+        <div className="ml-1 hidden overflow-hidden rounded-[9px] border border-[rgba(150,180,245,.22)] md:inline-flex">
+          {VIEW_MODES.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => onViewMode?.(m.key)}
+              className={`inline-flex h-[29px] items-center gap-1.5 px-2.5 text-[11.5px] font-medium tracking-[1.1px] transition ${
+                viewMode === m.key
+                  ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+                  : "text-[#aec2e8] hover:bg-[rgba(150,180,245,.06)] hover:text-[#67e8f9]"
+              }`}
+            >
+              <Icon icon={m.icon} className="text-sm" />
+              {m.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Controls */}
       <div className="flex items-center gap-1.5">
-        <LayoutPicker layoutKey={layoutKey} onChange={onLayoutChange} />
+        <QualitySelect quality={quality} onQuality={onQuality} />
 
-        <TourControl tour={tour} onStart={onStartTour} onStop={onStopTour} onInterval={onTourInterval} />
+        <div className="mx-0.5 h-6 w-px bg-[rgba(150,180,245,.22)]" />
+
+        {gridMode && <LayoutPicker layoutKey={layoutKey} onChange={onLayoutChange} />}
+
+        {gridMode && <TourControl tour={tour} onStart={onStartTour} onStop={onStopTour} onInterval={onTourInterval} />}
 
         {patternControl}
         {savedControl}
-        {onSaveGroup && (
+        {onSaveGroup && gridMode && (
           <button
             type="button"
             title="Save the current wall as a reusable camera group"
@@ -108,18 +158,79 @@ export default function WallToolbar({
 
         <div className="mx-0.5 h-6 w-px bg-[rgba(150,180,245,.22)]" />
 
-        <IconBtn
-          icon={allMuted ? "heroicons-outline:speaker-x-mark" : "heroicons-outline:speaker-wave"}
-          title={allMuted ? "Unmute wall" : "Mute wall"}
-          active={!allMuted}
-          onClick={onToggleMuteAll}
-        />
+        {gridMode && (
+          <IconBtn
+            icon={allMuted ? "heroicons-outline:speaker-x-mark" : "heroicons-outline:speaker-wave"}
+            title={allMuted ? "Unmute wall" : "Mute wall"}
+            active={!allMuted}
+            onClick={onToggleMuteAll}
+          />
+        )}
         <IconBtn icon="heroicons-outline:arrows-pointing-out" title="Fullscreen wall" onClick={onFullscreen} />
-        {liveCount > 0 && (
+        {gridMode && liveCount > 0 && (
           <IconBtn icon="heroicons-outline:trash" title="Clear wall" danger onClick={onClear} />
         )}
         <IconBtn icon="heroicons-outline:arrow-path" title="Refresh cameras" spinning={refreshing} onClick={onRefresh} />
+
+        {/* Playout (DVR transport) toggle */}
+        <IconBtn
+          icon="heroicons-outline:film"
+          title={playoutOpen ? "Hide playout transport" : "Show playout transport"}
+          active={playoutOpen}
+          onClick={onTogglePlayout}
+        />
+
+        {/* Alarm count chip (real count; hidden at zero) */}
+        {alarmCount > 0 && (
+          <span
+            title={`${alarmCount} active alarm${alarmCount === 1 ? "" : "s"}`}
+            className="inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.12)] px-2.5 font-mono text-[11px] font-semibold text-[#f87171]"
+          >
+            <Icon icon="heroicons-outline:bell-alert" className="text-sm" />
+            {alarmCount}
+          </span>
+        )}
+
+        <Clock />
       </div>
+    </div>
+  );
+}
+
+// Live wall clock (HH:MM:SS, mono) — matches the mockup top-bar clock.
+function Clock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const t = now.toLocaleTimeString("en-GB", { hour12: false });
+  return (
+    <span className="hidden items-center font-mono text-[12.5px] tabular-nums text-[#aec2e8] sm:inline-flex" title="Wall clock">
+      {t}
+    </span>
+  );
+}
+
+// Quality selector — global stream-profile switch (Auto/Eco/Balanced/High/Turbo).
+function QualitySelect({ quality, onQuality }) {
+  return (
+    <div className="hidden overflow-hidden rounded-[9px] border border-[rgba(150,180,245,.22)] lg:inline-flex" title="Stream quality">
+      {QUALITY_LEVELS.map((lvl) => (
+        <button
+          key={lvl.key}
+          type="button"
+          onClick={() => onQuality?.(lvl.key)}
+          title={lvl.label}
+          className={`inline-flex h-[27px] w-[29px] items-center justify-center transition ${
+            quality === lvl.key
+              ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+              : "text-[#aec2e8] hover:bg-[rgba(150,180,245,.06)] hover:text-[#67e8f9]"
+          }`}
+        >
+          <Icon icon={lvl.icon} className="text-sm" />
+        </button>
+      ))}
     </div>
   );
 }
