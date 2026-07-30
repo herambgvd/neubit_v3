@@ -77,7 +77,7 @@ function Soul() {
 }
 
 /* ── One metro tile ───────────────────────────────────────────────────── */
-function Tile({ icon, label, href, tone = "teal", count, sub, soon }) {
+function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }) {
   const toneRing = {
     teal: "hover:border-[rgba(34,211,238,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(34,211,238,.3)]",
     blue: "hover:border-[rgba(96,165,250,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(96,165,250,.3)]",
@@ -132,7 +132,19 @@ function Tile({ icon, label, href, tone = "teal", count, sub, soon }) {
             </span>
           )}
         </div>
-        {sub && (
+        {stats && (
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-px font-mono text-[10px] font-semibold text-emerald-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_#34d399]" />
+              {stats.online}
+            </span>
+            <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px font-mono text-[10px] font-semibold ${stats.offline > 0 ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-white/10 bg-white/5 text-[#7e93bf]"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${stats.offline > 0 ? "bg-red-500 shadow-[0_0_5px_#ef4444]" : "bg-white/25"}`} />
+              {stats.offline}
+            </span>
+          </div>
+        )}
+        {sub && !stats && (
           <div className="mt-0.5 truncate font-mono text-[10px] tracking-[.3px] text-[#7e93bf]">{sub}</div>
         )}
       </div>
@@ -229,7 +241,7 @@ export default function HomePage() {
   }, [camCountQ.data, fedCamQ.data]);
   const anyCamLoaded = camCountQ.isSuccess || fedCamQ.isSuccess;
   const cameraCount = anyCamLoaded ? camStats.total : undefined;
-  const cameraSub = anyCamLoaded ? `${camStats.online} online · ${camStats.offline} off` : undefined;
+  const cameraStats = anyCamLoaded ? { online: camStats.online, offline: camStats.offline } : undefined;
 
   const gate = (t) => {
     const ok = (!t.perm || can(t.perm)) && (!t.module || hasModule(t.module));
@@ -239,7 +251,7 @@ export default function HomePage() {
 
   // ── Surveillance — Watch / Act ──
   const survWatch = g([
-    { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "neubit.read", module: "vms", count: cameraCount, sub: cameraSub },
+    { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "neubit.read", module: "vms", count: cameraCount, stats: cameraStats },
     { icon: "heroicons:tv", label: "Video Walls", href: "/wall", tone: "teal", perm: "vms.wall.view", module: "vms" },
     { icon: "heroicons:cpu-chip", label: "Fleet", href: "/devices/recorders", tone: "att", perm: "neubit.read", module: "vms" },
     { icon: "heroicons:heart", label: "Pulse", href: "/system-health", tone: "teal", perm: "system.read" },
