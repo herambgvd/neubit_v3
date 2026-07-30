@@ -210,12 +210,22 @@ export default function CameraRail({
                           }
                           className={`shrink-0 text-sm ${site.kind === "recorder" ? "text-nb-blueb" : "text-[#aec2e8]"}`}
                         />
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#cfd0f2]">
-                          {site.name}
-                        </span>
-                        <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.1)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
-                          {site.cameras.length}
-                        </span>
+                        {site.kind === "recorder" ? (
+                          // Recorder branch (mockup): mono, uppercase, "· N CH".
+                          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] uppercase tracking-[.4px] text-[#7e93bf]">
+                            {site.name}
+                            <span className="text-[#5f7099]"> · {site.cameras.length} CH</span>
+                          </span>
+                        ) : (
+                          <>
+                            <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#cfd0f2]">
+                              {site.name}
+                            </span>
+                            <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.1)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
+                              {site.cameras.length}
+                            </span>
+                          </>
+                        )}
                       </button>
                       {open && (
                         <ul className="space-y-0.5 border-l border-[rgba(150,180,245,.15)] pl-1.5">

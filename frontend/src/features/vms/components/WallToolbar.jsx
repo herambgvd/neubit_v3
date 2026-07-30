@@ -6,6 +6,7 @@
 // clear, refresh. Kept dense + icon-first so the wall keeps the viewport.
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
+import Link from "next/link";
 
 import LayoutPicker from "./LayoutPicker";
 import { getLayout } from "../videoWall";
@@ -84,6 +85,19 @@ export default function WallToolbar({
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 backdrop-blur-sm">
       {/* Identity */}
       <div className="flex min-w-0 items-center gap-2">
+        {/* Home — back to the metro launcher (the wall has no global header). */}
+        <Link
+          href="/home"
+          title="Home"
+          className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
+        >
+          <Icon icon="heroicons-outline:home" className="text-base" />
+        </Link>
+        {/* Live mode tab (active) — matches the mockup's mode indicator. */}
+        <span className="inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border border-[rgba(34,211,238,.45)] bg-[rgba(34,211,238,.14)] px-2.5 text-[12px] font-semibold tracking-[.8px] text-[#67e8f9]">
+          <Icon icon="heroicons-solid:signal" className="text-sm" />
+          LIVE
+        </span>
         <IconBtn
           icon={railOpen ? "heroicons-outline:chevron-double-left" : "heroicons-outline:chevron-double-right"}
           title={railOpen ? "Collapse camera rail" : "Expand camera rail"}

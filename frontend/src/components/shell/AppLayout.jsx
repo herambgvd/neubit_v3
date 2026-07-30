@@ -166,18 +166,23 @@ export default function AppLayout({ children }) {
       className="fixed inset-0 flex flex-col overflow-hidden bg-background"
       style={home ? { background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" } : undefined}
     >
-      <Header />
+      {/* The Video Wall is a full-bleed operations console (mockup neubit-vms-live):
+          its OWN toolbar is the top bar (Home button + Live tab + view controls), so
+          the global Header, the Streaming sub-tab bar, and the footer are all
+          suppressed there — nothing chrome above the wall. */}
+      {!immersiveWall && <Header />}
       {/* The Users & Roles console is minimal-chrome (its own segment strip), so the
           Config sub-tab bar is suppressed there to match the VMS mockup. */}
       {isConfigRoute(pathname) && !minimalConsole && <SectionTabs tabs={configTabs} />}
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
-      {isStreamingRoute(pathname) && <SectionTabs tabs={streamTabs} />}
-      <AnnouncementBanner />
-      <LicenseBanner />
+      {isStreamingRoute(pathname) && !immersiveWall && <SectionTabs tabs={streamTabs} />}
+      {!immersiveWall && <AnnouncementBanner />}
+      {!immersiveWall && <LicenseBanner />}
       <main className={mainClass}>{children}</main>
       {/* HOME renders its own GVD lockup; the copyright footer bar is hidden there
-          to match the mockup's minimal single-viewport launcher. */}
-      {!home && <Footer />}
+          to match the mockup's minimal single-viewport launcher. Also hidden on the
+          immersive wall. */}
+      {!home && !immersiveWall && <Footer />}
       <CommandPalette />
       {/* App-wide operator popups (VMS linkage `popup` action → floating live camera). */}
       <VmsPopupHost />
