@@ -2,66 +2,37 @@
 
 // Recorder Cameras — the federated live grid. Lists the cameras OWNED by each
 // registered recorder (NVR) node (via /vms/federation/cameras) and plays them live
-// THROUGH the node: click a tile → mint a node-issued live token
-// (/vms/federation/.../live) → attach the HLS stream with hls.js. Proves the
-// end-to-end federation pipeline (NVR-owned cameras + live streaming in the VMS).
+// THROUGH the node. Each tile reuses the full LivePlayer engine (WHEP-first, with
+// H265→H264 transcode + HLS fallback) via a federated session `source` that mints
+// node-issued tokens from /vms/federation/.../live — so H265 cameras play in Chrome
+// too, not just Safari.
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useMemo } from "react";
 import { Icon } from "@iconify/react";
-import { toast } from "sonner";
 
 import { Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { vms } from "./api";
+import LivePlayer from "./components/LivePlayer";
 
-function HlsTile({ cam }) {
-  const videoRef = useRef(null);
-  const hlsRef = useRef(null);
-  const [playing, setPlaying] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-    };
-  }, []);
-
-  async function play() {
-    if (busy || playing) return;
-    setBusy(true);
-    setErr("");
-    try {
-      const s = await vms.federation.live(cam.node_id, cam.id, "sub");
-      const url = s.hls_url;
-      if (!url) throw new Error("no stream url");
-      const video = videoRef.current;
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari — native HLS.
-        video.src = url;
-      } else {
-        const Hls = (await import("hls.js")).default;
-        if (!Hls.isSupported()) throw new Error("HLS not supported");
-        const hls = new Hls({ lowLatencyMode: true, backBufferLength: 10 });
-        hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data.fatal) setErr("stream error");
-        });
-        hls.loadSource(url);
-        hls.attachMedia(video);
-        hlsRef.current = hls;
-      }
-      await video.play().catch(() => {});
-      setPlaying(true);
-    } catch (e) {
-      setErr(e.message || "failed");
-      toast.error(apiError(e, "Live failed"));
-    } finally {
-      setBusy(false);
-    }
-  }
+function CameraTile({ cam }) {
+  // A federated session source: mint/renew a node-issued live token through the
+  // recorder's estate; release is a no-op (the node's token just expires). Stable
+  // per (node, camera) so LivePlayer's attach effect doesn't churn.
+  const source = useMemo(
+    () => ({
+      start: async (_camId, profile) => {
+        const s = await vms.federation.live(cam.node_id, cam.id, profile);
+        return { ...s, ready: true };
+      },
+      renew: async (_camId, _sessionId) => {
+        const s = await vms.federation.live(cam.node_id, cam.id, "sub");
+        return { ...s, ready: true };
+      },
+      release: async () => {},
+    }),
+    [cam.node_id, cam.id],
+  );
 
   const dot =
     cam.status === "online"
@@ -71,18 +42,9 @@ function HlsTile({ cam }) {
         : "bg-nb-faint";
 
   return (
-    <div className="group relative overflow-hidden rounded-[12px] border border-nb-line bg-black">
-      <div className="relative aspect-video w-full">
-        <video ref={videoRef} muted playsInline className="h-full w-full bg-black object-contain" />
-        {!playing && (
-          <button
-            onClick={play}
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[rgba(6,11,26,.5)] text-nb-muted transition hover:text-nb-tealb"
-          >
-            <Icon icon={busy ? "svg-spinners:180-ring" : "heroicons-solid:play"} className="text-[34px]" />
-            <span className="text-[11px] tracking-[.5px]">{busy ? "Connecting…" : err || "Play live"}</span>
-          </button>
-        )}
+    <div className="overflow-hidden rounded-[12px] border border-nb-line bg-black">
+      <div className="aspect-video w-full">
+        <LivePlayer cameraId={cam.id} cameraName={cam.name} profile="sub" minimal source={source} className="h-full w-full" />
       </div>
       <div className="flex items-center gap-2 border-t border-nb-line px-3 py-2">
         <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
@@ -137,7 +99,7 @@ export default function RecorderCameras() {
         ) : (
           <div className="grid grid-cols-1 gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {cams.map((c) => (
-              <HlsTile key={`${c.node_id}:${c.id}`} cam={c} />
+              <CameraTile key={`${c.node_id}:${c.id}`} cam={c} />
             ))}
           </div>
         )}

@@ -119,11 +119,15 @@ function LivePlayer({
   talkCapable = false,
   canTalk = false,
   className = "",
+  // Optional session source override (mint/renew/release) — lets a federated
+  // recorder camera stream through the node's live endpoint while reusing this
+  // player's whole WHEP-first / h264-transcode / HLS-fallback engine.
+  source,
   onReady,
   onSnapshot,
 }) {
   const { hlsUrl, webrtcUrl, ready, loading: sessionLoading, error: sessionError, retry: retrySession } =
-    useLiveSession(cameraId, { profile });
+    useLiveSession(cameraId, { profile, source });
 
   // Keep the freshest session URLs (with the CURRENT token) in refs. The attach
   // effect keys on the token-less stream identity (streamKey) so a token-only
