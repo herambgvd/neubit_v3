@@ -170,6 +170,15 @@ function WallTile({
           never paints over the header account dropdown. */}
       <div className={`pointer-events-none absolute inset-x-0 top-0 z-[1] h-[2px] ${edge}`} />
 
+      {/* Source badge (mockup) — the recorder/node this camera streams through.
+          Real data only (federated cameras carry node_name); omitted for local
+          cameras so we never invent a source. */}
+      {camera?.node_name && (
+        <span className="pointer-events-none absolute right-2 top-2 z-10 rounded-[7px] border border-white/20 bg-black/35 px-1.5 py-px font-mono text-[10px] text-[#d7f7e9] backdrop-blur-sm">
+          {camera.node_name}
+        </span>
+      )}
+
       {/* Player — full-bleed, minimal (the tile owns the overlays). */}
       <LivePlayer
         key={`${cameraId}:${profile}`}
