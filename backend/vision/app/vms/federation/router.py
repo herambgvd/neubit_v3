@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,7 @@ router = APIRouter(prefix="/vms/federation", tags=["federation"])
 
 PERM_READ = "vms.camera.read"
 PERM_LIVE = "vms.live.view"
+PERM_PLAYBACK = "vms.playback.view"
 
 # Nodes we attempt to reach for a federated read (a draining/errored node is skipped).
 _REACHABLE = ("online", "unknown", "draining")
@@ -111,6 +112,95 @@ async def federated_live(
         raise NotFoundError("recorder node not found")
     try:
         payload = await fed.mint_estate_live(node.api_url, camera_id, profile=profile, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+    payload["node_id"] = str(node.id)
+    payload["node_name"] = node.name
+    return payload
+
+
+async def _resolve_node(db: AsyncSession, scope: Scope, node_id: str) -> MediaNode:
+    node = (await db.execute(_nodes_query(scope).where(MediaNode.id == node_id))).scalar_one_or_none()
+    if node is None:
+        raise NotFoundError("recorder node not found")
+    return node
+
+
+@router.get(
+    "/nodes/{node_id}/cameras/{camera_id}/timeline",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_timeline(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    profile: Optional[str] = None,
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = None,
+) -> dict:
+    """Merged recorded-coverage ranges (scrub bar) for a federated camera, via its node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.get_node_timeline(
+            node.api_url, camera_id, profile=profile, from_=from_, to=to, credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+    payload["node_id"] = str(node.id)
+    payload["node_name"] = node.name
+    return payload
+
+
+@router.get(
+    "/nodes/{node_id}/cameras/{camera_id}/recordings",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_recordings(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    profile: Optional[str] = None,
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = None,
+    limit: int = 500,
+    offset: int = 0,
+) -> dict:
+    """A federated camera's per-segment recording index THROUGH its recorder node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.list_node_recordings(
+            node.api_url, camera_id, profile=profile, from_=from_, to=to,
+            limit=limit, offset=offset, credential=node.credential,
+        )
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+    payload["node_id"] = str(node.id)
+    payload["node_name"] = node.name
+    return payload
+
+
+@router.post(
+    "/nodes/{node_id}/cameras/{camera_id}/playback",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_playback(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = None,
+) -> dict:
+    """Mint a playback session for a federated camera THROUGH its recorder node. Returns
+    the node-issued { session_id, playback_url, token, start, ranges, expires_at, ... }.
+    200 with an empty playback_url means no footage in the window (not an error)."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.mint_node_playback(
+            node.api_url, camera_id, from_=from_, to=to, credential=node.credential
+        )
     except fed.NodeUnavailable as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
     payload["node_id"] = str(node.id)

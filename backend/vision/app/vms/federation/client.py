@@ -89,3 +89,92 @@ async def mint_estate_live(
     if r.status_code // 100 != 2:
         raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
     return r.json() or {}
+
+
+async def get_node_timeline(
+    api_url: str,
+    camera_id: str,
+    *,
+    profile: str | None = None,
+    from_: str | None = None,
+    to: str | None = None,
+    credential: str | None = None,
+) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/recordings/timeline → merged recorded-coverage
+    ranges (the scrub-bar timeline) for a camera, read straight from the node's segment
+    index. Returns {camera_id, profile, ranges:[{start,duration,trigger_type}]}."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/recordings/timeline"
+    params: dict = {"camera_id": camera_id}
+    if profile:
+        params["profile"] = profile
+    if from_:
+        params["from"] = from_
+    if to:
+        params["to"] = to
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential), params=params)
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def list_node_recordings(
+    api_url: str,
+    camera_id: str,
+    *,
+    profile: str | None = None,
+    from_: str | None = None,
+    to: str | None = None,
+    limit: int = 500,
+    offset: int = 0,
+    credential: str | None = None,
+) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/recordings → the node's per-segment index for a
+    camera in an optional [from,to] window. Returns {items, total, skip, limit}."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/recordings"
+    params: dict = {"camera_id": camera_id, "limit": limit, "offset": offset}
+    if profile:
+        params["profile"] = profile
+    if from_:
+        params["from"] = from_
+    if to:
+        params["to"] = to
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential), params=params)
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def mint_node_playback(
+    api_url: str,
+    camera_id: str,
+    *,
+    from_: str | None = None,
+    to: str | None = None,
+    credential: str | None = None,
+) -> dict:
+    """POST {api_url}/api/v1/nvr/estate/cameras/{id}/playback → node-issued playback
+    payload (session_id / playback_url [tokenized, fmp4] / start [t=0] / ranges /
+    expires_at). The node mints + authorises its own playback media token; the VMS
+    relays it. 200 with empty playback_url means no footage in the window (not error)."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/playback"
+    body: dict = {}
+    if from_:
+        body["from"] = from_
+    if to:
+        body["to"] = to
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(url, headers=_headers(credential), json=body)
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}

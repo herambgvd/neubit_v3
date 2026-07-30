@@ -72,6 +72,15 @@ export const vms = {
     cameras: () => unwrap(api.get("/vms/federation/cameras")),
     live: (nodeId, cameraId, profile) =>
       unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/live${qs({ profile })}`)),
+    // Recorded-coverage ranges (scrub-bar timeline) for a federated camera.
+    timeline: (nodeId, cameraId, { profile, from, to } = {}) =>
+      unwrap(api.get(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/timeline${qs({ profile, from, to })}`)),
+    // Per-segment recording index for a federated camera.
+    recordings: (nodeId, cameraId, { profile, from, to, limit, offset } = {}) =>
+      unwrap(api.get(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recordings${qs({ profile, from, to, limit, offset })}`)),
+    // Mint a playback session (tokenized fmp4 URL + t=0 start) through the node.
+    playback: (nodeId, cameraId, { from, to } = {}) =>
+      unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/playback${qs({ from, to })}`)),
   },
 
   // ── Operations / Health dashboard (G2) — one live rollup ────────────────
