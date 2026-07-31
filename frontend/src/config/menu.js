@@ -90,12 +90,9 @@ export function isDevicesRoute(pathname) {
 //   (Recordings folded into Playback — its calendar/timeline covers estate browse +
 //   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs = [
-  // "Live" lives at /streaming as its own full-bleed immersive console (no global
-  // header/submenu there), reached from Home — so it's intentionally NOT a sub-tab.
-  // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
-  // shared state across every operator + display client. Distinct from the
-  // single-operator "Video Wall" live-grid above.
-  { title: "Wall Console", icon: "heroicons:tv", link: "/wall", perm: "vms.wall.view", module: "vms" },
+  // The video wall IS the Live console at /streaming (immersive, reached from
+  // Home) — the separate shared "Wall Console" surface was merged into it, so it's
+  // intentionally NOT a sub-tab here.
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read", module: "vms" },
   { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read", module: "vms" },
   { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view", module: "vms" },
