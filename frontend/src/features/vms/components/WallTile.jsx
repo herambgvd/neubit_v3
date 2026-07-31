@@ -187,7 +187,7 @@ function WallTile({
         profile={profile}
         source={source}
         minimal
-        fit="cover"
+        fit="contain"
         className="!rounded-none h-full w-full"
       />
 
