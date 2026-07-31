@@ -46,9 +46,23 @@ export const accessInventory = {
 // device_type:"camera"|"nvr" (cameraRenderer draws the FoV cone / server glyph).
 // A camera's / NVR's identifier field is `id`.
 export const vmsInventory = {
-  // Cameras — GET /vms/cameras → { items, total, skip, limit }.
-  cameras: (params = {}) =>
-    unwrap(api.get(`${VMS}/cameras${qs({ limit: 500, ...params })}`)),
+  // Cameras — local VMS cameras (GET /vms/cameras) PLUS federated recorder-owned
+  // cameras (GET /vms/federation/cameras), so an NVR's channels are placeable on a
+  // floor plan too. Federated cameras carry a composite id (`fed:<node>:<cam>`) —
+  // the same id the wall/DevicePlacement key on — and their node name as a suffix.
+  cameras: async (params = {}) => {
+    const [local, fed] = await Promise.all([
+      unwrap(api.get(`${VMS}/cameras${qs({ limit: 500, ...params })}`)),
+      unwrap(api.get(`${VMS}/federation/cameras`)).catch(() => ({ items: [] })),
+    ]);
+    const localItems = local?.items ?? [];
+    const fedItems = (fed?.items ?? []).map((c) => ({
+      id: `fed:${c.node_id}:${c.id}`,
+      name: c.node_name ? `${c.name} · ${c.node_name}` : c.name,
+      status: c.status,
+    }));
+    return { items: [...localItems, ...fedItems], total: localItems.length + fedItems.length };
+  },
   // NVRs — GET /vms/nvrs → { items, total, skip, limit }.
   nvrs: (params = {}) => unwrap(api.get(`${VMS}/nvrs${qs({ limit: 500, ...params })}`)),
 };
