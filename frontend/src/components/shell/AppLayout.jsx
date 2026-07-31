@@ -95,7 +95,10 @@ export default function AppLayout({ children }) {
   // scroll (a real-VMS control-room feel). So for that route only, <main> drops
   // its padding + scroll and becomes a bounded, overflow-hidden pane the wall
   // fills via h-full. Every other page keeps the padded, scrollable <main>.
-  const immersiveWall = pathname === "/streaming";
+  // Both the single-operator Live wall (/streaming) and a shared Wall Console
+  // (/wall/<id>) are full-bleed operations consoles with their OWN top toolbar —
+  // the global header/submenu/footer are suppressed so they fill the viewport.
+  const immersiveWall = pathname === "/streaming" || pathname.startsWith("/wall/");
 
   // The NeuBit HOME metro launcher is a full-bleed, single-viewport surface (its own
   // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.

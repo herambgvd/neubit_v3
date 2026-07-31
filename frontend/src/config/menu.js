@@ -90,7 +90,8 @@ export function isDevicesRoute(pathname) {
 //   (Recordings folded into Playback — its calendar/timeline covers estate browse +
 //   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs = [
-  { title: "Live", icon: "heroicons:signal", link: "/streaming", perm: "neubit.read", module: "vms" },
+  // "Live" lives at /streaming as its own full-bleed immersive console (no global
+  // header/submenu there), reached from Home — so it's intentionally NOT a sub-tab.
   // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
   // shared state across every operator + display client. Distinct from the
   // single-operator "Video Wall" live-grid above.
@@ -106,6 +107,9 @@ export const STREAMING_ENTRY = "/streaming";
 // True when the current path belongs to the Streaming section.
 export function isStreamingRoute(pathname) {
   if (!pathname) return false;
+  // /streaming (immersive Live) is no longer a sub-tab but still belongs to the
+  // Streaming section (for top-nav highlight).
+  if (pathname === STREAMING_ENTRY || pathname.startsWith(`${STREAMING_ENTRY}/`)) return true;
   return streamTabs.some(
     (t) => !t.disabled && (pathname === t.link || pathname.startsWith(`${t.link}/`)),
   );
