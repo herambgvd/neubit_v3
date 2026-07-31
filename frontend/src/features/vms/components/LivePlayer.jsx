@@ -126,6 +126,10 @@ function LivePlayer({
   // recorder camera stream through the node's live endpoint while reusing this
   // player's whole WHEP-first / h264-transcode / HLS-fallback engine.
   source,
+  // Extra control buttons (React node) merged INTO the player's own control bar,
+  // so a host (e.g. a wall tile) can add spotlight/remove next to play/zoom/fit —
+  // one control cluster, not two. Rendered at the left of the bar with a divider.
+  extraControls,
   onReady,
   onSnapshot,
 }) {
@@ -752,6 +756,12 @@ function LivePlayer({
             zoom > 1 ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >
+          {extraControls && (
+            <>
+              {extraControls}
+              <span className="mx-0.5 h-4 w-px bg-white/15" />
+            </>
+          )}
           <PlayerBtn icon={paused ? "heroicons-solid:play" : "heroicons-solid:pause"} title={paused ? "Play" : "Pause"} onClick={togglePlay} />
           <span className="mx-0.5 h-4 w-px bg-white/15" />
           <PlayerBtn icon="heroicons-outline:magnifying-glass-minus" title="Zoom out" onClick={() => zoomBy(-0.5)} disabled={zoom <= 1} />
@@ -817,7 +827,8 @@ function ChromeBtn({ icon, title, onClick }) {
 
 // Compact control button for the always-available player bar (play/pause, zoom,
 // fit). Stops propagation so a click never bubbles to the wall tile (spotlight).
-function PlayerBtn({ icon, title, onClick, disabled = false }) {
+// Exported so hosts can add matching buttons via LivePlayer's `extraControls`.
+export function PlayerBtn({ icon, title, onClick, disabled = false }) {
   return (
     <button
       type="button"

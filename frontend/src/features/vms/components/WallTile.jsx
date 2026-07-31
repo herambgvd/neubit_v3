@@ -32,7 +32,7 @@ import { Icon } from "@iconify/react";
 
 import { useAuth } from "@/lib/auth";
 import { vms } from "../api";
-import LivePlayer from "./LivePlayer";
+import LivePlayer, { PlayerBtn } from "./LivePlayer";
 import PtzOverlay from "./PtzOverlay";
 import { STATUS_PRESETS } from "../constants";
 import { isPtzCapable } from "../formUtils";
@@ -189,6 +189,12 @@ function WallTile({
         minimal
         fit="contain"
         className="!rounded-none h-full w-full"
+        extraControls={
+          <>
+            <PlayerBtn icon="heroicons-outline:arrows-pointing-out" title="Spotlight (double-click)" onClick={() => onSpotlight?.(index)} />
+            <PlayerBtn icon="heroicons-outline:x-mark" title="Remove from wall" onClick={() => onClose?.(index)} />
+          </>
+        }
       />
 
       {/* Bottom gradient info strip */}
@@ -217,21 +223,6 @@ function WallTile({
         </div>
       )}
 
-      {/* Hover toolbar — bottom-right, ABOVE the player control bar so every
-          control (spotlight/remove + play/zoom/fit) lives in one corner. */}
-      <div className="absolute bottom-11 right-2 z-20 flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-        <TileBtn
-          icon="heroicons-outline:arrows-pointing-out"
-          title="Spotlight (double-click)"
-          onClick={() => onSpotlight?.(index)}
-        />
-        <TileBtn
-          icon="heroicons-outline:x-mark"
-          title="Remove from wall"
-          danger
-          onClick={() => onClose?.(index)}
-        />
-      </div>
     </div>
   );
 }
@@ -241,21 +232,3 @@ function WallTile({
 // render. This is what keeps a sibling tile's state change from cascading a
 // render (and the WHEP re-attach risk) into every other tile's LivePlayer.
 export default memo(WallTile);
-
-function TileBtn({ icon, title, onClick, danger = false }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick?.();
-      }}
-      className={`rounded-md bg-black/50 p-1 text-white/85 backdrop-blur-sm transition hover:text-white ${
-        danger ? "hover:bg-red-500/70" : "hover:bg-white/20"
-      }`}
-    >
-      <Icon icon={icon} className="text-xs" />
-    </button>
-  );
-}
