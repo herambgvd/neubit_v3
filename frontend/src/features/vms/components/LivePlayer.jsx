@@ -155,6 +155,48 @@ function LivePlayer({
   const [showChrome, setShowChrome] = useState(!minimal);
   const [attach, setAttach] = useState(0); // bump to force a fresh attach
 
+  // Player controls (available on wall tiles too): play/pause, digital zoom
+  // (CSS transform 1×–5× with pan-drag), and a fit toggle (contain ↔ cover) so
+  // the operator kills letterbox / crop per taste without leaving the wall.
+  const [paused, setPaused] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [fitMode, setFitMode] = useState(fit);
+  useEffect(() => setFitMode(fit), [fit]);
+  const panDrag = useRef(null);
+
+  const togglePlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else v.pause();
+  }, []);
+
+  const zoomBy = useCallback((delta) => {
+    setZoom((z) => {
+      const next = Math.min(5, Math.max(1, +(z + delta).toFixed(2)));
+      if (next === 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
+  }, []);
+  const resetZoom = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  // Pan the zoomed frame by dragging.
+  const onPanDown = (e) => {
+    if (zoom <= 1) return;
+    panDrag.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
+  };
+  const onPanMove = (e) => {
+    if (!panDrag.current) return;
+    setPan({ x: panDrag.current.px + (e.clientX - panDrag.current.sx), y: panDrag.current.py + (e.clientY - panDrag.current.sy) });
+  };
+  const onPanUp = () => {
+    panDrag.current = null;
+  };
+
   const playError = error || sessionError;
 
   // ── attach / detach the media engine ──────────────────────────────────
@@ -655,7 +697,19 @@ function LivePlayer({
       onMouseLeave={() => !minimal && setShowChrome(false)}
     >
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <video ref={videoRef} className={`h-full w-full ${fit === "cover" ? "object-cover" : "object-contain"}`} playsInline muted={isMuted} />
+      <video
+        ref={videoRef}
+        className={`h-full w-full ${fitMode === "cover" ? "object-cover" : "object-contain"} ${zoom > 1 ? "cursor-grab active:cursor-grabbing" : ""}`}
+        playsInline
+        muted={isMuted}
+        onPlay={() => setPaused(false)}
+        onPause={() => setPaused(true)}
+        onMouseDown={onPanDown}
+        onMouseMove={onPanMove}
+        onMouseUp={onPanUp}
+        onMouseLeave={onPanUp}
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center" }}
+      />
 
       {/* Loading / warming-up overlay */}
       {busy && (
@@ -687,6 +741,30 @@ function LivePlayer({
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
           Live
         </span>
+      )}
+
+      {/* Player controls — play/pause + digital zoom + fit toggle. Available on
+          EVERY player (wall tiles too); surfaced on hover (or whenever zoomed).
+          Bottom-right so it never collides with the tile's own top-right toolbar. */}
+      {!busy && !playError && (
+        <div
+          className={`absolute bottom-2 right-2 z-20 flex items-center gap-0.5 rounded-[9px] border border-white/15 bg-black/55 p-0.5 backdrop-blur-sm transition-opacity ${
+            zoom > 1 ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+        >
+          <PlayerBtn icon={paused ? "heroicons-solid:play" : "heroicons-solid:pause"} title={paused ? "Play" : "Pause"} onClick={togglePlay} />
+          <span className="mx-0.5 h-4 w-px bg-white/15" />
+          <PlayerBtn icon="heroicons-outline:magnifying-glass-minus" title="Zoom out" onClick={() => zoomBy(-0.5)} disabled={zoom <= 1} />
+          {zoom > 1 && <span className="px-0.5 font-mono text-[10px] tabular-nums text-white/80">{zoom.toFixed(1)}×</span>}
+          <PlayerBtn icon="heroicons-outline:magnifying-glass-plus" title="Zoom in" onClick={() => zoomBy(0.5)} disabled={zoom >= 5} />
+          {zoom > 1 && <PlayerBtn icon="heroicons-outline:arrow-uturn-left" title="Reset zoom" onClick={resetZoom} />}
+          <span className="mx-0.5 h-4 w-px bg-white/15" />
+          <PlayerBtn
+            icon={fitMode === "cover" ? "heroicons-outline:arrows-pointing-in" : "heroicons-outline:arrows-pointing-out"}
+            title={fitMode === "cover" ? "Fit whole frame (no crop)" : "Fill tile (crop edges)"}
+            onClick={() => setFitMode((m) => (m === "cover" ? "contain" : "cover"))}
+          />
+        </div>
       )}
 
       {/* Chrome (hover) — hidden entirely in `minimal` mode */}
@@ -733,6 +811,25 @@ function ChromeBtn({ icon, title, onClick }) {
       className="rounded-full p-1.5 text-white/90 transition hover:bg-white/15 hover:text-white"
     >
       <Icon icon={icon} className="text-sm" />
+    </button>
+  );
+}
+
+// Compact control button for the always-available player bar (play/pause, zoom,
+// fit). Stops propagation so a click never bubbles to the wall tile (spotlight).
+function PlayerBtn({ icon, title, onClick, disabled = false }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      className="rounded-[6px] p-1 text-white/90 transition hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+    >
+      <Icon icon={icon} className="text-[13px]" />
     </button>
   );
 }
