@@ -760,7 +760,7 @@ function LivePlayer({
           {zoom > 1 && <PlayerBtn icon="heroicons-outline:arrow-uturn-left" title="Reset zoom" onClick={resetZoom} />}
           <span className="mx-0.5 h-4 w-px bg-white/15" />
           <PlayerBtn
-            icon={fitMode === "cover" ? "heroicons-outline:arrows-pointing-in" : "heroicons-outline:arrows-pointing-out"}
+            icon={fitMode === "cover" ? "mdi:fit-to-screen-outline" : "mdi:crop-free"}
             title={fitMode === "cover" ? "Fit whole frame (no crop)" : "Fill tile (crop edges)"}
             onClick={() => setFitMode((m) => (m === "cover" ? "contain" : "cover"))}
           />

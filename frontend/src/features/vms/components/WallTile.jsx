@@ -217,8 +217,9 @@ function WallTile({
         </div>
       )}
 
-      {/* Hover toolbar (top-right) */}
-      <div className="absolute right-1.5 top-2 z-20 flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+      {/* Hover toolbar — bottom-right, ABOVE the player control bar so every
+          control (spotlight/remove + play/zoom/fit) lives in one corner. */}
+      <div className="absolute bottom-11 right-2 z-20 flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
         <TileBtn
           icon="heroicons-outline:arrows-pointing-out"
           title="Spotlight (double-click)"
