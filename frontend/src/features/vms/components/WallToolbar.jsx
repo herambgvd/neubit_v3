@@ -43,7 +43,7 @@ const VIEW_MODES = [
 // full main-stream. "auto" defers to the per-tile grid heuristic (tileProfile).
 export const QUALITY_LEVELS = [
   { key: "auto", label: "Auto", icon: "heroicons-outline:sparkles", profile: null },
-  { key: "eco", label: "Eco", icon: "heroicons-outline:battery-50", profile: "sub" },
+  { key: "eco", label: "Eco", icon: "mdi:leaf", profile: "sub" },
   { key: "balanced", label: "Balanced", icon: "heroicons-outline:signal", profile: "sub" },
   { key: "high", label: "High", icon: "heroicons-outline:film", profile: "main" },
   { key: "turbo", label: "Turbo", icon: "heroicons-outline:bolt", profile: "main" },
@@ -82,7 +82,7 @@ export default function WallToolbar({
   const gridMode = viewMode !== "map"; // grid or split show the layout picker
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 backdrop-blur-sm">
+    <div className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 backdrop-blur-sm">
       {/* Identity */}
       <div className="flex min-w-0 items-center gap-2">
         {/* Home — back to the metro launcher (the wall has no global header). */}
@@ -104,8 +104,6 @@ export default function WallToolbar({
           onClick={onToggleRail}
         />
         <div className="flex min-w-0 items-center gap-2">
-          <Icon icon="heroicons-solid:signal" className="text-base text-[#22d3ee]" />
-          <span className="text-sm font-semibold text-[#f2f6ff]">Video Wall</span>
           <span
             title={`${liveCount} on wall · ${onlineCount} online`}
             className="rounded-[6px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-[#aec2e8]"

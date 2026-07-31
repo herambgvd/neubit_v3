@@ -113,6 +113,9 @@ function LivePlayer({
   muted = true,
   preferWebrtc = true,
   minimal = false, // hide chrome (used for dense wall tiles / thumbnails)
+  // Video object-fit. Wall tiles fill the cell edge-to-edge (cover, NVR-style);
+  // detail/modal views keep the whole frame (contain).
+  fit = "contain",
   // G6 — push-to-talk: show the Talk button when the camera is backchannel/
   // two-way capable AND the operator holds vms.live.view. Listen (unmute) is
   // always available regardless of these.
@@ -652,7 +655,7 @@ function LivePlayer({
       onMouseLeave={() => !minimal && setShowChrome(false)}
     >
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <video ref={videoRef} className="h-full w-full object-contain" playsInline muted={isMuted} />
+      <video ref={videoRef} className={`h-full w-full ${fit === "cover" ? "object-cover" : "object-contain"}`} playsInline muted={isMuted} />
 
       {/* Loading / warming-up overlay */}
       {busy && (
