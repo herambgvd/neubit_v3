@@ -37,7 +37,6 @@ from app.vms.media_nodes.router import router as media_node_router
 from app.vms.motion_search.router import router as motion_search_router
 from app.vms.nvr.router import router as nvr_router
 from app.vms.onvif_server.router import config_router as onvif_server_router
-from app.vms.pos.router import public_router as pos_public_router
 from app.vms.events.router import router as event_router
 from app.vms.federation.router import router as federation_router
 from app.vms.patterns.router import router as pattern_router
@@ -161,10 +160,6 @@ routers = [
 # stateless media token / WS-Security, not a session bearer). Keep this list tiny.
 public_routers = [
     live_public_router,  # GET /vms/media/verify — Traefik ForwardAuth hot path
-    # POS overlay (feature G) — POST /vms/pos/ingest (shared-token / operator-JWT push)
-    # + GET /vms/pos/stream?camera_id=&token= (browser SSE; EventSource can't send a
-    # bearer header, so both endpoints self-authenticate rather than ride the vms_gate).
-    pos_public_router,
 ]
 
 __all__ = ["routers", "public_routers"]

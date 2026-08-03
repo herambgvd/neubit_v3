@@ -30,13 +30,10 @@
 // Props MUST stay referentially stable for the memo to hold: callers pass stable
 // primitives + useCallback'd handlers (WallTile / Streaming do this).
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { useLiveSession } from "../hooks/useLiveSession";
 import { acquireSlot, releaseSlot } from "../lib/connectGate";
-import { vms } from "../api";
-import FisheyeDewarpCanvas from "./dewarp/FisheyeDewarpCanvas";
 import TalkButton from "./TalkButton";
 
 const WHEP_MAX_ATTEMPTS = 8;
@@ -153,93 +150,6 @@ function LivePlayer({
   const containerRef = useRef(null);
   const hlsRef = useRef(null);
   const pcRef = useRef(null);
-  const dewarpCanvasRef = useRef(null);
-
-  // ── Fisheye de-warp ────────────────────────────────────────────────────
-  // The recorder stores a per-camera dewarp config ({ enabled, mount, view });
-  // the PLAYER is what actually un-distorts the source. When enabled with a
-  // non-"original" view we render a WebGL canvas that re-projects the (still-
-  // playing, hidden) <video> — see dewarp/FisheyeDewarpCanvas. Fetched cheaply
-  // and cached; a camera with no fisheye config just returns { enabled:false }.
-  // `staleTime: Infinity` keeps this store-only config from re-fetching on the
-  // wall. When disabled/original the whole path is inert and the raw <video>
-  // renders exactly as before.
-  const { data: dewarpData } = useQuery({
-    queryKey: ["vms-dewarp", cameraId],
-    queryFn: () => vms.cameras.dewarp.get(cameraId),
-    enabled: !!cameraId,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-  });
-  const [dewarpFailed, setDewarpFailed] = useState(null); // "cors" | "webgl-unsupported"
-  useEffect(() => setDewarpFailed(null), [cameraId]);
-  const dewarpCfg = dewarpData?.dewarp;
-  const dewarpOn =
-    !!dewarpCfg?.enabled && dewarpCfg.view && dewarpCfg.view !== "original";
-  const dewarpActive = dewarpOn && !dewarpFailed;
-
-  // POS transaction overlay — the recorder stores a per-camera pos_overlay config
-  // ({ enabled, source, position }). Fetched cheaply + cached (store-only, like the
-  // dewarp config). When enabled we open the POS SSE stream and overlay whatever
-  // transaction text a real POS feed pushes to /vms/pos/ingest — never fabricated.
-  // Disabled → zero overhead (no stream opened, path fully inert).
-  const { data: posData } = useQuery({
-    queryKey: ["vms-pos-overlay", cameraId],
-    queryFn: () => vms.cameras.posOverlay.get(cameraId),
-    enabled: !!cameraId,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-  });
-  const posCfg = posData?.pos_overlay;
-  const posOn = !!posCfg?.enabled && !!(posCfg.source || "").trim();
-  const posPosition = posCfg?.position === "top" ? "top" : "bottom";
-  const [posLines, setPosLines] = useState([]); // newest last (ticker order)
-
-  // Open the POS SSE stream only while enabled; tear it down on unmount / disable /
-  // camera switch. Each `pos.line` frame appends to a bounded ring the strip renders.
-  useEffect(() => {
-    setPosLines([]);
-    if (!posOn || !cameraId) return;
-    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
-    const url = vms.pos.streamUrl(cameraId);
-    if (!url) return;
-
-    let es = null;
-    let closed = false;
-    let retry = 0;
-    let timer = null;
-
-    const connect = () => {
-      if (closed) return;
-      es = new EventSource(url);
-      es.addEventListener("pos.line", (e) => {
-        let line = null;
-        try {
-          line = JSON.parse(e.data);
-        } catch {
-          return; // keepalive / comment — ignore
-        }
-        if (!line || !line.text) return;
-        setPosLines((prev) => [...prev, line].slice(-8)); // keep last N lines
-      });
-      es.onopen = () => {
-        retry = 0;
-      };
-      es.onerror = () => {
-        es?.close();
-        if (closed) return;
-        retry = Math.min(retry + 1, 6);
-        timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 30000));
-      };
-    };
-
-    connect();
-    return () => {
-      closed = true;
-      if (timer) clearTimeout(timer);
-      es?.close();
-    };
-  }, [posOn, cameraId]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -745,18 +655,9 @@ function LivePlayer({
     if (!v) return;
     try {
       const canvas = document.createElement("canvas");
-      // When de-warp is active, capture the WebGL output the operator is actually
-      // watching (the un-distorted frame), not the raw fisheye video source.
-      const dw = dewarpActive ? dewarpCanvasRef.current : null;
-      if (dw && dw.width && dw.height) {
-        canvas.width = dw.width;
-        canvas.height = dw.height;
-        canvas.getContext("2d").drawImage(dw, 0, 0, canvas.width, canvas.height);
-      } else {
-        canvas.width = v.videoWidth || 640;
-        canvas.height = v.videoHeight || 480;
-        canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
-      }
+      canvas.width = v.videoWidth || 640;
+      canvas.height = v.videoHeight || 480;
+      canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
@@ -775,7 +676,7 @@ function LivePlayer({
     } catch {
       /* video not decodable yet — ignore */
     }
-  }, [cameraId, cameraName, onSnapshot, dewarpActive]);
+  }, [cameraId, cameraName, onSnapshot]);
 
   const toggleFullscreen = () => {
     const c = containerRef.current;
@@ -802,78 +703,17 @@ function LivePlayer({
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <video
         ref={videoRef}
-        className={`h-full w-full ${fitMode === "cover" ? "object-cover" : "object-contain"} ${zoom > 1 && !dewarpActive ? "cursor-grab active:cursor-grabbing" : ""} ${dewarpActive ? "pointer-events-none opacity-0" : ""}`}
+        className={`h-full w-full ${fitMode === "cover" ? "object-cover" : "object-contain"} ${zoom > 1 ? "cursor-grab active:cursor-grabbing" : ""}`}
         playsInline
         muted={isMuted}
         onPlay={() => setPaused(false)}
         onPause={() => setPaused(true)}
-        onMouseDown={dewarpActive ? undefined : onPanDown}
-        onMouseMove={dewarpActive ? undefined : onPanMove}
-        onMouseUp={dewarpActive ? undefined : onPanUp}
-        onMouseLeave={dewarpActive ? undefined : onPanUp}
-        style={
-          dewarpActive
-            ? undefined
-            : { transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center" }
-        }
+        onMouseDown={onPanDown}
+        onMouseMove={onPanMove}
+        onMouseUp={onPanUp}
+        onMouseLeave={onPanUp}
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center" }}
       />
-
-      {/* Fisheye de-warp — the visible surface while active. The <video> above
-          stays playing (hidden) as the GL texture source; this canvas draws the
-          un-distorted view and carries the same digital-zoom / pan transform. */}
-      {dewarpActive && (
-        <div
-          className={`absolute inset-0 ${zoom > 1 ? "cursor-grab active:cursor-grabbing" : ""}`}
-          onMouseDown={onPanDown}
-          onMouseMove={onPanMove}
-          onMouseUp={onPanUp}
-          onMouseLeave={onPanUp}
-          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center" }}
-        >
-          <FisheyeDewarpCanvas
-            videoRef={videoRef}
-            canvasRef={dewarpCanvasRef}
-            view={dewarpCfg.view}
-            mount={dewarpCfg.mount || "ceiling"}
-            active={!busy && !playError}
-            className="h-full w-full"
-            onUnavailable={setDewarpFailed}
-          />
-        </div>
-      )}
-
-      {/* Honest fallback: the fisheye source can't be textured (cross-origin) or
-          WebGL is unavailable → we show the raw video and say so, no fake output. */}
-      {dewarpOn && dewarpFailed && (
-        <span className="pointer-events-none absolute bottom-2 left-2 z-10 rounded bg-black/70 px-2 py-1 text-[10px] font-medium text-amber-200">
-          {dewarpFailed === "cors" ? "De-warp unavailable (protected source)" : "De-warp unavailable (no WebGL)"}
-        </span>
-      )}
-
-      {/* POS transaction overlay — a semi-transparent monospaced ticker of the
-          latest lines a real POS feed pushed for this camera's terminal. Sits at
-          the configured edge (top/bottom); pointer-events-none so it never steals
-          clicks from the video / zoom / control bar. Renders nothing until a line
-          actually arrives (honest: no feed → no strip). */}
-      {posOn && posLines.length > 0 && (
-        <div
-          className={`pointer-events-none absolute inset-x-0 z-10 ${
-            posPosition === "top" ? "top-0" : "bottom-0"
-          }`}
-        >
-          <div className="mx-1 my-1 rounded-md border border-sky-400/20 bg-[#0b1220]/80 px-2 py-1 font-mono text-[10px] leading-tight text-sky-100/90 shadow-lg backdrop-blur-sm">
-            <div className="mb-0.5 flex items-center gap-1 text-[8px] font-semibold uppercase tracking-wider text-sky-300/70">
-              <span className="h-1 w-1 animate-pulse rounded-full bg-sky-400" />
-              POS · {(posCfg?.source || "").trim()}
-            </div>
-            {posLines.map((l, i) => (
-              <div key={`${l.ts || ""}-${i}`} className="truncate">
-                {l.text}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Loading / warming-up overlay */}
       {busy && (

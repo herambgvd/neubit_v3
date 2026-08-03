@@ -2,7 +2,7 @@
 
 Ported (control-plane subset) from ``gvd_nvr`` camera/settings + neubit_v3 device
 conventions. Every enterprise field is present from day 1 (build-once): recording
-config, advanced (privacy/motion/POS/dewarp/backchannel), PTZ, floor-plan
+config, advanced (privacy/motion/backchannel), PTZ, floor-plan
 placement refs, NVR-channel + storage-pool + media-node linkage. The logic that
 fills these arrives in later phases; the schema does NOT churn.
 
@@ -138,8 +138,6 @@ class Camera(Base):
     # privacy_masks; pushed to the brand's motion-detection region config where supported.
     motion_zones: Mapped[list] = mapped_column(JSON, nullable=False, server_default=text("'[]'"))
     motion_config: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
-    pos_overlay: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
-    dewarp: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
     backchannel: Mapped[dict] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
 
     # --- PTZ. ---
