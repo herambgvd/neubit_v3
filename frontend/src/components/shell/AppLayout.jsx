@@ -10,6 +10,7 @@ import CommandPalette from "@/components/CommandPalette";
 import { FullPageLoader } from "@/components/ui/kit";
 import Footer from "@/components/shell/Footer";
 import GlobalNavDock from "@/components/shell/GlobalNavDock";
+import GlobalBrand from "@/components/shell/GlobalBrand";
 import ConsoleStrip from "@/components/shell/ConsoleStrip";
 import SectionTabs from "@/components/shell/SectionTabs";
 import VmsPopupHost from "@/features/vms/components/VmsPopupHost";
@@ -159,6 +160,7 @@ export default function AppLayout({ children }) {
           + the HOME status strip on the launcher) floats top-right on every screen;
           navigation is via the MENU overlay + the Home launcher. Both are suppressed
           on the immersive wall (/streaming, /wall/*), which carries its own controls. */}
+      {!immersiveWall && <GlobalBrand />}
       {!immersiveWall && <GlobalNavDock home={home} />}
       {/* Minimal-chrome CONSOLES (Platform/System/Security/Sites/Users & Roles/…) keep
           their own section strip — modtab + ?view= sub-nav — as a slim floating bar.

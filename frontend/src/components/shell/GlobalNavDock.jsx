@@ -54,10 +54,6 @@ function HomeStatusStrip() {
 
   return (
     <div className="mr-1 flex items-center gap-2">
-      <span className="flex items-center gap-1.5 rounded-[14px] border border-[rgba(150,180,245,.22)] px-2.5 py-1 font-mono text-[10px] text-[#aec2e8]">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#34d399] shadow-[0_0_6px_#34d399]" />
-        <b className="tracking-[.6px]">BASELINE</b>
-      </span>
       <span className="font-mono text-[13px] text-[#aec2e8]">{now}</span>
       <button type="button" title="Lock console" className={tiny}>
         <svg viewBox="0 0 24 24" width="15" height="15" {...HSS}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
