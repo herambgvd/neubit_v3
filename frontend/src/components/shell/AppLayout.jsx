@@ -127,6 +127,7 @@ export default function AppLayout({ children }) {
     pathname === "/devices/cameras" ||
     pathname === "/devices/nvr" ||
     pathname === "/devices/recorders" ||
+    pathname === "/federation" ||
     pathname === "/access-control" ||
     // Unified Playback is a control-room surface (source rail + synchronized grid +
     // master timeline) — the PAGE must not scroll; it fills the bounded pane via h-full.

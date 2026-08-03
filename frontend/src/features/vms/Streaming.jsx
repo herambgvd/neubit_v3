@@ -346,8 +346,7 @@ export default function Streaming() {
   }, []);
 
   // ── server patterns + camera-groups (the real pattern feature) ───────────
-  // Replaces the TODO(patterns) localStorage seed with server-persisted patterns:
-  // a pattern rotates through camera GROUPS, each painting the wall via
+  // A pattern rotates through camera GROUPS, each painting the wall via
   // applyWallPreset. Camera groups carry their own grid layout.
   const patternsQ = useQuery({
     queryKey: ["vms-patterns"],
@@ -420,7 +419,7 @@ export default function Streaming() {
   // running, the pattern picker still reflects the active pattern; explicit exit
   // (HUD ✕ / picker Stop) tears it down. No implicit exit — keeps it predictable.
 
-  // ── saved layouts (localStorage seed of the pattern feature) ─────────────
+  // ── saved layouts (browser-local recall of a single static grid) ─────────
   const saveCurrent = () => {
     const name = saveName.trim();
     if (!name) return;
@@ -769,9 +768,8 @@ export default function Streaming() {
   );
 }
 
-// Compact saved-layouts dropdown (localStorage-backed seed of the pattern
-// feature). Applies a preset via the parent's applyWallPreset; the parent's
-// TODO(patterns) marks where server-persisted patterns replace this store.
+// Compact saved-layouts dropdown (browser-local recall of a single static
+// grid). Applies a preset via the parent's applyWallPreset.
 function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
