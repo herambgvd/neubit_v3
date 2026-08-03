@@ -25,7 +25,7 @@
 //
 // Credentials (onvif.password / nvr password) are WRITE-ONLY — sent on
 // create/update, never returned (public shapes expose has_password/has_credentials).
-import { api } from "@/lib/api";
+import { api, tokens } from "@/lib/api";
 
 const CAMERAS = "/vms/cameras";
 const NVRS = "/vms/nvrs";
@@ -715,6 +715,28 @@ export const vms = {
     // GET /recording/active → { available, camera_ids } — which cameras are ACTUALLY
     // recording right now (live nvr state, not the policy mode). Drives the ● indicator.
     active: () => unwrap(api.get(`/vms/recording/active`)),
+  },
+
+  // ── POS transaction overlay (feature G) ─────────────────────────────────
+  // A camera's pos_overlay.source names a POS terminal. A terminal / middleware
+  // PUSHES transaction text to POST /vms/pos/ingest; the live player subscribes
+  // to GET /vms/pos/stream?camera_id=&token= over SSE and overlays each line.
+  //   ingest body: { terminal, camera_id?, text, ts? }  OR  { lines:[ ...] }
+  //   auth: an operator JWT (vms.config.manage) OR the shared VE_POS_INGEST_TOKEN.
+  pos: {
+    ingest: (body) => unwrap(api.post("/vms/pos/ingest", body)),
+    // SSE URL the player opens with EventSource. EventSource can't set an
+    // Authorization header, so the access token rides as ?token= (same trick as
+    // the vms-events realtime stream). Returns null on SSR / no token / no camera.
+    streamUrl: (cameraId) => {
+      if (typeof window === "undefined" || typeof EventSource === "undefined") return null;
+      const token = tokens.access;
+      if (!token || !cameraId) return null;
+      return (
+        `${api.defaults.baseURL}/vms/pos/stream` +
+        `?camera_id=${encodeURIComponent(cameraId)}&token=${encodeURIComponent(token)}`
+      );
+    },
   },
 
   // ── Storage (P3-B) — pools + tiering ────────────────────────────────────

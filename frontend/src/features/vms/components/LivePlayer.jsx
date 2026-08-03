@@ -178,6 +178,69 @@ function LivePlayer({
     !!dewarpCfg?.enabled && dewarpCfg.view && dewarpCfg.view !== "original";
   const dewarpActive = dewarpOn && !dewarpFailed;
 
+  // POS transaction overlay — the recorder stores a per-camera pos_overlay config
+  // ({ enabled, source, position }). Fetched cheaply + cached (store-only, like the
+  // dewarp config). When enabled we open the POS SSE stream and overlay whatever
+  // transaction text a real POS feed pushes to /vms/pos/ingest — never fabricated.
+  // Disabled → zero overhead (no stream opened, path fully inert).
+  const { data: posData } = useQuery({
+    queryKey: ["vms-pos-overlay", cameraId],
+    queryFn: () => vms.cameras.posOverlay.get(cameraId),
+    enabled: !!cameraId,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+  const posCfg = posData?.pos_overlay;
+  const posOn = !!posCfg?.enabled && !!(posCfg.source || "").trim();
+  const posPosition = posCfg?.position === "top" ? "top" : "bottom";
+  const [posLines, setPosLines] = useState([]); // newest last (ticker order)
+
+  // Open the POS SSE stream only while enabled; tear it down on unmount / disable /
+  // camera switch. Each `pos.line` frame appends to a bounded ring the strip renders.
+  useEffect(() => {
+    setPosLines([]);
+    if (!posOn || !cameraId) return;
+    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+    const url = vms.pos.streamUrl(cameraId);
+    if (!url) return;
+
+    let es = null;
+    let closed = false;
+    let retry = 0;
+    let timer = null;
+
+    const connect = () => {
+      if (closed) return;
+      es = new EventSource(url);
+      es.addEventListener("pos.line", (e) => {
+        let line = null;
+        try {
+          line = JSON.parse(e.data);
+        } catch {
+          return; // keepalive / comment — ignore
+        }
+        if (!line || !line.text) return;
+        setPosLines((prev) => [...prev, line].slice(-8)); // keep last N lines
+      });
+      es.onopen = () => {
+        retry = 0;
+      };
+      es.onerror = () => {
+        es?.close();
+        if (closed) return;
+        retry = Math.min(retry + 1, 6);
+        timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 30000));
+      };
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      if (timer) clearTimeout(timer);
+      es?.close();
+    };
+  }, [posOn, cameraId]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [mode, setMode] = useState(preferWebrtc ? "webrtc" : "hls");
@@ -785,6 +848,31 @@ function LivePlayer({
         <span className="pointer-events-none absolute bottom-2 left-2 z-10 rounded bg-black/70 px-2 py-1 text-[10px] font-medium text-amber-200">
           {dewarpFailed === "cors" ? "De-warp unavailable (protected source)" : "De-warp unavailable (no WebGL)"}
         </span>
+      )}
+
+      {/* POS transaction overlay — a semi-transparent monospaced ticker of the
+          latest lines a real POS feed pushed for this camera's terminal. Sits at
+          the configured edge (top/bottom); pointer-events-none so it never steals
+          clicks from the video / zoom / control bar. Renders nothing until a line
+          actually arrives (honest: no feed → no strip). */}
+      {posOn && posLines.length > 0 && (
+        <div
+          className={`pointer-events-none absolute inset-x-0 z-10 ${
+            posPosition === "top" ? "top-0" : "bottom-0"
+          }`}
+        >
+          <div className="mx-1 my-1 rounded-md border border-sky-400/20 bg-[#0b1220]/80 px-2 py-1 font-mono text-[10px] leading-tight text-sky-100/90 shadow-lg backdrop-blur-sm">
+            <div className="mb-0.5 flex items-center gap-1 text-[8px] font-semibold uppercase tracking-wider text-sky-300/70">
+              <span className="h-1 w-1 animate-pulse rounded-full bg-sky-400" />
+              POS · {(posCfg?.source || "").trim()}
+            </div>
+            {posLines.map((l, i) => (
+              <div key={`${l.ts || ""}-${i}`} className="truncate">
+                {l.text}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Loading / warming-up overlay */}
