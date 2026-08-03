@@ -170,6 +170,13 @@ function WallTile({
           never paints over the header account dropdown. */}
       <div className={`pointer-events-none absolute inset-x-0 top-0 z-[1] h-[2px] ${edge}`} />
 
+      {/* Scanline texture (mockup) — a barely-there CRT sheen for the control-room
+          look; never intercepts pointer events. */}
+      <div
+        className="pointer-events-none absolute inset-0 z-[2]"
+        style={{ background: "repeating-linear-gradient(0deg,rgba(255,255,255,.02) 0 1px,transparent 1px 4px)" }}
+      />
+
       {/* Source badge (mockup) — the recorder/node this camera streams through.
           Real data only (federated cameras carry node_name); omitted for local
           cameras so we never invent a source. */}
@@ -197,8 +204,8 @@ function WallTile({
         }
       />
 
-      {/* Bottom gradient info strip */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center gap-1.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 pb-1.5 pt-6">
+      {/* Bottom gradient info strip — slim (mockup): name + status only. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center gap-1.5 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${preset.dot}`} title={preset.label} />
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-[.3px] text-[#d7f7e9]">{name}</span>
         {/* Site shows on the roomy hero tile; dense tiles stay to just the name.
