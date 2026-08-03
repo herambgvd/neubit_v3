@@ -39,7 +39,7 @@ from kernel.auth import Principal, Scope, get_scope, require_permission
 from app.db import get_db
 
 from .catalog import AccessGroupCatalog, ScheduleCatalog
-from .commands import CommandError, CommandService, HARDWARE_SETS
+from .commands import CommandError, CommandService, HARDWARE_SETS, SCHEDULED_SETS
 from .doors import DoorCommandError, DoorService
 from .schemas import (
     AccessEventListResponse,
@@ -931,6 +931,30 @@ async def list_hardware(
         raise HTTPException(status_code=404, detail={"code": "unknown_hardware_set"})
     try:
         return await svc.list_hardware(instance_id, key, skip=skip, limit=limit)
+    except CommandError as exc:
+        raise _cmd_http(exc) from None
+
+
+# ── Scheduled collections proxy (read-only) ─────────────────────────────
+
+
+@router.get(
+    "/instances/{instance_id}/scheduled/{scheduled_set}",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def list_scheduled(
+    instance_id: str,
+    scheduled_set: str,
+    svc: Annotated[CommandService, Depends(_cmd_service)],
+    skip: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=500),
+) -> dict:
+    # Accept both dashed and underscored (scheduled-mags ↔ scheduled_mags).
+    key = scheduled_set.replace("-", "_")
+    if key not in SCHEDULED_SETS:
+        raise HTTPException(status_code=404, detail={"code": "unknown_scheduled_set"})
+    try:
+        return await svc.list_scheduled(instance_id, key, skip=skip, limit=limit)
     except CommandError as exc:
         raise _cmd_http(exc) from None
 

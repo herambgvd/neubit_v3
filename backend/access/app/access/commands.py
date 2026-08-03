@@ -62,6 +62,15 @@ HARDWARE_SETS = (
     "areas",
 )
 
+# Read-only scheduled collections proxied straight from the controller (connector
+# maps scheduled_mags → API_ScheduledMAGs, scheduled_readers →
+# API_ScheduledAdditionalReaders). Weekly programs are the ``schedules`` catalog
+# (API_WeeklyPrograms) and are served by the top-level /access/schedules routes.
+SCHEDULED_SETS = (
+    "scheduled_mags",
+    "scheduled_readers",
+)
+
 
 def _normalize(item: dict) -> dict:
     if not isinstance(item, dict):
@@ -208,3 +217,22 @@ class CommandService:
         window = items[skip : skip + limit]
         normalized = [_normalize(i) for i in window]
         return {"items": normalized, "count": len(normalized)}
+
+    # ── Scheduled collections proxy (read-only OData passthrough) ────────
+    async def list_scheduled(
+        self, instance_id: str, scheduled_set: str, *, skip: int, limit: int
+    ) -> dict:
+        inst = await self._instance(instance_id)
+        connector = get_connector(inst, secret=decrypt_secret(inst.secret_enc))
+        try:
+            items = await connector.list_collection(scheduled_set)
+        except DDSHTTPError as exc:
+            raise CommandError(exc.status_code, exc.body_text) from None
+        except ValueError as exc:
+            raise CommandError(404, {"message": str(exc)}) from None
+        except Exception as exc:  # noqa: BLE001 — never 500 on a dead controller
+            raise CommandError(502, {"message": str(exc) or type(exc).__name__}) from None
+        finally:
+            await connector.aclose()
+        window = items[skip : skip + limit]
+        return {"items": window, "count": len(window)}

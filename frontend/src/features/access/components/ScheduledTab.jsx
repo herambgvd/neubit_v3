@@ -1,16 +1,24 @@
 "use client";
 
 // Scheduled Access. Ported from neubit_v2's scheduled-tab.jsx — SAME sub-tab shell
-// (Scheduled MAGs / Scheduled Readers / Weekly Programs) so the surface matches v2.
+// (Scheduled MAGs / Scheduled Readers / Weekly Programs).
 //
-// IMPORTANT (v3): the v3 access service does NOT yet expose the scheduled-mags,
-// scheduled-readers or weekly-programs endpoints (the verified v3 contract covers
-// instances/cardholders/cards/access-groups/schedules/doors/commands/hardware/
-// events/sync-jobs only). So each sub-tab renders a faithful "not available in this
-// build" placeholder rather than calling a non-existent endpoint. When the backend
-// lands these routes, wire them here (add the calls to features/access/api.js).
+// v3 wiring:
+//   • Scheduled MAGs / Scheduled Readers — READ-ONLY inventory proxied live from
+//     the controller (GET /access/instances/{id}/scheduled/{scheduled_mags|
+//     scheduled_readers}; connector → API_ScheduledMAGs / API_ScheduledAdditionalReaders).
+//   • Weekly Programs — the schedules catalog (API_WeeklyPrograms), served by
+//     the existing GET /access/schedules?instance_id= route.
+// Columns are picked generically from the returned DTOs (the DDS shapes vary by
+// firmware), mirroring HardwareTab. Write-through for MAGs is intentionally NOT
+// exposed here — it needs a verified DDS OData write field-map (not faked).
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
+
+import { apiError } from "@/lib/api";
+import { asItems } from "@/lib/format";
+import { gates } from "../api";
 
 const SUB_TABS = [
   { key: "mags", label: "Scheduled MAGs" },
@@ -19,12 +27,119 @@ const SUB_TABS = [
 ];
 
 const COPY = {
-  mags: "Temporary cardholder → security-group grants between two dates.",
-  readers: "Per-reader scheduled weekly-program assignments.",
-  weekly: "The read-only weekly-program inventory pulled from the controller.",
+  mags: "Temporary cardholder → security-group grants between two dates, read live from the controller.",
+  readers: "Per-reader scheduled weekly-program assignments, read live from the controller.",
+  weekly: "The weekly-program inventory synced from the controller.",
 };
 
-export default function ScheduledTab() {
+// Prefer human-friendly keys first, then fill from whatever the DTO carries.
+function pickColumns(items) {
+  const PREFERRED = [
+    "Name",
+    "UID",
+    "Description",
+    "CardholderUID",
+    "ReaderUID",
+    "ScheduledSecurityGroupUID",
+    "OriginSecurityGroupUID",
+    "ScheduledWeeklyProgramUID",
+    "OriginWeeklyProgramUID",
+    "FromDateValid",
+    "ToDateValid",
+  ];
+  if (!items.length) return [];
+  const keys = new Set();
+  items.slice(0, 50).forEach((it) => Object.keys(it || {}).forEach((k) => keys.add(k)));
+  const ordered = [];
+  PREFERRED.forEach((f) => {
+    if (keys.has(f)) {
+      ordered.push(f);
+      keys.delete(f);
+    }
+  });
+  Array.from(keys)
+    .filter((k) => !k.startsWith("@"))
+    .slice(0, Math.max(0, 8 - ordered.length))
+    .forEach((k) => ordered.push(k));
+  return ordered;
+}
+
+function Cell({ value }) {
+  if (value === null || value === undefined || value === "") return <span className="text-muted/70">—</span>;
+  if (typeof value === "object") return <code className="text-[10px] text-muted">{JSON.stringify(value)}</code>;
+  const str = String(value);
+  return str.length > 48 ? <span title={str}>{str.slice(0, 48)}…</span> : str;
+}
+
+function ScheduledList({ instanceId, sub }) {
+  const q = useQuery({
+    queryKey: ["ac-scheduled", instanceId, sub],
+    queryFn: () =>
+      sub === "weekly"
+        ? gates.schedules.list(instanceId, { limit: 200 })
+        : gates.scheduled.list(instanceId, sub === "mags" ? "scheduled_mags" : "scheduled_readers", {
+            limit: 200,
+          }),
+    enabled: !!instanceId,
+  });
+  const items = asItems(q.data);
+  const cols = pickColumns(items);
+  const th = "px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-muted";
+
+  if (q.isLoading) {
+    return (
+      <div className="flex items-center gap-2 p-3 text-xs text-muted">
+        <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading…
+      </div>
+    );
+  }
+  if (q.isError) {
+    return (
+      <div className="rounded-md border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">
+        {apiError(q.error, "Could not load — check that the controller is reachable and synced.")}
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
+          <Icon icon="heroicons-outline:calendar-days" className="text-xl" />
+        </span>
+        <h4 className="mb-1 text-sm font-semibold text-foreground">{SUB_TABS.find((t) => t.key === sub)?.label}</h4>
+        <p className="max-w-sm text-xs text-muted">{COPY[sub]}</p>
+        <p className="mt-2 max-w-sm text-[11px] text-muted/70">None reported by the controller.</p>
+      </div>
+    );
+  }
+
+  return (
+    <table className="w-full text-xs">
+      <thead className="sticky top-0 bg-hover">
+        <tr>
+          {cols.map((c) => (
+            <th key={c} className={th}>
+              {c}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-card-border">
+        {items.map((it, i) => (
+          <tr key={it.UID || it.uid || it.id || i} className="hover:bg-hover/50">
+            {cols.map((c) => (
+              <td key={c} className="px-3 py-2 align-top font-mono text-[11px] text-muted">
+                <Cell value={it[c]} />
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+export default function ScheduledTab({ instanceId }) {
   const [sub, setSub] = useState("mags");
 
   return (
@@ -49,17 +164,7 @@ export default function ScheduledTab() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto pt-2">
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
-            <Icon icon="heroicons-outline:calendar-days" className="text-xl" />
-          </span>
-          <h4 className="mb-1 text-sm font-semibold text-foreground">{SUB_TABS.find((t) => t.key === sub)?.label}</h4>
-          <p className="max-w-sm text-xs text-muted">{COPY[sub]}</p>
-          <p className="mt-2 max-w-sm text-[11px] text-muted/70">
-            Not yet exposed by the v3 access service — this surface is ready to wire once the
-            scheduled-access endpoints ship.
-          </p>
-        </div>
+        <ScheduledList instanceId={instanceId} sub={sub} />
       </div>
     </div>
   );

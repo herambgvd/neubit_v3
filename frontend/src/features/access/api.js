@@ -153,6 +153,15 @@ export const gates = {
       unwrap(api.get(`${BASE}/instances/${instanceId}/hardware/${set}${qs(params)}`)),
   },
 
+  // ── Scheduled collections (read-only OData proxy, per instance) ─
+  //   kind ∈ scheduled_mags | scheduled_readers → { items, count }.
+  //   Weekly Programs are the `schedules` catalog (API_WeeklyPrograms) —
+  //   use `schedules.list` for those.
+  scheduled: {
+    list: (instanceId, kind, params = {}) =>
+      unwrap(api.get(`${BASE}/instances/${instanceId}/scheduled/${kind}${qs(params)}`)),
+  },
+
   // ── Events (per-instance; polled, no SSE in v3) ───────────────
   events: {
     list: (instanceId, params = {}) =>
