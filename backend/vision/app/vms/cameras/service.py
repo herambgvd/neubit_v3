@@ -909,6 +909,10 @@ class CameraService:
             return {"privacy_masks": row.privacy_masks or []}
         if section == "motion_zones":
             return {"motion_zones": row.motion_zones or []}
+        if section == "pos_overlay":
+            return {"pos_overlay": row.pos_overlay or {}}
+        if section == "dewarp":
+            return {"dewarp": row.dewarp or {}}
         if section == "onvif_events":
             return {"onvif_events": (row.onvif_capabilities or {}).get("_events_config", {})}
         raise ValidationError(f"unknown local config section: {section}")
@@ -935,6 +939,15 @@ class CameraService:
             row.motion_zones = value or []
             out = {"motion_zones": row.motion_zones}
             push_section = "motion_zones"
+        elif section == "pos_overlay":
+            # Store-only: no ONVIF verb for a POS text source, so we persist the
+            # operator's preference and let the player/exporter honour it.
+            row.pos_overlay = value or {}
+            out = {"pos_overlay": row.pos_overlay}
+        elif section == "dewarp":
+            # Store-only: fisheye de-warp is applied client-side by the player.
+            row.dewarp = value or {}
+            out = {"dewarp": row.dewarp}
         elif section == "onvif_events":
             caps = dict(row.onvif_capabilities or {})
             caps["_events_config"] = value or {}

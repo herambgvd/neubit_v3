@@ -25,6 +25,7 @@ import ImagingPanel from "./ImagingPanel";
 import IoPanel from "./IoPanel";
 import EncoderPanel from "./EncoderPanel";
 import OsdPanel from "./OsdPanel";
+import { DewarpPanel, PosOverlayPanel } from "./DewarpPosPanel";
 
 function ToggleRow({ label, hint, checked, onChange }) {
   return (
@@ -471,16 +472,25 @@ export default function CameraConfigForm({
         )}
       </div>
 
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Coming soon</p>
-        <div className="grid grid-cols-2 gap-2 text-[11px]">
-          {["POS overlay", "Dewarp"].map((f) => (
-            <div key={f} className="flex items-center gap-2 rounded-lg border border-card-border px-3 py-2 text-muted">
-              <Icon icon="heroicons-outline:clock" className="text-sm" /> {f} — soon
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Dewarp (fisheye) + POS overlay — store-only local config, so they only
+          make sense once the camera exists (need a camera id to persist against). */}
+      {isEdit && cameraId ? (
+        <>
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Fisheye de-warp</p>
+            <DewarpPanel cameraId={cameraId} cameraName={cameraName || form.name} />
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">POS overlay</p>
+            <PosOverlayPanel cameraId={cameraId} cameraName={cameraName || form.name} />
+          </div>
+        </>
+      ) : (
+        <InfoNote>
+          Fisheye de-warp and POS overlay are configured per camera — available once this
+          camera is onboarded.
+        </InfoNote>
+      )}
 
       {isEdit && regionTool && (
         <RegionDrawModal

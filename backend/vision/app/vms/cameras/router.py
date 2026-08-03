@@ -58,6 +58,8 @@ from .schemas import (
     MotionZonesBody,
     OnvifEventsBody,
     PrivacyMasksBody,
+    DewarpBody,
+    PosOverlayBody,
     ProbeBody,
     ProbeResponse,
     PtzBody,
@@ -529,6 +531,57 @@ async def put_motion_zones(
         svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
     )
     return ConfigResult(**await svc.put_local_config(camera_id, "motion_zones", body.zones))
+
+
+# ── Dewarp (fisheye) + POS overlay — store-only local config ──────────────────
+@router.get(
+    "/cameras/{camera_id}/dewarp",
+    response_model=ConfigResult,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def get_dewarp(
+    camera_id: str,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+) -> ConfigResult:
+    return ConfigResult(**await svc.get_local_config(camera_id, "dewarp"))
+
+
+@router.put("/cameras/{camera_id}/dewarp", response_model=ConfigResult)
+async def put_dewarp(
+    camera_id: str,
+    body: DewarpBody,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
+) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
+    return ConfigResult(**await svc.put_local_config(camera_id, "dewarp", body.model_dump()))
+
+
+@router.get(
+    "/cameras/{camera_id}/pos-overlay",
+    response_model=ConfigResult,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def get_pos_overlay(
+    camera_id: str,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+) -> ConfigResult:
+    return ConfigResult(**await svc.get_local_config(camera_id, "pos_overlay"))
+
+
+@router.put("/cameras/{camera_id}/pos-overlay", response_model=ConfigResult)
+async def put_pos_overlay(
+    camera_id: str,
+    body: PosOverlayBody,
+    svc: Annotated[CameraService, Depends(get_camera_service)],
+    actor: Principal = Depends(require_permission(PERM_CONFIG)),
+) -> ConfigResult:
+    await enforce_camera_privilege(
+        svc.db, scope=svc.scope, principal=actor, camera_id=camera_id, privilege="config"
+    )
+    return ConfigResult(**await svc.put_local_config(camera_id, "pos_overlay", body.model_dump()))
 
 
 @router.get(

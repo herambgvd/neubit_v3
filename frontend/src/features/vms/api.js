@@ -149,6 +149,24 @@ export const vms = {
       put: (id, zones) => unwrap(api.put(`${CAMERAS}/${id}/motion-zones`, { zones })),
     },
 
+    // ── Dewarp (fisheye) + POS overlay — store-only local config ─────────
+    // Persisted on the recorder (no device round-trip): dewarp is applied by
+    // the player for fisheye sources; the POS overlay is burned in by the
+    // player/exporter where a POS text source is wired. Reads gate on
+    // vms.camera.read; writes on vms.config.manage.
+    //   GET /cameras/{id}/dewarp      → { dewarp:{...} }
+    //   PUT /cameras/{id}/dewarp      { enabled, mount, view } → { dewarp }
+    //   GET /cameras/{id}/pos-overlay → { pos_overlay:{...} }
+    //   PUT /cameras/{id}/pos-overlay { enabled, source, position } → { pos_overlay }
+    dewarp: {
+      get: (id) => unwrap(api.get(`${CAMERAS}/${id}/dewarp`)),
+      put: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/dewarp`, body)),
+    },
+    posOverlay: {
+      get: (id) => unwrap(api.get(`${CAMERAS}/${id}/pos-overlay`)),
+      put: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/pos-overlay`, body)),
+    },
+
     getOnvifEvents: (id) => unwrap(api.get(`${CAMERAS}/${id}/onvif-events`)),
     setOnvifEvents: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/onvif-events`, body)),
 

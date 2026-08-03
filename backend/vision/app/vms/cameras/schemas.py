@@ -568,6 +568,35 @@ class OnvifEventsBody(BaseModel):
     topics: list[str] = Field(default_factory=list)
 
 
+class DewarpBody(BaseModel):
+    """PUT /cameras/{id}/dewarp — fisheye/panoramic de-warp preferences.
+
+    Store-only: persisted on the recorder and applied by the player where the
+    stream is a fisheye source. ``mount`` ∈ ceiling|wall|desk; ``view`` ∈
+    original|panorama|quad|dewarp. No device round-trip (no ONVIF de-warp verb),
+    so there is no ``pushed`` echo — honest store-only, like motion_config.
+    """
+
+    model_config = ConfigDict(extra="allow")
+    enabled: bool = False
+    mount: Optional[str] = None
+    view: Optional[str] = None
+
+
+class PosOverlayBody(BaseModel):
+    """PUT /cameras/{id}/pos-overlay — point-of-sale transaction overlay.
+
+    Store-only: persisted on the recorder and burned in by the player/exporter
+    where a POS text source is wired. ``source`` is a free-form transaction
+    source ref (terminal id / TCP endpoint); ``position`` ∈ top|bottom.
+    """
+
+    model_config = ConfigDict(extra="allow")
+    enabled: bool = False
+    source: Optional[str] = None
+    position: Optional[str] = None
+
+
 class ConfigResult(BaseModel):
     """Generic driver/local config result echo."""
 
