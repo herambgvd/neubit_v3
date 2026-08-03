@@ -9,15 +9,14 @@ import { api } from "@/lib/api";
 import CommandPalette from "@/components/CommandPalette";
 import { FullPageLoader } from "@/components/ui/kit";
 import Footer from "@/components/shell/Footer";
-import Header from "@/components/shell/Header";
+import GlobalNavDock from "@/components/shell/GlobalNavDock";
+import ConsoleStrip from "@/components/shell/ConsoleStrip";
 import SectionTabs from "@/components/shell/SectionTabs";
 import VmsPopupHost from "@/features/vms/components/VmsPopupHost";
 import { useAuth } from "@/lib/auth";
 import {
-  isConfigRoute,
   isDevicesRoute,
   isStreamingRoute,
-  configTabs,
   deviceTabs,
   streamTabs,
 } from "@/config/menu";
@@ -103,21 +102,6 @@ export default function AppLayout({ children }) {
   // The NeuBit HOME metro launcher is a full-bleed, single-viewport surface (its own
   // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.
   const home = pathname === "/home";
-  // Minimal-chrome config surfaces (own segment strip, no Config sub-tab bar).
-  const minimalConsole =
-    pathname === "/users" ||
-    pathname === "/roles" ||
-    pathname === "/audit" ||
-    pathname === "/sites" ||
-    pathname === "/map" ||
-    pathname === "/general" ||
-    pathname === "/workflow-config" ||
-    pathname === "/ingest" ||
-    pathname === "/config/security" ||
-    pathname === "/platform" ||
-    pathname === "/config/video-wall" ||
-    pathname === "/config/linkage" ||
-    pathname === "/config/onvif-server";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
@@ -170,14 +154,16 @@ export default function AppLayout({ children }) {
       className="fixed inset-0 flex flex-col overflow-hidden bg-background"
       style={home ? { background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" } : undefined}
     >
-      {/* The Video Wall is a full-bleed operations console (mockup neubit-vms-live):
-          its OWN toolbar is the top bar (Home button + Live tab + view controls), so
-          the global Header, the Streaming sub-tab bar, and the footer are all
-          suppressed there — nothing chrome above the wall. */}
-      {!immersiveWall && <Header />}
-      {/* The Users & Roles console is minimal-chrome (its own segment strip), so the
-          Config sub-tab bar is suppressed there to match the VMS mockup. */}
-      {isConfigRoute(pathname) && !minimalConsole && <SectionTabs tabs={configTabs} />}
+      {/* Header-less immersive UI: the global top-nav bar is retired. A compact
+          floating control dock (⊞ MENU navigator · search · notifications · account,
+          + the HOME status strip on the launcher) floats top-right on every screen;
+          navigation is via the MENU overlay + the Home launcher. Both are suppressed
+          on the immersive wall (/streaming, /wall/*), which carries its own controls. */}
+      {!immersiveWall && <GlobalNavDock home={home} />}
+      {/* Minimal-chrome CONSOLES (Platform/System/Security/Sites/Users & Roles/…) keep
+          their own section strip — modtab + ?view= sub-nav — as a slim floating bar.
+          ConsoleStrip self-guards by route (renders null elsewhere). */}
+      {!immersiveWall && <ConsoleStrip />}
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
       {isStreamingRoute(pathname) && !immersiveWall && <SectionTabs tabs={streamTabs} />}
       {!immersiveWall && <AnnouncementBanner />}

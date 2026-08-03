@@ -110,16 +110,6 @@ export default function MenuNavigator() {
   const devices = deviceTabs.filter(allowed).map((t) => ({ ...t }));
   const config = configConsoles.filter(allowed).map((t) => ({ ...t }));
 
-  // Building Intelligence — Phase-0 coming-soon surfaces (no destinations).
-  const intelligence = [
-    { title: "Portfolio", icon: "heroicons:building-office-2" },
-    { title: "Energy & Metering", icon: "heroicons:bolt" },
-    { title: "HVAC & Assets", icon: "heroicons:cog-8-tooth" },
-    { title: "IAQ & Environment", icon: "heroicons:sparkles" },
-    { title: "Ratings", icon: "heroicons:star" },
-    { title: "Insights & Correlation", icon: "heroicons:chart-pie" },
-  ];
-
   const launcher = (
     <button
       type="button"
@@ -181,12 +171,6 @@ export default function MenuNavigator() {
                     ))}
                   </Group>
                 )}
-
-                <Group title="Building Intelligence" accent="#c4b5fd">
-                  {intelligence.map((i) => (
-                    <Cell key={i.title} item={i} onGo={go} />
-                  ))}
-                </Group>
 
                 {(devices.length > 0 || config.length > 0) && (
                   <Group title="Configurations" accent="#93c5fd">
