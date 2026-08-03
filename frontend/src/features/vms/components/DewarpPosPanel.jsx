@@ -5,7 +5,7 @@
 // fisheye sources; the POS overlay is burned in by the player/exporter where a POS
 // text source is wired. Reads gate on vms.camera.read; writes on vms.config.manage.
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -45,6 +45,7 @@ function ToggleRow({ label, hint, checked, onChange, disabled }) {
 export function DewarpPanel({ cameraId, cameraName }) {
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
+  const queryClient = useQueryClient();
 
   const q = useQuery({
     queryKey: ["vms-dewarp", cameraId],
@@ -67,7 +68,12 @@ export function DewarpPanel({ cameraId, cameraName }) {
 
   const apply = useMutation({
     mutationFn: () => vms.cameras.dewarp.put(cameraId, { enabled, mount, view }),
-    onSuccess: () => toast.success(`De-warp saved for ${cameraName || "camera"}`),
+    onSuccess: () => {
+      // Share the cache key the live player reads so the change is visible there
+      // immediately (the player caches this store-only config with staleTime:∞).
+      queryClient.invalidateQueries({ queryKey: ["vms-dewarp", cameraId] });
+      toast.success(`De-warp saved for ${cameraName || "camera"}`);
+    },
     onError: (e) => toast.error(apiError(e, "Could not save de-warp")),
   });
 
