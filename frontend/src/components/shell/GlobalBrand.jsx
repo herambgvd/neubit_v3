@@ -22,7 +22,7 @@ export default function GlobalBrand() {
     <Link
       href="/home"
       title="Home"
-      className="fixed left-3 top-2.5 z-50 flex items-center gap-2.5 rounded-[12px] border border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.72)] px-3 py-1.5 shadow-[0_6px_24px_rgba(0,0,0,.35)] backdrop-blur transition hover:border-[rgba(34,211,238,.5)]"
+      className="flex items-center gap-2.5 rounded-[8px] px-1.5 py-1 transition hover:opacity-90"
     >
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element

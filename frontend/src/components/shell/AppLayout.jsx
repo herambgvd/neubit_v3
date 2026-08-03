@@ -10,7 +10,6 @@ import CommandPalette from "@/components/CommandPalette";
 import { FullPageLoader } from "@/components/ui/kit";
 import Footer from "@/components/shell/Footer";
 import GlobalNavDock from "@/components/shell/GlobalNavDock";
-import GlobalBrand from "@/components/shell/GlobalBrand";
 import ConsoleStrip from "@/components/shell/ConsoleStrip";
 import SectionTabs from "@/components/shell/SectionTabs";
 import VmsPopupHost from "@/features/vms/components/VmsPopupHost";
@@ -163,20 +162,13 @@ export default function AppLayout({ children }) {
       className="fixed inset-0 flex flex-col overflow-hidden bg-background"
       style={home ? { background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" } : undefined}
     >
-      {/* Header-less immersive UI: the global top-nav bar is retired. A compact
-          floating control dock (⊞ MENU navigator · search · notifications · account,
-          + the HOME status strip on the launcher) floats top-right on every screen;
-          navigation is via the MENU overlay + the Home launcher. Both are suppressed
-          on the immersive wall (/streaming, /wall/*), which carries its own controls. */}
-      {!immersiveWall && <GlobalBrand />}
+      {/* Global header BAR — a real in-flow slim bar (NeuBit brand → Home · ⊞ MENU
+          navigator · search · notifications · account). NOT floating, so page content
+          sits cleanly below it and nothing overlaps. The old domain top-nav
+          (Dashboard/Devices/Streaming/Incidents) is gone — navigation is the MENU
+          overlay + Home launcher. Suppressed on the immersive wall (/streaming,
+          /wall/*), which carries its own toolbar. */}
       {!immersiveWall && <GlobalNavDock home={home} />}
-      {/* GLOBAL TOP CLEARANCE (header-less era). The retired <Header> occupied a
-          ~56px top band; the floating brand (top-left) + dock (top-right) now overlay
-          that same band. This spacer restores it so nothing below — the device/stream
-          SectionTabs bar, the ConsoleStrip, or a page's own top toolbar/PageHeader —
-          starts under the two floating pills. HOME (full-bleed launcher with its own
-          top padding) and the immersive wall (pills suppressed) opt out. */}
-      {!immersiveWall && !home && <div aria-hidden className="h-14 shrink-0" />}
       {/* Minimal-chrome CONSOLES (Platform/System/Security/Sites/Users & Roles/…) keep
           their own section strip — modtab + ?view= sub-nav — as a slim floating bar.
           ConsoleStrip self-guards by route (renders null elsewhere). */}

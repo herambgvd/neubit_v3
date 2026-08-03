@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { api, apiError } from "@/lib/api";
 import { Avatar } from "@/components/ui/kit";
 import MenuNavigator from "@/components/shell/MenuNavigator";
+import GlobalBrand from "@/components/shell/GlobalBrand";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/components/theme";
 
@@ -307,25 +308,32 @@ function AccountMenu() {
   );
 }
 
-// The floating dock itself. `home` shows the HOME status strip alongside the
-// controls (clock/lock/fullscreen). Rendered fixed, top-right, above page chrome.
+// The global header BAR (header-less era, but a real in-flow bar — not floating —
+// so page content sits cleanly below it and nothing overlaps). Left: NeuBit brand
+// (→ Home) + ⊞ MENU navigator. Right: (Home) status strip, Search ⌘K,
+// notifications, account. Slim + navy to match the immersive aesthetic.
 export default function GlobalNavDock({ home = false }) {
   return (
-    <div className="fixed right-3 top-2.5 z-50 flex items-center gap-1 rounded-[12px] border border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.72)] px-2 py-1.5 shadow-[0_6px_24px_rgba(0,0,0,.35)] backdrop-blur">
-      {/* ⊞ MENU navigator launcher — jump to any section from any screen. */}
-      <MenuNavigator />
-      {home && <HomeStatusStrip />}
-      <button
-        onClick={() => window.dispatchEvent(new Event("palette:open"))}
-        className="hidden sm:flex items-center gap-2 rounded-md border border-card-border text-muted hover:text-foreground hover:bg-hover transition px-2.5 py-1.5"
-        aria-label="Search"
-        title="Search (⌘K)"
-      >
-        <Icon icon="heroicons-outline:magnifying-glass" className="text-base" />
-        <kbd className="text-[10px] border border-card-border rounded px-1 py-0.5">⌘K</kbd>
-      </button>
-      <NotificationsBell />
-      <AccountMenu />
-    </div>
+    <header className="relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.82)] px-3 backdrop-blur sm:px-4">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <GlobalBrand />
+        {/* ⊞ MENU navigator launcher — jump to any section from any screen. */}
+        <MenuNavigator />
+      </div>
+      <div className="flex items-center gap-1">
+        {home && <HomeStatusStrip />}
+        <button
+          onClick={() => window.dispatchEvent(new Event("palette:open"))}
+          className="hidden sm:flex items-center gap-2 rounded-md border border-card-border text-muted hover:text-foreground hover:bg-hover transition px-2.5 py-1.5"
+          aria-label="Search"
+          title="Search (⌘K)"
+        >
+          <Icon icon="heroicons-outline:magnifying-glass" className="text-base" />
+          <kbd className="text-[10px] border border-card-border rounded px-1 py-0.5">⌘K</kbd>
+        </button>
+        <NotificationsBell />
+        <AccountMenu />
+      </div>
+    </header>
   );
 }
