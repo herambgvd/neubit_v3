@@ -104,6 +104,12 @@ export default function AppLayout({ children }) {
   // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.
   const home = pathname === "/home";
 
+  // Alarms (/events) is a full-bleed navy console like Home/Streaming: its own
+  // radial-navy backdrop + masthead should reach the pane edges (no page padding);
+  // the board/map scrolls internally. Kept scrollable (not overflow-hidden) so long
+  // alarm lists page normally.
+  const eventsFull = pathname === "/events";
+
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
   // becomes a bounded, overflow-hidden pane (keeps padding) that the page fills via
@@ -139,9 +145,11 @@ export default function AppLayout({ children }) {
 
   const mainClass = immersiveWall || home
     ? "flex-1 min-h-0 w-full overflow-hidden"
-    : contained
-      ? "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3"
-      : "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6";
+    : eventsFull
+      ? "app-scroll flex-1 overflow-y-auto w-full"
+      : contained
+        ? "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3"
+        : "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6";
 
   // fixed inset-0: pin the shell to EXACTLY the viewport, immune to any parent
   // height-collapse. `h-screen` (100vh) was resolving short in this SCSS/flex context
@@ -162,6 +170,13 @@ export default function AppLayout({ children }) {
           on the immersive wall (/streaming, /wall/*), which carries its own controls. */}
       {!immersiveWall && <GlobalBrand />}
       {!immersiveWall && <GlobalNavDock home={home} />}
+      {/* GLOBAL TOP CLEARANCE (header-less era). The retired <Header> occupied a
+          ~56px top band; the floating brand (top-left) + dock (top-right) now overlay
+          that same band. This spacer restores it so nothing below — the device/stream
+          SectionTabs bar, the ConsoleStrip, or a page's own top toolbar/PageHeader —
+          starts under the two floating pills. HOME (full-bleed launcher with its own
+          top padding) and the immersive wall (pills suppressed) opt out. */}
+      {!immersiveWall && !home && <div aria-hidden className="h-14 shrink-0" />}
       {/* Minimal-chrome CONSOLES (Platform/System/Security/Sites/Users & Roles/…) keep
           their own section strip — modtab + ?view= sub-nav — as a slim floating bar.
           ConsoleStrip self-guards by route (renders null elsewhere). */}

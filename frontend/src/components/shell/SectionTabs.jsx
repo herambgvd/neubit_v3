@@ -34,11 +34,11 @@ export default function SectionTabs({ tabs }) {
                 key={t.title}
                 title="Coming soon"
                 aria-disabled="true"
-                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-muted/40 cursor-not-allowed select-none"
+                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-nb-faint cursor-not-allowed select-none"
               >
                 <Icon icon={t.icon} className="text-base shrink-0" />
                 {t.title}
-                <span className="ml-0.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-hover text-muted/70">
+                <span className="ml-0.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-[rgba(150,180,245,.1)] text-nb-faint">
                   Soon
                 </span>
               </span>
@@ -53,7 +53,7 @@ export default function SectionTabs({ tabs }) {
                 onClick={() =>
                   toast.error(`Access denied — “${t.title}” isn't enabled for your organization`)
                 }
-                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-muted/40 cursor-not-allowed select-none"
+                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-nb-faint cursor-not-allowed select-none"
               >
                 <Icon icon={t.icon} className="text-base shrink-0" />
                 {t.title}

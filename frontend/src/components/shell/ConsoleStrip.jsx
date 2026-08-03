@@ -64,8 +64,9 @@ export default function ConsoleStrip() {
 
   return (
     <div className="sticky top-0 z-40 shrink-0 border-b border-card-border bg-background/70 backdrop-blur">
-      {/* leave clearance on the right so content never runs under the floating dock */}
-      <div className="flex h-12 items-center gap-2 px-6 pr-[220px] lg:px-8 lg:pr-[240px]">
+      {/* Sits below the global top-clearance band (see AppLayout), so it clears the
+          floating brand + dock and can use the full page width. */}
+      <div className="flex h-12 items-center gap-2 px-6 lg:px-8">
         {usersRoles && (
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <UsersRolesStrip active={pathname === "/roles" ? "roles" : "users"} />
