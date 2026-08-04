@@ -55,8 +55,8 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-card-border bg-hover/40 p-4 space-y-4">
-      <h4 className="text-sm font-semibold text-foreground">{isEdit ? `Edit ${template.name}` : "New template"}</h4>
+    <form onSubmit={submit} className="rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-4 space-y-4">
+      <h4 className="text-sm font-semibold text-nb-ink">{isEdit ? `Edit ${template.name}` : "New template"}</h4>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field
           label="Name"
@@ -96,13 +96,13 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
         />
       )}
       <div>
-        <label className="text-xs font-medium uppercase tracking-wide text-muted">Body <span className="text-red-500 ml-1">*</span></label>
-        <textarea rows={5} value={body} onChange={(e) => { setBody(e.target.value); if (errors.body) setErrors((p) => ({ ...p, body: undefined })); }} className={`mt-1 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted outline-none focus:border-muted ${errors.body ? "!border-red-500" : ""}`} placeholder="Incident {{instance_name}} moved {{from_state}} → {{to_state}}." />
-        {errors.body && <p className="mt-1 text-xs text-red-500">{errors.body}</p>}
+        <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Body <span className="text-nb-crit ml-1">*</span></label>
+        <textarea rows={5} value={body} onChange={(e) => { setBody(e.target.value); if (errors.body) setErrors((p) => ({ ...p, body: undefined })); }} className={`mt-1 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm font-mono text-nb-ink placeholder:text-nb-faint outline-none focus:border-muted ${errors.body ? "!border-nb-crit" : ""}`} placeholder="Incident {{instance_name}} moved {{from_state}} → {{to_state}}." />
+        {errors.body && <p className="mt-1 text-xs text-nb-crit">{errors.body}</p>}
         <div className="mt-2 flex flex-wrap gap-1.5">
-          <span className="text-[11px] text-muted">Variables:</span>
+          <span className="text-[11px] text-nb-faint">Variables:</span>
           {TEMPLATE_VARS.map((v) => (
-            <button key={v} type="button" onClick={() => setBody((b) => `${b}{{${v}}}`)} className="text-[11px] font-mono rounded bg-card border border-card-border px-1.5 py-0.5 text-muted hover:text-foreground hover:bg-hover">{`{{${v}}}`}</button>
+            <button key={v} type="button" onClick={() => setBody((b) => `${b}{{${v}}}`)} className="text-[11px] font-mono rounded bg-[rgba(8,15,34,.5)] border border-nb-line px-1.5 py-0.5 text-nb-faint hover:text-nb-ink hover:bg-[rgba(96,165,250,.1)]">{`{{${v}}}`}</button>
           ))}
         </div>
       </div>
@@ -116,7 +116,7 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
           hint="Meta/WhatsApp provider-side template id — must match an approved template."
         />
       )}
-      <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active</label>
+      <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active</label>
       <div className="flex items-center justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>
         <Button type="submit" disabled={saving.isPending} className="!px-3 !py-1.5 text-xs">{saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create template"}</Button>

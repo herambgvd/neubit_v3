@@ -70,6 +70,16 @@ class Principal:
     limits: dict = field(default_factory=dict)
     license_state: str = "active"
     tenant_status: str = "active"  # "active" | "suspended"
+    # The caller's SITE ACCESS SCOPE (core subject "site" ids as opaque strings).
+    # EMPTY = unrestricted (all sites in the tenant). Non-empty = the caller may only
+    # see data belonging to these sites. Super-admins ignore it (they bypass).
+    site_ids: list[str] = field(default_factory=list)
+
+    def site_scoped(self) -> bool:
+        """True when this caller is confined to a subset of sites (non-superadmin
+        with a non-empty site list). Callers use it to decide whether to apply the
+        ``Camera.site_id IN site_ids`` restriction."""
+        return not self.is_superadmin and bool(self.site_ids)
 
     def grants(self, permission: str) -> bool:
         return (
@@ -140,6 +150,7 @@ def verify_token(token: str) -> Principal:
         limits=dict(payload.get("limits") or {}),
         license_state=str(payload.get("license_state") or "active"),
         tenant_status=str(payload.get("tenant_status") or "active"),
+        site_ids=[str(s) for s in (payload.get("site_ids") or [])],
     )
 
 

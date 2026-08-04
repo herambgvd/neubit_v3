@@ -11,31 +11,22 @@
 // Sections:
 //   1. Details — name, event_type (emitted), target_domain, priority, enabled, description
 //   2. Match conditions — repeating {path, op, value} rows (ALL must hold)
-//   3. Fields to extract — guided builder (paste a sample) or raw rows → field_map
+//   3. Fields to extract — repeating {outKey, jmespath} rows → field_map
 //   4. Test — paste sample JSON → per-condition ✓/✗ + overall matched + extracted
-//
-// Conditions and field_map both read the RAW payload — the same body the vendor
-// posts and the same one the receiver matches against (see run_pipeline). The
-// sample you paste in step 4 is therefore exactly what production will see.
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Modal } from "@/components/ui/kit";
+import { Button, Modal, Spinner } from "@/components/ui/kit";
 import { Field, FieldLabel, fieldClass } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
-import { clientSidePreview } from "../lib/rulePreview";
-import PayloadFieldsBuilder, {
-  fieldsToTransform,
-  transformToFields,
-} from "./PayloadFieldsBuilder";
 
 // Matcher operators — exact backend set.
 const OP_OPTIONS = [
-  { value: "exists", label: "is present (non-empty)" },
-  { value: "not_exists", label: "is missing / empty" },
+  { value: "exists", label: "is present" },
+  { value: "not_exists", label: "is missing" },
   { value: "equals", label: "equals" },
   { value: "not_equals", label: "does not equal" },
   { value: "contains", label: "contains" },
@@ -91,13 +82,6 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
     Object.entries(rule?.field_map || {}).map(([outKey, jmespath]) => ({ outKey, jmespath })),
   );
 
-  // Guided builder over the same field_map — paste a vendor sample and tick the
-  // fields instead of hand-typing every JMESPath.
-  const [builderMode, setBuilderMode] = useState(false);
-  const [builderFields, setBuilderFields] = useState(() =>
-    transformToFields(rule?.field_map),
-  );
-
   // ── live test ─────────────────────────────────────────────────
   const [sampleText, setSampleText] = useState("");
   const [jsonErr, setJsonErr] = useState("");
@@ -114,8 +98,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
         ...(OP_NEEDS_VALUE.has(c.op) ? { value: parseValue(c.value) } : {}),
       }));
 
-  // Build the { outKey: jmespath } field map. `fieldRows` stays the single source
-  // of truth — the guided builder writes into it, so both modes agree.
+  // Build the { outKey: jmespath } field map.
   const buildFieldMap = () => {
     const map = {};
     for (const r of fieldRows) {
@@ -123,18 +106,6 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
     }
     return map;
   };
-
-  function applyBuilderFields(nextFields) {
-    setBuilderFields(nextFields);
-    const map = fieldsToTransform(nextFields);
-    setFieldRows(Object.entries(map).map(([outKey, jmespath]) => ({ outKey, jmespath })));
-  }
-
-  function enterBuilderMode() {
-    // Carry any hand-typed rows in so switching modes never drops work.
-    setBuilderFields(transformToFields(buildFieldMap()));
-    setBuilderMode(true);
-  }
 
   const save = useMutation({
     mutationFn: (body) =>
@@ -147,8 +118,9 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
   });
 
   // Dry-run against the sample. The test endpoint honors the proposed
-  // match_conditions / field_map from the current draft, so edits preview before
-  // saving — but it anchors on an existing rule id.
+  // match_conditions / field_map from the current draft, so you can preview
+  // edits before saving — but it anchors on an existing rule id, so a
+  // brand-new (never-saved) rule must be created first before it can be tested.
   const test = useMutation({
     mutationFn: (payload) =>
       ingestApi.eventRules.test(rule.id, {
@@ -161,24 +133,11 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
   });
 
   function runTest() {
+    if (!isEdit) { toast.error("Create the rule first, then reopen it to test."); return; }
     let payload;
     try { payload = sampleText.trim() ? JSON.parse(sampleText) : {}; }
     catch (err) { setJsonErr(`Invalid sample JSON: ${err.message}`); return; }
     setJsonErr("");
-
-    // A rule that doesn't exist yet has no id to POST against — evaluate it in
-    // the browser instead. Writing a rule blind and only learning it never
-    // matches after saving is the exact loop this avoids.
-    if (!isEdit) {
-      setTestResult(
-        clientSidePreview(payload, {
-          conditions: buildConditions(),
-          fieldMap: buildFieldMap(),
-          eventType: eventType.trim(),
-        }),
-      );
-      return;
-    }
     test.mutate(payload);
   }
 
@@ -277,19 +236,19 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
           placeholder="Enter rule description (optional)"
           maxLength={1024}
         />
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-nb-soft">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="accent-nb-teal" />
           Enabled
         </label>
 
         {/* ── Match conditions ─────────────────────────────────── */}
-        <section className="rounded-lg border border-card-border p-4 space-y-3">
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
           <div>
-            <h4 className="text-sm font-semibold text-foreground">When should this rule fire?</h4>
-            <p className="text-[11px] text-muted/80">ALL conditions must hold. Most rules just need one: "this field is present."</p>
+            <h4 className="text-sm font-semibold text-nb-ink">When should this rule fire?</h4>
+            <p className="text-[11px] text-nb-faint">ALL conditions must hold. Most rules just need one: "this field is present."</p>
           </div>
           {conditions.length === 0 ? (
-            <p className="text-[11px] text-muted/70">No conditions — this rule matches any payload. Add one to make it specific.</p>
+            <p className="text-[11px] text-nb-faint">No conditions — this rule matches any payload. Add one to make it specific.</p>
           ) : (
             <div className="space-y-2">
               {conditions.map((c, i) => (
@@ -318,43 +277,13 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
         </section>
 
         {/* ── Field map ────────────────────────────────────────── */}
-        <section className="rounded-lg border border-card-border p-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h4 className="text-sm font-semibold text-foreground">Fields to extract</h4>
-              <p className="text-[11px] text-muted/80">
-                When this rule fires, each output key is filled from a JMESPath expression
-                over the payload. For nested output, use keys like{" "}
-                <code className="font-mono">cap.event_info.description</code>.
-              </p>
-            </div>
-            <div className="inline-flex shrink-0 rounded-md border border-card-border p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setBuilderMode(false)}
-                className={`rounded px-2 py-0.5 transition ${!builderMode ? "bg-foreground text-background" : "text-muted hover:text-foreground"}`}
-              >
-                Manual
-              </button>
-              <button
-                type="button"
-                onClick={enterBuilderMode}
-                className={`rounded px-2 py-0.5 transition ${builderMode ? "bg-foreground text-background" : "text-muted hover:text-foreground"}`}
-              >
-                Guided
-              </button>
-            </div>
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
+          <div>
+            <h4 className="text-sm font-semibold text-nb-ink">Fields to extract</h4>
+            <p className="text-[11px] text-nb-faint">When this rule fires, each output key is filled from a JMESPath expression over the payload.</p>
           </div>
-
-          {builderMode ? (
-            <PayloadFieldsBuilder
-              sampleText={sampleText}
-              onSampleTextChange={setSampleText}
-              fields={builderFields}
-              onFieldsChange={applyBuilderFields}
-            />
-          ) : fieldRows.length === 0 ? (
-            <p className="text-[11px] text-muted/70">No fields mapped — matched events publish with an empty payload.</p>
+          {fieldRows.length === 0 ? (
+            <p className="text-[11px] text-nb-faint">No fields mapped — matched events publish with an empty payload.</p>
           ) : (
             <div className="space-y-2">
               {fieldRows.map((r, i) => (
@@ -384,7 +313,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
                   <button
                     type="button"
                     onClick={() => setFieldRows(fieldRows.filter((_, idx) => idx !== i))}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500 shrink-0"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit"
                     aria-label="Remove field"
                   >
                     <Icon icon="heroicons-outline:trash" className="text-sm" />
@@ -393,27 +322,25 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
               ))}
             </div>
           )}
-          {!builderMode && (
-            <Button
-              type="button"
-              variant="secondary"
-              icon="heroicons-outline:plus"
-              className="!px-3 !py-1.5 text-xs"
-              onClick={() => setFieldRows([...fieldRows, { outKey: "", jmespath: "" }])}
-            >
-              Add field
-            </Button>
-          )}
+          <Button
+            type="button"
+            variant="secondary"
+            icon="heroicons-outline:plus"
+            className="!px-3 !py-1.5 text-xs"
+            onClick={() => setFieldRows([...fieldRows, { outKey: "", jmespath: "" }])}
+          >
+            Add field
+          </Button>
         </section>
 
         {/* ── Test ─────────────────────────────────────────────── */}
-        <section className="rounded-lg border border-card-border p-4 space-y-3">
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
           <div>
-            <h4 className="text-sm font-semibold text-foreground">Does this rule match the sample?</h4>
-            <p className="text-[11px] text-muted/80">
+            <h4 className="text-sm font-semibold text-nb-ink">Test this rule</h4>
+            <p className="text-[11px] text-nb-faint">
               {isEdit
                 ? "Paste a sample payload — checks the current draft conditions + field map (no save needed)."
-                : "Checked in your browser until the rule is saved, so simple paths preview but full JMESPath (filters, functions) only resolves server-side."}
+                : "Save the rule first, then reopen it here to dry-run a sample payload."}
             </p>
           </div>
           <Field
@@ -432,48 +359,43 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
               icon="heroicons-outline:play"
               className="!px-3 !py-1.5 text-xs"
               onClick={runTest}
-              disabled={test.isPending}
+              disabled={test.isPending || !isEdit}
             >
-              {test.isPending ? "Testing…" : "Run check"}
+              {test.isPending ? "Testing…" : "Run test"}
             </Button>
             {testResult && (
               <span
                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                   testResult.matched
-                    ? "bg-green-500/10 text-green-500 border-green-500/20"
-                    : "bg-red-500/10 text-red-500 border-red-500/20"
+                    ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good"
+                    : "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit"
                 }`}
               >
                 <Icon icon={testResult.matched ? "heroicons-outline:check-circle" : "heroicons-outline:x-circle"} className="text-sm" />
-                {testResult.matched ? "Rule matches" : "Rule does NOT match"}
-              </span>
-            )}
-            {testResult?._preview && (
-              <span className="text-[10px] rounded-full border border-card-border px-1.5 py-0.5 text-muted">
-                browser preview
+                {testResult.matched ? "Rule matches" : "Does NOT match"}
               </span>
             )}
             {testResult?.event_type && (
-              <span className="ml-auto text-[11px] font-mono text-muted truncate">→ {testResult.event_type}</span>
+              <span className="ml-auto truncate font-mono text-[11px] text-nb-faint">→ {testResult.event_type}</span>
             )}
           </div>
 
           {testResult?.condition_results?.length ? (
-            <div className="rounded-lg border border-card-border divide-y divide-card-border">
+            <div className="divide-y divide-nb-line/50 rounded-[8px] border border-nb-line">
               {testResult.condition_results.map((r, i) => (
                 <div key={i} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Icon
                       icon={r.ok ? "heroicons-outline:check-circle" : "heroicons-outline:x-circle"}
-                      className={`text-sm shrink-0 ${r.ok ? "text-green-500" : "text-red-500"}`}
+                      className={`shrink-0 text-sm ${r.ok ? "text-nb-good" : "text-nb-crit"}`}
                     />
-                    <span className="font-mono text-foreground truncate">{r.path}</span>
-                    <span className="text-muted shrink-0">{r.op}</span>
+                    <span className="truncate font-mono text-nb-soft">{r.path}</span>
+                    <span className="shrink-0 text-nb-faint">{r.op}</span>
                     {r.expected !== undefined && r.expected !== null && (
-                      <span className="font-mono text-muted">{formatValue(r.expected)}</span>
+                      <span className="font-mono text-nb-faint">{formatValue(r.expected)}</span>
                     )}
                   </div>
-                  <span className="font-mono text-muted shrink-0">→ {formatValue(r.actual)}</span>
+                  <span className="shrink-0 font-mono text-nb-faint">→ {formatValue(r.actual)}</span>
                 </div>
               ))}
             </div>
@@ -482,7 +404,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
           {testResult?.extracted && (
             <div>
               <FieldLabel>Extracted output</FieldLabel>
-              <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all max-h-48 overflow-auto">
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-soft">
                 {JSON.stringify(testResult.extracted, null, 2)}
               </pre>
             </div>
@@ -510,7 +432,7 @@ function ConditionRow({ condition, onChange, onRemove }) {
         className={`${fieldClass} !mt-0 !h-9 text-xs`}
       >
         {OP_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value} className="bg-card">{o.label}</option>
+          <option key={o.value} value={o.value} className="bg-[#0b1228] text-nb-ink">{o.label}</option>
         ))}
       </select>
       {needsValue ? (
@@ -521,12 +443,12 @@ function ConditionRow({ condition, onChange, onRemove }) {
           className={`${fieldClass} !mt-0 !h-9 font-mono text-xs`}
         />
       ) : (
-        <div className="text-[11px] text-muted/60 px-1">(no value)</div>
+        <div className="px-1 text-[11px] text-nb-faint">(no value)</div>
       )}
       <button
         type="button"
         onClick={onRemove}
-        className="inline-flex h-9 w-9 items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500 shrink-0"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit"
         aria-label="Remove condition"
       >
         <Icon icon="heroicons-outline:trash" className="text-sm" />

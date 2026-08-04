@@ -66,9 +66,9 @@ export default function TriggerTestModal({ open, trigger, onClose }) {
     : { tone: "bad", text: "No match — this trigger would NOT fire for this event." };
 
   const toneCls = {
-    ok: "border-green-500/40 bg-green-500/10 text-green-500",
-    warn: "border-amber-500/40 bg-amber-500/10 text-amber-500",
-    bad: "border-red-500/40 bg-red-500/10 text-red-500",
+    ok: "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good",
+    warn: "border-[rgba(251,191,36,.40)] bg-[rgba(251,191,36,.10)] text-nb-warn",
+    bad: "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit",
   };
 
   return (
@@ -87,39 +87,39 @@ export default function TriggerTestModal({ open, trigger, onClose }) {
       }
     >
       <div className="space-y-4">
-        <p className="text-xs text-muted">
+        <p className="text-xs text-nb-faint">
           Injects a synthetic event through the real matching pipeline (dry-run — nothing is persisted).
         </p>
 
         <div>
-          <label className="text-xs font-medium uppercase tracking-wide text-muted">Event type</label>
+          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Event type</label>
           <input
             value={eventType}
             onChange={(e) => setEventType(e.target.value)}
             placeholder="e.g. fire.alarm"
-            className="mt-1 h-10 w-full rounded-lg border border-field bg-transparent px-3 text-sm font-mono text-foreground outline-none focus:border-muted"
+            className="mt-1 h-10 w-full rounded-lg border border-field bg-transparent px-3 text-sm font-mono text-nb-ink outline-none focus:border-muted"
           />
         </div>
 
         <div>
-          <label className="text-xs font-medium uppercase tracking-wide text-muted">Sample payload (JSON)</label>
+          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Sample payload (JSON)</label>
           <textarea
             value={payloadText}
             onChange={(e) => setPayloadText(e.target.value)}
             spellCheck={false}
-            className="mt-1 h-52 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-xs font-mono text-foreground outline-none focus:border-muted"
+            className="mt-1 h-52 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-xs font-mono text-nb-ink outline-none focus:border-muted"
           />
-          {parseError && <p className="mt-1 text-xs text-red-500">JSON error: {parseError}</p>}
+          {parseError && <p className="mt-1 text-xs text-nb-crit">JSON error: {parseError}</p>}
         </div>
 
         {run.isError && (
-          <p className="text-xs text-red-500 flex items-center gap-1.5">
+          <p className="text-xs text-nb-crit flex items-center gap-1.5">
             <Icon icon="heroicons-outline:exclamation-triangle" /> {apiError(run.error)}
           </p>
         )}
 
         {run.isPending && (
-          <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Simulating…</div>
+          <div className="flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Simulating…</div>
         )}
 
         {result && !run.isPending && (
@@ -130,13 +130,13 @@ export default function TriggerTestModal({ open, trigger, onClose }) {
             {(matched || skipped) && (
               <ul className="space-y-1.5 text-xs">
                 {matched && (
-                  <li className="rounded-md border border-card-border bg-hover/40 px-3 py-2 text-muted">
-                    <span className="font-mono text-foreground">would_create</span>: {String(matched.would_create)}
+                  <li className="rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2 text-nb-faint">
+                    <span className="font-mono text-nb-ink">would_create</span>: {String(matched.would_create)}
                   </li>
                 )}
                 {skipped && (
-                  <li className="rounded-md border border-card-border bg-hover/40 px-3 py-2 text-muted">
-                    <span className="font-mono text-foreground">reason</span>: {skipped.reason}
+                  <li className="rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2 text-nb-faint">
+                    <span className="font-mono text-nb-ink">reason</span>: {skipped.reason}
                   </li>
                 )}
               </ul>

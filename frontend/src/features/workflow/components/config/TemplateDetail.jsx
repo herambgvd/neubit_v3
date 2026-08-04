@@ -10,24 +10,24 @@ export default function TemplateDetail({ template, onEdit, onDelete }) {
   const t = template;
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
+      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-purple-500/10 text-purple-500 shrink-0">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[rgba(96,165,250,.1)] text-nb-blueb shrink-0">
             <Icon icon="heroicons-outline:bell-alert" className="text-lg" />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-semibold text-foreground truncate">{t.name}</h2>
-              <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-hover text-muted uppercase">{titleize(t.channel_type)}</span>
-              {t.is_active === false && <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-hover text-muted">Inactive</span>}
+              <h2 className="text-lg font-semibold text-nb-ink truncate">{t.name}</h2>
+              <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-[rgba(96,165,250,.1)] text-nb-faint uppercase">{titleize(t.channel_type)}</span>
+              {t.is_active === false && <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-[rgba(96,165,250,.1)] text-nb-faint">Inactive</span>}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover">
+          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]">
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20">
+          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-[rgba(248,113,113,.30)] bg-[rgba(248,113,113,.10)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.20)]">
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>
         </div>
@@ -36,25 +36,25 @@ export default function TemplateDetail({ template, onEdit, onDelete }) {
       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
         {t.description && (
           <div>
-            <div className="text-[10px] font-medium uppercase tracking-wide text-muted/70">Description</div>
-            <div className="text-sm text-muted">{t.description}</div>
+            <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">Description</div>
+            <div className="text-sm text-nb-faint">{t.description}</div>
           </div>
         )}
         {t.provider_template_ref && (
           <div>
-            <div className="text-[10px] font-medium uppercase tracking-wide text-muted/70">Provider template ref</div>
-            <div className="text-sm font-mono text-foreground">{t.provider_template_ref}</div>
+            <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">Provider template ref</div>
+            <div className="text-sm font-mono text-nb-ink">{t.provider_template_ref}</div>
           </div>
         )}
         {t.subject && (
           <div>
-            <div className="text-[10px] font-medium uppercase tracking-wide text-muted/70">Subject</div>
-            <div className="text-sm text-foreground">{t.subject}</div>
+            <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">Subject</div>
+            <div className="text-sm text-nb-ink">{t.subject}</div>
           </div>
         )}
         <div>
-          <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted/70">Body</div>
-          <pre className="whitespace-pre-wrap rounded-lg border border-card-border bg-hover/40 px-3 py-2.5 text-xs font-mono text-foreground">{t.body || "—"}</pre>
+          <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">Body</div>
+          <pre className="whitespace-pre-wrap rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2.5 text-xs font-mono text-nb-ink">{t.body || "—"}</pre>
         </div>
       </div>
     </div>

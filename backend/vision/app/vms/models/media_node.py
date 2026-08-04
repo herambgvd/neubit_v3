@@ -53,6 +53,10 @@ class MediaNode(Base):
     rtsp_base: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Human location / region tag (e.g. "Tower-B basement", "us-east").
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Per-node federation credential (Phase-2 trust): the scoped key this node
+    # issued to us at enrolment. Presented as X-Node-Credential on estate calls
+    # instead of the ambient shared-secret JWT. NULL → fall back to the service JWT.
+    credential: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     capacity_channels: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("128")

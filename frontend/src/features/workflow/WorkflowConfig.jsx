@@ -1,11 +1,12 @@
 "use client";
 
 // Workflow configuration (page entry; a route wrapper re-exports this default).
-// Thin orchestrator: renders the shared TabBar + the active tab. Each tab
-// (SOPs / Triggers / Forms / Notifications / Threat levels) is its own component.
+// Thin orchestrator: renders a navy segmented tab bar + the active tab. Each tab
+// (SOPs / Triggers / Forms / Formats / Simulator / Notifications / Threat levels)
+// is its own component and fills the bounded console pane, scrolling internally.
 import { useState } from "react";
+import { Icon } from "@iconify/react";
 
-import { TabBar } from "@/components/common";
 import SopsTab from "./components/config/SopsTab";
 import TriggersTab from "./components/config/TriggersTab";
 import FormatsTab from "./components/config/FormatsTab";
@@ -27,17 +28,35 @@ const TABS = [
 export default function WorkflowConfigPage() {
   const [tab, setTab] = useState("sops");
 
-  // The five master/detail tabs fill the bounded pane and scroll internally (same
-  // contained layout as Sites / Users / Linkage). Threat levels + Simulator are plain
-  // stacked forms with no inner scroll container, so they get a scrolling wrapper —
-  // without it the bounded pane would clip them.
-  const masterDetailTab = tab !== "threat" && tab !== "simulator";
-
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-4 shrink-0" />
+    <div
+      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
+      {/* Segmented navy tab bar */}
+      <nav className="mb-3 flex shrink-0 flex-wrap items-center gap-1 rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.5)] p-1">
+        {TABS.map((t) => {
+          const on = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`inline-flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12.5px] font-medium tracking-[.2px] transition ${
+                on
+                  ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.1)] text-nb-tealb shadow-[0_0_10px_rgba(34,211,238,.18)]"
+                  : "border-transparent text-nb-muted hover:bg-[rgba(96,165,250,.08)] hover:text-nb-ink"
+              }`}
+            >
+              {t.icon && <Icon icon={t.icon} className="text-[15px]" />}
+              {t.label}
+            </button>
+          );
+        })}
+      </nav>
 
-      <div className={`min-h-0 flex-1 ${masterDetailTab ? "flex flex-col" : "app-scroll overflow-y-auto"}`}>
+      {/* Active tab — fills the pane, scrolls internally */}
+      <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "sops" && <SopsTab />}
         {tab === "triggers" && <TriggersTab />}
         {tab === "formats" && <FormatsTab />}

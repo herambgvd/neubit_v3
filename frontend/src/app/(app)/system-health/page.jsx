@@ -1,1 +1,2 @@
-export { default } from "@/features/core/system-health/Health";
+import { redirect } from "next/navigation";
+export default function R() { redirect("/platform?view=health"); }

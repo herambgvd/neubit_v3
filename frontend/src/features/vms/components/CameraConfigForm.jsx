@@ -471,17 +471,6 @@ export default function CameraConfigForm({
         )}
       </div>
 
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Coming soon</p>
-        <div className="grid grid-cols-2 gap-2 text-[11px]">
-          {["POS overlay", "Dewarp"].map((f) => (
-            <div key={f} className="flex items-center gap-2 rounded-lg border border-card-border px-3 py-2 text-muted">
-              <Icon icon="heroicons-outline:clock" className="text-sm" /> {f} — soon
-            </div>
-          ))}
-        </div>
-      </div>
-
       {isEdit && regionTool && (
         <RegionDrawModal
           open

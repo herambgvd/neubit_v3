@@ -204,47 +204,47 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
       }
     >
       <div className="space-y-4">
-        <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2 text-sm">
-          <span className="text-muted">Camera</span>{" "}
-          <span className="font-medium text-foreground">{cameraName || cameraId}</span>
+        <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2 text-sm">
+          <span className="text-[#aec2e8]">Camera</span>{" "}
+          <span className="font-medium text-[#f2f6ff]">{cameraName || cameraId}</span>
         </div>
 
         {!job && (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">From</span>
+                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">From</span>
                 <input
                   type="datetime-local"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+                  className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">To</span>
+                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">To</span>
                 <input
                   type="datetime-local"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+                  className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
                 />
               </label>
             </div>
             <div className="flex items-end gap-4">
               <div className="w-40">
-                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">Format</span>
+                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">Format</span>
                 <Select value={format} onChange={(e) => setFormat(e.target.value)} options={FORMATS} className="!h-9 !py-1.5" />
               </div>
               <label className="flex items-center gap-2 pb-1.5">
                 <Toggle checked={watermark} onChange={setWatermark} />
-                <span className="text-xs text-muted">Burn provenance watermark</span>
+                <span className="text-xs text-[#aec2e8]">Burn provenance watermark</span>
               </label>
             </div>
-            <p className="text-xs text-muted">
+            <p className="text-xs text-[#aec2e8]">
               {rangeValid ? (
                 <>
-                  Clip length: <span className="text-foreground">{fmtDuration(durationSec)}</span>. Only recorded
+                  Clip length: <span className="text-[#f2f6ff]">{fmtDuration(durationSec)}</span>. Only recorded
                   spans in this range are included.
                 </>
               ) : (
@@ -255,24 +255,24 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
         )}
 
         {job && (
-          <div className="rounded-lg border border-card-border bg-hover/30 p-4">
+          <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/30 p-4">
             <div className="flex items-center gap-3">
               {status === "done" ? (
-                <Icon icon="heroicons-solid:check-circle" className="text-2xl text-emerald-500" />
+                <Icon icon="heroicons-solid:check-circle" className="text-2xl text-[#22d3ee]" />
               ) : status === "failed" ? (
                 <Icon icon="heroicons-solid:x-circle" className="text-2xl text-red-500" />
               ) : (
-                <Icon icon="svg-spinners:180-ring" className="text-2xl text-foreground/70" />
+                <Icon icon="svg-spinners:180-ring" className="text-2xl text-[#f2f6ff]/70" />
               )}
               <div className="min-w-0">
-                <p className="text-sm font-medium capitalize text-foreground">
+                <p className="text-sm font-medium capitalize text-[#f2f6ff]">
                   {status === "done"
                     ? "Export ready"
                     : status === "failed"
                       ? "Export failed"
                       : `Export ${status || "queued"}…`}
                 </p>
-                <p className="truncate text-xs text-muted">
+                <p className="truncate text-xs text-[#aec2e8]">
                   Job {String(job.job_id).slice(0, 12)}
                   {job.file_size ? ` · ${fmtBytes(job.file_size)}` : ""}
                   {status === "failed" && job.error ? ` · ${job.error}` : ""}
@@ -280,33 +280,33 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
               </div>
             </div>
             {inFlight && (
-              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-card-border">
-                <div className="h-full w-1/3 animate-pulse rounded-full bg-foreground/60" />
+              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[rgba(150,180,245,.22)]">
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-[rgba(34,211,238,.6)]" />
               </div>
             )}
 
             {/* Tamper-evidence — signed badge + verify affordance (P6-B) */}
             {status === "done" && (
-              <div className="mt-4 space-y-3 border-t border-card-border pt-3">
+              <div className="mt-4 space-y-3 border-t border-[rgba(150,180,245,.22)] pt-3">
                 <div className="flex flex-wrap items-center gap-2">
                   {job.signed ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-500">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(34,211,238,.15)] px-2.5 py-1 text-xs font-medium text-[#67e8f9]">
                       <Icon icon="heroicons-solid:shield-check" className="text-sm" /> Signed (Ed25519)
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-hover px-2.5 py-1 text-xs text-muted">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
                       <Icon icon="heroicons-outline:shield-exclamation" className="text-sm" /> Not signed
                     </span>
                   )}
                   {job.watermark && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-hover px-2.5 py-1 text-xs text-muted">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
                       <Icon icon="heroicons-outline:identification" className="text-sm" /> Watermarked
                     </span>
                   )}
                   {verify && verify !== "loading" && (
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
-                        verify.valid ? "bg-emerald-500/15 text-emerald-500" : "bg-red-500/15 text-red-500"
+                        verify.valid ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]" : "bg-red-500/15 text-red-500"
                       }`}
                     >
                       <Icon icon={verify.valid ? "heroicons-solid:check-badge" : "heroicons-solid:x-circle"} className="text-sm" />
@@ -316,8 +316,8 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
                 </div>
 
                 {job.checksum && (
-                  <div className="text-[11px] text-muted">
-                    SHA-256 <code className="break-all text-foreground">{job.checksum}</code>
+                  <div className="text-[11px] text-[#aec2e8]">
+                    SHA-256 <code className="break-all text-[#f2f6ff]">{job.checksum}</code>
                   </div>
                 )}
 

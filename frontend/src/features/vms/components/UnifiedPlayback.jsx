@@ -602,10 +602,13 @@ export default function UnifiedPlayback({ onExportRange }) {
     // fold even though the DOM is full-height (verified: shell/main/aside all correct).
     // Isolating the layer forces a clean repaint. No fixed-positioned descendants here
     // (ExportDialog is a sibling), so this is safe.
-    <div className="flex h-full min-h-0 w-full gap-3 [transform:translateZ(0)]">
+    <div
+      className="flex h-full min-h-0 w-full gap-3 p-3 text-[#f2f6ff] [transform:translateZ(0)]"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       {/* ── Composer rail ──────────────────────────────────────────────────
           Calendar → Stream → Event filters → Channel multi-select (≤4) → Search. */}
-      <aside className="flex w-80 shrink-0 flex-col rounded-xl border border-card-border bg-card [transform:translateZ(0)]">
+      <aside className="flex w-80 shrink-0 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm [transform:translateZ(0)]">
         {/* composer — calendar · stream · event filters · channel multi-select */}
         <div className="scroll-themed min-h-0 flex-1 overflow-y-auto p-3">
           {/* ── Month calendar (footage days marked) ── */}
@@ -633,7 +636,7 @@ export default function UnifiedPlayback({ onExportRange }) {
 
           {/* ── Stream (Main / Sub) ── */}
           <div className="mt-4">
-            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">Stream</p>
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-[#9db0d8]">Stream</p>
             <div className="flex gap-1">
               {STREAMS.map((s) => (
                 <button
@@ -643,7 +646,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                   className={`flex-1 rounded-lg px-2 py-1.5 text-[12px] transition ${
                     stream === s.value
                       ? "bg-foreground font-medium text-background"
-                      : "text-muted hover:bg-hover hover:text-foreground"
+                      : "text-[#9db0d8] hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
                   }`}
                 >
                   {s.label}
@@ -654,7 +657,7 @@ export default function UnifiedPlayback({ onExportRange }) {
 
           {/* ── Event-type filters — filter the seekbar coverage bars + markers ── */}
           <div className="mt-4">
-            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-[#9db0d8]">
               Event types
             </p>
             <div className="grid grid-cols-2 gap-x-2 gap-y-1">
@@ -663,11 +666,11 @@ export default function UnifiedPlayback({ onExportRange }) {
                 return (
                   <label
                     key={et}
-                    className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] text-foreground hover:bg-hover"
+                    className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] text-[#f2f6ff] hover:bg-[rgba(150,180,245,.07)]"
                   >
                     <span
                       className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition ${
-                        on ? "border-foreground bg-foreground text-background" : "border-field"
+                        on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
                       }`}
                     >
                       {on && <Icon icon="heroicons-solid:check" className="text-[10px]" />}
@@ -695,8 +698,8 @@ export default function UnifiedPlayback({ onExportRange }) {
           {/* ── Channel / camera multi-select (≤4) ── */}
           <div className="mt-4">
             <div className="mb-1.5 flex items-center justify-between">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Channels</p>
-              <span className={`text-[11px] ${atCap ? "text-red-400" : "text-muted"}`}>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[#9db0d8]">Channels</p>
+              <span className={`text-[11px] ${atCap ? "text-red-400" : "text-[#9db0d8]"}`}>
                 {checked.length}/{MAX_TILES}
               </span>
             </div>
@@ -713,8 +716,8 @@ export default function UnifiedPlayback({ onExportRange }) {
                   onClick={() => setPickerKind(t.k)}
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] transition ${
                     pickerKind === t.k
-                      ? "bg-hover font-medium text-foreground"
-                      : "text-muted hover:bg-hover hover:text-foreground"
+                      ? "bg-[rgba(150,180,245,.08)] font-medium text-[#f2f6ff]"
+                      : "text-[#9db0d8] hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
                   }`}
                 >
                   <Icon icon={t.icon} className="text-sm" />
@@ -733,13 +736,13 @@ export default function UnifiedPlayback({ onExportRange }) {
                 <label className="relative block">
                   <Icon
                     icon="heroicons-outline:magnifying-glass"
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted"
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#9db0d8]"
                   />
                   <input
                     value={camSearch}
                     onChange={(e) => setCamSearch(e.target.value)}
                     placeholder="Search cameras…"
-                    className="h-8 w-full rounded-lg border border-field bg-transparent pl-8 pr-3 text-[13px] text-foreground placeholder:text-muted outline-none focus:border-muted"
+                    className="h-8 w-full rounded-lg border border-[rgba(150,180,245,.28)] bg-transparent pl-8 pr-3 text-[13px] text-[#f2f6ff] placeholder:text-[#7e93bf] outline-none focus:border-muted"
                   />
                 </label>
                 <Select
@@ -753,9 +756,9 @@ export default function UnifiedPlayback({ onExportRange }) {
                 />
 
                 {camerasQ.isLoading ? (
-                  <p className="px-2 py-6 text-center text-xs text-muted">Loading…</p>
+                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">Loading…</p>
                 ) : railCameras.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-xs text-muted">No cameras.</p>
+                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">No cameras.</p>
                 ) : (
                   (() => {
                     // Tree: Default › Site › Camera (scales for many cameras). Search
@@ -776,7 +779,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                         <label
                           key={c.id}
                           title={c.name}
-                          className={`flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover ${
+                          className={`flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[13px] text-[#f2f6ff] transition hover:bg-[rgba(150,180,245,.07)] ${
                             !on && atCap ? "opacity-40" : ""
                           }`}
                         >
@@ -789,20 +792,20 @@ export default function UnifiedPlayback({ onExportRange }) {
                           />
                           <span
                             className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
-                              on ? "border-foreground bg-foreground text-background" : "border-field"
+                              on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
                             }`}
                           >
                             {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
                           </span>
                           {c.nvr_channel_number != null && (
-                            <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[11px] font-semibold tabular-nums text-muted">
+                            <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-[rgba(150,180,245,.08)] px-1 font-mono text-[11px] font-semibold tabular-nums text-[#9db0d8]">
                               {c.nvr_channel_number}
                             </span>
                           )}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate">{primary}</span>
                             {secondary && (
-                              <span className="block truncate text-[11px] text-muted">{secondary}</span>
+                              <span className="block truncate text-[11px] text-[#9db0d8]">{secondary}</span>
                             )}
                           </span>
                         </label>
@@ -814,20 +817,20 @@ export default function UnifiedPlayback({ onExportRange }) {
                         <button
                           type="button"
                           onClick={() => pbToggle("__pb_root__")}
-                          className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-hover"
+                          className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
                         >
                           <Icon
                             icon="heroicons-mini:chevron-right"
-                            className={`shrink-0 text-sm text-muted transition-transform ${rootOpen ? "rotate-90" : ""}`}
+                            className={`shrink-0 text-sm text-[#9db0d8] transition-transform ${rootOpen ? "rotate-90" : ""}`}
                           />
-                          <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-sm text-muted" />
-                          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">Default</span>
-                          <span className="shrink-0 rounded-full bg-hover px-1.5 text-[10px] font-semibold tabular-nums text-muted">
+                          <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-sm text-[#9db0d8]" />
+                          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#f2f6ff]">Default</span>
+                          <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.08)] px-1.5 text-[10px] font-semibold tabular-nums text-[#9db0d8]">
                             {railCameras.length}
                           </span>
                         </button>
                         {rootOpen && (
-                          <div className="mt-0.5 space-y-0.5 border-l border-card-border/60 pl-1.5">
+                          <div className="mt-0.5 space-y-0.5 border-l border-[rgba(160,150,245,.14)] pl-1.5">
                             {camGroups.map((g) => {
                               const open = pbOpen(g.key);
                               return (
@@ -835,23 +838,23 @@ export default function UnifiedPlayback({ onExportRange }) {
                                   <button
                                     type="button"
                                     onClick={() => pbToggle(g.key)}
-                                    className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-hover"
+                                    className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
                                   >
                                     <Icon
                                       icon="heroicons-mini:chevron-right"
-                                      className={`shrink-0 text-sm text-muted transition-transform ${open ? "rotate-90" : ""}`}
+                                      className={`shrink-0 text-sm text-[#9db0d8] transition-transform ${open ? "rotate-90" : ""}`}
                                     />
                                     <Icon
                                       icon={g.key === "__unassigned" ? "heroicons-outline:inbox" : "heroicons-outline:map-pin"}
-                                      className="shrink-0 text-sm text-muted"
+                                      className="shrink-0 text-sm text-[#9db0d8]"
                                     />
-                                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{g.name}</span>
-                                    <span className="shrink-0 rounded-full bg-hover px-1.5 text-[10px] font-semibold tabular-nums text-muted">
+                                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#f2f6ff]">{g.name}</span>
+                                    <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.08)] px-1.5 text-[10px] font-semibold tabular-nums text-[#9db0d8]">
                                       {g.cameras.length}
                                     </span>
                                   </button>
                                   {open && (
-                                    <div className="grid grid-cols-2 gap-0.5 border-l border-card-border/60 pl-1.5">
+                                    <div className="grid grid-cols-2 gap-0.5 border-l border-[rgba(160,150,245,.14)] pl-1.5">
                                       {g.cameras.map(renderCamRow)}
                                     </div>
                                   )}
@@ -878,7 +881,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                 />
                 {pickNvrId &&
                   (nvrChannels.length === 0 ? (
-                    <p className="px-2 py-4 text-center text-xs text-muted">No mapped channels.</p>
+                    <p className="px-2 py-4 text-center text-xs text-[#9db0d8]">No mapped channels.</p>
                   ) : (
                     nvrChannels.map((c) => {
                       // NVR footage is keyed by the ONVIF video-source index
@@ -900,7 +903,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                         <label
                           key={val}
                           title={c.name || `Channel ${val}`}
-                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-foreground transition hover:bg-hover ${
+                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-[#f2f6ff] transition hover:bg-[rgba(150,180,245,.07)] ${
                             !on && atCap ? "opacity-40" : ""
                           }`}
                         >
@@ -913,12 +916,12 @@ export default function UnifiedPlayback({ onExportRange }) {
                           />
                           <span
                             className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
-                              on ? "border-foreground bg-foreground text-background" : "border-field"
+                              on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
                             }`}
                           >
                             {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
                           </span>
-                          <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[11px] font-semibold tabular-nums text-muted">
+                          <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-[rgba(150,180,245,.08)] px-1 font-mono text-[11px] font-semibold tabular-nums text-[#9db0d8]">
                             {val}
                           </span>
                           <span className="truncate">{clean}</span>
@@ -932,7 +935,7 @@ export default function UnifiedPlayback({ onExportRange }) {
         </div>
 
         {/* ── Search / Load ── */}
-        <div className="shrink-0 border-t border-card-border p-2">
+        <div className="shrink-0 border-t border-[rgba(160,150,245,.22)] p-2">
           <Button
             variant="primary"
             icon="heroicons-outline:magnifying-glass"
@@ -946,17 +949,17 @@ export default function UnifiedPlayback({ onExportRange }) {
       </aside>
 
       {/* ── Main: grid (or focus) + master transport ────────────────────── */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-card-border bg-card">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm">
         {/* selected day + focus/clear (day is driven by the rail calendar now) */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-card-border px-3 py-2">
-          <Icon icon="heroicons-outline:calendar-days" className="text-sm text-muted" />
-          <span className="text-sm font-medium text-foreground tabular-nums">{day}</span>
-          <span className="text-xs text-muted">· 2×2 synchronized playback</span>
+        <div className="flex shrink-0 items-center gap-2 border-b border-[rgba(160,150,245,.22)] px-3 py-2">
+          <Icon icon="heroicons-outline:calendar-days" className="text-sm text-[#9db0d8]" />
+          <span className="text-sm font-medium text-[#f2f6ff] tabular-nums">{day}</span>
+          <span className="text-xs text-[#9db0d8]">· 2×2 synchronized playback</span>
           {focusTile && (
             <button
               type="button"
               onClick={() => setFocusKey(null)}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-card-border px-2.5 py-1 text-[13px] text-muted transition hover:bg-hover hover:text-foreground"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[rgba(160,150,245,.22)] px-2.5 py-1 text-[13px] text-[#9db0d8] transition hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
             >
               <Icon icon="heroicons-outline:squares-2x2" className="text-sm" /> Back to grid
             </button>
@@ -968,7 +971,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                 setSources([]);
                 setChecked([]);
               }}
-              className="ml-auto text-[13px] text-muted transition hover:text-foreground"
+              className="ml-auto text-[13px] text-[#9db0d8] transition hover:text-[#67e8f9]"
             >
               Clear all
             </button>
@@ -981,12 +984,12 @@ export default function UnifiedPlayback({ onExportRange }) {
           ref={gridWrapRef}
           className={`min-h-0 flex-1 p-3 ${
             focusTile ? "scroll-themed overflow-y-auto" : "overflow-hidden"
-          } ${isFullscreen ? "bg-card" : ""}`}
+          } ${isFullscreen ? "bg-[rgba(8,15,34,.55)] backdrop-blur-sm" : ""}`}
         >
           {sources.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center text-muted">
+            <div className="flex h-full flex-col items-center justify-center text-center text-[#9db0d8]">
               <Icon icon="heroicons-outline:play" className="mb-3 text-5xl opacity-40" />
-              <p className="font-medium text-foreground">No sources loaded</p>
+              <p className="font-medium text-[#f2f6ff]">No sources loaded</p>
               <p className="mt-1 text-sm">
                 Pick a day, check up to 4 channels on the left, and hit Search to play them in sync.
               </p>
@@ -1087,7 +1090,7 @@ export default function UnifiedPlayback({ onExportRange }) {
 
         {/* master transport (grid mode only) */}
         {sources.length > 0 && !focusTile && (
-          <div className="shrink-0 border-t border-card-border p-3">
+          <div className="shrink-0 border-t border-[rgba(160,150,245,.22)] p-3">
             <ScrubBar
               coverage={mergedCoverage}
               markers={markers}
@@ -1119,7 +1122,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                       })
                     }
                     className={`inline-flex items-center gap-1.5 text-[11px] transition ${
-                      on ? "text-foreground" : "text-muted line-through opacity-50"
+                      on ? "text-[#f2f6ff]" : "text-[#9db0d8] line-through opacity-50"
                     }`}
                   >
                     <span className={`h-2.5 w-3.5 rounded-sm ${TIMELINE_PALETTE[t].cls}`} />
@@ -1153,7 +1156,7 @@ export default function UnifiedPlayback({ onExportRange }) {
               <Button variant="secondary" icon="heroicons-solid:forward" onClick={() => skip(60)} className="!px-2.5">
                 1m
               </Button>
-              <span className="mx-2 font-mono text-sm tabular-nums text-foreground">{readout(clock)}</span>
+              <span className="mx-2 font-mono text-sm tabular-nums text-[#f2f6ff]">{readout(clock)}</span>
               <div className="w-20">
                 <Select
                   value={String(speed)}
@@ -1165,7 +1168,7 @@ export default function UnifiedPlayback({ onExportRange }) {
 
               {/* Clip-selection group — Mark in / Mark out plant the selection band
                   on the timeline; Extract clip exports JUST that sub-range. */}
-              <div className="ml-2 flex items-center gap-1 border-l border-card-border pl-2">
+              <div className="ml-2 flex items-center gap-1 border-l border-[rgba(160,150,245,.22)] pl-2">
                 <ToolBtn
                   label="IN"
                   title={`Mark in (selection start) · ${readout(clock)}`}
@@ -1201,7 +1204,7 @@ export default function UnifiedPlayback({ onExportRange }) {
 
               {/* Snapshot / whole-window download / fullscreen — operate on the
                   active tile (focused, else first). */}
-              <div className="ml-2 flex items-center gap-1 border-l border-card-border pl-2">
+              <div className="ml-2 flex items-center gap-1 border-l border-[rgba(160,150,245,.22)] pl-2">
                 <ToolBtn
                   icon="heroicons-outline:camera"
                   title={`Snapshot${activeSource ? ` · ${activeSource.name}` : ""}`}
@@ -1240,7 +1243,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                   <span className="text-amber-400/70">({durReadout(selDurationMs)})</span>
                 </span>
                 {activeSource?.kind === "nvr" && (
-                  <span className="text-[11px] text-muted">Clip extract is unavailable for NVR channels.</span>
+                  <span className="text-[11px] text-[#9db0d8]">Clip extract is unavailable for NVR channels.</span>
                 )}
               </div>
             )}
@@ -1262,7 +1265,7 @@ function ToolBtn({ icon, label, title, onClick, disabled }) {
       title={title}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-card-border text-muted transition hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[rgba(160,150,245,.22)] text-[#9db0d8] transition hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9] disabled:pointer-events-none disabled:opacity-40"
     >
       {label ? (
         <span className="text-[11px] font-semibold tracking-wide">{label}</span>

@@ -13,11 +13,11 @@ export const PERM_READ = "ingest.read";
 export const PERM_MANAGE = "ingest.manage";
 
 export const AUTH_PILL = {
-  none: "bg-hover text-muted border-card-border",
-  api_key: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  basic: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  bearer: "bg-violet-500/10 text-violet-500 border-violet-500/20",
-  hmac: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+  none: "bg-[rgba(10,18,40,.6)] text-nb-faint border-nb-line",
+  api_key: "bg-[rgba(96,165,250,.1)] text-nb-blueb border-[rgba(96,165,250,.35)]",
+  basic: "bg-[rgba(251,191,36,.1)] text-nb-warn border-[rgba(251,191,36,.35)]",
+  bearer: "bg-[rgba(167,139,250,.12)] text-nb-violetb border-[rgba(167,139,250,.35)]",
+  hmac: "bg-[rgba(52,211,153,.1)] text-nb-good border-[rgba(52,211,153,.35)]",
 };
 
 export const authLabel = (t) => AUTH_TYPES.find((a) => a.value === t)?.label || t || "None";
@@ -31,9 +31,9 @@ export const REQUEST_METHODS = [
 
 // Event-log / test outcome pills (ok / failed / skipped).
 export const OUTCOME_PILL = {
-  ok: "bg-green-500/10 text-green-500",
-  failed: "bg-red-500/10 text-red-500",
-  skipped: "bg-hover text-muted",
+  ok: "border border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good",
+  failed: "border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit",
+  skipped: "border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint",
 };
 
 // ── Event-log status (the single-value verdict; EventStatus in schemas.py) ──

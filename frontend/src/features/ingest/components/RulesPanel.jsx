@@ -18,7 +18,7 @@ import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
 import RuleFormModal from "./RuleFormModal";
 
-export default function RulesPanel({ webhookId, canManage }) {
+export default function RulesPanel({ webhookId }) {
   const qc = useQueryClient();
   const key = ["ingest-event-rules", webhookId];
   const q = useQuery({ queryKey: key, queryFn: () => ingestApi.eventRules.list(webhookId) });
@@ -45,43 +45,39 @@ export default function RulesPanel({ webhookId, canManage }) {
   return (
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[11px] text-muted/80 max-w-md">
+        <p className="max-w-md text-[11px] text-nb-faint">
           One webhook can recognise many event shapes. When a payload arrives, rules are checked in
           priority order (lower first); the first match decides which fields to extract and what
           event type to tag the event as.
         </p>
-        {canManage && (
-          <Button
-            icon="heroicons-outline:plus"
-            className="!px-3 !py-1.5 text-xs shrink-0"
-            onClick={() => { setEditing(null); setFormOpen(true); }}
-          >
-            New event type
-          </Button>
-        )}
+        <Button
+          icon="heroicons-outline:plus"
+          className="!px-3 !py-1.5 text-xs shrink-0"
+          onClick={() => { setEditing(null); setFormOpen(true); }}
+        >
+          New rule
+        </Button>
       </div>
 
       {q.isLoading ? (
-        <div className="flex items-center gap-2 py-8 justify-center text-sm text-muted">
+        <div className="flex items-center justify-center gap-2 py-8 text-sm text-nb-soft">
           <Spinner className="!h-4 !w-4" /> Loading rules…
         </div>
       ) : rules.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-card-border py-10 text-center">
-          <Icon icon="heroicons-outline:funnel" className="text-3xl text-muted mb-2 opacity-60" />
-          <p className="text-sm font-medium text-foreground">No event types yet</p>
-          <p className="text-xs text-muted mt-1 max-w-sm">
-            Without rules, the webhook uses its flat output map for every payload. Add rules to
-            handle multiple event shapes from the same receiver URL — but note that once a
-            webhook has rules, a payload matching none of them is rejected rather than published.
+        <div className="flex flex-col items-center justify-center rounded-[10px] border border-dashed border-nb-line py-10 text-center">
+          <Icon icon="heroicons-outline:funnel" className="mb-2 text-3xl text-nb-faint opacity-70" />
+          <p className="text-sm font-medium text-nb-ink">No event rules yet</p>
+          <p className="mt-1 max-w-sm text-xs text-nb-faint">
+            Without rules, the webhook uses its flat field map for every payload. Add rules to
+            handle multiple event shapes from the same receiver URL.
           </p>
         </div>
       ) : (
-        <ul className="rounded-lg border border-card-border divide-y divide-card-border">
+        <ul className="divide-y divide-nb-line/50 rounded-[10px] border border-nb-line">
           {rules.map((r) => (
             <RuleRow
               key={r.id}
               rule={r}
-              canManage={canManage}
               onEdit={() => { setEditing(r); setFormOpen(true); }}
               onToggle={(enabled) => toggle.mutate({ id: r.id, enabled })}
               onDelete={() =>
@@ -111,57 +107,51 @@ export default function RulesPanel({ webhookId, canManage }) {
   );
 }
 
-function RuleRow({ rule, canManage, onEdit, onToggle, onDelete }) {
+function RuleRow({ rule, onEdit, onToggle, onDelete }) {
   const condCount = (rule.match_conditions || []).length;
-  const fieldCount = Object.keys(rule.field_map || {}).length;
   const summary = summarizeConditions(rule.match_conditions);
   return (
-    <li className="flex items-center gap-3 px-3 py-2.5 hover:bg-hover">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-foreground truncate">{rule.name}</span>
+    <li className="flex items-center gap-3 px-3 py-2.5 transition hover:bg-[rgba(96,165,250,.05)]">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium text-nb-ink">{rule.name}</span>
           <Badge color={rule.enabled ? "green" : "neutral"}>{rule.enabled ? "enabled" : "disabled"}</Badge>
-          <span className="text-[10px] rounded-full bg-hover text-muted border border-card-border px-1.5 py-0.5 font-mono">
+          <span className="rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 font-mono text-[10px] text-nb-faint">
             p{rule.priority}
           </span>
           {rule.event_type && (
-            <span className="text-[11px] font-mono text-blue-500 truncate">→ {rule.event_type}</span>
+            <span className="truncate font-mono text-[11px] text-nb-blueb">→ {rule.event_type}</span>
           )}
         </div>
-        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
-          <span className="font-mono truncate" title={summary.full}>{summary.short}</span>
+        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-nb-faint">
+          <span className="truncate font-mono" title={summary.full}>{summary.short}</span>
           <span className="shrink-0">· {condCount} condition{condCount === 1 ? "" : "s"}</span>
-          <span className="shrink-0">· {fieldCount} field{fieldCount === 1 ? "" : "s"}</span>
         </div>
       </div>
-      {canManage && (
-        <>
-          <button
-            type="button"
-            onClick={() => onToggle(!rule.enabled)}
-            title={rule.enabled ? "Disable" : "Enable"}
-            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground shrink-0"
-          >
-            <Icon icon={rule.enabled ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-sm" />
-          </button>
-          <button
-            type="button"
-            onClick={onEdit}
-            title="Edit"
-            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground shrink-0"
-          >
-            <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            title="Delete"
-            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500 shrink-0"
-          >
-            <Icon icon="heroicons-outline:trash" className="text-sm" />
-          </button>
-        </>
-      )}
+      <button
+        type="button"
+        onClick={() => onToggle(!rule.enabled)}
+        title={rule.enabled ? "Disable" : "Enable"}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink"
+      >
+        <Icon icon={rule.enabled ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-sm" />
+      </button>
+      <button
+        type="button"
+        onClick={onEdit}
+        title="Edit"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink"
+      >
+        <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        title="Delete"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit"
+      >
+        <Icon icon="heroicons-outline:trash" className="text-sm" />
+      </button>
     </li>
   );
 }

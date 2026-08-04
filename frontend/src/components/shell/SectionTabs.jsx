@@ -25,7 +25,7 @@ export default function SectionTabs({ tabs }) {
   );
 
   return (
-    <div className="shrink-0 border-b border-card-border bg-background/60 backdrop-blur">
+    <div className="shrink-0 border-b border-[rgba(150,180,245,.14)] bg-[rgba(8,15,34,.55)] backdrop-blur">
       <nav className="nav-scroll flex items-stretch gap-0.5 overflow-x-auto px-6 lg:px-8">
         {visible.map((t) => {
           if (t.disabled) {
@@ -34,11 +34,11 @@ export default function SectionTabs({ tabs }) {
                 key={t.title}
                 title="Coming soon"
                 aria-disabled="true"
-                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-muted/40 cursor-not-allowed select-none"
+                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-nb-faint cursor-not-allowed select-none"
               >
                 <Icon icon={t.icon} className="text-base shrink-0" />
                 {t.title}
-                <span className="ml-0.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-hover text-muted/70">
+                <span className="ml-0.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-[rgba(150,180,245,.1)] text-nb-faint">
                   Soon
                 </span>
               </span>
@@ -53,7 +53,7 @@ export default function SectionTabs({ tabs }) {
                 onClick={() =>
                   toast.error(`Access denied — “${t.title}” isn't enabled for your organization`)
                 }
-                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-muted/40 cursor-not-allowed select-none"
+                className="flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[13px] text-nb-faint cursor-not-allowed select-none"
               >
                 <Icon icon={t.icon} className="text-base shrink-0" />
                 {t.title}
@@ -68,8 +68,8 @@ export default function SectionTabs({ tabs }) {
               href={t.link}
               className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] transition ${
                 active
-                  ? "border-foreground text-foreground font-medium"
-                  : "border-transparent text-muted hover:text-foreground"
+                  ? "border-nb-teal text-nb-tealb font-medium"
+                  : "border-transparent text-nb-muted hover:text-nb-ink"
               }`}
             >
               <Icon icon={t.icon} className="text-base shrink-0" />

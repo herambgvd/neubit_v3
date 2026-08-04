@@ -15,7 +15,6 @@ import { toast } from "sonner";
 import Link from "next/link";
 
 import { Button, ConfirmDialog, EmptyState, Spinner } from "@/components/ui/kit";
-import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { asItems } from "@/lib/format";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -41,6 +40,7 @@ export default function WallManagement() {
   const canView = can("vms.wall.view");
 
   const [selectedId, setSelectedId] = useState(null);
+  const [q, setQ] = useState("");
   const [tab, setTab] = useState("monitors");
   const [wallModal, setWallModal] = useState(null); // { wall } | { }
   const [monitorModal, setMonitorModal] = useState(null);
@@ -55,6 +55,11 @@ export default function WallManagement() {
     enabled: canView,
   });
   const walls = useMemo(() => asItems(wallsQ.data), [wallsQ.data]);
+  const filtered = useMemo(() => {
+    const f = q.trim().toLowerCase();
+    if (!f) return walls;
+    return walls.filter((w) => [w.name, w.description].filter(Boolean).join(" ").toLowerCase().includes(f));
+  }, [walls, q]);
   const selected = useMemo(() => walls.find((w) => w.id === selectedId) || null, [walls, selectedId]);
 
   // Auto-select the first wall when nothing is selected (matches Sites / NVR).
@@ -118,74 +123,94 @@ export default function WallManagement() {
     });
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <MasterDetail
-        fill
-        className="min-h-0 flex-1"
-        aside={
-          <ListPanel
-            title="Walls"
-            count={walls.length}
-            action={
-              <div className="flex items-center gap-1">
-                <Link
-                  href="/wall"
-                  title="Open console"
-                  className="inline-flex h-7 items-center gap-1 rounded-md border border-card-border px-2 text-[12px] font-medium text-foreground transition hover:bg-hover"
-                >
-                  <Icon icon="heroicons-outline:play" className="text-sm" /> Console
-                </Link>
-                {canManage && (
-                  <button
-                    onClick={() => setWallModal({})}
-                    title="New wall"
-                    className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
-                  >
-                    <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
-                  </button>
-                )}
-              </div>
-            }
-          >
+    <div
+      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[300px_1fr]">
+        {/* LEFT — walls rail */}
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+          <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
+            <div className="flex items-center gap-2">
+              <Icon icon="heroicons:computer-desktop" className="text-sm text-nb-blueb" />
+              <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Walls</span>
+              <span className="font-mono text-[11px] text-nb-faint">{walls.length}</span>
+            </div>
+            <Link
+              href="/wall"
+              title="Open console"
+              className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2 text-[11px] font-medium text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+            >
+              <Icon icon="heroicons-outline:play" className="text-sm" /> Console
+            </Link>
+          </div>
+
+          <div className="px-3 pb-2">
+            <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
+              <Icon icon="heroicons-outline:magnifying-glass" className="text-sm text-nb-faint" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search walls…"
+                className="w-full bg-transparent text-[12.5px] text-nb-muted outline-none placeholder:text-nb-faint"
+              />
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3">
             {wallsQ.isLoading ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
-                <Spinner /> Loading…
+              <div className="flex items-center gap-2 px-1 py-6 text-sm text-nb-soft">
+                <Spinner className="!h-4 !w-4" /> Loading…
               </div>
-            ) : walls.length === 0 ? (
-              <div className="px-4 py-12 text-center">
-                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
-                  <Icon icon="heroicons:computer-desktop" className="text-lg text-muted" />
-                </div>
-                <div className="text-sm font-medium text-foreground">No walls yet</div>
-                <div className="mt-0.5 text-xs text-muted">Click Add to create your first wall.</div>
+            ) : filtered.length === 0 ? (
+              <div className="px-1 py-10 text-center text-xs text-nb-faint">
+                {q.trim() ? "No walls match your search" : "No walls yet"}
               </div>
             ) : (
-              <ul className="p-2">
-                {walls.map((w) => (
-                  <li key={w.id}>
+              <div className="space-y-2 pb-2">
+                {filtered.map((w) => {
+                  const sel = selectedId === w.id;
+                  return (
                     <button
+                      key={w.id}
                       type="button"
                       onClick={() => setSelectedId(w.id)}
-                      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-                        selectedId === w.id ? "bg-hover" : "hover:bg-hover"
+                      className={`flex w-full items-center gap-2.5 rounded-[10px] border px-3 py-2.5 text-left transition ${
+                        sel
+                          ? "border-[rgba(96,165,250,.6)] bg-[rgba(96,165,250,.1)]"
+                          : "border-nb-line bg-[rgba(6,11,26,.5)] hover:border-[rgba(150,180,245,.42)]"
                       }`}
                     >
-                      <Icon icon="heroicons:computer-desktop" className={`text-base ${selectedId === w.id ? "text-blue-500" : "text-muted"}`} />
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-sm font-medium text-foreground">{w.name}</span>
-                        <span className="text-[11px] text-muted">
-                          {w.rows}×{w.cols}
-                          {!w.is_active && " · inactive"}
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border border-nb-line bg-[rgba(10,18,40,.6)]">
+                        <Icon icon="heroicons:computer-desktop" className={`text-base ${sel ? "text-nb-blueb" : "text-nb-muted"}`} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-semibold text-nb-ink">{w.name}</span>
+                        <span className="block truncate font-mono text-[10px] text-nb-faint">
+                          {w.rows}×{w.cols} grid{!w.is_active && " · inactive"}
                         </span>
                       </span>
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${w.is_active ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"}`} />
                     </button>
-                  </li>
-                ))}
-              </ul>
+                  );
+                })}
+              </div>
             )}
-          </ListPanel>
-        }
-      >
+          </div>
+
+          {canManage && (
+            <div className="border-t border-nb-line/50 p-3">
+              <button
+                onClick={() => setWallModal({})}
+                className="w-full rounded-[9px] border border-dashed border-[rgba(150,180,245,.42)] py-2.5 text-[12px] tracking-[.7px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                ＋ NEW WALL
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT — detail */}
         {selected ? (
           <WallDetail
             wall={selected}
@@ -206,9 +231,17 @@ export default function WallManagement() {
             refetchDecoders={() => qc.invalidateQueries({ queryKey: ["wall-decoders"] })}
           />
         ) : (
-          <EmptyDetail icon="heroicons:computer-desktop" title="Select a wall" subtitle="Pick a wall to manage its monitors, presets and tours." />
+          <div className="flex min-h-0 flex-col items-center justify-center rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] py-20 text-center">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
+              <Icon icon="heroicons:computer-desktop" className="text-xl" />
+            </span>
+            <div className="mt-3 text-sm font-semibold text-nb-ink">No wall selected</div>
+            <div className="mt-0.5 text-xs text-nb-faint">
+              Pick a wall to manage its monitors, presets and tours.
+            </div>
+          </div>
         )}
-      </MasterDetail>
+      </div>
 
       {/* Modals */}
       <WallFormModal open={!!wallModal} wall={wallModal?.wall} onClose={() => setWallModal(null)} onSubmit={submitWall} busy={busy} />
@@ -408,15 +441,15 @@ function WallDetail({
     });
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-card-border bg-card">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
       {/* Detail header */}
-      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-card-border px-4 py-3">
+      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-nb-line px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="truncate text-base font-semibold text-foreground">{wall.name}</h2>
-            {!wall.is_active && <span className="rounded bg-hover px-1.5 py-0.5 text-[10px] font-medium text-muted">inactive</span>}
+            <h2 className="truncate text-base font-semibold text-nb-ink">{wall.name}</h2>
+            {!wall.is_active && <span className="rounded border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">inactive</span>}
           </div>
-          <p className="mt-0.5 text-xs text-muted">
+          <p className="mt-0.5 text-xs text-nb-soft">
             {wall.rows}×{wall.cols} monitor grid{wall.description ? ` · ${wall.description}` : ""}
           </p>
         </div>
@@ -425,28 +458,35 @@ function WallDetail({
             <Button variant="secondary" icon="heroicons-outline:pencil-square" onClick={onEditWall}>
               Edit
             </Button>
-            <Button variant="ghost" icon="heroicons-outline:trash" onClick={onDeleteWall} className="text-red-400 hover:text-red-500">
+            <Button variant="ghost" icon="heroicons-outline:trash" onClick={onDeleteWall} className="text-nb-crit hover:text-red-400">
               Delete
             </Button>
           </div>
         )}
       </header>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-card-border px-3 pt-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`inline-flex items-center gap-1.5 rounded-t-lg px-3 py-2 text-xs font-medium transition ${
-              tab === t.key ? "border-b-2 border-blue-500 text-foreground" : "text-muted hover:text-foreground"
-            }`}
-          >
-            <Icon icon={t.icon} className="text-sm" />
-            {t.label}
-          </button>
-        ))}
+      {/* Tabs — navy segmented control */}
+      <div className="border-b border-nb-line px-3 py-2.5">
+        <div className="inline-flex flex-wrap gap-1 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-1">
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-xs font-medium transition ${
+                  active
+                    ? "border border-[rgba(34,211,238,.45)] bg-[rgba(34,211,238,.12)] text-nb-tealb"
+                    : "border border-transparent text-nb-faint hover:text-nb-ink"
+                }`}
+              >
+                <Icon icon={t.icon} className="text-sm" />
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -464,10 +504,10 @@ function WallDetail({
               const isDecoder = m.kind === "decoder";
               return (
                 <>
-                  <Icon icon={isDecoder ? "heroicons:cpu-chip" : "heroicons:computer-desktop"} className={`text-base ${isDecoder ? "text-amber-400" : "text-muted"}`} />
+                  <Icon icon={isDecoder ? "heroicons:cpu-chip" : "heroicons:computer-desktop"} className={`text-base ${isDecoder ? "text-nb-warn" : "text-nb-muted"}`} />
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-medium text-foreground">{m.name}</span>
-                    <span className="text-[11px] text-muted">
+                    <span className="truncate text-sm font-medium text-nb-ink">{m.name}</span>
+                    <span className="text-[11px] text-nb-faint">
                       slot {m.position} · {cap === 1 ? "single" : `${cap} cells`} · {isDecoder ? `decoder${m.decoder_id ? `: ${decoderById.get(m.decoder_id)?.name || "?"} ch${m.decoder_channel}` : ""}` : "browser"}
                     </span>
                   </span>
@@ -488,10 +528,10 @@ function WallDetail({
             canManage={canManage}
             renderRow={(p) => (
               <>
-                <Icon icon="heroicons-outline:bookmark" className="text-base text-muted" />
+                <Icon icon="heroicons-outline:bookmark" className="text-base text-nb-muted" />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium text-foreground">{p.name}</span>
-                  <span className="text-[11px] text-muted">
+                  <span className="truncate text-sm font-medium text-nb-ink">{p.name}</span>
+                  <span className="text-[11px] text-nb-faint">
                     {Object.values(p.state || {}).reduce((n, mon) => n + Object.values(mon || {}).filter(Boolean).length, 0)} cameras
                     {p.is_default ? " · default" : ""}
                   </span>
@@ -513,13 +553,13 @@ function WallDetail({
             onAdd={onAddTour}
             renderRow={(t) => (
               <>
-                <Icon icon="heroicons-outline:arrow-path-rounded-square" className={`text-base ${t.is_running ? "text-blue-500" : "text-muted"}`} />
+                <Icon icon="heroicons-outline:arrow-path-rounded-square" className={`text-base ${t.is_running ? "text-nb-blueb" : "text-nb-muted"}`} />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium text-foreground">
+                  <span className="truncate text-sm font-medium text-nb-ink">
                     {t.name}
-                    {t.is_running && <span className="ml-1.5 rounded bg-blue-500/10 px-1 text-[9px] font-semibold text-blue-500">RUNNING</span>}
+                    {t.is_running && <span className="ml-1.5 rounded border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-1 text-[9px] font-semibold text-nb-blueb">RUNNING</span>}
                   </span>
-                  <span className="text-[11px] text-muted">
+                  <span className="text-[11px] text-nb-faint">
                     {(t.preset_ids || []).length} presets · {t.dwell_seconds}s dwell
                   </span>
                 </span>
@@ -541,10 +581,10 @@ function WallDetail({
             onAdd={onAddDecoder}
             renderRow={(d) => (
               <>
-                <Icon icon="heroicons:cpu-chip" className={`text-base ${d.is_enabled ? "text-amber-400" : "text-muted"}`} />
+                <Icon icon="heroicons:cpu-chip" className={`text-base ${d.is_enabled ? "text-nb-warn" : "text-nb-muted"}`} />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium text-foreground">{d.name}</span>
-                  <span className="text-[11px] text-muted">
+                  <span className="truncate text-sm font-medium text-nb-ink">{d.name}</span>
+                  <span className="text-[11px] text-nb-faint">
                     {DECODER_BRANDS.find((b) => b.value === d.brand)?.label || d.brand} · {d.host}:{d.port} · {d.channel_count} ch
                     {d.is_enabled ? "" : " · disabled"}
                   </span>
@@ -558,7 +598,7 @@ function WallDetail({
                 type="button"
                 title="Test connection"
                 onClick={() => testDecoder(d)}
-                className="rounded p-1.5 text-muted transition hover:bg-hover hover:text-foreground"
+                className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:signal" className="text-sm" />
               </button>
@@ -582,7 +622,7 @@ function TabList({ loading, items, emptyIcon, emptyText, addLabel, canManage, on
         </div>
       )}
       {loading ? (
-        <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted">
+        <div className="flex items-center justify-center gap-2 py-10 text-xs text-nb-soft">
           <Spinner /> Loading…
         </div>
       ) : items.length === 0 ? (
@@ -601,18 +641,18 @@ function TabList({ loading, items, emptyIcon, emptyText, addLabel, canManage, on
       ) : (
         <ul className="space-y-1.5">
           {items.map((it) => (
-            <li key={it.id} className="flex items-center gap-2.5 rounded-lg border border-card-border bg-background/40 px-3 py-2">
+            <li key={it.id} className="flex items-center gap-2.5 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2">
               {renderRow(it)}
               {canManage && (
                 <div className="flex shrink-0 items-center gap-0.5">
                   {extraAction && extraAction(it)}
                   {onEdit && (
-                    <button type="button" title="Edit" onClick={() => onEdit(it)} className="rounded p-1.5 text-muted transition hover:bg-hover hover:text-foreground">
+                    <button type="button" title="Edit" onClick={() => onEdit(it)} className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb">
                       <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
                     </button>
                   )}
                   {onDelete && (
-                    <button type="button" title="Delete" onClick={() => onDelete(it)} className="rounded p-1.5 text-muted transition hover:bg-red-500/10 hover:text-red-400">
+                    <button type="button" title="Delete" onClick={() => onDelete(it)} className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit">
                       <Icon icon="heroicons-outline:trash" className="text-sm" />
                     </button>
                   )}

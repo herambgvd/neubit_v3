@@ -767,7 +767,7 @@ export default function PlaybackPlayer({
 
   // ── Standalone player ────────────────────────────────────────────────────
   return (
-    <div className={`overflow-hidden rounded-xl border border-card-border bg-card ${className}`}>
+    <div className={`overflow-hidden rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm ${className}`}>
       {/* Video area */}
       <div className="relative aspect-video w-full bg-black">
         {useH265 && hlsUrl ? (
@@ -823,7 +823,7 @@ export default function PlaybackPlayer({
       </div>
 
       {/* Transport */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-card-border px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 border-t border-[rgba(150,180,245,.22)] px-3 py-2.5">
         <CtrlBtn icon="heroicons-solid:backward" title="Frame back" onClick={() => frameStep(-1)} disabled={!hlsUrl} />
         <CtrlBtn
           icon={localPlaying ? "heroicons-solid:pause" : "heroicons-solid:play"}
@@ -834,9 +834,9 @@ export default function PlaybackPlayer({
         />
         <CtrlBtn icon="heroicons-solid:forward" title="Frame forward" onClick={() => frameStep(1)} disabled={!hlsUrl} />
 
-        <div className="mx-1 h-5 w-px bg-card-border" />
+        <div className="mx-1 h-5 w-px bg-[rgba(150,180,245,.22)]" />
 
-        <span className="font-mono text-sm tabular-nums text-foreground">{readout(current)}</span>
+        <span className="font-mono text-sm tabular-nums text-[#f2f6ff]">{readout(current)}</span>
 
         <div className="ml-auto flex items-center gap-2">
           <div className="w-20">
@@ -856,7 +856,7 @@ export default function PlaybackPlayer({
               setCurrent(null);
               setLocalPlaying(false);
             }}
-            className="h-8 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted"
+            className="h-8 rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-2.5 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
           />
           <CtrlBtn icon="heroicons-outline:camera" title="Snapshot" onClick={snapshot} disabled={!hlsUrl} plain />
           <CtrlBtn
@@ -911,7 +911,7 @@ export default function PlaybackPlayer({
           onBookmarkClick={(bm) => setActiveBookmark(bm)}
           disabled={!hlsUrl && !timelineQ.isLoading && coverage.length === 0}
         />
-        <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted">
+        <div className="mt-1.5 flex items-center justify-between text-[10px] text-[#aec2e8]">
           <span>{new Date(windowStart).toLocaleDateString()}</span>
           <span>
             {timelineQ.isLoading
@@ -926,20 +926,20 @@ export default function PlaybackPlayer({
         {motionHits.length > 0 && (
           <div className="mt-2 flex items-center gap-2 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1.5 text-[11px]">
             <span className="inline-block h-2 w-3 rounded-sm bg-fuchsia-500/60" />
-            <span className="text-foreground">
+            <span className="text-[#f2f6ff]">
               {motionHits.length} motion hit{motionHits.length === 1 ? "" : "s"} on the timeline
             </span>
             <button
               type="button"
               onClick={() => setMotionSearchOpen(true)}
-              className="ml-auto text-muted hover:text-foreground"
+              className="ml-auto text-[#aec2e8] hover:text-[#67e8f9]"
             >
               Refine
             </button>
             <button
               type="button"
               onClick={() => setMotionHits([])}
-              className="text-muted hover:text-foreground"
+              className="text-[#aec2e8] hover:text-[#67e8f9]"
             >
               Clear
             </button>
@@ -951,18 +951,18 @@ export default function PlaybackPlayer({
           <div className="mt-2 flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2">
             <Icon icon="heroicons-solid:bookmark" className="mt-0.5 shrink-0 text-sky-400" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-foreground">{activeBookmark.title}</p>
-              <p className="text-[11px] text-muted">
+              <p className="truncate text-sm font-medium text-[#f2f6ff]">{activeBookmark.title}</p>
+              <p className="text-[11px] text-[#aec2e8]">
                 {readout(new Date(activeBookmark.start_ts).getTime())}
                 {activeBookmark.end_ts
                   ? ` – ${readout(new Date(activeBookmark.end_ts).getTime())}`
                   : ""}
               </p>
-              {activeBookmark.note && <p className="mt-0.5 text-[11px] text-muted">{activeBookmark.note}</p>}
+              {activeBookmark.note && <p className="mt-0.5 text-[11px] text-[#aec2e8]">{activeBookmark.note}</p>}
               {activeBookmark.tags?.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {activeBookmark.tags.map((t) => (
-                    <span key={t} className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-muted">
+                    <span key={t} className="rounded bg-[rgba(150,180,245,.08)] px-1.5 py-0.5 text-[10px] text-[#aec2e8]">
                       {t}
                     </span>
                   ))}
@@ -997,7 +997,7 @@ export default function PlaybackPlayer({
       </div>
 
       {/* Bookmarks + evidence-holds side rail */}
-      <div className="border-t border-card-border p-3">
+      <div className="border-t border-[rgba(150,180,245,.22)] p-3">
         <BookmarksPanel
           bookmarks={bookmarks}
           locks={locks}
@@ -1060,10 +1060,10 @@ function CtrlBtn({ icon, title, onClick, disabled, primary, plain }) {
   const base =
     "inline-flex h-8 w-8 items-center justify-center rounded-lg transition disabled:opacity-40 disabled:pointer-events-none";
   const skin = primary
-    ? "bg-foreground text-background hover:opacity-90"
+    ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9] border border-[rgba(34,211,238,.5)] hover:opacity-90"
     : plain
-      ? "border border-card-border text-muted hover:bg-hover hover:text-foreground"
-      : "text-muted hover:bg-hover hover:text-foreground";
+      ? "border border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9]"
+      : "text-[#aec2e8] hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9]";
   return (
     <button type="button" title={title} onClick={onClick} disabled={disabled} className={`${base} ${skin}`}>
       <Icon icon={icon} className="text-base" />

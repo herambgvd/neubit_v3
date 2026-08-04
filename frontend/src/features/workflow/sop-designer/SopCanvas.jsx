@@ -197,7 +197,7 @@ export default function SopCanvas({ sopId }) {
   const connectFrom = connect ? stateById.get(connect.fromId) : null;
 
   return (
-    <div className="rounded-xl border border-card-border bg-card overflow-hidden flex flex-col" style={{ height: "clamp(440px, 64vh, 760px)" }}>
+    <div className="rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden flex flex-col" style={{ height: "clamp(440px, 64vh, 760px)" }}>
       <CanvasToolbar
         scale={scale}
         onAddState={addState}
@@ -214,7 +214,7 @@ export default function SopCanvas({ sopId }) {
         onPointerMove={onWrapPointerMove}
         onPointerUp={endInteractions}
         onPointerLeave={endInteractions}
-        className="relative flex-1 min-w-0 min-h-0 overflow-hidden select-none rounded-lg border border-card-border"
+        className="relative flex-1 min-w-0 min-h-0 overflow-hidden select-none rounded-lg border border-nb-line"
         style={{
           cursor: panning ? "grabbing" : connect ? "crosshair" : "grab",
           backgroundColor: "var(--hover)",
@@ -274,17 +274,17 @@ export default function SopCanvas({ sopId }) {
         {/* Overlays */}
         {busy && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className="inline-flex items-center gap-2 rounded-md bg-card/80 px-3 py-1.5 text-xs text-muted border border-card-border">
+            <span className="inline-flex items-center gap-2 rounded-md bg-[rgba(8,15,34,.8)] px-3 py-1.5 text-xs text-nb-muted border border-nb-line">
               <Spinner className="!h-4 !w-4" /> Loading…
             </span>
           </div>
         )}
         {!busy && states.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-6">
-            <Icon icon="heroicons-outline:squares-plus" className="text-3xl text-muted opacity-60" />
-            <p className="mt-2 text-sm font-medium text-foreground">No states yet</p>
-            <p className="mt-1 text-xs text-muted">
-              Click <b className="text-foreground">Add state</b> to place the first node of this workflow.
+            <Icon icon="heroicons-outline:squares-plus" className="text-3xl text-nb-muted opacity-60" />
+            <p className="mt-2 text-sm font-medium text-nb-ink">No states yet</p>
+            <p className="mt-1 text-xs text-nb-muted">
+              Click <b className="text-nb-ink">Add state</b> to place the first node of this workflow.
             </p>
           </div>
         )}

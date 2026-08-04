@@ -27,11 +27,12 @@
 // `onPickHere(index)`) so a single useCallback'd handler is shared by every tile
 // instead of a fresh per-render closure that captures `i`. The tile supplies its
 // own stable `index` when invoking them.
-import { memo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { useAuth } from "@/lib/auth";
-import LivePlayer from "./LivePlayer";
+import { vms } from "../api";
+import LivePlayer, { PlayerBtn } from "./LivePlayer";
 import PtzOverlay from "./PtzOverlay";
 import { STATUS_PRESETS } from "../constants";
 import { isPtzCapable } from "../formUtils";
@@ -62,6 +63,25 @@ function WallTile({
   const rootRef = useRef(null);
   const [dropActive, setDropActive] = useState(false);
   const { can } = useAuth();
+
+  // Federated (recorder-owned) cameras stream THROUGH their node: mint/renew a
+  // node-issued live token via /vms/federation. Local VMS cameras use LivePlayer's
+  // default source (undefined). Stable per (node, real id) so the player doesn't
+  // re-attach on every wall render.
+  const fedNodeId = camera?.federated ? camera.node_id : null;
+  const fedRealId = camera?.federated ? camera.real_id : null;
+  const source = useMemo(() => {
+    if (!fedNodeId || !fedRealId) return undefined;
+    const mint = async (profile) => {
+      const s = await vms.federation.live(fedNodeId, fedRealId, profile);
+      return { ...s, ready: true };
+    };
+    return {
+      start: (_camId, profile) => mint(profile),
+      renew: () => mint("sub"),
+      release: async () => {},
+    };
+  }, [fedNodeId, fedRealId]);
 
   const onDragOver = (e) => {
     // Accept both a rail camera and another tile being dragged over.
@@ -94,24 +114,24 @@ function WallTile({
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         onClick={() => onPickHere?.(index)}
-        className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-black/90 transition ${
+        className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-[11px] bg-black/90 transition ${
           dropActive
-            ? "outline outline-2 outline-blue-500"
+            ? "outline outline-2 outline-[#22d3ee]"
             : hinting
-              ? "outline-dashed outline-1 outline-white/30"
-              : "border border-white/15 hover:border-white/25"
+              ? "outline-dashed outline-1 outline-[rgba(34,211,238,.4)]"
+              : "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]"
         }`}
       >
         {/* Quiet centred glyph — always present, very faint. */}
         <Icon
           icon="heroicons:video-camera"
-          className={`text-white/[0.06] transition group-hover/empty:text-white/15 ${
+          className={`text-[rgba(103,232,249,.1)] transition group-hover/empty:text-[rgba(103,232,249,.3)] ${
             isHero ? "text-5xl" : "text-2xl"
           }`}
         />
         {/* Hint appears only on hover or while dragging. */}
         <div
-          className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 pb-2 text-[10px] font-medium text-white/50 transition-opacity ${
+          className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 pb-2 font-mono text-[10px] font-medium uppercase tracking-[1px] text-[#67e8f9]/70 transition-opacity ${
             hinting ? "opacity-100" : "opacity-0 group-hover/empty:opacity-100"
           }`}
         >
@@ -141,8 +161,8 @@ function WallTile({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDoubleClick={() => onSpotlight?.(index)}
-      className={`group relative min-h-0 overflow-hidden rounded-lg bg-black transition ${
-        dropActive ? "outline outline-2 outline-blue-500" : "border border-white/15 hover:border-white/25"
+      className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${
+        dropActive ? "outline outline-2 outline-[#22d3ee]" : "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]"
       }`}
     >
       {/* Status-coloured top edge — sits just above the video INSIDE this tile
@@ -150,20 +170,44 @@ function WallTile({
           never paints over the header account dropdown. */}
       <div className={`pointer-events-none absolute inset-x-0 top-0 z-[1] h-[2px] ${edge}`} />
 
+      {/* Scanline texture (mockup) — a barely-there CRT sheen for the control-room
+          look; never intercepts pointer events. */}
+      <div
+        className="pointer-events-none absolute inset-0 z-[2]"
+        style={{ background: "repeating-linear-gradient(0deg,rgba(255,255,255,.02) 0 1px,transparent 1px 4px)" }}
+      />
+
+      {/* Source badge (mockup) — the recorder/node this camera streams through.
+          Real data only (federated cameras carry node_name); omitted for local
+          cameras so we never invent a source. */}
+      {camera?.node_name && (
+        <span className="pointer-events-none absolute right-2 top-2 z-10 rounded-[7px] border border-white/20 bg-black/35 px-1.5 py-px font-mono text-[10px] text-[#d7f7e9] backdrop-blur-sm">
+          {camera.node_name}
+        </span>
+      )}
+
       {/* Player — full-bleed, minimal (the tile owns the overlays). */}
       <LivePlayer
         key={`${cameraId}:${profile}`}
-        cameraId={cameraId}
+        cameraId={camera?.federated ? camera.real_id : cameraId}
         cameraName={name}
         profile={profile}
+        source={source}
         minimal
+        fit="contain"
         className="!rounded-none h-full w-full"
+        extraControls={
+          <>
+            <PlayerBtn icon="heroicons-outline:arrows-pointing-out" title="Spotlight (double-click)" onClick={() => onSpotlight?.(index)} />
+            <PlayerBtn icon="heroicons-outline:x-mark" title="Remove from wall" onClick={() => onClose?.(index)} />
+          </>
+        }
       />
 
-      {/* Bottom gradient info strip */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center gap-1.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 pb-1.5 pt-6">
+      {/* Bottom gradient info strip — slim (mockup): name + status only. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center gap-1.5 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${preset.dot}`} title={preset.label} />
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-white/90">{name}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-[.3px] text-[#d7f7e9]">{name}</span>
         {/* Site shows on the roomy hero tile; dense tiles stay to just the name.
             The state-aware LIVE badge is the player's own (top-left) — we don't
             duplicate it here so the strip never claims "live" while connecting. */}
@@ -186,20 +230,6 @@ function WallTile({
         </div>
       )}
 
-      {/* Hover toolbar (top-right) */}
-      <div className="absolute right-1.5 top-2 z-20 flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-        <TileBtn
-          icon="heroicons-outline:arrows-pointing-out"
-          title="Spotlight (double-click)"
-          onClick={() => onSpotlight?.(index)}
-        />
-        <TileBtn
-          icon="heroicons-outline:x-mark"
-          title="Remove from wall"
-          danger
-          onClick={() => onClose?.(index)}
-        />
-      </div>
     </div>
   );
 }
@@ -209,21 +239,3 @@ function WallTile({
 // render. This is what keeps a sibling tile's state change from cascading a
 // render (and the WHEP re-attach risk) into every other tile's LivePlayer.
 export default memo(WallTile);
-
-function TileBtn({ icon, title, onClick, danger = false }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick?.();
-      }}
-      className={`rounded-md bg-black/50 p-1 text-white/85 backdrop-blur-sm transition hover:text-white ${
-        danger ? "hover:bg-red-500/70" : "hover:bg-white/20"
-      }`}
-    >
-      <Icon icon={icon} className="text-xs" />
-    </button>
-  );
-}

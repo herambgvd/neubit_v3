@@ -1,10 +1,12 @@
-// Command Center — operator/tenant portal navigation.
+// Command Center — operator/tenant portal navigation (header-less era).
 //
-// Mirrors neubit_v2's proven two-tier arrangement (clients preferred it), rethemed
-// to neubit_v3's Vercel dark tokens:
-//   • TOP horizontal nav  → domain surfaces (Home, Dashboard, Devices, …, Config)
-//   • CONFIG sub-tab bar  → a SECOND horizontal bar shown under the header when you're
-//     in the Config or Devices section (Sites, Users, …; Access Control, …) — see shell/SectionTabs.
+// The global top-nav header is retired: the product moved to an immersive, chrome-free
+// UI. This file is now the single source of truth for the ⊞ MENU navigator overlay
+// (and the device/stream SectionTabs bars that still render under those pages):
+//   • menuItems      → the overlay's "Jump to" group (Home, Devices, Streaming, Incidents)
+//   • streamTabs     → the overlay's "Surveillance" group + the Streaming sub-tab bar
+//   • deviceTabs     → the Devices sub-tab bar + part of the overlay's "Configurations"
+//   • configConsoles → the rest of the overlay's "Configurations" group (standalone consoles)
 //
 // Items whose feature isn't built yet carry `disabled: true` — they render greyed with a
 // "Soon" pill (visible but not clickable) so the full menu shape is present from day one.
@@ -12,17 +14,17 @@
 // NOTE: "/" is the PUBLIC landing page (app/page.jsx → LandingClient), OUTSIDE the (app)
 // auth group. In-app nav must always target /home and friends, never "/".
 
-// ── Top horizontal nav (domain surfaces) ─────────────────────────────
+// ── Jump-to surfaces (⊞ MENU overlay "Jump to" group) ────────────────
 export const menuItems = [
   // Hidden for now (coming later) — uncomment to restore in the top nav.
   // { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "neubit.read" },
-  { title: "Dashboard", icon: "heroicons-outline:chart-bar", link: "/dashboard", perm: "vms.camera.read", module: "vms" },
-  // Devices is a SECTION: clicking it enters the Devices sub-tab bar (Access Control now;
-  // Cameras/NVR arrive with VMS). Mirrors neubit_v2's devices/ area.
-  { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices" },
-  // Streaming is a SECTION: the video surfaces — Video Wall (live), Playback.
-  // (Devices stays a pure onboarding zone; viewing lives here.)
-  { title: "Streaming", icon: "heroicons:signal", section: "streaming", module: "vms" },
+  // Devices → the onboarding zone (Access Control now; Cameras/NVR/Recorders with VMS).
+  // Carries an explicit `link` so it surfaces as a "Jump to" cell in the ⊞ MENU overlay;
+  // the full device tab list lives in the overlay's Configurations group.
+  { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices", link: "/access-control" },
+  // Streaming → the immersive Live video wall (/streaming). Explicit `link` so Live is
+  // directly reachable from the overlay (it is intentionally not a Surveillance sub-tab).
+  { title: "Streaming", icon: "heroicons:signal", section: "streaming", module: "vms", link: "/streaming" },
   // "Incidents" = the PSIM alarm/incident surface (SOP-driven, cross-domain incidents
   // live here, like neubit_v2). Named distinctly from Streaming → "Camera events" (the
   // raw device-level event feed) to remove the "Events vs Camera events" confusion.
@@ -31,37 +33,30 @@ export const menuItems = [
   // Hidden for now (coming later) — uncomment to restore in the top nav.
   // { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true, module: "nms" },
   // { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true, module: "octosense" },
-  // Config is a SECTION: clicking it enters the Config sub-tab bar (first enabled tab).
-  { title: "Config", icon: "heroicons-outline:cog-6-tooth", section: "config" },
+  // Config is no longer a top-nav section — every former Config surface is now its
+  // own minimal-chrome console reached from the ⊞ menu navigator + the Home
+  // Configurations launcher. The Config sub-tab bar is retired entirely.
 ];
 
-// ── Config sub-tab bar (second horizontal bar) ───────────────────────
-//   neubit_v2 order first (Sites…System), then neubit_v3's existing admin pages appended
-//   so nothing is lost. Enabled tabs map to real neubit_v3 routes; the rest are disabled
-//   placeholders until their feature ships.
-export const configTabs = [
-  { title: "Sites", icon: "heroicons:map-pin", link: "/sites", perm: "neubit.read" },
-  { title: "Users", icon: "heroicons-outline:users", link: "/users", perm: "user.read" },
-  { title: "Roles", icon: "heroicons-outline:shield-check", link: "/roles", perm: "role.read" },
-  { title: "Tags", icon: "heroicons:tag", link: "/tags", perm: "tags.read" },
-  { title: "Patterns", icon: "heroicons:squares-2x2", link: "/config/patterns", perm: "neubit.read" },
-  { title: "Video Wall", icon: "heroicons:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
-  { title: "Storage", icon: "heroicons:circle-stack", link: "/config/storage", perm: "neubit.read" },
-  { title: "Linkage", icon: "heroicons:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
-  { title: "Workflow", icon: "heroicons:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
-  { title: "Ingest", icon: "heroicons:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
-  { title: "Notifications", icon: "heroicons-outline:bell-alert", link: "/channels", perm: "settings.manage" },
-  { title: "Activity", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
-  { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
-  // VMS enterprise surfaces (P6-C/P6-D).
-  { title: "External Access", icon: "heroicons:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
+// ── Config surfaces ──────────────────────────────────────────────────
+// The Config sub-tab bar is fully retired: every former Config surface is now its
+// own minimal-chrome console (Users/Roles, Sites, Audit, Workflow, Ingest, System,
+// Security(+API Keys), Platform, Video Wall, Linkage, External Access), reached via
+// the ⊞ MENU navigator's "Configurations" group + the Home Configurations launcher.
+// The former Config surfaces, now standalone consoles — the ⊞ menu navigator's
+// "Configurations" column is built from THIS list.
+export const configConsoles = [
+  { title: "Users & Roles", icon: "heroicons-outline:users", link: "/users", perm: "user.read" },
+  { title: "Sites", icon: "heroicons-outline:map-pin", link: "/sites", perm: "neubit.read" },
+  { title: "Video Wall", icon: "heroicons-outline:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
+  { title: "Linkage", icon: "heroicons-outline:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
+  { title: "Workflow", icon: "heroicons-outline:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
+  { title: "Ingest", icon: "heroicons-outline:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
   { title: "Security", icon: "heroicons-outline:shield-exclamation", link: "/config/security", perm: "security.manage" },
-  // neubit_v3-only admin pages (no neubit_v2 config equivalent) — kept so they stay reachable.
-  { title: "API Keys", icon: "heroicons-outline:key", link: "/api-keys", perm: "apikey.manage" },
-  { title: "Branding", icon: "heroicons-outline:swatch", link: "/branding", perm: "branding.manage" },
-  { title: "Email Templates", icon: "heroicons-outline:envelope", link: "/email-templates", perm: "settings.manage" },
-  { title: "System Health", icon: "heroicons-outline:heart", link: "/system-health", perm: "system.read" },
-  { title: "License", icon: "heroicons-outline:check-badge", link: "/license" },
+  { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
+  { title: "Platform", icon: "heroicons-outline:squares-2x2", link: "/platform", perm: "settings.manage" },
+  { title: "Audit", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
+  { title: "External Access", icon: "heroicons-outline:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
 ];
 
 // ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──
@@ -91,11 +86,9 @@ export function isDevicesRoute(pathname) {
 //   (Recordings folded into Playback — its calendar/timeline covers estate browse +
 //   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs = [
-  { title: "Live", icon: "heroicons:signal", link: "/streaming", perm: "neubit.read", module: "vms" },
-  // Shared, centrally-managed control-room wall (VW-D) — multi-monitor, live
-  // shared state across every operator + display client. Distinct from the
-  // single-operator "Video Wall" live-grid above.
-  { title: "Wall Console", icon: "heroicons:tv", link: "/wall", perm: "vms.wall.view", module: "vms" },
+  // The video wall IS the Live console at /streaming (immersive, reached from
+  // Home) — the separate shared "Wall Console" surface was merged into it, so it's
+  // intentionally NOT a sub-tab here.
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read", module: "vms" },
   { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read", module: "vms" },
   { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view", module: "vms" },
@@ -107,41 +100,10 @@ export const STREAMING_ENTRY = "/streaming";
 // True when the current path belongs to the Streaming section.
 export function isStreamingRoute(pathname) {
   if (!pathname) return false;
+  // /streaming (immersive Live) is no longer a sub-tab but still belongs to the
+  // Streaming section (for top-nav highlight).
+  if (pathname === STREAMING_ENTRY || pathname.startsWith(`${STREAMING_ENTRY}/`)) return true;
   return streamTabs.some(
-    (t) => !t.disabled && (pathname === t.link || pathname.startsWith(`${t.link}/`)),
-  );
-}
-
-// The route the Config top-nav item jumps to (first enabled config tab).
-export const CONFIG_ENTRY = "/sites";
-
-// The tab list backing a top-nav section.
-export function tabsForSection(section) {
-  if (section === "devices") return deviceTabs;
-  if (section === "streaming") return streamTabs;
-  if (section === "config") return configTabs;
-  return [];
-}
-
-// The link a section should open: the FIRST tab the caller can actually use
-// (permission-allowed, module-licensed, not a "Soon"/vendor-only tab). If none are
-// usable it falls back to the first permission-allowed tab (so the section still
-// opens and shows its locked tabs), then to the first tab. Keeps a clicked section
-// from landing on a locked page when an accessible tab exists.
-export function firstEnabledLink(tabs, { can, hasModule, isSuperadmin }) {
-  const allowed = (t) =>
-    !t.disabled && (!t.superadmin || isSuperadmin) && (!t.perm || can(t.perm));
-  const usable = tabs.find((t) => allowed(t) && (!t.module || hasModule(t.module)));
-  const fallback = tabs.find(allowed);
-  return (usable || fallback || tabs[0])?.link;
-}
-
-// True when the current path belongs to the Config section (drives the sub-tab bar +
-// the "Config" top-nav active state). Matches any enabled config tab's route.
-export function isConfigRoute(pathname) {
-  if (!pathname) return false;
-  if (pathname === "/config" || pathname.startsWith("/config/")) return true;
-  return configTabs.some(
     (t) => !t.disabled && (pathname === t.link || pathname.startsWith(`${t.link}/`)),
   );
 }

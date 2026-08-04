@@ -95,16 +95,16 @@ export default function LayoutPicker({ layoutKey, onChange }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Change layout"
-        className="inline-flex h-8 items-center gap-2 rounded-lg border border-card-border bg-card px-2.5 text-xs font-medium text-foreground transition hover:bg-hover"
+        className="inline-flex h-8 items-center gap-2 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 text-xs font-medium text-[#f2f6ff] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
       >
-        <LayoutGlyph layout={active} className="h-4 w-4 text-blue-500" />
+        <LayoutGlyph layout={active} className="h-4 w-4 text-[#22d3ee]" />
         <span className="tabular-nums">{active.label}</span>
-        <Icon icon="heroicons-mini:chevron-down" className="text-sm text-muted" />
+        <Icon icon="heroicons-mini:chevron-down" className="text-sm text-[#7e93bf]" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-[13.5rem] rounded-xl border border-card-border bg-card p-2 shadow-2xl">
-          <p className="px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-[13.5rem] rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] p-2 shadow-2xl backdrop-blur-sm">
+          <p className="px-1 pb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">
             Grid layout
           </p>
           <div className="grid grid-cols-4 gap-1.5">
@@ -119,10 +119,10 @@ export default function LayoutPicker({ layoutKey, onChange }) {
                     onChange?.(l.key);
                     setOpen(false);
                   }}
-                  className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border transition ${
+                  className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-[8px] border transition ${
                     on
-                      ? "border-blue-500 bg-blue-500/10 text-blue-500"
-                      : "border-card-border text-muted hover:border-muted hover:bg-hover hover:text-foreground"
+                      ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+                      : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
                   }`}
                 >
                   <LayoutGlyph layout={l} className="h-5 w-5" />

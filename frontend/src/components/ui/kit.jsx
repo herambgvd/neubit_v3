@@ -1,14 +1,16 @@
 "use client";
 
-// Shared UI kit — theme-aware (Vercel style). Uses semantic tokens (background,
-// foreground, card, card-border, muted, hover) that flip between light/dark.
+// Shared UI kit — reskinned to the NeuBit navy/teal command-console look. Panels
+// are navy-glass (nb.line border, translucent navy bg, backdrop-blur); inputs use
+// the nb.field surface with teal focus rings; labels/text follow the ink→muted→
+// faint ramp. Status-semantic colours (green=ok, amber=warn, red=crit) are kept.
 import { Icon } from "@iconify/react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export function Card({ className = "", children }) {
   return (
-    <div className={`rounded-lg bg-card border border-card-border ${className}`}>{children}</div>
+    <div className={`rounded-lg bg-[rgba(8,15,34,.5)] border border-nb-line backdrop-blur-sm ${className}`}>{children}</div>
   );
 }
 
@@ -16,8 +18,8 @@ export function PageHeader({ title, subtitle, actions }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
-        {subtitle && <p className="text-muted mt-1 text-[13px]">{subtitle}</p>}
+        <h1 className="text-xl font-semibold tracking-tight text-nb-ink">{title}</h1>
+        {subtitle && <p className="text-nb-muted mt-1 text-[13px]">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -27,10 +29,10 @@ export function PageHeader({ title, subtitle, actions }) {
 const VARIANTS = {
   // Primary inverts with the theme (black-on-white in light, white-on-black in dark).
   primary: "bg-foreground text-background hover:opacity-90",
-  success: "bg-green-600 hover:bg-green-500 text-white", // create actions
+  success: "bg-nb-teal text-[#062330] font-semibold hover:bg-nb-tealb", // create actions — NeuBit teal
   danger: "bg-red-600 hover:bg-red-500 text-white", // delete actions
-  secondary: "bg-transparent border border-card-border text-foreground hover:bg-hover",
-  ghost: "bg-transparent text-muted hover:text-foreground hover:bg-hover",
+  secondary: "bg-transparent border border-nb-line text-nb-ink hover:bg-white/5",
+  ghost: "bg-transparent text-nb-muted hover:text-nb-ink hover:bg-white/5",
 };
 
 export function Button({ variant = "primary", icon, className = "", children, ...props }) {
@@ -46,14 +48,14 @@ export function Button({ variant = "primary", icon, className = "", children, ..
 }
 
 const FIELD =
-  "w-full rounded-md border border-field bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted";
+  "w-full rounded-md border border-nb-line bg-nb-field px-3 py-2 text-sm text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
 
 export function Input({ label, hint, className = "", ...props }) {
   return (
     <label className="block">
-      {label && <span className="block text-sm font-medium text-foreground mb-1.5">{label}</span>}
+      {label && <span className="block text-sm font-medium text-nb-ink mb-1.5">{label}</span>}
       <input {...props} className={`${FIELD} ${className}`} />
-      {hint && <span className="block text-xs text-muted mt-1">{hint}</span>}
+      {hint && <span className="block text-xs text-nb-muted mt-1">{hint}</span>}
     </label>
   );
 }
@@ -119,20 +121,20 @@ export function Select({ label, options = [], value, onChange, disabled, placeho
 
   return (
     <div className="block">
-      {label && <span className="block text-sm font-medium text-foreground mb-1.5">{label}</span>}
+      {label && <span className="block text-sm font-medium text-nb-ink mb-1.5">{label}</span>}
       <button
         ref={btnRef}
         type="button"
         disabled={disabled}
         onClick={toggle}
         className={`${FIELD} flex items-center justify-between text-left ${
-          isPlaceholder ? "!text-muted" : ""
+          isPlaceholder ? "!text-nb-faint" : ""
         } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${className}`}
       >
         <span className="truncate">{displayLabel}</span>
         <Icon
           icon="heroicons-outline:chevron-down"
-          className={`text-base shrink-0 ml-2 text-muted transition ${open ? "rotate-180" : ""}`}
+          className={`text-base shrink-0 ml-2 text-nb-muted transition ${open ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -141,7 +143,7 @@ export function Select({ label, options = [], value, onChange, disabled, placeho
           <div
             ref={panelRef}
             style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, zIndex: 60 }}
-            className="max-h-60 overflow-auto rounded-lg border border-card-border bg-card shadow-2xl py-1 animate-fade-in"
+            className="max-h-60 overflow-auto rounded-lg border border-nb-line bg-[rgba(8,15,34,.93)] backdrop-blur-md shadow-2xl py-1 animate-fade-in"
           >
             {options.map((o, i) => {
               const active = String(o.value) === String(value ?? "");
@@ -151,11 +153,11 @@ export function Select({ label, options = [], value, onChange, disabled, placeho
                   type="button"
                   onClick={() => pick(o.value)}
                   className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition ${
-                    active ? "text-foreground bg-hover" : "text-muted hover:text-foreground hover:bg-hover"
+                    active ? "text-nb-ink bg-nb-teal/10" : "text-nb-muted hover:text-nb-ink hover:bg-white/5"
                   }`}
                 >
                   <span className="truncate">{o.label}</span>
-                  {active && !isPlaceholder && <Icon icon="heroicons-outline:check" className="text-base shrink-0" />}
+                  {active && !isPlaceholder && <Icon icon="heroicons-outline:check" className="text-base shrink-0 text-nb-teal" />}
                 </button>
               );
             })}
@@ -169,20 +171,20 @@ export function Select({ label, options = [], value, onChange, disabled, placeho
 export function Textarea({ label, className = "", ...props }) {
   return (
     <label className="block">
-      {label && <span className="block text-sm font-medium text-foreground mb-1.5">{label}</span>}
+      {label && <span className="block text-sm font-medium text-nb-ink mb-1.5">{label}</span>}
       <textarea {...props} className={`${FIELD} ${className}`} />
     </label>
   );
 }
 
 const BADGE = {
-  slate: "bg-hover text-muted border-card-border",
-  neutral: "bg-hover text-muted border-card-border",
-  green: "bg-green-500/10 text-green-500 border-green-500/20",
-  red: "bg-red-500/10 text-red-500 border-red-500/20",
-  indigo: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  blue: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  amber: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  slate: "bg-white/5 text-nb-muted border-nb-line",
+  neutral: "bg-white/5 text-nb-muted border-nb-line",
+  green: "bg-green-500/10 text-green-400 border-green-500/20",
+  red: "bg-red-500/10 text-red-400 border-red-500/20",
+  indigo: "bg-nb-teal/10 text-nb-teal border-nb-teal/25",
+  blue: "bg-nb-blue/10 text-nb-blue border-nb-blue/25",
+  amber: "bg-amber-500/10 text-amber-400 border-amber-500/20",
 };
 
 export function Badge({ color = "neutral", children }) {
@@ -207,14 +209,14 @@ export function Avatar({ src, name, size = 28, className = "" }) {
         src={src}
         alt={name || "Avatar"}
         style={dim}
-        className={`rounded-full object-cover border border-card-border ${className}`}
+        className={`rounded-full object-cover border border-nb-line ${className}`}
       />
     );
   }
   return (
     <div
       style={dim}
-      className={`rounded-full bg-hover border border-card-border text-foreground flex items-center justify-center font-semibold shrink-0 ${className}`}
+      className={`rounded-full bg-white/5 border border-nb-line text-nb-ink flex items-center justify-center font-semibold shrink-0 ${className}`}
     >
       <span style={{ fontSize: Math.round(size * 0.42) }}>{initials}</span>
     </div>
@@ -223,7 +225,7 @@ export function Avatar({ src, name, size = 28, className = "" }) {
 
 export function Spinner({ className = "" }) {
   return (
-    <div className={`h-6 w-6 rounded-full border-2 border-card-border border-t-foreground animate-spin ${className}`} />
+    <div className={`h-6 w-6 rounded-full border-2 border-nb-line border-t-nb-teal animate-spin ${className}`} />
   );
 }
 
@@ -231,16 +233,16 @@ export function Spinner({ className = "" }) {
 // initial auth check and route-level loading fallbacks.
 export function FullPageLoader({ label = "Loading" }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background">
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-nb-bg">
       <div className="relative h-14 w-14">
-        <div className="absolute inset-0 rounded-full border-2 border-card-border border-t-foreground animate-spin" />
+        <div className="absolute inset-0 rounded-full border-2 border-nb-line border-t-nb-teal animate-spin" />
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="h-7 w-7 rounded-md bg-white flex items-center justify-center text-black font-bold text-sm">
+          <div className="h-7 w-7 rounded-md bg-nb-teal flex items-center justify-center text-[#062330] font-bold text-sm">
             N
           </div>
         </div>
       </div>
-      {label && <p className="text-muted text-[13px] animate-pulse">{label}</p>}
+      {label && <p className="text-nb-muted text-[13px] animate-pulse">{label}</p>}
     </div>
   );
 }
@@ -248,9 +250,9 @@ export function FullPageLoader({ label = "Loading" }) {
 export function EmptyState({ icon = "heroicons-outline:inbox", title, subtitle, action }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <Icon icon={icon} className="text-4xl text-muted mb-3 opacity-60" />
-      <p className="text-foreground font-medium">{title}</p>
-      {subtitle && <p className="text-muted text-sm mt-1">{subtitle}</p>}
+      <Icon icon={icon} className="text-4xl text-nb-teal mb-3 opacity-70" />
+      <p className="text-nb-ink font-medium">{title}</p>
+      {subtitle && <p className="text-nb-muted text-sm mt-1">{subtitle}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -260,24 +262,26 @@ export function EmptyState({ icon = "heroicons-outline:inbox", title, subtitle, 
 // The enterprise stat tile used across dashboards & report headers: an icon chip
 // (tone-coloured) + a large tabular value + an uppercase label, with a matching
 // accent bar. Use <MetricRow> to lay out a set that always fills the row width.
+// Status-semantic tones (ok/warn/bad) keep their green/amber/red meaning; the
+// neutral/info tones adopt the NeuBit teal accent.
 const _METRIC_TONE = {
-  ok: "text-emerald-500 bg-emerald-500/10",
-  warn: "text-amber-500 bg-amber-500/10",
-  bad: "text-red-500 bg-red-500/10",
-  info: "text-blue-500 bg-blue-500/10",
-  neutral: "text-muted bg-hover",
+  ok: "text-nb-good bg-nb-good/10",
+  warn: "text-nb-warn bg-nb-warn/10",
+  bad: "text-nb-crit bg-nb-crit/10",
+  info: "text-nb-teal bg-nb-teal/10",
+  neutral: "text-nb-muted bg-white/5",
 };
 const _METRIC_BAR = {
-  ok: "bg-emerald-500/70",
-  warn: "bg-amber-500/70",
-  bad: "bg-red-500/70",
-  info: "bg-blue-500/70",
-  neutral: "bg-card-border",
+  ok: "bg-nb-good/70",
+  warn: "bg-nb-warn/70",
+  bad: "bg-nb-crit/70",
+  info: "bg-nb-teal/70",
+  neutral: "bg-nb-line",
 };
 export function MetricCard({ label, value, icon, tone = "info", hint, className = "" }) {
   return (
     <div
-      className={`relative flex items-center gap-3 overflow-hidden rounded-xl border border-card-border bg-card px-4 py-3.5 ${className}`}
+      className={`relative flex items-center gap-3 overflow-hidden rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] backdrop-blur-sm px-4 py-3.5 ${className}`}
     >
       <span className={`absolute inset-y-0 left-0 w-1 ${_METRIC_BAR[tone] || _METRIC_BAR.info}`} />
       {icon && (
@@ -286,9 +290,9 @@ export function MetricCard({ label, value, icon, tone = "info", hint, className 
         </span>
       )}
       <div className="min-w-0">
-        <div className="text-2xl font-semibold leading-tight tracking-tight text-foreground tabular-nums">{value}</div>
-        <div className="mt-0.5 truncate text-[11px] font-medium uppercase tracking-wide text-muted">{label}</div>
-        {hint && <div className="truncate text-[11px] text-muted/70">{hint}</div>}
+        <div className="text-2xl font-semibold leading-tight tracking-tight text-nb-ink tabular-nums">{value}</div>
+        <div className="mt-0.5 truncate text-[11px] font-medium uppercase tracking-wide text-nb-muted">{label}</div>
+        {hint && <div className="truncate text-[11px] text-nb-faint">{hint}</div>}
       </div>
     </div>
   );
@@ -312,12 +316,12 @@ export function Toggle({ checked, onChange, disabled }) {
       disabled={disabled}
       onClick={() => onChange?.(!checked)}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
-        checked ? "bg-foreground" : "bg-card-border"
+        checked ? "bg-nb-teal" : "bg-white/10"
       } disabled:opacity-40`}
     >
       <span
         className={`inline-block h-3.5 w-3.5 transform rounded-full transition ${
-          checked ? "bg-background" : "bg-muted"
+          checked ? "bg-[#062330]" : "bg-nb-faint"
         }`}
         style={{ transform: checked ? "translateX(18px)" : "translateX(3px)" }}
       />
@@ -339,17 +343,17 @@ export function Modal({ open, onClose, title, children, footer, wide }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div
-        className={`relative w-full ${wide ? "max-w-2xl" : "max-w-md"} rounded-xl bg-card border border-card-border shadow-2xl animate-modal-in`}
+        className={`relative w-full ${wide ? "max-w-2xl" : "max-w-md"} rounded-xl bg-[rgba(8,15,34,.93)] border border-nb-line backdrop-blur-md shadow-2xl animate-modal-in`}
       >
-        <div className="flex items-center justify-between border-b border-card-border px-5 py-4">
-          <h3 className="text-base font-semibold text-foreground">{title}</h3>
-          <button onClick={onClose} className="text-muted hover:text-foreground transition">
+        <div className="flex items-center justify-between border-b border-nb-line px-5 py-4">
+          <h3 className="text-base font-semibold text-nb-ink">{title}</h3>
+          <button onClick={onClose} className="text-nb-muted hover:text-nb-ink transition">
             <Icon icon="heroicons-outline:x-mark" className="text-xl" />
           </button>
         </div>
         <div className="px-5 py-4 max-h-[70vh] overflow-y-auto">{children}</div>
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-card-border px-5 py-4">{footer}</div>
+          <div className="flex justify-end gap-2 border-t border-nb-line px-5 py-4">{footer}</div>
         )}
       </div>
     </div>
@@ -370,13 +374,13 @@ export function Drawer({ open, onClose, title, subtitle, children, width = "max-
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className={`relative h-full w-full ${width} bg-card border-l border-card-border shadow-2xl flex flex-col animate-modal-in`}>
-        <div className="flex items-start justify-between border-b border-card-border px-5 py-4 shrink-0">
+      <div className={`relative h-full w-full ${width} bg-[rgba(8,15,34,.93)] border-l border-nb-line backdrop-blur-md shadow-2xl flex flex-col animate-modal-in`}>
+        <div className="flex items-start justify-between border-b border-nb-line px-5 py-4 shrink-0">
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-foreground truncate">{title}</h3>
-            {subtitle && <p className="text-xs text-muted mt-0.5 truncate">{subtitle}</p>}
+            <h3 className="text-base font-semibold text-nb-ink truncate">{title}</h3>
+            {subtitle && <p className="text-xs text-nb-muted mt-0.5 truncate">{subtitle}</p>}
           </div>
-          <button onClick={onClose} className="text-muted hover:text-foreground transition shrink-0 ml-3">
+          <button onClick={onClose} className="text-nb-muted hover:text-nb-ink transition shrink-0 ml-3">
             <Icon icon="heroicons-outline:x-mark" className="text-xl" />
           </button>
         </div>
@@ -413,9 +417,9 @@ export function ConfirmDialog({ state, onClose, pending }) {
       }
     >
       {cfg.danger === false ? (
-        <p className="text-sm text-foreground">{cfg.message}</p>
+        <p className="text-sm text-nb-ink">{cfg.message}</p>
       ) : (
-        <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-sm text-red-500">
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-sm text-red-400">
           <Icon icon="heroicons-outline:exclamation-triangle" className="text-base mt-0.5 shrink-0" />
           <span>{cfg.message || "This action cannot be undone."}</span>
         </div>
@@ -432,11 +436,11 @@ export function Table({ columns, rows, empty }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-card-border bg-hover/40">
+          <tr className="border-b border-nb-line bg-white/[.03]">
             {columns.map((c) => (
               <th
                 key={c.key}
-                className={`px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted ${alignCls(c.align)}`}
+                className={`px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-nb-muted ${alignCls(c.align)}`}
               >
                 {c.label}
               </th>
@@ -447,12 +451,12 @@ export function Table({ columns, rows, empty }) {
           {rows.map((row, i) => (
             <tr
               key={row.id || i}
-              className="border-b border-card-border/60 transition last:border-0 hover:bg-hover/50"
+              className="border-b border-nb-line/60 transition last:border-0 hover:bg-white/5"
             >
               {columns.map((c) => (
                 <td
                   key={c.key}
-                  className={`px-4 py-3 text-foreground ${alignCls(c.align)} ${c.align === "right" ? "tabular-nums" : ""} ${c.className || ""}`}
+                  className={`px-4 py-3 text-nb-ink ${alignCls(c.align)} ${c.align === "right" ? "tabular-nums" : ""} ${c.className || ""}`}
                 >
                   {c.render ? c.render(row) : row[c.key]}
                 </td>

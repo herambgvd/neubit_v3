@@ -25,7 +25,18 @@ const RENEW_LEAD_MS = 45_000;
 const READY_POLL_MAX = 6;
 const READY_POLL_DELAY_MS = 2_000;
 
-export function useLiveSession(cameraId, { profile = "sub", enabled = true } = {}) {
+// The default session source — vision's own /vms/cameras/{id}/live control plane.
+// Callers (e.g. federated recorder cameras) can pass a custom `source` with the
+// same shape to mint/renew/release through a different endpoint while reusing this
+// whole lifecycle (warm-up poll, auto-renew, release-on-unmount).
+const DEFAULT_SOURCE = {
+  start: (cameraId, profile) => vms.live.start(cameraId, profile),
+  renew: (cameraId, sessionId) => vms.live.renew(cameraId, sessionId),
+  release: (sessionId) => vms.live.release(sessionId),
+};
+
+export function useLiveSession(cameraId, { profile = "sub", enabled = true, source = DEFAULT_SOURCE } = {}) {
+  const src = source || DEFAULT_SOURCE;
   const [session, setSession] = useState(null); // PlaybackSessionPublic
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -60,7 +71,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true } = {
         const cur = sessionRef.current;
         if (disposedRef.current || !cur?.session_id) return;
         try {
-          const next = await vms.live.renew(cameraId, cur.session_id);
+          const next = await src.renew(cameraId, cur.session_id);
           if (disposedRef.current) return;
           sessionRef.current = next;
           setSession(next);
@@ -83,7 +94,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true } = {
     setError(null);
     const myAttempt = ++attemptRef.current;
     try {
-      const sess = await vms.live.start(cameraId, profile);
+      const sess = await src.start(cameraId, profile);
       if (disposedRef.current || myAttempt !== attemptRef.current) return;
       sessionRef.current = sess;
       setSession(sess);
@@ -100,7 +111,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true } = {
         if (!cur || cur.ready || polls >= READY_POLL_MAX) return;
         polls += 1;
         try {
-          const refreshed = await vms.live.start(cameraId, profile);
+          const refreshed = await src.start(cameraId, profile);
           if (disposedRef.current || myAttempt !== attemptRef.current) return;
           sessionRef.current = refreshed;
           setSession(refreshed);
@@ -141,7 +152,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true } = {
       setSession(null);
       // Fire-and-forget release so the MediaMTX path is reaped once nobody's
       // watching. Never awaited — unmount must not block.
-      if (cur?.session_id) vms.live.release(cur.session_id).catch(() => {});
+      if (cur?.session_id) src.release(cur.session_id).catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId, profile, enabled]);

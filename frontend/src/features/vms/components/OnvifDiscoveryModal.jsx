@@ -34,18 +34,18 @@ function Stepper({ step }) {
       {STEPS.map((s, i) => (
         <div key={s.key} className="flex flex-1 items-center gap-1">
           <div
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
               i === idx
-                ? "bg-foreground text-background"
+                ? "border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb"
                 : i < idx
-                  ? "bg-emerald-500/10 text-emerald-500"
-                  : "bg-hover text-muted"
+                  ? "border-[rgba(52,211,153,.3)] bg-[rgba(52,211,153,.1)] text-nb-good"
+                  : "border-nb-line bg-[rgba(10,18,40,.5)] text-nb-faint"
             }`}
           >
             <Icon icon={i < idx ? "heroicons-outline:check" : s.icon} className="text-xs" />
             {s.label}
           </div>
-          {i < STEPS.length - 1 && <div className="h-px flex-1 bg-card-border" />}
+          {i < STEPS.length - 1 && <div className="h-px flex-1 bg-nb-line" />}
         </div>
       ))}
     </div>
@@ -230,21 +230,21 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }) 
           </div>
 
           {devices.length > 0 ? (
-            <div className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-card-border p-2">
+            <div className="max-h-72 space-y-1.5 overflow-y-auto rounded-[10px] border border-nb-line p-2">
               {devices.map((d) => {
                 const pr = probes[d.ip];
                 return (
-                  <div key={d.ip + d.port} className="rounded-lg border border-card-border bg-card px-3 py-2">
+                  <div key={d.ip + d.port} className="rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
+                        <p className="truncate text-sm font-medium text-nb-ink">
                           {d.name || d.manufacturer || "ONVIF device"}
                         </p>
-                        <p className="truncate font-mono text-[11px] text-muted">
+                        <p className="truncate font-mono text-[11px] text-nb-faint">
                           {d.ip}:{d.port} {d.mac ? `· ${d.mac}` : ""}
                         </p>
                         {pr && (
-                          <p className="mt-0.5 text-[11px] text-emerald-500">
+                          <p className="mt-0.5 text-[11px] text-nb-good">
                             {pr.reachable
                               ? `${pr.manufacturer || ""} ${pr.model || ""} · ${pr.channel_count} ch${pr.has_ptz ? " · PTZ" : ""}`
                               : pr.error || "Unreachable"}
@@ -257,7 +257,7 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }) 
                           title="Probe (needs creds below-right)"
                           onClick={() => probeOne.mutate({ host: d.ip, port: d.port })}
                           disabled={probeOne.isPending}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
                         >
                           <Icon icon="heroicons-outline:signal" className="text-sm" />
                         </button>
@@ -271,7 +271,7 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }) 
               })}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-card-border px-4 py-10 text-center text-xs text-muted">
+            <div className="rounded-[10px] border border-dashed border-nb-line px-4 py-10 text-center text-xs text-nb-faint">
               {scan.isPending ? (
                 <span className="inline-flex items-center gap-2">
                   <Icon icon="svg-spinners:180-ring" className="text-base" /> Probing the network…
@@ -282,8 +282,8 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }) 
             </div>
           )}
 
-          <div className="rounded-lg border border-card-border bg-hover/40 p-3">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">Credentials for probing</p>
+          <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-nb-muted">Credentials for probing</p>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Username" value={conn.username} onChange={(e) => setConn({ ...conn, username: e.target.value })} placeholder="admin" />
               <Field label="Password" type="password" value={conn.password} onChange={(e) => setConn({ ...conn, password: e.target.value })} placeholder="••••••••" />
@@ -310,7 +310,7 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }) 
             <Field label="Username" value={conn.username} onChange={(e) => setConn({ ...conn, username: e.target.value })} placeholder="admin" />
             <Field label="Password" type="password" value={conn.password} onChange={(e) => setConn({ ...conn, password: e.target.value })} placeholder="••••••••" />
           </div>
-          <div className="flex items-start gap-2 rounded-lg border border-card-border bg-hover px-3 py-2.5 text-[11px] text-muted">
+          <div className="flex items-start gap-2 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2.5 text-[11px] text-nb-soft">
             <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0 text-sm" />
             <span>
               Enumerate a multi-channel encoder / DVR to onboard all its channels at once. A single
@@ -324,7 +324,7 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }) 
       {step === "select" && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted">
+            <p className="text-xs text-nb-soft">
               {selectedCount} of {channels.length} channel(s) selected
             </p>
             <Field
@@ -336,28 +336,28 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }) 
             />
           </div>
 
-          <div className="max-h-80 space-y-1.5 overflow-y-auto rounded-lg border border-card-border p-2">
+          <div className="max-h-80 space-y-1.5 overflow-y-auto rounded-[10px] border border-nb-line p-2">
             {channels.map((c) => {
               const s = selected[c.channel] || {};
               return (
-                <div key={c.channel} className="flex items-center gap-3 rounded-lg border border-card-border bg-card px-3 py-2">
+                <div key={c.channel} className="flex items-center gap-3 rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2">
                   <Toggle
                     checked={!!s.checked}
                     onChange={(v) => setSelected((prev) => ({ ...prev, [c.channel]: { ...prev[c.channel], checked: v } }))}
                   />
-                  <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded bg-hover text-[11px] font-semibold text-muted">
+                  <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-[11px] font-semibold text-nb-muted">
                     {c.channel_number ?? c.channel}
                   </div>
                   <input
                     value={s.name || ""}
                     onChange={(e) => setSelected((prev) => ({ ...prev, [c.channel]: { ...prev[c.channel], name: e.target.value } }))}
                     placeholder={c.name || `Channel ${c.channel}`}
-                    className="h-9 flex-1 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
+                    className="h-9 flex-1 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 text-sm text-nb-ink placeholder:text-nb-faint outline-none focus:border-nb-blue"
                   />
-                  <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted">
+                  <div className="flex shrink-0 items-center gap-2 text-[11px] text-nb-faint">
                     {c.main?.resolution && <span>{c.main.resolution}</span>}
                     {c.ptz_capable && (
-                      <span className="rounded-full bg-blue-500/10 px-1.5 py-0.5 text-blue-500">PTZ</span>
+                      <span className="rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] px-1.5 py-0.5 text-nb-blueb">PTZ</span>
                     )}
                   </div>
                 </div>

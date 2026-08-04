@@ -105,48 +105,58 @@ export default function RecordersPage() {
             onSearch={setSearch}
             searchPlaceholder="Search name, label or URL…"
             action={
-              <div className="flex items-center gap-1">
-                <button onClick={invalidate} title="Refresh" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground">
+              <div className="flex items-center gap-1.5">
+                <button onClick={invalidate} title="Refresh" className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#22d3ee]">
                   <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
                 </button>
-                <button onClick={() => setAddOpen(true)} title="Add recorder" className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500">
+                <button onClick={() => setAddOpen(true)} title="Add recorder" className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] px-2.5 text-[12px] font-medium text-[#67e8f9] transition hover:border-[#22d3ee] hover:bg-[rgba(34,211,238,.25)]">
                   <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
                 </button>
               </div>
             }
           >
-            <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
-              <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /><span className="text-muted">{onlineCount} online</span></span>
-              <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-muted" /><span className="text-muted">{nodes.length - onlineCount} offline</span></span>
+            <div className="flex items-center gap-3 px-4 pb-1 pt-1 font-mono text-[10px] uppercase tracking-[1.2px]">
+              <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#34d399] shadow-[0_0_5px_#34d399]" /><span className="text-[#aec2e8]">{onlineCount} online</span></span>
+              <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#f87171] shadow-[0_0_5px_rgba(248,113,113,.6)]" /><span className="text-[#7e93bf]">{nodes.length - onlineCount} offline</span></span>
             </div>
 
             {nodesQ.isLoading ? (
-              <div className="px-4 py-6 text-center text-xs text-muted"><Icon icon="svg-spinners:180-ring" className="mx-auto mb-1 text-base" />Loading…</div>
+              <div className="px-4 py-6 text-center text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mx-auto mb-1 text-base text-[#67e8f9]" />Loading…</div>
             ) : nodesQ.isError ? (
-              <div className="px-4 py-6 text-center text-xs text-red-500">{apiError(nodesQ.error, "Failed to load recorders")}</div>
+              <div className="px-4 py-6 text-center text-xs text-[#f87171]">{apiError(nodesQ.error, "Failed to load recorders")}</div>
             ) : filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-muted">{nodes.length === 0 ? "No recorders yet — click Add." : "No matches."}</div>
+              <div className="px-4 py-6 text-center text-xs text-[#9a92c8]">{nodes.length === 0 ? "No recorders yet — click Add." : "No matches."}</div>
             ) : (
               <div className="space-y-1.5 px-3 py-2">
                 {filtered.map((n) => {
                   const isSel = selectedId === n.id;
                   const used = n.used_channels ?? 0;
                   const cap = n.capacity_channels;
+                  const pct = cap != null && cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : null;
+                  const online = n.status === "online";
                   return (
                     <button
                       key={n.id}
                       onClick={() => setSelectedId(n.id)}
-                      className={`relative block w-full rounded-lg border px-3 py-2.5 text-left transition ${isSel ? "border-foreground bg-hover" : "border-card-border hover:bg-hover"}`}
+                      className={`relative block w-full overflow-hidden rounded-[13px] border px-3 py-2.5 text-left backdrop-blur-sm transition ${isSel ? "border-[#22d3ee] bg-[rgba(34,211,238,.08)] shadow-[0_0_0_1px_rgba(34,211,238,.4)]" : "border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] hover:border-[rgba(34,211,238,.5)] hover:bg-[rgba(34,211,238,.06)]"}`}
                     >
-                      {isSel && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l bg-blue-500" />}
+                      {isSel && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l bg-[#22d3ee]" />}
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-xs font-semibold text-foreground">{n.name}</p>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-[#34d399] shadow-[0_0_5px_#34d399]" : "bg-[#f87171] shadow-[0_0_5px_rgba(248,113,113,.6)]"}`} />
+                          <p className="truncate font-mono text-xs font-semibold text-[#f2f6ff]">{n.name}</p>
+                        </span>
                         <StatusBadge status={n.status} />
                       </div>
-                      {n.label && <p className="mt-0.5 truncate text-[10px] text-muted">{n.label}</p>}
-                      <p className="mt-0.5 text-[10px] text-muted/70 tabular-nums">
+                      {n.label && <p className="mt-0.5 truncate pl-3.5 text-[10px] text-[#9a92c8]">{n.label}</p>}
+                      <p className="mt-0.5 pl-3.5 font-mono text-[10px] tabular-nums text-[#7e93bf]">
                         {used} / {cap != null ? cap : "∞"} channel(s)
                       </p>
+                      {pct != null && (
+                        <div className="ml-3.5 mt-1.5 h-[4px] overflow-hidden rounded-full border border-[rgba(150,180,245,.22)] bg-black/40">
+                          <span className="block h-full rounded-full bg-gradient-to-r from-[#60a5fa] to-[#22d3ee]" style={{ width: `${pct}%` }} />
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -190,11 +200,12 @@ export default function RecordersPage() {
 // Right-pane detail for one recorder (MediaNode): header (name / label / status +
 // Edit / Drain / Delete) + an info grid (endpoints, capacity, heartbeat). Mirrors
 // NvrDetail's card chrome so the three device pages look identical.
-function InfoCell({ label, value, mono = false }) {
+function InfoCell({ label, value, mono = false, children }) {
   return (
-    <div className="min-w-0 rounded-lg border border-card-border bg-hover/40 px-3 py-1.5">
-      <p className="text-[10px] uppercase tracking-wide text-muted">{label}</p>
-      <p className={`mt-0.5 truncate text-[13px] font-medium text-foreground ${mono ? "font-mono" : ""}`} title={typeof value === "string" ? value : undefined}>{value ?? "—"}</p>
+    <div className="min-w-0 rounded-[10px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] px-3 py-1.5">
+      <p className="font-mono text-[10px] uppercase tracking-[1.4px] text-[#9a92c8]">{label}</p>
+      <p className={`mt-0.5 truncate text-[13px] font-medium text-[#f2f6ff] ${mono ? "font-mono" : ""}`} title={typeof value === "string" ? value : undefined}>{value ?? "—"}</p>
+      {children}
     </div>
   );
 }
@@ -219,25 +230,25 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }) {
   const full = cap != null && used >= cap;
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-sm">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-card-border px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(160,150,245,.22)] px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.12)] text-[#67e8f9]">
             <Icon icon="heroicons:cpu-chip" className="text-base" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-foreground">{node.name}</h1>
-            <p className="truncate font-mono text-[11px] text-muted">{node.api_url || "—"}</p>
+            <h1 className="truncate font-mono text-base font-semibold text-[#f2f6ff]">{node.name}</h1>
+            <p className="truncate font-mono text-[11px] text-[#9a92c8]">{node.api_url || "—"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={node.status} />
           <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" icon="heroicons-outline:pencil-square" onClick={() => onEdit?.(node)}>Edit</Button>
           {node.status !== "draining" && (
-            <Button variant="ghost" className="!px-2 !py-1.5 !text-xs !text-amber-500" icon="heroicons-outline:arrow-down-tray" onClick={() => onDrain?.(node)}>Drain</Button>
+            <Button variant="ghost" className="!px-2 !py-1.5 !text-xs !text-[#fbbf24]" icon="heroicons-outline:arrow-down-tray" onClick={() => onDrain?.(node)}>Drain</Button>
           )}
-          <Button variant="ghost" className="!px-2 !py-1.5 !text-xs !text-red-500" icon="heroicons-outline:trash" onClick={() => onDelete?.(node)}>Delete</Button>
+          <Button variant="ghost" className="!px-2 !py-1.5 !text-xs !text-[#f87171]" icon="heroicons-outline:trash" onClick={() => onDelete?.(node)}>Delete</Button>
         </div>
       </div>
 
@@ -248,18 +259,27 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }) {
           <InfoCell
             label="Capacity"
             value={
-              <span className={full ? "text-amber-500" : ""}>
+              <span className={full ? "text-[#fbbf24]" : ""}>
                 {used}
-                <span className="text-muted"> / {cap != null ? cap : "∞"}</span>
+                <span className="text-[#7e93bf]"> / {cap != null ? cap : "∞"}</span>
               </span>
             }
-          />
+          >
+            {cap != null && cap > 0 && (
+              <div className="mt-1.5 h-[5px] overflow-hidden rounded-full border border-[rgba(150,180,245,.22)] bg-black/40">
+                <span
+                  className={`block h-full rounded-full ${full ? "bg-gradient-to-r from-[#60a5fa] to-[#fbbf24]" : "bg-gradient-to-r from-[#60a5fa] to-[#22d3ee]"}`}
+                  style={{ width: `${Math.min(100, Math.round((used / cap) * 100))}%` }}
+                />
+              </div>
+            )}
+          </InfoCell>
           <InfoCell label="Location / label" value={node.label || "—"} />
           <InfoCell label="Last heartbeat" value={node.last_heartbeat ? fmtRelative(node.last_heartbeat) : "—"} />
         </div>
 
         {/* Endpoints */}
-        <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted">Endpoints</p>
+        <p className="mb-2 mt-4 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Endpoints</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <InfoCell label="API URL" value={node.api_url || "—"} mono />
           <InfoCell label="HLS base" value={node.hls_base || "—"} mono />
@@ -269,33 +289,33 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }) {
 
         {/* Assigned cameras — what this recorder actually records */}
         <div className="mb-2 mt-4 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Assigned cameras</p>
-          <span className="rounded-full bg-hover px-1.5 text-[10px] font-semibold tabular-nums text-muted">{assigned.length}</span>
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Assigned cameras</p>
+          <span className="rounded-full border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">{assigned.length}</span>
         </div>
         {camsQ.isLoading ? (
-          <p className="px-1 py-3 text-xs text-muted"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm" />Loading…</p>
+          <p className="px-1 py-3 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
         ) : assigned.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-card-border px-3 py-4 text-center text-xs text-muted">
+          <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-4 text-center text-xs text-[#9a92c8]">
             No cameras pinned to this recorder yet. On the Cameras page, open a camera → Recording → Recorder and select “{node.name}”.
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {assigned.map((c) => (
-              <li key={c.id} className="flex items-center gap-2 rounded-lg border border-card-border bg-hover/40 px-3 py-1.5">
+              <li key={c.id} className="flex items-center gap-2 rounded-[10px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] px-3 py-1.5">
                 <StatusDot status={c.status} />
                 {c.nvr_channel_number != null && (
-                  <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-hover px-1 font-mono text-[10px] font-semibold tabular-nums text-muted">
+                  <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
                     {c.nvr_channel_number}
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate text-[13px] text-foreground" title={c.name}>{c.name}</span>
-                <span className="shrink-0 text-[10px] capitalize text-muted">{c.status}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-[#f2f6ff]" title={c.name}>{c.name}</span>
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.5px] text-[#7e93bf]">{c.status}</span>
               </li>
             ))}
           </ul>
         )}
 
-        <p className="mt-3 text-[11px] text-muted">
+        <p className="mt-3 text-[11px] text-[#7e93bf]">
           Cameras pinned to this recorder record to its local storage. Drain before deleting, then reassign its cameras to another recorder.
         </p>
       </div>

@@ -75,17 +75,39 @@ class CameraService:
     #: loop doesn't GC them mid-flight. Class-level → survives the request-scoped service.
     _bg_tasks: set = set()
 
-    def __init__(self, db: AsyncSession, scope: Scope, *, bearer: str | None = None) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        scope: Scope,
+        *,
+        bearer: str | None = None,
+        site_ids: list[str] | None = None,
+    ) -> None:
         self.db = db
         self.scope = scope
         # The caller's JWT — forwarded to the Go nvr when the snapshot fallback needs to
         # bring the MediaMTX on-demand path up (same shared-JWT contract as live view).
         self.bearer = bearer
+        # SITE ACCESS SCOPE (from the token's ``site_ids`` claim). EMPTY = unrestricted.
+        # Non-empty confines this caller to cameras whose ``site_id`` is in the set —
+        # enforced on both single-camera access (``_row``) and listing (``list_``).
+        self.site_ids = [str(s) for s in (site_ids or [])]
+
+    def _site_allowed(self, row: Camera) -> bool:
+        """Whether a camera is inside the caller's site scope (always True when the
+        caller is unrestricted). A camera with no site_id is outside every scope."""
+        if not self.site_ids:
+            return True
+        return row.site_id is not None and str(row.site_id) in self.site_ids
 
     # ── row + credential helpers ────────────────────────────────────────
     async def _row(self, camera_id: str) -> Camera:
         row = await self.db.get(Camera, camera_id)
         assert_owned(row, self.scope, message="Camera not found")
+        # Site scope: a camera outside the caller's sites is indistinguishable from a
+        # missing one (NOT_FOUND, never FORBIDDEN — no cross-site existence leak).
+        if not self._site_allowed(row):
+            raise NotFoundError("Camera not found")
         return row
 
     async def _profiles(self, camera_id: str) -> list[MediaProfile]:
@@ -277,8 +299,6 @@ class CameraService:
             privacy_masks=body.advanced.privacy_masks,
             motion_zones=body.advanced.motion_zones,
             motion_config=body.advanced.motion_config,
-            pos_overlay=body.advanced.pos_overlay,
-            dewarp=body.advanced.dewarp,
             backchannel=body.advanced.backchannel,
             ptz_capable=body.ptz.capable,
             ptz_presets=body.ptz.presets,
@@ -339,6 +359,9 @@ class CameraService:
         count_stmt = scoped(select(func.count()).select_from(Camera), Camera, self.scope)
 
         def _filters(s):
+            # Site access scope: confine a scoped caller to their sites (empty = all).
+            if self.site_ids:
+                s = s.where(Camera.site_id.in_(self.site_ids))
             if status:
                 s = s.where(Camera.status == status)
             if brand:
@@ -441,8 +464,6 @@ class CameraService:
             row.privacy_masks = a.privacy_masks
             row.motion_zones = a.motion_zones
             row.motion_config = a.motion_config
-            row.pos_overlay = a.pos_overlay
-            row.dewarp = a.dewarp
             row.backchannel = a.backchannel
         if body.ptz is not None:
             row.ptz_capable = body.ptz.capable

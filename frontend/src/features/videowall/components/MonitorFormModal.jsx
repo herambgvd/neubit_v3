@@ -87,8 +87,8 @@ export default function MonitorFormModal({ open, monitor, decoders = [], default
         <Select label="Kind" options={KIND_OPTS} value={form.kind} onChange={(e) => set("kind", e.target.value)} />
 
         {isDecoder && (
-          <div className="space-y-3 rounded-md border border-amber-500/20 bg-amber-500/[0.04] p-3">
-            <p className="text-[11px] text-amber-400/90">
+          <div className="space-y-3 rounded-[9px] border border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.06)] p-3">
+            <p className="text-[11px] text-nb-warn">
               Decoder monitors push camera streams to a hardware video decoder output (VW-B). The console preview still plays
               live so you can see what's routed.
             </p>
@@ -107,7 +107,7 @@ export default function MonitorFormModal({ open, monitor, decoders = [], default
               onChange={(e) => set("decoder_channel", e.target.value)}
             />
             {decoders.length === 0 && (
-              <p className="text-[11px] text-muted">No decoders registered yet — add one in the Decoders section first.</p>
+              <p className="text-[11px] text-nb-faint">No decoders registered yet — add one in the Decoders section first.</p>
             )}
           </div>
         )}

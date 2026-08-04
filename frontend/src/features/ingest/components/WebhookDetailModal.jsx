@@ -19,28 +19,16 @@ import WebhookEventsPanel from "./WebhookEventsPanel";
 import RulesPanel from "./RulesPanel";
 
 const DETAIL_TABS = [
-  { key: "rules", label: "Event types", icon: "heroicons-outline:funnel" },
   { key: "overview", label: "Overview", icon: "heroicons-outline:information-circle" },
+  { key: "rules", label: "Rules", icon: "heroicons-outline:funnel" },
   { key: "test", label: "Test", icon: "heroicons-outline:beaker" },
-  { key: "events", label: "API hits", icon: "heroicons-outline:queue-list" },
+  { key: "events", label: "Recent events", icon: "heroicons-outline:queue-list" },
 ];
 
-function Row({ label, children }) {
-  return (
-    <div>
-      <FieldLabel>{label}</FieldLabel>
-      <p className="mt-1 text-sm text-foreground">{children}</p>
-    </div>
-  );
-}
-
-export default function WebhookDetailModal({ webhook, canManage, onClose, onEdit, onChanged }) {
-  // Rules first: an operator opens a webhook to work on its event types far more
-  // often than to re-read its config.
-  const [tab, setTab] = useState("rules");
+export default function WebhookDetailModal({ webhook, onClose, onChanged }) {
+  const [tab, setTab] = useState("overview");
+  const [token, setToken] = useState(webhook.token); // updates live after a rotate
   const [confirm, setConfirm] = useState(null);
-  // The freshly minted secret, shown once — the server never returns it again.
-  const [newSecret, setNewSecret] = useState(null);
   const hookId = webhook.id ?? webhook.webhook_id;
 
   useEffect(() => {
@@ -50,51 +38,26 @@ export default function WebhookDetailModal({ webhook, canManage, onClose, onEdit
   }, [onClose]);
 
   const rotate = useMutation({
-    mutationFn: () => ingestApi.webhooks.rotateSecret(hookId),
+    mutationFn: () => ingestApi.webhooks.rotateSecret(hookId, false),
     onSuccess: (res) => {
-      toast.success("New auth secret generated");
-      if (res?.auth_secret) setNewSecret(res.auth_secret);
+      toast.success("Receiver token rotated");
+      if (res?.token) setToken(res.token);
       onChanged?.();
     },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  // The URL never changes here — the slug is fixed at create and rotate only
-  // touches the auth secret.
-  const url = receiverUrl(webhook.slug, webhook.ingest_url);
+  const url = receiverUrl(token);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      {/* Wide + tall: this modal stands in for what v2 gave a whole page. The
-          rule list, the two-column tester and the event-log table all need room
-          — at max-w-2xl the tester's columns collapsed and payload JSON wrapped
-          to unreadable shreds. */}
-      <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col rounded-xl border border-card-border bg-card shadow-2xl animate-modal-in">
-        <div className="flex items-center justify-between gap-3 border-b border-card-border px-5 py-4 shrink-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-base font-semibold text-foreground">{webhook.name}</h3>
-            <span
-              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                webhook.is_active !== false ? "bg-green-500/10 text-green-500" : "bg-hover text-muted"
-              }`}
-            >
-              {webhook.is_active !== false ? "Enabled" : "Disabled"}
-            </span>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {canManage && onEdit && (
-              <button
-                onClick={onEdit}
-                className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover"
-              >
-                <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-              </button>
-            )}
-            <button onClick={onClose} className="text-muted transition hover:text-foreground">
-              <Icon icon="heroicons-outline:x-mark" className="text-xl" />
-            </button>
-          </div>
+      <div className="relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.93)] shadow-2xl backdrop-blur-md animate-modal-in">
+        <div className="flex shrink-0 items-center justify-between border-b border-nb-line px-5 py-4">
+          <h3 className="text-base font-semibold text-nb-ink">{webhook.name}</h3>
+          <button onClick={onClose} className="text-nb-muted transition hover:text-nb-ink">
+            <Icon icon="heroicons-outline:x-mark" className="text-xl" />
+          </button>
         </div>
 
         <TabBar tabs={DETAIL_TABS} active={tab} onChange={setTab} className="px-3 shrink-0" />
@@ -105,121 +68,50 @@ export default function WebhookDetailModal({ webhook, canManage, onClose, onEdit
               <div>
                 <FieldLabel>Public receiver URL</FieldLabel>
                 <div className="mt-1 flex items-center gap-2">
-                  <code className="flex-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground break-all">{url}</code>
-                  <button onClick={() => copyToClipboard(url)} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-2 text-xs text-foreground hover:bg-hover shrink-0">
+                  <code className="flex-1 break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-blueb">{url}</code>
+                  <button onClick={() => copyToClipboard(url)} className="inline-flex shrink-0 items-center gap-1 rounded-[8px] border border-nb-line px-2.5 py-2 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb">
                     <Icon icon="heroicons-outline:clipboard-document" className="text-sm" /> Copy
                   </button>
-                  {canManage && webhook.auth_type !== "none" && (
-                    <button
-                      onClick={() => setConfirm({
-                        title: "Generate a new auth secret?",
-                        message:
-                          "The current secret stops working immediately — every sender must be updated with the new one. The URL is not affected.",
-                        confirmLabel: "Generate",
-                        danger: true,
-                        onConfirm: () => { rotate.mutate(); setConfirm(null); },
-                      })}
-                      disabled={rotate.isPending}
-                      className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-500 hover:bg-amber-500/20 shrink-0 disabled:opacity-50"
-                    >
-                      <Icon icon="heroicons-outline:key" className="text-sm" /> New secret
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setConfirm({
+                      title: "Rotate receiver token?",
+                      message: "The current URL will stop working immediately. Any integrations must be updated to the new URL.",
+                      confirmLabel: "Rotate",
+                      onConfirm: () => { rotate.mutate(); setConfirm(null); },
+                    })}
+                    disabled={rotate.isPending}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-[8px] border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.1)] px-2.5 py-2 text-xs text-nb-warn transition hover:bg-[rgba(251,191,36,.18)] disabled:opacity-50"
+                  >
+                    <Icon icon="heroicons-outline:arrow-path" className="text-sm" /> Rotate
+                  </button>
                 </div>
-                <p className="mt-1 text-[11px] text-muted/70">Point your external system at this URL to POST events.</p>
+                <p className="mt-1 text-[11px] text-nb-faint">Point your external system at this URL to POST events.</p>
               </div>
-
-              {newSecret && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-                  <FieldLabel>New auth secret — copy it now</FieldLabel>
-                  <div className="mt-1 flex items-center gap-2">
-                    <code className="flex-1 break-all rounded border border-amber-500/20 bg-card px-2 py-1.5 font-mono text-xs text-foreground">
-                      {newSecret}
-                    </code>
-                    <button
-                      onClick={() => copyToClipboard(newSecret)}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover"
-                    >
-                      <Icon icon="heroicons-outline:clipboard-document" className="text-sm" /> Copy
-                    </button>
-                  </div>
-                  <p className="mt-1 text-[11px] text-amber-500">
-                    This is the only time it is shown — only its hash is stored.
-                  </p>
-                </div>
-              )}
-              {webhook.description && (
-                <Row label="Description">{webhook.description}</Row>
-              )}
-
-              {/* Auth */}
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                <Row label="Auth type">
-                  <span className="font-mono text-xs">{authLabel(webhook.auth_type)}</span>
-                </Row>
-                {webhook.auth_username && (
-                  <Row label="Username">
-                    <span className="font-mono text-xs">{webhook.auth_username}</span>
-                  </Row>
-                )}
-                {webhook.auth_type !== "none" && (
-                  <Row label="Secret">
-                    {webhook.has_secret ? (
-                      <span className="text-emerald-500">configured</span>
-                    ) : (
-                      <span className="text-red-500">missing — edit to fix</span>
-                    )}
-                  </Row>
-                )}
-                <Row label="Method">
-                  <span className="font-mono text-xs uppercase">{webhook.request_method || "post"}</span>
-                </Row>
+              <div className="grid grid-cols-2 gap-4">
+                <div><FieldLabel>Auth type</FieldLabel><p className="mt-1 text-sm text-nb-soft">{authLabel(webhook.auth_type)}</p></div>
+                <div><FieldLabel>Status</FieldLabel><p className="mt-1 text-sm text-nb-soft">{webhook.is_active !== false ? "Active" : "Inactive"}</p></div>
               </div>
-
-              {/* Routing */}
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                <Row label="Slug">
-                  <span className="font-mono text-xs">{webhook.slug}</span>
-                </Row>
-                <Row label="Default event type">
-                  <span className="font-mono text-xs">{webhook.event_type || "ingest.event"}</span>
-                </Row>
-                <Row label="Status">{webhook.is_active !== false ? "Active" : "Inactive"}</Row>
-              </div>
-
-              {/* Device lookup — only when configured (v2 parity). */}
-              {webhook.device_lookup_expr && (
-                <div>
-                  <FieldLabel>Device lookup</FieldLabel>
-                  <p className="mt-1 font-mono text-xs text-foreground">{webhook.device_lookup_expr}</p>
-                  <p className="mt-1 text-[11px] text-muted/70">
-                    Published as <code className="font-mono">device_lookup_value</code>. Resolving it
-                    to a device is not wired up yet.
-                  </p>
-                </div>
-              )}
-
               <div>
-                <FieldLabel>Output map (field → JMESPath)</FieldLabel>
-                <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+                <FieldLabel>Transform (field map)</FieldLabel>
+                <pre className="mt-1 whitespace-pre-wrap break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-soft">
                   {webhook.transform && Object.keys(webhook.transform).length ? JSON.stringify(webhook.transform, null, 2) : "—"}
                 </pre>
               </div>
               <div>
-                <FieldLabel>Accepted payload (JSON Schema)</FieldLabel>
-                <pre className="mt-1 rounded-lg border border-field bg-hover/40 px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all max-h-52 overflow-auto">
+                <FieldLabel>Schema (JSON)</FieldLabel>
+                <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-[8px] border border-nb-line bg-[rgba(0,0,0,.35)] px-3 py-2 font-mono text-xs text-nb-soft">
                   {webhook.payload_schema && Object.keys(webhook.payload_schema).length ? JSON.stringify(webhook.payload_schema, null, 2) : "—"}
                 </pre>
               </div>
             </div>
           )}
 
-          {tab === "rules" && <RulesPanel webhookId={hookId} canManage={canManage} />}
-          {tab === "test" && <WebhookTestPanel webhook={webhook} hookId={hookId} />}
-          {tab === "events" && <WebhookEventsPanel hookId={hookId} canManage={canManage} />}
+          {tab === "rules" && <RulesPanel webhookId={hookId} />}
+          {tab === "test" && <WebhookTestPanel hookId={hookId} />}
+          {tab === "events" && <WebhookEventsPanel hookId={hookId} />}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-card-border shrink-0">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-nb-line px-6 py-4">
           <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>

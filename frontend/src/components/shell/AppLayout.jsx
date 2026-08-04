@@ -9,15 +9,14 @@ import { api } from "@/lib/api";
 import CommandPalette from "@/components/CommandPalette";
 import { FullPageLoader } from "@/components/ui/kit";
 import Footer from "@/components/shell/Footer";
-import Header from "@/components/shell/Header";
+import GlobalNavDock from "@/components/shell/GlobalNavDock";
+import ConsoleStrip from "@/components/shell/ConsoleStrip";
 import SectionTabs from "@/components/shell/SectionTabs";
 import VmsPopupHost from "@/features/vms/components/VmsPopupHost";
 import { useAuth } from "@/lib/auth";
 import {
-  isConfigRoute,
   isDevicesRoute,
   isStreamingRoute,
-  configTabs,
   deviceTabs,
   streamTabs,
 } from "@/config/menu";
@@ -95,7 +94,20 @@ export default function AppLayout({ children }) {
   // scroll (a real-VMS control-room feel). So for that route only, <main> drops
   // its padding + scroll and becomes a bounded, overflow-hidden pane the wall
   // fills via h-full. Every other page keeps the padded, scrollable <main>.
-  const immersiveWall = pathname === "/streaming";
+  // Both the single-operator Live wall (/streaming) and a shared Wall Console
+  // (/wall/<id>) are full-bleed operations consoles with their OWN top toolbar —
+  // the global header/submenu/footer are suppressed so they fill the viewport.
+  const immersiveWall = pathname === "/streaming" || pathname.startsWith("/wall/");
+
+  // The NeuBit HOME metro launcher is a full-bleed, single-viewport surface (its own
+  // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.
+  const home = pathname === "/home";
+
+  // Alarms (/events) is a full-bleed navy console like Home/Streaming: its own
+  // radial-navy backdrop + masthead should reach the pane edges (no page padding);
+  // the board/map scrolls internally. Kept scrollable (not overflow-hidden) so long
+  // alarm lists page normally.
+  const eventsFull = pathname === "/events";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
@@ -105,6 +117,7 @@ export default function AppLayout({ children }) {
     pathname === "/devices/cameras" ||
     pathname === "/devices/nvr" ||
     pathname === "/devices/recorders" ||
+    pathname === "/federation" ||
     pathname === "/access-control" ||
     // Unified Playback is a control-room surface (source rail + synchronized grid +
     // master timeline) — the PAGE must not scroll; it fills the bounded pane via h-full.
@@ -117,18 +130,25 @@ export default function AppLayout({ children }) {
     pathname === "/tags" ||
     pathname === "/config/patterns" ||
     pathname === "/config/linkage" ||
+    pathname === "/config/onvif-server" ||
+    pathname === "/config/video-wall" ||
+    pathname === "/general" ||
     pathname === "/workflow-config" ||
     pathname === "/ingest" ||
-    pathname === "/config/video-wall" ||
-    pathname === "/config/storage" ||
+    pathname === "/config/security" ||
+    pathname === "/platform" ||
+    // Audit console — bounded pane; the entries table scrolls internally.
+    pathname === "/audit" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 
-  const mainClass = immersiveWall
+  const mainClass = immersiveWall || home
     ? "flex-1 min-h-0 w-full overflow-hidden"
-    : contained
-      ? "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3"
-      : "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6";
+    : eventsFull
+      ? "app-scroll flex-1 overflow-y-auto w-full"
+      : contained
+        ? "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3"
+        : "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6";
 
   // fixed inset-0: pin the shell to EXACTLY the viewport, immune to any parent
   // height-collapse. `h-screen` (100vh) was resolving short in this SCSS/flex context
@@ -138,15 +158,30 @@ export default function AppLayout({ children }) {
   // overflow-hidden: the body never scrolls — scrollable pages scroll INSIDE <main>
   // (app-scroll / overflow-y-auto); contained/immersive pages clip.
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
-      <Header />
-      {isConfigRoute(pathname) && <SectionTabs tabs={configTabs} />}
+    <div
+      className="fixed inset-0 flex flex-col overflow-hidden bg-background"
+      style={home ? { background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" } : undefined}
+    >
+      {/* Global header BAR — a real in-flow slim bar (NeuBit brand → Home · ⊞ MENU
+          navigator · search · notifications · account). NOT floating, so page content
+          sits cleanly below it and nothing overlaps. The old domain top-nav
+          (Dashboard/Devices/Streaming/Incidents) is gone — navigation is the MENU
+          overlay + Home launcher. Suppressed on the immersive wall (/streaming,
+          /wall/*), which carries its own toolbar. */}
+      {!immersiveWall && <GlobalNavDock home={home} />}
+      {/* Minimal-chrome CONSOLES (Platform/System/Security/Sites/Users & Roles/…) keep
+          their own section strip — modtab + ?view= sub-nav — as a slim floating bar.
+          ConsoleStrip self-guards by route (renders null elsewhere). */}
+      {!immersiveWall && <ConsoleStrip />}
       {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
-      {isStreamingRoute(pathname) && <SectionTabs tabs={streamTabs} />}
-      <AnnouncementBanner />
-      <LicenseBanner />
+      {isStreamingRoute(pathname) && !immersiveWall && <SectionTabs tabs={streamTabs} />}
+      {!immersiveWall && <AnnouncementBanner />}
+      {!immersiveWall && <LicenseBanner />}
       <main className={mainClass}>{children}</main>
-      <Footer />
+      {/* HOME renders its own GVD lockup; the copyright footer bar is hidden there
+          to match the mockup's minimal single-viewport launcher. Also hidden on the
+          immersive wall. */}
+      {!home && !immersiveWall && <Footer />}
       <CommandPalette />
       {/* App-wide operator popups (VMS linkage `popup` action → floating live camera). */}
       <VmsPopupHost />

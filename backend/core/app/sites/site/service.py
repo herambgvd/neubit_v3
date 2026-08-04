@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.audit import record as audit_record
-from ...core.errors import ConflictError
+from ...core.errors import ConflictError, NotFoundError
 from ...tenancy.scope import Scope, assert_owned, scoped
 from ..events import emit
 from ..floor.models import Floor
@@ -47,15 +47,29 @@ def _dump(value):
 
 
 class SiteService:
-    def __init__(self, db: AsyncSession, scope: Scope) -> None:
+    def __init__(self, db: AsyncSession, scope: Scope, site_ids: list[str] | None = None) -> None:
         self.db = db
         self.scope = scope
+        # Per-user SITE ACCESS SCOPE (from the caller's User.site_ids). EMPTY =
+        # unrestricted (every site in the tenant). Non-empty confines reads/lookups
+        # to exactly these sites — the same coarse control the token's ``site_ids``
+        # claim applies to cameras in the vision service.
+        self.site_ids = [str(s) for s in (site_ids or [])]
+
+    def _site_allowed(self, row: Site) -> bool:
+        if not self.site_ids:
+            return True
+        return row is not None and str(row.site_id) in self.site_ids
 
     # ── internal fetch (scoped) ────────────────────────────────────
 
     async def _get_row(self, site_id: str) -> Site:
         row = await self.db.get(Site, site_id)
         assert_owned(row, self.scope, message="Site not found")
+        # Site scope: a site outside the caller's scope is indistinguishable from a
+        # missing one (NOT_FOUND, never FORBIDDEN — no cross-site existence leak).
+        if not self._site_allowed(row):
+            raise NotFoundError("Site not found")
         return row
 
     async def _floor_count(self, site_id: str) -> int:
@@ -116,6 +130,10 @@ class SiteService:
     ) -> tuple[list[SitePublic], int]:
         stmt = scoped(select(Site), Site, self.scope)
         count_stmt = scoped(select(func.count()).select_from(Site), Site, self.scope)
+        # Confine a site-scoped caller to their sites (empty list = all sites).
+        if self.site_ids:
+            stmt = stmt.where(Site.site_id.in_(self.site_ids))
+            count_stmt = count_stmt.where(Site.site_id.in_(self.site_ids))
         if search:
             term = f"%{search}%"
             stmt = stmt.where(Site.name.ilike(term))

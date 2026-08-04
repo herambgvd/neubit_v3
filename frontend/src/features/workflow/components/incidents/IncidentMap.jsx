@@ -28,7 +28,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
-import { Badge, Card, Spinner } from "@/components/ui/kit";
+import { Badge } from "@/components/ui/kit";
 import { fileUrl } from "@/lib/api";
 import { asItems, titleize, fmtRelative } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
@@ -141,42 +141,45 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
 
   const openIncident = (it) => router.push(`/events/${incId(it)}`);
 
+  const mapSelCls =
+    "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-none transition focus:border-[rgba(34,211,238,.5)]";
+
   return (
-    <Card className="overflow-hidden">
+    <div className="overflow-hidden rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-sm">
       {/* Map toolbar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-card-border px-4 py-3">
-        <Icon icon="heroicons-outline:map-pin" className="text-base text-muted" />
+      <div className="flex flex-wrap items-center gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-3">
+        <Icon icon="heroicons-outline:map-pin" className="text-base text-[#67e8f9]" />
         <select
           value={siteId}
           onChange={(e) => { setSiteId(e.target.value); setFloorId(""); }}
-          className="h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted"
+          className={mapSelCls}
         >
-          {sites.length === 0 && <option value="" className="bg-card">No sites</option>}
+          {sites.length === 0 && <option value="" className="bg-[#0c1530]">No sites</option>}
           {sites.map((s) => (
-            <option key={s.site_id} value={s.site_id} className="bg-card">{s.name}</option>
+            <option key={s.site_id} value={s.site_id} className="bg-[#0c1530]">{s.name}</option>
           ))}
         </select>
         <select
           value={floorId}
           onChange={(e) => setFloorId(e.target.value)}
           disabled={!floors.length}
-          className="h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted disabled:opacity-40"
+          className={`${mapSelCls} disabled:opacity-40`}
         >
-          {floors.length === 0 && <option value="" className="bg-card">No floors</option>}
+          {floors.length === 0 && <option value="" className="bg-[#0c1530]">No floors</option>}
           {floors.map((f) => (
-            <option key={f.floor_id} value={f.floor_id} className="bg-card">{f.name}</option>
+            <option key={f.floor_id} value={f.floor_id} className="bg-[#0c1530]">{f.name}</option>
           ))}
         </select>
-        <span className="ml-auto text-xs text-muted">
+        <span className="ml-auto font-mono text-[11px] uppercase tracking-[1px] text-[#7e93bf]">
           {siteCount} at this site · {clusters.reduce((n, c) => n + c.items.length, 0)} mapped
         </span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_18rem]">
         {/* Canvas */}
-        <div className="relative min-h-[420px] bg-hover/40">
+        <div className="relative min-h-[420px] bg-[rgba(0,0,0,.28)]">
           {floorsQ.isLoading || zonesQ.isLoading ? (
-            <div className="flex h-full items-center justify-center py-24"><Spinner /></div>
+            <div className="flex h-full items-center justify-center py-24"><Icon icon="svg-spinners:180-ring" className="text-2xl text-[#67e8f9]" /></div>
           ) : (
             <svg
               viewBox={`0 0 ${img.w} ${img.h}`}
@@ -246,7 +249,7 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
           )}
 
           {!planUrl && !floorsQ.isLoading && (
-            <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md border border-card-border bg-card/90 px-3 py-1.5 text-xs text-muted shadow">
+            <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(9,16,36,.9)] px-3 py-1.5 text-xs text-[#aec2e8] shadow backdrop-blur-sm">
               <Icon icon="heroicons-outline:photo" className="mr-1 inline text-sm" />
               No floor plan uploaded — showing zones on a grid
             </div>
@@ -254,13 +257,13 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
         </div>
 
         {/* Side panel: mapped clusters + unplaced fallback */}
-        <div className="border-t border-card-border lg:border-l lg:border-t-0">
+        <div className="border-t border-[rgba(150,180,245,.22)] lg:border-l lg:border-t-0">
           <div className="max-h-[70vh] overflow-y-auto p-3">
             {unmappedNoSite > 0 && (
-              <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-500">
+              <div className="mb-3 flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.1)] px-3 py-2 text-[11px] text-[#fbbf24]">
                 <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0 text-sm" />
-                <span className="text-muted">
-                  <span className="font-medium text-amber-500">{unmappedNoSite}</span> incident(s) have no
+                <span className="text-[#aec2e8]">
+                  <span className="font-medium text-[#fbbf24]">{unmappedNoSite}</span> incident(s) have no
                   site set and can&apos;t be placed on a map. See the Board for the full list.
                 </span>
               </div>
@@ -269,7 +272,7 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
             {/* Mapped clusters */}
             {clusters.length > 0 && (
               <div className="mb-3">
-                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">On this floor</div>
+                <div className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#7e93bf]">On this floor</div>
                 <div className="space-y-1.5">
                   {clusters.map((c) =>
                     c.items.map((it) => (
@@ -282,12 +285,12 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
 
             {/* Unplaced fallback */}
             <div>
-              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+              <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#7e93bf]">
                 Unplaced at this site
-                <span className="rounded bg-hover px-1 text-[10px] text-muted">{unplaced.length}</span>
+                <span className="rounded border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 text-[10px] text-[#aec2e8]">{unplaced.length}</span>
               </div>
               {unplaced.length === 0 ? (
-                <p className="px-1 text-[11px] text-muted">
+                <p className="px-1 text-[11px] text-[#7e93bf]">
                   {siteCount === 0 ? "No incidents at this site." : "All site incidents are on a zone."}
                 </p>
               ) : (
@@ -301,7 +304,7 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
           </div>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -311,12 +314,12 @@ function IncidentRow({ it, onOpen, zoneName, sopName = {} }) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 rounded-lg border border-card-border bg-card px-2.5 py-2 text-left transition hover:bg-hover"
+      className="flex w-full items-center gap-2 rounded-[10px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 py-2 text-left transition hover:border-[rgba(34,211,238,.4)] hover:bg-[rgba(150,180,245,.07)]"
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium text-foreground">{incTitle(it)}</span>
-        <span className="block truncate text-[10px] text-muted">
+        <span className="block truncate text-xs font-medium text-[#f2f6ff]">{incTitle(it)}</span>
+        <span className="block truncate font-mono text-[10px] text-[#7e93bf]">
           {zoneName ? `${zoneName} · ` : ""}{fmtRelative(it.created_at)}
         </span>
       </span>

@@ -103,10 +103,10 @@ export default function OnboardCameraModal({ onClose, onSuccess, sites = [] }) {
 
         {probe && (
           <div
-            className={`mb-4 flex items-start gap-2 rounded-lg border px-3 py-2 text-[11px] ${
+            className={`mb-4 flex items-start gap-2 rounded-[10px] border px-3 py-2 text-[11px] ${
               probe.reachable
-                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-500"
-                : "border-red-500/20 bg-red-500/10 text-red-500"
+                ? "border-[rgba(52,211,153,.3)] bg-[rgba(52,211,153,.1)] text-nb-good"
+                : "border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.12)] text-nb-crit"
             }`}
           >
             <Icon

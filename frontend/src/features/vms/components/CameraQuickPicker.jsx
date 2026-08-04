@@ -43,23 +43,23 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 p-4 pt-[12vh]" onMouseDown={onClose}>
       <div
-        className="w-full max-w-md overflow-hidden rounded-xl border border-card-border bg-card shadow-2xl"
+        className="w-full max-w-md overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.95)] shadow-2xl backdrop-blur-sm"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-card-border px-3">
-          <Icon icon="heroicons-outline:magnifying-glass" className="text-base text-muted" />
+        <div className="flex items-center gap-2 border-b border-[rgba(160,150,245,.22)] px-3">
+          <Icon icon="heroicons-outline:magnifying-glass" className="text-base text-[#7e93bf]" />
           <input
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={`Add camera to tile ${tileIndex != null ? tileIndex + 1 : ""}…`}
-            className="h-11 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted outline-none"
+            className="h-11 flex-1 bg-transparent text-sm text-[#f2f6ff] placeholder:text-[#7e93bf] outline-none"
           />
-          <kbd className="rounded border border-card-border px-1.5 py-0.5 text-[10px] text-muted">Esc</kbd>
+          <kbd className="rounded border border-[rgba(150,180,245,.22)] px-1.5 py-0.5 font-mono text-[10px] text-[#7e93bf]">Esc</kbd>
         </div>
         <ul className="max-h-80 overflow-y-auto p-1.5">
           {filtered.length === 0 ? (
-            <li className="px-3 py-6 text-center text-xs text-muted">No cameras match.</li>
+            <li className="px-3 py-6 text-center text-xs text-[#7e93bf]">No cameras match.</li>
           ) : (
             filtered.map((c) => {
               const onWall = mountedIds?.has(c.id);
@@ -68,15 +68,15 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
                   <button
                     type="button"
                     onClick={() => onPick?.(c.id)}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-hover"
+                    className="flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition hover:bg-[rgba(150,180,245,.07)]"
                   >
                     <StatusDot status={c.status} />
                     <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-sm font-medium text-foreground">{c.name}</span>
-                      {c.site_name && <span className="truncate text-[11px] text-muted">{c.site_name}</span>}
+                      <span className="truncate text-sm font-medium text-[#f2f6ff]">{c.name}</span>
+                      {c.site_name && <span className="truncate text-[11px] text-[#7e93bf]">{c.site_name}</span>}
                     </span>
                     {onWall && (
-                      <Icon icon="heroicons-solid:tv" className="shrink-0 text-sm text-blue-500" title="Already on wall" />
+                      <Icon icon="heroicons-solid:tv" className="shrink-0 text-sm text-[#22d3ee]" title="Already on wall" />
                     )}
                   </button>
                 </li>

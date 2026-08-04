@@ -64,26 +64,26 @@ export default function TourFormModal({ open, tour, presets = [], onClose, onSub
         </div>
 
         <div>
-          <span className="mb-1.5 block text-sm font-medium text-foreground">Preset sequence</span>
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Preset sequence</span>
           {selected.length === 0 ? (
-            <p className="rounded-md border border-dashed border-card-border px-3 py-3 text-xs text-muted">
+            <p className="rounded-[8px] border border-dashed border-nb-line px-3 py-3 text-xs text-nb-faint">
               Add presets below — the tour cycles them in this order.
             </p>
           ) : (
             <ul className="space-y-1">
               {selected.map((id, idx) => (
-                <li key={id} className="flex items-center gap-2 rounded-md border border-card-border bg-card px-2 py-1.5">
-                  <span className="w-5 text-center text-[11px] tabular-nums text-muted">{idx + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                <li key={id} className="flex items-center gap-2 rounded-[8px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 py-1.5">
+                  <span className="w-5 text-center font-mono text-[11px] tabular-nums text-nb-tealb">{idx + 1}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-ink">
                     {presetById.get(id)?.name || "(deleted preset)"}
                   </span>
-                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0} className="rounded p-0.5 text-muted hover:bg-hover disabled:opacity-30">
+                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0} className="rounded p-0.5 text-nb-soft hover:bg-[rgba(150,180,245,.07)] hover:text-nb-tealb disabled:opacity-30">
                     <Icon icon="heroicons-mini:chevron-up" className="text-xs" />
                   </button>
-                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === selected.length - 1} className="rounded p-0.5 text-muted hover:bg-hover disabled:opacity-30">
+                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === selected.length - 1} className="rounded p-0.5 text-nb-soft hover:bg-[rgba(150,180,245,.07)] hover:text-nb-tealb disabled:opacity-30">
                     <Icon icon="heroicons-mini:chevron-down" className="text-xs" />
                   </button>
-                  <button type="button" onClick={() => remove(id)} className="rounded p-0.5 text-muted hover:bg-red-500/10 hover:text-red-400">
+                  <button type="button" onClick={() => remove(id)} className="rounded p-0.5 text-nb-soft hover:bg-[rgba(248,113,113,.1)] hover:text-nb-crit">
                     <Icon icon="heroicons-outline:x-mark" className="text-xs" />
                   </button>
                 </li>
@@ -94,16 +94,16 @@ export default function TourFormModal({ open, tour, presets = [], onClose, onSub
 
         {available.length > 0 && (
           <div>
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted">Add preset</span>
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Add preset</span>
             <div className="flex flex-wrap gap-1.5">
               {available.map((p) => (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => add(p.id)}
-                  className="inline-flex items-center gap-1 rounded-full border border-card-border px-2 py-1 text-xs text-foreground transition hover:bg-hover"
+                  className="inline-flex items-center gap-1 rounded-full border border-nb-line px-2 py-1 text-xs text-nb-ink transition hover:border-nb-teal hover:text-nb-tealb"
                 >
-                  <Icon icon="heroicons-mini:plus" className="text-[11px] text-muted" />
+                  <Icon icon="heroicons-mini:plus" className="text-[11px] text-nb-muted" />
                   {p.name}
                 </button>
               ))}
@@ -111,7 +111,7 @@ export default function TourFormModal({ open, tour, presets = [], onClose, onSub
           </div>
         )}
         {presets.length === 0 && (
-          <p className="text-[11px] text-muted">Save some presets first — a tour cycles through presets.</p>
+          <p className="text-[11px] text-nb-faint">Save some presets first — a tour cycles through presets.</p>
         )}
       </div>
     </Modal>

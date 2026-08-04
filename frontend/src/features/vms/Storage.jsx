@@ -39,10 +39,10 @@ const RAID_HEALTH = {
   unknown: { tone: "muted", label: "Unknown", icon: "heroicons-outline:question-mark-circle" },
 };
 const RAID_TONE = {
-  emerald: "border-emerald-500/20 bg-emerald-500/10 text-emerald-500",
-  red: "border-red-500/20 bg-red-500/10 text-red-500",
-  amber: "border-amber-500/20 bg-amber-500/10 text-amber-500",
-  muted: "border-card-border bg-hover text-muted",
+  emerald: "border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.08)] text-nb-tealb",
+  red: "border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] text-nb-crit",
+  amber: "border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.1)] text-nb-warn",
+  muted: "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted",
 };
 
 export default function StoragePage() {
@@ -105,7 +105,10 @@ export default function StoragePage() {
     });
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-5 shrink-0" />
 
       {tab === "pools" ? (
@@ -167,30 +170,32 @@ function PoolListItem({ pool, selected, onSelect }) {
     <li className="relative">
       <button
         onClick={onSelect}
-        className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${
-          selected ? "bg-hover" : "hover:bg-hover"
+        className={`w-full flex items-start gap-3 rounded-[10px] border px-4 py-3 text-left transition ${
+          selected
+            ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
+            : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
         }`}
       >
-        {selected && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />}
-        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-md bg-hover text-muted shrink-0 border border-card-border">
+        {selected && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded bg-nb-blue" />}
+        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted shrink-0">
           <Icon icon={TYPE_ICON[p.pool_type] || "heroicons-outline:server"} className="text-base" />
           <span
-            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-card ${
-              p.is_active !== false ? "bg-green-500" : "bg-muted/50"
+            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-[#0c1530] ${
+              p.is_active !== false ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"
             }`}
           />
         </span>
         <span className="flex-1 min-w-0">
           <span className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-foreground truncate">{p.name}</span>
+            <span className="text-sm font-semibold text-nb-ink truncate">{p.name}</span>
             {p.is_default && (
-              <span className="text-[10px] rounded-full bg-blue-500/10 text-blue-400 px-1.5 py-0.5 font-medium">
+              <span className="text-[10px] rounded-full bg-[rgba(96,165,250,.1)] text-nb-blueb px-1.5 py-0.5 font-medium">
                 Default
               </span>
             )}
           </span>
-          <span className="block text-xs text-muted truncate">{typeLabel}</span>
-          <span className="block text-[10px] font-mono text-muted/70 truncate">{loc}</span>
+          <span className="block text-xs text-nb-soft truncate">{typeLabel}</span>
+          <span className="block text-[10px] font-mono text-nb-faint truncate">{loc}</span>
         </span>
       </button>
     </li>
@@ -221,7 +226,7 @@ function PoolsTab({ pools, rules, poolNames, query, onAdd, onEdit, onDelete }) {
     <button
       onClick={onAdd}
       title="Add pool"
-      className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+      className="inline-flex h-7 items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
     >
       <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
     </button>
@@ -242,37 +247,37 @@ function PoolsTab({ pools, rules, poolNames, query, onAdd, onEdit, onDelete }) {
         >
           <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
             <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-              <span className="text-muted">{activeCount} active</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
+              <span className="text-nb-muted">{activeCount} active</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
-              <span className="text-muted">{pools.length - activeCount} inactive</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />
+              <span className="text-nb-muted">{pools.length - activeCount} inactive</span>
             </span>
           </div>
 
           {query.isLoading ? (
-            <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted">
+            <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-soft">
               <Spinner className="!h-4 !w-4" /> Loading…
             </div>
           ) : query.isError ? (
-            <div className="px-4 py-6 text-center text-xs text-red-500">
+            <div className="px-4 py-6 text-center text-xs text-nb-crit">
               {apiError(query.error, "Failed to load pools")}
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-4 py-12 text-center">
-              <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
-                <Icon icon="heroicons-outline:circle-stack" className="text-lg text-muted" />
+              <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)]">
+                <Icon icon="heroicons-outline:circle-stack" className="text-lg text-nb-muted" />
               </div>
-              <div className="text-sm font-medium text-foreground">
+              <div className="text-sm font-medium text-nb-ink">
                 {search.trim() ? "No matches" : "No storage pools"}
               </div>
-              <div className="mt-0.5 text-xs text-muted">
+              <div className="mt-0.5 text-xs text-nb-muted">
                 {search.trim() ? "Try a different keyword." : "Click Add to create your first pool."}
               </div>
             </div>
           ) : (
-            <ul className="divide-y divide-card-border">
+            <ul className="space-y-0.5 px-2 py-2">
               {filtered.map((p) => (
                 <PoolListItem key={p.id} pool={p} selected={p.id === selectedId} onSelect={() => setSelectedId(p.id)} />
               ))}
@@ -281,7 +286,7 @@ function PoolsTab({ pools, rules, poolNames, query, onAdd, onEdit, onDelete }) {
         </ListPanel>
       }
     >
-      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
+      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
         {selected ? (
           <StoragePoolDetail
             key={selected.id}
@@ -294,11 +299,11 @@ function PoolsTab({ pools, rules, poolNames, query, onAdd, onEdit, onDelete }) {
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)] text-nb-muted">
               <Icon icon="heroicons-outline:circle-stack" className="text-xl" />
             </span>
-            <div className="mt-3 text-sm font-semibold text-foreground">No pool selected</div>
-            <div className="text-xs text-muted mt-0.5">
+            <div className="mt-3 text-sm font-semibold text-nb-ink">No pool selected</div>
+            <div className="text-xs text-nb-muted mt-0.5">
               Pick one from the list, or click <b>Add</b> to create a new pool.
             </div>
           </div>
@@ -314,8 +319,8 @@ const fmtAge = (h) => (h >= 24 ? `${Math.round(h / 24)}d (${h}h)` : `${h}h`);
 function TierInfoField({ label, children }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
-      <div className="mt-1 text-sm text-foreground">{children}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{label}</div>
+      <div className="mt-1 text-sm text-nb-ink">{children}</div>
     </div>
   );
 }
@@ -325,30 +330,32 @@ function TierRuleListItem({ rule, poolNames, selected, onSelect }) {
     <li className="relative">
       <button
         onClick={onSelect}
-        className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${
-          selected ? "bg-hover" : "hover:bg-hover"
+        className={`w-full flex items-start gap-3 rounded-[10px] border px-4 py-3 text-left transition ${
+          selected
+            ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
+            : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
         }`}
       >
-        {selected && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />}
-        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-md bg-hover text-muted shrink-0 border border-card-border">
+        {selected && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded bg-nb-blue" />}
+        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted shrink-0">
           <Icon icon="heroicons-outline:arrows-right-left" className="text-base" />
           <span
-            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-card ${
-              rule.enabled ? "bg-green-500" : "bg-muted/50"
+            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-[#0c1530] ${
+              rule.enabled ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"
             }`}
           />
         </span>
         <span className="flex-1 min-w-0">
           <span className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-foreground truncate">{rule.name}</span>
+            <span className="text-sm font-semibold text-nb-ink truncate">{rule.name}</span>
             {!rule.enabled && (
-              <span className="text-[10px] rounded-full bg-hover px-1.5 py-0.5 font-medium text-muted">Disabled</span>
+              <span className="text-[10px] rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 font-medium text-nb-muted">Disabled</span>
             )}
           </span>
-          <span className="block text-xs text-muted truncate">
+          <span className="block text-xs text-nb-soft truncate">
             {poolNames[rule.source_pool_id] || "—"} → {poolNames[rule.target_pool_id] || "—"}
           </span>
-          <span className="block text-[10px] text-muted/70">after {fmtAge(rule.after_age_hours || 0)}</span>
+          <span className="block text-[10px] font-mono text-nb-faint">after {fmtAge(rule.after_age_hours || 0)}</span>
         </span>
       </button>
     </li>
@@ -358,18 +365,18 @@ function TierRuleListItem({ rule, poolNames, selected, onSelect }) {
 function TierRuleDetail({ rule, poolNames, onClose, onEdit, onDelete }) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
+      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 shrink-0">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-[rgba(96,165,250,.1)] text-nb-blueb shrink-0">
             <Icon icon="heroicons-outline:arrows-right-left" className="text-2xl" />
           </span>
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-foreground truncate">{rule.name}</h2>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted flex-wrap">
+            <h2 className="text-xl font-semibold text-nb-ink truncate">{rule.name}</h2>
+            <div className="mt-0.5 flex items-center gap-2 text-xs text-nb-soft flex-wrap">
               <span>after {fmtAge(rule.after_age_hours || 0)}</span>
               <span
                 className={`rounded-full px-2 py-0.5 font-medium ${
-                  rule.enabled ? "bg-green-500/10 text-green-500" : "bg-hover text-muted"
+                  rule.enabled ? "bg-[rgba(52,211,153,.12)] text-nb-good" : "bg-[rgba(10,18,40,.6)] text-nb-muted"
                 }`}
               >
                 {rule.enabled ? "Enabled" : "Disabled"}
@@ -381,19 +388,19 @@ function TierRuleDetail({ rule, poolNames, onClose, onEdit, onDelete }) {
           <button
             onClick={onClose}
             title="Close"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons-outline:x-mark" className="text-base" />
           </button>
           <button
             onClick={onEdit}
-            className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover"
+            className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
           <button
             onClick={onDelete}
-            className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20"
+            className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.2)]"
           >
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>
@@ -402,18 +409,18 @@ function TierRuleDetail({ rule, poolNames, onClose, onEdit, onDelete }) {
 
       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Flow</div>
-          <div className="flex items-center gap-3 rounded-xl border border-card-border bg-hover/40 px-4 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted mb-2">Flow</div>
+          <div className="flex items-center gap-3 rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] px-4 py-3">
             <div className="flex-1 min-w-0 text-center">
-              <div className="text-[10px] uppercase tracking-wide text-muted">Source</div>
-              <div className="mt-0.5 text-sm font-medium text-foreground truncate">
+              <div className="text-[10px] uppercase tracking-wide text-nb-muted">Source</div>
+              <div className="mt-0.5 text-sm font-medium text-nb-ink truncate">
                 {poolNames[rule.source_pool_id] || "—"}
               </div>
             </div>
-            <Icon icon="heroicons-outline:arrow-long-right" className="text-lg text-muted shrink-0" />
+            <Icon icon="heroicons-outline:arrow-long-right" className="text-lg text-nb-blueb shrink-0" />
             <div className="flex-1 min-w-0 text-center">
-              <div className="text-[10px] uppercase tracking-wide text-muted">Target</div>
-              <div className="mt-0.5 text-sm font-medium text-foreground truncate">
+              <div className="text-[10px] uppercase tracking-wide text-nb-muted">Target</div>
+              <div className="mt-0.5 text-sm font-medium text-nb-ink truncate">
                 {poolNames[rule.target_pool_id] || "—"}
               </div>
             </div>
@@ -457,7 +464,7 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
     <button
       onClick={onAdd}
       title="Add rule"
-      className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+      className="inline-flex h-7 items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
     >
       <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
     </button>
@@ -478,39 +485,39 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
         >
           <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
             <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-              <span className="text-muted">{enabledCount} enabled</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
+              <span className="text-nb-muted">{enabledCount} enabled</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
-              <span className="text-muted">{rules.length - enabledCount} disabled</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />
+              <span className="text-nb-muted">{rules.length - enabledCount} disabled</span>
             </span>
           </div>
 
           {query.isLoading ? (
-            <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted">
+            <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-soft">
               <Spinner className="!h-4 !w-4" /> Loading…
             </div>
           ) : query.isError ? (
-            <div className="px-4 py-6 text-center text-xs text-red-500">
+            <div className="px-4 py-6 text-center text-xs text-nb-crit">
               {apiError(query.error, "Failed to load rules")}
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-4 py-12 text-center">
-              <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
-                <Icon icon="heroicons-outline:arrows-right-left" className="text-lg text-muted" />
+              <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)]">
+                <Icon icon="heroicons-outline:arrows-right-left" className="text-lg text-nb-muted" />
               </div>
-              <div className="text-sm font-medium text-foreground">
+              <div className="text-sm font-medium text-nb-ink">
                 {search.trim() ? "No matches" : "No tier rules"}
               </div>
-              <div className="mt-0.5 text-xs text-muted">
+              <div className="mt-0.5 text-xs text-nb-muted">
                 {search.trim()
                   ? "Try a different keyword."
                   : "Rules move recordings between pools as they age (hot → cold)."}
               </div>
             </div>
           ) : (
-            <ul className="divide-y divide-card-border">
+            <ul className="space-y-0.5 px-2 py-2">
               {filtered.map((r) => (
                 <TierRuleListItem
                   key={r.id}
@@ -525,7 +532,7 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
         </ListPanel>
       }
     >
-      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
+      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
         {selected ? (
           <TierRuleDetail
             key={selected.id}
@@ -537,11 +544,11 @@ function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)] text-nb-muted">
               <Icon icon="heroicons-outline:arrows-right-left" className="text-xl" />
             </span>
-            <div className="mt-3 text-sm font-semibold text-foreground">No rule selected</div>
-            <div className="text-xs text-muted mt-0.5">
+            <div className="mt-3 text-sm font-semibold text-nb-ink">No rule selected</div>
+            <div className="text-xs text-nb-muted mt-0.5">
               Pick one from the list, or click <b>Add</b> to create a new rule.
             </div>
           </div>
@@ -565,15 +572,15 @@ function RaidTab({ query }) {
   // Host can't inspect software-RAID (non-Linux / mdadm absent) — honest banner.
   if (!data.available) {
     return (
-      <div className="rounded-xl border border-card-border bg-card p-6">
+      <div className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] p-6">
         <div className="flex items-start gap-3">
-          <Icon icon="heroicons-outline:information-circle" className="mt-0.5 text-lg text-muted" />
+          <Icon icon="heroicons-outline:information-circle" className="mt-0.5 text-lg text-nb-muted" />
           <div>
-            <div className="text-sm font-medium text-foreground">RAID inspection not available on this host</div>
-            <p className="mt-1 text-sm text-muted">
+            <div className="text-sm font-medium text-nb-ink">RAID inspection not available on this host</div>
+            <p className="mt-1 text-sm text-nb-soft">
               {data.reason || "Software-RAID (mdadm) is not present on this node."}
             </p>
-            <p className="mt-2 text-xs text-muted">
+            <p className="mt-2 text-xs text-nb-muted">
               On a Linux recording node with an mdadm array, arrays and their health appear here
               automatically, and a degraded array raises an alarm.
             </p>
@@ -618,10 +625,10 @@ function RaidArrayCard({ arr }) {
   const alarm = arr.health === "degraded" || arr.health === "failed";
   const pct = arr.rebuild_percent;
   return (
-    <div className={`rounded-xl border bg-card p-4 ${alarm ? "border-red-500/30" : "border-card-border"}`}>
+    <div className={`rounded-[14px] border bg-[rgba(8,15,34,.5)] p-4 ${alarm ? "border-[rgba(248,113,113,.3)]" : "border-nb-line"}`}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 font-mono text-sm font-medium text-foreground">
-          <Icon icon="heroicons-outline:server-stack" className="text-base text-muted" />
+        <div className="flex items-center gap-2 font-mono text-sm font-medium text-nb-ink">
+          <Icon icon="heroicons-outline:server-stack" className="text-base text-nb-muted" />
           {arr.device}
         </div>
         <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${RAID_TONE[h.tone]}`}>
@@ -630,41 +637,41 @@ function RaidArrayCard({ arr }) {
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-lg border border-card-border bg-hover/40 py-2">
-          <div className="text-sm font-semibold tabular-nums text-foreground">{(arr.level || "—").toUpperCase()}</div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted">Level</div>
+        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-2">
+          <div className="text-sm font-semibold tabular-nums text-nb-ink">{(arr.level || "—").toUpperCase()}</div>
+          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-nb-muted">Level</div>
         </div>
-        <div className="rounded-lg border border-card-border bg-hover/40 py-2">
-          <div className="text-sm font-semibold tabular-nums text-emerald-500">{arr.working_devices}/{arr.total_devices}</div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted">Working</div>
+        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-2">
+          <div className="text-sm font-semibold tabular-nums text-nb-good">{arr.working_devices}/{arr.total_devices}</div>
+          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-nb-muted">Working</div>
         </div>
-        <div className="rounded-lg border border-card-border bg-hover/40 py-2">
-          <div className={`text-sm font-semibold tabular-nums ${arr.failed_devices ? "text-red-500" : "text-foreground"}`}>
+        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-2">
+          <div className={`text-sm font-semibold tabular-nums ${arr.failed_devices ? "text-nb-crit" : "text-nb-ink"}`}>
             {arr.failed_devices}
           </div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted">Failed</div>
+          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-nb-muted">Failed</div>
         </div>
       </div>
 
       {arr.health === "rebuilding" && (
         <div className="mt-3">
-          <div className="mb-1 flex items-center justify-between text-[11px] text-muted">
+          <div className="mb-1 flex items-center justify-between text-[11px] text-nb-muted">
             <span>Rebuilding</span>
             {pct != null && <span className="tabular-nums">{pct}%</span>}
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-hover">
-            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${pct ?? 30}%` }} />
+          <div className="h-1.5 w-full overflow-hidden rounded-full border border-nb-line bg-black/40">
+            <div className="h-full rounded-full bg-nb-warn transition-all" style={{ width: `${pct ?? 30}%` }} />
           </div>
         </div>
       )}
 
       {alarm && (
-        <p className="mt-3 text-xs text-red-500">
+        <p className="mt-3 text-xs text-nb-crit">
           Replace the failed disk and the array rebuilds automatically. Until then redundancy is lost.
         </p>
       )}
       {arr.state && (
-        <p className="mt-2 truncate font-mono text-[10px] text-muted" title={arr.state}>{arr.state}</p>
+        <p className="mt-2 truncate font-mono text-[10px] text-nb-faint" title={arr.state}>{arr.state}</p>
       )}
     </div>
   );
@@ -673,7 +680,7 @@ function RaidArrayCard({ arr }) {
 // ── Small shared bits ──────────────────────────────────────────────────────
 function Loading({ label }) {
   return (
-    <div className="flex items-center justify-center gap-2 rounded-xl border border-card-border bg-card py-20 text-sm text-muted">
+    <div className="flex items-center justify-center gap-2 rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] py-20 text-sm text-nb-soft">
       <Icon icon="svg-spinners:180-ring" className="text-base" /> {label}
     </div>
   );
@@ -681,7 +688,7 @@ function Loading({ label }) {
 
 function ErrorBox({ error, fallback }) {
   return (
-    <div className="rounded-xl border border-red-500/20 bg-red-500/10 py-10 text-center text-sm text-red-500">
+    <div className="rounded-[14px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] py-10 text-center text-sm text-nb-crit">
       {apiError(error, fallback)}
     </div>
   );

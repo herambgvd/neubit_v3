@@ -137,13 +137,13 @@ export default function SelectMenu({
         aria-haspopup="listbox"
         aria-expanded={open}
         className={`${fieldClass} flex items-center justify-between text-left ${
-          isPlaceholder ? "!text-muted" : ""
-        } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-muted"} ${className}`}
+          isPlaceholder ? "!text-nb-faint" : ""
+        } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-nb-teal"} ${className}`}
       >
         <span className="truncate">{displayLabel}</span>
         <Icon
           icon="heroicons-outline:chevron-down"
-          className={`ml-2 shrink-0 text-base text-muted transition ${open ? "rotate-180" : ""}`}
+          className={`ml-2 shrink-0 text-base text-nb-muted transition ${open ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -153,10 +153,10 @@ export default function SelectMenu({
             ref={panelRef}
             role="listbox"
             style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, zIndex: 70 }}
-            className="max-h-64 overflow-auto rounded-lg border border-card-border bg-card py-1 shadow-2xl animate-fade-in"
+            className="max-h-64 overflow-auto rounded-lg border border-nb-line bg-[rgba(8,15,34,.93)] backdrop-blur-md py-1 shadow-2xl animate-fade-in"
           >
             {options.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-muted">No options</div>
+              <div className="px-3 py-2 text-sm text-nb-muted">No options</div>
             ) : (
               options.map((o, i) => {
                 const active = String(o.value) === String(value ?? "");
@@ -171,12 +171,12 @@ export default function SelectMenu({
                     onMouseEnter={() => setActiveIdx(i)}
                     onClick={() => pick(o.value)}
                     className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition ${
-                      highlighted ? "bg-hover" : ""
-                    } ${active ? "text-foreground" : "text-muted hover:text-foreground"}`}
+                      highlighted ? "bg-white/5" : ""
+                    } ${active ? "text-nb-ink" : "text-nb-muted hover:text-nb-ink"}`}
                   >
                     <span className="truncate">{o.label}</span>
                     {active && !isPlaceholder && (
-                      <Icon icon="heroicons-outline:check" className="shrink-0 text-base text-foreground" />
+                      <Icon icon="heroicons-outline:check" className="shrink-0 text-base text-nb-teal" />
                     )}
                   </button>
                 );

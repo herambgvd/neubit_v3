@@ -46,13 +46,13 @@ export function ListPanel({
   className = "",
 }) {
   return (
-    <aside className={`flex min-h-0 flex-col rounded-xl border border-card-border bg-card ${className}`}>
-      <header className="flex shrink-0 items-center justify-between border-b border-card-border px-3 py-2">
+    <aside className={`flex min-h-0 flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] backdrop-blur-sm ${className}`}>
+      <header className="flex shrink-0 items-center justify-between border-b border-nb-line px-3 py-2">
         <div className="flex items-center gap-2">
-          {icon && <Icon icon={icon} className="text-sm text-muted" />}
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{title}</span>
+          {icon && <Icon icon={icon} className="text-sm text-nb-muted" />}
+          <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-nb-muted">{title}</span>
           {count != null && (
-            <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] font-medium text-muted">{count}</span>
+            <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-nb-muted">{count}</span>
           )}
         </div>
         {action}
@@ -63,13 +63,13 @@ export function ListPanel({
           <label className="relative block">
             <Icon
               icon="heroicons-outline:magnifying-glass"
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-faint"
             />
             <input
               value={search}
               onChange={(e) => onSearch(e.target.value)}
               placeholder={searchPlaceholder}
-              className="h-8 w-full rounded-lg border border-field bg-transparent pl-8 pr-3 text-[13px] text-foreground placeholder:text-muted outline-none transition focus:border-muted"
+              className="h-8 w-full rounded-lg border border-nb-line bg-nb-field pl-8 pr-3 text-[13px] text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40"
             />
           </label>
         </div>
@@ -83,12 +83,12 @@ export function ListPanel({
 // Right-hand empty placeholder for when nothing is selected.
 export function EmptyDetail({ icon = "heroicons-outline:cursor-arrow-rays", title = "Nothing selected", subtitle }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-card-border bg-card py-20 text-center">
-      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
+    <section className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] backdrop-blur-sm py-20 text-center">
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-nb-teal/10 text-nb-teal">
         <Icon icon={icon} className="text-xl" />
       </span>
-      <div className="mt-3 text-sm font-semibold text-foreground">{title}</div>
-      {subtitle && <div className="mt-0.5 text-xs text-muted">{subtitle}</div>}
+      <div className="mt-3 text-sm font-semibold text-nb-ink">{title}</div>
+      {subtitle && <div className="mt-0.5 text-xs text-nb-muted">{subtitle}</div>}
     </section>
   );
 }

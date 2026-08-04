@@ -140,8 +140,6 @@ class AdvancedConfig(BaseModel):
     privacy_masks: list[dict[str, Any]] = Field(default_factory=list)
     motion_zones: list[dict[str, Any]] = Field(default_factory=list)
     motion_config: dict[str, Any] = Field(default_factory=dict)
-    pos_overlay: dict[str, Any] = Field(default_factory=dict)
-    dewarp: dict[str, Any] = Field(default_factory=dict)
     backchannel: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -285,8 +283,6 @@ class CameraPublic(BaseModel):
                     "privacy_masks": row.privacy_masks or [],
                     "motion_zones": row.motion_zones or [],
                     "motion_config": row.motion_config or {},
-                    "pos_overlay": row.pos_overlay or {},
-                    "dewarp": row.dewarp or {},
                     "backchannel": row.backchannel or {},
                 },
                 "ptz": {

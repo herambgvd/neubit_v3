@@ -261,15 +261,15 @@ export default function MotionSearchModal({
       }
     >
       <div className="space-y-4">
-        <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2 text-sm">
-          <span className="text-muted">Camera</span>{" "}
-          <span className="font-medium text-foreground">{cameraName || cameraId}</span>
+        <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2 text-sm">
+          <span className="text-[#aec2e8]">Camera</span>{" "}
+          <span className="font-medium text-[#f2f6ff]">{cameraName || cameraId}</span>
         </div>
 
         {/* Reference frame + draw layer */}
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
               Draw region(s) to search — {regionSummary}
             </span>
             {regions.length > 0 && (
@@ -277,7 +277,7 @@ export default function MotionSearchModal({
                 type="button"
                 onClick={clearRegions}
                 disabled={running}
-                className="text-[11px] text-muted hover:text-foreground disabled:opacity-40"
+                className="text-[11px] text-[#aec2e8] hover:text-[#67e8f9] disabled:opacity-40"
               >
                 Clear all
               </button>
@@ -289,7 +289,7 @@ export default function MotionSearchModal({
             onMouseMove={onDrawMove}
             onMouseUp={onDrawUp}
             onMouseLeave={onDrawUp}
-            className={`relative aspect-video w-full select-none overflow-hidden rounded-lg border border-card-border bg-black ${
+            className={`relative aspect-video w-full select-none overflow-hidden rounded-lg border border-[rgba(150,180,245,.22)] bg-black ${
               running ? "cursor-not-allowed" : "cursor-crosshair"
             }`}
           >
@@ -352,7 +352,7 @@ export default function MotionSearchModal({
               />
             )}
           </div>
-          <p className="mt-1 text-[10px] text-muted">
+          <p className="mt-1 text-[10px] text-[#aec2e8]">
             Drag on the frame to add a search box. No box = the whole frame is searched.
           </p>
         </div>
@@ -360,23 +360,23 @@ export default function MotionSearchModal({
         {/* Time window */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">From</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">From</span>
             <input
               type="datetime-local"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               disabled={running}
-              className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted disabled:opacity-60"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)] disabled:opacity-60"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">To</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">To</span>
             <input
               type="datetime-local"
               value={to}
               onChange={(e) => setTo(e.target.value)}
               disabled={running}
-              className="h-9 w-full rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted disabled:opacity-60"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)] disabled:opacity-60"
             />
           </label>
         </div>
@@ -386,9 +386,9 @@ export default function MotionSearchModal({
 
         {/* Sensitivity */}
         <label className="block">
-          <span className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-muted">
+          <span className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
             <span>Sensitivity</span>
-            <span className="font-mono text-foreground">{sensitivity.toFixed(2)}</span>
+            <span className="font-mono text-[#f2f6ff]">{sensitivity.toFixed(2)}</span>
           </span>
           <input
             type="range"
@@ -400,7 +400,7 @@ export default function MotionSearchModal({
             disabled={running}
             className="w-full accent-fuchsia-500"
           />
-          <div className="mt-0.5 flex justify-between text-[10px] text-muted">
+          <div className="mt-0.5 flex justify-between text-[10px] text-[#aec2e8]">
             <span>Less (only big motion)</span>
             <span>More (subtle motion)</span>
           </div>
@@ -411,7 +411,7 @@ export default function MotionSearchModal({
           <button
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}
-            className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-foreground"
+            className="inline-flex items-center gap-1 text-[11px] text-[#aec2e8] hover:text-[#67e8f9]"
           >
             <Icon
               icon={showAdvanced ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"}
@@ -421,9 +421,9 @@ export default function MotionSearchModal({
           </button>
           {showAdvanced && (
             <label className="mt-2 block">
-              <span className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-muted">
+              <span className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
                 <span>Sample rate (fps)</span>
-                <span className="font-mono text-foreground">{sampleFps.toFixed(1)}</span>
+                <span className="font-mono text-[#f2f6ff]">{sampleFps.toFixed(1)}</span>
               </span>
               <input
                 type="range"
@@ -435,7 +435,7 @@ export default function MotionSearchModal({
                 disabled={running}
                 className="w-full accent-fuchsia-500"
               />
-              <p className="mt-0.5 text-[10px] text-muted">
+              <p className="mt-0.5 text-[10px] text-[#aec2e8]">
                 Frames analysed per second. Higher = more precise hits, slower search.
               </p>
             </label>
@@ -444,13 +444,13 @@ export default function MotionSearchModal({
 
         {/* Progress */}
         {running && (
-          <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-2.5">
-            <div className="mb-1.5 flex items-center gap-2 text-xs text-foreground">
+          <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2.5">
+            <div className="mb-1.5 flex items-center gap-2 text-xs text-[#f2f6ff]">
               <Icon icon="svg-spinners:180-ring" className="text-sm text-fuchsia-400" />
               {statusText || "Working…"}
-              <span className="ml-auto font-mono text-muted">{Math.round((progress || 0) * 100)}%</span>
+              <span className="ml-auto font-mono text-[#aec2e8]">{Math.round((progress || 0) * 100)}%</span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-card-border/60">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[rgba(150,180,245,.22)]/60">
               <div
                 className="h-full rounded-full bg-fuchsia-500 transition-all"
                 style={{ width: `${Math.round((progress || 0) * 100)}%` }}
@@ -471,7 +471,7 @@ export default function MotionSearchModal({
         {hits != null && !running && !jobError && (
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
                 {hits.length ? `${hits.length} hit${hits.length === 1 ? "" : "s"}` : "No motion found"}
               </span>
             </div>
@@ -482,33 +482,33 @@ export default function MotionSearchModal({
               </p>
             )}
             {hits.length > 0 ? (
-              <ul className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-card-border">
+              <ul className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-[rgba(150,180,245,.22)]">
                 {hits.map((h, i) => (
                   <li key={`${h.start}-${i}`}>
                     <button
                       type="button"
                       onClick={() => onSeekHit?.(h.start)}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-hover"
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[rgba(34,211,238,.08)]"
                     >
                       <span className="flex h-5 w-5 items-center justify-center rounded bg-fuchsia-500/20 text-[10px] font-medium text-fuchsia-300">
                         {i + 1}
                       </span>
-                      <span className="font-mono tabular-nums text-foreground">
+                      <span className="font-mono tabular-nums text-[#f2f6ff]">
                         {fmtTime(h.start)}
                         {h.end ? ` – ${fmtTime(h.end)}` : ""}
                       </span>
                       {typeof h.score === "number" && (
-                        <span className="ml-auto font-mono text-[10px] text-muted">
+                        <span className="ml-auto font-mono text-[10px] text-[#aec2e8]">
                           {(h.score * 100).toFixed(0)}%
                         </span>
                       )}
-                      <Icon icon="heroicons-outline:play" className="h-3.5 w-3.5 text-muted" />
+                      <Icon icon="heroicons-outline:play" className="h-3.5 w-3.5 text-[#aec2e8]" />
                     </button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="rounded-lg border border-dashed border-card-border px-3 py-3 text-center text-xs text-muted">
+              <p className="rounded-lg border border-dashed border-[rgba(150,180,245,.22)] px-3 py-3 text-center text-xs text-[#aec2e8]">
                 No motion detected in the selected region and window.
               </p>
             )}

@@ -263,6 +263,18 @@ class MediaNodeService:
                     f"{_health_url(body.api_url)} — it will come online on the next heartbeat"
                 )
 
+        # Phase-2 trust: enrol a per-node scoped credential so subsequent estate
+        # calls use X-Node-Credential (not the ambient shared-secret JWT). Best-effort
+        # — a node that can't enrol (older recorder, unreachable) simply keeps None and
+        # falls back to the service JWT.
+        if row.status == "online" and body.api_url:
+            try:
+                from app.vms.federation.client import enroll_node
+
+                row.credential = await enroll_node(body.api_url)
+            except Exception as exc:  # noqa: BLE001 — enrolment is best-effort
+                log.warning("media node %s: federation enrolment skipped: %s", body.name, exc)
+
         self.db.add(row)
         await self.db.commit()
         await self.db.refresh(row)

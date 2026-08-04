@@ -50,7 +50,7 @@ export default function AlarmCardCamera({ cameraId, eventTime }) {
   const stop = (e) => e.stopPropagation();
 
   return (
-    <div className="mt-1 flex items-center gap-3 rounded-lg border border-card-border bg-hover/30 p-2" onClick={stop}>
+    <div className="mt-1 flex items-center gap-3 rounded-[10px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] p-2" onClick={stop}>
       {/* Snapshot thumbnail */}
       <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-black">
         {state === "loading" && (
@@ -72,14 +72,14 @@ export default function AlarmCardCamera({ cameraId, eventTime }) {
 
       {/* Actions */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1 text-[11px] text-muted">
+        <div className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[1px] text-[#7e93bf]">
           <Icon icon="heroicons-outline:video-camera" className="text-xs" />
           <span className="truncate">Associated camera</span>
         </div>
         <Link
           href={playbackHref}
           onClick={stop}
-          className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-card"
+          className="mt-1.5 inline-flex items-center gap-1 rounded-[8px] border border-[rgba(150,180,245,.22)] px-2 py-1 text-[11px] font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         >
           <Icon icon="heroicons-outline:play" className="text-xs" /> View recording
         </Link>

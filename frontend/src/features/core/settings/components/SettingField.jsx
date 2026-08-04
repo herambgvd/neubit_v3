@@ -15,10 +15,10 @@ export default function SettingField({ item, value, onChange }) {
 
   if (item.type === "bool") {
     return (
-      <div className="flex items-center justify-between gap-4 py-3 border-b border-card-border last:border-0">
+      <div className="flex items-center justify-between gap-4 py-2 border-b border-nb-line/60 last:border-0">
         <div className="min-w-0">
-          <div className="text-sm font-medium text-foreground">{item.label}</div>
-          {item.description && <div className="text-xs text-muted mt-0.5">{item.description}</div>}
+          <div className="text-sm font-medium text-nb-ink">{item.label}</div>
+          {item.description && <div className="text-xs text-nb-soft mt-0.5">{item.description}</div>}
         </div>
         <Toggle checked={!!value} onChange={(v) => onChange(v)} />
       </div>
@@ -55,7 +55,7 @@ export default function SettingField({ item, value, onChange }) {
   }
 
   return (
-    <div className="py-3 border-b border-card-border last:border-0">
+    <div className="py-2 border-b border-nb-line/60 last:border-0">
       <Input
         label={item.label}
         type={item.type === "number" ? "number" : "text"}

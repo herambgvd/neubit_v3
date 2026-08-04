@@ -50,6 +50,20 @@ class UserOut(BaseModel):
     preferences: dict = {}
     # Whether the user has an active TOTP second factor.
     totp_enabled: bool = False
+    # --- account security posture (real, row-backed) -----------------------
+    # Consecutive failed logins + brute-force lock expiry. ``locked`` is the
+    # derived "is this account currently locked" (auto lockout OR an admin lock,
+    # which sets locked_until far in the future).
+    failed_login_count: int = 0
+    locked_until: dt.datetime | None = None
+    locked: bool = False
+    password_changed_at: dt.datetime | None = None
+    # Count of the user's live (non-revoked, unexpired) sessions — filled by the
+    # router from the refresh-token table (0 when not resolved).
+    active_sessions: int = 0
+    # --- site access scope -------------------------------------------------
+    # The site ids this user is confined to; EMPTY = unrestricted (all sites).
+    site_ids: list[str] = []
     # Platform super-admin flag (tenant_id NULL + is_superadmin True). The admin
     # console reads this to gate access to the cross-tenant panel.
     is_superadmin: bool = False
@@ -156,12 +170,32 @@ class CreateUserIn(BaseModel):
     # tenant (a tenant-admin can never provision into another tenant). A tenant-admin
     # can also never set is_superadmin (there is no field for it).
     tenant_id: uuid.UUID | None = None
+    # Site access scope for the new user (site ids). EMPTY = unrestricted.
+    site_ids: list[str] = []
 
 
 class UpdateUserIn(BaseModel):
     role_id: uuid.UUID | None = None
     is_active: bool | None = None
     full_name: str | None = None
+    # None = leave scope unchanged; a list (incl. []) REPLACES it ([] = unrestricted).
+    site_ids: list[str] | None = None
+
+
+class CloneUserIn(BaseModel):
+    """Fast onboarding: copy a source user's role, status and site scope into a new
+    account. Only identity differs — a fresh email + name; the new user sets their
+    own password via the emailed invite (no plaintext is ever copied)."""
+
+    email: EmailStr
+    full_name: str | None = None
+    send_invite: bool = True
+
+
+class CloneRoleIn(BaseModel):
+    """Copy a role's permissions + description under a new name."""
+
+    name: str
 
 
 class ConfirmPasswordIn(BaseModel):

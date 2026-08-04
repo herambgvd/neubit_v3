@@ -90,28 +90,28 @@ export default function AccessControlPage() {
                 <button
                   onClick={() => qc.invalidateQueries({ queryKey: ["ac-instances"] })}
                   title="Refresh"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#22d3ee]"
                 >
                   <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
                 </button>
                 <button
                   onClick={() => setBrandPickerOpen(true)}
                   title="Add controller"
-                  className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
+                  className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] px-2.5 text-[12px] font-medium text-[#67e8f9] transition hover:border-[#22d3ee] hover:bg-[rgba(34,211,238,.25)]"
                 >
                   <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
                 </button>
               </div>
             }
           >
-            <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                <span className="text-muted">{onlineCount} online</span>
+            <div className="flex items-center gap-3 px-4 pb-1 pt-1 font-mono text-[10px] uppercase tracking-[1.2px]">
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#34d399] shadow-[0_0_5px_#34d399]" />
+                <span className="text-[#aec2e8]">{onlineCount} online</span>
               </span>
-              <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-muted" />
-                <span className="text-muted">{instances.length - onlineCount} offline</span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#f87171] shadow-[0_0_5px_rgba(248,113,113,.6)]" />
+                <span className="text-[#7e93bf]">{instances.length - onlineCount} offline</span>
               </span>
             </div>
 

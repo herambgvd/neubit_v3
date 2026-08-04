@@ -81,7 +81,7 @@ export default function TierRuleModal({ rule, pools = [], onClose, onSuccess }) 
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>
-          <Button variant="success" onClick={submit} disabled={save.isPending}>
+          <Button variant="primary" onClick={submit} disabled={save.isPending}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create rule"}
           </Button>
         </>
@@ -133,8 +133,8 @@ export default function TierRuleModal({ rule, pools = [], onClose, onSuccess }) 
                 onClick={() => set({ after_age_hours: p.hours })}
                 className={`rounded-md border px-2 py-1 text-xs transition ${
                   Number(form.after_age_hours) === p.hours
-                    ? "border-foreground text-foreground"
-                    : "border-card-border text-muted hover:bg-hover"
+                    ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb"
+                    : "border-nb-line text-nb-muted hover:bg-[rgba(96,165,250,.06)]"
                 }`}
               >
                 {p.label}
@@ -142,7 +142,7 @@ export default function TierRuleModal({ rule, pools = [], onClose, onSuccess }) 
             ))}
           </div>
         </div>
-        <label className="flex items-center gap-2 text-sm text-foreground">
+        <label className="flex items-center gap-2 text-sm text-nb-soft">
           <Toggle checked={!!form.enabled} onChange={(v) => set({ enabled: v })} />
           Enabled
         </label>

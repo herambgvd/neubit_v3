@@ -23,26 +23,26 @@ export default function FormatDetail({ format, sopName, onEdit, onDelete }) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-card-border">
+      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-md text-white shrink-0" style={{ background: f.color_code || "#ef4444" }}>
             <Icon icon={f.icon || "heroicons-outline:swatch"} className="text-lg" />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-semibold text-foreground truncate">{f.name}</h2>
+              <h2 className="text-lg font-semibold text-nb-ink truncate">{f.name}</h2>
               <Badge color={PRIORITY_COLOR[f.severity] || "slate"}>{titleize(f.severity)}</Badge>
               <Badge color={PRIORITY_COLOR[f.priority] || "slate"}>{titleize(f.priority)}</Badge>
-              <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${f.is_active === false ? "bg-hover text-muted" : "bg-green-500/10 text-green-500"}`}>{f.is_active === false ? "Inactive" : "Active"}</span>
+              <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${f.is_active === false ? "bg-[rgba(96,165,250,.1)] text-nb-faint" : "bg-[rgba(52,211,153,.10)] text-nb-good"}`}>{f.is_active === false ? "Inactive" : "Active"}</span>
             </div>
-            <p className="mt-0.5 text-[11px] text-muted font-mono">{f.alert_code}</p>
+            <p className="mt-0.5 text-[11px] text-nb-faint font-mono">{f.alert_code}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-xs text-foreground hover:bg-hover">
+          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]">
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/20">
+          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-[rgba(248,113,113,.30)] bg-[rgba(248,113,113,.10)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.20)]">
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>
         </div>
@@ -66,7 +66,7 @@ export default function FormatDetail({ format, sopName, onEdit, onDelete }) {
 function OverviewPanel({ f }) {
   return (
     <div className="space-y-6">
-      {f.description && <p className="text-sm text-muted">{f.description}</p>}
+      {f.description && <p className="text-sm text-nb-faint">{f.description}</p>}
       <Section title="Identity">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
           <Row label="Name" value={f.name || "—"} />
@@ -93,9 +93,9 @@ function PresentationPanel({ f }) {
       <Section title="Visual">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
           <div>
-            <div className="text-[10px] font-medium uppercase tracking-wide text-muted/70">Colour</div>
-            <div className="mt-1 flex items-center gap-2 text-sm text-foreground">
-              <span className="h-4 w-4 rounded border border-card-border" style={{ background: f.color_code || "#ef4444" }} />
+            <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">Colour</div>
+            <div className="mt-1 flex items-center gap-2 text-sm text-nb-ink">
+              <span className="h-4 w-4 rounded border border-nb-line" style={{ background: f.color_code || "#ef4444" }} />
               <span className="font-mono">{f.color_code || "—"}</span>
             </div>
           </div>
@@ -120,7 +120,7 @@ function WorkflowLinkPanel({ f, sopName }) {
             <Row label="SOP mode" value={titleize(f.sop_mode || "manual")} />
           </div>
         ) : (
-          <p className="text-sm text-muted/70">No SOP linked — alerts of this kind won&apos;t auto-trigger a workflow.</p>
+          <p className="text-sm text-nb-faint/70">No SOP linked — alerts of this kind won&apos;t auto-trigger a workflow.</p>
         )}
       </Section>
     </div>
@@ -130,7 +130,7 @@ function WorkflowLinkPanel({ f, sopName }) {
 function Section({ title, children }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h3>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-nb-faint">{title}</h3>
       {children}
     </section>
   );
@@ -139,8 +139,8 @@ function Section({ title, children }) {
 function Row({ label, value, mono }) {
   return (
     <div>
-      <div className="text-[10px] font-medium uppercase tracking-wide text-muted/70">{label}</div>
-      <div className={`text-sm text-foreground ${mono ? "font-mono" : ""}`}>{value}</div>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">{label}</div>
+      <div className={`text-sm text-nb-ink ${mono ? "font-mono" : ""}`}>{value}</div>
     </div>
   );
 }

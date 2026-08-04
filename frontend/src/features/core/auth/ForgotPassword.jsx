@@ -6,7 +6,11 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
-import AuthShell, { AuthInput, AuthLabel, AuthSubmit } from "@/components/AuthShell";
+import NeubitAuthShell, {
+  NbLabel,
+  NbInput,
+  NbSubmit,
+} from "@/features/core/auth/components/NeubitAuthShell";
 
 // Two-step reset: (1) request a token by email, (2) enter the token + new password.
 // An invite/reset email links here with ?token=... so we jump straight to step 2.
@@ -58,20 +62,21 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <AuthShell
-      eyebrow="Reset"
-      title="Reset your password"
-      subtitle={
-        step === "request"
-          ? "Enter your email and we'll send a reset token."
-          : "Enter the token from your email and choose a new password."
-      }
-    >
+    <NeubitAuthShell>
+      <h2 className="text-[19px] font-[650] tracking-[0.2px] text-[#f2f6ff]">
+        Reset your password
+      </h2>
+      <p className="mb-5 mt-1 text-[11.5px] text-[#9a92c8]">
+        {step === "request"
+          ? "Enter your work email — we'll send a reset token."
+          : "Enter the token from your email and choose a new password."}
+      </p>
+
       {step === "request" ? (
-        <form onSubmit={requestReset} className="space-y-5" noValidate>
-          <div className="space-y-1.5">
-            <AuthLabel htmlFor="email">Work email</AuthLabel>
-            <AuthInput
+        <form onSubmit={requestReset} noValidate>
+          <div className="mb-3">
+            <NbLabel>WORK EMAIL</NbLabel>
+            <NbInput
               id="email"
               type="email"
               autoComplete="email"
@@ -81,13 +86,15 @@ export default function ForgotPasswordPage() {
               placeholder="you@company.com"
             />
           </div>
-          <AuthSubmit loading={busy}>Send reset token</AuthSubmit>
+          <div className="mt-4">
+            <NbSubmit loading={busy}>SEND RESET TOKEN →</NbSubmit>
+          </div>
         </form>
       ) : (
-        <form onSubmit={doReset} className="space-y-5" noValidate>
-          <div className="space-y-1.5">
-            <AuthLabel htmlFor="token">Reset token</AuthLabel>
-            <AuthInput
+        <form onSubmit={doReset} noValidate>
+          <div className="mb-3">
+            <NbLabel>RESET TOKEN</NbLabel>
+            <NbInput
               id="token"
               required
               value={token}
@@ -96,9 +103,9 @@ export default function ForgotPasswordPage() {
               className="font-mono"
             />
           </div>
-          <div className="space-y-1.5">
-            <AuthLabel htmlFor="new-password">New password</AuthLabel>
-            <AuthInput
+          <div className="mb-3">
+            <NbLabel>NEW PASSWORD</NbLabel>
+            <NbInput
               id="new-password"
               type="password"
               autoComplete="new-password"
@@ -108,22 +115,27 @@ export default function ForgotPasswordPage() {
               placeholder="••••••••••••"
             />
           </div>
-          <AuthSubmit loading={busy}>Set new password</AuthSubmit>
+          <div className="mt-4">
+            <NbSubmit loading={busy}>SET NEW PASSWORD →</NbSubmit>
+          </div>
           <button
             type="button"
             onClick={() => setStep("request")}
-            className="w-full text-center text-xs text-white/40 transition hover:text-white/70"
+            className="mt-3 w-full text-center text-[11px] text-[#9a92c8] transition hover:text-[#cfd0f2]"
           >
             Didn&apos;t get it? Request again
           </button>
         </form>
       )}
 
-      <div className="mt-6 text-center">
-        <Link href="/login" className="font-mono text-[11px] text-white/40 transition hover:text-white/70">
+      <div className="mt-5 border-t border-[rgba(160,150,245,.2)] pt-4 text-center">
+        <Link
+          href="/login"
+          className="font-mono text-[11px] text-[#c4b5fd] transition hover:text-[#f2f6ff]"
+        >
           ← Back to sign in
         </Link>
       </div>
-    </AuthShell>
+    </NeubitAuthShell>
   );
 }

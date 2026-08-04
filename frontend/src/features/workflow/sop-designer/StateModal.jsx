@@ -20,8 +20,8 @@ const roleName = (r) => r.display_name || titleize(r.name) || roleId(r);
 const chipCls = (active) =>
   `text-xs rounded-full border px-2.5 py-1 transition ${
     active
-      ? "border-blue-500 bg-blue-500/10 text-blue-500"
-      : "border-card-border bg-card text-muted hover:bg-hover"
+      ? "border-nb-blue bg-[rgba(96,165,250,.10)] text-nb-blueb"
+      : "border-nb-line bg-[rgba(8,15,34,.5)] text-nb-muted hover:bg-[rgba(96,165,250,.1)]"
   }`;
 const STATE_COLORS = ["#6366F1", "#10B981", "#F59E0B", "#EF4444", "#3B82F6", "#8B5CF6", "#EC4899", "#64748B"];
 
@@ -83,8 +83,8 @@ export default function StateModal({ sopId, state, defaults, onClose, onSaved })
       <div className="space-y-4">
         <div>
           <FieldLabel required>Name</FieldLabel>
-          <input autoFocus value={name} onChange={(e) => { setName(e.target.value); if (err) setErr(""); }} className={`${fieldClass} ${err ? "!border-red-500" : ""}`} placeholder="e.g. Acknowledged" />
-          {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
+          <input autoFocus value={name} onChange={(e) => { setName(e.target.value); if (err) setErr(""); }} className={`${fieldClass} ${err ? "!border-nb-crit" : ""}`} placeholder="e.g. Acknowledged" />
+          {err && <p className="mt-1 text-xs text-nb-crit">{err}</p>}
         </div>
         <div>
           <FieldLabel>Description</FieldLabel>
@@ -107,10 +107,10 @@ export default function StateModal({ sopId, state, defaults, onClose, onSaved })
                 title={c}
               />
             ))}
-            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-7 w-9 rounded border border-card-border bg-transparent cursor-pointer" title="Custom color" />
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-7 w-9 rounded border border-nb-line bg-transparent cursor-pointer" title="Custom color" />
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-4 text-sm text-foreground">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-nb-ink">
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={isInitial} onChange={(e) => setIsInitial(e.target.checked)} /> Initial</label>
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={isTerminal} onChange={(e) => setIsTerminal(e.target.checked)} /> Terminal</label>
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={isCancellation} onChange={(e) => setIsCancellation(e.target.checked)} /> Cancellation</label>
@@ -118,9 +118,9 @@ export default function StateModal({ sopId, state, defaults, onClose, onSaved })
         <div>
           <FieldLabel>Required roles</FieldLabel>
           {rolesQ.isLoading ? (
-            <div className="text-xs text-muted">Loading roles…</div>
+            <div className="text-xs text-nb-muted">Loading roles…</div>
           ) : roles.length === 0 ? (
-            <div className="text-xs text-muted">No roles available.</div>
+            <div className="text-xs text-nb-muted">No roles available.</div>
           ) : (
             <div className="mt-1.5 flex flex-wrap gap-2">
               {roles.map((r) => (

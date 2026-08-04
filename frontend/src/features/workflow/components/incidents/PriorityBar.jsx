@@ -11,15 +11,15 @@ export default function PriorityBar({ byPriority }) {
   const { total, segments } = priorityMix(byPriority || {});
 
   return (
-    <div className="mb-4 rounded-xl border border-card-border bg-card px-4 py-3">
+    <div className="mb-4 rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-4 py-3 backdrop-blur-sm">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#7e93bf]">
           Priority distribution
         </span>
-        <span className="text-[11px] text-muted">{total} open</span>
+        <span className="font-mono text-[11px] text-[#aec2e8]">{total} open</span>
       </div>
 
-      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-hover">
+      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-[rgba(0,0,0,.35)]">
         {total === 0 ? (
           <div className="h-full w-full bg-hover" />
         ) : (
@@ -38,10 +38,10 @@ export default function PriorityBar({ byPriority }) {
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
         {segments.map((s) => (
-          <span key={s.priority} className="inline-flex items-center gap-1.5 text-[11px] text-muted">
+          <span key={s.priority} className="inline-flex items-center gap-1.5 text-[11px] text-[#aec2e8]">
             <span className={`h-2 w-2 rounded-sm ${sev(s.priority).dot}`} />
-            <span className="text-foreground">{sev(s.priority).label}</span>
-            <span className="tabular-nums">{s.count}</span>
+            <span className="text-[#f2f6ff]">{sev(s.priority).label}</span>
+            <span className="font-mono tabular-nums text-[#7e93bf]">{s.count}</span>
           </span>
         ))}
       </div>

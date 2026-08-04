@@ -56,33 +56,33 @@ export default function NotificationTemplatesTab() {
       onSearch={setSearch}
       searchPlaceholder="Search templates…"
       action={
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => { setMode("create"); setSelectedId(null); }} className="!px-2.5 !py-1 text-xs">New</Button>
+        <button onClick={() => { setMode("create"); setSelectedId(null); }} className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"><Icon icon="heroicons-outline:plus" /> New</button>
       }
     >
       {q.isLoading ? (
-        <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Loading…</div>
+        <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Loading…</div>
       ) : filtered.length === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-muted">{search.trim() ? "No templates match your search." : "No templates yet."}</div>
+        <div className="px-4 py-12 text-center text-sm text-nb-faint">{search.trim() ? "No templates match your search." : "No templates yet."}</div>
       ) : (
-        <ul className="divide-y divide-card-border">
+        <ul className="divide-y divide-nb-line">
           {filtered.map((t) => {
             const isSel = t.template_id === selectedId && mode !== "create";
             return (
               <li key={t.template_id} className="relative">
                 <button
                   onClick={() => { setSelectedId(t.template_id); setMode("view"); }}
-                  className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${isSel ? "bg-hover" : "hover:bg-hover"}`}
+                  className={`w-full flex items-start gap-3 rounded-[10px] px-4 py-3 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
                 >
-                  {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-purple-500" />}
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-purple-500/10 text-purple-500 shrink-0">
+                  {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-violet" />}
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-nb-violet/10 text-nb-violetb shrink-0">
                     <Icon icon="heroicons-outline:bell-alert" className="text-base" />
                   </span>
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold text-foreground truncate">{t.name}</span>
-                      <span className="text-[9px] rounded-full px-1.5 py-0.5 font-medium bg-hover text-muted uppercase shrink-0">{titleize(t.channel_type)}</span>
+                      <span className="text-sm font-semibold text-nb-ink truncate">{t.name}</span>
+                      <span className="text-[9px] rounded-full px-1.5 py-0.5 font-medium bg-[rgba(10,18,40,.65)] text-nb-faint uppercase shrink-0">{titleize(t.channel_type)}</span>
                     </span>
-                    <span className="block text-[11px] text-muted truncate mt-0.5">{t.subject || t.body?.slice(0, 80)}</span>
+                    <span className="block text-[11px] text-nb-faint truncate mt-0.5">{t.subject || t.body?.slice(0, 80)}</span>
                   </span>
                 </button>
               </li>
@@ -94,8 +94,8 @@ export default function NotificationTemplatesTab() {
   );
 
   return (
-    <MasterDetail fill aside={aside} gridCols="lg:grid-cols-[360px_1fr]" className="min-h-0 flex-1">
-      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
+    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" fill className="h-full">
+      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
         {mode === "create" || mode === "edit" ? (
           <div className="flex-1 min-h-0 overflow-y-auto p-5">
             <TemplateForm

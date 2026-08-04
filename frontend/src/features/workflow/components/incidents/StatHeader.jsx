@@ -10,10 +10,10 @@ import { Icon } from "@iconify/react";
 
 function Tile({ icon, label, value, tone, active, onClick, hint }) {
   const tones = {
-    red: "text-red-500 bg-red-500/10 border-red-500/25",
-    blue: "text-blue-500 bg-blue-500/10 border-blue-500/25",
-    amber: "text-amber-500 bg-amber-500/10 border-amber-500/25",
-    slate: "text-muted bg-hover border-card-border",
+    red: "text-[#fca5a5] bg-[rgba(248,113,113,.14)] border-[rgba(248,113,113,.45)]",
+    blue: "text-[#93c5fd] bg-[rgba(96,165,250,.13)] border-[rgba(96,165,250,.4)]",
+    amber: "text-[#fcd34d] bg-[rgba(251,191,36,.13)] border-[rgba(251,191,36,.4)]",
+    slate: "text-[#aec2e8] bg-[rgba(150,180,245,.06)] border-[rgba(150,180,245,.22)]",
   };
   const clickable = typeof onClick === "function";
   return (
@@ -22,16 +22,18 @@ function Tile({ icon, label, value, tone, active, onClick, hint }) {
       onClick={onClick}
       disabled={!clickable}
       title={hint}
-      className={`group relative flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${
-        active ? "border-foreground bg-hover" : "border-card-border hover:bg-hover"
+      className={`group relative flex items-center gap-3 rounded-[13px] border px-4 py-3 text-left backdrop-blur-sm transition ${
+        active
+          ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.1)]"
+          : "border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] hover:border-[rgba(34,211,238,.4)] hover:bg-[rgba(150,180,245,.07)]"
       } ${clickable ? "cursor-pointer" : "cursor-default"}`}
     >
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${tones[tone]}`}>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px] border ${tones[tone]}`}>
         <Icon icon={icon} className="text-lg" />
       </span>
       <span className="min-w-0">
-        <span className="block text-2xl font-semibold leading-none text-foreground">{value}</span>
-        <span className="mt-1 block truncate text-[11px] uppercase tracking-wide text-muted">{label}</span>
+        <span className="block font-mono text-2xl font-bold leading-none text-[#f2f6ff]">{value}</span>
+        <span className="mt-1 block truncate font-mono text-[10px] uppercase tracking-[1.4px] text-[#7e93bf]">{label}</span>
       </span>
     </button>
   );

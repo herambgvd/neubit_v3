@@ -58,32 +58,32 @@ export default function SopsTab() {
       onSearch={setQ}
       searchPlaceholder="Search SOPs…"
       action={
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => { setMode("create"); setSelectedId(null); }} className="!px-2.5 !py-1 text-xs">
-          New
-        </Button>
+        <button onClick={() => { setMode("create"); setSelectedId(null); }} className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]">
+          <Icon icon="heroicons-outline:plus" /> New
+        </button>
       }
     >
       {sopsQ.isLoading ? (
-        <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted"><Spinner className="!h-4 !w-4" /> Loading…</div>
+        <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Loading…</div>
       ) : filtered.length === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-muted">{q.trim() ? "No SOPs match your search." : <>No SOPs yet. Click <b>New</b>.</>}</div>
+        <div className="px-4 py-12 text-center text-sm text-nb-faint">{q.trim() ? "No SOPs match your search." : <>No SOPs yet. Click <b>New</b>.</>}</div>
       ) : (
-        <ul className="divide-y divide-card-border">
+        <ul className="divide-y divide-nb-line">
           {filtered.map((s) => {
             const isSel = sopId(s) === selectedId && mode !== "create";
             return (
               <li key={sopId(s)} className="relative">
                 <button
                   onClick={() => { setSelectedId(sopId(s)); setMode("view"); }}
-                  className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${isSel ? "bg-hover" : "hover:bg-hover"}`}
+                  className={`w-full flex items-start gap-3 rounded-[10px] px-4 py-3 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
                 >
-                  {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />}
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-blue-500/10 text-blue-500 shrink-0">
+                  {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-blue" />}
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[rgba(96,165,250,.12)] text-nb-blueb shrink-0">
                     <Icon icon="heroicons:rectangle-stack" className="text-base" />
                   </span>
                   <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-semibold text-foreground truncate">{s.name}</span>
-                    <span className="block text-[11px] text-muted">
+                    <span className="block text-sm font-semibold text-nb-ink truncate">{s.name}</span>
+                    <span className="block text-[11px] text-nb-faint">
                       {typeof s.version === "number" ? `v${s.version} · ` : ""}
                       {titleize(s.default_priority || "medium")}
                       {s.is_active === false ? " · Inactive" : ""}
@@ -99,8 +99,8 @@ export default function SopsTab() {
   );
 
   return (
-    <MasterDetail fill aside={aside} gridCols="lg:grid-cols-[360px_1fr]" className="min-h-0 flex-1">
-      <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
+    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" fill className="h-full">
+      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
         {mode === "create" || mode === "edit" ? (
           <SopForm
             sop={mode === "edit" ? selected : null}

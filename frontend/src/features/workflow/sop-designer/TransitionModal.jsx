@@ -28,7 +28,7 @@ const NOTIFY_TYPES = [
 function Section({ title, children }) {
   return (
     <div>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">{title}</div>
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{title}</div>
       {children}
     </div>
   );
@@ -37,8 +37,8 @@ function Section({ title, children }) {
 const chipCls = (active) =>
   `text-xs rounded-full border px-2.5 py-1 transition ${
     active
-      ? "border-blue-500 bg-blue-500/10 text-blue-500"
-      : "border-card-border bg-card text-muted hover:bg-hover"
+      ? "border-nb-blue bg-[rgba(96,165,250,.10)] text-nb-blueb"
+      : "border-nb-line bg-[rgba(8,15,34,.5)] text-nb-muted hover:bg-[rgba(96,165,250,.1)]"
   }`;
 
 export default function TransitionModal({ sopId, states = [], transition, defaults, onClose, onSaved }) {
@@ -156,7 +156,7 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
         </>
       }
     >
-      <div className="mb-4 text-xs text-muted">{fromName || "?"} → {toName || "?"}</div>
+      <div className="mb-4 text-xs text-nb-muted">{fromName || "?"} → {toName || "?"}</div>
 
       <form noValidate onSubmit={submit} className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -166,22 +166,22 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <FieldLabel required>Name</FieldLabel>
-                  <input value={name} onChange={(e) => { setName(e.target.value); if (nameErr) setNameErr(""); }} placeholder="Acknowledge" className={`${fieldClass} ${nameErr ? "!border-red-500" : ""}`} />
-                  {nameErr && <p className="mt-1 text-xs text-red-500">{nameErr}</p>}
+                  <input value={name} onChange={(e) => { setName(e.target.value); if (nameErr) setNameErr(""); }} placeholder="Acknowledge" className={`${fieldClass} ${nameErr ? "!border-nb-crit" : ""}`} />
+                  {nameErr && <p className="mt-1 text-xs text-nb-crit">{nameErr}</p>}
                 </div>
                 <div>
                   <FieldLabel>Linked form (optional)</FieldLabel>
                   <select value={formId} onChange={(e) => setFormId(e.target.value)} className={fieldClass}>
-                    <option value="" className="bg-card">No form required</option>
+                    <option value="" className="bg-[rgba(8,15,34,.5)]">No form required</option>
                     {forms.map((f) => (
-                      <option key={f.form_id} value={f.form_id} className="bg-card">{f.name}</option>
+                      <option key={f.form_id} value={f.form_id} className="bg-[rgba(8,15,34,.5)]">{f.name}</option>
                     ))}
                   </select>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer md:mt-6">
+                <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer md:mt-6">
                   <input type="checkbox" checked={requiresNote} onChange={(e) => setRequiresNote(e.target.checked)} /> Requires note
                 </label>
-                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer md:mt-6">
+                <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer md:mt-6">
                   <input type="checkbox" checked={confirmationRequired} onChange={(e) => setConfirmationRequired(e.target.checked)} /> Confirmation required
                 </label>
                 <div className="md:col-span-2">
@@ -193,7 +193,7 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
 
             <Section title="Required roles">
               {roles.length === 0 ? (
-                <div className="text-xs text-muted">No roles available.</div>
+                <div className="text-xs text-nb-muted">No roles available.</div>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {roles.map((r) => (
@@ -213,7 +213,7 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
                 <div>
                   <FieldLabel>Type</FieldLabel>
                   <select value={notifyType} onChange={(e) => setNotifyType(e.target.value)} className={fieldClass}>
-                    {NOTIFY_TYPES.map((t) => <option key={t.value} value={t.value} className="bg-card">{t.label}</option>)}
+                    {NOTIFY_TYPES.map((t) => <option key={t.value} value={t.value} className="bg-[rgba(8,15,34,.5)]">{t.label}</option>)}
                   </select>
                 </div>
                 <div />
@@ -223,7 +223,7 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
                 <div className="mt-4 space-y-4">
                   {roles.length > 0 && (
                     <div>
-                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">Notify roles</div>
+                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-nb-muted">Notify roles</div>
                       <div className="flex flex-wrap gap-2">
                         {roles.map((r) => (
                           <button key={roleId(r)} type="button" onClick={() => toggleId(roleId(r), notifyRoleIds, setNotifyRoleIds)} className={chipCls(notifyRoleIds.includes(roleId(r)))}>
@@ -251,10 +251,10 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
                         <FieldLabel>Email body template</FieldLabel>
                         <textarea value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={4} placeholder="Workflow {instance_name} moved from {from_state} to {to_state}." className={areaClass} />
                       </div>
-                      <p className="text-[11px] text-muted">
+                      <p className="text-[11px] text-nb-muted">
                         Available placeholders:{" "}
                         {["{instance_name}", "{from_state}", "{to_state}", "{priority}"].map((p) => (
-                          <code key={p} className="mr-1 rounded bg-hover px-1">{p}</code>
+                          <code key={p} className="mr-1 rounded bg-[rgba(96,165,250,.1)] px-1">{p}</code>
                         ))}
                       </p>
                     </div>
@@ -301,12 +301,12 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
-        <div className="flex items-center gap-2 text-[11px] text-muted">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{label}</div>
+        <div className="flex items-center gap-2 text-[11px] text-nb-muted">
           <Icon icon="heroicons-outline:users" className="text-sm" />
           {selectedIds.length} selected
           {selectedIds.length > 0 && (
-            <button type="button" onClick={onClear} className="hover:text-foreground hover:underline">clear</button>
+            <button type="button" onClick={onClear} className="hover:text-nb-ink hover:underline">clear</button>
           )}
         </div>
       </div>
@@ -314,7 +314,7 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
       {selectedUsers.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {selectedUsers.map((u) => (
-            <span key={uid(u)} className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs text-blue-500">
+            <span key={uid(u)} className="inline-flex items-center gap-1 rounded-full border border-[rgba(96,165,250,.30)] bg-[rgba(96,165,250,.10)] px-2.5 py-1 text-xs text-nb-blueb">
               {display(u)}
               <button type="button" onClick={() => onToggle(uid(u))} aria-label={`Remove ${display(u)}`}>×</button>
             </span>
@@ -322,28 +322,28 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
         </div>
       )}
 
-      <div className="rounded-lg border border-card-border bg-card">
-        <label className="relative block border-b border-card-border">
-          <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-foreground outline-none" />
+      <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
+        <label className="relative block border-b border-nb-line">
+          <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-muted" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-nb-ink outline-none" />
         </label>
         <div className="max-h-40 overflow-y-auto">
           {usersQ.isLoading ? (
-            <div className="px-3 py-3 text-xs text-muted">Loading…</div>
+            <div className="px-3 py-3 text-xs text-nb-muted">Loading…</div>
           ) : filtered.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-muted">No users match &quot;{query}&quot;.</div>
+            <div className="px-3 py-3 text-xs text-nb-muted">No users match &quot;{query}&quot;.</div>
           ) : (
             <ul className="divide-y divide-card-border">
               {filtered.map((u) => {
                 const checked = selectedIds.includes(uid(u));
                 return (
                   <li key={uid(u)}>
-                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-blue-500/10" : "hover:bg-hover"}`}>
+                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-[rgba(96,165,250,.10)]" : "hover:bg-[rgba(96,165,250,.1)]"}`}>
                       <input type="checkbox" checked={checked} onChange={() => onToggle(uid(u))} />
                       <span className="flex-1 min-w-0">
-                        <span className="block font-medium text-foreground truncate">{display(u)}</span>
+                        <span className="block font-medium text-nb-ink truncate">{display(u)}</span>
                         {u.email && display(u) !== u.email && (
-                          <span className="block text-[10px] text-muted truncate">{u.email}</span>
+                          <span className="block text-[10px] text-nb-muted truncate">{u.email}</span>
                         )}
                       </span>
                     </label>

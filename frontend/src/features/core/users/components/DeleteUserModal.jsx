@@ -21,7 +21,7 @@ export default function DeleteUserModal({ deleting, onClose, password, setPasswo
       }
     >
       <div className="space-y-4">
-        <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-sm text-red-500">
+        <div className="flex items-start gap-2 rounded-[9px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] px-3 py-2.5 text-sm text-nb-crit">
           <Icon icon="heroicons-outline:exclamation-triangle" className="text-base mt-0.5 shrink-0" />
           <span>
             This permanently deletes <strong>{deleting?.email}</strong> and revokes their access. This

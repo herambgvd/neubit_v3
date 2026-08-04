@@ -47,7 +47,9 @@ import {
 } from "./videoWall";
 import CameraRail from "./components/CameraRail";
 import WallTile from "./components/WallTile";
-import WallToolbar from "./components/WallToolbar";
+import WallToolbar, { QUALITY_LEVELS } from "./components/WallToolbar";
+import MapView from "./components/MapView";
+import PlayoutBar from "./components/PlayoutBar";
 import SpotlightOverlay from "./components/SpotlightOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
 import PatternPickerMenu from "./components/PatternPickerMenu";
@@ -60,6 +62,8 @@ const LS_LAYOUT = "neubit.vms.wall.layout";
 const LS_CELLS = "neubit.vms.wall.cells";
 const LS_SAVED = "neubit.vms.wall.saved";
 const LS_RAIL = "neubit.vms.wall.rail";
+const LS_VIEW = "neubit.vms.wall.view";
+const LS_QUALITY = "neubit.vms.wall.quality";
 
 const emptyCell = () => ({ cameraId: null });
 
@@ -113,6 +117,17 @@ export default function Streaming() {
     return Array.isArray(s) ? s : [];
   });
 
+  // View mode (grid | map | split) + global stream quality + DVR playout bar.
+  const [viewMode, setViewMode] = useState(() => {
+    const v = readLS(LS_VIEW, "grid");
+    return ["grid", "map", "split"].includes(v) ? v : "grid";
+  });
+  const [quality, setQuality] = useState(() => {
+    const qv = readLS(LS_QUALITY, "auto");
+    return QUALITY_LEVELS.some((l) => l.key === qv) ? qv : "auto";
+  });
+  const [playoutOpen, setPlayoutOpen] = useState(false);
+
   const [railOpen, setRailOpen] = useState(() => readLS(LS_RAIL, true) !== false);
   const [railDragging, setRailDragging] = useState(false);
   const [spotlight, setSpotlight] = useState(null); // tile index or null
@@ -143,6 +158,8 @@ export default function Streaming() {
   useEffect(() => writeLS(LS_CELLS, cells.map((c) => ({ cameraId: c.cameraId || null }))), [cells]);
   useEffect(() => writeLS(LS_SAVED, savedLayouts), [savedLayouts]);
   useEffect(() => writeLS(LS_RAIL, railOpen), [railOpen]);
+  useEffect(() => writeLS(LS_VIEW, viewMode), [viewMode]);
+  useEffect(() => writeLS(LS_QUALITY, quality), [quality]);
 
   // ── cameras ─────────────────────────────────────────────────────────────
   const camerasQ = useQuery({
@@ -150,7 +167,33 @@ export default function Streaming() {
     queryFn: () => vms.cameras.list({ limit: 500 }),
     refetchInterval: 20_000,
   });
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+  // Federated recorder cameras — cameras OWNED by registered NVR nodes, pulled up
+  // read-only and streamed THROUGH each node. Merged into the same wall so the
+  // camera tree shows recorders as top-level branches alongside local cameras.
+  const fedQ = useQuery({
+    queryKey: ["vms-wall-federation-cameras"],
+    queryFn: () => vms.federation.cameras(),
+    refetchInterval: 30_000,
+  });
+  const cameras = useMemo(() => {
+    const local = asItems(camerasQ.data);
+    // Each federated camera gets a composite id (`fed:<node>:<cam>`) so it never
+    // collides with a local camera id; real_id + node_id drive the node-issued
+    // live source (see WallTile). Grouped under its recorder in the rail via
+    // site_id/site_name = the node.
+    const fed = (fedQ.data?.items || []).map((c) => ({
+      id: `fed:${c.node_id}:${c.id}`,
+      real_id: c.id,
+      name: c.name,
+      status: c.status,
+      federated: true,
+      node_id: c.node_id,
+      node_name: c.node_name,
+      site_id: `nvr:${c.node_id}`,
+      site_name: c.node_name,
+    }));
+    return [...fed, ...local];
+  }, [camerasQ.data, fedQ.data]);
   const cameraById = useMemo(() => {
     const m = new Map();
     cameras.forEach((c) => m.set(c.id, c));
@@ -179,7 +222,7 @@ export default function Streaming() {
   // SUCCESSFUL fetch — a transient load error or the pre-load mount must NOT clear the
   // wall. Empties the cell (drag-target) rather than error-holding a dead id.
   useEffect(() => {
-    if (!camerasQ.isSuccess) return;
+    if (!camerasQ.isSuccess || !fedQ.isSuccess) return;
     setCells((prev) => {
       let changed = false;
       const next = prev.map((c) => {
@@ -191,7 +234,7 @@ export default function Streaming() {
       });
       return changed ? next : prev;
     });
-  }, [camerasQ.isSuccess, cameraIdSet]);
+  }, [camerasQ.isSuccess, fedQ.isSuccess, cameraIdSet]);
 
   // ── layout / assignment ────────────────────────────────────────────────
   const changeLayout = useCallback((key) => {
@@ -303,8 +346,7 @@ export default function Streaming() {
   }, []);
 
   // ── server patterns + camera-groups (the real pattern feature) ───────────
-  // Replaces the TODO(patterns) localStorage seed with server-persisted patterns:
-  // a pattern rotates through camera GROUPS, each painting the wall via
+  // A pattern rotates through camera GROUPS, each painting the wall via
   // applyWallPreset. Camera groups carry their own grid layout.
   const patternsQ = useQuery({
     queryKey: ["vms-patterns"],
@@ -377,7 +419,7 @@ export default function Streaming() {
   // running, the pattern picker still reflects the active pattern; explicit exit
   // (HUD ✕ / picker Stop) tears it down. No implicit exit — keeps it predictable.
 
-  // ── saved layouts (localStorage seed of the pattern feature) ─────────────
+  // ── saved layouts (browser-local recall of a single static grid) ─────────
   const saveCurrent = () => {
     const name = saveName.trim();
     if (!name) return;
@@ -481,6 +523,13 @@ export default function Streaming() {
 
   const hero = heroIndex(layout);
 
+  // Global quality override → forces the media profile (Auto defers to the
+  // per-tile grid heuristic). eco/balanced → sub-stream, high/turbo → main.
+  const qualityProfile = useMemo(
+    () => QUALITY_LEVELS.find((l) => l.key === quality)?.profile || null,
+    [quality],
+  );
+
   // Per-tile grid-area styles, memoised so each tile gets a REFERENTIALLY STABLE
   // `style` prop (tileStyle() builds a fresh {gridArea} object for spotlight
   // layouts each call — that alone would defeat WallTile's memo). Symmetric
@@ -506,7 +555,7 @@ export default function Streaming() {
       // Profile is derived from the GRID (not spotlight) so a tile's LivePlayer
       // key is stable across spotlight ↔ grid — the session is reused, not
       // restarted. The spotlight hero simply gets a bigger surface, same stream.
-      profile={tileProfile(layout.capacity, isHero)}
+      profile={qualityProfile || tileProfile(layout.capacity, isHero)}
       isHero={isHero || spotlightMode}
       spotlight={spotlightMode}
       railDragging={railDragging}
@@ -520,7 +569,11 @@ export default function Streaming() {
   );
 
   return (
-    <div ref={wallRef} className="flex h-full min-h-0 flex-col bg-background fullscreen:h-screen">
+    <div
+      ref={wallRef}
+      className="flex h-full min-h-0 flex-col fullscreen:h-screen"
+      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+    >
       <WallToolbar
         railOpen={railOpen}
         onToggleRail={() => setRailOpen((o) => !o)}
@@ -528,6 +581,13 @@ export default function Streaming() {
         onLayoutChange={changeLayout}
         liveCount={liveCount}
         onlineCount={onlineCount}
+        viewMode={viewMode}
+        onViewMode={setViewMode}
+        quality={quality}
+        onQuality={setQuality}
+        playoutOpen={playoutOpen}
+        onTogglePlayout={() => setPlayoutOpen((o) => !o)}
+        alarmCount={0}
         tour={tour}
         onStartTour={startTour}
         onStopTour={stopTour}
@@ -562,55 +622,77 @@ export default function Streaming() {
             mountedIds={mountedIds}
             onPick={pickCamera}
             onDragStateChange={setRailDragging}
-            isLoading={camerasQ.isLoading}
+            isLoading={camerasQ.isLoading || fedQ.isLoading}
             onlineCount={onlineCount}
             liveCount={liveCount}
           />
         )}
 
-        <main className="relative z-0 flex min-w-0 flex-1 flex-col bg-background">
-          {/* Grid — the hero. Full-bleed with tight gaps.
-              The grid CONTAINER is the SAME element in both modes (only its
-              template + children change) so the spotlighted tile — kept with its
-              stable `tile-i` key — is preserved by React across grid↔spotlight,
-              reusing its LivePlayer session instead of remounting. In spotlight
-              mode every OTHER tile is omitted, so their players unmount and their
-              sessions release. */}
-          <div className="relative min-h-0 flex-1 overflow-hidden p-1.5">
-            <div
-              ref={gridRef}
-              className="grid h-full min-h-0 gap-1.5"
-              style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
-            >
-              {isSpotlightActive
-                ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
-                : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
-            </div>
-            {isSpotlightActive && (
-              <SpotlightOverlay
-                label={spotlightCam?.name || "Camera"}
-                position={filledIndexes.indexOf(spotlight) + 1}
-                total={filledIndexes.length}
-                onPrev={() => stepSpotlight(-1)}
-                onNext={() => stepSpotlight(1)}
-                onExit={() => setSpotlight(null)}
-              />
+        <main className="relative z-0 flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1">
+            {/* Grid — the hero. Full-bleed with tight gaps. Hidden in MAP view;
+                shares the row with the map in SPLIT (grid gets slightly more).
+                The grid CONTAINER is the SAME element across grid↔spotlight (only
+                its template + children change) so the spotlighted tile — kept with
+                its stable `tile-i` key — is preserved by React, reusing its
+                LivePlayer session instead of remounting. */}
+            {viewMode !== "map" && (
+              <div
+                className={`relative min-h-0 overflow-hidden p-1.5 ${viewMode === "split" ? "flex-[1.15]" : "flex-1"}`}
+              >
+                <div
+                  ref={gridRef}
+                  className="grid h-full min-h-0 gap-1.5"
+                  style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
+                >
+                  {isSpotlightActive
+                    ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
+                    : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
+                </div>
+                {isSpotlightActive && (
+                  <SpotlightOverlay
+                    label={spotlightCam?.name || "Camera"}
+                    position={filledIndexes.indexOf(spotlight) + 1}
+                    total={filledIndexes.length}
+                    onPrev={() => stepSpotlight(-1)}
+                    onNext={() => stepSpotlight(1)}
+                    onExit={() => setSpotlight(null)}
+                  />
+                )}
+                {rotation.active && !isSpotlightActive && (
+                  <PatternHud
+                    patternName={activePattern?.name || "Pattern"}
+                    groupName={rotation.current?.name}
+                    index={rotation.index}
+                    total={rotation.total}
+                    paused={rotation.paused}
+                    seconds={rotation.seconds}
+                    onPrev={rotation.prev}
+                    onNext={rotation.next}
+                    onTogglePause={rotation.togglePause}
+                    onExit={exitPattern}
+                  />
+                )}
+              </div>
             )}
-            {rotation.active && !isSpotlightActive && (
-              <PatternHud
-                patternName={activePattern?.name || "Pattern"}
-                groupName={rotation.current?.name}
-                index={rotation.index}
-                total={rotation.total}
-                paused={rotation.paused}
-                seconds={rotation.seconds}
-                onPrev={rotation.prev}
-                onNext={rotation.next}
-                onTogglePause={rotation.togglePause}
-                onExit={exitPattern}
-              />
+
+            {/* Facility MAP — camera positions over a site map. Scaffold until
+                site geometry / camera coordinates exist (honest empty state). */}
+            {viewMode !== "grid" && (
+              <div className={`relative min-h-0 p-1.5 ${viewMode === "split" ? "flex-1 border-l border-[rgba(150,180,245,.15)]" : "flex-1"}`}>
+                <MapView cameras={cameras} onPick={(cam) => pickCamera(cam)} />
+              </div>
             )}
           </div>
+
+          {/* DVR playout transport (24h timeline + scrub). Wall-level, toggled
+              from the toolbar. Wired to the selected/first camera. */}
+          {playoutOpen && (
+            <PlayoutBar
+              camera={spotlightCam || cameraById.get(wallCameraIds[0]) || null}
+              onClose={() => setPlayoutOpen(false)}
+            />
+          )}
         </main>
       </div>
 
@@ -651,7 +733,7 @@ export default function Streaming() {
           autoFocus
           onKeyDown={(e) => e.key === "Enter" && saveCurrent()}
         />
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-2 text-xs text-[#9a92c8]">
           Saves the grid + camera assignment to this browser. {liveCount} camera{liveCount === 1 ? "" : "s"} on the wall.
         </p>
       </Modal>
@@ -686,9 +768,8 @@ export default function Streaming() {
   );
 }
 
-// Compact saved-layouts dropdown (localStorage-backed seed of the pattern
-// feature). Applies a preset via the parent's applyWallPreset; the parent's
-// TODO(patterns) marks where server-persisted patterns replace this store.
+// Compact saved-layouts dropdown (browser-local recall of a single static
+// grid). Applies a preset via the parent's applyWallPreset.
 function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -708,18 +789,18 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Saved layouts"
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-card-border bg-card px-2.5 text-xs font-medium text-foreground transition hover:bg-hover"
+        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 text-xs font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
       >
-        <Icon icon="heroicons-outline:bookmark" className="text-sm text-muted" />
+        <Icon icon="heroicons-outline:bookmark" className="text-sm text-[#7e93bf]" />
         Saved
         {layouts.length > 0 && (
-          <span className="rounded-full bg-hover px-1.5 text-[9px] font-semibold text-muted">{layouts.length}</span>
+          <span className="rounded-full bg-[rgba(150,180,245,.1)] px-1.5 text-[9px] font-semibold text-[#aec2e8]">{layouts.length}</span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-card-border bg-card py-1 shadow-2xl">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] py-1 shadow-2xl backdrop-blur-sm">
           <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Saved layouts</span>
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Saved layouts</span>
             <button
               type="button"
               disabled={!canSave}
@@ -727,20 +808,20 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }) {
                 onSave?.();
                 setOpen(false);
               }}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-blue-500 transition hover:bg-blue-500/10 disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.12)] disabled:opacity-40"
             >
               <Icon icon="heroicons-mini:plus" className="text-xs" />
               Save current
             </button>
           </div>
           {layouts.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-muted">
+            <div className="px-3 py-3 text-xs text-[#aec2e8]">
               No saved layouts yet — fill the grid and click <em>Save current</em>.
             </div>
           ) : (
-            <ul className="max-h-72 overflow-y-auto border-t border-card-border pt-1">
+            <ul className="max-h-72 overflow-y-auto border-t border-[rgba(160,150,245,.22)] pt-1">
               {layouts.map((l) => (
-                <li key={l.id} className="flex items-center justify-between gap-2 px-2 py-1.5 hover:bg-hover">
+                <li key={l.id} className="flex items-center justify-between gap-2 px-2 py-1.5 hover:bg-[rgba(150,180,245,.07)]">
                   <button
                     type="button"
                     onClick={() => {
@@ -749,8 +830,8 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }) {
                     }}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <div className="truncate text-xs font-semibold text-foreground">{l.name}</div>
-                    <div className="text-[10px] text-muted">
+                    <div className="truncate text-xs font-semibold text-[#f2f6ff]">{l.name}</div>
+                    <div className="text-[10px] text-[#7e93bf]">
                       {getLayout(l.layout || l.layoutKey).label} ·{" "}
                       {(l.tiles || l.cameraIds || []).filter(Boolean).length} cameras
                     </div>
@@ -759,7 +840,7 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }) {
                     type="button"
                     title="Delete"
                     onClick={() => onDelete(l.id)}
-                    className="shrink-0 rounded p-1 text-muted hover:bg-red-500/10 hover:text-red-500"
+                    className="shrink-0 rounded p-1 text-[#7e93bf] hover:bg-red-500/10 hover:text-red-500"
                   >
                     <Icon icon="heroicons-outline:trash" className="text-xs" />
                   </button>

@@ -109,18 +109,18 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-card-border bg-hover/40 p-4 space-y-4">
+    <form onSubmit={submit} className="rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-4 space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-foreground">{isEdit ? `Edit ${trigger.name}` : "Add trigger"}</h4>
+        <h4 className="text-sm font-semibold text-nb-ink">{isEdit ? `Edit ${trigger.name}` : "Add trigger"}</h4>
         <button
           type="button"
           onClick={() => setShowTest(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-card-border px-2.5 py-1.5 text-xs text-muted hover:bg-hover hover:text-foreground"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-nb-line px-2.5 py-1.5 text-xs text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink"
         >
           <Icon icon="heroicons-outline:beaker" className="text-sm" /> Test
         </button>
       </div>
-      {errors.event && <p className="text-xs text-red-500">{errors.event}</p>}
+      {errors.event && <p className="text-xs text-nb-crit">{errors.event}</p>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field
           containerClassName="md:col-span-2"
@@ -181,21 +181,21 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
       {/* Conditions (AND) */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-medium uppercase tracking-wide text-muted">Conditions (all must match)</label>
-          <button type="button" onClick={() => setConditions((cs) => [...cs, { path: "", op: "eq", value: "" }])} className="text-xs text-blue-500 hover:underline">+ Add condition</button>
+          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Conditions (all must match)</label>
+          <button type="button" onClick={() => setConditions((cs) => [...cs, { path: "", op: "eq", value: "" }])} className="text-xs text-nb-blueb hover:underline">+ Add condition</button>
         </div>
         {conditions.length === 0 ? (
-          <p className="text-[11px] text-muted/70">No conditions — the trigger fires on any matching event type.</p>
+          <p className="text-[11px] text-nb-faint/70">No conditions — the trigger fires on any matching event type.</p>
         ) : (
           <div className="space-y-2">
             {conditions.map((c, i) => (
               <div key={i} className="flex items-center gap-2">
-                <input value={c.path} onChange={(e) => updateCond(i, { path: e.target.value })} placeholder="payload.path" className="h-9 flex-1 rounded-lg border border-field bg-transparent px-2.5 text-sm font-mono text-foreground outline-none focus:border-muted" />
-                <select value={c.op} onChange={(e) => updateCond(i, { op: e.target.value })} className="h-9 rounded-lg border border-field bg-transparent px-2 text-sm text-foreground outline-none focus:border-muted">
-                  {TRIGGER_OPS.map((o) => <option key={o} value={o} className="bg-card">{OP_LABEL[o] || o}</option>)}
+                <input value={c.path} onChange={(e) => updateCond(i, { path: e.target.value })} placeholder="payload.path" className="h-9 flex-1 rounded-lg border border-field bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-none focus:border-muted" />
+                <select value={c.op} onChange={(e) => updateCond(i, { op: e.target.value })} className="h-9 rounded-lg border border-field bg-transparent px-2 text-sm text-nb-ink outline-none focus:border-muted">
+                  {TRIGGER_OPS.map((o) => <option key={o} value={o} className="bg-[rgba(8,15,34,.5)]">{OP_LABEL[o] || o}</option>)}
                 </select>
-                <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted" />
-                <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded text-muted hover:bg-hover hover:text-red-500"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
+                <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-field bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-muted" />
+                <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
               </div>
             ))}
           </div>
@@ -207,17 +207,17 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
 
       {/* Deduplication */}
       <div>
-        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted">Deduplication</label>
-        <p className="mb-2 text-[11px] text-muted/70">Within the window, events resolving to the same dedup key are suppressed — only the first raises an incident.</p>
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-nb-faint">Deduplication</label>
+        <p className="mb-2 text-[11px] text-nb-faint/70">Within the window, events resolving to the same dedup key are suppressed — only the first raises an incident.</p>
         <div className="space-y-2">
           {DEDUP_STRATEGIES.map((s) => {
             const active = dedupStrategy === s.value;
             return (
-              <label key={s.value} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-blue-500/50 bg-blue-500/10" : "border-card-border bg-card hover:bg-hover"}`}>
+              <label key={s.value} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-[rgba(96,165,250,.50)] bg-[rgba(96,165,250,.10)]" : "border-nb-line bg-[rgba(8,15,34,.5)] hover:bg-[rgba(96,165,250,.1)]"}`}>
                 <input type="radio" name="dedup-strategy" checked={active} onChange={() => setDedupStrategy(s.value)} className="mt-0.5" />
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-foreground">{s.label}</span>
-                  <span className="mt-0.5 block text-[11px] text-muted">{s.hint}</span>
+                  <span className="block text-sm font-medium text-nb-ink">{s.label}</span>
+                  <span className="mt-0.5 block text-[11px] text-nb-faint">{s.hint}</span>
                 </span>
               </label>
             );
@@ -242,7 +242,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+      <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
       </label>
 
@@ -282,12 +282,12 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
-        <div className="flex items-center gap-2 text-[11px] text-muted">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-faint">{label}</div>
+        <div className="flex items-center gap-2 text-[11px] text-nb-faint">
           <Icon icon="heroicons-outline:users" className="text-sm" />
           {selectedIds.length} selected
           {selectedIds.length > 0 && (
-            <button type="button" onClick={onClear} className="hover:text-foreground hover:underline">clear</button>
+            <button type="button" onClick={onClear} className="hover:text-nb-ink hover:underline">clear</button>
           )}
         </div>
       </div>
@@ -295,7 +295,7 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
       {selectedUsers.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {selectedUsers.map((u) => (
-            <span key={uid(u)} className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs text-blue-500">
+            <span key={uid(u)} className="inline-flex items-center gap-1 rounded-full border border-[rgba(96,165,250,.30)] bg-[rgba(96,165,250,.10)] px-2.5 py-1 text-xs text-nb-blueb">
               {display(u)}
               <button type="button" onClick={() => onToggle(uid(u))} aria-label={`Remove ${display(u)}`}>×</button>
             </span>
@@ -303,28 +303,28 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
         </div>
       )}
 
-      <div className="rounded-lg border border-card-border bg-card">
-        <label className="relative block border-b border-card-border">
-          <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-foreground outline-none" />
+      <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
+        <label className="relative block border-b border-nb-line">
+          <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-faint" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-nb-ink outline-none" />
         </label>
         <div className="max-h-40 overflow-y-auto">
           {usersQ.isLoading ? (
-            <div className="px-3 py-3 text-xs text-muted">Loading…</div>
+            <div className="px-3 py-3 text-xs text-nb-faint">Loading…</div>
           ) : filtered.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-muted">No users match &quot;{query}&quot;.</div>
+            <div className="px-3 py-3 text-xs text-nb-faint">No users match &quot;{query}&quot;.</div>
           ) : (
-            <ul className="divide-y divide-card-border">
+            <ul className="divide-y divide-nb-line">
               {filtered.map((u) => {
                 const checked = selectedIds.includes(uid(u));
                 return (
                   <li key={uid(u)}>
-                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-blue-500/10" : "hover:bg-hover"}`}>
+                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-[rgba(96,165,250,.10)]" : "hover:bg-[rgba(96,165,250,.1)]"}`}>
                       <input type="checkbox" checked={checked} onChange={() => onToggle(uid(u))} />
                       <span className="flex-1 min-w-0">
-                        <span className="block font-medium text-foreground truncate">{display(u)}</span>
+                        <span className="block font-medium text-nb-ink truncate">{display(u)}</span>
                         {u.email && display(u) !== u.email && (
-                          <span className="block text-[10px] text-muted truncate">{u.email}</span>
+                          <span className="block text-[10px] text-nb-faint truncate">{u.email}</span>
                         )}
                       </span>
                     </label>

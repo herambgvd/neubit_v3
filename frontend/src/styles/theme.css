@@ -11,14 +11,17 @@
   --field-border: #e2e2e2;
 }
 
+/* NeuBit navy command-console (the VMS look). "Dark" is no longer near-black — it
+   is the navy palette the mockups use, so the app chrome (header, sub-tabs, footer,
+   cards) reads as one continuous console instead of black bars. */
 .dark {
-  --background: #000000;
-  --foreground: #ededed;
-  --card: #0a0a0a;
-  --card-border: #262626;
-  --muted: #a1a1a1;
-  --hover: #171717;
-  --field-border: #2a2a2a;
+  --background: #0c1530;
+  --foreground: #f2f6ff;
+  --card: #0b1228;
+  --card-border: #24325c;
+  --muted: #aec2e8;
+  --hover: rgba(150, 180, 245, 0.08);
+  --field-border: #24325c;
 }
 
 /* Modal / dropdown entrance animations */
