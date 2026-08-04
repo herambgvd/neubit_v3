@@ -118,7 +118,7 @@ export default function MenuNavigator() {
       aria-label="Open menu navigator"
       className="grid h-9 w-9 place-items-center rounded-[8px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.13)] text-[#67e8f9] transition hover:border-[rgba(34,211,238,.7)] hover:shadow-[0_0_16px_rgba(34,211,238,.3)]"
     >
-      <Icon icon="heroicons-outline:squares-2x2" className="text-[18px]" />
+      <Icon icon="heroicons-outline:home" className="text-[18px]" />
     </button>
   );
 
@@ -139,7 +139,7 @@ export default function MenuNavigator() {
             >
               <div className="mb-8 flex items-center gap-3">
                 <span className="grid h-9 w-9 place-items-center rounded-[8px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.13)] text-[#67e8f9]">
-                  <Icon icon="heroicons:squares-2x2" className="text-[18px]" />
+                  <Icon icon="heroicons-outline:home" className="text-[18px]" />
                 </span>
                 <span className="text-[15px] font-bold tracking-[0.5px]">
                   Neu<i className="not-italic text-[#67e8f9]">Bit</i>

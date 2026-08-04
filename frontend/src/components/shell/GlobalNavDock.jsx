@@ -8,7 +8,7 @@
 //   • the ⊞ MENU navigator launcher (jump to any section),
 //   • a Search / ⌘K trigger (opens the global CommandPalette),
 //   • the notifications bell (unread badge + recent dropdown),
-//   • the account menu (Account, theme toggle, avatar, Sign out),
+//   • the account menu (Account, avatar, Sign out) — dark-only, no theme switch,
 //   • on HOME only, the status strip (mode · clock · lock · fullscreen).
 // It is deliberately minimal — a floating pill, not a bar — to match the
 // immersive wall's floating controls and the navy aesthetic.
@@ -25,7 +25,6 @@ import { Avatar } from "@/components/ui/kit";
 import MenuNavigator from "@/components/shell/MenuNavigator";
 import GlobalBrand from "@/components/shell/GlobalBrand";
 import { useAuth } from "@/lib/auth";
-import { useTheme } from "@/components/theme";
 
 /* HOME status strip — mode label + live clock + lock + fullscreen. Shown only on
    the launcher. Inline SVGs so the chrome renders even offline. Honest: BASELINE
@@ -84,6 +83,7 @@ function fmtTs(ts) {
 // notifications (mark one / mark all read) with a "View all" link to the page.
 function NotificationsBell() {
   const qc = useQueryClient();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -95,11 +95,20 @@ function NotificationsBell() {
   const items = data?.items || [];
   const unread = items.filter((n) => !n.read);
 
+  // Same dismissal contract as the account menu: outside click, Escape, navigation.
   useEffect(() => {
+    if (!open) return;
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function onKey(e) { if (e.key === "Escape") setOpen(false); }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  useEffect(() => setOpen(false), [pathname]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["notifications-bell"] });
   const markRead = useMutation({ mutationFn: (id) => api.post(`/messaging/notifications/${id}/read`), onSuccess: invalidate });
@@ -166,7 +175,6 @@ function NotificationsBell() {
 // Account menu: Account link, theme toggle, avatar add/change/remove, Sign out.
 function AccountMenu() {
   const { user, logout, reload } = useAuth();
-  const { theme, toggle } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const [openUser, setOpenUser] = useState(false);
@@ -258,21 +266,7 @@ function AccountMenu() {
             <Icon icon="heroicons-outline:user-circle" className="text-base shrink-0" />
             Account
           </Link>
-          <button
-            onClick={toggle}
-            className="w-full flex items-center justify-between gap-2.5 px-4 py-2 text-[13px] text-muted hover:text-foreground hover:bg-hover transition"
-          >
-            <span className="flex items-center gap-2.5">
-              <Icon
-                icon={theme === "dark" ? "heroicons-outline:sun" : "heroicons-outline:moon"}
-                className="text-base shrink-0"
-              />
-              {theme === "dark" ? "Light mode" : "Dark mode"}
-            </span>
-            <span className={`relative h-4 w-7 rounded-full transition ${theme === "dark" ? "bg-foreground/30" : "bg-hover"}`}>
-              <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-foreground transition-all ${theme === "dark" ? "left-3.5" : "left-0.5"}`} />
-            </span>
-          </button>
+          {/* No theme switch — the console is dark-only. */}
           <button
             disabled={uploading}
             onClick={() => fileRef.current?.click()}
@@ -314,22 +308,36 @@ function AccountMenu() {
 // notifications, account. Slim + navy to match the immersive aesthetic.
 export default function GlobalNavDock({ home = false }) {
   return (
-    <header className="relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.82)] px-3 backdrop-blur sm:px-4">
+    // z-50 (above ConsoleStrip/SectionTabs, which sit at z-30): the header's
+    // notification + account dropdowns must paint OVER every page chrome on EVERY
+    // route. They previously shared z-40 with the sticky ConsoleStrip, so on the
+    // console routes (/users, /roles, /platform, …) that later sibling won the tie
+    // and covered the open menus — while strip-less routes (/access-control)
+    // looked correct. One header level for all routes keeps it consistent.
+    <header className="relative z-50 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.82)] px-3 backdrop-blur sm:px-4">
       <div className="flex min-w-0 items-center gap-1.5">
-        <GlobalBrand />
-        {/* ⊞ MENU navigator launcher — jump to any section from any screen. */}
+        {/* ⊞ MENU navigator launcher — jump to any section from any screen. Sits to
+            the LEFT of the brand so the navigator is the first thing in the bar. */}
         <MenuNavigator />
+        <GlobalBrand />
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         {home && <HomeStatusStrip />}
         <button
           onClick={() => window.dispatchEvent(new Event("palette:open"))}
-          className="hidden sm:flex items-center gap-2 rounded-md border border-card-border text-muted hover:text-foreground hover:bg-hover transition px-2.5 py-1.5"
+          className="hidden sm:flex h-9 items-center gap-2.5 rounded-md border border-card-border px-2.5 text-muted hover:text-foreground hover:bg-hover transition"
           aria-label="Search"
           title="Search (⌘K)"
         >
-          <Icon icon="heroicons-outline:magnifying-glass" className="text-base" />
-          <kbd className="text-[10px] border border-card-border rounded px-1 py-0.5">⌘K</kbd>
+          <Icon icon="heroicons-outline:magnifying-glass" className="shrink-0 text-base" />
+          {/* Fixed-height, leading-none kbd: the arbitrary text-[10px] inherited the
+              body line-height, so the badge grew taller than its row and collided
+              with the search icon. The ⌘ and K are separate flex children so they
+              get real spacing — mashed together they read as one glyph. */}
+          <kbd className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-card-border px-1.5 font-mono text-[10px] leading-none">
+            <span className="text-[11px]">⌘</span>
+            <span>K</span>
+          </kbd>
         </button>
         <NotificationsBell />
         <AccountMenu />

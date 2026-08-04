@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { Card, Toggle } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useTheme } from "@/components/theme";
 
 function PrefRow({ title, desc, children }) {
   return (
@@ -22,7 +21,6 @@ function PrefRow({ title, desc, children }) {
 
 export default function PreferencesTab() {
   const { user, reload } = useAuth();
-  const { theme, toggle } = useTheme();
   const prefs = user?.preferences || {};
 
   const save = useMutation({
@@ -37,30 +35,9 @@ export default function PreferencesTab() {
   const notifyEmail = prefs.notify_email !== false; // default on
   const notifyInapp = prefs.notify_inapp !== false; // default on
 
+  // No Appearance/Theme card — the console is dark-only, so there is nothing to choose.
   return (
     <div className="grid gap-6 lg:grid-cols-2 items-start">
-      <Card className="p-6">
-        <h2 className="text-sm font-semibold text-foreground mb-1">Appearance</h2>
-        <PrefRow title="Theme" desc="Choose how the interface looks on this device.">
-          <div className="flex items-center gap-1 rounded-md border border-card-border p-1">
-            {["light", "dark"].map((t) => (
-              <button
-                key={t}
-                onClick={() => {
-                  if (theme !== t) toggle();
-                  save.mutate({ theme: t });
-                }}
-                className={`px-3 py-1 rounded text-xs font-medium capitalize transition ${
-                  theme === t ? "bg-hover text-foreground" : "text-muted hover:text-foreground"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </PrefRow>
-      </Card>
-
       <Card className="p-6">
         <h2 className="text-sm font-semibold text-foreground mb-1">Notifications</h2>
         <PrefRow title="Email notifications" desc="Receive important alerts by email.">

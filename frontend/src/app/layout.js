@@ -11,12 +11,12 @@ export const metadata = {
   description: "Neubit — physical security command center",
 };
 
-// Set the theme class before first paint to avoid a flash (reads localStorage).
+// DARK-ONLY console: force the dark class before first paint and scrub any
+// `theme: "light"` an older build may have persisted, so no stored preference can
+// flash (or stick) the retired light palette.
 const noFlashScript = `
-try {
-  var t = localStorage.getItem('theme');
-  document.documentElement.classList.toggle('dark', t !== 'light');
-} catch (e) { document.documentElement.classList.add('dark'); }
+document.documentElement.classList.add('dark');
+try { localStorage.setItem('theme', 'dark'); } catch (e) {}
 `;
 
 // Root font-size 14px keeps the whole UI compact (all rem-based sizing scales down).

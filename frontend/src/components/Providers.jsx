@@ -5,12 +5,12 @@ import { useState } from "react";
 import { Toaster } from "sonner";
 
 import { AuthProvider } from "@/lib/auth";
-import { ThemeProvider, useTheme } from "@/components/theme";
+import { ThemeProvider } from "@/components/theme";
 import TitleSync from "@/components/TitleSync";
 
+// Dark-only console — the toasts are pinned to match.
 function ThemedToaster() {
-  const { theme } = useTheme();
-  return <Toaster theme={theme} position="bottom-right" richColors closeButton />;
+  return <Toaster theme="dark" position="bottom-right" richColors closeButton />;
 }
 
 // App-wide client providers: theme + TanStack Query + Auth + sonner toasts.
