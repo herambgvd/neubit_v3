@@ -29,14 +29,14 @@ export default function CloneUserModal({ source, onClose, form, setForm, onClone
           label="Full name"
           value={form.full_name}
           onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-          placeholder="New staff name"
+          placeholder="Enter full name"
         />
         <Input
           label="Email · sign-in"
           type="email"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
-          placeholder="new.user@example.com"
+          placeholder="Enter email address"
         />
         <div className="flex items-center justify-between rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5">
           <div>

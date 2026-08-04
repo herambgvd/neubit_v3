@@ -25,6 +25,7 @@ export default function RoleFormModal({
       open={open}
       onClose={onClose}
       wide
+      hideScroll
       title={editing ? (readOnly ? `${editing.name} (system role)` : `Edit role`) : "Create role"}
       footer={
         readOnly ? (
@@ -52,14 +53,14 @@ export default function RoleFormModal({
           value={form.name}
           disabled={readOnly}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
-          placeholder="e.g. Operator"
+          placeholder="Enter role name (e.g. Operator)"
         />
         <Input
           label="Description"
           value={form.description}
           disabled={readOnly}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
-          placeholder="What this role is for"
+          placeholder="Enter a short description of what this role can do"
         />
 
         <PermissionSelector

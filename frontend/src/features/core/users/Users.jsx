@@ -176,6 +176,16 @@ export default function UsersPage() {
   function setStatus(u, next) {
     const cur = u.locked ? "locked" : u.is_active ? "active" : "disabled";
     if (next === cur) return;
+    // Never let the signed-in admin lock themselves out of their own console,
+    // and never let an Administrator account (the way back in) be shut off.
+    if (u.id === me?.id && next !== "active") {
+      toast.error("You cannot disable or lock your own account");
+      return;
+    }
+    if (u.role?.is_system && next !== "active") {
+      toast.error("Administrator accounts cannot be disabled or locked");
+      return;
+    }
     if (next === "locked") {
       adminAction.mutate({ id: u.id, action: "lock", key: "lock", done: "Account locked" });
     } else if (next === "active") {

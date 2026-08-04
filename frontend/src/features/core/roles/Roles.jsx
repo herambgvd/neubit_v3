@@ -275,7 +275,7 @@ export default function RolesPage() {
             Copies all of <b className="text-nb-blueb">{cloneSrc?.name}</b>&rsquo;s permissions under a
             new name — a fast starting point you can then trim down.
           </div>
-          <Input label="New role name" value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="e.g. SOC Operator (night shift)" />
+          <Input label="New role name" value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="Enter new role name (e.g. SOC Operator — night shift)" />
         </div>
       </Modal>
 
