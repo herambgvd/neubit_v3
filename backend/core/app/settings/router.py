@@ -41,16 +41,19 @@ async def public_settings(
 @router.get("/maps", response_model=MapsConfigOut)
 async def get_maps_config(
     db: AsyncSession = Depends(get_db),
-    _actor: User = Depends(get_current_user),
+    actor: User = Depends(get_current_user),
 ) -> MapsConfigOut:
     """Google Maps config for the browser JS loader — any AUTHENTICATED user.
 
-    Reads the PLATFORM-DEFAULT (tenant_id NULL) values that the super-admin edits
-    under /admin/platform/settings. The api_key is intentionally returned to the
+    Resolves the CALLER'S EFFECTIVE values (their tenant's override ← the
+    platform default), so a tenant-admin who enables Maps and saves a key under
+    Settings → Google Maps lights up their own Sites Map and the site form's
+    address→coordinates lookup. A super-admin (tenant_id None) reads the
+    platform default, as before. The api_key is intentionally returned to the
     browser (the Maps JavaScript API loader needs it); restrict it by HTTP referrer
     in Google Cloud Console. Not part of the unauthenticated /public subset.
     """
-    values = await SettingsService(db, None).all_values()
+    values = await SettingsService(db, actor.tenant_id).all_values()
     return MapsConfigOut(
         enabled=bool(values.get("google_maps_enabled", False)),
         api_key=str(values.get("google_maps_api_key") or ""),

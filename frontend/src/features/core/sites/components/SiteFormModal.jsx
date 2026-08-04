@@ -4,16 +4,17 @@
 // sections plus an image upload/preview. Auto-generates a location code from the
 // site type on create. On save, creates/updates then optionally uploads the image.
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/kit";
 import { FieldLabel, fieldClass } from "@/components/common";
-import { apiError, fileUrl } from "@/lib/api";
+import { api, apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { SITE_TYPES, THREAT_LEVELS, capitalize, generateLocationCode } from "../constants";
 import { FInput, FTextarea, FSelect, ImagePreviewCard, Section } from "./FormControls";
+import GeocodeButton from "./GeocodeButton";
 
 export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
   const isEdit = !!site;
@@ -35,6 +36,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
   const [contactPerson, setContactPerson] = useState(site?.contact_person || "");
   const [contactPhone, setContactPhone] = useState(site?.contact_phone || "");
   const [emailAddress, setEmailAddress] = useState(site?.email_address || "");
+  const [geoMatch, setGeoMatch] = useState("");
   const [errors, setErrors] = useState({});
   const [imageFile, setImageFile] = useState(null);
   const [existingImageUrl] = useState(site?.image_url || "");
@@ -58,6 +60,16 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onCancel]);
+
+  // Address → coordinates is only offered when this tenant has Google Maps turned
+  // on AND a key saved; same config the Sites Map reads, so it stays in one place.
+  const mapsQ = useQuery({
+    queryKey: ["maps-config"],
+    queryFn: () => api.get("/settings/maps").then((r) => r.data),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const mapsKey = (mapsQ.data?.enabled && mapsQ.data?.api_key) || "";
 
   const saving = useMutation({
     mutationFn: async ({ body, file }) => {
@@ -149,7 +161,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
         </div>
 
         <form noValidate onSubmit={submit} className="flex flex-col min-h-0 flex-1">
-          <div className="flex-1 px-6 py-6 space-y-6 overflow-y-auto">
+          <div className="flex-1 px-6 py-6 space-y-6 overflow-y-auto scroll-none">
             <Section title="Identity">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -203,13 +215,35 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
                 <FInput label="Country" value={country} onChange={setCountry} placeholder="Country" />
               </div>
             </Section>
-            <Section title="Coordinates (optional)">
+            <Section
+              title="Coordinates (optional)"
+              action={
+                mapsKey ? (
+                  <GeocodeButton
+                    apiKey={mapsKey}
+                    address={{ street, city, state, zipCode, country }}
+                    onResult={({ latitude: lat, longitude: lng, formatted }) => {
+                      setLatitude(lat.toFixed(6));
+                      setLongitude(lng.toFixed(6));
+                      setGeoMatch(formatted);
+                    }}
+                  />
+                ) : null
+              }
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FInput label="Latitude" type="number" step="any" value={latitude} onChange={setLatitude} placeholder="Latitude" />
-                <FInput label="Longitude" type="number" step="any" value={longitude} onChange={setLongitude} placeholder="Longitude" />
+                <FInput label="Latitude" type="number" step="any" value={latitude} onChange={(v) => { setLatitude(v); setGeoMatch(""); }} placeholder="Latitude" />
+                <FInput label="Longitude" type="number" step="any" value={longitude} onChange={(v) => { setLongitude(v); setGeoMatch(""); }} placeholder="Longitude" />
               </div>
+              {geoMatch && (
+                <p className="mt-2 flex items-start gap-1.5 text-[11px] text-nb-blueb">
+                  <Icon icon="heroicons-outline:map-pin" className="mt-px shrink-0 text-[13px]" />
+                  <span>Matched <b>{geoMatch}</b> — adjust the values if the pin is off.</span>
+                </p>
+              )}
               <p className="mt-2 text-[11px] text-nb-faint">
                 Sites with coordinates appear as pins on the <b>Map view</b>.
+                {mapsKey ? " Fetch from address needs the full address above — street, city, state, zip code and country." : ""}
               </p>
             </Section>
             <Section title="Contact">
