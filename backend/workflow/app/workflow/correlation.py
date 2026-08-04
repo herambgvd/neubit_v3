@@ -185,13 +185,29 @@ class CorrelationEngine:
         """Handle one decoded event envelope (from ``kernel.events``).
 
         Envelope shape: {event_id, tenant_id, type, occurred_at, source, payload}.
-        ``type`` is ``<domain>.<event>`` (e.g. "ingest.event.received"). We map it
-        onto Trigger.event_type. Feedback-loop guard: skip our own workflow events.
+
+        A trigger matches on EITHER of two names, because publishers disagree
+        about which one is the event's identity:
+
+        * the TRANSPORT type — ``kernel.events`` derives ``envelope["type"]`` from
+          the subject, so everything ingest publishes is ``ingest.event.received``
+          regardless of what the payload actually is;
+        * the SEMANTIC type — ``payload["event_type"]``, which is what an ingest
+          event RULE emits ("lumina.motion") and what an operator naturally types
+          into a trigger.
+
+        Matching only the transport type (the original behavior) made per-type
+        triggers impossible for ingest: every ingest event looked identical. v2
+        had no such split — its Kafka envelope carried the semantic type at the
+        top level — so this is the v2 behavior restored, not a new feature.
+
+        Feedback-loop guard stays on the transport type: it is our own subject we
+        must not react to, whatever a payload claims to be.
         """
-        event_type = envelope.get("type") or envelope.get("event_type")
-        if not event_type:
+        transport_type = envelope.get("type") or envelope.get("event_type")
+        if not transport_type:
             return
-        if str(event_type).startswith("workflow."):
+        if str(transport_type).startswith("workflow."):
             return  # never react to our own emissions
 
         tenant_id = envelope.get("tenant_id")
@@ -200,8 +216,14 @@ class CorrelationEngine:
         if "site_id" not in envelope and isinstance(payload, dict):
             envelope = {**envelope, "site_id": payload.get("site_id")}
 
+        semantic_type = payload.get("event_type") if isinstance(payload, dict) else None
+        candidates = {str(transport_type)}
+        if semantic_type:
+            candidates.add(str(semantic_type))
+        event_type = str(semantic_type or transport_type)  # for logging
+
         async with self._sm() as session:
-            triggers = await self._matching_triggers(session, tenant_id, str(event_type))
+            triggers = await self._matching_triggers(session, tenant_id, candidates)
             fired = 0
             for trig in triggers:
                 if not matches_conditions(envelope, trig.conditions or []):
@@ -217,9 +239,13 @@ class CorrelationEngine:
                 log.info("correlation: event_type=%s fired %d incident(s)", event_type, fired)
 
     async def _matching_triggers(
-        self, session: AsyncSession, tenant_id: str | None, event_type: str
+        self, session: AsyncSession, tenant_id: str | None, event_types: set[str]
     ) -> list[Trigger]:
-        """Enabled triggers for this tenant whose event_type matches (or is empty)."""
+        """Enabled triggers for this tenant matching any candidate type (or empty).
+
+        ``event_types`` holds the transport type and, when the payload names one,
+        the semantic type — see ``handle_event``.
+        """
         stmt = select(Trigger).where(Trigger.enabled.is_(True))
         # Scope by tenant: a trigger fires only for its own tenant's events. NULL
         # tenant_id triggers are platform/shared and match any event.
@@ -232,7 +258,7 @@ class CorrelationEngine:
             except (ValueError, TypeError):
                 stmt = stmt.where(Trigger.tenant_id.is_(None))
         rows = list((await session.execute(stmt)).scalars().all())
-        return [t for t in rows if not t.event_type or t.event_type == event_type]
+        return [t for t in rows if not t.event_type or t.event_type in event_types]
 
     async def _fire(self, session: AsyncSession, trigger: Trigger, envelope: dict[str, Any]) -> bool:
         sop = await session.get(SOP, trigger.sop_id)

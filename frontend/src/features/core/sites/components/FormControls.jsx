@@ -79,11 +79,15 @@ export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }) {
   );
 }
 
-// Titled section wrapper for the site create/edit modal.
-export function Section({ title, children }) {
+// Titled section wrapper for the site create/edit modal. `action` renders an
+// optional control (e.g. "Fetch from address") on the right of the heading.
+export function Section({ title, action, children }) {
   return (
     <section>
-      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">{title}</h4>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">{title}</h4>
+        {action}
+      </div>
       {children}
     </section>
   );

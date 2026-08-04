@@ -71,6 +71,9 @@ export default function UserEditor({
     JSON.stringify([...siteIds].sort()) !== JSON.stringify([...(u.site_ids || [])].sort());
 
   const status = u.locked ? "locked" : u.is_active ? "active" : "disabled";
+  // Accounts on the built-in Administrator role are the console's last way back
+  // in — they stay enabled no matter who is looking at them.
+  const isAdminAccount = !!u.role?.is_system;
   const pwAge = daysSince(u.password_changed_at);
   const selectedSites = new Set(siteIds);
   const toggleSite = (id) => {
@@ -82,6 +85,12 @@ export default function UserEditor({
 
   const statusBtn = (val, label, tone) => {
     const on = status === val;
+    // You can never take your own access away — signing yourself out of the
+    // console (disabled or locked) would leave nobody able to undo it. An
+    // administrator account is protected the same way, whoever is editing it.
+    const selfLockout = isSelf && val !== "active";
+    const adminLockout = isAdminAccount && val !== "active";
+    const blocked = selfLockout || adminLockout;
     const activeCls = {
       active: "bg-[rgba(52,211,153,.18)] text-nb-good",
       disabled: "bg-[rgba(120,140,180,.2)] text-nb-muted",
@@ -90,11 +99,18 @@ export default function UserEditor({
     return (
       <button
         type="button"
-        disabled={!canManage || (val === "locked" && isSelf)}
+        disabled={!canManage || blocked}
+        title={
+          selfLockout
+            ? "You cannot disable or lock your own account"
+            : adminLockout
+              ? "Administrator accounts cannot be disabled or locked"
+              : undefined
+        }
         onClick={() => onSetStatus(val)}
         className={`px-3 py-1.5 text-[10.5px] tracking-[.5px] transition disabled:opacity-40 ${
-          on ? activeCls : "text-nb-faint hover:text-nb-muted"
-        }`}
+          blocked ? "disabled:cursor-not-allowed" : ""
+        } ${on ? activeCls : "text-nb-faint hover:text-nb-muted"}`}
       >
         {label}
       </button>
@@ -220,12 +236,23 @@ export default function UserEditor({
           </div>
         </Row>
         <Row label="Account status">
-          <div className="inline-flex overflow-hidden rounded-[7px] border border-nb-line">
-            {statusBtn("active", "ACTIVE", "active")}
-            <span className="w-px bg-nb-line" />
-            {statusBtn("disabled", "DISABLED", "disabled")}
-            <span className="w-px bg-nb-line" />
-            {statusBtn("locked", "LOCKED", "locked")}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex overflow-hidden rounded-[7px] border border-nb-line">
+              {statusBtn("active", "ACTIVE", "active")}
+              <span className="w-px bg-nb-line" />
+              {statusBtn("disabled", "DISABLED", "disabled")}
+              <span className="w-px bg-nb-line" />
+              {statusBtn("locked", "LOCKED", "locked")}
+            </div>
+            {isSelf ? (
+              <span className="text-[11px] text-nb-faint">
+                this is your own account — you cannot disable or lock it
+              </span>
+            ) : isAdminAccount ? (
+              <span className="text-[11px] text-nb-faint">
+                administrator account — it cannot be disabled or locked
+              </span>
+            ) : null}
           </div>
         </Row>
         <Row label="Session timeout">

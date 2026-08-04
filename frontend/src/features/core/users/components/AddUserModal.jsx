@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Input, Modal, Select, Toggle } from "@/components/ui/kit";
+import { Button, Input, Modal, PasswordInput, Select, Toggle } from "@/components/ui/kit";
 import SiteScopeField from "./SiteScopeField";
 
 export default function AddUserModal({ open, onClose, form, setForm, roleOptions, sites = [], onCreate, creating }) {
@@ -8,6 +8,7 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
     <Modal
       open={open}
       onClose={onClose}
+      hideScroll
       title="Add user"
       footer={
         <>
@@ -23,9 +24,9 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
       }
     >
       <div className="space-y-4">
-        <Input label="Full name" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Jane Doe" />
-        <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="jane@example.com" />
-        <Input label="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} hint="At least 8 characters, with a letter and a number." />
+        <Input label="Full name" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Enter full name" />
+        <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Enter email address" />
+        <PasswordInput label="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Enter a password" hint="At least 8 characters, with a letter and a number." />
         <Select
           label="Role"
           value={form.role_id}

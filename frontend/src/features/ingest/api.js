@@ -5,13 +5,26 @@
 // unwraps `.data` so callers get plain objects, mirroring lib/api/sites.js.
 //
 // Backend contract:
-//   GET/POST         /ingest/categories
+//   GET/POST         /ingest/categories          (409 on a duplicate name)
 //   GET/PATCH/DELETE /ingest/categories/{id}
 //   GET/POST         /ingest/webhooks
 //   GET/PATCH/DELETE /ingest/webhooks/{id}
-//     webhook fields: category_id, name, token, auth_type[none|api_key|basic],
-//                     transform (JMESPath string), schema (JSON), is_active.
-//   The public receiver `/ingest/hooks/{token}` is server-only — we only DISPLAY
+//     webhook fields: category_id, name, slug, description, request_method,
+//                     auth_type[none|api_key|basic|bearer|hmac], auth_username,
+//                     auth_secret (write-only) / has_secret (read-only),
+//                     payload_schema (JSON Schema), transform (field→JMESPath),
+//                     device_lookup_expr, event_type, is_active, ingest_url.
+//     `slug` is the operator-chosen last segment of the public URL. Required on
+//     create, 409 on a duplicate, and REJECTED on update (it's immutable).
+//   POST             /ingest/webhooks/{id}/test           (dry-run)
+//   POST             /ingest/webhooks/{id}/rotate-secret
+//   GET/POST         /ingest/webhooks/{id}/rules
+//   GET/PATCH/DELETE /ingest/event-rules/{ruleId}
+//   POST             /ingest/event-rules/{ruleId}/test
+//   GET              /ingest/event-logs   ?webhook_id&status&published&since&until
+//   GET              /ingest/event-logs/{id}
+//   POST             /ingest/event-logs/{id}/replay
+//   The public receiver `/ingest/hooks/{slug}` is server-only — we only DISPLAY
 //   the URL in the webhook detail (never call it).
 import { api } from "@/lib/api";
 
@@ -45,13 +58,14 @@ export const ingest = {
     create: (body) => unwrap(api.post(WEBHOOKS, body)),
     update: (id, body) => unwrap(api.patch(`${WEBHOOKS}/${id}`, body)),
     remove: (id) => unwrap(api.delete(`${WEBHOOKS}/${id}`)),
-    // Dry-run: validate+transform a sample payload (no publish, no log).
-    // → { schema_valid, schema_errors, transformed, transform_errors, would_publish_subject, auth_type }
+    // Dry-run: run the sample through the real receiver pipeline (no publish, no log).
+    // → { would_publish, reject_reason, schema_valid, schema_errors, transformed,
+    //     transform_errors, would_publish_subject, auth_type, resolved_event_type,
+    //     matched_rule_id, matched_rule_name, device_lookup_value, resolved_device_id }
     test: (id, payload) => unwrap(api.post(`${WEBHOOKS}/${id}/test`, { payload })),
-    // Rotate the public receiver token (+ optional auth secret). Returned once.
-    // → { id, token, ingest_url, auth_secret }
-    rotateSecret: (id, rotate_auth_secret = false) =>
-      unwrap(api.post(`${WEBHOOKS}/${id}/rotate-secret`, { rotate_auth_secret })),
+    // Mint a fresh auth secret, returned ONCE. The URL/slug is NOT changed.
+    // → { id, slug, ingest_url, auth_secret }
+    rotateSecret: (id) => unwrap(api.post(`${WEBHOOKS}/${id}/rotate-secret`, {})),
   },
 
   // Inbound request audit trail (one row per receiver call).

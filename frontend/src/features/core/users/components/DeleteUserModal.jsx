@@ -2,7 +2,7 @@
 
 import { Icon } from "@iconify/react";
 
-import { Button, Input, Modal } from "@/components/ui/kit";
+import { Button, Modal, PasswordInput } from "@/components/ui/kit";
 
 // Delete user — requires the admin to re-enter their password.
 export default function DeleteUserModal({ deleting, onClose, password, setPassword, onConfirm, removing }) {
@@ -28,12 +28,11 @@ export default function DeleteUserModal({ deleting, onClose, password, setPasswo
             cannot be undone.
           </span>
         </div>
-        <Input
+        <PasswordInput
           label="Confirm your password"
-          type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Your account password"
+          placeholder="Enter your account password"
           hint="Re-enter your own password to authorize this deletion."
         />
       </div>

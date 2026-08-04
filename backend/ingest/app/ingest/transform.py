@@ -3,15 +3,17 @@
 Ported from neubit_v2's ingest ``transformer``. The service layer orchestrates the
 DB lookup and the NATS publish; this module only owns the data-shape transform:
 
-* ``validate_payload`` — gate the raw body against an (optional) JSON Schema.
-* ``apply_transform``  — map ``{target_field: "jmespath_expr"}`` over the payload.
+* ``validate_payload``      — gate the raw body against an (optional) JSON Schema.
+* ``apply_transform``       — map ``{target_field: "jmespath_expr"}`` over the payload.
+* ``evaluate_lookup_expr``  — pull the device-identifying value out of the payload.
 
-Both collect errors instead of raising, so a misconfigured webhook surfaces a
+All collect errors instead of raising, so a misconfigured webhook surfaces a
 clean 422 rather than a 500.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,6 +22,8 @@ import jmespath
 from jmespath.exceptions import JMESPathError
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+
+logger = logging.getLogger(__name__)
 
 _TARGET_PATH_RE = re.compile(r"([^.[\]]+)|\[(\d+)\]")
 
@@ -64,8 +68,8 @@ def apply_transform(
 
     Empty map → return the raw payload as-is (passthrough). Per-field JMESPath
     failures are collected, not raised — a partial transform still produces a
-    value. Dotted target keys (e.g. ``event.description``) materialize nested
-    objects so the output shape is configurable directly.
+    value. ``cap.``-prefixed target keys materialize nested objects/arrays; every
+    other key (dotted or not) stays a flat literal — see ``_assign_target``.
     """
     if not transform_map:
         if not isinstance(payload, dict):
@@ -90,8 +94,14 @@ def apply_transform(
 
 
 def _assign_target(out: dict[str, Any], target: str, value: Any) -> None:
-    """Flat key → literal; dotted key → nested object/array path."""
-    if "." not in target and "[" not in target:
+    """``cap.``-prefixed key → nested object/array path; anything else → flat literal.
+
+    Only the CAP namespace is interpreted as a path. A vendor payload routinely
+    wants a flat output key that happens to contain a dot (``data.mac``), so
+    treating every dotted key as nested would silently reshape those maps — and
+    every ingest transform written against v2 is a map of exactly that kind.
+    """
+    if not target.startswith("cap."):
         out[target] = value
         return
     _assign_nested(out, target, value)
@@ -133,3 +143,22 @@ def _assign_nested(root: dict[str, Any], path: str, value: Any) -> None:
         if not isinstance(existing, list if want_list else dict):
             cur[token] = [] if want_list else {}
         cur = cur[token]
+
+
+def evaluate_lookup_expr(payload: Any, expr: str | None) -> str | None:
+    """Pull the device-identifying value (e.g. a MAC) out of the raw payload.
+
+    A bad expression is a webhook misconfiguration, not a client error: log-free
+    ``None`` here, and the caller carries on without device context rather than
+    rejecting a delivery the vendor cannot fix.
+    """
+    if not expr:
+        return None
+    try:
+        val = jmespath.search(expr, payload)
+    except JMESPathError as exc:
+        logger.warning("device_lookup_expr failed: %s", exc)
+        return None
+    if val is None:
+        return None
+    return str(val)

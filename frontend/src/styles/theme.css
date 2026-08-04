@@ -81,3 +81,12 @@
 .scroll-themed:hover::-webkit-scrollbar-thumb { background: var(--muted); }
 .app-scroll::-webkit-scrollbar-thumb:hover,
 .scroll-themed::-webkit-scrollbar-thumb:hover { background: var(--foreground); }
+
+/* Fully INVISIBLE scrollbar — the pane still scrolls (wheel, touch, keyboard, and
+   scrollIntoView), it just draws no track or thumb. For compact overlay surfaces
+   like the command palette, where a visible bar clutters the panel edge. */
+.scroll-none {
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* legacy Edge/IE */
+}
+.scroll-none::-webkit-scrollbar { width: 0; height: 0; }

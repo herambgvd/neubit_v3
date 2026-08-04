@@ -2,6 +2,9 @@
 
 // Google Maps info-window content for a selected site. Renders inside Google's own
 // light popup, so this card keeps explicit light colors rather than theme tokens.
+// The title needs `!` — the app is locked to dark mode and the global
+// `h3 { …dark:text-slate-300 }` rule in _typography.scss outranks a plain class,
+// which washed the site name out to grey on the white popup.
 import { Icon } from "@iconify/react";
 import { THREAT_PIN } from "../constants";
 
@@ -22,7 +25,7 @@ export default function SiteCard({ site, onClose }) {
           <Icon icon="heroicons-outline:building-office-2" className="text-base" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-slate-900">{site.name}</h3>
+          <h3 className="truncate text-sm font-semibold !text-slate-900">{site.name}</h3>
           {site.location_code && <p className="font-mono text-[10px] text-slate-500">{site.location_code}</p>}
         </div>
       </div>

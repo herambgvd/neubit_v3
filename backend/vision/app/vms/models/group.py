@@ -14,6 +14,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Index,
     String,
@@ -52,6 +53,11 @@ class CameraGroup(Base):
     # string (no PG enum) — validated at the schema layer.
     layout: Mapped[str] = mapped_column(
         String(8), nullable=False, server_default=text("'2x2'")
+    )
+    # Whether this group is active (e.g. eligible for the video wall). Inactive
+    # groups are kept but can be hidden/skipped by consumers.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
     )
 
     created_by: Mapped[str | None] = mapped_column(String(64))

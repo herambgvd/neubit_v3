@@ -29,6 +29,7 @@ class CameraGroupCreate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=1024)
     camera_ids: list[str] = Field(default_factory=list)
     layout: GridLayout = "2x2"
+    is_active: bool = True
 
 
 class CameraGroupUpdate(BaseModel):
@@ -38,6 +39,7 @@ class CameraGroupUpdate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=1024)
     camera_ids: Optional[list[str]] = None
     layout: Optional[GridLayout] = None
+    is_active: Optional[bool] = None
 
 
 class CameraGroupPublic(BaseModel):
@@ -48,6 +50,7 @@ class CameraGroupPublic(BaseModel):
     description: Optional[str] = None
     camera_ids: list[str] = Field(default_factory=list)
     layout: GridLayout = "2x2"
+    is_active: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -61,6 +64,7 @@ class CameraGroupPublic(BaseModel):
                 "description": row.description,
                 "camera_ids": row.camera_ids or [],
                 "layout": row.layout or "2x2",
+                "is_active": row.is_active if row.is_active is not None else True,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }

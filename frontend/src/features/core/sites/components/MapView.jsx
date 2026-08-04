@@ -14,6 +14,12 @@ import SiteCard from "./SiteCard";
 
 const CONTAINER_STYLE = { width: "100%", height: "100%" };
 
+// Teardrop pin (Material "place", 24×24 with the tip at 12,22) — a plain circle
+// marker disappeared against the map's own POI dots, so sites get a real pin in
+// their threat colour with a white outline plus the site name underneath.
+const PIN_PATH = "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z";
+const LABEL_MAX = 26;
+
 export function Loading() {
   return (
     <div className="flex h-full items-center justify-center gap-2 text-sm text-muted">
@@ -40,7 +46,8 @@ export function Disabled() {
 }
 
 // Google's default info-window close icon + top padding can duplicate our in-card close
-// button, so hide them.
+// button, so hide them. The marker label gets a white halo so a site's name stays
+// readable over roads, parks and satellite-ish tiles alike.
 export function MapPopupStyleFix() {
   return (
     <style jsx global>{`
@@ -49,6 +56,14 @@ export function MapPopupStyleFix() {
       }
       .sites-map-root .gm-style .gm-style-iw-c {
         padding-top: 8px !important;
+      }
+      .sites-map-root .gm-style .site-marker-label {
+        white-space: nowrap;
+        text-shadow:
+          0 0 3px #fff,
+          0 0 3px #fff,
+          0 0 4px #fff,
+          0 1px 3px rgba(255, 255, 255, 0.95);
       }
     `}</style>
   );
@@ -100,18 +115,32 @@ export default function MapView({ apiKey, center, zoom, sites, selected, onSelec
     >
       {sites.map((s) => {
         const tone = THREAT_PIN[s.threat_level] || THREAT_PIN.normal;
+        const isSelected = selected?.site_id === s.site_id;
+        const scale = isSelected ? 2 : 1.6;
         return (
           <Marker
             key={s.site_id}
             position={{ lat: s.coordinates.latitude, lng: s.coordinates.longitude }}
             onClick={() => onSelect(s)}
+            zIndex={isSelected ? 1000 : 1}
             icon={{
-              path: window.google.maps.SymbolPath.CIRCLE,
+              path: PIN_PATH,
               fillColor: tone.color,
               fillOpacity: 1,
-              strokeWeight: 2,
+              strokeWeight: 1.5,
               strokeColor: "#ffffff",
-              scale: 8,
+              scale,
+              anchor: new window.google.maps.Point(12, 22),
+              // Below the tip, in the path's own 24×24 space — keeps the name
+              // clear of the pin at every scale.
+              labelOrigin: new window.google.maps.Point(12, 30),
+            }}
+            label={{
+              text: s.name.length > LABEL_MAX ? `${s.name.slice(0, LABEL_MAX - 1)}…` : s.name,
+              className: "site-marker-label",
+              color: "#0f172a",
+              fontSize: "12px",
+              fontWeight: "600",
             }}
             title={`${s.name} · ${tone.label}`}
           />

@@ -6,8 +6,9 @@ Two router objects, split by trust boundary:
   ``{prefix}/ingest/categories`` + ``{prefix}/ingest/webhooks``. JWT + permission
   gated (``ingest.read`` / ``ingest.manage``) and tenant-scoped.
 
-* ``public_router`` — the PUBLIC receiver ``POST /ingest/hooks/{token}``. NO JWT:
+* ``public_router`` — the PUBLIC receiver ``POST /ingest/hooks/{slug}``. NO JWT:
   authenticated by the webhook's own per-webhook auth. Returns 202 on accept.
+  The slug identifies the webhook; ``auth_type`` is what authorizes the caller.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from .schemas import (
     EventRuleListResponse,
     EventRulePublic,
     EventRuleUpdate,
+    EventStatus,
     IngestResponse,
     ReplayResponse,
     RotateSecretRequest,
@@ -253,10 +255,8 @@ async def rotate_webhook_secret(
     svc: Annotated[WebhookService, Depends(_webhook_service)],
     actor: Principal = Depends(require_permission(PERM_MANAGE)),
 ) -> RotateSecretResponse:
-    """Regenerate the public token (and optionally the auth secret). Returned once."""
-    return await svc.rotate_secret(
-        webhook_id, rotate_auth_secret=body.rotate_auth_secret, actor=actor
-    )
+    """Mint a fresh auth secret, returned once. The URL/slug is not changed."""
+    return await svc.rotate_secret(webhook_id, actor=actor)
 
 
 # --- Event rules (payload-driven routing) ---
@@ -362,6 +362,8 @@ async def list_event_logs(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=500),
     webhook_id: Optional[str] = Query(None, max_length=36),
+    # The single-value verdict the operator UI filters on (EventStatus).
+    status: Optional[EventStatus] = Query(None),
     auth_outcome: Optional[str] = Query(None, pattern="^(ok|failed)$"),
     published: Optional[bool] = Query(None),
     since: Optional[datetime] = Query(None),
@@ -371,6 +373,7 @@ async def list_event_logs(
         skip=skip,
         limit=limit,
         webhook_id=webhook_id,
+        status=status.value if status else None,
         auth_outcome=auth_outcome,
         published=published,
         since=since,
@@ -427,13 +430,13 @@ def build_public_router(bus: EventBus) -> APIRouter:
     """
 
     @public_router.api_route(
-        "/hooks/{token}",
+        "/hooks/{slug}",
         methods=["GET", "POST"],
         response_model=IngestResponse,
         status_code=status.HTTP_202_ACCEPTED,
     )
     async def receive(  # noqa: D401 — public webhook receiver (NO JWT dependency)
-        token: str,
+        slug: str,
         request: Request,
         db: Annotated[AsyncSession, Depends(get_db)],
     ) -> IngestResponse:
@@ -456,7 +459,7 @@ def build_public_router(bus: EventBus) -> APIRouter:
             except Exception:
                 payload = {}
         svc = ReceiverService(db, bus)
-        _event_type, event_id = await svc.handle(token, request, payload, raw_body)
+        _event_type, event_id = await svc.handle(slug, request, payload, raw_body)
         return IngestResponse(accepted=True, event_id=event_id)
 
     return public_router

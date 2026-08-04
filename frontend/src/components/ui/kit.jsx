@@ -60,6 +60,30 @@ export function Input({ label, hint, className = "", ...props }) {
   );
 }
 
+// Password field with the same show/hide eye affordance as the sign-in form —
+// so an admin can verify what they typed before creating an account.
+export function PasswordInput({ label, hint, className = "", ...props }) {
+  const [show, setShow] = useState(false);
+  return (
+    <label className="block">
+      {label && <span className="block text-sm font-medium text-nb-ink mb-1.5">{label}</span>}
+      <span className="relative block">
+        <input {...props} type={show ? "text" : "password"} className={`${FIELD} pr-10 ${className}`} />
+        <button
+          type="button"
+          onClick={() => setShow((v) => !v)}
+          aria-label={show ? "Hide password" : "Show password"}
+          title={show ? "Hide password" : "Show password"}
+          className="absolute inset-y-0 right-0 flex items-center px-3 text-nb-faint transition hover:text-nb-ink"
+        >
+          <Icon icon={show ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="text-base" />
+        </button>
+      </span>
+      {hint && <span className="block text-xs text-nb-muted mt-1">{hint}</span>}
+    </label>
+  );
+}
+
 // Custom themed dropdown (replaces the native <select> for a consistent dark/light
 // look). The options panel renders in a portal with fixed positioning so it never
 // gets clipped by a scroll container (modals, tables). Drop-in compatible: emits
@@ -329,7 +353,9 @@ export function Toggle({ checked, onChange, disabled }) {
   );
 }
 
-export function Modal({ open, onClose, title, children, footer, wide }) {
+// `hideScroll` keeps the body scrollable (wheel/touch/keyboard) but draws no
+// scrollbar — for form modals where the bar clutters the panel edge.
+export function Modal({ open, onClose, title, children, footer, wide, hideScroll }) {
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") onClose?.();
@@ -351,7 +377,7 @@ export function Modal({ open, onClose, title, children, footer, wide }) {
             <Icon icon="heroicons-outline:x-mark" className="text-xl" />
           </button>
         </div>
-        <div className="px-5 py-4 max-h-[70vh] overflow-y-auto">{children}</div>
+        <div className={`px-5 py-4 max-h-[70vh] overflow-y-auto ${hideScroll ? "scroll-none" : ""}`}>{children}</div>
         {footer && (
           <div className="flex justify-end gap-2 border-t border-nb-line px-5 py-4">{footer}</div>
         )}

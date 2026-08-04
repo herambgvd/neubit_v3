@@ -233,7 +233,9 @@ export default function CommandPalette() {
         </div>
 
         {/* Results */}
-        <div ref={listRef} id="cmd-list" role="listbox" className="max-h-[52vh] overflow-y-auto p-2">
+        {/* scroll-none: the list still scrolls (wheel / ↑↓ / scrollIntoView) but draws
+            no scrollbar — cleaner panel edge on a compact overlay. */}
+        <div ref={listRef} id="cmd-list" role="listbox" className="scroll-none max-h-[52vh] overflow-y-auto p-2">
           {flat.length === 0 ? (
             <div className="px-3 py-10 text-center text-sm text-muted">
               {term && !loading ? "No results found." : "Type to search…"}

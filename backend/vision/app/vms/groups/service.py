@@ -60,6 +60,7 @@ class CameraGroupService:
             description=body.description,
             camera_ids=list(body.camera_ids or []),
             layout=body.layout,
+            is_active=body.is_active,
             created_by=actor_id,
             updated_by=actor_id,
         )
@@ -84,7 +85,7 @@ class CameraGroupService:
             )
             if dup is not None:
                 raise ConflictError("a camera group with this name already exists")
-        for k in ("name", "color", "description", "camera_ids", "layout"):
+        for k in ("name", "color", "description", "camera_ids", "layout", "is_active"):
             if k in data and data[k] is not None:
                 setattr(row, k, data[k])
         actor_id = _actor_id(actor)

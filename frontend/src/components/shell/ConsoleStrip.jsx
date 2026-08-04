@@ -63,7 +63,9 @@ export default function ConsoleStrip() {
       : null;
 
   return (
-    <div className="sticky top-0 z-40 shrink-0 border-b border-card-border bg-background/70 backdrop-blur">
+    // z-30 — strictly BELOW the global header (z-50) so the header's notification
+    // and account dropdowns render over this strip on every console route.
+    <div className="sticky top-0 z-30 shrink-0 border-b border-card-border bg-background/70 backdrop-blur">
       {/* Sits below the global top-clearance band (see AppLayout), so it clears the
           floating brand + dock and can use the full page width. */}
       <div className="flex h-12 items-center gap-2 px-6 lg:px-8">

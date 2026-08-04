@@ -250,9 +250,12 @@ export default function SopCanvas({ sopId }) {
           </g>
         </svg>
 
-        {/* Node layer (DOM) */}
+        {/* Node layer (DOM). The container is pointer-events-none so it doesn't
+            paint OVER the SVG edges below and swallow their clicks (that blocked
+            selecting/editing a transition); each CanvasNode re-enables pointer
+            events on itself. */}
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 pointer-events-none"
           style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`, transformOrigin: "0 0" }}
         >
           {effStates.map((s) => (
