@@ -24,6 +24,7 @@ const IconSpark = (p) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M12 2l1.9 5.6L19.5 9l-4.4 3.2 1.6 5.8L12 14.9 7.3 18l1.6-5.8L4.5 9l5.6-1.4z" /></svg>
 );
 
+import { LAUNCHER_MODES, gateTile } from "@/config/launcher";
 import { vms } from "@/features/vms/api";
 import { useAuth } from "@/lib/auth";
 
@@ -193,11 +194,9 @@ function NeuBitAiButton() {
   );
 }
 
-const MODES = [
-  { id: "surv", label: "Surveillance", glow: "rgba(34,211,238,.5)" },
-  { id: "int", label: "Building Intelligence", glow: "rgba(167,139,250,.55)" },
-  { id: "conf", label: "Configurations", glow: "rgba(96,165,250,.5)" },
-];
+// Modes, groups and tiles all come from config/launcher.js — the ⊞ MENU navigator
+// renders the very same list, so the launcher and the overlay can't drift apart.
+const MODES = LAUNCHER_MODES;
 
 const MODE_IDS = MODES.map((m) => m.id);
 
@@ -243,53 +242,14 @@ export default function HomePage() {
   const cameraCount = anyCamLoaded ? camStats.total : undefined;
   const cameraStats = anyCamLoaded ? { online: camStats.online, offline: camStats.offline } : undefined;
 
-  const gate = (t) => {
-    const ok = (!t.perm || can(t.perm)) && (!t.module || hasModule(t.module));
-    return ok ? t : { ...t, href: undefined, soon: true };
-  };
-  const g = (arr) => arr.map((t) => (t.soon ? t : gate(t)));
+  // The Live tile is the only one carrying live figures — the camera count + online /
+  // offline split resolved above. Everything else is a plain launcher tile.
+  const decorate = (t) =>
+    t.href === "/streaming" ? { ...t, count: cameraCount, stats: cameraStats } : t;
+  const tilesOf = (group) =>
+    group.tiles.map((t) => gateTile(decorate(t), { can, hasModule }));
 
-  // ── Surveillance — Watch / Act ──
-  const survWatch = g([
-    { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "neubit.read", module: "vms", count: cameraCount, stats: cameraStats },
-    { icon: "heroicons:cpu-chip", label: "Fleet", href: "/devices/recorders", tone: "att", perm: "neubit.read", module: "vms" },
-    { icon: "heroicons:heart", label: "Pulse", href: "/system-health", tone: "teal", perm: "system.read" },
-  ]);
-  const survAct = g([
-    { icon: "heroicons:bell-alert", label: "Alarms", href: "/events", tone: "hot", perm: "neubit.read" },
-    { icon: "heroicons:magnifying-glass-circle", label: "Investigate", href: "/playback", tone: "teal", perm: "neubit.read", module: "vms" },
-    { icon: "heroicons:chart-bar-square", label: "Video Analytics", soon: true },
-  ]);
-
-  // ── Building Intelligence — Sense / Think (all coming-soon) ──
-  const biSense = [
-    { icon: "heroicons:building-office-2", label: "Portfolio" },
-    { icon: "heroicons:cog-8-tooth", label: "HVAC & Assets" },
-    { icon: "heroicons:bolt", label: "Energy & Metering" },
-    { icon: "heroicons:sparkles", label: "IAQ & Environment" },
-  ];
-  const biThink = [
-    { icon: "heroicons:star", label: "Ratings" },
-    { icon: "heroicons:chart-pie", label: "Insights & Correlation" },
-  ];
-
-  // ── Configurations — System & Policy / Devices & Automation ──
-  const confSystem = g([
-    { icon: "heroicons:users", label: "Users & Roles", href: "/users", tone: "blue", perm: "user.read" },
-    { icon: "heroicons:map-pin", label: "Sites", href: "/sites", tone: "blue", perm: "neubit.read" },
-    { icon: "heroicons:adjustments-horizontal", label: "System", href: "/general", tone: "blue", perm: "settings.manage" },
-    { icon: "heroicons:shield-exclamation", label: "Security", href: "/config/security", tone: "blue", perm: "security.manage" },
-    { icon: "heroicons:squares-2x2", label: "Platform", href: "/platform", tone: "blue", perm: "settings.manage" },
-    { icon: "heroicons:share", label: "Federation", href: "/federation", tone: "blue", perm: "vms.camera.read", module: "vms" },
-  ]);
-  const confDevices = g([
-    { icon: "heroicons:video-camera", label: "Devices", href: "/devices/cameras", tone: "blue", perm: "neubit.read", module: "vms" },
-    { icon: "heroicons:bolt", label: "Linkage & Policies", href: "/config/linkage", tone: "att", perm: "neubit.read", module: "vms" },
-    { icon: "heroicons:computer-desktop", label: "Wall Layouts", href: "/config/video-wall", tone: "blue", perm: "vms.wall.manage", module: "vms" },
-    { icon: "heroicons:rectangle-stack", label: "Workflow", href: "/workflow-config", tone: "blue", perm: "neubit.read", module: "workflow" },
-    { icon: "heroicons:arrow-down-on-square-stack", label: "Ingest", href: "/ingest", tone: "blue", perm: "neubit.read", module: "workflow" },
-    { icon: "heroicons:signal", label: "External Access", href: "/config/onvif-server", tone: "blue", perm: "vms.config.manage" },
-  ]);
+  const activeMode = MODES.find((m) => m.id === mode) || MODES[0];
 
   return (
     <div
@@ -318,24 +278,23 @@ export default function HomePage() {
 
       {/* active pane — one mode at a time, left-anchored */}
       <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-8 pt-10 lg:px-[11%]">
-        {mode === "surv" && (
-          <div className="flex flex-wrap gap-x-[72px] gap-y-10">
-            <Group title="Watch" accent="#67e8f9" tiles={survWatch} />
-            <Group title="Act" accent="#67e8f9" tiles={survAct} />
-          </div>
-        )}
-        {mode === "int" && (
-          <div className="flex flex-wrap gap-x-[72px] gap-y-10">
-            <Group title="Sense" accent="#67e8f9" tiles={biSense} soon />
-            <Group title="Think" accent="#c4b5fd" tiles={biThink} soon />
-          </div>
-        )}
-        {mode === "conf" && (
-          <div className="flex flex-col gap-8">
-            <Group title="System & Policy" accent="#93c5fd" tiles={confSystem} />
-            <Group title="Devices & Automation" accent="#93c5fd" tiles={confDevices} />
-          </div>
-        )}
+        <div
+          className={
+            activeMode.layout === "column"
+              ? "flex flex-col gap-8"
+              : "flex flex-wrap gap-x-[72px] gap-y-10"
+          }
+        >
+          {activeMode.groups.map((group) => (
+            <Group
+              key={group.title}
+              title={group.title}
+              accent={group.accent}
+              tiles={tilesOf(group)}
+              soon={activeMode.soon}
+            />
+          ))}
+        </div>
       </div>
 
       {/* GVD lockup — bottom-right */}

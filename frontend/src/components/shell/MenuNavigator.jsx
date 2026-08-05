@@ -3,9 +3,14 @@
 // Global ⊞ MENU navigator (Round-26a) — a launcher button injected top-left across
 // every authenticated screen. Clicking it opens a full-screen NeuBit-navy overlay that
 // exposes the whole information architecture as a metro grid, so an operator can jump to
-// any section from anywhere. Built from the SAME source-of-truth as the top nav
-// (config/menu.js) and permission/module-gated via useAuth, so it never advertises a
-// surface the caller can't reach.
+// any section from anywhere.
+//
+// Below the "Jump to" quick row it is the HOME launcher, in miniature: the same groups
+// and the same surfaces, because both render config/launcher.js. Gating is Home's too —
+// a surface the caller's permissions or plan don't reach keeps its label but loses its
+// link and renders "Soon", rather than being hidden, so operators can see what their
+// plan could unlock. "Jump to" still comes from config/menu.js and still HIDES what the
+// caller can't reach: it is a shortcut row, not a catalogue.
 
 import { Icon } from "@iconify/react";
 import Link from "next/link";
@@ -13,12 +18,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-import {
-  menuItems,
-  configConsoles,
-  deviceTabs,
-  streamTabs,
-} from "@/config/menu";
+import { launcherGroups } from "@/config/launcher";
+import { menuItems } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 
 // One IA group in the overlay grid.
@@ -106,9 +107,17 @@ export default function MenuNavigator() {
       .filter((m) => m.link && allowed(m))
       .map((m) => ({ title: m.title, icon: m.icon, link: m.link })),
   ];
-  const streaming = streamTabs.filter(allowed).map((t) => ({ ...t }));
-  const devices = deviceTabs.filter(allowed).map((t) => ({ ...t }));
-  const config = configConsoles.filter(allowed).map((t) => ({ ...t }));
+  // Below "Jump to", the overlay presents exactly what the HOME launcher presents —
+  // the same groups (Watch · Act · Sense · Think · System & Policy · Devices &
+  // Automation), the same surfaces, in the same order — because both render the one
+  // launcher IA in config/launcher.js. Home shows one mode at a time; the overlay
+  // shows every mode's groups at once. Nothing to keep in sync by hand.
+  const groups = launcherGroups({ can, hasModule }).map((g) => ({
+    ...g,
+    // Cell speaks {title, icon, link}; a gated or unbuilt tile arrives with no href
+    // and renders as the dimmed "Soon" cell, just as it renders a SOON tile on Home.
+    items: g.tiles.map((t) => ({ title: t.label, icon: t.icon, link: t.href })),
+  }));
 
   const launcher = (
     <button
@@ -164,21 +173,13 @@ export default function MenuNavigator() {
                   ))}
                 </Group>
 
-                {streaming.length > 0 && (
-                  <Group title="Surveillance" accent="#22d3ee">
-                    {streaming.map((i) => (
+                {groups.map((g) => (
+                  <Group key={g.title} title={g.title} accent={g.accent}>
+                    {g.items.map((i) => (
                       <Cell key={i.title} item={i} onGo={go} />
                     ))}
                   </Group>
-                )}
-
-                {(devices.length > 0 || config.length > 0) && (
-                  <Group title="Configurations" accent="#93c5fd">
-                    {[...devices, ...config].map((i) => (
-                      <Cell key={i.title} item={i} onGo={go} />
-                    ))}
-                  </Group>
-                )}
+                ))}
               </div>
             </div>
           </div>,
