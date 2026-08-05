@@ -1,8 +1,8 @@
 "use client";
 
 // The Users & Roles console strip (VMS mockup): a section modtab + a USERS ⇄ ROLES
-// segment toggle (navigates between the two routes). Sits in the header in place of
-// the Config sub-tab bar. AUDIT lives in the header's right cluster.
+// segment toggle (navigates between the two routes). Rendered by ConsoleStrip inside
+// the global header bar; the AUDIT link sits beside it (see ConsoleStrip).
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 

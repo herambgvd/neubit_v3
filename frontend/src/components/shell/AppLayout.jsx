@@ -10,16 +10,8 @@ import CommandPalette from "@/components/CommandPalette";
 import { FullPageLoader } from "@/components/ui/kit";
 import Footer from "@/components/shell/Footer";
 import GlobalNavDock from "@/components/shell/GlobalNavDock";
-import ConsoleStrip from "@/components/shell/ConsoleStrip";
-import SectionTabs from "@/components/shell/SectionTabs";
 import VmsPopupHost from "@/features/vms/components/VmsPopupHost";
 import { useAuth } from "@/lib/auth";
-import {
-  isDevicesRoute,
-  isStreamingRoute,
-  deviceTabs,
-  streamTabs,
-} from "@/config/menu";
 
 // A banner shown to every signed-in user when an admin sets an announcement.
 function AnnouncementBanner() {
@@ -86,8 +78,8 @@ export default function AppLayout({ children }) {
     return <FullPageLoader label={status === "anon" ? "Redirecting" : "Loading"} />;
   }
 
-  // Full-height shell: header + footer stay fixed, only <main> scrolls. The Config
-  // sub-tab bar appears under the header whenever we're inside the Config section.
+  // Full-height shell: header + footer stay fixed, only <main> scrolls. A page's
+  // section nav rides INSIDE the header bar (HeaderSectionNav) — no second nav row.
   //
   // The Video Wall (/streaming) is an IMMERSIVE surface — it should fill the
   // remaining viewport EXACTLY, full-bleed, with no page padding and no page
@@ -162,19 +154,15 @@ export default function AppLayout({ children }) {
       className="fixed inset-0 flex flex-col overflow-hidden bg-background"
       style={home ? { background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" } : undefined}
     >
-      {/* Global header BAR — a real in-flow slim bar (NeuBit brand → Home · ⊞ MENU
-          navigator · search · notifications · account). NOT floating, so page content
-          sits cleanly below it and nothing overlaps. The old domain top-nav
-          (Dashboard/Devices/Streaming/Incidents) is gone — navigation is the MENU
-          overlay + Home launcher. Suppressed on the immersive wall (/streaming,
-          /wall/*), which carries its own toolbar. */}
+      {/* Global header BAR — a real in-flow slim bar (⊞ MENU navigator · NeuBit brand
+          → Home · THE PAGE'S OWN SECTION NAV · search · notifications · account). NOT
+          floating, so page content sits cleanly below it and nothing overlaps. The old
+          domain top-nav (Dashboard/Devices/Streaming/Incidents) is gone — navigation is
+          the MENU overlay + Home launcher. Every page's section nav (the console strips
+          and the Devices/Streaming tabs) renders INSIDE this bar via HeaderSectionNav,
+          so there is no second nav row below the header any more. Suppressed on the
+          immersive wall (/streaming, /wall/*), which carries its own toolbar. */}
       {!immersiveWall && <GlobalNavDock home={home} />}
-      {/* Minimal-chrome CONSOLES (Platform/System/Security/Sites/Users & Roles/…) keep
-          their own section strip — modtab + ?view= sub-nav — as a slim floating bar.
-          ConsoleStrip self-guards by route (renders null elsewhere). */}
-      {!immersiveWall && <ConsoleStrip />}
-      {isDevicesRoute(pathname) && <SectionTabs tabs={deviceTabs} />}
-      {isStreamingRoute(pathname) && !immersiveWall && <SectionTabs tabs={streamTabs} />}
       {!immersiveWall && <AnnouncementBanner />}
       {!immersiveWall && <LicenseBanner />}
       <main className={mainClass}>{children}</main>

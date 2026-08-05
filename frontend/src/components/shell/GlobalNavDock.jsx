@@ -24,6 +24,7 @@ import { api, apiError } from "@/lib/api";
 import { Avatar } from "@/components/ui/kit";
 import MenuNavigator from "@/components/shell/MenuNavigator";
 import GlobalBrand from "@/components/shell/GlobalBrand";
+import HeaderSectionNav from "@/components/shell/HeaderSectionNav";
 import { useAuth } from "@/lib/auth";
 
 /* HOME status strip — mode label + live clock + lock + fullscreen. Shown only on
@@ -304,24 +305,31 @@ function AccountMenu() {
 
 // The global header BAR (header-less era, but a real in-flow bar — not floating —
 // so page content sits cleanly below it and nothing overlaps). Left: NeuBit brand
-// (→ Home) + ⊞ MENU navigator. Right: (Home) status strip, Search ⌘K,
-// notifications, account. Slim + navy to match the immersive aesthetic.
+// (→ Home) + ⊞ MENU navigator. Middle: the CURRENT PAGE's section nav (Users &
+// Roles ⇄ Users/Roles + Audit, Sites ⇄ List/Map, Platform's sub-views, the
+// Devices/Streaming tabs…) — this used to be a second bar below the header, and now
+// lives here so each page carries exactly one row of chrome. Right: (Home) status
+// strip, Search ⌘K, notifications, account. Slim + navy to match the immersive
+// aesthetic.
 export default function GlobalNavDock({ home = false }) {
   return (
-    // z-50 (above ConsoleStrip/SectionTabs, which sit at z-30): the header's
-    // notification + account dropdowns must paint OVER every page chrome on EVERY
-    // route. They previously shared z-40 with the sticky ConsoleStrip, so on the
-    // console routes (/users, /roles, /platform, …) that later sibling won the tie
-    // and covered the open menus — while strip-less routes (/access-control)
-    // looked correct. One header level for all routes keeps it consistent.
-    <header className="relative z-50 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.82)] px-3 backdrop-blur sm:px-4">
-      <div className="flex min-w-0 items-center gap-1.5">
+    // z-50: the header's notification + account dropdowns must paint OVER every page
+    // chrome on EVERY route. They once shared a stacking level with the section-nav
+    // bar that used to sit below the header, so on console routes (/users, /roles,
+    // /platform, …) that later sibling won the tie and covered the open menus. One
+    // header level above all page chrome keeps it consistent.
+    <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.82)] px-3 backdrop-blur sm:px-4">
+      <div className="flex shrink-0 items-center gap-1.5">
         {/* ⊞ MENU navigator launcher — jump to any section from any screen. Sits to
             the LEFT of the brand so the navigator is the first thing in the bar. */}
         <MenuNavigator />
         <GlobalBrand />
       </div>
-      <div className="flex items-center gap-1.5">
+      {/* Per-page section nav. Takes the middle of the bar and scrolls internally
+          (min-w-0) so a wide sub-view segment can never push the dock cluster off
+          screen. Renders nothing on routes without a section nav. */}
+      <HeaderSectionNav />
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
         {home && <HomeStatusStrip />}
         <button
           onClick={() => window.dispatchEvent(new Event("palette:open"))}
