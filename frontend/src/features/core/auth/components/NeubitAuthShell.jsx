@@ -26,7 +26,9 @@ function Soul() {
           <stop offset="70%" stopColor="#0c1530" stopOpacity="0" />
         </radialGradient>
       </defs>
-      <rect width="1600" height="900" fill="url(#nb-soul-v)" />
+      {/* stroke="none": the svg's inherited currentColor stroke would otherwise
+          outline this rect, showing as white edges left/right after slice-crop. */}
+      <rect width="1600" height="900" fill="url(#nb-soul-v)" stroke="none" />
       <g transform="translate(470,470)" fill="none" stroke="#8fb0e8" opacity=".06">
         <circle r="330" />
         <circle r="470" />

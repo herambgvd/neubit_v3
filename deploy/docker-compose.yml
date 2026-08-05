@@ -15,6 +15,12 @@ volumes:
   # /recordings so the on-disk path (cameras/<tenant>/<cam>/<profile>/<seg>.mp4) is
   # identical on both sides.
   recordings:
+  # Core's LOCAL object store (settings.storage_local_dir = ./data/storage → /app/data
+  # /storage): site images, floorplans, branding logos, exports. Without this volume
+  # every upload lives in the container's writable layer, so any rebuild or
+  # `up --force-recreate` silently deletes them and `/files/<key>` starts 404ing
+  # while the DB still holds the image_url. S3 deployments don't use this path.
+  corefiles:
 
 services:
 
@@ -100,6 +106,9 @@ services:
       bash -c "alembic upgrade 0001 &&
                alembic stamp head &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      # Persist uploaded blobs across rebuilds — see the `corefiles` volume note.
+      - corefiles:/app/data
     networks: [neubit]
     labels:
       - traefik.enable=true

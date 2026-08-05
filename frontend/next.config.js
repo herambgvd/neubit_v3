@@ -11,8 +11,26 @@ const securityHeaders = [
   { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
 ];
 
+// Next 16's dev server 403s every /_next/* request whose Origin isn't localhost
+// (block-cross-site-dev). Opening the console on the machine's LAN IP therefore
+// served the SSR HTML but no client bundle — the page rendered un-hydrated, so
+// every mount-animated panel (login form, dashboard preview) stayed at opacity 0.
+// Allow the private-network ranges so ONE dev server works from any LAN address;
+// NEXT_DEV_ORIGINS adds hostnames (or `*.example.com`) on top. Dev-only knob —
+// production builds ignore it.
+const allowedDevOrigins = [
+  "192.168.*.*",
+  "10.*.*.*",
+  "172.*.*.*",
+  ...(process.env.NEXT_DEV_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  allowedDevOrigins,
   // Self-contained production build: `next build` emits `.next/standalone` with a
   // minimal `server.js` — the Docker runner stage ships that alone (no source, no
   // dev tooling). See frontend/Dockerfile.

@@ -11,8 +11,21 @@ const securityHeaders = [
   { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
 ];
 
+// Same LAN-IP dev fix as frontend/next.config.js — Next 16 blocks /_next/* for any
+// non-localhost Origin, which leaves the page un-hydrated. See that file for detail.
+const allowedDevOrigins = [
+  "192.168.*.*",
+  "10.*.*.*",
+  "172.*.*.*",
+  ...(process.env.NEXT_DEV_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  allowedDevOrigins,
   // Self-contained production build (see admin-frontend/Dockerfile).
   output: "standalone",
   // Next 16 runs on Turbopack by default. No custom bundler rules are needed.

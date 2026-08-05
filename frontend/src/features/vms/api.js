@@ -46,9 +46,12 @@ const EVIDENCE = "/vms/evidence";
 // The axios baseURL is "<host>/api/v1" — for endpoints the browser must hit
 // directly (an authed blob download triggered via a save-link), prefix the
 // full origin. Reuse the same host-derivation the api instance uses.
+// Same-origin by default so the download hits the gateway on whatever host the
+// operator opened (localhost, a LAN IP, a domain) — not core's raw :8000, which
+// isn't published outside dev.
 const API_ROOT =
   process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== "undefined" ? `http://${window.location.hostname}:8000` : "http://localhost:8000");
+  (typeof window !== "undefined" ? window.location.origin : "");
 
 const unwrap = (p) => p.then((r) => r.data);
 

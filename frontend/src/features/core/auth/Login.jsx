@@ -4,15 +4,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { api, apiError } from "@/lib/api";
+import { api, apiError, tokens } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { FullPageLoader } from "@/components/ui/kit";
 
 import NeubitAuthShell from "./components/NeubitAuthShell";
 import { LoginForm } from "./components/LoginForm";
 import { MfaForm } from "./components/MfaForm";
 
 export default function LoginPage() {
-  const { login, loginMfa } = useAuth();
+  const { login, loginMfa, status } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,6 +21,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [mfaToken, setMfaToken] = useState(null);
   const [code, setCode] = useState("");
+  // Set post-mount only — reading localStorage during render would desync SSR.
+  const [hadToken, setHadToken] = useState(false);
+
+  useEffect(() => setHadToken(!!tokens.access), []);
+
+  // Already signed in → the login page is a dead end; bounce to the console.
+  useEffect(() => {
+    if (status === "authed") router.replace("/home");
+  }, [status, router]);
 
   // First run (no users yet) → setup wizard.
   useEffect(() => {
@@ -27,6 +37,12 @@ export default function LoginPage() {
       if (r.data?.needs_setup) router.replace("/setup");
     }).catch(() => {});
   }, [router]);
+
+  // Hold the form back while a stored token is still being validated, so a
+  // signed-in operator never sees the sign-in screen flash before the redirect.
+  if (status === "authed" || (hadToken && status === "loading")) {
+    return <FullPageLoader label="Redirecting" />;
+  }
 
   async function onSubmit(e) {
     e.preventDefault();
