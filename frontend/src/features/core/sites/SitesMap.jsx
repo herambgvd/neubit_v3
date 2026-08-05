@@ -8,12 +8,9 @@
 // real security boundary is the HTTP-referrer restriction on the key. If Maps is
 // disabled or the key is empty we render a graceful "not configured" placeholder.
 // The map canvas, markers, info-window and placeholders live in components/MapView.
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Icon } from "@iconify/react";
 
-import { PageHeader } from "@/components/ui/kit";
 import { api } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import MapView, { Loading, Disabled, MapPopupStyleFix } from "./components/MapView";
@@ -47,18 +44,7 @@ export default function SitesMapPage() {
     [sites],
   );
 
-  const [search, setSearch] = useState("");
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return sitesWithCoords;
-    return sitesWithCoords.filter((s) =>
-      [s.name, s.location_code, s.address?.city, s.address?.state]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [sitesWithCoords, search]);
+  const filtered = sitesWithCoords;
 
   const [selected, setSelected] = useState(null);
 
@@ -75,31 +61,6 @@ export default function SitesMapPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        title="Sites Map"
-        subtitle={`${sites.length} sites · ${sitesWithCoords.length} with coordinates`}
-        actions={
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-sm" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Filter sites…"
-                className="h-9 w-56 rounded-lg border border-field bg-transparent pl-8 pr-3 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
-              />
-            </div>
-            <Link
-              href="/sites"
-              className="inline-flex items-center gap-2 rounded-md border border-card-border px-3.5 py-2 text-sm font-medium text-foreground transition hover:bg-hover"
-            >
-              <Icon icon="heroicons-outline:cog-6-tooth" className="text-base" />
-              Configure
-            </Link>
-          </div>
-        }
-      />
-
       <section className="sites-map-root relative min-h-0 flex-1 overflow-hidden rounded-xl border border-card-border bg-hover/40">
         <MapPopupStyleFix />
         {cfgQ.isLoading ? (
