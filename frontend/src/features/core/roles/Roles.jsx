@@ -260,6 +260,7 @@ export default function RolesPage() {
       <Modal
         open={!!cloneSrc}
         onClose={() => setCloneSrc(null)}
+        staticBackdrop
         title={cloneSrc ? `Clone ${cloneSrc.name}` : "Clone role"}
         footer={
           <>
@@ -275,11 +276,11 @@ export default function RolesPage() {
             Copies all of <b className="text-nb-blueb">{cloneSrc?.name}</b>&rsquo;s permissions under a
             new name — a fast starting point you can then trim down.
           </div>
-          <Input label="New role name" value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="Enter new role name (e.g. SOC Operator — night shift)" />
+          <Input label="New role name" required value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="Enter new role name (e.g. SOC Operator — night shift)" />
         </div>
       </Modal>
 
-      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} staticBackdrop />
     </div>
   );
 }

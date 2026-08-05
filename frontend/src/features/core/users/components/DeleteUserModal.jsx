@@ -10,6 +10,7 @@ export default function DeleteUserModal({ deleting, onClose, password, setPasswo
     <Modal
       open={!!deleting}
       onClose={onClose}
+      staticBackdrop
       title="Delete user"
       footer={
         <>
@@ -30,6 +31,7 @@ export default function DeleteUserModal({ deleting, onClose, password, setPasswo
         </div>
         <PasswordInput
           label="Confirm your password"
+          required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Enter your account password"

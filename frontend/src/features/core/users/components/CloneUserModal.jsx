@@ -10,6 +10,7 @@ export default function CloneUserModal({ source, onClose, form, setForm, onClone
     <Modal
       open={!!source}
       onClose={onClose}
+      staticBackdrop
       title={source ? `Clone ${source.full_name || source.email}` : "Clone user"}
       footer={
         <>
@@ -34,6 +35,7 @@ export default function CloneUserModal({ source, onClose, form, setForm, onClone
         <Input
           label="Email · sign-in"
           type="email"
+          required
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
           placeholder="Enter email address"

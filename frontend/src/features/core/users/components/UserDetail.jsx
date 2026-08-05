@@ -1,25 +1,17 @@
 "use client";
 
-// Right-pane detail for a selected user: header (avatar, name, email, role/status
-// pills + close/edit/delete), an identity grid, an ACCOUNT SECURITY posture panel
-// (real, row-backed), and admin recovery actions (lock/unlock, force sign-out,
-// reset MFA, clone) wired to the backend. Mirrors the VMS Users & Roles mockup.
+// CENTER column — read-only user detail (mirrors RoleDetail in the Roles console).
+// Header (avatar, name, email, status badge + Edit/Delete), IDENTITY (name, email,
+// role, site access scope) and ACCOUNT SECURITY (MFA, account status, session
+// timeout, password age). The editable fields — name, role, scope, active flag —
+// are changed through EditUserModal, not here. Status and MFA stay as immediate
+// admin actions, since they are one-click operations rather than form edits.
 import { Icon } from "@iconify/react";
-import { Avatar, Badge } from "@/components/ui/kit";
-import { fmtLogin } from "../format";
+import { Avatar } from "@/components/ui/kit";
 
-function InfoField({ label, children }) {
+function Section({ icon, children, note }) {
   return (
-    <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-faint">{label}</div>
-      <div className="mt-1 text-sm text-nb-ink">{children}</div>
-    </div>
-  );
-}
-
-function SectionHeading({ icon, children, note }) {
-  return (
-    <div className="mb-3 mt-6 flex items-center gap-2 first:mt-0">
+    <div className="mb-2 mt-5 flex items-center gap-2 first:mt-0">
       <Icon icon={icon} className="text-sm text-nb-blueb" />
       <span className="text-[10.5px] font-semibold uppercase tracking-[1.4px] text-nb-faint">{children}</span>
       <span className="h-px flex-1 bg-nb-line/60" />
@@ -28,39 +20,12 @@ function SectionHeading({ icon, children, note }) {
   );
 }
 
-// One security-posture stat: label + a colored value.
-function PostureRow({ label, value, tone = "ink" }) {
-  const color = {
-    ink: "text-nb-ink",
-    good: "text-nb-good",
-    warn: "text-nb-warn",
-    crit: "text-nb-crit",
-    faint: "text-nb-faint",
-  }[tone];
+function Row({ label, children }) {
   return (
-    <div className="flex items-center justify-between border-b border-nb-line/40 py-2 last:border-b-0">
-      <span className="text-xs text-nb-faint">{label}</span>
-      <span className={`font-mono text-[12.5px] ${color}`}>{value}</span>
+    <div className="flex items-start gap-4 border-b border-nb-line/40 py-1.5 last:border-b-0">
+      <span className="w-[130px] shrink-0 pt-1.5 text-[11.5px] text-nb-faint">{label}</span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
-  );
-}
-
-function ActionBtn({ icon, children, onClick, tone = "blue", disabled, busy }) {
-  const styles = {
-    blue: "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb hover:bg-[rgba(96,165,250,.16)]",
-    warn: "border-[rgba(251,146,60,.5)] bg-[rgba(251,146,60,.1)] text-[#fb923c] hover:bg-[rgba(251,146,60,.16)]",
-    good: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good hover:bg-[rgba(52,211,153,.16)]",
-  }[tone];
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled || busy}
-      className={`inline-flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-xs tracking-[.3px] transition disabled:opacity-50 ${styles}`}
-    >
-      <Icon icon={busy ? "svg-spinners:180-ring" : icon} className="text-sm" />
-      {children}
-    </button>
   );
 }
 
@@ -75,178 +40,179 @@ export default function UserDetail({
   user,
   canManage,
   isSelf,
-  siteNames = [],
-  busyAction,
-  onClose,
+  sites = [],
+  sessionIdleMinutes,
   onEdit,
   onDelete,
-  onLock,
-  onUnlock,
-  onForceSignOut,
+  onSetStatus, // (status) => void   status: "active" | "disabled" | "locked"
   onResetMfa,
-  onClone,
 }) {
   const u = user;
-  const locked = !!u.locked;
+  const status = u.locked ? "locked" : u.is_active ? "active" : "disabled";
+  // Accounts on the built-in Administrator role are the console's last way back
+  // in — they stay enabled no matter who is looking at them.
+  const isAdminAccount = !!u.role?.is_system;
   const pwAge = daysSince(u.password_changed_at);
+  const scoped = new Set(u.site_ids || []);
+  const scopeNames = sites.filter((s) => scoped.has(s.site_id)).map((s) => s.name);
+
+  const statusBtn = (val, label, tone) => {
+    const on = status === val;
+    // You can never take your own access away — signing yourself out of the
+    // console (disabled or locked) would leave nobody able to undo it. An
+    // administrator account is protected the same way, whoever is editing it.
+    const selfLockout = isSelf && val !== "active";
+    const adminLockout = isAdminAccount && val !== "active";
+    const blocked = selfLockout || adminLockout;
+    const activeCls = {
+      active: "bg-[rgba(52,211,153,.18)] text-nb-good",
+      disabled: "bg-[rgba(120,140,180,.2)] text-nb-muted",
+      locked: "bg-[rgba(248,113,113,.18)] text-nb-crit",
+    }[tone];
+    return (
+      <button
+        type="button"
+        disabled={!canManage || blocked}
+        title={
+          selfLockout
+            ? "You cannot disable or lock your own account"
+            : adminLockout
+              ? "Administrator accounts cannot be disabled or locked"
+              : undefined
+        }
+        onClick={() => onSetStatus(val)}
+        className={`px-3 py-1.5 text-[10.5px] tracking-[.5px] transition disabled:opacity-40 ${
+          blocked ? "disabled:cursor-not-allowed" : ""
+        } ${on ? activeCls : "text-nb-faint hover:text-nb-muted"}`}
+      >
+        {label}
+      </button>
+    );
+  };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
-        <div className="flex items-start gap-3 min-w-0">
-          <Avatar src={u.avatar_url} name={u.full_name || u.email} size={48} />
-          <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-nb-ink truncate">{u.full_name || u.email}</h2>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-nb-soft flex-wrap">
-              <span className="truncate">{u.email}</span>
-              {u.role?.name && (
-                <span className="rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb px-2 py-0.5 font-medium">{u.role.name}</span>
-              )}
-              {locked ? (
-                <span className="rounded-full px-2 py-0.5 font-medium border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit">Locked</span>
-              ) : (
-                <span
-                  className={`rounded-full px-2 py-0.5 font-medium border ${
-                    u.is_active
-                      ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good"
-                      : "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint"
-                  }`}
-                >
-                  {u.is_active ? "Active" : "Disabled"}
-                </span>
-              )}
-            </div>
-          </div>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex items-center gap-3 border-b border-nb-line px-5 py-3">
+        <Avatar src={u.avatar_url} name={u.full_name || u.email} size={44} />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[17px] font-semibold text-nb-ink">{u.full_name || u.email}</h2>
+          <div className="truncate font-mono text-[11px] text-nb-faint">{u.email}</div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <span
+          className={`rounded-[7px] border px-2.5 py-1 text-[10px] tracking-[.5px] ${
+            status === "locked"
+              ? "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit"
+              : status === "active"
+                ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good"
+                : "border-nb-line text-nb-faint"
+          }`}
+        >
+          {status.toUpperCase()}
+        </span>
+        {canManage && (
           <button
-            onClick={onClose}
-            title="Close"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
-            <Icon icon="heroicons-outline:x-mark" className="text-base" />
+            <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
-          {canManage && (
-            <button
-              onClick={onEdit}
-              className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-            >
-              <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-            </button>
-          )}
-          {canManage && !isSelf && (
-            <button
-              onClick={onDelete}
-              className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] px-2.5 py-1.5 text-xs text-nb-crit transition hover:bg-[rgba(248,113,113,.18)]"
-            >
-              <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
-            </button>
-          )}
-        </div>
+        )}
+        {canManage && !isSelf && (
+          <button
+            onClick={onDelete}
+            title="Delete user"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] text-nb-crit transition hover:bg-[rgba(248,113,113,.18)]"
+          >
+            <Icon icon="heroicons-outline:trash" className="text-sm" />
+          </button>
+        )}
       </header>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
         {/* Identity */}
-        <SectionHeading icon="heroicons-outline:user">Identity</SectionHeading>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-          <InfoField label="Full name">{u.full_name || "—"}</InfoField>
-          <InfoField label="Email · sign-in">{u.email}</InfoField>
-          <InfoField label="Role">{u.role?.name || "—"}</InfoField>
-          <InfoField label="Email verified">
-            <Badge color={u.email_verified ? "green" : "amber"}>{u.email_verified ? "Verified" : "Pending"}</Badge>
-          </InfoField>
-          <InfoField label="Access scope">
-            {siteNames.length === 0 ? (
-              <span className="text-nb-soft">All sites</span>
-            ) : (
-              <span className="flex flex-wrap gap-1.5">
-                {siteNames.map((n) => (
-                  <span key={n} className="rounded-[7px] border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] px-2 py-0.5 text-[11px] text-nb-blueb">
-                    {n}
-                  </span>
-                ))}
-              </span>
-            )}
-          </InfoField>
-          <InfoField label="Created">
-            {u.created_at ? new Date(u.created_at).toLocaleString() : "—"}
-          </InfoField>
-        </div>
-
-        {/* Account security posture — real, row-backed */}
-        <SectionHeading icon="heroicons-outline:shield-check" note="IS 19319">Account security</SectionHeading>
-        <div className="rounded-[11px] border border-nb-line bg-[rgba(6,11,26,.5)] px-4 py-1">
-          <PostureRow
-            label="Multi-factor (MFA)"
-            value={u.totp_enabled ? "ENROLLED" : "NOT SET"}
-            tone={u.totp_enabled ? "good" : "warn"}
-          />
-          <PostureRow label="Last sign-in" value={fmtLogin(u.last_login_at)} />
-          <PostureRow
-            label="Failed logins"
-            value={`${u.failed_login_count ?? 0}${locked ? " · LOCKED" : ""}`}
-            tone={locked ? "crit" : u.failed_login_count ? "warn" : "ink"}
-          />
-          <PostureRow
-            label="Active sessions"
-            value={u.active_sessions ?? 0}
-            tone={u.active_sessions ? "ink" : "faint"}
-          />
-          <PostureRow
-            label="Password age"
-            value={pwAge == null ? "—" : `${pwAge} day${pwAge === 1 ? "" : "s"}`}
-            tone={pwAge != null && pwAge > 90 ? "warn" : "faint"}
-          />
-        </div>
-        <p className="mt-2 text-[11px] leading-snug text-nb-faint">
-          Passwords are never handled here — the user sets and resets their own credential through
-          the identity provider; NeuBit stores no plaintext.
-        </p>
-
-        {/* Admin recovery actions */}
-        {canManage && (
-          <>
-            <SectionHeading icon="heroicons-outline:key">Admin actions</SectionHeading>
-            <div className="flex flex-wrap gap-2">
-              {locked ? (
-                <ActionBtn icon="heroicons-outline:lock-open" tone="good" onClick={onUnlock} busy={busyAction === "unlock"}>
-                  Unlock account
-                </ActionBtn>
-              ) : (
-                !isSelf && (
-                  <ActionBtn icon="heroicons-outline:lock-closed" tone="warn" onClick={onLock} busy={busyAction === "lock"}>
-                    Lock account
-                  </ActionBtn>
-                )
-              )}
-              <ActionBtn
-                icon="heroicons-outline:arrow-right-on-rectangle"
-                tone="warn"
-                onClick={onForceSignOut}
-                disabled={!u.active_sessions}
-                busy={busyAction === "revoke"}
-              >
-                Force sign-out{u.active_sessions ? ` (${u.active_sessions})` : ""}
-              </ActionBtn>
-              <ActionBtn
-                icon="heroicons-outline:device-phone-mobile"
-                tone="warn"
-                onClick={onResetMfa}
-                disabled={!u.totp_enabled}
-                busy={busyAction === "resetmfa"}
-              >
-                Reset MFA
-              </ActionBtn>
-              <ActionBtn icon="heroicons-outline:document-duplicate" tone="blue" onClick={onClone} busy={busyAction === "clone"}>
-                Clone user
-              </ActionBtn>
+        <Section icon="heroicons-outline:user">Identity</Section>
+        <Row label="Full name">
+          <span className="block py-1.5 text-[12.5px] text-nb-ink">{u.full_name || "—"}</span>
+        </Row>
+        <Row label="Email · sign-in">
+          <span className="block py-1.5 font-mono text-[12.5px] text-nb-ink">{u.email}</span>
+        </Row>
+        <Row label="Role">
+          <div className="flex flex-wrap items-center gap-2 py-0.5">
+            <span className="inline-flex items-center gap-2 rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-3 py-1.5 text-[12px] text-nb-blueb">
+              <Icon icon="heroicons-outline:shield-check" className="text-[13px]" />
+              {u.role?.name || "—"}
+            </span>
+            <span className="text-[11px] text-nb-faint">inherits its permissions</span>
+          </div>
+        </Row>
+        <Row label="Access scope">
+          {scopeNames.length === 0 ? (
+            <span className="block py-1.5 text-[12px] text-nb-soft">All sites</span>
+          ) : (
+            <div className="flex flex-wrap gap-1.5 py-1">
+              {scopeNames.map((n) => (
+                <span
+                  key={n}
+                  className="rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-2.5 py-1 text-[11px] text-nb-blueb"
+                >
+                  {n}
+                </span>
+              ))}
             </div>
-            <p className="mt-2 text-[11px] leading-snug text-nb-faint">
-              Clone a similar user to inherit their role, scope and status in one click — new staff
-              productive in seconds. Every action here is audit-signed.
-            </p>
-          </>
-        )}
+          )}
+        </Row>
+
+        {/* Account security */}
+        <Section icon="heroicons-outline:shield-check" note="IS 19319">Account security</Section>
+        <Row label="Multi-factor (MFA)">
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`inline-flex h-[21px] w-[38px] items-center rounded-full border px-0.5 ${
+                u.totp_enabled
+                  ? "justify-end border-[rgba(52,211,153,.6)] bg-[rgba(52,211,153,.2)]"
+                  : "justify-start border-nb-line bg-[rgba(90,110,150,.15)]"
+              } ${canManage && u.totp_enabled ? "cursor-pointer" : "cursor-default"}`}
+              onClick={() => canManage && u.totp_enabled && onResetMfa()}
+              title={u.totp_enabled ? "Reset (disable) MFA" : "The user enrols MFA from their device"}
+            >
+              <span className={`h-4 w-4 rounded-full ${u.totp_enabled ? "bg-nb-good" : "bg-nb-faint"}`} />
+            </span>
+            <span className="text-[11.5px] text-nb-faint">{u.totp_enabled ? "enrolled" : "not enrolled"}</span>
+          </div>
+        </Row>
+        <Row label="Account status">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex overflow-hidden rounded-[7px] border border-nb-line">
+              {statusBtn("active", "ACTIVE", "active")}
+              <span className="w-px bg-nb-line" />
+              {statusBtn("disabled", "DISABLED", "disabled")}
+              <span className="w-px bg-nb-line" />
+              {statusBtn("locked", "LOCKED", "locked")}
+            </div>
+            {isSelf ? (
+              <span className="text-[11px] text-nb-faint">
+                this is your own account — you cannot disable or lock it
+              </span>
+            ) : isAdminAccount ? (
+              <span className="text-[11px] text-nb-faint">
+                administrator account — it cannot be disabled or locked
+              </span>
+            ) : null}
+          </div>
+        </Row>
+        <Row label="Session timeout">
+          <span className="font-mono text-[12.5px] text-nb-ink">
+            {sessionIdleMinutes ? `${sessionIdleMinutes} min` : "Not set"}
+          </span>
+          <span className="ml-2 text-[11px] text-nb-faint">tenant policy · idle auto sign-out</span>
+        </Row>
+        <Row label="Password age">
+          <span className="font-mono text-[12.5px] text-nb-ink">
+            {pwAge == null ? "—" : `${pwAge} day${pwAge === 1 ? "" : "s"}`}
+          </span>
+          <span className="ml-2 text-[11px] text-nb-faint">since last change</span>
+        </Row>
       </div>
     </div>
   );

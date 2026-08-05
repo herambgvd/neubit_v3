@@ -9,6 +9,7 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
       open={open}
       onClose={onClose}
       hideScroll
+      staticBackdrop
       title="Add user"
       footer={
         <>
@@ -25,10 +26,11 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
     >
       <div className="space-y-4">
         <Input label="Full name" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Enter full name" />
-        <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Enter email address" />
-        <PasswordInput label="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Enter a password" hint="At least 8 characters, with a letter and a number." />
+        <Input label="Email" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Enter email address" />
+        <PasswordInput label="Password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Enter a password" hint="At least 8 characters, with a letter and a number." />
         <Select
           label="Role"
+          required
           value={form.role_id}
           options={[{ value: "", label: "Select a role…" }, ...roleOptions]}
           onChange={(e) => setForm({ ...form, role_id: e.target.value })}

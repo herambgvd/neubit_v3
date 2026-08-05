@@ -26,6 +26,7 @@ export default function RoleFormModal({
       onClose={onClose}
       wide
       hideScroll
+      staticBackdrop
       title={editing ? (readOnly ? `${editing.name} (system role)` : `Edit role`) : "Create role"}
       footer={
         readOnly ? (
@@ -50,6 +51,7 @@ export default function RoleFormModal({
 
         <Input
           label="Name"
+          required={!readOnly}
           value={form.name}
           disabled={readOnly}
           onChange={(e) => setForm({ ...form, name: e.target.value })}

@@ -1,9 +1,10 @@
 "use client";
 
 // Users & Roles console — USERS view. Three columns (VMS mockup): LEFT a searchable
-// library of user cards + New User; CENTER the inline UserEditor; RIGHT the
-// SECURITY POSTURE panel with recovery actions. Create/clone/delete run through
-// modals; edits, status changes and admin actions hit the backend directly.
+// library of user cards + New User; CENTER the read-only UserDetail; RIGHT the
+// SECURITY POSTURE panel with recovery actions. Create/edit/clone/delete all run
+// through modals (same shape as the Roles console); status changes and admin
+// actions hit the backend directly from the detail pane.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
@@ -14,14 +15,16 @@ import { api, apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { useAuth } from "@/lib/auth";
 import UserListItem from "./components/UserListItem";
-import UserEditor from "./components/UserEditor";
+import UserDetail from "./components/UserDetail";
 import UserPosture from "./components/UserPosture";
 import AddUserModal from "./components/AddUserModal";
+import EditUserModal from "./components/EditUserModal";
 import DeleteUserModal from "./components/DeleteUserModal";
 import CloneUserModal from "./components/CloneUserModal";
 
 const EMPTY_CREATE = { email: "", password: "", full_name: "", role_id: "", send_invite: true, site_ids: [] };
 const EMPTY_CLONE = { email: "", full_name: "", send_invite: true };
+const EMPTY_EDIT = { full_name: "", role_id: "", site_ids: [], is_active: true };
 
 export default function UsersPage() {
   const qc = useQueryClient();
@@ -29,6 +32,8 @@ export default function UsersPage() {
   const canManage = can("user.manage");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_CREATE);
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState(EMPTY_EDIT);
   const [deleting, setDeleting] = useState(null);
   const [delPassword, setDelPassword] = useState("");
   const [cloning, setCloning] = useState(null);
@@ -126,12 +131,15 @@ export default function UsersPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
+  // `close` is a UI-only flag (the edit modal wants to dismiss on success) — it is
+  // destructured out so it never reaches the PATCH body.
   const saveEdit = useMutation({
-    mutationFn: ({ id, ...body }) => api.patch(`/auth/users/${id}`, body),
+    mutationFn: ({ id, close: _close, ...body }) => api.patch(`/auth/users/${id}`, body),
     onMutate: () => setBusyAction("save"),
-    onSuccess: () => {
+    onSuccess: (_d, vars) => {
       toast.success("User updated");
       qc.invalidateQueries({ queryKey: ["users"] });
+      if (vars.close) closeEdit();
     },
     onError: (e) => toast.error(apiError(e)),
     onSettled: () => setBusyAction(null),
@@ -168,6 +176,19 @@ export default function UsersPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  function openEdit(u) {
+    setEditForm({
+      full_name: u.full_name || "",
+      role_id: u.role?.id || "",
+      site_ids: u.site_ids || [],
+      is_active: !!u.is_active,
+    });
+    setEditing(u);
+  }
+  function closeEdit() {
+    setEditing(null);
+    setEditForm(EMPTY_EDIT);
+  }
   function openClone(u) {
     setCloneForm({ ...EMPTY_CLONE, full_name: `${u.full_name || u.email} (copy)` });
     setCloning(u);
@@ -271,16 +292,14 @@ export default function UsersPage() {
         {/* CENTER — editor */}
         <div className={col}>
           {selected ? (
-            <UserEditor
+            <UserDetail
               key={selected.id}
               user={selected}
               canManage={canManage}
               isSelf={selected.id === me?.id}
               sites={siteList}
-              roleOptions={roleOptions}
               sessionIdleMinutes={sessionIdle}
-              busyAction={busyAction}
-              onSave={(body) => saveEdit.mutate({ id: selected.id, ...body })}
+              onEdit={() => openEdit(selected)}
               onDelete={() => setDeleting(selected)}
               onSetStatus={(s) => setStatus(selected, s)}
               onResetMfa={() => adminAction.mutate({ id: selected.id, action: "reset-mfa", key: "resetmfa", done: "MFA reset" })}
@@ -325,6 +344,17 @@ export default function UsersPage() {
         sites={siteList}
         onCreate={() => create.mutate(form)}
         creating={create.isPending}
+      />
+      <EditUserModal
+        editing={editing}
+        isSelf={editing?.id === me?.id}
+        onClose={closeEdit}
+        form={editForm}
+        setForm={setEditForm}
+        roleOptions={roleOptions}
+        sites={siteList}
+        onSave={() => saveEdit.mutate({ id: editing.id, ...editForm, close: true })}
+        saving={saveEdit.isPending}
       />
       <CloneUserModal
         source={cloning}

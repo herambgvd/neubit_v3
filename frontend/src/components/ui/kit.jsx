@@ -50,11 +50,24 @@ export function Button({ variant = "primary", icon, className = "", children, ..
 const FIELD =
   "w-full rounded-md border border-nb-line bg-nb-field px-3 py-2 text-sm text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
 
-export function Input({ label, hint, className = "", ...props }) {
+// Kit field label. `required` draws the red asterisk — same convention as the
+// uppercase FieldLabel in components/common, so mandatory fields read the same
+// way whichever form kit a screen is built on. Local on purpose: exporting a
+// second `FieldLabel` under a different look would be easy to import by mistake.
+function Label({ children, required }) {
+  return (
+    <span className="block text-sm font-medium text-nb-ink mb-1.5">
+      {children}
+      {required && <span className="ml-1 text-nb-crit">*</span>}
+    </span>
+  );
+}
+
+export function Input({ label, hint, required, className = "", ...props }) {
   return (
     <label className="block">
-      {label && <span className="block text-sm font-medium text-nb-ink mb-1.5">{label}</span>}
-      <input {...props} className={`${FIELD} ${className}`} />
+      {label && <Label required={required}>{label}</Label>}
+      <input {...props} aria-required={required || undefined} className={`${FIELD} ${className}`} />
       {hint && <span className="block text-xs text-nb-muted mt-1">{hint}</span>}
     </label>
   );
@@ -62,13 +75,18 @@ export function Input({ label, hint, className = "", ...props }) {
 
 // Password field with the same show/hide eye affordance as the sign-in form —
 // so an admin can verify what they typed before creating an account.
-export function PasswordInput({ label, hint, className = "", ...props }) {
+export function PasswordInput({ label, hint, required, className = "", ...props }) {
   const [show, setShow] = useState(false);
   return (
     <label className="block">
-      {label && <span className="block text-sm font-medium text-nb-ink mb-1.5">{label}</span>}
+      {label && <Label required={required}>{label}</Label>}
       <span className="relative block">
-        <input {...props} type={show ? "text" : "password"} className={`${FIELD} pr-10 ${className}`} />
+        <input
+          {...props}
+          type={show ? "text" : "password"}
+          aria-required={required || undefined}
+          className={`${FIELD} pr-10 ${className}`}
+        />
         <button
           type="button"
           onClick={() => setShow((v) => !v)}
@@ -88,7 +106,7 @@ export function PasswordInput({ label, hint, className = "", ...props }) {
 // look). The options panel renders in a portal with fixed positioning so it never
 // gets clipped by a scroll container (modals, tables). Drop-in compatible: emits
 // onChange({ target: { value } }) like a native select.
-export function Select({ label, options = [], value, onChange, disabled, placeholder, className = "" }) {
+export function Select({ label, options = [], value, onChange, disabled, placeholder, required, className = "" }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null); // { left, top?, bottom?, width }
   const btnRef = useRef(null);
@@ -145,7 +163,7 @@ export function Select({ label, options = [], value, onChange, disabled, placeho
 
   return (
     <div className="block">
-      {label && <span className="block text-sm font-medium text-nb-ink mb-1.5">{label}</span>}
+      {label && <Label required={required}>{label}</Label>}
       <button
         ref={btnRef}
         type="button"
@@ -192,11 +210,11 @@ export function Select({ label, options = [], value, onChange, disabled, placeho
   );
 }
 
-export function Textarea({ label, className = "", ...props }) {
+export function Textarea({ label, required, className = "", ...props }) {
   return (
     <label className="block">
-      {label && <span className="block text-sm font-medium text-nb-ink mb-1.5">{label}</span>}
-      <textarea {...props} className={`${FIELD} ${className}`} />
+      {label && <Label required={required}>{label}</Label>}
+      <textarea {...props} aria-required={required || undefined} className={`${FIELD} ${className}`} />
     </label>
   );
 }
@@ -355,7 +373,10 @@ export function Toggle({ checked, onChange, disabled }) {
 
 // `hideScroll` keeps the body scrollable (wheel/touch/keyboard) but draws no
 // scrollbar — for form modals where the bar clutters the panel edge.
-export function Modal({ open, onClose, title, children, footer, wide, hideScroll }) {
+// `staticBackdrop` makes the dialog "static": a stray click on the dim backdrop no
+// longer dismisses it, so half-filled forms are never lost by accident. The X,
+// Cancel and Escape still close it.
+export function Modal({ open, onClose, title, children, footer, wide, hideScroll, staticBackdrop }) {
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") onClose?.();
@@ -367,7 +388,10 @@ export function Modal({ open, onClose, title, children, footer, wide, hideScroll
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+        onClick={staticBackdrop ? undefined : onClose}
+      />
       <div
         className={`relative w-full ${wide ? "max-w-2xl" : "max-w-md"} rounded-xl bg-[rgba(8,15,34,.93)] border border-nb-line backdrop-blur-md shadow-2xl animate-modal-in`}
       >
@@ -419,12 +443,13 @@ export function Drawer({ open, onClose, title, subtitle, children, width = "max-
 // A themed confirmation modal (replaces window.confirm). Drive it with a piece of
 // state: setConfirm({ title, message, confirmLabel, danger, onConfirm }) to open,
 // and render one <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />.
-export function ConfirmDialog({ state, onClose, pending }) {
+export function ConfirmDialog({ state, onClose, pending, staticBackdrop }) {
   const cfg = state || {};
   return (
     <Modal
       open={!!state}
       onClose={onClose}
+      staticBackdrop={staticBackdrop}
       title={cfg.title || "Are you sure?"}
       footer={
         <>
