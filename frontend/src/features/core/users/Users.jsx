@@ -7,10 +7,20 @@
 // actions hit the backend directly from the detail pane.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Spinner } from "@/components/ui/kit";
+import {
+  ConsolePage,
+  ConsoleGrid,
+  ConsolePanel,
+  PanelHeader,
+  PanelSearch,
+  PanelList,
+  PanelFooter,
+  CreateButton,
+  IconButton,
+  EmptyPane,
+} from "@/components/console";
 import { api, apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { useAuth } from "@/lib/auth";
@@ -217,80 +227,46 @@ export default function UsersPage() {
     }
   }
 
-  const col = "rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] min-h-0 flex flex-col overflow-hidden";
-
   return (
-    <div
-      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[300px_1fr_320px]">
+    <ConsolePage>
+      <ConsoleGrid cols="lg:grid-cols-[300px_1fr_320px]">
         {/* LEFT — library */}
-        <div className={col}>
-          <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
-            <div className="flex items-center gap-2">
-              <Icon icon="heroicons-outline:user" className="text-sm text-nb-blueb" />
-              <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Users</span>
-              <span className="font-mono text-[11px] text-nb-faint">{total}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onPickImport} />
-              <button onClick={exportUsers} title="Export CSV" className="grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb">
-                <Icon icon="heroicons-outline:arrow-down-tray" className="text-sm" />
-              </button>
-              {canManage && (
-                <button onClick={() => importRef.current?.click()} disabled={importUsers.isPending} title="Import CSV" className="grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb disabled:opacity-50">
-                  <Icon icon={importUsers.isPending ? "svg-spinners:180-ring" : "heroicons-outline:arrow-up-tray"} className="text-sm" />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="px-3 pb-2">
-            <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
-              <Icon icon="heroicons-outline:magnifying-glass" className="text-sm text-nb-faint" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search users, email, role…"
-                className="w-full bg-transparent text-[12.5px] text-nb-muted outline-none placeholder:text-nb-faint"
-              />
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-3">
-            {users.isLoading ? (
-              <div className="flex items-center gap-2 px-1 py-6 text-sm text-nb-soft"><Spinner className="!h-4 !w-4" /> Loading…</div>
-            ) : filtered.length === 0 ? (
-              <div className="px-1 py-10 text-center text-xs text-nb-faint">
-                {search.trim() ? "No users match your search" : "No users yet"}
-              </div>
-            ) : (
-              <div className="space-y-2 pb-2">
-                {filtered.map((u) => (
-                  <UserListItem key={u.id} user={u} selected={u.id === selectedId} onSelect={() => setSelectedId(u.id)} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-nb-line/50 p-3">
+        <ConsolePanel>
+          <PanelHeader icon="heroicons-outline:user" title="Users" count={total}>
+            <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onPickImport} />
+            <IconButton icon="heroicons-outline:arrow-down-tray" title="Export CSV" onClick={exportUsers} />
             {canManage && (
-              <button
-                onClick={() => setOpen(true)}
-                className="w-full rounded-[9px] border border-dashed border-[rgba(150,180,245,.42)] py-2.5 text-[12px] tracking-[.7px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-              >
-                ＋ NEW USER
-              </button>
+              <IconButton
+                icon={importUsers.isPending ? "svg-spinners:180-ring" : "heroicons-outline:arrow-up-tray"}
+                title="Import CSV"
+                onClick={() => importRef.current?.click()}
+                disabled={importUsers.isPending}
+              />
             )}
+          </PanelHeader>
+          <PanelSearch value={search} onChange={setSearch} placeholder="Search users, email, role…" />
+
+          <PanelList
+            loading={users.isLoading}
+            empty={filtered.length === 0}
+            emptyText={search.trim() ? "No users match your search" : "No users yet"}
+          >
+            {filtered.map((u) => (
+              <UserListItem key={u.id} user={u} selected={u.id === selectedId} onSelect={() => setSelectedId(u.id)} />
+            ))}
+          </PanelList>
+
+          <PanelFooter>
+            {canManage && <CreateButton label="USER" onClick={() => setOpen(true)} />}
             <p className="mt-2.5 text-[10.5px] leading-relaxed text-nb-faint">
               Access is <b className="text-nb-blueb">role-based</b>: users inherit a role&rsquo;s
               permissions, scoped by site. Every change is audit-signed for IS 19319 evidence.
             </p>
-          </div>
-        </div>
+          </PanelFooter>
+        </ConsolePanel>
 
         {/* CENTER — editor */}
-        <div className={col}>
+        <ConsolePanel>
           {selected ? (
             <UserDetail
               key={selected.id}
@@ -305,18 +281,16 @@ export default function UsersPage() {
               onResetMfa={() => adminAction.mutate({ id: selected.id, action: "reset-mfa", key: "resetmfa", done: "MFA reset" })}
             />
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
-                <Icon icon="heroicons-outline:users" className="text-xl" />
-              </span>
-              <div className="mt-3 text-sm font-semibold text-nb-ink">No user selected</div>
-              <div className="mt-0.5 text-xs text-nb-faint">Pick one from the list or create a new account.</div>
-            </div>
+            <EmptyPane
+              icon="heroicons-outline:users"
+              title="No user selected"
+              subtitle="Pick one from the list, or click ＋ NEW USER to create an account."
+            />
           )}
-        </div>
+        </ConsolePanel>
 
         {/* RIGHT — posture */}
-        <div className={`${col} hidden lg:flex`}>
+        <ConsolePanel className="hidden lg:flex">
           {selected ? (
             <UserPosture
               key={selected.id}
@@ -332,8 +306,8 @@ export default function UsersPage() {
               Select a user to see their security posture.
             </div>
           )}
-        </div>
-      </div>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       <AddUserModal
         open={open}
@@ -372,6 +346,6 @@ export default function UsersPage() {
         onConfirm={() => remove.mutate({ id: deleting.id, password: delPassword })}
         removing={remove.isPending}
       />
-    </div>
+    </ConsolePage>
   );
 }

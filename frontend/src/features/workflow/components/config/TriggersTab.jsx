@@ -2,14 +2,23 @@
 
 // Triggers tab — master (trigger list) / detail (read-only detail, or the
 // create/edit TriggerForm). Matches the v2 master-detail layout: a fixed 360px
-// ListPanel on the left, the detail/editor/empty pane on the right.
+// console list panel on the left, the detail/editor/empty pane on the right.
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Spinner } from "@/components/ui/kit";
-import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
+import { ConfirmDialog } from "@/components/ui/kit";
+import {
+  ConsoleGrid,
+  ConsolePanel,
+  PanelHeader,
+  PanelSearch,
+  PanelList,
+  PanelFooter,
+  CreateButton,
+  EmptyPane,
+} from "@/components/console";
 import { apiError } from "@/lib/api";
 import { asItems, idOf, fmtRelative } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
@@ -70,30 +79,21 @@ export default function TriggersTab() {
   }
 
   const aside = (
-    <ListPanel
-      title="Triggers"
-      count={triggers.length}
-      search={search}
-      onSearch={setSearch}
-      searchPlaceholder="Search triggers…"
-      action={
-        <button onClick={() => { setMode("create"); setSelectedId(null); }} className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"><Icon icon="heroicons-outline:plus" /> New</button>
-      }
-    >
-      {q.isLoading ? (
-        <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Loading…</div>
-      ) : filtered.length === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-nb-faint">{search.trim() ? "No triggers match your search." : "No triggers yet."}</div>
-      ) : (
-        <ul className="divide-y divide-nb-line">
+    <ConsolePanel>
+      <PanelHeader icon="heroicons:bolt" title="Triggers" count={triggers.length} />
+      <PanelSearch value={search} onChange={setSearch} placeholder="Search triggers…" />
+      <PanelList
+        loading={q.isLoading}
+        empty={filtered.length === 0}
+        emptyText={search.trim() ? "No triggers match your search" : "No triggers yet"}
+      >
           {filtered.map((t) => {
             const isSel = trigId(t) === selectedId && mode !== "create";
             const enabled = t.enabled !== false;
             return (
-              <li key={trigId(t)} className="relative">
-                <button
+              <button key={trigId(t)}
                   onClick={() => { setSelectedId(trigId(t)); setMode("view"); }}
-                  className={`w-full flex items-start gap-3 rounded-[10px] px-4 py-3 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
+                  className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
                 >
                   {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-warn" />}
                   <span className={`inline-flex h-8 w-8 items-center justify-center rounded-md shrink-0 ${enabled ? "bg-nb-warn/10 text-nb-warn" : "bg-[rgba(10,18,40,.65)] text-nb-faint"}`}>
@@ -110,20 +110,23 @@ export default function TriggersTab() {
                     <span className="block text-[10px] text-nb-faint/70 truncate">fired {t.fire_count ?? 0}× · last {fmtRelative(t.last_fired_at)}</span>
                   </span>
                 </button>
-              </li>
             );
           })}
-        </ul>
-      )}
-    </ListPanel>
+      </PanelList>
+
+      <PanelFooter>
+        <CreateButton label="TRIGGER" onClick={() => { setMode("create"); setSelectedId(null); }} />
+      </PanelFooter>
+    </ConsolePanel>
   );
 
   return (
-    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" fill className="h-full">
-      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
+    <>
+      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]" className="h-full">
+        {aside}
+        <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
-          <div className="flex-1 min-h-0 overflow-y-auto p-5">
-            <TriggerForm
+          <TriggerForm
               key={mode === "edit" ? trigId(selected) : "new"}
               trigger={mode === "edit" ? selected : null}
               sops={sops}
@@ -131,9 +134,8 @@ export default function TriggersTab() {
               onCancel={() => setMode("view")}
               onSubmit={(body) => save.mutate({ id: mode === "edit" ? trigId(selected) : null, body })}
             />
-          </div>
         ) : !selected ? (
-          <EmptyDetail icon="heroicons:bolt" title="No trigger selected" subtitle="Pick one from the list or click New." />
+          <EmptyPane icon="heroicons:bolt" title="No trigger selected" subtitle="Pick one from the list, or click ＋ NEW TRIGGER to create one." />
         ) : (
           <TriggerDetail
             trigger={selected}
@@ -145,10 +147,12 @@ export default function TriggersTab() {
             onTest={() => setTest(selected)}
           />
         )}
-      </section>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
       <TriggerTestModal open={!!test} trigger={test} onClose={() => setTest(null)} />
-    </MasterDetail>
+
+    </>
   );
 }

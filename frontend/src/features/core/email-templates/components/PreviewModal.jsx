@@ -31,17 +31,17 @@ export default function PreviewModal({ name, onClose }) {
       ) : (
         <div className="space-y-3">
           <div>
-            <span className="block text-xs font-medium text-muted mb-1">Subject</span>
-            <div className="rounded-lg border border-card-border bg-hover px-3 py-2 text-sm text-foreground">
+            <span className="block text-xs font-medium text-nb-muted mb-1">Subject</span>
+            <div className="rounded-lg border border-nb-line bg-white/5 px-3 py-2 text-sm text-nb-ink">
               {d?.subject || "—"}
             </div>
           </div>
           <div>
-            <span className="block text-xs font-medium text-muted mb-1">Rendered email</span>
+            <span className="block text-xs font-medium text-nb-muted mb-1">Rendered email</span>
             <iframe
               title="Email preview"
               srcDoc={d?.html || "<p style='font-family:sans-serif;color:#666'>This template has no body.</p>"}
-              className="w-full h-[440px] rounded-lg border border-card-border bg-white"
+              className="w-full h-[440px] rounded-lg border border-nb-line bg-white"
             />
           </div>
         </div>

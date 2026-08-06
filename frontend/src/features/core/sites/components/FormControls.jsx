@@ -5,6 +5,8 @@
 // `fieldClass` / `areaClass` from @/components/common so labels and inputs match
 // the rest of the app — this replaces the old per-file label + input-class pair.
 import { FieldLabel, fieldClass, areaClass } from "@/components/common";
+import SelectMenu from "@/components/common/SelectMenu";
+import { Checkbox } from "@/components/ui/kit";
 
 export function FInput({ label, required, full, value, onChange, placeholder, type = "text", step, min }) {
   return (
@@ -38,39 +40,44 @@ export function FTextarea({ label, full, value, onChange, rows, placeholder }) {
   );
 }
 
-export function FSelect({ label, full, required, value, onChange, children }) {
+// `options` is [{ value, label }] — the same shape every other picker in the app
+// takes. This was a native <select> fed <option> children, which is why the site
+// forms showed an OS-styled dropdown next to the app's own everywhere else.
+export function FSelect({ label, full, required, value, onChange, options = [], placeholder }) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <FieldLabel required={required}>{label}</FieldLabel>
-      <select value={value || ""} onChange={(e) => onChange(e.target.value)} className={fieldClass}>
-        {children}
-      </select>
+      <SelectMenu
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        options={options}
+        placeholder={placeholder}
+      />
     </div>
   );
 }
 
 export function FCheckbox({ label, value, onChange }) {
   return (
-    <label className="flex items-center gap-2 h-10 px-3 rounded-lg border border-field bg-transparent text-sm cursor-pointer">
-      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
-      <span className="text-foreground">{label}</span>
-    </label>
+    <div className="flex h-10 items-center rounded-lg border border-nb-line px-3">
+      <Checkbox label={label} checked={value} onChange={onChange} />
+    </div>
   );
 }
 
 export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }) {
   return (
-    <div className="rounded-lg border border-card-border bg-card overflow-hidden">
-      <div className="px-3 py-2 border-b border-card-border bg-hover/40">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</p>
-        <p className="text-[11px] text-muted/70 truncate">{subtitle}</p>
+    <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden">
+      <div className="px-3 py-2 border-b border-nb-line bg-white/5">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-nb-muted">{title}</p>
+        <p className="text-[11px] text-nb-faint truncate">{subtitle}</p>
       </div>
       <div className="p-3">
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageUrl} alt={`${title} preview`} className="h-28 w-full rounded-md border border-card-border object-cover" />
+          <img src={imageUrl} alt={`${title} preview`} className="h-28 w-full rounded-md border border-nb-line object-cover" />
         ) : (
-          <div className="h-28 w-full rounded-md border border-dashed border-card-border bg-hover/30 px-3 flex items-center justify-center text-center text-[11px] text-muted/70">
+          <div className="h-28 w-full rounded-md border border-dashed border-nb-line bg-white/[.04] px-3 flex items-center justify-center text-center text-[11px] text-nb-faint">
             {emptyText}
           </div>
         )}
@@ -85,7 +92,7 @@ export function Section({ title, action, children }) {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">{title}</h4>
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-nb-muted">{title}</h4>
         {action}
       </div>
       {children}

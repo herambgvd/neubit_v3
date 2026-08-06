@@ -46,7 +46,7 @@ export default function CategoryFormModal({ category, onCancel, onSaved }) {
       footer={
         <>
           <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-          <Button type="submit" form="ingest-category-form" variant="success" disabled={saving.isPending}>
+          <Button type="submit" form="ingest-category-form" variant="action" disabled={saving.isPending}>
             {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create"}
           </Button>
         </>

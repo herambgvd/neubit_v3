@@ -2,14 +2,23 @@
 
 // Notification templates tab — master (template list) / detail (read-only
 // detail, or the create/edit TemplateForm). v2 master-detail layout: 360px
-// ListPanel on the left, detail/editor/empty on the right.
+// console list panel on the left, detail/editor/empty on the right.
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Spinner } from "@/components/ui/kit";
-import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
+import { ConfirmDialog } from "@/components/ui/kit";
+import {
+  ConsoleGrid,
+  ConsolePanel,
+  PanelHeader,
+  PanelSearch,
+  PanelList,
+  PanelFooter,
+  CreateButton,
+  EmptyPane,
+} from "@/components/console";
 import { apiError } from "@/lib/api";
 import { asItems, titleize } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
@@ -49,29 +58,20 @@ export default function NotificationTemplatesTab() {
   }
 
   const aside = (
-    <ListPanel
-      title="Templates"
-      count={templates.length}
-      search={search}
-      onSearch={setSearch}
-      searchPlaceholder="Search templates…"
-      action={
-        <button onClick={() => { setMode("create"); setSelectedId(null); }} className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"><Icon icon="heroicons-outline:plus" /> New</button>
-      }
-    >
-      {q.isLoading ? (
-        <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Loading…</div>
-      ) : filtered.length === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-nb-faint">{search.trim() ? "No templates match your search." : "No templates yet."}</div>
-      ) : (
-        <ul className="divide-y divide-nb-line">
+    <ConsolePanel>
+      <PanelHeader icon="heroicons-outline:bell-alert" title="Templates" count={templates.length} />
+      <PanelSearch value={search} onChange={setSearch} placeholder="Search templates…" />
+      <PanelList
+        loading={q.isLoading}
+        empty={filtered.length === 0}
+        emptyText={search.trim() ? "No templates match your search" : "No templates yet"}
+      >
           {filtered.map((t) => {
             const isSel = t.template_id === selectedId && mode !== "create";
             return (
-              <li key={t.template_id} className="relative">
-                <button
+              <button key={t.template_id}
                   onClick={() => { setSelectedId(t.template_id); setMode("view"); }}
-                  className={`w-full flex items-start gap-3 rounded-[10px] px-4 py-3 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
+                  className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
                 >
                   {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-violet" />}
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-nb-violet/10 text-nb-violetb shrink-0">
@@ -85,34 +85,38 @@ export default function NotificationTemplatesTab() {
                     <span className="block text-[11px] text-nb-faint truncate mt-0.5">{t.subject || t.body?.slice(0, 80)}</span>
                   </span>
                 </button>
-              </li>
             );
           })}
-        </ul>
-      )}
-    </ListPanel>
+      </PanelList>
+
+      <PanelFooter>
+        <CreateButton label="TEMPLATE" onClick={() => { setMode("create"); setSelectedId(null); }} />
+      </PanelFooter>
+    </ConsolePanel>
   );
 
   return (
-    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" fill className="h-full">
-      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
+    <>
+      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]" className="h-full">
+        {aside}
+        <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
-          <div className="flex-1 min-h-0 overflow-y-auto p-5">
-            <TemplateForm
+          <TemplateForm
               key={mode === "edit" ? selected?.template_id : "new"}
               template={mode === "edit" ? selected : null}
               onCancel={() => setMode("view")}
               onSaved={() => { qc.invalidateQueries({ queryKey: ["wf-templates"] }); setMode("view"); }}
             />
-          </div>
         ) : !selected ? (
-          <EmptyDetail icon="heroicons-outline:bell-alert" title="No template selected" subtitle="Pick one from the list or click New." />
+          <EmptyPane icon="heroicons-outline:bell-alert" title="No template selected" subtitle="Pick one from the list, or click ＋ NEW TEMPLATE to create one." />
         ) : (
           <TemplateDetail template={selected} onEdit={() => setMode("edit")} onDelete={() => askDelete(selected)} />
         )}
-      </section>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
-    </MasterDetail>
+
+    </>
   );
 }

@@ -66,7 +66,7 @@ export default function SopBuilder({ sop, onDelete, onSaved }) {
               key={t.key}
               onClick={() => setTab(t.key)}
               className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition ${
-                active ? "border-foreground text-nb-ink" : "border-transparent text-nb-faint hover:text-nb-ink"
+                active ? "border-nb-blue text-nb-ink" : "border-transparent text-nb-faint hover:text-nb-ink"
               }`}
             >
               <Icon icon={t.icon} className="text-base" />

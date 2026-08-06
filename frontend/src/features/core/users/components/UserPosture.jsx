@@ -25,7 +25,7 @@ function Stat({ label, value, tone = "ink" }) {
 function Action({ icon, children, onClick, tone = "blue", disabled, busy }) {
   const cls = {
     blue: "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb hover:bg-[rgba(96,165,250,.16)]",
-    warn: "border-[rgba(251,146,60,.5)] bg-[rgba(251,146,60,.1)] text-[#fb923c] hover:bg-[rgba(251,146,60,.16)]",
+    warn: "border-nb-warn/50 bg-nb-warn/10 text-nb-warn hover:bg-nb-warn/20",
     good: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good hover:bg-[rgba(52,211,153,.16)]",
   }[tone];
   return (
@@ -52,7 +52,7 @@ export default function UserPosture({ user, canManage, busyAction, onClone, onFo
         <span className="ml-auto font-mono text-[10px] text-nb-faint">IS 19319</span>
       </div>
 
-      <div className="rounded-[11px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-1">
+      <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-1">
         <Stat label="MFA" value={u.totp_enabled ? "ENROLLED" : "NOT SET"} tone={u.totp_enabled ? "good" : "warn"} />
         <Stat label="Last sign-in" value={fmtLogin(u.last_login_at)} />
         <Stat

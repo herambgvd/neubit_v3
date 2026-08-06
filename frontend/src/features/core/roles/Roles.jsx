@@ -6,10 +6,20 @@
 // RoleFormModal (system roles open read-only); clone through a small modal.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Input, Modal, Spinner } from "@/components/ui/kit";
+import {
+  ConsolePage,
+  ConsoleGrid,
+  ConsolePanel,
+  PanelHeader,
+  PanelSearch,
+  PanelList,
+  PanelFooter,
+  CreateButton,
+  EmptyPane,
+} from "@/components/console";
+import { Button, ConfirmDialog, Input, Modal } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import RoleListItem from "./components/RoleListItem";
@@ -137,69 +147,35 @@ export default function RolesPage() {
   }
   const saving = create.isPending || patch.isPending;
 
-  const col = "rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] min-h-0 flex flex-col overflow-hidden";
-
   return (
-    <div
-      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[300px_1fr_320px]">
+    <ConsolePage>
+      <ConsoleGrid cols="lg:grid-cols-[300px_1fr_320px]">
         {/* LEFT — library */}
-        <div className={col}>
-          <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
-            <div className="flex items-center gap-2">
-              <Icon icon="heroicons-outline:shield-check" className="text-sm text-nb-blueb" />
-              <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Roles</span>
-              <span className="font-mono text-[11px] text-nb-faint">{total}</span>
-            </div>
-          </div>
-          <div className="px-3 pb-2">
-            <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
-              <Icon icon="heroicons-outline:magnifying-glass" className="text-sm text-nb-faint" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search roles…"
-                className="w-full bg-transparent text-[12.5px] text-nb-muted outline-none placeholder:text-nb-faint"
-              />
-            </div>
-          </div>
+        <ConsolePanel>
+          <PanelHeader icon="heroicons-outline:shield-check" title="Roles" count={total} />
+          <PanelSearch value={search} onChange={setSearch} placeholder="Search roles…" />
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-3">
-            {roles.isLoading ? (
-              <div className="flex items-center gap-2 px-1 py-6 text-sm text-nb-soft"><Spinner className="!h-4 !w-4" /> Loading…</div>
-            ) : filtered.length === 0 ? (
-              <div className="px-1 py-10 text-center text-xs text-nb-faint">
-                {search.trim() ? "No roles match your search" : "No roles yet"}
-              </div>
-            ) : (
-              <div className="space-y-2 pb-2">
-                {filtered.map((r) => (
-                  <RoleListItem key={r.id} role={r} selected={r.id === selectedId} onSelect={() => setSelectedId(r.id)} />
-                ))}
-              </div>
-            )}
-          </div>
+          <PanelList
+            loading={roles.isLoading}
+            empty={filtered.length === 0}
+            emptyText={search.trim() ? "No roles match your search" : "No roles yet"}
+          >
+            {filtered.map((r) => (
+              <RoleListItem key={r.id} role={r} selected={r.id === selectedId} onSelect={() => setSelectedId(r.id)} />
+            ))}
+          </PanelList>
 
-          <div className="border-t border-nb-line/50 p-3">
-            {canManage && (
-              <button
-                onClick={openCreate}
-                className="w-full rounded-[9px] border border-dashed border-[rgba(150,180,245,.42)] py-2.5 text-[12px] tracking-[.7px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-              >
-                ＋ NEW ROLE
-              </button>
-            )}
+          <PanelFooter>
+            {canManage && <CreateButton label="ROLE" onClick={openCreate} />}
             <p className="mt-2.5 text-[10.5px] leading-relaxed text-nb-faint">
               A role is a named <b className="text-nb-blueb">bundle of permissions</b>. Users inherit
               their role&rsquo;s access; every change is audit-signed.
             </p>
-          </div>
-        </div>
+          </PanelFooter>
+        </ConsolePanel>
 
         {/* CENTER — detail */}
-        <div className={col}>
+        <ConsolePanel>
           {selectedRole ? (
             <RoleDetail
               key={selectedRole.id}
@@ -213,18 +189,16 @@ export default function RolesPage() {
               onClone={() => openClone(selectedRole)}
             />
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
-                <Icon icon="heroicons-outline:shield-check" className="text-xl" />
-              </span>
-              <div className="mt-3 text-sm font-semibold text-nb-ink">No role selected</div>
-              <div className="mt-0.5 text-xs text-nb-faint">Pick one from the list or create a new role.</div>
-            </div>
+            <EmptyPane
+              icon="heroicons-outline:shield-check"
+              title="No role selected"
+              subtitle="Pick one from the list, or click ＋ NEW ROLE to create a role."
+            />
           )}
-        </div>
+        </ConsolePanel>
 
         {/* RIGHT — summary */}
-        <div className={`${col} hidden lg:flex`}>
+        <ConsolePanel className="hidden lg:flex">
           {selectedRole ? (
             <RolePanel
               key={selectedRole.id}
@@ -238,8 +212,8 @@ export default function RolesPage() {
               Select a role to see its summary.
             </div>
           )}
-        </div>
-      </div>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       <RoleFormModal
         open={open}
@@ -265,7 +239,7 @@ export default function RolesPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setCloneSrc(null)}>Cancel</Button>
-            <Button variant="success" disabled={cloneRole.isPending || !cloneName.trim()} onClick={() => cloneRole.mutate({ id: cloneSrc.id, name: cloneName.trim() })}>
+            <Button variant="action" disabled={cloneRole.isPending || !cloneName.trim()} onClick={() => cloneRole.mutate({ id: cloneSrc.id, name: cloneName.trim() })}>
               {cloneRole.isPending ? "Cloning…" : "Create clone"}
             </Button>
           </>
@@ -281,6 +255,6 @@ export default function RolesPage() {
       </Modal>
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} staticBackdrop />
-    </div>
+    </ConsolePage>
   );
 }

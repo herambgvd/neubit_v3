@@ -61,10 +61,10 @@ export default function ZoneForm({ zone, onCancel, onSaved }) {
   }
 
   return (
-    <form noValidate onSubmit={submit} className="rounded-lg border border-card-border bg-hover/40 p-4 space-y-4">
+    <form noValidate onSubmit={submit} className="rounded-lg border border-nb-line bg-white/5 p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-foreground">Edit zone · {zone.name}</h4>
-        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground">
+        <h4 className="text-sm font-semibold text-nb-ink">Edit zone · {zone.name}</h4>
+        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-nb-muted hover:bg-white/5 hover:text-nb-ink">
           <Icon icon="heroicons-outline:x-mark" className="text-sm" />
         </button>
       </div>
@@ -82,21 +82,23 @@ export default function ZoneForm({ zone, onCancel, onSaved }) {
           />
           {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
         </div>
-        <FSelect label="Zone type" value={zoneType} onChange={setZoneType}>
-          {ZONE_TYPES.map((t) => (
-            <option key={t} value={t} className="bg-card">{t.replace(/_/g, " ")}</option>
-          ))}
-        </FSelect>
-        <FSelect label="Threat level" value={threatLevel} onChange={setThreatLevel}>
-          {THREAT_LEVELS.map((t) => (
-            <option key={t} value={t} className="bg-card">{capitalize(t)}</option>
-          ))}
-        </FSelect>
+        <FSelect
+          label="Zone type"
+          value={zoneType}
+          onChange={setZoneType}
+          options={ZONE_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, " ") }))}
+        />
+        <FSelect
+          label="Threat level"
+          value={threatLevel}
+          onChange={setThreatLevel}
+          options={THREAT_LEVELS.map((t) => ({ value: t, label: capitalize(t) }))}
+        />
         <div>
           <FieldLabel>Color</FieldLabel>
           <div className="mt-1 flex items-center gap-2">
-            <input type="color" value={color || "#6366F1"} onChange={(e) => setColor(e.target.value)} className="h-10 w-16 rounded-md border border-field cursor-pointer bg-transparent" />
-            <input value={color || ""} onChange={(e) => setColor(e.target.value)} className="h-10 flex-1 rounded-md border border-field bg-transparent px-3 text-sm font-mono text-foreground outline-none focus:border-muted" />
+            <input type="color" value={color || "#6366F1"} onChange={(e) => setColor(e.target.value)} className="h-10 w-16 rounded-md border border-nb-line cursor-pointer bg-transparent" />
+            <input value={color || ""} onChange={(e) => setColor(e.target.value)} className="h-10 flex-1 rounded-md border border-nb-line bg-transparent px-3 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal" />
           </div>
         </div>
         <FInput label="Max occupancy" type="number" min={0} value={maxOccupancy} onChange={setMaxOccupancy} placeholder="Max occupancy" />

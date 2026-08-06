@@ -11,6 +11,8 @@
 // is what lets the header own it, and it makes a tab linkable and refresh-proof.
 import { useSearchParams } from "next/navigation";
 
+import { ConsolePage } from "@/components/console";
+
 import SopsTab from "./components/config/SopsTab";
 import TriggersTab from "./components/config/TriggersTab";
 import FormatsTab from "./components/config/FormatsTab";
@@ -35,14 +37,11 @@ export default function WorkflowConfigPage() {
   const View = VIEWS[v] || VIEWS[WORKFLOW_VIEWS[0].key];
 
   return (
-    <div
-      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
+    <ConsolePage>
       {/* Active tab — fills the pane, scrolls internally */}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <View />
       </div>
-    </div>
+    </ConsolePage>
   );
 }

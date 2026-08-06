@@ -15,7 +15,7 @@ export default function RoleDetail({ role, groups, catalogLoading, canManage, on
     <div className="flex flex-col flex-1 min-h-0">
       <header className="flex items-start justify-between gap-4 px-6 py-3.5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-[11px] border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-blueb shrink-0">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-blueb shrink-0">
             <Icon
               icon={role.is_system ? "heroicons-outline:lock-closed" : "heroicons-outline:shield-check"}
               className="text-2xl"
@@ -77,7 +77,7 @@ export default function RoleDetail({ role, groups, catalogLoading, canManage, on
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-faint mb-2">Permissions</div>
           {all ? (
-            <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-sm text-nb-tealb">
+            <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-3 py-2 text-sm text-nb-blueb">
               <Icon icon="heroicons-outline:check-badge" className="text-base" /> This role grants all permissions.
             </div>
           ) : catalogLoading ? (

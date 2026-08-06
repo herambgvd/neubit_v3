@@ -7,7 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Card, ConfirmDialog, Spinner, Table } from "@/components/ui/kit";
+import { ActionButton } from "@/components/console";
+import { Card, ConfirmDialog, Spinner, Table } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { buildApiKeyColumns } from "./components/ApiKeyColumns";
 import CreateApiKeyModal from "./components/CreateApiKeyModal";
@@ -78,8 +79,8 @@ export default function ApiKeysPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-end">
-        <Button variant="success" icon="heroicons-outline:plus" onClick={() => setOpen(true)}>Create key</Button>
+      <div className="mb-3 flex items-center justify-end">
+        <ActionButton icon="heroicons-outline:plus" onClick={() => setOpen(true)}>Create key</ActionButton>
       </div>
       <Card className="p-2">
         {keys.isLoading ? (

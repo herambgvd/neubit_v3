@@ -3,9 +3,8 @@
 // Grouped permission picker used inside the role form. Renders each catalog
 // category as a card with a check-all/uncheck-all toggle and per-permission
 // checkboxes. Read-only when viewing a system role.
-import { Icon } from "@iconify/react";
 
-import { EmptyState, Spinner } from "@/components/ui/kit";
+import { EmptyState, Spinner, checkboxClass } from "@/components/ui/kit";
 
 export default function PermissionSelector({ groups, selected, loading, readOnly, count, onToggleKey, onToggleGroup }) {
   return (
@@ -63,6 +62,7 @@ export default function PermissionSelector({ groups, selected, loading, readOnly
                       >
                         <input
                           type="checkbox"
+                          className={checkboxClass}
                           checked={on}
                           disabled={readOnly}
                           onChange={() => onToggleKey(p.key)}

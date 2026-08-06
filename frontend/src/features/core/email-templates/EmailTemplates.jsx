@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Spinner } from "@/components/ui/kit";
+import { LoadingBlock } from "@/components/console";
 import { api } from "@/lib/api";
 import TemplateCard from "./components/TemplateCard";
 import PreviewModal from "./components/PreviewModal";
@@ -25,11 +25,9 @@ export default function EmailTemplatesPage() {
   return (
     <div>
       {templates.isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner />
-        </div>
+        <LoadingBlock />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {(templates.data || []).map((t) => (
             <TemplateCard
               key={t.name}

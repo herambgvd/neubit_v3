@@ -2,9 +2,11 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Badge, Button, Card, Input, Toggle } from "@/components/ui/kit";
+import { ActionButton, QuietButton, SectionCard } from "@/components/console";
+import { Badge, Input, Toggle } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 
 import { CHANNEL_FIELDS, CHANNEL_META } from "../constants";
@@ -58,20 +60,23 @@ export function ChannelCard({ channel }) {
   };
 
   return (
-    <Card className="p-5">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
+    <SectionCard>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon icon={meta.icon} className="shrink-0 text-sm text-nb-blueb" />
+          <span className="truncate text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
+            {meta.title}
+          </span>
           <Badge color={enabled ? "green" : "slate"}>{enabled ? "Enabled" : "Disabled"}</Badge>
-          <h3 className="text-base font-semibold text-foreground">{meta.title}</h3>
         </div>
         <Toggle checked={enabled} onChange={setEnabled} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {fields.map((f) =>
           f.type === "bool" ? (
-            <div key={f.key} className="flex items-center justify-between rounded-lg border border-card-border px-3 py-2.5">
-              <span className="text-sm font-medium text-muted">{f.label}</span>
+            <div key={f.key} className="flex items-center justify-between rounded-[10px] border border-nb-line px-3 py-2.5">
+              <span className="text-sm font-medium text-nb-muted">{f.label}</span>
               <Toggle checked={!!config[f.key]} onChange={(v) => setField(f.key, v)} />
             </div>
           ) : (
@@ -87,19 +92,18 @@ export function ChannelCard({ channel }) {
         )}
       </div>
 
-      <div className="flex items-center gap-2 mt-5">
-        <Button icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
+      <div className="mt-4 flex items-center gap-2">
+        <ActionButton icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
           {save.isPending ? "Saving…" : "Save"}
-        </Button>
-        <Button
-          variant="secondary"
+        </ActionButton>
+        <QuietButton
           icon="heroicons-outline:paper-airplane"
           disabled={test.isPending || !enabled}
           onClick={() => test.mutate()}
         >
           {test.isPending ? "Sending…" : "Send test"}
-        </Button>
+        </QuietButton>
       </div>
-    </Card>
+    </SectionCard>
   );
 }

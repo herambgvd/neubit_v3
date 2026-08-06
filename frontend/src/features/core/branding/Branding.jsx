@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { Button, Spinner } from "@/components/ui/kit";
+import { ActionButton, LoadingBlock, ViewActions } from "@/components/console";
 import { api, apiError } from "@/lib/api";
 import BrandingEditor from "./components/BrandingEditor";
 import BrandingPreview from "./components/BrandingPreview";
@@ -61,29 +61,21 @@ export default function BrandingPage() {
 
   const logoUrl = branding.data?.logo_url;
 
-  if (branding.isLoading) {
-    return (
-      <div>
-        <div className="flex justify-center py-16">
-          <Spinner />
-        </div>
-      </div>
-    );
-  }
+  if (branding.isLoading) return <LoadingBlock />;
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-end">
-        <Button
+      <ViewActions>
+        <ActionButton
           icon="heroicons-outline:check"
           disabled={save.isPending}
           onClick={() => save.mutate(form)}
         >
-          {save.isPending ? "Saving…" : "Save"}
-        </Button>
-      </div>
+          {save.isPending ? "Saving…" : "Save changes"}
+        </ActionButton>
+      </ViewActions>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-3">
         <BrandingEditor
           form={form}
           setForm={setForm}

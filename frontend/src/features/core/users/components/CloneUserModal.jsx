@@ -15,7 +15,7 @@ export default function CloneUserModal({ source, onClose, form, setForm, onClone
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="success" disabled={cloning || !form.email} onClick={onClone}>
+          <Button variant="action" disabled={cloning || !form.email} onClick={onClone}>
             {cloning ? "Cloning…" : "Create clone"}
           </Button>
         </>

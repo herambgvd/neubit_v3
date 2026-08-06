@@ -18,10 +18,11 @@ import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Modal, Spinner } from "@/components/ui/kit";
+import { Button, Checkbox, Modal } from "@/components/ui/kit";
 import { Field, FieldLabel, fieldClass } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
+import SelectMenu from "@/components/common/SelectMenu";
 
 // Matcher operators — exact backend set.
 const OP_OPTIONS = [
@@ -236,10 +237,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
           placeholder="Enter rule description (optional)"
           maxLength={1024}
         />
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-nb-soft">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="accent-nb-teal" />
-          Enabled
-        </label>
+        <Checkbox label="Enabled" checked={enabled} onChange={setEnabled} />
 
         {/* ── Match conditions ─────────────────────────────────── */}
         <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
@@ -426,15 +424,12 @@ function ConditionRow({ condition, onChange, onRemove }) {
         spellCheck={false}
         className={`${fieldClass} !mt-0 !h-9 font-mono text-xs`}
       />
-      <select
+      <SelectMenu
         value={condition.op}
         onChange={(e) => onChange({ op: e.target.value })}
-        className={`${fieldClass} !mt-0 !h-9 text-xs`}
-      >
-        {OP_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value} className="bg-[#0b1228] text-nb-ink">{o.label}</option>
-        ))}
-      </select>
+        options={OP_OPTIONS}
+        className="!mt-0 !h-9 !text-xs"
+      />
       {needsValue ? (
         <input
           value={condition.value ?? ""}

@@ -11,7 +11,7 @@ import TagListItem from "./TagListItem";
 export default function TagList({ items, loading, query, selectedId, mode, onSelect }) {
   if (loading) {
     return (
-      <div className="px-4 py-8 flex items-center gap-2 text-sm text-muted">
+      <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-muted">
         <Spinner className="!h-4 !w-4" /> Loading…
       </div>
     );
@@ -20,13 +20,13 @@ export default function TagList({ items, loading, query, selectedId, mode, onSel
   if (items.length === 0) {
     return (
       <div className="px-4 py-12 text-center">
-        <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-hover">
-          <Icon icon="heroicons:tag" className="text-lg text-muted" />
+        <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5">
+          <Icon icon="heroicons:tag" className="text-lg text-nb-muted" />
         </div>
-        <div className="text-sm font-medium text-foreground">
+        <div className="text-sm font-medium text-nb-ink">
           {query.trim() ? "No tags match your search" : "No tags yet"}
         </div>
-        <div className="mt-0.5 text-xs text-muted">
+        <div className="mt-0.5 text-xs text-nb-muted">
           {query.trim() ? "Try a different keyword." : "Click Add tag to create your first tag."}
         </div>
       </div>
@@ -34,7 +34,7 @@ export default function TagList({ items, loading, query, selectedId, mode, onSel
   }
 
   return (
-    <ul className="divide-y divide-card-border">
+    <ul className="divide-y divide-nb-line">
       {items.map((t) => (
         <TagListItem
           key={t.tag_id}

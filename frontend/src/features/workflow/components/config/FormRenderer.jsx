@@ -4,6 +4,8 @@
 // Works off the v3 field shape:
 //   { id, label, type, placeholder, options:[{value,label}], validation:{ required, pattern } }
 import { fieldClass, areaClass, FieldLabel } from "@/components/common";
+import { checkboxClass } from "@/components/ui/kit";
+import SelectMenu from "@/components/common/SelectMenu";
 
 export default function FormRenderer({ field, value, onChange, error, disabled = false }) {
   const id = `ff-${field.id || field._key || "x"}`;
@@ -19,7 +21,7 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
     return (
       <div>
         <label className="inline-flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
-          <input id={id} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => set(e.target.checked)} />
+          <input id={id} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => set(e.target.checked)} className={checkboxClass} />
           <span>{field.label || field.id}{required && <span className="ml-1 text-nb-crit">*</span>}</span>
         </label>
         {field.help_text && <p className="mt-1 text-[11px] text-nb-faint/70">{field.help_text}</p>}
@@ -47,10 +49,15 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
       break;
     case "select":
       control = (
-        <select id={id} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`}>
-          <option value="" className="bg-[rgba(8,15,34,.5)]">— select —</option>
-          {opts.map((o) => <option key={o.value} value={o.value} className="bg-[rgba(8,15,34,.5)]">{o.label}</option>)}
-        </select>
+        <SelectMenu
+          id={id}
+          disabled={disabled}
+          value={value ?? ""}
+          onChange={(e) => set(e.target.value)}
+          placeholder="— select —"
+          options={opts.map((o) => ({ value: o.value, label: o.label }))}
+          className={error ? "!border-nb-crit" : ""}
+        />
       );
       break;
     case "radio":
@@ -69,12 +76,13 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
     case "multiselect": {
       const arr = Array.isArray(value) ? value : [];
       control = (
-        <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-field bg-transparent p-2">
+        <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-nb-line bg-transparent p-2">
           {opts.length === 0 && <span className="text-xs text-nb-faint/70 px-1">No options</span>}
           {opts.map((o) => (
             <label key={o.value} className="inline-flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
               <input
                 type="checkbox"
+                className={checkboxClass}
                 disabled={disabled}
                 checked={arr.includes(o.value)}
                 onChange={(e) => set(e.target.checked ? [...arr, o.value] : arr.filter((x) => x !== o.value))}

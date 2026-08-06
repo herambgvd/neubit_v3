@@ -6,7 +6,8 @@
 import { useRef } from "react";
 import { Icon } from "@iconify/react";
 
-import { Button, Card, Input, Toggle } from "@/components/ui/kit";
+import { QuietButton, SectionCard, SectionHead } from "@/components/console";
+import { Input, Toggle } from "@/components/ui/kit";
 import ColorField from "./ColorField";
 
 export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, uploading }) {
@@ -19,8 +20,9 @@ export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, u
   }
 
   return (
-    <div className="lg:col-span-2 space-y-6">
-      <Card className="p-6 space-y-5">
+    <div className="space-y-3 lg:col-span-2">
+      <SectionCard className="space-y-4">
+        <SectionHead icon="heroicons-outline:swatch" title="Identity" />
         <Input
           label="App name"
           value={form.app_name}
@@ -29,10 +31,10 @@ export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, u
           hint="Always used for the browser tab title."
         />
 
-        <div className="flex items-center justify-between rounded-lg border border-card-border px-3 py-2.5">
+        <div className="flex items-center justify-between rounded-[10px] border border-nb-line px-3 py-2.5">
           <div>
-            <div className="text-sm font-medium text-foreground">Show app name in header</div>
-            <div className="text-xs text-muted">
+            <div className="text-sm font-medium text-nb-ink">Show app name in header</div>
+            <div className="text-xs text-nb-muted">
               Replace the default mark with your app name. A custom logo overrides this.
             </div>
           </div>
@@ -42,7 +44,7 @@ export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, u
           />
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <ColorField
             label="Primary color"
             value={form.primary_color}
@@ -54,23 +56,21 @@ export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, u
             onChange={(v) => setForm({ ...form, accent_color: v })}
           />
         </div>
-      </Card>
+      </SectionCard>
 
-      <Card className="p-6">
-        <h3 className="text-base font-semibold text-foreground mb-1">Logo</h3>
-        <p className="text-sm text-muted mb-4">
-          PNG or SVG works best. Uploads apply immediately.
-        </p>
-        <div className="flex items-center gap-5">
-          <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl border border-card-border border-card-border bg-hover bg-hover">
+      <SectionCard>
+        <SectionHead
+          icon="heroicons-outline:photo"
+          title="Logo"
+          desc="PNG or SVG works best. Uploads apply immediately."
+        />
+        <div className="flex items-center gap-4">
+          <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[10px] border border-nb-line bg-white/5">
             {logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" />
             ) : (
-              <Icon
-                icon="heroicons-outline:photo"
-                className="text-3xl text-muted text-muted"
-              />
+              <Icon icon="heroicons-outline:photo" className="text-3xl text-nb-faint" />
             )}
           </div>
           <div>
@@ -81,17 +81,16 @@ export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, u
               onChange={onPickLogo}
               className="hidden"
             />
-            <Button
-              variant="secondary"
+            <QuietButton
               icon="heroicons-outline:arrow-up-tray"
               disabled={uploading}
               onClick={() => fileRef.current?.click()}
             >
               {uploading ? "Uploading…" : "Upload logo"}
-            </Button>
+            </QuietButton>
           </div>
         </div>
-      </Card>
+      </SectionCard>
     </div>
   );
 }

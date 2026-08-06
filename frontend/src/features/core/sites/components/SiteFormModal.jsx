@@ -147,7 +147,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onCancel} />
-      <div className="relative w-full max-w-3xl rounded-[14px] bg-[#0e1734] border border-nb-line shadow-2xl animate-modal-in flex flex-col max-h-[85vh] text-nb-ink">
+      <div className="relative w-full max-w-3xl rounded-xl bg-nb-panel border border-nb-line shadow-2xl animate-modal-in flex flex-col max-h-[85vh] text-nb-ink">
         <div className="flex items-center justify-between border-b border-nb-line px-5 py-4 shrink-0">
           <div>
             <h3 className="text-base font-semibold text-nb-ink">{isEdit ? `Edit ${site?.name || "site"}` : "Create site"}</h3>
@@ -189,20 +189,32 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
                   </div>
                   {!isEdit && <p className="mt-1 text-[11px] text-nb-faint">Auto-generated from site type. Edit or regenerate as you like.</p>}
                 </div>
-                <FSelect label="Site type" value={siteType} onChange={setSiteType}>
-                  {SITE_TYPES.map((t) => (<option key={t} value={t} className="bg-[#0e1734]">{capitalize(t)}</option>))}
-                </FSelect>
-                <FSelect label="Threat level" value={threatLevel} onChange={setThreatLevel}>
-                  {THREAT_LEVELS.map((t) => (<option key={t} value={t} className="bg-[#0e1734]">{capitalize(t)}</option>))}
-                </FSelect>
-                <FSelect label="Parent site" value={parentId} onChange={setParentId} full>
-                  <option value="" className="bg-[#0e1734]">No parent</option>
-                  {parentChoices.map((s) => (
-                    <option key={s.site_id} value={s.site_id} className="bg-[#0e1734]">
-                      {s.name}{s.location_code ? ` · ${s.location_code}` : ""}
-                    </option>
-                  ))}
-                </FSelect>
+                <FSelect
+                  label="Site type"
+                  value={siteType}
+                  onChange={setSiteType}
+                  options={SITE_TYPES.map((t) => ({ value: t, label: capitalize(t) }))}
+                />
+                <FSelect
+                  label="Threat level"
+                  value={threatLevel}
+                  onChange={setThreatLevel}
+                  options={THREAT_LEVELS.map((t) => ({ value: t, label: capitalize(t) }))}
+                />
+                <FSelect
+                  label="Parent site"
+                  value={parentId}
+                  onChange={setParentId}
+                  full
+                  placeholder="No parent"
+                  options={[
+                    { value: "", label: "No parent" },
+                    ...parentChoices.map((s) => ({
+                      value: s.site_id,
+                      label: `${s.name}${s.location_code ? ` · ${s.location_code}` : ""}`,
+                    })),
+                  ]}
+                />
                 <FTextarea label="Description" full value={description} onChange={setDescription} rows={2} placeholder="Site description (optional)" />
               </div>
             </Section>
@@ -275,13 +287,9 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
           </div>
           <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-nb-line shrink-0">
             <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-            <button
-              type="submit"
-              disabled={saving.isPending}
-              className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-50"
-            >
+            <Button type="submit" variant="action" icon="heroicons-outline:check" disabled={saving.isPending}>
               {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create site"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

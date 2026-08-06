@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { Spinner } from "@/components/ui/kit";
+import { LoadingBlock } from "@/components/console";
 import { api } from "@/lib/api";
 
 import { ChannelCard } from "./components/ChannelCard";
@@ -16,11 +16,9 @@ export default function ChannelsPage() {
   return (
     <div>
       {channels.isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner />
-        </div>
+        <LoadingBlock />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
           {(channels.data || []).map((c) => (
             <ChannelCard key={c.channel} channel={c} />
           ))}

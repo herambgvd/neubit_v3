@@ -61,7 +61,7 @@ export default function SitesMapPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <section className="sites-map-root relative min-h-0 flex-1 overflow-hidden rounded-xl border border-card-border bg-hover/40">
+      <section className="sites-map-root relative min-h-0 flex-1 overflow-hidden rounded-xl border border-nb-line bg-white/5">
         <MapPopupStyleFix />
         {cfgQ.isLoading ? (
           <Loading />

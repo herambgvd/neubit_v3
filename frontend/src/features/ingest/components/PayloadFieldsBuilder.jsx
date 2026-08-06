@@ -15,8 +15,8 @@
 import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { Button } from "@/components/ui/kit";
-import { FieldLabel, areaClass } from "@/components/common";
+import { Button, checkboxClass } from "@/components/ui/kit";
+import { areaClass } from "@/components/common";
 
 // Heuristics: pre-tick these field-name patterns when found in the sample.
 const AUTO_PICK_NAMES = new Set([
@@ -223,7 +223,7 @@ function FieldRow({ field, preview, onCheck, onName }) {
         type="checkbox"
         checked={field.checked}
         onChange={(e) => onCheck(e.target.checked)}
-        className="h-3.5 w-3.5 cursor-pointer accent-nb-teal"
+        className={checkboxClass}
       />
       <input
         value={field.name}

@@ -9,6 +9,7 @@ import { THREAT_PILL, THREAT_LEVELS, capitalize } from "../constants";
 import SiteInfoPanel from "./SiteInfoPanel";
 import FloorsPanel from "./FloorsPanel";
 import ZonesPanel from "./ZonesPanel";
+import SelectMenu from "@/components/common/SelectMenu";
 
 const TABS = [
   { key: "info", label: "Site info", icon: "heroicons-outline:building-office-2" },
@@ -47,16 +48,14 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <select
-            value={site.threat_level || "normal"}
-            onChange={(e) => onChangeThreat(e.target.value)}
-            className="h-8 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 text-xs text-nb-ink outline-none focus:border-nb-blue"
-            title="Set threat level"
-          >
-            {THREAT_LEVELS.map((t) => (
-              <option key={t} value={t} className="bg-[#0e1734] text-nb-ink">{capitalize(t)}</option>
-            ))}
-          </select>
+          <span className="w-32" title="Set threat level">
+            <SelectMenu
+              value={site.threat_level || "normal"}
+              onChange={(e) => onChangeThreat(e.target.value)}
+              options={THREAT_LEVELS.map((t) => ({ value: t, label: capitalize(t) }))}
+              className="!mt-0 !h-8 !text-xs"
+            />
+          </span>
           <button onClick={onClose} title="Close" className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-muted hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb">
             <Icon icon="heroicons-outline:x-mark" className="text-base" />
           </button>

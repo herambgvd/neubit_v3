@@ -12,14 +12,16 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
-import { Button } from "@/components/ui/kit";
-import { Field, FieldLabel } from "@/components/common";
+import { Button, Checkbox, checkboxClass } from "@/components/ui/kit";
+import { Field } from "@/components/common";
 import { api } from "@/lib/api";
 import { titleize, idOf, asItems } from "@/lib/format";
 import { PRIORITIES } from "../../constants";
 import { MATCHER_OPS, OP_LABEL } from "../../lib/matcher";
 import ConditionsPreview from "./ConditionsPreview";
 import TriggerTestModal from "./TriggerTestModal";
+import SelectMenu from "@/components/common/SelectMenu";
+import { PaneForm } from "@/components/console";
 
 const TRIGGER_OPS = MATCHER_OPS;
 
@@ -109,18 +111,24 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-4 space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-nb-ink">{isEdit ? `Edit ${trigger.name}` : "Add trigger"}</h4>
-        <button
-          type="button"
-          onClick={() => setShowTest(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-nb-line px-2.5 py-1.5 text-xs text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink"
-        >
-          <Icon icon="heroicons-outline:beaker" className="text-sm" /> Test
-        </button>
-      </div>
-      {errors.event && <p className="text-xs text-nb-crit">{errors.event}</p>}
+    <PaneForm
+      title={isEdit ? `Edit ${trigger.name}` : "Add trigger"}
+      onSubmit={submit}
+      action={
+        <Button variant="secondary" icon="heroicons-outline:beaker" onClick={() => setShowTest(true)}>
+          Test
+        </Button>
+      }
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" variant="action" icon="heroicons-outline:check" disabled={pending}>
+            {pending ? "Saving…" : isEdit ? "Save changes" : "Create trigger"}
+          </Button>
+        </>
+      }
+    >
+      {errors.event && <p className="mb-3 text-xs text-nb-crit">{errors.event}</p>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field
           containerClassName="md:col-span-2"
@@ -190,11 +198,16 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
           <div className="space-y-2">
             {conditions.map((c, i) => (
               <div key={i} className="flex items-center gap-2">
-                <input value={c.path} onChange={(e) => updateCond(i, { path: e.target.value })} placeholder="payload.path" className="h-9 flex-1 rounded-lg border border-field bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-none focus:border-muted" />
-                <select value={c.op} onChange={(e) => updateCond(i, { op: e.target.value })} className="h-9 rounded-lg border border-field bg-transparent px-2 text-sm text-nb-ink outline-none focus:border-muted">
-                  {TRIGGER_OPS.map((o) => <option key={o} value={o} className="bg-[rgba(8,15,34,.5)]">{OP_LABEL[o] || o}</option>)}
-                </select>
-                <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-field bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-muted" />
+                <input value={c.path} onChange={(e) => updateCond(i, { path: e.target.value })} placeholder="payload.path" className="h-9 flex-1 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal" />
+                <span className="w-36 shrink-0">
+                  <SelectMenu
+                    value={c.op}
+                    onChange={(e) => updateCond(i, { op: e.target.value })}
+                    options={TRIGGER_OPS.map((o) => ({ value: o, label: OP_LABEL[o] || o }))}
+                    className="!mt-0 !h-9"
+                  />
+                </span>
+                <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-nb-teal" />
                 <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
               </div>
             ))}
@@ -242,17 +255,10 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
-      </label>
-
-      <div className="flex items-center justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>
-        <Button type="submit" disabled={pending} className="!px-3 !py-1.5 text-xs">{pending ? "Saving…" : isEdit ? "Save changes" : "Create trigger"}</Button>
-      </div>
+      <Checkbox label="Enabled" checked={enabled} onChange={setEnabled} />
 
       <TriggerTestModal open={showTest} trigger={draftForTest} onClose={() => setShowTest(false)} />
-    </form>
+    </PaneForm>
   );
 }
 
@@ -320,7 +326,7 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
                 return (
                   <li key={uid(u)}>
                     <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-[rgba(96,165,250,.10)]" : "hover:bg-[rgba(96,165,250,.1)]"}`}>
-                      <input type="checkbox" checked={checked} onChange={() => onToggle(uid(u))} />
+                      <input type="checkbox" checked={checked} onChange={() => onToggle(uid(u))} className={checkboxClass} />
                       <span className="flex-1 min-w-0">
                         <span className="block font-medium text-nb-ink truncate">{display(u)}</span>
                         {u.email && display(u) !== u.email && (

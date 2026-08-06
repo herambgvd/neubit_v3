@@ -11,8 +11,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Icon } from "@iconify/react";
 
+import {
+  ConsolePage,
+  ConsoleGrid,
+  ConsolePanel,
+  EmptyPane,
+} from "@/components/console";
 import { ConfirmDialog } from "@/components/ui/kit";
 import { asItems, idOf } from "@/lib/format";
 import { apiError } from "@/lib/api";
@@ -67,17 +72,11 @@ export default function IngestConfigPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const col = "rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] min-h-0 flex flex-col overflow-hidden";
-
   return (
-    <div
-      className="flex h-full min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 py-3 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[300px_1fr]">
+    <ConsolePage>
+      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]">
         {/* LEFT — category rail */}
         <CategoryList
-          className={col}
           categories={filtered}
           total={cats.length}
           loading={catsQ.isLoading}
@@ -95,17 +94,13 @@ export default function IngestConfigPage() {
         />
 
         {/* CENTER — detail */}
-        <div className={col}>
+        <ConsolePanel>
           {!selected ? (
-            <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
-                <Icon icon="heroicons-outline:arrow-down-on-square-stack" className="text-xl" />
-              </span>
-              <div className="mt-3 text-sm font-semibold text-nb-ink">No category selected</div>
-              <div className="mt-0.5 text-xs text-nb-faint">
-                Pick one from the list, or click <b className="text-nb-blueb">＋ New category</b>.
-              </div>
-            </div>
+            <EmptyPane
+              icon="heroicons-outline:arrow-down-on-square-stack"
+              title="No category selected"
+              subtitle="Pick one from the list, or click ＋ NEW CATEGORY to create one."
+            />
           ) : (
             <CategoryDetail
               category={selected}
@@ -124,8 +119,8 @@ export default function IngestConfigPage() {
               }
             />
           )}
-        </div>
-      </div>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       {(mode === "create" || mode === "edit") && (
         <CategoryFormModal
@@ -142,6 +137,6 @@ export default function IngestConfigPage() {
       )}
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={removeCat.isPending} />
-    </div>
+    </ConsolePage>
   );
 }

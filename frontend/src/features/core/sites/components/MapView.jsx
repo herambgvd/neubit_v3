@@ -59,7 +59,7 @@ function pinIcon(color, selected) {
 
 export function Loading() {
   return (
-    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted">
+    <div className="flex h-full items-center justify-center gap-2 text-sm text-nb-muted">
       <Spinner className="!h-4 !w-4" /> Loading map…
     </div>
   );
@@ -68,13 +68,13 @@ export function Loading() {
 export function Disabled() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center py-20">
-      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-nb-muted">
         <Icon icon="heroicons-outline:map" className="text-xl" />
       </span>
-      <p className="text-sm font-semibold text-foreground">Google Maps not configured</p>
-      <p className="max-w-md text-xs text-muted">
+      <p className="text-sm font-semibold text-nb-ink">Google Maps not configured</p>
+      <p className="max-w-md text-xs text-nb-muted">
         A super-admin must enable Google Maps and save an API key under{" "}
-        <span className="font-medium text-foreground">Platform Settings → Google Maps</span>. Once a
+        <span className="font-medium text-nb-ink">Platform Settings → Google Maps</span>. Once a
         key is saved and the toggle is on, this map populates from sites whose coordinates have been
         set under Config → Sites.
       </p>
@@ -143,8 +143,8 @@ export default function MapView({ apiKey, center, zoom, sites, selected, onSelec
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl text-red-500" />
-        <p className="text-sm font-semibold text-foreground">Could not load Google Maps</p>
-        <p className="max-w-md text-xs text-muted">
+        <p className="text-sm font-semibold text-nb-ink">Could not load Google Maps</p>
+        <p className="max-w-md text-xs text-nb-muted">
           Check the API key restrictions in Google Cloud Console — the key must be allowed for
           the Maps JavaScript API and accept this origin as a referrer.
         </p>

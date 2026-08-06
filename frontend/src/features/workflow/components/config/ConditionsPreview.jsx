@@ -61,7 +61,7 @@ export default function ConditionsPreview({ conditions }) {
               value={text}
               onChange={(e) => setText(e.target.value)}
               spellCheck={false}
-              className="mt-1 h-44 w-full rounded-lg border border-field bg-transparent px-2.5 py-2 text-xs font-mono text-nb-ink outline-none focus:border-muted"
+              className="mt-1 h-44 w-full rounded-lg border border-nb-line bg-transparent px-2.5 py-2 text-xs font-mono text-nb-ink outline-none focus:border-nb-teal"
             />
             {parsed.err && <p className="mt-1 text-[11px] text-nb-crit">JSON error: {parsed.err}</p>}
           </div>

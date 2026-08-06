@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Button, Input, Toggle } from "@/components/ui/kit";
+import { ActionButton } from "@/components/console";
+import { Input, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { security } from "../api";
 import SecuritySection from "./SecuritySection";
@@ -52,18 +53,18 @@ export default function PolicyCard({ canManage }) {
       action={
         canManage &&
         form && (
-          <Button variant="primary" icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
+          <ActionButton icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Saving…" : "Save"}
-          </Button>
+          </ActionButton>
         )
       }
     >
       {form && (
         <div className="space-y-4">
-          <label className="flex items-center justify-between rounded-lg border border-card-border bg-hover/30 px-3 py-2.5">
+          <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
             <div>
-              <span className="text-sm text-foreground">Require 2FA</span>
-              <p className="text-xs text-muted">Force all users (or the roles below) to enroll a second factor.</p>
+              <span className="text-sm text-nb-ink">Require 2FA</span>
+              <p className="text-xs text-nb-muted">Force all users (or the roles below) to enroll a second factor.</p>
             </div>
             <Toggle
               checked={form.require_2fa}

@@ -11,12 +11,14 @@ import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/kit";
-import { Field, FieldLabel, fieldClass } from "@/components/common";
+import { Button, Checkbox } from "@/components/ui/kit";
+import SelectMenu from "@/components/common/SelectMenu";
+import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { titleize } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
 import FormPreview from "./FormPreview";
+import { PaneForm } from "@/components/console";
 
 // Form field kinds the builder can create (mirrors backend FieldType enum).
 const FIELD_TYPES = ["text", "textarea", "number", "email", "phone", "date", "datetime", "select", "radio", "multiselect", "checkbox", "boolean", "rating", "file"];
@@ -111,9 +113,20 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-    <form onSubmit={submit} className="rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-4 space-y-4">
-      <h4 className="text-sm font-semibold text-nb-ink">{isEdit ? `Edit ${form.name}` : "New form"}</h4>
+    <PaneForm
+      title={isEdit ? `Edit ${form.name}` : "New form"}
+      onSubmit={submit}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" variant="action" icon="heroicons-outline:check" disabled={saving.isPending}>
+            {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create form"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field
           label="Name"
@@ -169,9 +182,11 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
                   <Field label="Label" required value={f.label} onChange={(e) => updateField(i, { label: e.target.value })} placeholder="Field label" />
                   <div>
                     <FieldLabel>Type</FieldLabel>
-                    <select value={f.type} onChange={(e) => updateField(i, { type: e.target.value })} className={fieldClass}>
-                      {FIELD_TYPES.map((t) => <option key={t} value={t} className="bg-[rgba(8,15,34,.5)]">{titleize(t)}</option>)}
-                    </select>
+                    <SelectMenu
+                      value={f.type}
+                      onChange={(e) => updateField(i, { type: e.target.value })}
+                      options={FIELD_TYPES.map((t) => ({ value: t, label: titleize(t) }))}
+                    />
                   </div>
                   <Field label="Placeholder" value={f.placeholder} onChange={(e) => updateField(i, { placeholder: e.target.value })} placeholder="Shown inside the input" />
                   <Field label="Default value" value={f.default_value} onChange={(e) => updateField(i, { default_value: e.target.value })} placeholder="Optional" />
@@ -182,9 +197,7 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
                   {FIELD_TYPES_WITH_PATTERN.has(f.type) && (
                     <Field containerClassName="md:col-span-2" label="Validation pattern (regex)" value={f.pattern} onChange={(e) => updateField(i, { pattern: e.target.value })} placeholder="^[A-Za-z0-9]+$" />
                   )}
-                  <label className="flex items-center gap-1.5 text-xs text-nb-ink cursor-pointer md:col-span-2">
-                    <input type="checkbox" checked={f.required} onChange={(e) => updateField(i, { required: e.target.checked })} /> Required
-                  </label>
+                  <Checkbox label="Required" checked={f.required} onChange={(v) => updateField(i, { required: v })} className="md:col-span-2" />
                 </div>
               )}
             </div>
@@ -192,14 +205,10 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active</label>
-
-      <div className="flex items-center justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>
-        <Button type="submit" disabled={saving.isPending} className="!px-3 !py-1.5 text-xs">{saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create form"}</Button>
+      <Checkbox label="Active" checked={isActive} onChange={setIsActive} />
       </div>
-    </form>
       <FormPreview name={name} description={description} fields={fields} />
-    </div>
+      </div>
+    </PaneForm>
   );
 }

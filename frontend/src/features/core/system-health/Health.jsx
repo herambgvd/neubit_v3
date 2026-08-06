@@ -11,6 +11,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
+import { LoadingBlock, SectionCard, ViewActions } from "@/components/console";
 import { api } from "@/lib/api";
 
 const DEP_META = {
@@ -24,23 +25,23 @@ function toGB(bytes) {
   return (bytes / 1024 ** 3).toFixed(1);
 }
 
-// NeuBit gauge color ramp — teal healthy, amber warn, red critical.
+// Gauge color ramp — blue healthy (the Configurations accent), amber warn, red critical.
 function ringColor(percent) {
   if (percent >= 90) return "#f87171"; // nb.crit
   if (percent >= 70) return "#fbbf24"; // nb.warn
-  return "#22d3ee"; // nb.teal
+  return "#60a5fa"; // nb.blue — Configurations accent
 }
 
 /* ── Micro heading (mono / uppercase / faint) ─────────────────────────── */
 function SectionLabel({ children, count }) {
   return (
     <div className="mb-3 flex items-center gap-3">
-      <h2 className="font-mono text-[10px] uppercase tracking-[1.6px] text-[#9a92c8]">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
         {children}
       </h2>
-      <span className="h-px flex-1 bg-[rgba(160,150,245,.2)]" />
+      <span className="h-px flex-1 bg-nb-line" />
       {count != null && (
-        <span className="font-mono text-[10px] tracking-[.4px] text-[#7e93bf]">{count}</span>
+        <span className="font-mono text-[10px] tracking-[.4px] text-nb-faint">{count}</span>
       )}
     </div>
   );
@@ -88,48 +89,42 @@ function Ring({ percent, size = 58, stroke = 6 }) {
 }
 
 /* ── Navy glass resource tile ─────────────────────────────────────────── */
-function ResourceTile({ icon, label, percent, name, sub, iconColor = "#67e8f9" }) {
+function ResourceTile({ icon, label, percent, name, sub, iconColor = "#93c5fd" }) {
   return (
-    <div
-      className="flex items-center gap-3 rounded-[13px] border border-[rgba(160,150,245,.22)] p-4 backdrop-blur-sm"
-      style={{ background: "linear-gradient(155deg,rgba(150,180,245,.06),rgba(150,180,245,.02) 70%)" }}
-    >
+    <SectionCard className="flex items-center gap-3">
       <Ring percent={percent} />
       <div className="min-w-0">
-        <div className="flex items-center gap-1.5 text-sm font-medium text-[#f2f6ff]">
+        <div className="flex items-center gap-1.5 text-sm font-medium text-nb-ink">
           <Icon icon={icon} className="shrink-0 text-base" style={{ color: iconColor }} />
-          <span className="font-mono text-[11px] uppercase tracking-[1.4px] text-[#aec2e8]">
+          <span className="font-mono text-[11px] uppercase tracking-[1.4px] text-nb-soft">
             {label}
           </span>
         </div>
         {name && (
-          <div className="mt-0.5 truncate text-xs text-[#cfd0f2]" title={name}>
+          <div className="mt-0.5 truncate text-xs text-nb-muted" title={name}>
             {name}
           </div>
         )}
-        {sub && <div className="truncate font-mono text-[11px] text-[#7e93bf]">{sub}</div>}
+        {sub && <div className="truncate font-mono text-[11px] text-nb-faint">{sub}</div>}
       </div>
-    </div>
+    </SectionCard>
   );
 }
 
 function GpuTile({ gpus }) {
   if (!gpus.length) {
     return (
-      <div
-        className="flex items-center gap-3 rounded-[13px] border border-[rgba(160,150,245,.22)] p-4 backdrop-blur-sm"
-        style={{ background: "linear-gradient(155deg,rgba(150,180,245,.06),rgba(150,180,245,.02) 70%)" }}
-      >
-        <div className="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-full border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)]">
-          <Icon icon="heroicons-outline:cpu-chip" className="text-xl text-[#7e93bf]" />
+      <SectionCard className="flex items-center gap-3">
+        <div className="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-full border border-nb-line bg-white/[.04]">
+          <Icon icon="heroicons-outline:cpu-chip" className="text-xl text-nb-faint" />
         </div>
         <div className="min-w-0">
-          <div className="font-mono text-[11px] uppercase tracking-[1.4px] text-[#aec2e8]">GPU</div>
-          <div className="mt-1 inline-flex rounded-full border border-[rgba(160,150,245,.3)] px-2 py-px font-mono text-[10px] uppercase tracking-[.8px] text-[#8f8ac0]">
+          <div className="font-mono text-[11px] uppercase tracking-[1.4px] text-nb-soft">GPU</div>
+          <div className="mt-1 inline-flex rounded-full border border-nb-line px-2 py-px font-mono text-[10px] uppercase tracking-[.8px] text-nb-faint">
             CPU host
           </div>
         </div>
-      </div>
+      </SectionCard>
     );
   }
   const g = gpus[0];
@@ -154,13 +149,13 @@ function GpuTile({ gpus }) {
 
 function SkeletonTile() {
   return (
-    <div className="flex items-center gap-3 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.03)] p-4">
-      <div className="h-[58px] w-[58px] shrink-0 animate-pulse rounded-full bg-[rgba(150,180,245,.08)]" />
+    <SectionCard className="flex items-center gap-3">
+      <div className="h-[58px] w-[58px] shrink-0 animate-pulse rounded-full bg-white/5" />
       <div className="space-y-2">
-        <div className="h-3 w-16 animate-pulse rounded bg-[rgba(150,180,245,.08)]" />
-        <div className="h-2.5 w-20 animate-pulse rounded bg-[rgba(150,180,245,.08)]" />
+        <div className="h-3 w-16 animate-pulse rounded bg-white/5" />
+        <div className="h-2.5 w-20 animate-pulse rounded bg-white/5" />
       </div>
-    </div>
+    </SectionCard>
   );
 }
 
@@ -230,82 +225,63 @@ export default function HealthPage() {
   const healthy = overall === "healthy";
 
   return (
-    <div
-      className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto p-6 text-[#f2f6ff] lg:p-8"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
-      {/* masthead + overall status */}
-      <div className="mb-6 flex items-center gap-3">
-        <Icon icon="heroicons:heart" className="text-2xl text-[#67e8f9]" />
-        <div>
-          <h1 className="text-[20px] font-extralight tracking-[1px] text-[#f2f6ff]">Pulse</h1>
-          <span className="font-mono text-[10px] uppercase tracking-[2px] text-[#9a92c8]">
-            System Health
-          </span>
-        </div>
-        {overall && (
+    // A Platform sub-view: PlatformConsole already owns the navy page frame AND the
+    // scroll container, so this renders bare content. Nesting a second gradient +
+    // a second overflow-y-auto made the pane scroll inside a scroll.
+    <div className="relative w-full text-nb-ink">
+      {/* Overall status — sits in the same right-aligned action row every other
+          Platform view uses, instead of its own oversized masthead. */}
+      {overall && (
+        <ViewActions>
           <span
-            className="ml-auto inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[1.2px]"
-            style={
-              healthy
-                ? { color: "#34d399", borderColor: "rgba(52,211,153,.45)", background: "rgba(52,211,153,.08)" }
-                : { color: "#f87171", borderColor: "rgba(248,113,113,.55)", background: "rgba(248,113,113,.10)" }
-            }
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[1.2px] ${
+              healthy ? "border-nb-good/45 bg-nb-good/10 text-nb-good" : "border-nb-crit/55 bg-nb-crit/10 text-nb-crit"
+            }`}
           >
             <span
-              className="h-[7px] w-[7px] rounded-full"
-              style={{
-                background: healthy ? "#34d399" : "#f87171",
-                boxShadow: `0 0 8px ${healthy ? "#34d399" : "#f87171"}`,
-              }}
+              className={`h-[7px] w-[7px] rounded-full ${
+                healthy ? "bg-nb-good shadow-[0_0_8px_#34d399]" : "bg-nb-crit shadow-[0_0_8px_#f87171]"
+              }`}
             />
             {healthy ? "All systems operational" : "Degraded"}
           </span>
-        )}
-      </div>
+        </ViewActions>
+      )}
 
       {/* Dependencies */}
-      <section className="mb-8">
+      <section className="mb-4">
         <SectionLabel count={Object.keys(DEP_META).length}>Dependencies</SectionLabel>
         {health.isLoading ? (
-          <div className="flex justify-center rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.03)] py-12">
-            <Icon icon="heroicons:arrow-path" className="animate-spin text-2xl text-[#67e8f9]" />
-          </div>
+          <LoadingBlock />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {Object.entries(DEP_META).map(([key, meta]) => {
               const state = checks[key] || "unknown";
               const ok = state === "ok";
-              const dot = ok ? "#34d399" : "#f87171";
               return (
-                <div
-                  key={key}
-                  className="rounded-[13px] border p-5 backdrop-blur-sm"
-                  style={{
-                    borderColor: ok ? "rgba(160,150,245,.22)" : "rgba(248,113,113,.4)",
-                    background: "linear-gradient(155deg,rgba(150,180,245,.06),rgba(150,180,245,.02) 70%)",
-                  }}
-                >
+                <SectionCard key={key} className={ok ? "" : "!border-nb-crit/40"}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Icon icon={meta.icon} className="text-lg text-[#aec2e8]" />
-                      <span className="text-sm font-medium text-[#f2f6ff]">{meta.label}</span>
+                      <Icon icon={meta.icon} className="text-lg text-nb-blueb" />
+                      <span className="text-sm font-medium text-nb-ink">{meta.label}</span>
                     </div>
                     <span
-                      className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[1px]"
-                      style={{ color: dot }}
+                      className={`inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[1px] ${
+                        ok ? "text-nb-good" : "text-nb-crit"
+                      }`}
                     >
                       <span
-                        className="h-[7px] w-[7px] rounded-full"
-                        style={{ background: dot, boxShadow: `0 0 8px ${dot}` }}
+                        className={`h-[7px] w-[7px] rounded-full ${
+                          ok ? "bg-nb-good shadow-[0_0_8px_#34d399]" : "bg-nb-crit shadow-[0_0_8px_#f87171]"
+                        }`}
                       />
                       {ok ? "Healthy" : "Down"}
                     </span>
                   </div>
                   {!ok && (
-                    <p className="mt-3 break-all font-mono text-[11px] text-[#f87171]">{state}</p>
+                    <p className="mt-3 break-all font-mono text-[11px] text-nb-crit">{state}</p>
                   )}
-                </div>
+                </SectionCard>
               );
             })}
           </div>
@@ -315,15 +291,10 @@ export default function HealthPage() {
       {/* Host resources */}
       <section>
         <SectionLabel>Host resources</SectionLabel>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <HostResources />
         </div>
       </section>
-
-      {/* GVD lockup */}
-      <div className="mt-auto flex items-center justify-end gap-2 pt-6 font-mono text-[9px] tracking-[1.3px] text-[#9fb2d8]">
-        <span>GENIUS VISION DIGITAL · GVD</span>
-      </div>
     </div>
   );
 }

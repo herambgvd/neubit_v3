@@ -15,7 +15,7 @@ export function buildApiKeyColumns({ onRevoke }) {
       key: "prefix",
       label: "Key",
       render: (k) => (
-        <span className="font-mono text-xs text-muted text-muted">{k.prefix}…</span>
+        <span className="font-mono text-xs text-nb-muted">{k.prefix}…</span>
       ),
     },
     {
@@ -26,12 +26,12 @@ export function buildApiKeyColumns({ onRevoke }) {
     {
       key: "created_at",
       label: "Created",
-      render: (k) => <span className="text-muted">{fmtDate(k.created_at)}</span>,
+      render: (k) => <span className="text-nb-muted">{fmtDate(k.created_at)}</span>,
     },
     {
       key: "last_used_at",
       label: "Last used",
-      render: (k) => <span className="text-muted">{fmtDate(k.last_used_at)}</span>,
+      render: (k) => <span className="text-nb-muted">{fmtDate(k.last_used_at)}</span>,
     },
     {
       key: "is_active",

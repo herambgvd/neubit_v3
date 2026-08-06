@@ -4,6 +4,7 @@
 // Renders the current pairs as removable rows + an add-row. Emits the plain object.
 import { useState } from "react";
 import { Icon } from "@iconify/react";
+import { FieldLabel } from "@/components/common";
 
 export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, onChange, disabled }) {
   const [k, setK] = useState("");
@@ -26,19 +27,19 @@ export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, o
 
   return (
     <div>
-      <span className="mb-1.5 block text-sm font-medium text-foreground">{label}</span>
-      <div className="rounded-lg border border-card-border">
+      <FieldLabel className="mb-1.5 block">{label}</FieldLabel>
+      <div className="rounded-lg border border-nb-line">
         {entries.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-muted">No mappings — directory/SSO users fall back to the default role.</p>
+          <p className="px-3 py-3 text-xs text-nb-muted">No mappings — directory/SSO users fall back to the default role.</p>
         ) : (
-          <div className="divide-y divide-card-border">
+          <div className="divide-y divide-nb-line">
             {entries.map(([key, role]) => (
               <div key={key} className="flex items-center gap-2 px-3 py-2 text-sm">
-                <code className="flex-1 truncate text-foreground">{key}</code>
-                <Icon icon="heroicons-outline:arrow-right" className="text-xs text-muted" />
-                <span className="rounded bg-hover px-2 py-0.5 text-xs text-foreground">{role}</span>
+                <code className="flex-1 truncate text-nb-ink">{key}</code>
+                <Icon icon="heroicons-outline:arrow-right" className="text-xs text-nb-muted" />
+                <span className="rounded bg-white/5 px-2 py-0.5 text-xs text-nb-ink">{role}</span>
                 {!disabled && (
-                  <button className="text-muted transition hover:text-red-500" onClick={() => remove(key)} title="Remove">
+                  <button className="text-nb-muted transition hover:text-red-500" onClick={() => remove(key)} title="Remove">
                     <Icon icon="heroicons-outline:x-mark" className="text-base" />
                   </button>
                 )}
@@ -47,24 +48,24 @@ export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, o
           </div>
         )}
         {!disabled && (
-          <div className="flex items-center gap-2 border-t border-card-border p-2">
+          <div className="flex items-center gap-2 border-t border-nb-line p-2">
             <input
               value={k}
               onChange={(e) => setK(e.target.value)}
               placeholder={keyLabel}
-              className="h-8 flex-1 rounded-md border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted"
+              className="h-8 flex-1 rounded-md border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-nb-teal"
             />
-            <Icon icon="heroicons-outline:arrow-right" className="text-xs text-muted" />
+            <Icon icon="heroicons-outline:arrow-right" className="text-xs text-nb-muted" />
             <input
               value={v}
               onChange={(e) => setV(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
               placeholder="role"
-              className="h-8 w-32 rounded-md border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted"
+              className="h-8 w-32 rounded-md border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-nb-teal"
             />
             <button
               onClick={add}
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-card-border text-muted transition hover:text-foreground"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-nb-line text-nb-muted transition hover:text-nb-ink"
               title="Add mapping"
             >
               <Icon icon="heroicons-outline:plus" className="text-base" />

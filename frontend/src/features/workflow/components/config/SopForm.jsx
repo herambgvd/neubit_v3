@@ -5,12 +5,13 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/kit";
+import { Button, Checkbox } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { titleize, idOf } from "@/lib/format";
 import { PRIORITIES } from "../../constants";
 import { workflow as wfApi } from "../../api";
+import { PaneForm } from "@/components/console";
 
 export default function SopForm({ sop, onCancel, onSaved }) {
   const isEdit = !!sop;
@@ -55,11 +56,19 @@ export default function SopForm({ sop, onCancel, onSaved }) {
   }
 
   return (
-    <form noValidate onSubmit={submit} className="flex flex-col flex-1 min-h-0">
-      <header className="px-6 py-5 border-b border-nb-line">
-        <h2 className="text-lg font-semibold text-nb-ink">{isEdit ? `Edit ${sop.name}` : "Create SOP"}</h2>
-      </header>
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+    <PaneForm
+      title={isEdit ? `Edit ${sop.name}` : "Create SOP"}
+      onSubmit={submit}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" variant="action" icon="heroicons-outline:check" disabled={saving.isPending}>
+            {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create SOP"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Field
           containerClassName="md:col-span-2"
           label="Name"
@@ -120,14 +129,8 @@ export default function SopForm({ sop, onCancel, onSaved }) {
             Array of objects: <code className="font-mono">{`{ after_hours, to_priority, notify_role_ids }`}</code>
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
-          <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active
-        </label>
+        <Checkbox label="Active" checked={isActive} onChange={setIsActive} />
       </div>
-      <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-nb-line">
-        <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <button type="submit" disabled={saving.isPending} className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-50">{saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create SOP"}</button>
-      </div>
-    </form>
+    </PaneForm>
   );
 }

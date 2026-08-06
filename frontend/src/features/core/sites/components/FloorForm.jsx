@@ -100,10 +100,10 @@ export default function FloorForm({ site, floor, onCancel, onSaved }) {
   }
 
   return (
-    <form noValidate onSubmit={submit} className="rounded-lg border border-card-border bg-hover/40 p-4 space-y-4">
+    <form noValidate onSubmit={submit} className="rounded-lg border border-nb-line bg-white/5 p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-foreground">{isEdit ? `Edit floor · ${floor.name}` : "Add floor"}</h4>
-        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground">
+        <h4 className="text-sm font-semibold text-nb-ink">{isEdit ? `Edit floor · ${floor.name}` : "Add floor"}</h4>
+        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-nb-muted hover:bg-white/5 hover:text-nb-ink">
           <Icon icon="heroicons-outline:x-mark" className="text-sm" />
         </button>
       </div>
@@ -129,9 +129,9 @@ export default function FloorForm({ site, floor, onCancel, onSaved }) {
             type="file"
             accept="image/png,image/jpeg,image/webp,image/svg+xml"
             onChange={onPick}
-            className="mt-1 block w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground"
+            className="mt-1 block w-full rounded-lg border border-nb-line bg-transparent px-3 py-2 text-sm text-nb-ink"
           />
-          <p className="mt-1 text-[11px] text-muted">Allowed: PNG, JPEG, WEBP, SVG (max 8 MiB)</p>
+          <p className="mt-1 text-[11px] text-nb-muted">Allowed: PNG, JPEG, WEBP, SVG (max 8 MiB)</p>
           {errors.floorplan && <p className="mt-1 text-xs text-red-500">{errors.floorplan}</p>}
           <div className="mt-3">
             <ImagePreviewCard

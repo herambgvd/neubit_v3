@@ -1,15 +1,24 @@
 "use client";
 
 // SOPs tab — master (SOP list) / detail (metadata + the visual state-machine
-// canvas). Uses the shared MasterDetail + ListPanel scaffold for the two-pane
-// layout; the SOP rows + detail header stay bespoke (color accent, canvas).
+// canvas). Built on the shared console primitives (components/console) so it wears
+// the same frame as Users / Sites / Ingest; SOP rows + canvas stay bespoke.
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Spinner } from "@/components/ui/kit";
-import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
+import {
+  ConsoleGrid,
+  ConsolePanel,
+  PanelHeader,
+  PanelSearch,
+  PanelList,
+  PanelFooter,
+  CreateButton,
+  EmptyPane,
+} from "@/components/console";
+import { ConfirmDialog } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { titleize, asItems, idOf } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
@@ -51,56 +60,50 @@ export default function SopsTab() {
   });
 
   const aside = (
-    <ListPanel
-      title="SOPs"
-      count={sops.length}
-      search={q}
-      onSearch={setQ}
-      searchPlaceholder="Search SOPs…"
-      action={
-        <button onClick={() => { setMode("create"); setSelectedId(null); }} className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]">
-          <Icon icon="heroicons-outline:plus" /> New
-        </button>
-      }
-    >
-      {sopsQ.isLoading ? (
-        <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-faint"><Spinner className="!h-4 !w-4" /> Loading…</div>
-      ) : filtered.length === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-nb-faint">{q.trim() ? "No SOPs match your search." : <>No SOPs yet. Click <b>New</b>.</>}</div>
-      ) : (
-        <ul className="divide-y divide-nb-line">
-          {filtered.map((s) => {
-            const isSel = sopId(s) === selectedId && mode !== "create";
-            return (
-              <li key={sopId(s)} className="relative">
-                <button
-                  onClick={() => { setSelectedId(sopId(s)); setMode("view"); }}
-                  className={`w-full flex items-start gap-3 rounded-[10px] px-4 py-3 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
-                >
-                  {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-blue" />}
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[rgba(96,165,250,.12)] text-nb-blueb shrink-0">
-                    <Icon icon="heroicons:rectangle-stack" className="text-base" />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-semibold text-nb-ink truncate">{s.name}</span>
-                    <span className="block text-[11px] text-nb-faint">
-                      {typeof s.version === "number" ? `v${s.version} · ` : ""}
-                      {titleize(s.default_priority || "medium")}
-                      {s.is_active === false ? " · Inactive" : ""}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </ListPanel>
+    <ConsolePanel>
+      <PanelHeader icon="heroicons:rectangle-stack" title="SOPs" count={sops.length} />
+      <PanelSearch value={q} onChange={setQ} placeholder="Search SOPs…" />
+      <PanelList
+        loading={sopsQ.isLoading}
+        empty={filtered.length === 0}
+        emptyText={q.trim() ? "No SOPs match your search" : "No SOPs yet"}
+      >
+        {filtered.map((s) => {
+          const isSel = sopId(s) === selectedId && mode !== "create";
+          return (
+            <button
+              key={sopId(s)}
+              onClick={() => { setSelectedId(sopId(s)); setMode("view"); }}
+              className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
+            >
+              {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-blue" />}
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[rgba(96,165,250,.12)] text-nb-blueb shrink-0">
+                <Icon icon="heroicons:rectangle-stack" className="text-base" />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-semibold text-nb-ink truncate">{s.name}</span>
+                <span className="block text-[11px] text-nb-faint">
+                  {typeof s.version === "number" ? `v${s.version} · ` : ""}
+                  {titleize(s.default_priority || "medium")}
+                  {s.is_active === false ? " · Inactive" : ""}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </PanelList>
+
+      <PanelFooter>
+        <CreateButton label="SOP" onClick={() => { setMode("create"); setSelectedId(null); }} />
+      </PanelFooter>
+    </ConsolePanel>
   );
 
   return (
-    <MasterDetail aside={aside} gridCols="lg:grid-cols-[360px_1fr]" fill className="h-full">
-      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
+    <>
+      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]" className="h-full">
+        {aside}
+        <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
           <SopForm
             sop={mode === "edit" ? selected : null}
@@ -113,7 +116,7 @@ export default function SopsTab() {
             }}
           />
         ) : !selected ? (
-          <EmptyDetail icon="heroicons:rectangle-stack" title="No SOP selected" subtitle="Pick one from the list or click New." />
+          <EmptyPane icon="heroicons:rectangle-stack" title="No SOP selected" subtitle="Pick one from the list, or click ＋ NEW SOP to create one." />
         ) : (
           <SopBuilder
             key={sopId(selected)}
@@ -129,9 +132,10 @@ export default function SopsTab() {
             }
           />
         )}
-      </section>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
-    </MasterDetail>
+    </>
   );
 }

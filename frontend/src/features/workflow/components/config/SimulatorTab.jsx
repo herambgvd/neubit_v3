@@ -15,7 +15,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Spinner, Badge } from "@/components/ui/kit";
+import { Badge, Spinner, checkboxClass } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, idOf } from "@/lib/format";
@@ -125,14 +125,14 @@ export default function SimulatorTab() {
   return (
     <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-2">
       {/* ── Composer ─────────────────────────────────────────────── */}
-      <form onSubmit={submit} className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+      <form onSubmit={submit} className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
         <header className="shrink-0 px-5 py-4 border-b border-nb-line">
-          <h3 className="text-sm font-semibold text-nb-ink">Event composer</h3>
+          <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Event composer</h3>
           <p className="text-xs text-nb-faint">Compose a synthetic event and run it through trigger + format matching.</p>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto scroll-themed px-5 py-4 space-y-4">
           <div>
-            <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Presets</label>
+            <label className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">Presets</label>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {PRESETS.map((p) => (
                 <button
@@ -186,7 +186,7 @@ export default function SimulatorTab() {
           />
 
           <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-nb-line bg-[rgba(6,11,26,.5)]" : "border-nb-warn/40 bg-nb-warn/10"}`}>
-            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className="mt-0.5" />
+            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className={`${checkboxClass} mt-0.5`} />
             <span className="min-w-0">
               <span className="block text-sm font-medium text-nb-ink">Dry run</span>
               <span className="block text-[11px] text-nb-faint">
@@ -198,7 +198,7 @@ export default function SimulatorTab() {
           </label>
 
           <div className="flex items-center justify-end">
-            <button type="submit" disabled={simulate.isPending} className={`inline-flex items-center gap-1.5 rounded-[9px] border px-3.5 py-2 text-sm tracking-[.4px] transition disabled:opacity-50 ${dryRun ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] text-nb-tealb hover:shadow-[0_0_10px_rgba(34,211,238,.25)]" : "border-nb-crit/50 bg-nb-crit/10 text-nb-crit hover:shadow-[0_0_10px_rgba(248,113,113,.25)]"}`}>
+            <button type="submit" disabled={simulate.isPending} className={`inline-flex items-center gap-1.5 rounded-[9px] border px-3.5 py-2 text-sm tracking-[.4px] transition disabled:opacity-50 ${dryRun ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.14)] text-nb-blueb hover:bg-[rgba(96,165,250,.22)]" : "border-nb-crit/50 bg-nb-crit/10 text-nb-crit hover:shadow-[0_0_10px_rgba(248,113,113,.25)]"}`}>
               <Icon icon={dryRun ? "heroicons-outline:beaker" : "heroicons-outline:bolt"} className="text-sm" />
               {simulate.isPending ? "Simulating…" : dryRun ? "Simulate" : "Run live"}
             </button>
@@ -207,10 +207,10 @@ export default function SimulatorTab() {
       </form>
 
       {/* ── Result ───────────────────────────────────────────────── */}
-      <div className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+      <div className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
         <header className="shrink-0 px-5 py-4 border-b border-nb-line flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-nb-ink">Result</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Result</h3>
             <p className="text-xs text-nb-faint">What the event matched.</p>
           </div>
           {result && (

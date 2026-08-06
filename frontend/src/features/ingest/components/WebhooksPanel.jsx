@@ -52,7 +52,7 @@ export default function WebhooksPanel({ category, catId }) {
           </p>
         </div>
         {!creating && !editing && (
-          <Button variant="success" icon="heroicons-outline:plus" onClick={() => setCreating(true)} className="!px-3 !py-1.5 text-xs">
+          <Button variant="action" icon="heroicons-outline:plus" onClick={() => setCreating(true)} className="!px-3 !py-1.5 text-xs">
             Add webhook
           </Button>
         )}

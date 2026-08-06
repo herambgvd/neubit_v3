@@ -24,16 +24,16 @@ export function NotificationItem({ notification, onMarkRead, marking }) {
   return (
     <Card
       className={`p-4 flex items-start justify-between gap-4 ${
-        n.read ? "" : "border-l-2 !border-l-foreground bg-hover"
+        n.read ? "" : "border-l-2 !border-l-foreground bg-white/5"
       }`}
     >
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           {!n.read && <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0" />}
-          <p className="font-medium text-foreground text-foreground truncate">{n.title}</p>
+          <p className="font-medium text-nb-ink truncate">{n.title}</p>
         </div>
-        {n.body && <p className="text-sm text-muted text-muted mt-1">{n.body}</p>}
-        <p className="text-xs text-muted mt-2">{formatTime(n.ts)}</p>
+        {n.body && <p className="text-sm text-nb-muted mt-1">{n.body}</p>}
+        <p className="text-xs text-nb-muted mt-2">{formatTime(n.ts)}</p>
       </div>
       {!n.read && (
         <Button

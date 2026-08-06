@@ -53,6 +53,9 @@ export const configConsoles = [
   { title: "Workflow", icon: "heroicons-outline:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
   { title: "Ingest", icon: "heroicons-outline:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
   { title: "Security", icon: "heroicons-outline:shield-exclamation", link: "/config/security", perm: "security.manage" },
+  // Federation is a System & Policy console on the HOME launcher — list it here too
+  // so the ⌘K command palette can reach it like every other Configurations surface.
+  { title: "Federation", icon: "heroicons-outline:share", link: "/federation", perm: "vms.camera.read", module: "vms" },
   { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
   { title: "Platform", icon: "heroicons-outline:squares-2x2", link: "/platform", perm: "settings.manage" },
   { title: "Audit", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },

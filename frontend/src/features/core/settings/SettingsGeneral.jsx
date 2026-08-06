@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { ActionButton } from "@/components/console";
 import { Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import SettingField from "./components/SettingField";
@@ -55,13 +56,13 @@ export default function SettingsGeneralPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col px-1 text-nb-ink">
       <div className="mb-3 flex shrink-0 items-center justify-end">
-        <button
+        <ActionButton
+          icon="heroicons-outline:check"
           disabled={save.isPending || cfg.isLoading}
           onClick={() => save.mutate()}
-          className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-50"
         >
           {save.isPending ? "Saving…" : "Save changes"}
-        </button>
+        </ActionButton>
       </div>
 
       {cfg.isLoading ? (

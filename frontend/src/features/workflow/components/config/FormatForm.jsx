@@ -6,9 +6,10 @@
 // bespoke row for the colour swatches (below Field's control API). The parent
 // (FormatsTab) owns the mutation; this form just collects + validates a body.
 import { useState } from "react";
-import { Button } from "@/components/ui/kit";
+import { Button, Checkbox } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { titleize, idOf } from "@/lib/format";
+import { PaneForm } from "@/components/console";
 
 const ALERT_CATEGORIES = ["custom", "security", "performance", "maintenance", "system"];
 const SEVERITIES = ["low", "medium", "high", "critical"];
@@ -60,8 +61,18 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-4 space-y-4">
-      <h4 className="text-sm font-semibold text-nb-ink">{isEdit ? `Edit ${format.name}` : "Add alert format"}</h4>
+    <PaneForm
+      title={isEdit ? `Edit ${format.name}` : "Add alert format"}
+      onSubmit={submit}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" variant="action" icon="heroicons-outline:check" disabled={pending}>
+            {pending ? "Saving…" : isEdit ? "Save changes" : "Create format"}
+          </Button>
+        </>
+      }
+    >
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field
@@ -130,7 +141,7 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
               type="button"
               onClick={() => setColorCode(c)}
               title={c}
-              className={`h-7 w-7 rounded-md border transition ${colorCode.toLowerCase() === c ? "ring-2 ring-offset-1 ring-offset-card ring-foreground border-transparent" : "border-nb-line"}`}
+              className={`h-7 w-7 rounded-md border transition ${colorCode.toLowerCase() === c ? "ring-2 ring-offset-1 ring-offset-[rgba(8,15,34,.5)] ring-nb-blue border-transparent" : "border-nb-line"}`}
               style={{ background: c }}
             />
           ))}
@@ -145,7 +156,7 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
           <input
             value={colorCode}
             onChange={(e) => setColorCode(e.target.value)}
-            className="h-8 w-28 rounded-lg border border-field bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-none focus:border-muted"
+            className="h-8 w-28 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal"
             placeholder="#ef4444"
           />
         </div>
@@ -172,18 +183,10 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
       </div>
 
       <div className="flex flex-wrap items-center gap-5">
-        <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
-          <input type="checkbox" checked={alertSound} onChange={(e) => setAlertSound(e.target.checked)} /> Play alert sound
-        </label>
-        <label className="flex items-center gap-2 text-sm text-nb-ink cursor-pointer">
-          <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active
-        </label>
+        <Checkbox label="Play alert sound" checked={alertSound} onChange={setAlertSound} />
+        <Checkbox label="Active" checked={isActive} onChange={setIsActive} />
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>
-        <Button type="submit" disabled={pending} className="!px-3 !py-1.5 text-xs">{pending ? "Saving…" : isEdit ? "Save changes" : "Create format"}</Button>
-      </div>
-    </form>
+    </PaneForm>
   );
 }

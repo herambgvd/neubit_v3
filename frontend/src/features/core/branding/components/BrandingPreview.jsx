@@ -4,15 +4,13 @@
 // current form values (colors, name, logo). Presentational.
 import { Icon } from "@iconify/react";
 
-import { Card } from "@/components/ui/kit";
+import { SectionCard, SectionHead } from "@/components/console";
 
 export default function BrandingPreview({ form, logoUrl }) {
   return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted mb-2">
-        Live preview
-      </p>
-      <Card className="overflow-hidden">
+    <SectionCard className="!p-0 overflow-hidden">
+      <SectionHead icon="heroicons-outline:eye" title="Live preview" className="!mb-0 px-4 pt-4" />
+      <div className="mt-3">
         {/* Mini app-bar */}
         <div
           className="flex items-center gap-3 px-4 py-3"
@@ -23,38 +21,38 @@ export default function BrandingPreview({ form, logoUrl }) {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" />
             ) : (
-              <Icon icon="heroicons-outline:sparkles" className="text-lg text-foreground" />
+              <Icon icon="heroicons-outline:sparkles" className="text-lg text-nb-ink" />
             )}
           </div>
-          <span className="font-semibold text-foreground truncate">
+          <span className="font-semibold text-nb-ink truncate">
             {form.app_name || "Your App"}
           </span>
           <span
-            className="ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium text-foreground"
+            className="ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium text-nb-ink"
             style={{ backgroundColor: form.accent_color }}
           >
             Live
           </span>
         </div>
         <div className="p-4 space-y-3">
-          <div className="h-2.5 w-3/4 rounded-full bg-hover bg-hover" />
-          <div className="h-2.5 w-1/2 rounded-full bg-hover bg-hover" />
+          <div className="h-2.5 w-3/4 rounded-full bg-white/10" />
+          <div className="h-2.5 w-1/2 rounded-full bg-white/10" />
           <div className="flex gap-2 pt-2">
             <span
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-foreground"
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-nb-ink"
               style={{ backgroundColor: form.primary_color }}
             >
               Primary
             </span>
             <span
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-foreground"
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-nb-ink"
               style={{ backgroundColor: form.accent_color }}
             >
               Accent
             </span>
           </div>
         </div>
-      </Card>
-    </div>
+      </div>
+    </SectionCard>
   );
 }

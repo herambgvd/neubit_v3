@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
 const STRIP_ROUTES = new Set([
   "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config",
   "/ingest", "/config/security", "/platform", "/config/video-wall",
-  "/config/linkage", "/config/onvif-server",
+  "/config/linkage", "/config/onvif-server", "/federation",
 ]);
 
 export function hasConsoleStrip(pathname) {
@@ -57,11 +57,14 @@ export default function ConsoleStrip() {
   const isVideoWall = pathname === "/config/video-wall";
   const isLinkage = pathname === "/config/linkage";
   const isExternal = pathname === "/config/onvif-server";
+  const isFederation = pathname === "/federation";
   const SOLO = isLinkage
     ? { label: "Linkage", icon: "heroicons-outline:bolt" }
     : isExternal
       ? { label: "External Access", icon: "heroicons-outline:signal" }
-      : null;
+      : isFederation
+        ? { label: "Federation", icon: "heroicons-outline:share" }
+        : null;
 
   return (
     // Bare inline content — the global header owns the bar chrome. nav-scroll +
@@ -151,8 +154,8 @@ export default function ConsoleStrip() {
             ].map((s) => {
               const on = (view || "notifications") === s.v;
               return (
-                <Link key={s.v} href={`/platform?view=${s.v}`} className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 py-1 text-[11px] tracking-[.6px] transition ${on ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"}`}>
-                  <Icon icon={s.icon} className="text-[13px]" /> {s.label}
+                <Link key={s.v} href={`/platform?view=${s.v}`} className={seg(on)}>
+                  <Icon icon={s.icon} className="text-[14px]" /> {s.label}
                 </Link>
               );
             })}

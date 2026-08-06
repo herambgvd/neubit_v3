@@ -3,6 +3,7 @@
 import { Icon } from "@iconify/react";
 
 import { Button, Modal } from "@/components/ui/kit";
+import { FieldLabel } from "@/components/common";
 
 // Shows the freshly-created secret key once, with a copy button.
 export default function RevealKeyModal({ revealed, onClose, copied, onCopy }) {
@@ -19,10 +20,10 @@ export default function RevealKeyModal({ revealed, onClose, copied, onCopy }) {
           <span>Copy this key now — you won't be able to see it again.</span>
         </div>
         <div>
-          <span className="block text-sm font-medium text-muted text-muted mb-1">Secret key</span>
+          <FieldLabel className="mb-1.5 block">Secret key</FieldLabel>
           <div className="flex items-stretch gap-2">
-            <div className="flex-1 min-w-0 rounded-lg border border-card-border border-card-border bg-hover bg-background/40 px-3 py-2.5">
-              <code className="block font-mono text-xs text-foreground text-foreground break-all">
+            <div className="flex-1 min-w-0 rounded-lg border border-nb-line bg-[rgba(8,15,34,.4)] px-3 py-2.5">
+              <code className="block font-mono text-xs text-nb-ink break-all">
                 {revealed?.key}
               </code>
             </div>

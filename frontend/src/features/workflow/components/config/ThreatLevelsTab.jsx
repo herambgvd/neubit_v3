@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Button, Spinner } from "@/components/ui/kit";
+import { Spinner } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
@@ -48,8 +48,8 @@ export default function ThreatLevelsTab() {
 
   return (
     <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-[22rem_1fr]">
-      <form onSubmit={submit} className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] p-5 space-y-4 h-fit">
-        <h3 className="text-sm font-semibold text-nb-ink">Set threat level</h3>
+      <form onSubmit={submit} className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-5 space-y-4 h-fit">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Set threat level</h3>
         <Field
           as="select"
           label="Scope"
@@ -58,7 +58,7 @@ export default function ThreatLevelsTab() {
           options={[{ value: "", label: "Deployment-wide" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]}
         />
         <div>
-          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Level</label>
+          <label className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">Level</label>
           <div className="mt-1 grid grid-cols-2 gap-2">
             {THREAT_LEVELS.map((lv) => (
               <button key={lv} type="button" onClick={() => setLevel(lv)} className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${level === lv ? `${THREAT_COLOR[lv]} border-transparent` : "border-nb-line text-nb-faint hover:bg-[rgba(96,165,250,.06)]"}`}>{lv}</button>
@@ -73,12 +73,12 @@ export default function ThreatLevelsTab() {
           onChange={(e) => setReason(e.target.value)}
           placeholder="Optional context for the change"
         />
-        <button type="submit" disabled={set.isPending} className="w-full inline-flex items-center justify-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-50">{set.isPending ? "Setting…" : "Set threat level"}</button>
+        <button type="submit" disabled={set.isPending} className="w-full inline-flex items-center justify-center gap-1.5 rounded-[9px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.14)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.22)] disabled:opacity-50">{set.isPending ? "Setting…" : "Set threat level"}</button>
       </form>
 
-      <div className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden">
+      <div className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden">
         <header className="shrink-0 px-5 py-4 border-b border-nb-line">
-          <h3 className="text-sm font-semibold text-nb-ink">Current posture</h3>
+          <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Current posture</h3>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto scroll-themed">
         {q.isLoading ? (

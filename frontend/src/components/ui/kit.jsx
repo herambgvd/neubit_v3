@@ -5,8 +5,10 @@
 // the nb.field surface with teal focus rings; labels/text follow the ink→muted→
 // faint ramp. Status-semantic colours (green=ok, amber=warn, red=crit) are kept.
 import { Icon } from "@iconify/react";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+
+import { areaClass, fieldClass, FieldLabel } from "@/components/common/Field";
+import SelectMenu from "@/components/common/SelectMenu";
 
 export function Card({ className = "", children }) {
   return (
@@ -29,38 +31,47 @@ export function PageHeader({ title, subtitle, actions }) {
 const VARIANTS = {
   // Primary inverts with the theme (black-on-white in light, white-on-black in dark).
   primary: "bg-foreground text-background hover:opacity-90",
-  success: "bg-nb-teal text-[#062330] font-semibold hover:bg-nb-tealb", // create actions — NeuBit teal
-  danger: "bg-red-600 hover:bg-red-500 text-white", // delete actions
-  secondary: "bg-transparent border border-nb-line text-nb-ink hover:bg-white/5",
+  // `action` is the Configurations blue — the confirm/save colour on every console
+  // surface. Console's <ActionButton> is this variant, so an inline Save and a modal
+  // footer's Create are the same button rather than two that merely look similar.
+  action:
+    "border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.14)] text-nb-blueb hover:bg-[rgba(96,165,250,.22)]",
+  success: "bg-nb-teal text-[#062330] font-semibold hover:bg-nb-tealb", // create actions — Surveillance teal
+  danger: "border border-nb-crit/40 bg-nb-crit/10 text-nb-crit hover:bg-nb-crit/20", // delete actions
+  secondary: "border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted hover:border-nb-blue hover:text-nb-blueb",
   ghost: "bg-transparent text-nb-muted hover:text-nb-ink hover:bg-white/5",
 };
 
-export function Button({ variant = "primary", icon, className = "", children, ...props }) {
+// `as` lets a button that navigates render as a <Link>/<a>. Wrapping a <button>
+// in a <Link> nests interactive elements — invalid HTML, and it breaks keyboard
+// and assistive-tech navigation.
+export function Button({ as: As = "button", variant = "primary", icon, className = "", children, ...props }) {
+  const extra = As === "button" ? { type: props.type || "button" } : {};
   return (
-    <button
+    <As
       {...props}
-      className={`inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition disabled:opacity-50 disabled:pointer-events-none ${VARIANTS[variant]} ${className}`}
+      {...extra}
+      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] font-medium tracking-[.4px] transition disabled:opacity-50 disabled:pointer-events-none ${VARIANTS[variant]} ${className}`}
     >
-      {icon && <Icon icon={icon} className="text-base" />}
+      {icon && <Icon icon={icon} className="text-[15px]" />}
       {children}
-    </button>
+    </As>
   );
 }
 
-const FIELD =
-  "w-full rounded-md border border-nb-line bg-nb-field px-3 py-2 text-sm text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
+// Control + label styling come from components/common/Field — the ONE definition.
+// The kit used to declare its own (rounded-md, py-2, sentence-case ink label) while
+// common used another (rounded-lg, h-10, uppercase muted label), so a modal built on
+// the kit and a pane form built on common looked like two different products. Both
+// now render the same field; only the wrappers differ.
+const FIELD = `${fieldClass} !mt-0`;
+const AREA = `${areaClass} !mt-0`;
 
-// Kit field label. `required` draws the red asterisk — same convention as the
-// uppercase FieldLabel in components/common, so mandatory fields read the same
-// way whichever form kit a screen is built on. Local on purpose: exporting a
-// second `FieldLabel` under a different look would be easy to import by mistake.
+// Kit field label — the same uppercase micro-label as common's FieldLabel, with the
+// kit's own bottom spacing (the kit stacks label-over-control; common relies on the
+// control's mt-1).
 function Label({ children, required }) {
-  return (
-    <span className="block text-sm font-medium text-nb-ink mb-1.5">
-      {children}
-      {required && <span className="ml-1 text-nb-crit">*</span>}
-    </span>
-  );
+  return <FieldLabel className="mb-1.5 block" required={required}>{children}</FieldLabel>;
 }
 
 export function Input({ label, hint, required, className = "", ...props }) {
@@ -102,111 +113,46 @@ export function PasswordInput({ label, hint, required, className = "", ...props 
   );
 }
 
-// Custom themed dropdown (replaces the native <select> for a consistent dark/light
-// look). The options panel renders in a portal with fixed positioning so it never
-// gets clipped by a scroll container (modals, tables). Drop-in compatible: emits
-// onChange({ target: { value } }) like a native select.
-export function Select({ label, options = [], value, onChange, disabled, placeholder, required, className = "" }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState(null); // { left, top?, bottom?, width }
-  const btnRef = useRef(null);
-  const panelRef = useRef(null);
-
-  const selected = options.find((o) => String(o.value) === String(value ?? ""));
-  const isPlaceholder = !selected || selected.value === "";
-  const displayLabel = selected ? selected.label : placeholder || "Select…";
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e) {
-      if (btnRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
-      setOpen(false);
-    }
-    // Fixed-positioned panel can't follow ancestor scroll, so close on page/
-    // container scroll — but NOT when the scroll happens INSIDE the panel itself
-    // (the options list is `overflow-auto`; capture-phase would otherwise catch
-    // the panel's own scroll and close it, making a long list impossible to
-    // scroll through).
-    function onScroll(e) {
-      if (panelRef.current && panelRef.current.contains(e.target)) return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onScroll);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, [open]);
-
-  function toggle() {
-    if (disabled) return;
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect();
-      const dropUp = window.innerHeight - r.bottom < 260 && r.top > 260;
-      setPos({
-        left: r.left,
-        width: r.width,
-        top: dropUp ? undefined : r.bottom + 4,
-        bottom: dropUp ? window.innerHeight - r.top + 4 : undefined,
-      });
-    }
-    setOpen((o) => !o);
-  }
-
-  function pick(v) {
-    onChange?.({ target: { value: v } });
-    setOpen(false);
-  }
-
+// Select — delegates to the shared SelectMenu so a picker looks and behaves the
+// same whether the screen was built on this kit or on components/common. The kit
+// used to carry its own near-duplicate (no keyboard nav, different active colour);
+// this wrapper only adds the kit's label.
+export function Select({ label, required, className = "", ...props }) {
   return (
     <div className="block">
       {label && <Label required={required}>{label}</Label>}
-      <button
-        ref={btnRef}
-        type="button"
-        disabled={disabled}
-        onClick={toggle}
-        className={`${FIELD} flex items-center justify-between text-left ${
-          isPlaceholder ? "!text-nb-faint" : ""
-        } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${className}`}
-      >
-        <span className="truncate">{displayLabel}</span>
-        <Icon
-          icon="heroicons-outline:chevron-down"
-          className={`text-base shrink-0 ml-2 text-nb-muted transition ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {open && !disabled && pos && typeof document !== "undefined" &&
-        createPortal(
-          <div
-            ref={panelRef}
-            style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, zIndex: 60 }}
-            className="max-h-60 overflow-auto rounded-lg border border-nb-line bg-[rgba(8,15,34,.93)] backdrop-blur-md shadow-2xl py-1 animate-fade-in"
-          >
-            {options.map((o, i) => {
-              const active = String(o.value) === String(value ?? "");
-              return (
-                <button
-                  key={`${o.value ?? ""}-${i}`}
-                  type="button"
-                  onClick={() => pick(o.value)}
-                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition ${
-                    active ? "text-nb-ink bg-nb-teal/10" : "text-nb-muted hover:text-nb-ink hover:bg-white/5"
-                  }`}
-                >
-                  <span className="truncate">{o.label}</span>
-                  {active && !isPlaceholder && <Icon icon="heroicons-outline:check" className="text-base shrink-0 text-nb-teal" />}
-                </button>
-              );
-            })}
-          </div>,
-          document.body
-        )}
+      <SelectMenu {...props} className={`!mt-0 ${className}`} />
     </div>
+  );
+}
+
+// For the few places a raw <input type="checkbox"> has to stay because it sits
+// inside a bespoke row layout (permission grids, payload pickers): this gives it
+// the same size and accent as <Checkbox> so the two never look like two controls.
+export const checkboxClass = "h-4 w-4 shrink-0 cursor-pointer accent-nb-blue";
+
+// Themed checkbox — replaces the native box, whose blue accent and sizing did not
+// match anything else in the console. Renders label + box as one clickable row.
+export function Checkbox({ label, checked, onChange, disabled, className = "", ...props }) {
+  return (
+    <label className={`inline-flex cursor-pointer select-none items-center gap-2 ${disabled ? "opacity-50" : ""} ${className}`}>
+      <span
+        className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border transition ${
+          checked ? "border-nb-blue bg-nb-blue text-[#0c1530]" : "border-nb-line bg-nb-field"
+        }`}
+      >
+        {checked && <Icon icon="heroicons-mini:check" className="text-[13px]" />}
+      </span>
+      <input
+        type="checkbox"
+        checked={!!checked}
+        disabled={disabled}
+        onChange={(e) => onChange?.(e.target.checked, e)}
+        className="sr-only"
+        {...props}
+      />
+      {label && <span className="text-sm text-nb-muted">{label}</span>}
+    </label>
   );
 }
 
@@ -214,7 +160,7 @@ export function Textarea({ label, required, className = "", ...props }) {
   return (
     <label className="block">
       {label && <Label required={required}>{label}</Label>}
-      <textarea {...props} aria-required={required || undefined} className={`${FIELD} ${className}`} />
+      <textarea {...props} aria-required={required || undefined} className={`${AREA} ${className}`} />
     </label>
   );
 }

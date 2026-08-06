@@ -8,7 +8,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Input, Toggle } from "@/components/ui/kit";
+import { ActionButton, QuietButton } from "@/components/console";
+import { Input, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { security } from "../api";
 import SecuritySection from "./SecuritySection";
@@ -120,25 +121,24 @@ export default function DirectoryCard({ canManage }) {
         canManage && (
           <div className="flex items-center gap-2">
             {configured && (
-              <Button
-                variant="secondary"
+              <QuietButton
                 icon="heroicons-outline:arrow-path"
                 disabled={sync.isPending}
                 onClick={() => sync.mutate()}
               >
                 {sync.isPending ? "Syncing…" : "Sync"}
-              </Button>
+              </QuietButton>
             )}
-            <Button variant="primary" icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
+            <ActionButton icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
               {save.isPending ? "Saving…" : "Save"}
-            </Button>
+            </ActionButton>
           </div>
         )
       }
     >
       <div className="space-y-4">
-        <label className="flex items-center justify-between rounded-lg border border-card-border bg-hover/30 px-3 py-2.5">
-          <span className="text-sm text-foreground">Directory enabled</span>
+        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
+          <span className="text-sm text-nb-ink">Directory enabled</span>
           <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} />
         </label>
 
@@ -162,17 +162,17 @@ export default function DirectoryCard({ canManage }) {
             placeholder={hasBindPassword ? PLACEHOLDER : "Set the bind password"}
             autoComplete="new-password"
           />
-          <label className="flex items-center justify-between rounded-lg border border-card-border bg-hover/30 px-3 py-2.5">
-            <span className="text-sm text-foreground">Use SSL/TLS</span>
+          <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
+            <span className="text-sm text-nb-ink">Use SSL/TLS</span>
             <Toggle checked={form.use_ssl} onChange={(v) => set({ use_ssl: v })} disabled={!canManage} />
           </label>
         </div>
 
-        <details className="rounded-lg border border-card-border">
-          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted">
+        <details className="rounded-lg border border-nb-line">
+          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium uppercase tracking-wide text-nb-muted">
             Attribute mapping
           </summary>
-          <div className="grid grid-cols-1 gap-3 border-t border-card-border p-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 border-t border-nb-line p-3 sm:grid-cols-2">
             <Input label="User DN base (optional)" value={form.user_dn_base} onChange={(e) => set({ user_dn_base: e.target.value })} disabled={!canManage} placeholder="ou=Users,dc=example,dc=com" />
             <Input label="User filter" value={form.user_filter} onChange={(e) => set({ user_filter: e.target.value })} disabled={!canManage} />
             <Input label="Email attribute" value={form.email_attr} onChange={(e) => set({ email_attr: e.target.value })} disabled={!canManage} />
@@ -191,7 +191,7 @@ export default function DirectoryCard({ canManage }) {
         />
 
         {configured && canManage && (
-          <div className="flex items-center gap-2 border-t border-card-border pt-3">
+          <div className="flex items-center gap-2 border-t border-nb-line pt-3">
             <Icon icon="heroicons-outline:exclamation-triangle" className="text-sm text-red-500" />
             <button
               className="text-xs text-red-500 transition hover:underline"
@@ -204,10 +204,10 @@ export default function DirectoryCard({ canManage }) {
           </div>
         )}
 
-        <p className="flex items-start gap-2 text-[11px] text-muted">
+        <p className="flex items-start gap-2 text-[11px] text-nb-muted">
           <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0" />
           Live LDAP bind requires the server to have the ldap3 extra installed and reachable directory. Sync reports
-          <span className="mx-1 rounded bg-hover px-1">live: true</span> when a real bind was used.
+          <span className="mx-1 rounded bg-white/5 px-1">live: true</span> when a real bind was used.
         </p>
       </div>
     </SecuritySection>

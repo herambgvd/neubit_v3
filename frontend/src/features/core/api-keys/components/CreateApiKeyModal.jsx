@@ -12,7 +12,7 @@ export default function CreateApiKeyModal({ open, onClose, form, setForm, roleOp
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button
-            variant="success"
+            variant="action"
             disabled={creating || !form.name || !form.role_id}
             onClick={onCreate}
           >

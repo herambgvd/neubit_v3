@@ -5,14 +5,14 @@
 // state + save mutation; calls onSaved(saved) / onCancel back to the parent.
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/kit";
+import { ActionButton, QuietButton, PaneForm } from "@/components/console";
 import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { tags as tagsApi } from "@/lib/api/tags";
 import { DEFAULT_COLOR, HEX_RE, SWATCHES } from "../constants";
+import { checkboxClass } from "@/components/ui/kit";
 
 export default function TagForm({ tag, onCancel, onSaved }) {
   const isEdit = !!tag;
@@ -53,25 +53,19 @@ export default function TagForm({ tag, onCancel, onSaved }) {
   const clearErr = (key) => errors[key] && setErrors((p) => ({ ...p, [key]: undefined }));
 
   return (
-    <form noValidate onSubmit={submit} className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-center justify-between px-6 py-5 border-b border-card-border">
-        <div className="flex items-center gap-3">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-white" style={{ background: HEX_RE.test(color) ? color : DEFAULT_COLOR }}>
-            <Icon icon="heroicons:tag" className="text-xl" />
-          </span>
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">{isEdit ? `Edit ${tag.name}` : "Create tag"}</h2>
-            <p className="text-xs text-muted mt-0.5">
-              {isEdit ? "Update this label's name, color or description." : "Add a new cross-cutting label."}
-            </p>
-          </div>
-        </div>
-        <button type="button" onClick={onCancel} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-foreground">
-          <Icon icon="heroicons-outline:x-mark" className="text-base" />
-        </button>
-      </header>
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-5">
+    <PaneForm
+      title={isEdit ? `Edit ${tag.name}` : "Create tag"}
+      subtitle={isEdit ? "Update this label's name, color or description." : "Add a new cross-cutting label."}
+      onSubmit={submit}
+      footer={
+        <>
+          <QuietButton onClick={onCancel}>Cancel</QuietButton>
+          <ActionButton type="submit" icon="heroicons-outline:check" disabled={saving.isPending}>
+            {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create tag"}
+          </ActionButton>
+        </>
+      }
+    >
         <div className="max-w-lg space-y-5">
           <Field
             label="Name"
@@ -95,7 +89,7 @@ export default function TagForm({ tag, onCancel, onSaved }) {
                   setColor(e.target.value);
                   clearErr("color");
                 }}
-                className="h-10 w-16 rounded-md border border-field cursor-pointer bg-transparent"
+                className="h-10 w-16 rounded-md border border-nb-line cursor-pointer bg-transparent"
               />
               <input
                 value={color}
@@ -103,7 +97,7 @@ export default function TagForm({ tag, onCancel, onSaved }) {
                   setColor(e.target.value);
                   clearErr("color");
                 }}
-                className={`h-10 flex-1 rounded-md border border-field bg-transparent px-3 text-sm font-mono text-foreground outline-none focus:border-muted ${errors.color ? "!border-red-500" : ""}`}
+                className={`h-10 flex-1 rounded-md border border-nb-line bg-transparent px-3 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal ${errors.color ? "!border-red-500" : ""}`}
               />
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -117,7 +111,7 @@ export default function TagForm({ tag, onCancel, onSaved }) {
                     clearErr("color");
                   }}
                   className={`h-6 w-6 rounded-full border transition ${
-                    color?.toUpperCase() === c ? "border-foreground scale-110" : "border-card-border"
+                    color?.toUpperCase() === c ? "border-nb-ink scale-110" : "border-nb-line"
                   }`}
                   style={{ background: c }}
                 />
@@ -136,20 +130,12 @@ export default function TagForm({ tag, onCancel, onSaved }) {
           />
 
           {isEdit && (
-            <label className="flex items-center gap-2 h-10 px-3 rounded-lg border border-field bg-transparent text-sm cursor-pointer w-fit">
-              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-              <span className="text-foreground">Active</span>
+            <label className="flex items-center gap-2 h-10 px-3 rounded-lg border border-nb-line bg-transparent text-sm cursor-pointer w-fit">
+              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className={checkboxClass} />
+              <span className="text-nb-ink">Active</span>
             </label>
           )}
         </div>
-      </div>
-
-      <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-card-border shrink-0">
-        <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" variant="success" disabled={saving.isPending}>
-          {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create tag"}
-        </Button>
-      </div>
-    </form>
+    </PaneForm>
   );
 }

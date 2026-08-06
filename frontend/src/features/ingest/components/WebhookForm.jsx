@@ -12,7 +12,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/kit";
+import { Button, Checkbox } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
@@ -141,7 +141,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
   return (
     <form noValidate onSubmit={submit} className="space-y-4 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-[13px] font-semibold text-nb-ink">{isEdit ? `Edit webhook · ${webhook.name}` : "Add webhook"}</h4>
+        <h4 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{isEdit ? `Edit webhook · ${webhook.name}` : "Add webhook"}</h4>
         <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink">
           <Icon icon="heroicons-outline:x-mark" className="text-sm" />
         </button>
@@ -288,10 +288,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
         hint="Optional JSON Schema to validate the transformed payload."
       />
 
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-nb-soft">
-        <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="accent-nb-teal" />
-        Active
-      </label>
+      <Checkbox label="Active" checked={isActive} onChange={setIsActive} />
 
       <div className="flex items-center justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>

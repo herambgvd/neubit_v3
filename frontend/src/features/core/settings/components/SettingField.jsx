@@ -9,6 +9,7 @@ import { Icon } from "@iconify/react";
 import { useState } from "react";
 
 import { Input, Toggle } from "@/components/ui/kit";
+import { FieldLabel } from "@/components/common";
 
 export default function SettingField({ item, value, onChange }) {
   const [reveal, setReveal] = useState(false);
@@ -28,27 +29,27 @@ export default function SettingField({ item, value, onChange }) {
   // Secret fields (API keys, passwords) mask their value and expose an eye toggle.
   if (item.secret) {
     return (
-      <div className="py-3 border-b border-card-border last:border-0">
+      <div className="py-3 border-b border-nb-line last:border-0">
         <label className="block">
-          <span className="block text-sm font-medium text-foreground mb-1.5">{item.label}</span>
+          <FieldLabel className="mb-1.5 block">{item.label}</FieldLabel>
           <div className="relative">
             <input
               type={reveal ? "text" : "password"}
               value={value ?? ""}
               placeholder={item.placeholder || ""}
               onChange={(e) => onChange(e.target.value)}
-              className="w-full rounded-md border border-field bg-transparent px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted"
+              className="w-full rounded-md border border-nb-line bg-transparent px-3 py-2 pr-10 text-sm text-nb-ink placeholder:text-nb-muted outline-none transition focus:border-nb-teal"
             />
             <button
               type="button"
               onClick={() => setReveal((r) => !r)}
               aria-label={reveal ? "Hide value" : "Show value"}
-              className="absolute inset-y-0 right-0 flex items-center px-3 text-muted hover:text-foreground transition"
+              className="absolute inset-y-0 right-0 flex items-center px-3 text-nb-muted hover:text-nb-ink transition"
             >
               <Icon icon={reveal ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="text-base" />
             </button>
           </div>
-          {item.description && <span className="block text-xs text-muted mt-1">{item.description}</span>}
+          {item.description && <span className="block text-xs text-nb-muted mt-1">{item.description}</span>}
         </label>
       </div>
     );

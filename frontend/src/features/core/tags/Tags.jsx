@@ -9,10 +9,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Icon } from "@iconify/react";
-
+import {
+  ConsoleGrid,
+  ConsolePanel,
+  PanelHeader,
+  PanelCounts,
+  PanelSearch,
+  PanelFooter,
+  CreateButton,
+  EmptyPane,
+} from "@/components/console";
 import { ConfirmDialog } from "@/components/ui/kit";
-import { MasterDetail, ListPanel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { tags as tagsApi } from "@/lib/api/tags";
 import TagList from "./components/TagList";
@@ -72,40 +79,25 @@ export default function TagsConfigPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MasterDetail
-        fill
-        className="min-h-0 flex-1"
-        aside={
-          <ListPanel
+      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]">
+        {/* LEFT — library */}
+        <ConsolePanel>
+          <PanelHeader
+            icon="heroicons-outline:tag"
             title="Tags"
             count={total}
-            search={q}
-            onSearch={setQ}
-            searchPlaceholder="Search tags…"
-            action={
-              <button
-                onClick={() => {
-                  setSelectedId(null);
-                  setMode("create");
-                }}
-                title="Add tag"
-                className="inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2 text-[12px] font-medium text-white transition hover:bg-emerald-500"
-              >
-                <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
-              </button>
+            actions={
+              <PanelCounts
+                items={[
+                  { tone: "good", value: active, label: "active" },
+                  { tone: "idle", value: inactive, label: "inactive" },
+                ]}
+              />
             }
-          >
-            <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                <span className="text-muted">{active} active</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
-                <span className="text-muted">{inactive} inactive</span>
-              </span>
-            </div>
+          />
+          <PanelSearch value={q} onChange={setQ} placeholder="Search tags…" />
 
+          <div className="min-h-0 flex-1 overflow-y-auto px-3">
             <TagList
               items={filtered}
               loading={tagsQ.isLoading}
@@ -117,10 +109,21 @@ export default function TagsConfigPage() {
                 setMode("view");
               }}
             />
-          </ListPanel>
-        }
-      >
-        <section className="rounded-xl border border-card-border bg-card overflow-hidden min-h-full flex flex-col">
+          </div>
+
+          <PanelFooter>
+            <CreateButton
+              label="TAG"
+              onClick={() => {
+                setSelectedId(null);
+                setMode("create");
+              }}
+            />
+          </PanelFooter>
+        </ConsolePanel>
+
+        {/* CENTER — detail */}
+        <ConsolePanel>
           {mode === "create" || editing ? (
             <TagForm
               key={editing ? editing.tag_id : "create"}
@@ -133,15 +136,11 @@ export default function TagsConfigPage() {
               }}
             />
           ) : !selected ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-              <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-hover text-muted">
-                <Icon icon="heroicons:tag" className="text-xl" />
-              </span>
-              <div className="mt-3 text-sm font-semibold text-foreground">No tag selected</div>
-              <div className="text-xs text-muted mt-0.5">
-                Pick one from the list, or click <b>Add tag</b> to create a new tag.
-              </div>
-            </div>
+            <EmptyPane
+              icon="heroicons-outline:tag"
+              title="No tag selected"
+              subtitle="Pick one from the list, or click ＋ NEW TAG to create a tag."
+            />
           ) : (
             <TagDetail
               tag={selected}
@@ -159,8 +158,8 @@ export default function TagsConfigPage() {
               }
             />
           )}
-        </section>
-      </MasterDetail>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
     </div>

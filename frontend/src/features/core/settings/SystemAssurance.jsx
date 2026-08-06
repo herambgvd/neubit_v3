@@ -49,7 +49,7 @@ function Section({ icon, title, link, linkLabel, children }) {
         <Icon icon={icon} className="text-sm text-nb-blueb" />
         <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{title}</span>
         {link && (
-          <Link href={link} className="ml-auto flex items-center gap-1 text-[11px] text-nb-blueb transition hover:text-nb-tealb">
+          <Link href={link} className="ml-auto flex items-center gap-1 text-[11px] text-nb-blueb transition hover:text-nb-ink">
             {linkLabel || "Manage"} <Icon icon="heroicons-mini:arrow-right" className="text-[12px]" />
           </Link>
         )}

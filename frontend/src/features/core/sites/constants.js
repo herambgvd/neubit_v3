@@ -22,7 +22,7 @@ export const THREAT_PILL = {
   elevated: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   high: "bg-orange-500/10 text-orange-500 border-orange-500/20",
   critical: "bg-red-500/10 text-red-500 border-red-500/20",
-  lockdown: "bg-hover text-foreground border-card-border",
+  lockdown: "bg-white/5 text-nb-ink border-nb-line",
 };
 
 // Map-marker tones (raw hex — used for Google Maps SymbolPath fill + info-window).

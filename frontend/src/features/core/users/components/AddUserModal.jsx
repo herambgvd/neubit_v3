@@ -15,7 +15,7 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button
-            variant="success"
+            variant="action"
             disabled={creating || !form.email || !form.password || !form.role_id}
             onClick={onCreate}
           >

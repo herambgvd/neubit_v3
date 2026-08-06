@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { ActionButton } from "@/components/console";
 import { Button, Card, ConfirmDialog, Input } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 
@@ -66,9 +67,9 @@ export default function RetentionCard() {
               onChange={(e) => setDays(e.target.value)}
             />
           </div>
-          <Button variant="primary" disabled={savePolicy.isPending} onClick={() => savePolicy.mutate()}>
+          <ActionButton disabled={savePolicy.isPending} onClick={() => savePolicy.mutate()}>
             {savePolicy.isPending ? "Saving…" : "Save"}
-          </Button>
+          </ActionButton>
           <Button
             variant="danger"
             icon="heroicons-outline:trash"

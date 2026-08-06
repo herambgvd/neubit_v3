@@ -9,7 +9,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Input, Toggle } from "@/components/ui/kit";
+import { ActionButton } from "@/components/console";
+import { Input, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { security } from "../api";
 import SecuritySection from "./SecuritySection";
@@ -111,15 +112,15 @@ export default function SsoCard({ canManage }) {
       error={q.isError ? apiError(q.error, "Failed to load SSO") : null}
       action={
         canManage && (
-          <Button variant="primary" icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
+          <ActionButton icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Saving…" : "Save"}
-          </Button>
+          </ActionButton>
         )
       }
     >
       <div className="space-y-4">
-        <label className="flex items-center justify-between rounded-lg border border-card-border bg-hover/30 px-3 py-2.5">
-          <span className="text-sm text-foreground">SSO enabled</span>
+        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
+          <span className="text-sm text-nb-ink">SSO enabled</span>
           <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} />
         </label>
 
@@ -140,11 +141,11 @@ export default function SsoCard({ canManage }) {
           <Input label="Default role (optional)" value={form.default_role} onChange={(e) => set({ default_role: e.target.value })} disabled={!canManage} placeholder="viewer" />
         </div>
 
-        <details className="rounded-lg border border-card-border">
-          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted">
+        <details className="rounded-lg border border-nb-line">
+          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium uppercase tracking-wide text-nb-muted">
             Claim mapping
           </summary>
-          <div className="grid grid-cols-1 gap-3 border-t border-card-border p-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 border-t border-nb-line p-3 sm:grid-cols-3">
             <Input label="Email claim" value={form.email_claim} onChange={(e) => set({ email_claim: e.target.value })} disabled={!canManage} />
             <Input label="Name claim" value={form.name_claim} onChange={(e) => set({ name_claim: e.target.value })} disabled={!canManage} />
             <Input label="Groups claim" value={form.groups_claim} onChange={(e) => set({ groups_claim: e.target.value })} disabled={!canManage} placeholder="groups" />
@@ -159,23 +160,23 @@ export default function SsoCard({ canManage }) {
           disabled={!canManage}
         />
 
-        <label className="flex items-center justify-between rounded-lg border border-card-border bg-hover/30 px-3 py-2.5">
+        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
           <div>
-            <span className="text-sm text-foreground">Auto-provision users</span>
-            <p className="text-xs text-muted">Create a user on first successful SSO login.</p>
+            <span className="text-sm text-nb-ink">Auto-provision users</span>
+            <p className="text-xs text-nb-muted">Create a user on first successful SSO login.</p>
           </div>
           <Toggle checked={form.auto_provision} onChange={(v) => set({ auto_provision: v })} disabled={!canManage} />
         </label>
 
         {/* IdP app-registration hints */}
-        <div className="rounded-lg border border-card-border bg-hover/30 p-3">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Configure these in your IdP</p>
+        <div className="rounded-lg border border-nb-line bg-white/[.04] p-3">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-nb-muted">Configure these in your IdP</p>
           <UrlRow label="Login URL" value={loginUrl} />
           <UrlRow label="Redirect / callback URL" value={callbackUrl} />
         </div>
 
         {configured && canManage && (
-          <div className="flex items-center gap-2 border-t border-card-border pt-3">
+          <div className="flex items-center gap-2 border-t border-nb-line pt-3">
             <Icon icon="heroicons-outline:exclamation-triangle" className="text-sm text-red-500" />
             <button
               className="text-xs text-red-500 transition hover:underline"
@@ -188,7 +189,7 @@ export default function SsoCard({ canManage }) {
           </div>
         )}
 
-        <p className="flex items-start gap-2 text-[11px] text-muted">
+        <p className="flex items-start gap-2 text-[11px] text-nb-muted">
           <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0" />
           The token-exchange callback is validated against a real IdP at login time. Discovery ({form.issuer || "issuer"}
           /.well-known/openid-configuration) must be reachable.
@@ -205,11 +206,11 @@ function UrlRow({ label, value }) {
   };
   return (
     <div className="mt-1.5 flex items-center gap-3">
-      <span className="w-44 shrink-0 text-xs text-muted">{label}</span>
-      <code className="flex-1 truncate rounded-md border border-card-border bg-background/50 px-2.5 py-1.5 text-xs text-foreground">
+      <span className="w-44 shrink-0 text-xs text-nb-muted">{label}</span>
+      <code className="flex-1 truncate rounded-md border border-nb-line bg-[rgba(8,15,34,.5)] px-2.5 py-1.5 text-xs text-nb-ink">
         {value}
       </code>
-      <button className="text-muted transition hover:text-foreground" title="Copy" onClick={copy}>
+      <button className="text-nb-muted transition hover:text-nb-ink" title="Copy" onClick={copy}>
         <Icon icon="heroicons-outline:clipboard-document" className="text-base" />
       </button>
     </div>

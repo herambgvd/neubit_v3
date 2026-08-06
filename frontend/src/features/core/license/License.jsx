@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Spinner } from "@/components/ui/kit";
+import { LoadingBlock } from "@/components/console";
 import { api, apiError } from "@/lib/api";
 import LicenseOverview from "./components/LicenseOverview";
 import TenantEntitlements from "./components/TenantEntitlements";
@@ -35,17 +35,15 @@ export default function LicensePage() {
   const lic = license.data;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* The tenant's own plan/modules/limits (multi-tenant). */}
       <TenantEntitlements />
 
       {/* The platform / on-prem signed license (renew here). */}
       {license.isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner />
-        </div>
+        <LoadingBlock />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-3 lg:grid-cols-3">
           <LicenseOverview lic={lic} />
           <UpdateLicensePanel
             token={token}
