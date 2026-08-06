@@ -16,6 +16,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import UsersRolesStrip from "@/components/shell/UsersRolesStrip";
+import { WORKFLOW_VIEWS } from "@/features/workflow/constants";
 import { useAuth } from "@/lib/auth";
 
 // Routes that render a console strip (must match AppLayout's minimalConsole set,
@@ -84,9 +85,22 @@ export default function ConsoleStrip() {
       )}
 
       {isWorkflow && (
-        <div className={modtab}>
-          <Icon icon="heroicons-outline:rectangle-stack" className="text-[14px]" />
-          Workflow
+        <div className="flex min-w-0 items-center gap-2">
+          <div className={modtab}>
+            <Icon icon="heroicons-outline:rectangle-stack" className="text-[14px]" />
+            Workflow
+          </div>
+          <div className={segBox}>
+            {WORKFLOW_VIEWS.map((s, i) => {
+              // First entry is the default view — it owns the bare /workflow-config URL.
+              const on = i === 0 ? !view || view === s.key : view === s.key;
+              return (
+                <Link key={s.key} href={`/workflow-config?view=${s.key}`} className={seg(on)}>
+                  <Icon icon={s.icon} className="text-[14px]" /> {s.label}
+                </Link>
+              );
+            })}
+          </div>
         </div>
       )}
 

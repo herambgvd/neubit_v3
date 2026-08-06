@@ -276,8 +276,10 @@ export default function HomePage() {
         })}
       </div>
 
-      {/* active pane — one mode at a time, left-anchored */}
-      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-8 pt-10 lg:px-[11%]">
+      {/* Active pane — one mode at a time, left-anchored. scroll-none: the launcher is
+          a single-viewport, chrome-free surface, so the pane still scrolls (wheel /
+          touch / keyboard) when a mode's tiles overflow, but draws no bar. */}
+      <div className="scroll-none relative z-10 min-h-0 flex-1 overflow-y-auto px-8 pt-10 lg:px-[11%]">
         <div
           className={
             activeMode.layout === "column"

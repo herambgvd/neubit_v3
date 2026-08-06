@@ -36,3 +36,19 @@ export const INCIDENT_SOURCES = [
 
 // Camera-origin source values → the incident carries a linked camera event.
 export const CAMERA_SOURCES = new Set(["vision"]);
+
+// ── Workflow console sub-views ────────────────────────────────────────────
+// The /workflow-config console's seven surfaces. Like every other console
+// (Platform, Security, System, Sites), the active one is chosen by ?view= and its
+// segment lives in the global header bar — NOT in the page. So this list is shared:
+// ConsoleStrip renders the segment from it and WorkflowConfig maps `key` to the tab
+// component. `key` is the ?view= value; the FIRST entry is the default view.
+export const WORKFLOW_VIEWS = [
+  { key: "sops", label: "SOPS", icon: "heroicons:rectangle-stack" },
+  { key: "triggers", label: "TRIGGERS", icon: "heroicons:bolt" },
+  { key: "forms", label: "FORMS", icon: "heroicons-outline:clipboard-document-list" },
+  { key: "formats", label: "FORMATS", icon: "heroicons-outline:swatch" },
+  { key: "simulator", label: "SIMULATOR", icon: "heroicons-outline:beaker" },
+  { key: "notifications", label: "NOTIFICATIONS", icon: "heroicons-outline:bell-alert" },
+  { key: "threat", label: "THREAT LEVELS", icon: "heroicons-outline:shield-exclamation" },
+];
