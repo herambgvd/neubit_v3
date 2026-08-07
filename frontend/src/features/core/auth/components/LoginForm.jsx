@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { NbLabel, NbInput, NbSubmit, NbError } from "./NeubitAuthShell";
+import { NbLabel, NbInput, NbSubmit, NbError, NbFieldError } from "./NeubitAuthShell";
 import {
   GoogleGlyph,
   AppleGlyph,
@@ -45,18 +45,48 @@ function SsoButton({ label, Glyph, wide, onClick }) {
   );
 }
 
+/* The backend answers an empty payload with a generic "Request validation
+   failed" — useless to an operator. Catch the obvious cases here instead and
+   say which field is wrong, in that field's own words. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validate(email, password) {
+  const next = {};
+  const trimmed = email.trim();
+  if (!trimmed) next.email = "Work email is required.";
+  else if (!EMAIL_RE.test(trimmed)) next.email = "Enter a valid work email, e.g. you@company.com.";
+  if (!password) next.password = "Password is required.";
+  return next;
+}
+
 export function LoginForm({ email, setEmail, password, setPassword, error, busy, onSubmit }) {
   const [show, setShow] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const notifySso = (label) => toast(`${label}: single sign-on unavailable`, { description: SSO_MESSAGE });
+
+  function handleSubmit(e) {
+    const next = validate(email, password);
+    setFieldErrors(next);
+    if (Object.keys(next).length) {
+      e.preventDefault();
+      document.getElementById(next.email ? "email" : "password")?.focus();
+      return;
+    }
+    onSubmit(e);
+  }
+
+  // Clear a field's complaint as soon as the operator starts fixing it.
+  const clearFieldError = (field) =>
+    setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
 
   return (
     <div>
       <h2 className="text-[19px] font-[650] tracking-[0.2px] text-[#f2f6ff]">Sign in</h2>
       <p className="mb-5 mt-1 text-[11.5px] text-[#9a92c8]">to your command console</p>
 
-      <form onSubmit={onSubmit} className="space-y-3" noValidate>
+      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
         <div>
           <NbLabel>WORK EMAIL</NbLabel>
           <NbInput
@@ -64,10 +94,13 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
             type="email"
             autoComplete="username"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => { setEmail(e.target.value); clearFieldError("email"); }}
             placeholder="you@company.com"
+            invalid={!!fieldErrors.email}
+            aria-describedby={fieldErrors.email ? "email-error" : undefined}
             required
           />
+          <NbFieldError id="email-error">{fieldErrors.email}</NbFieldError>
         </div>
 
         <div>
@@ -78,9 +111,11 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
               type={show ? "text" : "password"}
               autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => { setPassword(e.target.value); clearFieldError("password"); }}
               placeholder="••••••••••"
               className="pr-10"
+              invalid={!!fieldErrors.password}
+              aria-describedby={fieldErrors.password ? "password-error" : undefined}
               required
             />
             <button
@@ -92,6 +127,7 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
               <Icon icon={show ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="h-4 w-4" />
             </button>
           </div>
+          <NbFieldError id="password-error">{fieldErrors.password}</NbFieldError>
         </div>
 
         <div className="flex items-center justify-between pb-1 pt-0.5">
