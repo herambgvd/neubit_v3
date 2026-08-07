@@ -546,6 +546,11 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
 ) -> UserOut:
+    # A name is mandatory when an admin creates an account by hand: the audit trail
+    # and every user list read as a person, not an address. (CSV import deliberately
+    # still accepts a blank name column — see import_users.)
+    if not (data.full_name or "").strip():
+        raise ValidationError("Full name is required.")
     # Scope forces a tenant-admin's new users into their own tenant and blocks
     # setting is_superadmin / a cross-tenant tenant_id (see AuthService.create_user).
     user = await AuthService(db).create_user(data, scope_of(actor))
@@ -725,9 +730,15 @@ async def update_user(
     actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
 ) -> UserOut:
     user = await AuthService(db).update_user(user_id, data, scope_of(actor))
+    # Record WHAT changed, never the secret itself — an audit trail holding plaintext
+    # passwords would be a breach in its own right. mode="json" keeps the UUIDs/emails
+    # storable in the JSON meta column.
+    changed = data.model_dump(exclude_none=True, mode="json")
+    if changed.pop("password", None):  # truthy, like the service's "blank = unchanged"
+        changed["password_changed"] = True
     await audit_record(
         db, actor=actor, action="user.update", target_type="user",
-        target_id=str(user_id), meta=data.model_dump(exclude_none=True),
+        target_id=str(user_id), meta=changed,
     )
     return await _user_out(user)
 

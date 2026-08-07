@@ -7,6 +7,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
+from ..core.fields import AsciiEmail
+
 
 # --- roles -------------------------------------------------------------------
 class RoleOut(BaseModel):
@@ -70,6 +72,9 @@ class UserOut(BaseModel):
 
 
 class LoginIn(BaseModel):
+    # Deliberately plain EmailStr, not AsciiEmail: sign-in and password-reset only
+    # LOOK UP an existing row, and accounts created before the ASCII rule must still
+    # be able to get in (and be renamed). Only account-creating schemas are strict.
     email: EmailStr
     password: str
 
@@ -152,13 +157,13 @@ class AccessOut(BaseModel):
 class SetupIn(BaseModel):
     """First-run setup: create the very first administrator (only when none exist)."""
 
-    email: EmailStr
+    email: AsciiEmail
     password: str
     full_name: str | None = None
 
 
 class CreateUserIn(BaseModel):
-    email: EmailStr
+    email: AsciiEmail
     password: str
     full_name: str | None = None
     role_id: uuid.UUID
@@ -178,6 +183,11 @@ class UpdateUserIn(BaseModel):
     role_id: uuid.UUID | None = None
     is_active: bool | None = None
     full_name: str | None = None
+    # Admin-side identity + credential edits. Both are optional and only applied when
+    # sent: a new address must still be unique, and an omitted (or empty) password
+    # leaves the existing one untouched — the console sends it only when refilled.
+    email: AsciiEmail | None = None
+    password: str | None = None
     # None = leave scope unchanged; a list (incl. []) REPLACES it ([] = unrestricted).
     site_ids: list[str] | None = None
 
@@ -187,7 +197,7 @@ class CloneUserIn(BaseModel):
     account. Only identity differs — a fresh email + name; the new user sets their
     own password via the emailed invite (no plaintext is ever copied)."""
 
-    email: EmailStr
+    email: AsciiEmail
     full_name: str | None = None
     send_invite: bool = True
 

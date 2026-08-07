@@ -86,6 +86,52 @@ _HTTP_CODE_MAP = {
 }
 
 
+# Pydantic's own wording for the constraints we use most, rewritten for a person
+# reading a toast. Anything not listed falls back to pydantic's `msg`.
+_VALIDATION_WORDING = {
+    "missing": "is required",
+    "string_too_short": "is too short",
+    "string_too_long": "is too long",
+    "value_error.email": "is not a valid email address",
+}
+
+
+def _field_label(loc: tuple) -> str:
+    """"Full name" from ``("body", "full_name")`` — the last named part of the path.
+
+    A ``*_id`` foreign key is labelled by what it points at ("Role", not "Role id"),
+    which is what the form calls it.
+    """
+    parts = [p for p in loc if isinstance(p, str) and p not in ("body", "query", "path")]
+    name = parts[-1] if parts else "request"
+    if name.endswith("_id") and len(name) > 3:
+        name = name[:-3]
+    return name.replace("_", " ").capitalize()
+
+
+def _validation_message(errors: list[dict]) -> str:
+    """Turn pydantic's error list into one readable sentence.
+
+    "Request validation failed" tells an operator nothing about WHICH field is
+    wrong — the UI showed it verbatim in a toast. Name the fields instead, at most
+    three so the toast stays a toast; ``details`` still carries the full list.
+    (Kept in step with core's app/core/errors.py — same envelope, same wording.)
+    """
+    parts: list[str] = []
+    for err in errors[:3]:
+        etype = str(err.get("type", ""))
+        msg = _VALIDATION_WORDING.get(etype)
+        if msg is None and etype == "value_error" and "email" in str(err.get("msg", "")).lower():
+            msg = _VALIDATION_WORDING["value_error.email"]
+        if msg is None:
+            msg = str(err.get("msg", "is invalid")).removeprefix("Value error, ")
+        parts.append(f"{_field_label(tuple(err.get('loc') or ()))} {msg[0].lower() + msg[1:]}")
+    if not parts:
+        return "Request validation failed"
+    extra = len(errors) - len(parts)
+    return ". ".join(parts) + (f" (+{extra} more)" if extra > 0 else "") + "."
+
+
 def _envelope(code: str, message: str, details: Any | None = None) -> dict:
     body: dict = {"error": {"code": code, "message": message}}
     if details is not None:
@@ -105,13 +151,10 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _handle_validation(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = jsonable_encoder(exc.errors())
         return JSONResponse(
             status_code=422,
-            content=_envelope(
-                "VALIDATION_ERROR",
-                "Request validation failed",
-                {"errors": jsonable_encoder(exc.errors())},
-            ),
+            content=_envelope("VALIDATION_ERROR", _validation_message(errors), {"errors": errors}),
         )
 
     @app.exception_handler(StarletteHTTPException)

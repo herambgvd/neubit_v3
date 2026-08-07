@@ -89,19 +89,32 @@ function Label({ children, required }) {
   return <FieldLabel className="mb-1.5 block" required={required}>{children}</FieldLabel>;
 }
 
-export function Input({ label, hint, required, className = "", ...props }) {
+// `error` mirrors common/Field: a red border and a red message that takes the
+// hint's place, so a kit modal reports a bad field exactly like a pane form does.
+function FieldNote({ error, hint }) {
+  if (error) return <span className="mt-1 block text-xs text-nb-crit">{error}</span>;
+  if (hint) return <span className="mt-1 block text-xs text-nb-muted">{hint}</span>;
+  return null;
+}
+
+export function Input({ label, hint, error, required, className = "", ...props }) {
   return (
     <label className="block">
       {label && <Label required={required}>{label}</Label>}
-      <input {...props} aria-required={required || undefined} className={`${FIELD} ${className}`} />
-      {hint && <span className="block text-xs text-nb-muted mt-1">{hint}</span>}
+      <input
+        {...props}
+        aria-required={required || undefined}
+        aria-invalid={error ? true : undefined}
+        className={`${FIELD} ${error ? "!border-nb-crit" : ""} ${className}`}
+      />
+      <FieldNote error={error} hint={hint} />
     </label>
   );
 }
 
 // Password field with the same show/hide eye affordance as the sign-in form —
 // so an admin can verify what they typed before creating an account.
-export function PasswordInput({ label, hint, required, className = "", ...props }) {
+export function PasswordInput({ label, hint, error, required, className = "", ...props }) {
   const [show, setShow] = useState(false);
   return (
     <label className="block">
@@ -111,7 +124,8 @@ export function PasswordInput({ label, hint, required, className = "", ...props 
           {...props}
           type={show ? "text" : "password"}
           aria-required={required || undefined}
-          className={`${FIELD} pr-10 ${className}`}
+          aria-invalid={error ? true : undefined}
+          className={`${FIELD} pr-10 ${error ? "!border-nb-crit" : ""} ${className}`}
         />
         <button
           type="button"
@@ -123,7 +137,7 @@ export function PasswordInput({ label, hint, required, className = "", ...props 
           <Icon icon={show ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="text-base" />
         </button>
       </span>
-      {hint && <span className="block text-xs text-nb-muted mt-1">{hint}</span>}
+      <FieldNote error={error} hint={hint} />
     </label>
   );
 }
@@ -132,11 +146,12 @@ export function PasswordInput({ label, hint, required, className = "", ...props 
 // same whether the screen was built on this kit or on components/common. The kit
 // used to carry its own near-duplicate (no keyboard nav, different active colour);
 // this wrapper only adds the kit's label.
-export function Select({ label, required, className = "", ...props }) {
+export function Select({ label, required, error, hint, className = "", ...props }) {
   return (
     <div className="block">
       {label && <Label required={required}>{label}</Label>}
-      <SelectMenu {...props} className={`!mt-0 ${className}`} />
+      <SelectMenu {...props} className={`!mt-0 ${error ? "!border-nb-crit" : ""} ${className}`} />
+      <FieldNote error={error} hint={hint} />
     </div>
   );
 }

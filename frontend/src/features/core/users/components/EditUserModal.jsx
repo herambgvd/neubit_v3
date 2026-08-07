@@ -1,7 +1,10 @@
 "use client";
 
-import { Button, Input, Modal, Select, Toggle } from "@/components/ui/kit";
+import { useEffect, useState } from "react";
+
+import { Button, Input, Modal, PasswordInput, Select, Toggle } from "@/components/ui/kit";
 import SiteScopeField from "./SiteScopeField";
+import { PASSWORD_HINT, validateEditUser } from "../validation";
 
 // Edit a user through a modal (the Users console mirrors Roles: the centre pane is
 // read-only, the pencil opens this form). Role and the Active switch are locked for
@@ -20,6 +23,21 @@ export default function EditUserModal({
 }) {
   const isAdminAccount = !!editing?.role?.is_system;
   const statusLocked = isSelf || isAdminAccount;
+
+  // Errors surface on the first save attempt, then track each field as it is fixed.
+  const [submitted, setSubmitted] = useState(false);
+  useEffect(() => { if (!editing) setSubmitted(false); }, [editing]);
+
+  const errors = validateEditUser(form);
+  const show = (field) => (submitted ? errors[field] : undefined);
+  const emailChanged = !!editing && (form.email || "").trim() !== editing.email;
+
+  function handleSave() {
+    setSubmitted(true);
+    if (Object.keys(errors).length) return;
+    onSave();
+  }
+
   return (
     <Modal
       open={!!editing}
@@ -30,7 +48,7 @@ export default function EditUserModal({
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button disabled={saving || !form.role_id} onClick={onSave}>
+          <Button disabled={saving} onClick={handleSave}>
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </>
@@ -39,9 +57,30 @@ export default function EditUserModal({
       <div className="space-y-4">
         <Input
           label="Full name"
+          required
           value={form.full_name}
           onChange={(e) => setForm({ ...form, full_name: e.target.value })}
           placeholder="Enter full name"
+          error={show("full_name")}
+        />
+        <Input
+          label="Email"
+          type="email"
+          required
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          placeholder="Enter email address"
+          error={show("email")}
+          hint={emailChanged ? "Changing the address marks it unverified until they use a new invite." : undefined}
+        />
+        <PasswordInput
+          label="New password"
+          value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })}
+          placeholder="Leave blank to keep the current password"
+          autoComplete="new-password"
+          hint={form.password ? PASSWORD_HINT : "Leave blank to keep the current password. Setting one signs them out everywhere."}
+          error={show("password")}
         />
         <Select
           label="Role"
@@ -50,6 +89,7 @@ export default function EditUserModal({
           options={roleOptions}
           disabled={isSelf}
           onChange={(e) => setForm({ ...form, role_id: e.target.value })}
+          error={show("role_id")}
         />
         {isSelf && (
           <p className="-mt-2 text-[11px] text-nb-faint">
