@@ -84,6 +84,18 @@ export const vms = {
     // Mint a playback session (tokenized fmp4 URL + t=0 start) through the node.
     playback: (nodeId, cameraId, { from, to } = {}) =>
       unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/playback${qs({ from, to })}`)),
+    // ── operate-THROUGH-node — the only two mutations on a node-owned camera ──
+    // PTZ a federated camera through its recorder. `body` = { action:"move"|"stop"|
+    // "zoom"|"focus", ...payload } (the node forwards the payload to the device).
+    // Node-side PTZ gates on vms.ptz.control; the scoped federation credential does
+    // NOT carry it, so this only passes while the node falls back to the shared
+    // service JWT (502 otherwise). Read-only surfaces stay read-only.
+    ptz: (nodeId, cameraId, body) =>
+      unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz`, body)),
+    // Snapshot URL for a federated camera (relative path — fetched as an authed
+    // blob, same as cameras.snapshotUrl, since the endpoint needs the Bearer header).
+    snapshotUrl: (nodeId, cameraId) =>
+      `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/snapshot`,
   },
 
   // ── Operations / Health dashboard (G2) — one live rollup ────────────────

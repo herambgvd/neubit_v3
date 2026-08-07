@@ -187,6 +187,9 @@ export default function Streaming() {
       name: c.name,
       status: c.status,
       federated: true,
+      // PTZ capability as the node reported it (public.ptz.capable) — drives the
+      // wall's PTZ overlay gate; commands proxy through the node (operate-through-node).
+      ptz_capable: !!(c.ptz && c.ptz.capable),
       node_id: c.node_id,
       node_name: c.node_name,
       site_id: `nvr:${c.node_id}`,

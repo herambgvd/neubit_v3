@@ -12,6 +12,8 @@ aggregator can skip one node without failing the whole list.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 
 import httpx
@@ -178,3 +180,76 @@ async def mint_node_playback(
     if r.status_code // 100 != 2:
         raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
     return r.json() or {}
+
+
+# ── operate-THROUGH-node (Phase-3) — the only two mutations the VMS makes on a
+# node-owned camera. Everything else on a federated camera stays read-only; PTZ
+# and snapshot are proxied to the owning NVR, which runs the real device op.
+
+# The node's PTZ subroutes (estate/ptz.go). Allow-listed so a caller can never
+# smuggle an arbitrary path segment into the node URL.
+_PTZ_ACTIONS = frozenset({"move", "stop", "zoom", "focus"})
+
+
+async def ptz_node(
+    api_url: str,
+    camera_id: str,
+    action: str,
+    body: dict | None = None,
+    *,
+    credential: str | None = None,
+) -> dict:
+    """POST {api_url}/api/v1/nvr/estate/cameras/{id}/ptz/{action} → the node runs the
+    real PTZ command on its own camera and returns { ok, result }. ``action`` names
+    the node subroute (move|stop|zoom|focus); ``body`` is the command payload the
+    node forwards to the device (pan/tilt/zoom/speed, or direction+speed). The node
+    gates PTZ on vms.ptz.control — a grant the SCOPED federation credential does not
+    carry (see federation.go federationGrants), so this only passes on a node still
+    falling back to the shared service JWT. NodeUnavailable (→ 502) on any non-2xx."""
+    act = (action or "").strip().lower()
+    if act not in _PTZ_ACTIONS:
+        raise NodeUnavailable(f"unsupported ptz action: {action!r}")
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/ptz/{act}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(url, headers=_headers(credential), json=body or {})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def snapshot_node(
+    api_url: str,
+    camera_id: str,
+    *,
+    refresh: bool = False,
+    credential: str | None = None,
+) -> tuple[bytes, str]:
+    """GET {api_url}/api/v1/nvr/estate/cameras/{id}/snapshot → the node grabs a still
+    off its own camera. The node answers JSON { image: "data:image/jpeg;base64,…",
+    captured_at, … } (snapshot.go), so we decode the data URI down to raw bytes +
+    content-type — the VMS then serves a real image the browser renders/downloads
+    directly. Gated node-side on vms.camera.read, which the scoped federation
+    credential DOES carry. Returns (image_bytes, content_type). NodeUnavailable on a
+    non-2xx or a response carrying no decodable image."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/snapshot"
+    params: dict = {"refresh": "1"} if refresh else {}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential), params=params)
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    uri = ((r.json() or {}).get("image") or "").strip()
+    if not uri.startswith("data:"):
+        raise NodeUnavailable("node returned no snapshot image")
+    try:
+        header, b64 = uri.split(",", 1)
+        content_type = header[len("data:"):].split(";", 1)[0] or "image/jpeg"
+        raw = base64.b64decode(b64)
+    except (ValueError, binascii.Error) as e:
+        raise NodeUnavailable(f"could not decode node snapshot: {e}") from e
+    return raw, content_type

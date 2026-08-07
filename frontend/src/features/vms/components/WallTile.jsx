@@ -219,14 +219,21 @@ function WallTile({
       {/* PTZ overlay — only when this tile fills the wall (spotlight) and the
           camera is PTZ-capable. Kept off dense grid tiles to avoid clutter.
           Stop drag/double-click from bubbling to the tile while operating it. */}
-      {spotlight && isPtzCapable(camera) && (
+      {spotlight && (isPtzCapable(camera) || camera?.federated) && (
         <div
           className="absolute bottom-3 left-3 z-30 max-w-[min(28rem,calc(100%-1.5rem))]"
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <PtzOverlay cameraId={cameraId} canControl={can("vms.ptz.control")} />
+          {/* Federated cameras route PTZ THROUGH their owning recorder (operate-
+              through-node); local cameras use the local control plane. */}
+          <PtzOverlay
+            cameraId={camera?.federated ? camera.real_id : cameraId}
+            canControl={can("vms.ptz.control")}
+            fedNodeId={camera?.federated ? camera.node_id : null}
+            fedRealId={camera?.federated ? camera.real_id : null}
+          />
         </div>
       )}
 

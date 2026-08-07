@@ -51,6 +51,9 @@ export default function CamerasPage() {
         name: c.name,
         status: c.status,
         federated: true,
+        // PTZ capability as the node reported it (public.ptz.capable) — drives the
+        // detail pane's PTZ control; commands proxy through the node.
+        ptz_capable: !!(c.ptz && c.ptz.capable),
         node_id: c.node_id,
         node_name: c.node_name,
         source_label: c.node_name,
