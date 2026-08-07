@@ -79,9 +79,9 @@ export default function FederatedCameraDetail({ camera }) {
           </span>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-nb-ink">{camera.name}</h2>
-            <p className="flex items-center gap-1 truncate font-mono text-[10px] text-nb-faint">
-              <Icon icon="heroicons:cpu-chip" className="shrink-0 text-[10px]" />
-              via {camera.node_name || "recorder"}
+            <p className="flex items-center gap-1 truncate text-[10.5px] text-nb-faint">
+              <Icon icon="heroicons:server-stack" className="shrink-0 text-[10px]" />
+              <span className="truncate">{camera.node_name || "recorder"}</span>
             </p>
           </div>
         </div>

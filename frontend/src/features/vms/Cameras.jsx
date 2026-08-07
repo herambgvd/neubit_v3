@@ -174,9 +174,9 @@ export default function CamerasPage() {
   );
 }
 
-// Compact camera row for the left list — status dot + name + a "via <recorder>"
-// source pill so the operator sees at a glance which recorder owns the camera. All
-// rows are read-through (node-owned): no bulk checkbox, no editable recorder line.
+// Compact camera row for the left list — status dot + name, with the owning
+// recorder as a quiet secondary line (no loud "via …" pill). All rows are
+// read-through (node-owned): no bulk checkbox, no editable recorder line.
 function CameraListItem({ camera, selected, onSelect }) {
   return (
     <div
@@ -184,32 +184,25 @@ function CameraListItem({ camera, selected, onSelect }) {
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
-      className={`flex cursor-pointer items-center gap-2 rounded-[10px] border px-2 py-1.5 transition ${
+      className={`group flex cursor-pointer items-center gap-2.5 rounded-[10px] border px-2.5 py-2 transition ${
         selected
           ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
           : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
       }`}
     >
-      <span
-        title={`Managed by ${camera.node_name || "recorder"}`}
-        className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center text-nb-faint"
-      >
-        <Icon icon="heroicons:cpu-chip" className="text-[11px]" />
-      </span>
+      <StatusDot status={camera.status} />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 truncate text-[13px] font-medium text-nb-ink">
-          <StatusDot status={camera.status} />
-          <span className="truncate">{camera.name}</span>
-          <span
-            title={`Streamed via ${camera.node_name || "recorder"}`}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-[rgba(96,165,250,.3)] bg-[rgba(96,165,250,.08)] px-1.5 py-px text-[9px] font-medium text-nb-blueb"
-          >
-            <Icon icon="heroicons-mini:link" className="text-[9px]" />
-            via {camera.node_name || "recorder"}
-          </span>
+        <p className="truncate text-[13px] font-medium text-nb-ink">{camera.name}</p>
+        <p className="flex items-center gap-1 truncate text-[10.5px] text-nb-faint">
+          <Icon icon="heroicons:server-stack" className="shrink-0 text-[10px]" />
+          <span className="truncate">{camera.node_name || "recorder"}</span>
         </p>
-        <p className="truncate font-mono text-[10px] text-nb-faint">Recorder camera · read-only</p>
       </div>
+      <Icon
+        icon="heroicons-outline:lock-closed"
+        title="Owned by its recorder — read-only here"
+        className="shrink-0 text-[11px] text-nb-faint/70"
+      />
     </div>
   );
 }
