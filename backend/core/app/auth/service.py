@@ -490,9 +490,29 @@ class AuthService:
             user.is_active = data.is_active
         if data.full_name is not None:
             user.full_name = data.full_name
+        if data.email is not None and data.email != user.email:
+            taken = (
+                await self.db.execute(
+                    select(User).where(User.email == data.email, User.id != user.id)
+                )
+            ).scalar_one_or_none()
+            if taken is not None:
+                raise ConflictError("email already registered")
+            user.email = data.email
+            # A new address is an unproven inbox again — re-verification is the only
+            # thing that says this person can actually receive mail there.
+            user.email_verified = False
+        # An admin-set password goes through the same gate as a self-service change
+        # (policy + reuse history + timestamp); an empty/absent value changes nothing.
+        password_set = bool(data.password)
+        if password_set:
+            self._set_password(user, data.password)
         if data.site_ids is not None:
             user.site_ids = list(data.site_ids)
         await self.db.commit()
+        # Someone else now knows this password — every existing session must go.
+        if password_set:
+            await self.revoke_all_refresh(user.id)
         await self.db.refresh(user)
         return user
 

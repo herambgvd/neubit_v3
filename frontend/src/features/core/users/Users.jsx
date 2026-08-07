@@ -34,7 +34,8 @@ import CloneUserModal from "./components/CloneUserModal";
 
 const EMPTY_CREATE = { email: "", password: "", full_name: "", role_id: "", send_invite: true, site_ids: [] };
 const EMPTY_CLONE = { email: "", full_name: "", send_invite: true };
-const EMPTY_EDIT = { full_name: "", role_id: "", site_ids: [], is_active: true };
+// `password` is write-only and starts blank on every open: blank = leave it alone.
+const EMPTY_EDIT = { full_name: "", email: "", password: "", role_id: "", site_ids: [], is_active: true };
 
 export default function UsersPage() {
   const qc = useQueryClient();
@@ -142,9 +143,13 @@ export default function UsersPage() {
     onError: (e) => toast.error(apiError(e)),
   });
   // `close` is a UI-only flag (the edit modal wants to dismiss on success) — it is
-  // destructured out so it never reaches the PATCH body.
+  // destructured out so it never reaches the PATCH body. An empty `password` means
+  // "keep the current one", so it is dropped rather than sent as "".
   const saveEdit = useMutation({
-    mutationFn: ({ id, close: _close, ...body }) => api.patch(`/auth/users/${id}`, body),
+    mutationFn: ({ id, close: _close, ...body }) => {
+      if (!body.password) delete body.password;
+      return api.patch(`/auth/users/${id}`, body);
+    },
     onMutate: () => setBusyAction("save"),
     onSuccess: (_d, vars) => {
       toast.success("User updated");
@@ -189,6 +194,8 @@ export default function UsersPage() {
   function openEdit(u) {
     setEditForm({
       full_name: u.full_name || "",
+      email: u.email || "",
+      password: "",
       role_id: u.role?.id || "",
       site_ids: u.site_ids || [],
       is_active: !!u.is_active,

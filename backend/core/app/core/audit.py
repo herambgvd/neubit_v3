@@ -46,6 +46,10 @@ class AuditLog(Base):
     # system / anonymous actions.
     actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     actor_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Display name at the time of the action — snapshotted for the same reason as
+    # the email: the trail must stay readable after a rename or a delete. NULL for
+    # system actions and for users who never set a full name (UI falls back to email).
+    actor_name: Mapped[str | None] = mapped_column(String, nullable=True)
     # --- multi-tenancy -----------------------------------------------------
     # The tenant this action belongs to (the actor's tenant at the time). NULL =
     # a platform/super-admin/system action. Tenant-admins only see their own rows.
@@ -82,6 +86,7 @@ async def record(
     entry = AuditLog(
         actor_id=getattr(actor, "id", None),
         actor_email=getattr(actor, "email", None),
+        actor_name=getattr(actor, "full_name", None) or None,
         # Stamp the actor's tenant so the trail is tenant-scoped. Super-admins (and
         # system/anonymous actions) have no tenant → NULL (platform scope).
         tenant_id=getattr(actor, "tenant_id", None),
@@ -105,6 +110,7 @@ class AuditLogOut(BaseModel):
     id: uuid.UUID
     actor_id: uuid.UUID | None
     actor_email: str | None
+    actor_name: str | None
     action: str
     target_type: str | None
     target_id: str | None
@@ -129,7 +135,7 @@ async def list_audit(
     a super-admin sees the whole platform trail (incl. tenant_id NULL rows).
 
     Optional filters: ``action`` matches an action category by PREFIX (e.g. ``user``
-    → ``user.*``); ``q`` is a free-text search over the actor email + action key.
+    → ``user.*``); ``q`` is a free-text search over the actor name + email + action key.
     """
     from ..tenancy.scope import scope_of, scoped
 
@@ -138,7 +144,13 @@ async def list_audit(
         stmt = stmt.where(AuditLog.action.ilike(f"{action}%"))
     if q:
         term = f"%{q}%"
-        stmt = stmt.where(or_(AuditLog.actor_email.ilike(term), AuditLog.action.ilike(term)))
+        stmt = stmt.where(
+            or_(
+                AuditLog.actor_name.ilike(term),
+                AuditLog.actor_email.ilike(term),
+                AuditLog.action.ilike(term),
+            )
+        )
     return await paginate(db, stmt, params, item_model=AuditLogOut)
 
 

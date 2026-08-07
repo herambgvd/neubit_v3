@@ -1,9 +1,26 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { Button, Input, Modal, PasswordInput, Select, Toggle } from "@/components/ui/kit";
 import SiteScopeField from "./SiteScopeField";
+import { PASSWORD_HINT, validateNewUser } from "../validation";
 
 export default function AddUserModal({ open, onClose, form, setForm, roleOptions, sites = [], onCreate, creating }) {
+  // Errors appear on the first Create attempt, then track the field as it is fixed —
+  // so the dialog never opens already shouting at an untouched form.
+  const [submitted, setSubmitted] = useState(false);
+  useEffect(() => { if (!open) setSubmitted(false); }, [open]);
+
+  const errors = validateNewUser(form);
+  const show = (field) => (submitted ? errors[field] : undefined);
+
+  function handleCreate() {
+    setSubmitted(true);
+    if (Object.keys(errors).length) return;
+    onCreate();
+  }
+
   return (
     <Modal
       open={open}
@@ -14,26 +31,46 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button
-            variant="action"
-            disabled={creating || !form.email || !form.password || !form.role_id}
-            onClick={onCreate}
-          >
+          <Button variant="action" disabled={creating} onClick={handleCreate}>
             {creating ? "Creating…" : "Create"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <Input label="Full name" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Enter full name" />
-        <Input label="Email" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Enter email address" />
-        <PasswordInput label="Password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Enter a password" hint="At least 8 characters, with a letter and a number." />
+        <Input
+          label="Full name"
+          required
+          value={form.full_name}
+          onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+          placeholder="Enter full name"
+          error={show("full_name")}
+        />
+        <Input
+          label="Email"
+          type="email"
+          required
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          placeholder="Enter email address"
+          error={show("email")}
+        />
+        <PasswordInput
+          label="Password"
+          required
+          value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })}
+          placeholder="Enter a password"
+          hint={PASSWORD_HINT}
+          error={show("password")}
+        />
         <Select
           label="Role"
           required
           value={form.role_id}
           options={[{ value: "", label: "Select a role…" }, ...roleOptions]}
           onChange={(e) => setForm({ ...form, role_id: e.target.value })}
+          error={show("role_id")}
         />
         <SiteScopeField
           sites={sites}

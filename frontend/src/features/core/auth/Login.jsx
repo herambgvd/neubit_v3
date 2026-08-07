@@ -60,7 +60,8 @@ export default function LoginPage() {
       router.push("/home");
     } catch (err) {
       const msg = apiError(err, "Login failed");
-      setError(msg);
+      // The backend's generic 422 envelope says nothing useful to an operator.
+      setError(msg === "Request validation failed" ? "Check your email and password, then try again." : msg);
     } finally {
       setBusy(false);
     }

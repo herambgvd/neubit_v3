@@ -205,15 +205,30 @@ export function NbLabel({ children }) {
   );
 }
 
-export function NbInput({ className = "", ...props }) {
+export function NbInput({ className = "", invalid = false, ...props }) {
   return (
     <input
       {...props}
+      aria-invalid={invalid || undefined}
       className={
-        "w-full rounded-[10px] border border-[rgba(160,150,245,.2)] bg-[#0b1228] px-[14px] py-[11px] text-[13.5px] text-[#f2f6ff] outline-none transition placeholder:text-[#9a92c8]/60 focus:border-[rgba(34,211,238,.55)] focus:ring-[3px] focus:ring-[rgba(34,211,238,.08)] " +
+        "w-full rounded-[10px] border bg-[#0b1228] px-[14px] py-[11px] text-[13.5px] text-[#f2f6ff] outline-none transition placeholder:text-[#9a92c8]/60 focus:ring-[3px] " +
+        (invalid
+          ? "border-red-400/60 focus:border-red-400/80 focus:ring-red-500/10 "
+          : "border-[rgba(160,150,245,.2)] focus:border-[rgba(34,211,238,.55)] focus:ring-[rgba(34,211,238,.08)] ") +
         className
       }
     />
+  );
+}
+
+/* Per-field validation message — sits directly under its input. */
+export function NbFieldError({ id, children }) {
+  if (!children) return null;
+  return (
+    <p id={id} className="mt-[5px] flex items-center gap-[5px] text-[11px] text-red-300">
+      <span aria-hidden>⚠</span>
+      {children}
+    </p>
   );
 }
 
