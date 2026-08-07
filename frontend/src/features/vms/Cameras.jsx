@@ -19,6 +19,7 @@ import { vms } from "./api";
 import { BRAND_FILTERS, STATUS_FILTERS } from "./constants";
 import { StatusDot } from "./components/StatusBadge";
 import CameraDetailView from "./components/CameraDetailView";
+import FederatedCameraDetail from "./components/FederatedCameraDetail";
 import BulkActionBar from "./components/BulkActionBar";
 import OnboardCameraModal from "./components/OnboardCameraModal";
 import BulkDeviceResultModal from "./components/BulkDeviceResultModal";
@@ -51,7 +52,48 @@ export default function CamerasPage() {
       vms.cameras.list({ status, brand, site_id: siteFilter, q: search, limit: 500 }),
     refetchInterval: 20_000,
   });
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+  const localCameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+
+  // Federated (recorder-owned) cameras — cameras OWNED by registered NVR nodes
+  // (our own standalone recorder + 3rd-party NVRs surfaced through federation),
+  // pulled up READ-ONLY and streamed THROUGH each node. They are NOT local Camera
+  // rows — never edited/deleted/configured from here — but they belong in the one
+  // Devices inventory so every camera is discoverable + floor-plan-plottable.
+  const fedQ = useQuery({
+    queryKey: ["vms-federation-cameras"],
+    queryFn: () => vms.federation.cameras(),
+    refetchInterval: 30_000,
+  });
+
+  // Map federated items to a display shape consistent with local cameras, tagged
+  // `federated`. The composite id (`fed:<node>:<cam>`) matches the floor-builder
+  // inventory + the video wall, so a camera plotted here keys the same everywhere.
+  // The local list is already server-filtered (status/brand/site/q); brand + site
+  // don't apply to node-owned cameras, so when either is set we drop federated
+  // (the local-only result is authoritative) and otherwise filter them client-side
+  // by status + search so the two lists behave as one.
+  const fedCameras = useMemo(() => {
+    if (brand || siteFilter) return [];
+    const q = search.trim().toLowerCase();
+    return (fedQ.data?.items || [])
+      .map((c) => ({
+        id: `fed:${c.node_id}:${c.id}`,
+        real_id: c.id,
+        name: c.name,
+        status: c.status,
+        federated: true,
+        node_id: c.node_id,
+        node_name: c.node_name,
+        source_label: c.node_name,
+      }))
+      .filter((c) => (status ? c.status === status : true))
+      .filter((c) =>
+        q ? c.name?.toLowerCase().includes(q) || (c.node_name || "").toLowerCase().includes(q) : true,
+      );
+  }, [fedQ.data, brand, siteFilter, status, search]);
+
+  // The one unified inventory: local first, then read-through recorder cameras.
+  const cameras = useMemo(() => [...localCameras, ...fedCameras], [localCameras, fedCameras]);
 
   const healthQ = useQuery({
     queryKey: ["vms-health"],
@@ -173,12 +215,16 @@ export default function CamerasPage() {
   };
 
   // ── Selection helpers ────────────────────────────────────────────────
-  const toggleSelect = (id) =>
+  // Bulk selection is LOCAL-only — federated cameras never carry a checkbox, but
+  // guard here too so a stray composite id can never enter a bulk op payload.
+  const toggleSelect = (id) => {
+    if (typeof id === "string" && id.startsWith("fed:")) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  };
 
   const askDelete = (cam) =>
     setConfirm({
@@ -226,7 +272,7 @@ export default function CamerasPage() {
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button
-                onClick={() => { invalidate(); healthQ.refetch(); }}
+                onClick={() => { invalidate(); healthQ.refetch(); fedQ.refetch(); }}
                 title="Refresh"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
@@ -268,9 +314,9 @@ export default function CamerasPage() {
 
           {/* List */}
           <div className="scroll-themed min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
-            {camerasQ.isLoading ? (
+            {camerasQ.isLoading && cameras.length === 0 ? (
               <div className="px-2 py-8 text-center text-xs text-nb-faint">Loading…</div>
-            ) : camerasQ.isError ? (
+            ) : camerasQ.isError && cameras.length === 0 ? (
               <div className="px-2 py-8 text-center text-xs text-nb-crit">{apiError(camerasQ.error, "Failed to load cameras")}</div>
             ) : cameras.length === 0 ? (
               <div className="px-2 py-8 text-center text-xs text-nb-faint">
@@ -299,15 +345,21 @@ export default function CamerasPage() {
         {/* ── Right: inline detail ── */}
         {selected ? (
           <section className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
-            <CameraDetailView
-              key={selected.id}
-              camera={selected}
-              sites={sites}
-              recording={recordingIds.has(selected.id)}
-              onUpdated={invalidate}
-              onDelete={askDelete}
-              onSnapshot={(c) => setSnapTarget(c)}
-            />
+            {selected.federated ? (
+              // Recorder-owned camera → live view + read-only facts. NO config /
+              // maintenance / delete editor (the NVR owns it).
+              <FederatedCameraDetail key={selected.id} camera={selected} />
+            ) : (
+              <CameraDetailView
+                key={selected.id}
+                camera={selected}
+                sites={sites}
+                recording={recordingIds.has(selected.id)}
+                onUpdated={invalidate}
+                onDelete={askDelete}
+                onSnapshot={(c) => setSnapTarget(c)}
+              />
+            )}
           </section>
         ) : (
           <EmptyDetail
@@ -360,7 +412,13 @@ export default function CamerasPage() {
 // Compact camera row for the left list — status dot + name + codec badge + a
 // meta line (ip · brand · site). Bulk-checkbox on the left; the row selects for
 // the detail pane. Selected row gets an accent border + hover fill.
+//
+// Federated (recorder-owned) rows are READ-THROUGH: no bulk checkbox (they can't
+// participate in local bulk ops), no editable recorder line — instead they carry a
+// "via <node>" source pill so the operator sees at a glance which recorder owns
+// them. The row still selects for the (read-only) detail pane.
 function CameraListItem({ camera, siteName, nodeName, recording, selected, bulkChecked, onSelect, onToggleBulk }) {
+  const federated = !!camera.federated;
   return (
     <div
       role="button"
@@ -373,31 +431,55 @@ function CameraListItem({ camera, siteName, nodeName, recording, selected, bulkC
           : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
       }`}
     >
-      <input
-        type="checkbox"
-        checked={bulkChecked}
-        onChange={onToggleBulk}
-        onClick={(e) => e.stopPropagation()}
-        className="accent-nb-blue"
-        aria-label={`Select ${camera.name}`}
-      />
+      {federated ? (
+        // No bulk-select for node-owned cameras — a recorder glyph holds the slot
+        // so rows stay aligned with the local (checkbox) rows.
+        <span
+          title={`Managed by ${camera.node_name || "recorder"}`}
+          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center text-nb-faint"
+        >
+          <Icon icon="heroicons:cpu-chip" className="text-[11px]" />
+        </span>
+      ) : (
+        <input
+          type="checkbox"
+          checked={bulkChecked}
+          onChange={onToggleBulk}
+          onClick={(e) => e.stopPropagation()}
+          className="accent-nb-blue"
+          aria-label={`Select ${camera.name}`}
+        />
+      )}
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 truncate text-[13px] font-medium text-nb-ink">
           <StatusDot status={camera.status} />
           <span className="truncate">{camera.name}</span>
+          {federated && (
+            <span
+              title={`Streamed via ${camera.node_name || "recorder"}`}
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-[rgba(96,165,250,.3)] bg-[rgba(96,165,250,.08)] px-1.5 py-px text-[9px] font-medium text-nb-blueb"
+            >
+              <Icon icon="heroicons-mini:link" className="text-[9px]" />
+              via {camera.node_name || "recorder"}
+            </span>
+          )}
         </p>
         <p className="truncate font-mono text-[10px] text-nb-faint">
-          {cameraIp(camera)}
-          {camera.brand ? ` · ${titleize(camera.brand)}` : ""}
-          {siteName ? ` · ${siteName}` : ""}
+          {federated
+            ? "Recorder camera · read-only"
+            : `${cameraIp(camera)}${camera.brand ? ` · ${titleize(camera.brand)}` : ""}${siteName ? ` · ${siteName}` : ""}`}
         </p>
-        {/* Recorder (media node) the camera is pinned to — "Auto" when unassigned. */}
-        <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-nb-faint">
-          <Icon icon="heroicons:cpu-chip" className="shrink-0 text-[10px]" />
-          <span className="truncate">{nodeName || "Auto"}</span>
-        </p>
+        {/* Recorder (media node) the LOCAL camera is pinned to — "Auto" when
+            unassigned. Federated cameras record on their own recorder, so we
+            don't show a (meaningless) media-node line for them. */}
+        {!federated && (
+          <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-nb-faint">
+            <Icon icon="heroicons:cpu-chip" className="shrink-0 text-[10px]" />
+            <span className="truncate">{nodeName || "Auto"}</span>
+          </p>
+        )}
       </div>
-      {recording && (
+      {recording && !federated && (
         <span
           title="Recording"
           className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.12)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-nb-crit"
