@@ -113,15 +113,22 @@ const nvrTile = (nvrId, ch, nvrName) => ({
 // through the federation proxy. nodeId/realId address it on the remote node; the
 // synthetic `cameraId` (like nvrTile's) satisfies the player's truthy-id guards +
 // query keys — the real request is overridden by tileSource's sourceFn.
-const fedTile = (c) => ({
-  key: `fed:${c.node_id}:${c.real_id}`,
-  kind: "federated",
-  name: c.name,
-  cameraId: `${c.node_id}:${c.real_id}`,
-  nodeId: c.node_id,
-  realId: c.real_id,
-  federated: true,
-});
+// vms.federation.cameras() returns each camera's node-side id as `id` (there is no
+// `real_id` on the raw payload — that alias only exists after the Streaming console
+// remaps it). Use `id` (fall back to real_id if a caller pre-mapped it) so the tile
+// key + playback target are never `undefined`.
+const fedTile = (c) => {
+  const realId = c.real_id ?? c.id;
+  return {
+    key: `fed:${c.node_id}:${realId}`,
+    kind: "federated",
+    name: c.name,
+    cameraId: `${c.node_id}:${realId}`,
+    nodeId: c.node_id,
+    realId,
+    federated: true,
+  };
+};
 
 // Federated nodes expose NO recording-days endpoint, so DERIVE the month's footage
 // days client-side from a month-wide timeline: every returned range's local-day span

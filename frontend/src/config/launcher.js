@@ -31,6 +31,7 @@ export const LAUNCHER_MODES = [
         accent: "#67e8f9",
         tiles: [
           { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "neubit.read", module: "vms" },
+          { icon: "heroicons:backward", label: "Playback", href: "/playback", tone: "teal", perm: "neubit.read", module: "vms" },
           { icon: "heroicons:cpu-chip", label: "Fleet", href: "/devices/recorders", tone: "att", perm: "neubit.read", module: "vms" },
           { icon: "heroicons:heart", label: "Pulse", href: "/system-health", tone: "teal", perm: "system.read" },
         ],
