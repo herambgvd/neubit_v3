@@ -15,6 +15,7 @@ import { AUTH_PILL, authLabel } from "../constants";
 import { receiverUrl, copyToClipboard } from "../lib/receiverUrl";
 import WebhookForm from "./WebhookForm";
 import WebhookDetailModal from "./WebhookDetailModal";
+import { RowAction } from "@/components/console";
 
 export default function WebhooksPanel({ category, catId }) {
   const qc = useQueryClient();
@@ -52,7 +53,7 @@ export default function WebhooksPanel({ category, catId }) {
           </p>
         </div>
         {!creating && !editing && (
-          <Button variant="action" icon="heroicons-outline:plus" onClick={() => setCreating(true)} className="!px-3 !py-1.5 text-xs">
+          <Button variant="action" icon="heroicons-outline:plus" onClick={() => setCreating(true)}>
             Add webhook
           </Button>
         )}
@@ -115,12 +116,8 @@ export default function WebhooksPanel({ category, catId }) {
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <button onClick={() => setDetail(h)} title="Details" className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-blueb">
-                      <Icon icon="heroicons-outline:eye" className="text-sm" />
-                    </button>
-                    <button onClick={() => setEditing(h)} title="Edit" className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink">
-                      <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
-                    </button>
+                    <RowAction icon="heroicons-outline:eye" title="Details" onClick={() => setDetail(h)} />
+                    <RowAction icon="heroicons-outline:pencil-square" title="Edit" onClick={() => setEditing(h)} />
                     <button
                       onClick={() =>
                         setConfirm({

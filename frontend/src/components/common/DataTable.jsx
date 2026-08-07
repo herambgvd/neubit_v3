@@ -71,7 +71,7 @@ export default function DataTable({
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] backdrop-blur-sm">
+    <div className="overflow-x-auto rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)]">
       <table className="w-full text-sm">
         <thead>
           {table.getHeaderGroups().map((hg) => (

@@ -318,7 +318,13 @@ export default function GlobalNavDock({ home = false }) {
     // bar that used to sit below the header, so on console routes (/users, /roles,
     // /platform, …) that later sibling won the tie and covered the open menus. One
     // header level above all page chrome keeps it consistent.
-    <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.82)] px-3 backdrop-blur sm:px-4">
+    // NO backdrop-blur: the bar is IN FLOW (shrink-0 in the shell's flex column) and
+    // the shell never scrolls, so nothing ever passes behind it — the frost had no
+    // source to sample. It did, however, make the header its own *backdrop root*,
+    // which a modal's own backdrop-blur cannot reach into: the dim/blur stopped dead
+    // at the header's bottom border and the top of the screen stayed sharp, reading
+    // as the page background being "cut off" above the overlay. Same for <Footer>.
+    <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.82)] px-3 sm:px-4">
       <div className="flex shrink-0 items-center gap-1.5">
         {/* ⊞ MENU navigator launcher — jump to any section from any screen. Sits to
             the LEFT of the brand so the navigator is the first thing in the bar. */}

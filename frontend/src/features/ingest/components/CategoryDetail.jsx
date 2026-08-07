@@ -4,6 +4,7 @@
 import { Icon } from "@iconify/react";
 
 import WebhooksPanel from "./WebhooksPanel";
+import { QuietButton, DangerButton } from "@/components/console";
 
 export default function CategoryDetail({ category, catId, onEdit, onDelete }) {
   return (
@@ -18,19 +19,12 @@ export default function CategoryDetail({ category, catId, onEdit, onDelete }) {
             <p className="truncate text-[11.5px] text-nb-faint">{category.description}</p>
           )}
         </div>
-        <button
-          onClick={onEdit}
-          className="inline-flex items-center gap-1.5 rounded-[8px] border border-nb-line px-3 py-1.5 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-        >
-          <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-        </button>
-        <button
-          onClick={onDelete}
-          title="Delete category"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] text-nb-crit transition hover:bg-[rgba(248,113,113,.18)]"
-        >
-          <Icon icon="heroicons-outline:trash" className="text-sm" />
-        </button>
+        <QuietButton icon="heroicons-outline:pencil-square" onClick={onEdit}>
+          Edit
+        </QuietButton>
+        <DangerButton icon="heroicons-outline:trash" title="Delete category" onClick={onDelete}>
+          Delete
+        </DangerButton>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <WebhooksPanel category={category} catId={catId} />

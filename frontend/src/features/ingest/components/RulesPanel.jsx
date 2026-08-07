@@ -17,6 +17,7 @@ import { asItems } from "@/lib/format";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
 import RuleFormModal from "./RuleFormModal";
+import { RowAction } from "@/components/console";
 
 export default function RulesPanel({ webhookId }) {
   const qc = useQueryClient();
@@ -128,30 +129,13 @@ function RuleRow({ rule, onEdit, onToggle, onDelete }) {
           <span className="shrink-0">· {condCount} condition{condCount === 1 ? "" : "s"}</span>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => onToggle(!rule.enabled)}
+      <RowAction
+        icon={rule.enabled ? "heroicons-outline:pause" : "heroicons-outline:play"}
         title={rule.enabled ? "Disable" : "Enable"}
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink"
-      >
-        <Icon icon={rule.enabled ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-sm" />
-      </button>
-      <button
-        type="button"
-        onClick={onEdit}
-        title="Edit"
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink"
-      >
-        <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        title="Delete"
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit"
-      >
-        <Icon icon="heroicons-outline:trash" className="text-sm" />
-      </button>
+        onClick={() => onToggle(!rule.enabled)}
+      />
+      <RowAction icon="heroicons-outline:pencil-square" title="Edit" onClick={onEdit} />
+      <RowAction icon="heroicons-outline:trash" title="Delete" tone="danger" onClick={onDelete} />
     </li>
   );
 }

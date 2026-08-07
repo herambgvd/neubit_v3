@@ -153,6 +153,27 @@ export function CreateButton({ label, onClick, disabled, className = "" }) {
   );
 }
 
+// Borderless icon action for a LIST ROW (view / edit / delete on a webhook, rule,
+// event…). Distinct from IconButton, which is the bordered chip a panel header
+// uses. Rows were hand-rolling this at h-7 and h-8, with and without borders.
+export function RowAction({ icon, title, onClick, disabled, tone = "default", className = "", ...props }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      {...props}
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition disabled:opacity-50 ${
+        tone === "danger" ? "hover:bg-nb-crit/12 hover:text-nb-crit" : "hover:bg-white/5 hover:text-nb-blueb"
+      } ${className}`}
+    >
+      <Icon icon={icon} className="text-sm" />
+    </button>
+  );
+}
+
 // Small square icon button used in panel headers (export / import / refresh).
 export function IconButton({ icon, title, onClick, disabled, className = "", ...props }) {
   return (
@@ -181,6 +202,35 @@ export function ActionButton(props) {
 // Quiet secondary action (Cancel, Manage, Back).
 export function QuietButton(props) {
   return <Button variant="secondary" {...props} />;
+}
+
+// Segmented toggle — the same pill-in-a-box the header's console strip uses for
+// ?view= navigation, but driven by state instead of links. Anywhere a form offers
+// two or three modes (Raw JSON / Guided, list / map) this is the control.
+//   <Segmented value={mode} onChange={setMode} options={[{value,label,icon}]} />
+export function Segmented({ value, onChange, options = [], className = "" }) {
+  return (
+    <div className={`flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px] ${className}`}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange?.(o.value)}
+            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${
+              on
+                ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb"
+                : "border border-transparent text-nb-faint hover:text-nb-muted"
+            }`}
+          >
+            {o.icon && <Icon icon={o.icon} className="text-[14px]" />}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // The right-aligned action row a console view puts above its content (Save
@@ -221,7 +271,7 @@ export function PaneForm({ title, subtitle, action, onSubmit, footer, className 
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
       {footer && (
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-nb-line px-5 py-3">{footer}</div>
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-nb-line px-5 py-4">{footer}</div>
       )}
     </form>
   );

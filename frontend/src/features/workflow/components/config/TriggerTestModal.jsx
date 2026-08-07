@@ -79,8 +79,8 @@ export default function TriggerTestModal({ open, trigger, onClose }) {
       title={`Test trigger${trigger?.name ? ` — ${trigger.name}` : ""}`}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} className="!px-3 !py-1.5 text-xs">Close</Button>
-          <Button onClick={submit} disabled={run.isPending} icon="heroicons-outline:beaker" className="!px-3 !py-1.5 text-xs">
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <Button onClick={submit} disabled={run.isPending} icon="heroicons-outline:beaker">
             {run.isPending ? "Running…" : "Run simulation"}
           </Button>
         </>

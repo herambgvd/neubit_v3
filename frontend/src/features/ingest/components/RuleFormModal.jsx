@@ -267,7 +267,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
             type="button"
             variant="secondary"
             icon="heroicons-outline:plus"
-            className="!px-3 !py-1.5 text-xs"
+           
             onClick={() => setConditions([...conditions, { path: "", op: "exists", value: "" }])}
           >
             Add condition
@@ -324,7 +324,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
             type="button"
             variant="secondary"
             icon="heroicons-outline:plus"
-            className="!px-3 !py-1.5 text-xs"
+           
             onClick={() => setFieldRows([...fieldRows, { outKey: "", jmespath: "" }])}
           >
             Add field
@@ -355,7 +355,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }) {
               type="button"
               variant="secondary"
               icon="heroicons-outline:play"
-              className="!px-3 !py-1.5 text-xs"
+             
               onClick={runTest}
               disabled={test.isPending || !isEdit}
             >

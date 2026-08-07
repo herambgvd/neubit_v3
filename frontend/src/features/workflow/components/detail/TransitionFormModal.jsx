@@ -5,7 +5,7 @@
 // definition, validates required fields, then hands the values to onSubmit.
 import { useState } from "react";
 import { Icon } from "@iconify/react";
-import { Button } from "@/components/ui/kit";
+import { Button, Overlay } from "@/components/ui/kit";
 import { titleize } from "@/lib/format";
 import { stateId, stateName } from "./StateMachine";
 import FormFieldInput, { fieldKey, fieldRequired } from "./FormFieldInput";
@@ -47,8 +47,7 @@ export default function TransitionFormModal({ transition, states, formList, pend
     transition.to_state;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onCancel} />
+    <Overlay onClose={onCancel}>
       <div className="relative w-full max-w-lg rounded-xl bg-card border border-card-border shadow-2xl animate-modal-in flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between border-b border-card-border px-5 py-4">
           <div>
@@ -86,6 +85,6 @@ export default function TransitionFormModal({ transition, states, formList, pend
           </div>
         </form>
       </div>
-    </div>
+    </Overlay>
   );
 }

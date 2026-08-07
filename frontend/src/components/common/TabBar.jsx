@@ -25,7 +25,7 @@ export function TabBar({ tabs = [], active, onChange, className = "" }) {
             onClick={() => onChange?.(t.key)}
             className={`inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${
               isActive
-                ? "border-nb-teal text-nb-teal"
+                ? "border-nb-blue text-nb-blueb"
                 : "border-transparent text-nb-muted hover:text-nb-ink"
             }`}
           >
