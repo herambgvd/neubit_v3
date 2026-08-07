@@ -18,7 +18,7 @@
 export const menuItems = [
   // Hidden for now (coming later) — uncomment to restore in the top nav.
   // { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "neubit.read" },
-  // Devices → the onboarding zone (Access Control now; Cameras/NVR/Recorders with VMS).
+  // Devices → the estate zone (Access Control; federated Cameras view + Recorders with VMS).
   // Carries an explicit `link` so it surfaces as a "Jump to" cell in the ⊞ MENU overlay;
   // the full device tab list lives in the overlay's Configurations group.
   { title: "Devices", icon: "heroicons-outline:video-camera", section: "devices", link: "/access-control" },
@@ -65,10 +65,14 @@ export const configConsoles = [
 // ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──
 export const deviceTabs = [
   { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read", module: "access" },
+  // Cameras = a FEDERATED, read-only view of every recorder-owned camera (single
+  // ownership: the standalone recorder owns all cameras — direct + 3rd-party NVRs
+  // onboarded on the recorder edge). The VMS never onboards cameras; management
+  // happens on the owning recorder.
   { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read", module: "vms" },
-  { title: "NVR", icon: "heroicons:server-stack", link: "/devices/nvr", perm: "neubit.read", module: "vms" },
-  // Recorders = our own MediaNode registry (independent recorder machines cameras
-  // are pinned to). Distinct from NVR (3rd-party onboarded recorders).
+  // Recorders = our recorder NODE registry (federated standalone recorders). This is
+  // the only Devices onboarding surface — 3rd-party NVRs are onboarded ON a recorder,
+  // so the old VMS-side "NVR" onboarding tab has been retired.
   { title: "Recorders", icon: "heroicons:cpu-chip", link: "/devices/recorders", perm: "neubit.read", module: "vms" },
 ];
 

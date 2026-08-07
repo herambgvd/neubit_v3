@@ -107,7 +107,6 @@ export default function AppLayout({ children }) {
   // h-full + its own inner overflow. Keeps all three device pages consistent.
   const contained =
     pathname === "/devices/cameras" ||
-    pathname === "/devices/nvr" ||
     pathname === "/devices/recorders" ||
     pathname === "/federation" ||
     pathname === "/access-control" ||
