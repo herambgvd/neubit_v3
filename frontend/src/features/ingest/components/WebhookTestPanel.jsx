@@ -42,7 +42,7 @@ export default function WebhookTestPanel({ hookId }) {
         hint="Runs schema validation + JMESPath transform. Nothing is published or logged."
       />
       <div className="flex justify-end">
-        <Button onClick={submit} disabled={run.isPending} icon="heroicons-outline:play" className="!px-3 !py-1.5 text-xs">
+        <Button onClick={submit} disabled={run.isPending} icon="heroicons-outline:play">
           {run.isPending ? "Running…" : "Run test"}
         </Button>
       </div>

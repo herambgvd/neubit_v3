@@ -17,7 +17,7 @@ export default function FormSubmitTestModal({ open, onClose, fields, values }) {
       onClose={onClose}
       wide
       title="Test submit"
-      footer={<Button variant="secondary" onClick={onClose} className="!px-3 !py-1.5 text-xs">Close</Button>}
+      footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
     >
       <div className="space-y-4">
         <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${valid ? "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good" : "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit"}`}>

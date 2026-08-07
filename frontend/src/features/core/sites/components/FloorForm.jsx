@@ -152,8 +152,8 @@ export default function FloorForm({ site, floor, onCancel, onSaved }) {
         {isEdit && <FCheckbox label="Active" value={isActive} onChange={setIsActive} />}
       </div>
       <div className="flex items-center justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>
-        <Button type="submit" disabled={saving.isPending || (!isEdit && !floorplanFile)} className="!px-3 !py-1.5 text-xs">
+        <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" disabled={saving.isPending || (!isEdit && !floorplanFile)}>
           {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create floor"}
         </Button>
       </div>

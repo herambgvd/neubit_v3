@@ -13,6 +13,7 @@ import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
 import { OUTCOME_PILL } from "../constants";
 import EventLogDetail from "./EventLogDetail";
+import { RowAction } from "@/components/console";
 
 // Received-at with seconds — kept local since the shared fmtDateTime omits seconds.
 const fmt = (ts) =>
@@ -61,9 +62,7 @@ export default function WebhookEventsPanel({ hookId }) {
                 )}
                 {r.is_replay && <span className="rounded-full border border-[rgba(96,165,250,.35)] bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] font-medium text-nb-blueb">replay</span>}
               </button>
-              <button onClick={() => replay.mutate(r.id)} disabled={replay.isPending} title="Replay" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-blueb disabled:opacity-50">
-                <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
-              </button>
+              <RowAction icon="heroicons-outline:arrow-path" title="Replay" disabled={replay.isPending} onClick={() => replay.mutate(r.id)} />
             </div>
             {open && <EventLogDetail id={r.id} error={r.error} />}
           </li>

@@ -1,18 +1,25 @@
 "use client";
 
 // Shared UI kit — reskinned to the NeuBit navy/teal command-console look. Panels
-// are navy-glass (nb.line border, translucent navy bg, backdrop-blur); inputs use
-// the nb.field surface with teal focus rings; labels/text follow the ink→muted→
-// faint ramp. Status-semantic colours (green=ok, amber=warn, red=crit) are kept.
+// are navy-glass (nb.line border, translucent navy bg); inputs use the nb.field
+// surface with teal focus rings; labels/text follow the ink→muted→faint ramp.
+// Status-semantic colours (green=ok, amber=warn, red=crit) are kept.
+//
+// Panels carry NO backdrop-blur. They sit on a smooth radial gradient, so there is
+// nothing for a blur to reveal — but it did make every panel its own *backdrop
+// root*, which an overlay's backdrop-blur cannot reach into. The result was sharp
+// islands in an otherwise blurred page whenever a modal opened. Only the overlays
+// below blur, and they paint on top.
 import { Icon } from "@iconify/react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { areaClass, fieldClass, FieldLabel } from "@/components/common/Field";
 import SelectMenu from "@/components/common/SelectMenu";
 
 export function Card({ className = "", children }) {
   return (
-    <div className={`rounded-lg bg-[rgba(8,15,34,.5)] border border-nb-line backdrop-blur-sm ${className}`}>{children}</div>
+    <div className={`rounded-lg bg-[rgba(8,15,34,.5)] border border-nb-line ${className}`}>{children}</div>
   );
 }
 
@@ -37,15 +44,23 @@ const VARIANTS = {
   action:
     "border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.14)] text-nb-blueb hover:bg-[rgba(96,165,250,.22)]",
   success: "bg-nb-teal text-[#062330] font-semibold hover:bg-nb-tealb", // create actions — Surveillance teal
+  // Disruptive but reversible (rotate a token, force a re-sync): warns without
+  // claiming the action destroys data, which is what `danger` means.
+  warn: "border border-nb-warn/40 bg-nb-warn/10 text-nb-warn hover:bg-nb-warn/20",
   danger: "border border-nb-crit/40 bg-nb-crit/10 text-nb-crit hover:bg-nb-crit/20", // delete actions
   secondary: "border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted hover:border-nb-blue hover:text-nb-blueb",
   ghost: "bg-transparent text-nb-muted hover:text-nb-ink hover:bg-white/5",
 };
 
+// DEFAULT VARIANT is `action` (the console blue). A bare <Button> is the primary
+// confirm on its surface, and ~28 of them were falling through to `primary` — the
+// theme-inverting black-on-white chip — which is why "Create webhook" rendered as a
+// white button next to blue ones. `primary` is still there for callers that ask.
+//
 // `as` lets a button that navigates render as a <Link>/<a>. Wrapping a <button>
 // in a <Link> nests interactive elements — invalid HTML, and it breaks keyboard
 // and assistive-tech navigation.
-export function Button({ as: As = "button", variant = "primary", icon, className = "", children, ...props }) {
+export function Button({ as: As = "button", variant = "action", icon, className = "", children, ...props }) {
   const extra = As === "button" ? { type: props.type || "button" } : {};
   return (
     <As
@@ -269,7 +284,7 @@ const _METRIC_BAR = {
 export function MetricCard({ label, value, icon, tone = "info", hint, className = "" }) {
   return (
     <div
-      className={`relative flex items-center gap-3 overflow-hidden rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] backdrop-blur-sm px-4 py-3.5 ${className}`}
+      className={`relative flex items-center gap-3 overflow-hidden rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] px-4 py-3.5 ${className}`}
     >
       <span className={`absolute inset-y-0 left-0 w-1 ${_METRIC_BAR[tone] || _METRIC_BAR.info}`} />
       {icon && (
@@ -317,27 +332,56 @@ export function Toggle({ checked, onChange, disabled }) {
   );
 }
 
+// The dim-backdrop shell EVERY overlay sits in — modal, drawer, and the hand-rolled
+// dialogs that need their own panel markup. Owns three things: the portal, the
+// full-viewport wrapper, and Escape-to-close.
+//
+// PORTAL TO <body>, and this is the whole point. `position: fixed` only means "the
+// viewport" while no ancestor establishes a containing block for it — a transform,
+// filter, backdrop-filter, contain, will-change or composited scroller anywhere up
+// the tree silently re-parents it and then the ancestor's overflow clips it. That is
+// exactly what split the two ingest dialogs: <CategoryFormModal> is a direct child of
+// the page and dimmed the whole screen, while <WebhookDetailModal> renders four levels
+// down inside a scrolling, overflow-hidden <ConsolePanel> — so its backdrop stopped at
+// that panel's edges and the header and category rail stayed lit, reading as the
+// background being cut off. Identical markup, different ancestry, different result.
+// Rendered at <body> there is no ancestry left to matter, so every overlay behaves the
+// same wherever in the tree it happens to be written.
+export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justify-center p-4", children }) {
+  // document is undefined during SSR/prerender; portal only once mounted.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") onClose?.();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!mounted) return null;
+  return createPortal(
+    <div className={`fixed inset-0 z-50 flex ${wrapper}`}>
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+        onClick={staticBackdrop ? undefined : onClose}
+      />
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 // `hideScroll` keeps the body scrollable (wheel/touch/keyboard) but draws no
 // scrollbar — for form modals where the bar clutters the panel edge.
 // `staticBackdrop` makes the dialog "static": a stray click on the dim backdrop no
 // longer dismisses it, so half-filled forms are never lost by accident. The X,
 // Cancel and Escape still close it.
 export function Modal({ open, onClose, title, children, footer, wide, hideScroll, staticBackdrop }) {
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape") onClose?.();
-    }
-    if (open) document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
-        onClick={staticBackdrop ? undefined : onClose}
-      />
+    <Overlay onClose={onClose} staticBackdrop={staticBackdrop}>
       <div
         className={`relative w-full ${wide ? "max-w-2xl" : "max-w-md"} rounded-xl bg-[rgba(8,15,34,.93)] border border-nb-line backdrop-blur-md shadow-2xl animate-modal-in`}
       >
@@ -352,24 +396,15 @@ export function Modal({ open, onClose, title, children, footer, wide, hideScroll
           <div className="flex justify-end gap-2 border-t border-nb-line px-5 py-4">{footer}</div>
         )}
       </div>
-    </div>
+    </Overlay>
   );
 }
 
 // Right-side sliding sheet for detail views (person detail, investigation history…).
 export function Drawer({ open, onClose, title, subtitle, children, width = "max-w-md" }) {
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape") onClose?.();
-    }
-    if (open) document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+    <Overlay onClose={onClose} wrapper="justify-end">
       <div className={`relative h-full w-full ${width} bg-[rgba(8,15,34,.93)] border-l border-nb-line backdrop-blur-md shadow-2xl flex flex-col animate-modal-in`}>
         <div className="flex items-start justify-between border-b border-nb-line px-5 py-4 shrink-0">
           <div className="min-w-0">
@@ -382,7 +417,7 @@ export function Drawer({ open, onClose, title, subtitle, children, width = "max-
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
       </div>
-    </div>
+    </Overlay>
   );
 }
 

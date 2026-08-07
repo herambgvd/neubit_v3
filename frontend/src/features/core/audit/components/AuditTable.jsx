@@ -9,7 +9,7 @@ const columns = [
   {
     key: "ts",
     label: "Time",
-    render: (r) => <span className="text-muted text-muted">{formatTs(r.ts)}</span>,
+    render: (r) => <span className="text-nb-muted text-nb-muted">{formatTs(r.ts)}</span>,
   },
   {
     key: "actor_email",
@@ -24,7 +24,7 @@ const columns = [
   {
     key: "activity",
     label: "Activity",
-    render: (r) => <span className="text-foreground">{describe(r)}</span>,
+    render: (r) => <span className="text-nb-ink">{describe(r)}</span>,
   },
 ];
 

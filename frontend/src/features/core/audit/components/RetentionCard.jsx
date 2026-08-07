@@ -51,8 +51,8 @@ export default function RetentionCard() {
     <Card className="p-5 mb-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">Data retention</h2>
-          <p className="text-xs text-muted mt-0.5">
+          <h2 className="text-sm font-semibold text-nb-ink">Data retention</h2>
+          <p className="text-xs text-nb-muted mt-0.5">
             {info.data ? `${info.data.total} entries stored.` : "—"} Automatically delete entries
             older than the window below. 0 keeps them forever.
           </p>

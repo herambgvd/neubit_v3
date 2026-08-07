@@ -8,7 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/kit";
+import { Button, Overlay } from "@/components/ui/kit";
 import { FieldLabel, fieldClass } from "@/components/common";
 import { api, apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
@@ -53,13 +53,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
     return () => URL.revokeObjectURL(url);
   }, [imageFile]);
 
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape") onCancel?.();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  // Escape-to-close lives in <Overlay>.
 
   // Address → coordinates is only offered when this tenant has Google Maps turned
   // on AND a key saved; same config the Sites Map reads, so it stays in one place.
@@ -145,8 +139,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
   const parentChoices = (allSites || []).filter((s) => s.site_id !== site?.site_id);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onCancel} />
+    <Overlay onClose={onCancel}>
       <div className="relative w-full max-w-3xl rounded-xl bg-nb-panel border border-nb-line shadow-2xl animate-modal-in flex flex-col max-h-[85vh] text-nb-ink">
         <div className="flex items-center justify-between border-b border-nb-line px-5 py-4 shrink-0">
           <div>
@@ -293,6 +286,6 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Overlay>
   );
 }

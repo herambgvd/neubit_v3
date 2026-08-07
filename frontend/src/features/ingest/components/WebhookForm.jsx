@@ -12,8 +12,9 @@ import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
+import { Segmented, RowAction } from "@/components/console";
 import { Button, Checkbox } from "@/components/ui/kit";
-import { Field } from "@/components/common";
+import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
 import { AUTH_TYPES, REQUEST_METHODS } from "../constants";
@@ -142,9 +143,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
     <form noValidate onSubmit={submit} className="space-y-4 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-4">
       <div className="flex items-center justify-between">
         <h4 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{isEdit ? `Edit webhook · ${webhook.name}` : "Add webhook"}</h4>
-        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-white/5 hover:text-nb-ink">
-          <Icon icon="heroicons-outline:x-mark" className="text-sm" />
-        </button>
+<RowAction icon="heroicons-outline:x-mark" title="Close" onClick={onCancel} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -228,25 +227,15 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
       {/* ── Transform (field map) ──────────────────────────────── */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="font-mono text-xs font-medium uppercase tracking-wide text-nb-muted">
-            Transform (field map)
-          </label>
-          <div className="inline-flex rounded-[8px] border border-nb-line p-0.5 text-xs">
-            <button
-              type="button"
-              onClick={() => setBuilderMode(false)}
-              className={`rounded-[6px] px-2 py-0.5 transition ${!builderMode ? "bg-[rgba(96,165,250,.15)] text-nb-blueb" : "text-nb-faint hover:text-nb-ink"}`}
-            >
-              Raw JSON
-            </button>
-            <button
-              type="button"
-              onClick={() => setBuilderMode(true)}
-              className={`rounded-[6px] px-2 py-0.5 transition ${builderMode ? "bg-[rgba(96,165,250,.15)] text-nb-blueb" : "text-nb-faint hover:text-nb-ink"}`}
-            >
-              Guided
-            </button>
-          </div>
+          <FieldLabel>Transform (field map)</FieldLabel>
+          <Segmented
+            value={builderMode ? "guided" : "raw"}
+            onChange={(v) => setBuilderMode(v === "guided")}
+            options={[
+              { value: "raw", label: "Raw JSON", icon: "heroicons-outline:code-bracket" },
+              { value: "guided", label: "Guided", icon: "heroicons-outline:sparkles" },
+            ]}
+          />
         </div>
 
         {builderMode ? (
@@ -291,8 +280,8 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }) 
       <Checkbox label="Active" checked={isActive} onChange={setIsActive} />
 
       <div className="flex items-center justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel} className="!px-3 !py-1.5 text-xs">Cancel</Button>
-        <Button type="submit" disabled={saving.isPending} className="!px-3 !py-1.5 text-xs">
+        <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" variant="action" icon="heroicons-outline:check" disabled={saving.isPending}>
           {saving.isPending ? "Saving…" : isEdit ? "Save changes" : "Create webhook"}
         </Button>
       </div>

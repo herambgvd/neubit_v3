@@ -76,7 +76,7 @@ export default function FormPreview({ name, description, fields }) {
               {previewFields.map((f) => (
                 <FormRenderer key={f.id} field={f} value={values[f.id]} onChange={(v) => update(f.id, v)} />
               ))}
-              <Button type="submit" icon="heroicons-outline:paper-airplane" className="!px-3 !py-1.5 text-xs">Test submit</Button>
+              <Button type="submit" icon="heroicons-outline:paper-airplane">Test submit</Button>
             </form>
           )}
         </div>

@@ -110,7 +110,7 @@ export default function PayloadFieldsBuilder({
             icon="heroicons-outline:arrow-path"
             disabled={!sample}
             onClick={handleAnalyze}
-            className="!px-3 !py-1.5 text-xs"
+           
           >
             {fields.length === 0 ? "Find fields" : "Re-analyze"}
           </Button>

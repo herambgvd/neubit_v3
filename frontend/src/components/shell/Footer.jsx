@@ -16,7 +16,9 @@ export default function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="shrink-0 border-t border-[rgba(150,180,245,.14)] bg-[rgba(8,15,34,.55)] backdrop-blur">
+    // No backdrop-blur — see GlobalNavDock: in-flow chrome with nothing behind it,
+    // and the blur only made the bar a backdrop root an overlay could not dim through.
+    <footer className="shrink-0 border-t border-[rgba(150,180,245,.14)] bg-[rgba(8,15,34,.55)]">
       <div className="w-full px-6 lg:px-8 py-2.5 flex items-center justify-between">
         <span className="text-[11px] tracking-[.2px] text-nb-faint">
           © {year} {name}. All rights reserved.
