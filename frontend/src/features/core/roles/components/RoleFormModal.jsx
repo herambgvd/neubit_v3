@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { Button, Input, Modal } from "@/components/ui/kit";
 import PermissionSelector from "./PermissionSelector";
+import { validateRole } from "../validation";
 
 export default function RoleFormModal({
   open,
@@ -20,6 +22,19 @@ export default function RoleFormModal({
   onSave,
   saving,
 }) {
+  // Same submit-then-validate flow as the Add/Edit user dialogs.
+  const [submitted, setSubmitted] = useState(false);
+  useEffect(() => { if (!open) setSubmitted(false); }, [open]);
+
+  const errors = validateRole(form);
+  const show = (field) => (submitted ? errors[field] : undefined);
+
+  function handleSave() {
+    setSubmitted(true);
+    if (Object.keys(errors).length) return;
+    onSave();
+  }
+
   return (
     <Modal
       open={open}
@@ -34,7 +49,10 @@ export default function RoleFormModal({
         ) : (
           <>
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button variant={editing ? "primary" : "success"} disabled={saving || !form.name} onClick={onSave}>
+            {/* `action` (console blue) — the same confirm button as every other
+                console dialog. This used to be `success`/`primary`, so creating a
+                role was teal and saving one was the theme-inverting black chip. */}
+            <Button variant="action" disabled={saving} onClick={handleSave}>
               {saving ? "Saving…" : editing ? "Save changes" : "Create"}
             </Button>
           </>
@@ -56,6 +74,7 @@ export default function RoleFormModal({
           disabled={readOnly}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           placeholder="Enter role name (e.g. Operator)"
+          error={show("name")}
         />
         <Input
           label="Description"

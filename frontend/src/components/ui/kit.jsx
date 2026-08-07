@@ -393,22 +393,32 @@ export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justi
 // `staticBackdrop` makes the dialog "static": a stray click on the dim backdrop no
 // longer dismisses it, so half-filled forms are never lost by accident. The X,
 // Cancel and Escape still close it.
-export function Modal({ open, onClose, title, children, footer, wide, hideScroll, staticBackdrop }) {
+// `size` widens the dialog for form-heavy content ("xl" is the site editor's four
+// sections). `wide` is the older boolean and still works. `subtitle` is the one
+// line of context under the title — SiteFormModal hand-rolled its whole shell to
+// get these two things, which is how it ended up with its own header and footer.
+const MODAL_WIDTH = { md: "max-w-md", wide: "max-w-2xl", xl: "max-w-3xl" };
+
+export function Modal({ open, onClose, title, subtitle, children, footer, wide, size, hideScroll, staticBackdrop }) {
   if (!open) return null;
+  const width = MODAL_WIDTH[size] || (wide ? MODAL_WIDTH.wide : MODAL_WIDTH.md);
   return (
     <Overlay onClose={onClose} staticBackdrop={staticBackdrop}>
       <div
-        className={`relative w-full ${wide ? "max-w-2xl" : "max-w-md"} rounded-xl bg-[rgba(8,15,34,.93)] border border-nb-line backdrop-blur-md shadow-2xl animate-modal-in`}
+        className={`relative flex max-h-[85vh] w-full ${width} flex-col rounded-xl bg-[rgba(8,15,34,.93)] border border-nb-line backdrop-blur-md shadow-2xl animate-modal-in`}
       >
-        <div className="flex items-center justify-between border-b border-nb-line px-5 py-4">
-          <h3 className="text-base font-semibold text-nb-ink">{title}</h3>
-          <button onClick={onClose} className="text-nb-muted hover:text-nb-ink transition">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-nb-line px-5 py-4">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-nb-ink">{title}</h3>
+            {subtitle && <p className="mt-0.5 text-xs text-nb-soft">{subtitle}</p>}
+          </div>
+          <button onClick={onClose} aria-label="Close" className="shrink-0 text-nb-muted hover:text-nb-ink transition">
             <Icon icon="heroicons-outline:x-mark" className="text-xl" />
           </button>
         </div>
-        <div className={`px-5 py-4 max-h-[70vh] overflow-y-auto ${hideScroll ? "scroll-none" : ""}`}>{children}</div>
+        <div className={`min-h-0 flex-1 overflow-y-auto px-5 py-4 ${hideScroll ? "scroll-none" : ""}`}>{children}</div>
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-nb-line px-5 py-4">{footer}</div>
+          <div className="flex shrink-0 justify-end gap-2 border-t border-nb-line px-5 py-4">{footer}</div>
         )}
       </div>
     </Overlay>

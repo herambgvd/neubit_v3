@@ -10,8 +10,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ...core.fields import AsciiEmail
 from ..shared import (
     SiteType,
     ThreatLevel,
@@ -59,7 +60,7 @@ class CreateSiteRequest(BaseModel):
     coordinates: Optional[Coordinates] = None
     contact_person: Optional[str] = None
     contact_phone: Optional[str] = None
-    email_address: Optional[EmailStr] = None
+    email_address: Optional[AsciiEmail] = None
     image_url: Optional[str] = None
 
     @field_validator("name")
@@ -91,7 +92,7 @@ class UpdateSiteRequest(BaseModel):
     coordinates: Optional[Coordinates] = None
     contact_person: Optional[str] = None
     contact_phone: Optional[str] = None
-    email_address: Optional[EmailStr] = None
+    email_address: Optional[AsciiEmail] = None
     image_url: Optional[str] = None
     is_active: Optional[bool] = None
 

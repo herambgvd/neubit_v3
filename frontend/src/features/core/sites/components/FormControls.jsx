@@ -8,19 +8,36 @@ import { FieldLabel, fieldClass, areaClass } from "@/components/common";
 import SelectMenu from "@/components/common/SelectMenu";
 import { Checkbox } from "@/components/ui/kit";
 
-export function FInput({ label, required, full, value, onChange, placeholder, type = "text", step, min }) {
+// `error` and `hint` behave exactly like kit's <Input> / common's <Field>: red
+// border, red message in place of the hint. `action` puts a control beside the
+// field (Regenerate) — that row used to be hand-built with its own input classes,
+// so the Location code box didn't match the Name box next to it.
+export function FInput({
+  label, required, full, value, onChange, placeholder, type = "text", step, min, error, hint, action, mono,
+}) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <FieldLabel required={required}>{label}</FieldLabel>
-      <input
-        type={type}
-        step={step}
-        min={min}
-        value={value === null || value === undefined ? "" : value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={fieldClass}
-      />
+      <div className={action ? "mt-1 flex gap-2" : ""}>
+        <input
+          type={type}
+          step={step}
+          min={min}
+          value={value === null || value === undefined ? "" : value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          aria-invalid={error ? true : undefined}
+          className={`${fieldClass} ${action ? "!mt-0 flex-1" : ""} ${mono ? "font-mono" : ""} ${
+            error ? "!border-nb-crit" : ""
+          }`}
+        />
+        {action}
+      </div>
+      {error ? (
+        <p className="mt-1 text-xs text-nb-crit">{error}</p>
+      ) : hint ? (
+        <p className="mt-1 text-[11px] text-nb-faint">{hint}</p>
+      ) : null}
     </div>
   );
 }
