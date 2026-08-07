@@ -18,6 +18,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.deps import get_current_user, require_permission
@@ -281,11 +282,17 @@ async def ingest_video_audit(
     sensitive video op (who / what / when / camera / range). Gated by ``audit.write``.
     """
     # Build a lightweight actor snapshot so the audit row carries the real user, not
-    # the service account, while staying tenant-scoped to the caller's tenant.
+    # the service account, while staying tenant-scoped to the caller's tenant. The
+    # satellite only knows the user's id — core owns the profile, so resolve the
+    # display name here and the trail reads as a person rather than an address.
+    actor_name = None
+    if data.actor_id:
+        actor_name = await db.scalar(select(User.full_name).where(User.id == data.actor_id))
     actor_snapshot = type(
         "ActorSnapshot", (), {
             "id": data.actor_id,
             "email": data.actor_email or getattr(caller, "email", None),
+            "full_name": actor_name,
             "tenant_id": data.tenant_id or getattr(caller, "tenant_id", None),
         },
     )()

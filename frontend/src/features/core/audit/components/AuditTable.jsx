@@ -12,9 +12,14 @@ const columns = [
     render: (r) => <span className="text-nb-muted text-nb-muted">{formatTs(r.ts)}</span>,
   },
   {
-    key: "actor_email",
+    key: "actor_name",
     label: "Actor",
-    render: (r) => <span className="font-medium">{r.actor_email || "—"}</span>,
+    // Name first; email is the fallback for rows recorded before names were snapshotted.
+    render: (r) => (
+      <span className="font-medium" title={r.actor_email || undefined}>
+        {r.actor_name || r.actor_email || "System"}
+      </span>
+    ),
   },
   {
     key: "action",

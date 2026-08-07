@@ -181,7 +181,11 @@ export default function AuditPage() {
               items.map((r, i) => (
                 <div key={r.id ?? i} className="grid grid-cols-[150px_1fr_150px_1.4fr] items-center gap-3 border-b border-nb-line/40 px-4 py-2 text-[12.5px] last:border-b-0 hover:bg-[rgba(96,165,250,.05)]">
                   <span className="font-mono text-[11.5px] text-nb-faint">{formatTs(r.ts)}</span>
-                  <span className="truncate font-medium text-nb-ink">{r.actor_email || "—"}</span>
+                  {/* Name is the operator-facing identity; the email is the tooltip
+                      fallback for rows recorded before names were snapshotted. */}
+                  <span className="truncate font-medium text-nb-ink" title={r.actor_email || undefined}>
+                    {r.actor_name || r.actor_email || "System"}
+                  </span>
                   <span>
                     <span className={`inline-block rounded-[6px] border px-2 py-0.5 font-mono text-[10.5px] ${PILL[actionColor(r.action)] || PILL.slate}`}>
                       {r.action || "—"}
