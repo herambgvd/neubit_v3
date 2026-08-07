@@ -43,11 +43,18 @@ const DIRS = {
   "down-right": { pan: MOVE_SPEED, tilt: -MOVE_SPEED },
 };
 
-export default function PtzOverlay({ cameraId, canControl }) {
+// `fedNodeId`/`fedRealId` (both set) put the overlay in FEDERATED mode: move/zoom/
+// focus/stop are proxied to the owning recorder via vms.federation.ptz (operate-
+// through-node) instead of the local vms.ptz. Presets + patrols are NOT proxied
+// through the node, so those sections are hidden in federated mode rather than
+// shown as controls that would fail — honest about what operate-through-node covers.
+export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fedRealId = null }) {
   const qc = useQueryClient();
   const [showPatrols, setShowPatrols] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+
+  const federated = !!(fedNodeId && fedRealId);
 
   // Tracks whether a hold is active so we only ever send a single trailing stop.
   const movingRef = useRef(false);
@@ -58,13 +65,13 @@ export default function PtzOverlay({ cameraId, canControl }) {
   const presetsQ = useQuery({
     queryKey: presetsKey,
     queryFn: () => vms.ptz.presets.list(cameraId),
-    enabled: !!cameraId,
+    enabled: !!cameraId && !federated,
     staleTime: 30_000,
   });
   const patrolsQ = useQuery({
     queryKey: patrolsKey,
     queryFn: () => vms.ptz.patrols.list(cameraId),
-    enabled: !!cameraId,
+    enabled: !!cameraId && !federated,
     staleTime: 30_000,
   });
 
@@ -76,31 +83,28 @@ export default function PtzOverlay({ cameraId, canControl }) {
     if (!movingRef.current) return;
     movingRef.current = false;
     try {
-      await vms.ptz.stop(cameraId);
+      if (federated) await vms.federation.ptz(fedNodeId, fedRealId, { action: "stop" });
+      else await vms.ptz.stop(cameraId);
     } catch (e) {
       toast.error(apiError(e, "PTZ stop failed"));
     }
-  }, [cameraId]);
+  }, [cameraId, federated, fedNodeId, fedRealId]);
 
   const startPanTilt = useCallback(
     async (dir) => {
       if (!canControl || movingRef.current) return;
       movingRef.current = true;
       const v = DIRS[dir];
+      const cmd = { mode: "continuous", pan: v.pan, tilt: v.tilt, zoom: 0, speed: MOVE_SPEED };
       try {
-        await vms.ptz.move(cameraId, {
-          mode: "continuous",
-          pan: v.pan,
-          tilt: v.tilt,
-          zoom: 0,
-          speed: MOVE_SPEED,
-        });
+        if (federated) await vms.federation.ptz(fedNodeId, fedRealId, { action: "move", ...cmd });
+        else await vms.ptz.move(cameraId, cmd);
       } catch (e) {
         movingRef.current = false;
         toast.error(apiError(e, "PTZ move failed"));
       }
     },
-    [cameraId, canControl]
+    [cameraId, canControl, federated, fedNodeId, fedRealId]
   );
 
   const startZoom = useCallback(
@@ -108,13 +112,15 @@ export default function PtzOverlay({ cameraId, canControl }) {
       if (!canControl || movingRef.current) return;
       movingRef.current = true;
       try {
-        await vms.ptz.zoom(cameraId, { direction, speed: ZOOM_SPEED });
+        if (federated)
+          await vms.federation.ptz(fedNodeId, fedRealId, { action: "zoom", direction, speed: ZOOM_SPEED });
+        else await vms.ptz.zoom(cameraId, { direction, speed: ZOOM_SPEED });
       } catch (e) {
         movingRef.current = false;
         toast.error(apiError(e, "Zoom failed"));
       }
     },
-    [cameraId, canControl]
+    [cameraId, canControl, federated, fedNodeId, fedRealId]
   );
 
   const startFocus = useCallback(
@@ -122,13 +128,15 @@ export default function PtzOverlay({ cameraId, canControl }) {
       if (!canControl || movingRef.current) return;
       movingRef.current = true;
       try {
-        await vms.ptz.focus(cameraId, { direction, speed: FOCUS_SPEED });
+        if (federated)
+          await vms.federation.ptz(fedNodeId, fedRealId, { action: "focus", direction, speed: FOCUS_SPEED });
+        else await vms.ptz.focus(cameraId, { direction, speed: FOCUS_SPEED });
       } catch (e) {
         movingRef.current = false;
         toast.error(apiError(e, "Focus failed"));
       }
     },
-    [cameraId, canControl]
+    [cameraId, canControl, federated, fedNodeId, fedRealId]
   );
 
   // Safety net: always stop on window blur / tab hide / unmount so a held button
@@ -245,7 +253,17 @@ export default function PtzOverlay({ cameraId, canControl }) {
         </div>
       )}
 
-      {/* Preset bar */}
+      {/* Federated note — operate-through-node covers only pan/tilt/zoom/focus;
+          presets + patrols live on the recorder, not proxied here. */}
+      {federated && (
+        <div className="flex items-center gap-1.5 border-t border-white/10 pt-2 text-[10px] text-white/45">
+          <Icon icon="heroicons-outline:cpu-chip" className="text-xs" />
+          Controlled through its recorder — presets &amp; patrols managed on the NVR
+        </div>
+      )}
+
+      {/* Preset bar — local cameras only (not proxied through a node). */}
+      {!federated && (
       <div className="flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-2">
         <span className="mr-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/45">
           Presets
@@ -329,8 +347,9 @@ export default function PtzOverlay({ cameraId, canControl }) {
           )}
         </div>
       </div>
+      )}
 
-      {editorOpen && (
+      {!federated && editorOpen && (
         <PatrolEditorModal
           cameraId={cameraId}
           presets={presets}

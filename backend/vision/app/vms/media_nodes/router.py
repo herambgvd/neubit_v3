@@ -112,3 +112,49 @@ async def delete_media_node(
 ) -> Response:
     await svc.delete(node_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── federation trust / credential management ─────────────────────────────────────
+# Manage the scoped credentials the recorder node issues to this VMS. Same PERM_MANAGE
+# (vms.config.manage) gate as the rest of node onboarding — credential trust is an
+# infrastructure/config write. The node's federation API is proxied via the service JWT.
+
+
+@router.get(
+    "/media-nodes/{node_id}/credentials",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def list_media_node_credentials(
+    node_id: str,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> dict:
+    """List the federation credentials the recorder node has issued (no raw keys)."""
+    return {"items": await svc.list_credentials(node_id)}
+
+
+@router.post(
+    "/media-nodes/{node_id}/enroll",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def enroll_media_node_credential(
+    node_id: str,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> dict:
+    """Enrol a fresh scoped credential on the node, store it, and surface the raw key
+    ONCE ({credential, id, label, grants}) — the node never returns it again."""
+    return await svc.enroll_credential(node_id)
+
+
+@router.delete(
+    "/media-nodes/{node_id}/credentials/{cred_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def revoke_media_node_credential(
+    node_id: str,
+    cred_id: str,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> Response:
+    await svc.revoke_credential(node_id, cred_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

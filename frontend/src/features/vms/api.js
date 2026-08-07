@@ -84,6 +84,36 @@ export const vms = {
     // Mint a playback session (tokenized fmp4 URL + t=0 start) through the node.
     playback: (nodeId, cameraId, { from, to } = {}) =>
       unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/playback${qs({ from, to })}`)),
+    // ── operate-THROUGH-node — the only two mutations on a node-owned camera ──
+    // PTZ a federated camera through its recorder. `body` = { action:"move"|"stop"|
+    // "zoom"|"focus", ...payload } (the node forwards the payload to the device).
+    // Node-side PTZ gates on vms.ptz.control; the scoped federation credential does
+    // NOT carry it, so this only passes while the node falls back to the shared
+    // service JWT (502 otherwise). Read-only surfaces stay read-only.
+    ptz: (nodeId, cameraId, body) =>
+      unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz`, body)),
+    // Snapshot URL for a federated camera (relative path — fetched as an authed
+    // blob, same as cameras.snapshotUrl, since the endpoint needs the Bearer header).
+    snapshotUrl: (nodeId, cameraId) =>
+      `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/snapshot`,
+
+    // ── Storage (single-ownership) — READ-ONLY per recorder node ────────────
+    // Storage is OWNED + managed by the standalone recorder; the VMS only reads it
+    // through the node. All GET, read-only. Tagged with node_id/node_name.
+    //   usage      → { total_bytes, free_bytes, used_bytes, used_percent, reachable, … }
+    //   raid       → md-array health ({ available, arrays:[…], reason? })
+    //   pools      → { items:[StoragePool{ id, name, kind local|nfs|smb|s3, path, usage }] }
+    //   tierRules  → { items:[TierRule…] } (source → target after N hours)
+    //   upstreamNvr→ a 3rd-party NVR's own HDDs as reported by the recorder, or
+    //                { available:false } when not yet available.
+    storage: {
+      usage: (nodeId) => unwrap(api.get(`/vms/federation/nodes/${nodeId}/storage/usage`)),
+      raid: (nodeId) => unwrap(api.get(`/vms/federation/nodes/${nodeId}/storage/raid`)),
+      pools: (nodeId) => unwrap(api.get(`/vms/federation/nodes/${nodeId}/storage/pools`)),
+      tierRules: (nodeId) => unwrap(api.get(`/vms/federation/nodes/${nodeId}/storage/tier-rules`)),
+      upstreamNvr: (nodeId, nvrId) =>
+        unwrap(api.get(`/vms/federation/nodes/${nodeId}/nvrs/${nvrId}/storage`)),
+    },
   },
 
   // ── Operations / Health dashboard (G2) — one live rollup ────────────────
@@ -285,6 +315,19 @@ export const vms = {
     create: (body) => unwrap(api.post("/vms/media-nodes", body)),
     update: (id, body) => unwrap(api.patch(`/vms/media-nodes/${id}`, body)),
     remove: (id) => unwrap(api.delete(`/vms/media-nodes/${id}`)),
+
+    // ── Federation trust — per-node credential management ────────────────────
+    // A node is enrolled when it holds a federation credential (MediaNodePublic
+    // carries `has_credential`). The RAW credential is returned ONCE on enroll and
+    // never again — surface it to copy immediately.
+    //   GET    /vms/media-nodes/{id}/credentials → { items:[{ id, label, grants[],
+    //            created_at, last_used_at, revoked_at }] }
+    //   POST   /vms/media-nodes/{id}/enroll → 201 { credential (RAW), id, label, grants[] }
+    //   DELETE /vms/media-nodes/{id}/credentials/{credId} → 204
+    credentials: (id) => unwrap(api.get(`/vms/media-nodes/${id}/credentials`)),
+    enroll: (id) => unwrap(api.post(`/vms/media-nodes/${id}/enroll`, {})),
+    revokeCredential: (id, credId) =>
+      unwrap(api.delete(`/vms/media-nodes/${id}/credentials/${credId}`)),
   },
 
   // Camera groups — a named set of cameras shown in a grid `layout`
@@ -702,7 +745,12 @@ export const vms = {
     active: () => unwrap(api.get(`/vms/recording/active`)),
   },
 
-  // ── Storage (P3-B) — pools + tiering ────────────────────────────────────
+  // ── Storage (P3-B) — LEGACY VMS-local pools + tiering ───────────────────
+  // Single-ownership: storage is now OWNED by the standalone recorder and read
+  // per-node via `federation.storage.*`. The Storage PAGE reads through federation;
+  // this block points at the now-unmounted /vms/storage/* and only survives for the
+  // camera recording-pool selector (components/CameraConfigForm). Do NOT use it for
+  // new surfaces — it 404s where the vision storage router is unmounted.
   // Pool: name, pool_type(local|nfs|smb|s3), path, priority, max_size_bytes,
   //   is_default, is_active, nas_*(server/share/protocol/username/password/
   //   domain), s3_*(endpoint/bucket/access_key/secret_key/region/use_ssl),

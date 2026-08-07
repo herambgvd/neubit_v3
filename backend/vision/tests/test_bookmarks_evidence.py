@@ -1,8 +1,8 @@
 """Bookmarks + Evidence Lock / Legal Hold tests (G3) — no network, in-memory SQLite.
 
-Exercises the tenant-scoped bookmark + evidence-lock control planes and — the key value
-of G3 — that the retention worker SKIPS a recording covered by an active evidence lock and
-still deletes an unlocked one.
+Exercises the tenant-scoped bookmark + evidence-lock control planes and the
+``recording_is_locked`` seam (the retention SWEEP that consumed it is owned by the
+NVR — the VMS RetentionTieringWorker was retired — so we assert the helper directly).
 
   * Bookmark CRUD: create (point + range) → row persisted; range query by camera + window;
     patch/delete; tenant isolation (a foreign tenant → NotFound → 404); range validation.
@@ -30,14 +30,11 @@ from kernel.auth import Scope
 from kernel.errors import NotFoundError, ValidationError
 
 from app.db import Base
-from app.vms.models import Bookmark, Camera, EvidenceLock, Recording, StoragePool
+from app.vms.models import Bookmark, Camera, EvidenceLock, Recording
 from app.vms.bookmarks.service import BookmarkService
 from app.vms.bookmarks.schemas import BookmarkCreate, BookmarkUpdate
 from app.vms.evidence.service import EvidenceService, recording_is_locked, is_locked
 from app.vms.evidence.schemas import EvidenceLockCreate
-from app.vms.storage.worker import RetentionTieringWorker
-from app.vms.storage.service import StorageService
-from app.vms.storage.schemas import StoragePoolCreate
 
 TENANT = uuid.uuid4()
 OTHER_TENANT = uuid.uuid4()
@@ -223,28 +220,27 @@ async def test_evidence_tenant_isolation(db, camera):
         await other.get(lk.id)
 
 
-# ── retention worker MUST respect the evidence lock (the key test) ──────────
+# ── evidence lock → recording_is_locked seam ───────────────────────────────
+# NOTE: the retention/capacity SWEEP that consumed this seam is owned by the NVR
+# (the VMS RetentionTieringWorker was retired), so these tests assert the
+# ``recording_is_locked`` helper directly rather than driving a worker.
 
 
-async def test_retention_skips_evidence_locked_and_deletes_unlocked(db, camera, tmp_path, monkeypatch):
-    """Seed a recording covered by an ACTIVE evidence lock + an unlocked one; run the
-    age-retention step; assert the locked survives + the unlocked is deleted."""
-    monkeypatch.setenv("VE_DEFAULT_RETENTION_DAYS", "30")
-    old = _now() - timedelta(days=10)  # camera.retention_days=7 → both are past retention
+async def test_recording_is_locked_reflects_active_lock(db, camera, tmp_path):
+    """An ACTIVE evidence lock covering a recording's window → recording_is_locked
+    True; a recording outside any lock window → False (protection is by range alone,
+    the per-recording ``locked`` bool stays False)."""
+    old = _now() - timedelta(days=10)
 
-    # A recording covered by an evidence lock (note: its per-recording `locked` bool is FALSE
-    # — protection comes from the range lock alone, proving the seam works).
     p_locked = _write_file(tmp_path, "held.mp4")
     rec_locked = await _make_recording(
         db, camera, path=p_locked, start=old, end=old + timedelta(minutes=30)
     )
-    # An unlocked recording on the same camera, outside any lock window.
     p_free = _write_file(tmp_path, "free.mp4")
     rec_free = await _make_recording(
         db, camera, path=p_free, start=old + timedelta(hours=5), end=old + timedelta(hours=5, minutes=30)
     )
 
-    # Place an ACTIVE evidence lock covering the first recording's window only.
     ev = EvidenceService(db, _scope())
     await ev.create(
         EvidenceLockCreate(
@@ -256,24 +252,11 @@ async def test_retention_skips_evidence_locked_and_deletes_unlocked(db, camera, 
         actor=_Actor(),
     )
 
-    # Sanity: the helper the worker uses agrees.
     assert await recording_is_locked(db, rec_locked) is True
     assert await recording_is_locked(db, rec_free) is False
 
-    w = RetentionTieringWorker(None)
-    deleted = await w._run_age_retention(db)
 
-    assert deleted == 1
-    # LOCKED survives (row + file).
-    assert await db.get(Recording, rec_locked.id) is not None
-    assert os.path.exists(p_locked)
-    # UNLOCKED deleted (row + file).
-    assert await db.get(Recording, rec_free.id) is None
-    assert not os.path.exists(p_free)
-
-
-async def test_released_lock_no_longer_protects(db, camera, tmp_path, monkeypatch):
-    monkeypatch.setenv("VE_DEFAULT_RETENTION_DAYS", "30")
+async def test_released_lock_no_longer_protects(db, camera, tmp_path):
     old = _now() - timedelta(days=10)
     p = _write_file(tmp_path, "held.mp4")
     rec = await _make_recording(db, camera, path=p, start=old, end=old + timedelta(minutes=30))
@@ -291,40 +274,6 @@ async def test_released_lock_no_longer_protects(db, camera, tmp_path, monkeypatc
     # Release the lock → no longer protects.
     await ev.release(lk.id, actor=_Actor())
     assert await recording_is_locked(db, rec) is False
-
-    w = RetentionTieringWorker(None)
-    deleted = await w._run_age_retention(db)
-    assert deleted == 1
-    assert await db.get(Recording, rec.id) is None
-    assert not os.path.exists(p)
-
-
-async def test_capacity_retention_respects_evidence_lock(db, camera, tmp_path):
-    svc = StorageService(db, _scope())
-    pool = await svc.create_pool(
-        StoragePoolCreate(name="capped", path=str(tmp_path), max_size_bytes=1500),
-        actor=_Actor(),
-    )
-    now = _now()
-    p_old = _write_file(tmp_path, "old.mp4")
-    p_mid = _write_file(tmp_path, "mid.mp4")
-    p_new = _write_file(tmp_path, "new.mp4")
-    r_old = await _make_recording(db, camera, path=p_old, start=now - timedelta(hours=3), end=now - timedelta(hours=2, minutes=30), size=1000, pool_id=pool.id)
-    await _make_recording(db, camera, path=p_mid, start=now - timedelta(hours=2), end=now - timedelta(hours=1, minutes=30), size=1000, pool_id=pool.id)
-    await _make_recording(db, camera, path=p_new, start=now - timedelta(hours=1), end=now - timedelta(minutes=30), size=1000, pool_id=pool.id)
-
-    # Evidence-lock the OLDEST (which capacity would delete first).
-    ev = EvidenceService(db, _scope())
-    await ev.create(
-        EvidenceLockCreate(camera_id=camera.id, start_ts=now - timedelta(hours=4), end_ts=now - timedelta(hours=2, minutes=15)),
-        actor=_Actor(),
-    )
-
-    w = RetentionTieringWorker(None)
-    await w._run_capacity_retention(db)
-    # The evidence-held oldest survives; unlocked recordings are evicted to get under cap.
-    assert await db.get(Recording, r_old.id) is not None
-    assert os.path.exists(p_old)
 
 
 async def test_is_locked_helper_requires_point_or_range(db, camera):

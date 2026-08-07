@@ -107,9 +107,9 @@ export default function AppLayout({ children }) {
   // h-full + its own inner overflow. Keeps all three device pages consistent.
   const contained =
     pathname === "/devices/cameras" ||
-    pathname === "/devices/nvr" ||
     pathname === "/devices/recorders" ||
     pathname === "/federation" ||
+    pathname === "/storage" ||
     pathname === "/access-control" ||
     // Unified Playback is a control-room surface (source rail + synchronized grid +
     // master timeline) — the PAGE must not scroll; it fills the bounded pane via h-full.

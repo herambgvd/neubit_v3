@@ -391,6 +391,52 @@ class MediaNodeService:
         await self.db.delete(row)
         await self.db.commit()
 
+    # ── federation trust / credential management ─────────────────────────────
+    # The VMS enrols + revokes the scoped credentials the recorder node issues. These
+    # proxy to the node's settings.manage-gated federation API via the shared-secret
+    # service JWT (client.py handles the auth) — never X-Node-Credential.
+    async def list_credentials(self, node_id: str) -> list[dict]:
+        """List the federation credentials the node has issued (id/label/grants/…)."""
+        row = await self._row(node_id)
+        from app.vms.federation.client import NodeUnavailable, list_node_credentials
+
+        try:
+            return await list_node_credentials(row.api_url or "")
+        except NodeUnavailable as exc:
+            raise ConflictError(f"recorder unavailable: {exc}") from exc
+
+    async def enroll_credential(self, node_id: str) -> dict:
+        """Enrol a fresh scoped credential on the node, OVERWRITE the stored key with it,
+        and surface the raw credential ONCE ({credential, id, label, grants})."""
+        row = await self._row(node_id)
+        from app.vms.federation.client import NodeUnavailable, enroll_node_full
+
+        try:
+            payload = await enroll_node_full(row.api_url or "")
+        except NodeUnavailable as exc:
+            raise ConflictError(f"recorder unavailable: {exc}") from exc
+        row.credential = payload.get("credential")
+        row.updated_at = _utcnow()
+        await self.db.commit()
+        # Surface the raw key ONCE — the node never returns it again.
+        return {
+            "credential": payload.get("credential"),
+            "id": payload.get("id"),
+            "label": payload.get("label"),
+            "grants": payload.get("grants"),
+        }
+
+    async def revoke_credential(self, node_id: str, cred_id: str) -> None:
+        """Revoke one credential the node issued. If it was the key we currently store,
+        clear the stored copy so the node falls back to the shared service JWT."""
+        row = await self._row(node_id)
+        from app.vms.federation.client import NodeUnavailable, revoke_node_credential
+
+        try:
+            await revoke_node_credential(row.api_url or "", cred_id)
+        except NodeUnavailable as exc:
+            raise ConflictError(f"recorder unavailable: {exc}") from exc
+
 
 # ── background heartbeat monitor (all tenants) ───────────────────────────────────
 class NodeHeartbeatMonitor:

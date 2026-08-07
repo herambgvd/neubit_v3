@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
 const STRIP_ROUTES = new Set([
   "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config",
   "/ingest", "/config/security", "/platform", "/config/video-wall",
-  "/config/linkage", "/config/onvif-server", "/federation",
+  "/config/linkage", "/config/onvif-server", "/federation", "/storage",
 ]);
 
 export function hasConsoleStrip(pathname) {
@@ -58,13 +58,16 @@ export default function ConsoleStrip() {
   const isLinkage = pathname === "/config/linkage";
   const isExternal = pathname === "/config/onvif-server";
   const isFederation = pathname === "/federation";
+  const isStorage = pathname === "/storage";
   const SOLO = isLinkage
     ? { label: "Linkage", icon: "heroicons-outline:bolt" }
     : isExternal
       ? { label: "External Access", icon: "heroicons-outline:signal" }
       : isFederation
         ? { label: "Federation", icon: "heroicons-outline:share" }
-        : null;
+        : isStorage
+          ? { label: "Storage", icon: "heroicons-outline:circle-stack" }
+          : null;
 
   return (
     // Bare inline content — the global header owns the bar chrome. nav-scroll +

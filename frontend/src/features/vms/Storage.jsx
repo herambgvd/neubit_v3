@@ -1,36 +1,44 @@
 "use client";
 
-// VMS → Storage. Configure where recordings live and how they age:
-//   • Pools — local / NFS / SMB / S3 targets with usage bars, default + active
-//     toggles (CRUD).
-//   • Tier rules — move recordings source → target after N hours (hot → cold).
-//   • Retention overview — a read-out of per-pool caps + rule coverage.
-// Ported from gvd_nvr's Storage page, reskinned to v3's dark tokens + the
-// shared kit/common layer. Lives under Config → Storage.
+// VMS → Storage. A READ-ONLY, node-scoped view of a recorder's storage. Single
+// ownership: the standalone recorder OWNS and manages all storage; the VMS only
+// READS it, through the node (/vms/federation/nodes/{id}/storage/*). Pick a recorder
+// on the left, then see its disk usage, RAID health, storage pools, tier rules and
+// any upstream 3rd-party NVR storage on the right. There is NO CRUD here — pools,
+// tiering and formatting live on the recorder. Wears the shared console frame + the
+// blue Configurations accent, exactly like its sibling federation lens (Federation).
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
-import { toast } from "sonner";
+import Link from "next/link";
 
-import { ConfirmDialog, EmptyState, MetricRow, Spinner } from "@/components/ui/kit";
-import { MasterDetail, ListPanel, TabBar } from "@/components/common";
+import {
+  ConsolePage,
+  ConsoleGrid,
+  ConsolePanel,
+  PanelHeader,
+  PanelCounts,
+  PanelSearch,
+  PanelList,
+  PanelFooter,
+  EmptyPane,
+  QuietButton,
+} from "@/components/console";
 import { apiError } from "@/lib/api";
-import { asItems } from "@/lib/format";
+import { asItems, fmtBytes } from "@/lib/format";
 import { vms } from "./api";
-import StoragePoolDetail from "./components/StoragePoolDetail";
-import StoragePoolModal from "./components/StoragePoolModal";
-import TierRuleModal from "./components/TierRuleModal";
-import { POOL_TYPES } from "./constants";
+import StatusBadge from "./components/StatusBadge";
 
-const TYPE_ICON = Object.fromEntries(POOL_TYPES.map((t) => [t.value, t.icon]));
+// Storage-pool kind → label + icon (the node reports `kind`, not the legacy
+// VMS-local `pool_type`).
+const POOL_KIND = {
+  local: { label: "Local disk", icon: "heroicons-outline:server" },
+  nfs: { label: "NFS", icon: "heroicons-outline:server-stack" },
+  smb: { label: "SMB / CIFS", icon: "heroicons-outline:server-stack" },
+  s3: { label: "S3 / MinIO", icon: "heroicons-outline:cloud" },
+};
 
-const TABS = [
-  { key: "pools", label: "Pools", icon: "heroicons-outline:circle-stack" },
-  { key: "rules", label: "Tier Rules", icon: "heroicons-outline:arrows-right-left" },
-  { key: "raid", label: "RAID", icon: "heroicons-outline:server-stack" },
-];
-
-// Health → tone/label/icon for a RAID array badge.
+// RAID array health → tone/label/icon for its badge.
 const RAID_HEALTH = {
   healthy: { tone: "emerald", label: "Healthy", icon: "heroicons-outline:shield-check" },
   degraded: { tone: "red", label: "Degraded", icon: "heroicons-outline:exclamation-triangle" },
@@ -45,578 +53,350 @@ const RAID_TONE = {
   muted: "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted",
 };
 
-export default function StoragePage() {
-  const qc = useQueryClient();
-  const [tab, setTab] = useState("pools");
-  const [poolModal, setPoolModal] = useState(null); // {} = new, pool = edit, null = closed
-  const [ruleModal, setRuleModal] = useState(null);
-  const [confirm, setConfirm] = useState(null);
+// A used% → bar gradient, shared by every usage bar on the page.
+function barColor(pct) {
+  return pct > 90
+    ? "bg-gradient-to-r from-nb-warn to-nb-crit"
+    : pct > 70
+      ? "bg-gradient-to-r from-nb-warn to-nb-warn"
+      : "bg-gradient-to-r from-nb-blue to-nb-teal";
+}
 
-  const poolsQ = useQuery({
-    queryKey: ["vms-storage-pools"],
-    queryFn: () => vms.storage.pools.list(),
+export default function StoragePage() {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+
+  // Recorder nodes = the storage owners. Federation is the read path; fall back to
+  // the media-node registry shape (both return {items} / a bare array via asItems).
+  const nodesQ = useQuery({
+    queryKey: ["vms-storage-nodes"],
+    queryFn: () => vms.federation.nodes(),
+    refetchInterval: 20_000,
   });
+  const nodes = useMemo(() => asItems(nodesQ.data), [nodesQ.data]);
+
+  // Federated cameras — grouped per node so a node's upstream 3rd-party NVRs can be
+  // discovered (a camera onboarded from an NVR carries its nvr_id). Best-effort: if
+  // the payload has no nvr linkage, the upstream section simply stays empty.
+  const camsQ = useQuery({
+    queryKey: ["vms-storage-fed-cameras"],
+    queryFn: () => vms.federation.cameras(),
+    refetchInterval: 30_000,
+  });
+  const nvrsByNode = useMemo(() => {
+    const m = new Map();
+    for (const c of camsQ.data?.items || []) {
+      const nid = c.node_id;
+      const nvrId = c.nvr_id || c.nvr?.id;
+      if (!nid || !nvrId) continue;
+      const arr = m.get(nid) || [];
+      if (!arr.some((n) => n.id === nvrId))
+        arr.push({ id: nvrId, name: c.nvr_name || c.nvr?.name || `NVR ${nvrId}` });
+      m.set(nid, arr);
+    }
+    return m;
+  }, [camsQ.data]);
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return nodes;
+    return nodes.filter(
+      (n) =>
+        n.name?.toLowerCase().includes(term) ||
+        n.label?.toLowerCase().includes(term) ||
+        n.api_url?.toLowerCase().includes(term),
+    );
+  }, [nodes, search]);
+
+  const selected = useMemo(() => nodes.find((n) => n.id === selectedId) || null, [nodes, selectedId]);
+
+  useEffect(() => {
+    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
+  }, [selected, filtered]);
+
+  const onlineCount = nodes.filter((n) => n.status === "online").length;
+
+  return (
+    <ConsolePage>
+      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]">
+        {/* LEFT — recorder nodes (storage owners) */}
+        <ConsolePanel>
+          <PanelHeader
+            icon="heroicons-outline:circle-stack"
+            title="Recorders"
+            count={nodes.length}
+            actions={
+              <PanelCounts
+                items={[
+                  { tone: "good", value: onlineCount, label: "online" },
+                  { tone: "crit", value: nodes.length - onlineCount, label: "offline" },
+                ]}
+              />
+            }
+          />
+          <PanelSearch value={search} onChange={setSearch} placeholder="Search name, label or URL…" />
+
+          <PanelList
+            loading={nodesQ.isLoading}
+            error={nodesQ.isError ? apiError(nodesQ.error, "Failed to load recorders") : null}
+            empty={filtered.length === 0}
+            emptyText={
+              nodes.length === 0
+                ? "No recorder nodes enrolled yet. Enroll one on the Recorders page (Devices → Recorders)."
+                : "No nodes match your search"
+            }
+          >
+            {filtered.map((n) => {
+              const isSel = selectedId === n.id;
+              const online = n.status === "online";
+              return (
+                <button
+                  key={n.id}
+                  onClick={() => setSelectedId(n.id)}
+                  className={`relative block w-full overflow-hidden rounded-[10px] border px-3 py-2.5 text-left transition ${
+                    isSel
+                      ? "border-nb-blue bg-[rgba(96,165,250,.1)]"
+                      : "border-nb-line bg-[rgba(10,18,40,.5)] hover:border-nb-blue/60 hover:bg-[rgba(96,165,250,.06)]"
+                  }`}
+                >
+                  {isSel && <span className="absolute inset-y-0 left-0 w-0.5 rounded-l bg-nb-blue" />}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          online
+                            ? "bg-nb-good shadow-[0_0_5px_#34d399]"
+                            : "bg-nb-crit shadow-[0_0_5px_rgba(248,113,113,.6)]"
+                        }`}
+                      />
+                      <p className="truncate text-[13px] font-semibold text-nb-ink">{n.name}</p>
+                    </span>
+                    <StatusBadge status={n.status} />
+                  </div>
+                  {n.label && <p className="mt-0.5 truncate pl-3.5 text-[11px] text-nb-faint">{n.label}</p>}
+                  <p className="mt-0.5 truncate pl-3.5 font-mono text-[10.5px] text-nb-faint">{n.api_url || "—"}</p>
+                </button>
+              );
+            })}
+          </PanelList>
+
+          <PanelFooter>
+            <QuietButton as={Link} href="/devices/recorders" icon="heroicons-outline:cog-6-tooth" className="w-full justify-center">
+              Manage recorders
+            </QuietButton>
+            <p className="mt-2.5 flex items-start gap-1.5 text-[10.5px] leading-relaxed text-nb-faint">
+              <Icon icon="heroicons-outline:lock-closed" className="mt-0.5 shrink-0 text-[12px]" />
+              Storage is owned and managed by the recorder. This is a read-only view.
+            </p>
+          </PanelFooter>
+        </ConsolePanel>
+
+        {/* CENTER — one node's storage */}
+        <ConsolePanel>
+          {selected ? (
+            <NodeStorageDetail
+              key={selected.id}
+              node={selected}
+              nvrs={nvrsByNode.get(selected.id) || []}
+            />
+          ) : (
+            <EmptyPane
+              icon="heroicons-outline:circle-stack"
+              title="No recorder selected"
+              subtitle="Choose a recorder to see the disk usage, RAID health, pools and tier rules it reports."
+            />
+          )}
+        </ConsolePanel>
+      </ConsoleGrid>
+    </ConsolePage>
+  );
+}
+
+// ── Right pane: one node's storage, read-only ───────────────────────────────
+function NodeStorageDetail({ node, nvrs }) {
+  const reachableOffline = node.status !== "online";
+
+  const usageQ = useQuery({
+    queryKey: ["vms-node-storage-usage", node.id],
+    queryFn: () => vms.federation.storage.usage(node.id),
+    refetchInterval: 30_000,
+    retry: false,
+  });
+  const poolsQ = useQuery({
+    queryKey: ["vms-node-storage-pools", node.id],
+    queryFn: () => vms.federation.storage.pools(node.id),
+    retry: false,
+  });
+  const rulesQ = useQuery({
+    queryKey: ["vms-node-storage-tier-rules", node.id],
+    queryFn: () => vms.federation.storage.tierRules(node.id),
+    retry: false,
+  });
+  const raidQ = useQuery({
+    queryKey: ["vms-node-storage-raid", node.id],
+    queryFn: () => vms.federation.storage.raid(node.id),
+    refetchInterval: 30_000,
+    retry: false,
+  });
+
+  const usage = usageQ.data || {};
   const pools = useMemo(() => asItems(poolsQ.data), [poolsQ.data]);
+  const rules = useMemo(() => asItems(rulesQ.data), [rulesQ.data]);
   const poolNames = useMemo(() => {
     const m = {};
     for (const p of pools) m[p.id] = p.name;
     return m;
   }, [pools]);
 
-  const rulesQ = useQuery({
-    queryKey: ["vms-tier-rules"],
-    queryFn: () => vms.storage.tierRules.list(),
-  });
-  const rules = useMemo(() => asItems(rulesQ.data), [rulesQ.data]);
-
-  // RAID health — poll live while the tab is open (arrays change state slowly, so
-  // 15s is plenty). Disabled off-tab so we don't shell mdadm needlessly.
-  const raidQ = useQuery({
-    queryKey: ["vms-raid-status"],
-    queryFn: () => vms.storage.raid.status(),
-    enabled: tab === "raid",
-    refetchInterval: tab === "raid" ? 15_000 : false,
-  });
-
-  const removePool = useMutation({
-    mutationFn: (id) => vms.storage.pools.remove(id),
-    onSuccess: () => { toast.success("Pool deleted"); qc.invalidateQueries({ queryKey: ["vms-storage-pools"] }); },
-    onError: (e) => toast.error(apiError(e, "Delete failed")),
-  });
-  const removeRule = useMutation({
-    mutationFn: (id) => vms.storage.tierRules.remove(id),
-    onSuccess: () => { toast.success("Rule deleted"); qc.invalidateQueries({ queryKey: ["vms-tier-rules"] }); },
-    onError: (e) => toast.error(apiError(e, "Delete failed")),
-  });
-
-  const askDeletePool = (pool) =>
-    setConfirm({
-      title: "Delete storage pool",
-      message: `Delete "${pool.name}"? Recordings on it are not removed, but new writes stop. This cannot be undone.`,
-      confirmLabel: "Delete",
-      onConfirm: () => { removePool.mutate(pool.id); setConfirm(null); },
-    });
-  const askDeleteRule = (rule) =>
-    setConfirm({
-      title: "Delete tier rule",
-      message: `Delete "${rule.name}"? Existing tiered recordings stay where they are.`,
-      confirmLabel: "Delete",
-      onConfirm: () => { removeRule.mutate(rule.id); setConfirm(null); },
-    });
-
-  return (
-    <div
-      className="flex h-[calc(100%+1.5rem)] min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 pt-3 pb-2 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
-      <TabBar tabs={TABS} active={tab} onChange={setTab} className="mb-5 shrink-0" />
-
-      {tab === "pools" ? (
-        <PoolsTab
-          pools={pools}
-          rules={rules}
-          poolNames={poolNames}
-          query={poolsQ}
-          onAdd={() => setPoolModal({})}
-          onEdit={(p) => setPoolModal(p)}
-          onDelete={askDeletePool}
-        />
-      ) : tab === "rules" ? (
-        <RulesTab
-          rules={rules}
-          poolNames={poolNames}
-          query={rulesQ}
-          onAdd={() => setRuleModal({})}
-          onEdit={(r) => setRuleModal(r)}
-          onDelete={askDeleteRule}
-        />
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto scroll-themed">
-          <RaidTab query={raidQ} />
-        </div>
-      )}
-
-      {poolModal && (
-        <StoragePoolModal
-          pool={poolModal.id ? poolModal : null}
-          onClose={() => setPoolModal(null)}
-          onSuccess={() => setPoolModal(null)}
-        />
-      )}
-      {ruleModal && (
-        <TierRuleModal
-          rule={ruleModal.id ? ruleModal : null}
-          pools={pools}
-          onClose={() => setRuleModal(null)}
-          onSuccess={() => setRuleModal(null)}
-        />
-      )}
-      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={removePool.isPending || removeRule.isPending} />
-    </div>
-  );
-}
-
-// ── Pools tab — master/detail (list + StoragePoolDetail), mirrors Sites ─────
-function PoolListItem({ pool, selected, onSelect }) {
-  const p = pool;
-  const typeLabel = POOL_TYPES.find((t) => t.value === p.pool_type)?.label || p.pool_type;
-  const loc =
-    p.pool_type === "s3"
-      ? p.s3_bucket || p.s3_endpoint || "—"
-      : p.pool_type === "nfs" || p.pool_type === "smb"
-        ? `${p.nas_server || "?"}:${p.nas_share || p.path || "?"}`
-        : p.path || "—";
-  return (
-    <li className="relative">
-      <button
-        onClick={onSelect}
-        className={`w-full flex items-start gap-3 rounded-[10px] border px-4 py-3 text-left transition ${
-          selected
-            ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
-            : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
-        }`}
-      >
-        {selected && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded bg-nb-blue" />}
-        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted shrink-0">
-          <Icon icon={TYPE_ICON[p.pool_type] || "heroicons-outline:server"} className="text-base" />
-          <span
-            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-[#0c1530] ${
-              p.is_active !== false ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"
-            }`}
-          />
-        </span>
-        <span className="flex-1 min-w-0">
-          <span className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-nb-ink truncate">{p.name}</span>
-            {p.is_default && (
-              <span className="text-[10px] rounded-full bg-[rgba(96,165,250,.1)] text-nb-blueb px-1.5 py-0.5 font-medium">
-                Default
-              </span>
-            )}
-          </span>
-          <span className="block text-xs text-nb-soft truncate">{typeLabel}</span>
-          <span className="block text-[10px] font-mono text-nb-faint truncate">{loc}</span>
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function PoolsTab({ pools, rules, poolNames, query, onAdd, onEdit, onDelete }) {
-  const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState(null);
-
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return pools;
-    return pools.filter((p) =>
-      [p.name, p.path, p.s3_bucket, p.nas_server].filter(Boolean).join(" ").toLowerCase().includes(term),
-    );
-  }, [pools, search]);
-
-  const selected = useMemo(() => pools.find((p) => p.id === selectedId) || null, [pools, selectedId]);
-
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
-
-  const activeCount = pools.filter((p) => p.is_active !== false).length;
-
-  const listActions = (
-    <button
-      onClick={onAdd}
-      title="Add pool"
-      className="inline-flex h-7 items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
-    >
-      <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
-    </button>
-  );
-
-  return (
-    <MasterDetail
-      fill
-      className="min-h-0 flex-1"
-      aside={
-        <ListPanel
-          title="Pools"
-          count={pools.length}
-          action={listActions}
-          search={search}
-          onSearch={setSearch}
-          searchPlaceholder="Search pools…"
-        >
-          <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
-            <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
-              <span className="text-nb-muted">{activeCount} active</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />
-              <span className="text-nb-muted">{pools.length - activeCount} inactive</span>
-            </span>
-          </div>
-
-          {query.isLoading ? (
-            <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-soft">
-              <Spinner className="!h-4 !w-4" /> Loading…
-            </div>
-          ) : query.isError ? (
-            <div className="px-4 py-6 text-center text-xs text-nb-crit">
-              {apiError(query.error, "Failed to load pools")}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)]">
-                <Icon icon="heroicons-outline:circle-stack" className="text-lg text-nb-muted" />
-              </div>
-              <div className="text-sm font-medium text-nb-ink">
-                {search.trim() ? "No matches" : "No storage pools"}
-              </div>
-              <div className="mt-0.5 text-xs text-nb-muted">
-                {search.trim() ? "Try a different keyword." : "Click Add to create your first pool."}
-              </div>
-            </div>
-          ) : (
-            <ul className="space-y-0.5 px-2 py-2">
-              {filtered.map((p) => (
-                <PoolListItem key={p.id} pool={p} selected={p.id === selectedId} onSelect={() => setSelectedId(p.id)} />
-              ))}
-            </ul>
-          )}
-        </ListPanel>
-      }
-    >
-      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
-        {selected ? (
-          <StoragePoolDetail
-            key={selected.id}
-            pool={selected}
-            rules={rules}
-            poolNames={poolNames}
-            onClose={() => setSelectedId(null)}
-            onEdit={() => onEdit(selected)}
-            onDelete={() => onDelete(selected)}
-          />
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)] text-nb-muted">
-              <Icon icon="heroicons-outline:circle-stack" className="text-xl" />
-            </span>
-            <div className="mt-3 text-sm font-semibold text-nb-ink">No pool selected</div>
-            <div className="text-xs text-nb-muted mt-0.5">
-              Pick one from the list, or click <b>Add</b> to create a new pool.
-            </div>
-          </div>
-        )}
-      </section>
-    </MasterDetail>
-  );
-}
-
-// ── Tier-rules tab — master/detail (list + detail), mirrors Pools ───────────
-const fmtAge = (h) => (h >= 24 ? `${Math.round(h / 24)}d (${h}h)` : `${h}h`);
-
-function TierInfoField({ label, children }) {
-  return (
-    <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{label}</div>
-      <div className="mt-1 text-sm text-nb-ink">{children}</div>
-    </div>
-  );
-}
-
-function TierRuleListItem({ rule, poolNames, selected, onSelect }) {
-  return (
-    <li className="relative">
-      <button
-        onClick={onSelect}
-        className={`w-full flex items-start gap-3 rounded-[10px] border px-4 py-3 text-left transition ${
-          selected
-            ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
-            : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
-        }`}
-      >
-        {selected && <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded bg-nb-blue" />}
-        <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted shrink-0">
-          <Icon icon="heroicons-outline:arrows-right-left" className="text-base" />
-          <span
-            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-[#0c1530] ${
-              rule.enabled ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"
-            }`}
-          />
-        </span>
-        <span className="flex-1 min-w-0">
-          <span className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-nb-ink truncate">{rule.name}</span>
-            {!rule.enabled && (
-              <span className="text-[10px] rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 font-medium text-nb-muted">Disabled</span>
-            )}
-          </span>
-          <span className="block text-xs text-nb-soft truncate">
-            {poolNames[rule.source_pool_id] || "—"} → {poolNames[rule.target_pool_id] || "—"}
-          </span>
-          <span className="block text-[10px] font-mono text-nb-faint">after {fmtAge(rule.after_age_hours || 0)}</span>
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function TierRuleDetail({ rule, poolNames, onClose, onEdit, onDelete }) {
-  return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
-        <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-[rgba(96,165,250,.1)] text-nb-blueb shrink-0">
-            <Icon icon="heroicons-outline:arrows-right-left" className="text-2xl" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-nb-ink truncate">{rule.name}</h2>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-nb-soft flex-wrap">
-              <span>after {fmtAge(rule.after_age_hours || 0)}</span>
-              <span
-                className={`rounded-full px-2 py-0.5 font-medium ${
-                  rule.enabled ? "bg-[rgba(52,211,153,.12)] text-nb-good" : "bg-[rgba(10,18,40,.6)] text-nb-muted"
-                }`}
-              >
-                {rule.enabled ? "Enabled" : "Disabled"}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={onClose}
-            title="Close"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
-          >
-            <Icon icon="heroicons-outline:x-mark" className="text-base" />
-          </button>
-          <button
-            onClick={onEdit}
-            className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
-          >
-            <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-          </button>
-          <button
-            onClick={onDelete}
-            className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.2)]"
-          >
-            <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
-          </button>
-        </div>
-      </header>
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted mb-2">Flow</div>
-          <div className="flex items-center gap-3 rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] px-4 py-3">
-            <div className="flex-1 min-w-0 text-center">
-              <div className="text-[10px] uppercase tracking-wide text-nb-muted">Source</div>
-              <div className="mt-0.5 text-sm font-medium text-nb-ink truncate">
-                {poolNames[rule.source_pool_id] || "—"}
-              </div>
-            </div>
-            <Icon icon="heroicons-outline:arrow-long-right" className="text-lg text-nb-blueb shrink-0" />
-            <div className="flex-1 min-w-0 text-center">
-              <div className="text-[10px] uppercase tracking-wide text-nb-muted">Target</div>
-              <div className="mt-0.5 text-sm font-medium text-nb-ink truncate">
-                {poolNames[rule.target_pool_id] || "—"}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-          <TierInfoField label="Move after">{fmtAge(rule.after_age_hours || 0)}</TierInfoField>
-          <TierInfoField label="Status">{rule.enabled ? "Enabled" : "Disabled"}</TierInfoField>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RulesTab({ rules, poolNames, query, onAdd, onEdit, onDelete }) {
-  const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState(null);
-
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return rules;
-    return rules.filter((r) =>
-      [r.name, poolNames[r.source_pool_id], poolNames[r.target_pool_id]]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [rules, poolNames, search]);
-
-  const selected = useMemo(() => rules.find((r) => r.id === selectedId) || null, [rules, selectedId]);
-
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
-
-  const enabledCount = rules.filter((r) => r.enabled).length;
-
-  const listActions = (
-    <button
-      onClick={onAdd}
-      title="Add rule"
-      className="inline-flex h-7 items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
-    >
-      <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
-    </button>
-  );
-
-  return (
-    <MasterDetail
-      fill
-      className="min-h-0 flex-1"
-      aside={
-        <ListPanel
-          title="Tier Rules"
-          count={rules.length}
-          action={listActions}
-          search={search}
-          onSearch={setSearch}
-          searchPlaceholder="Search rules…"
-        >
-          <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
-            <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
-              <span className="text-nb-muted">{enabledCount} enabled</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />
-              <span className="text-nb-muted">{rules.length - enabledCount} disabled</span>
-            </span>
-          </div>
-
-          {query.isLoading ? (
-            <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-soft">
-              <Spinner className="!h-4 !w-4" /> Loading…
-            </div>
-          ) : query.isError ? (
-            <div className="px-4 py-6 text-center text-xs text-nb-crit">
-              {apiError(query.error, "Failed to load rules")}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)]">
-                <Icon icon="heroicons-outline:arrows-right-left" className="text-lg text-nb-muted" />
-              </div>
-              <div className="text-sm font-medium text-nb-ink">
-                {search.trim() ? "No matches" : "No tier rules"}
-              </div>
-              <div className="mt-0.5 text-xs text-nb-muted">
-                {search.trim()
-                  ? "Try a different keyword."
-                  : "Rules move recordings between pools as they age (hot → cold)."}
-              </div>
-            </div>
-          ) : (
-            <ul className="space-y-0.5 px-2 py-2">
-              {filtered.map((r) => (
-                <TierRuleListItem
-                  key={r.id}
-                  rule={r}
-                  poolNames={poolNames}
-                  selected={r.id === selectedId}
-                  onSelect={() => setSelectedId(r.id)}
-                />
-              ))}
-            </ul>
-          )}
-        </ListPanel>
-      }
-    >
-      <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
-        {selected ? (
-          <TierRuleDetail
-            key={selected.id}
-            rule={selected}
-            poolNames={poolNames}
-            onClose={() => setSelectedId(null)}
-            onEdit={() => onEdit(selected)}
-            onDelete={() => onDelete(selected)}
-          />
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)] text-nb-muted">
-              <Icon icon="heroicons-outline:arrows-right-left" className="text-xl" />
-            </span>
-            <div className="mt-3 text-sm font-semibold text-nb-ink">No rule selected</div>
-            <div className="text-xs text-nb-muted mt-0.5">
-              Pick one from the list, or click <b>Add</b> to create a new rule.
-            </div>
-          </div>
-        )}
-      </section>
-    </MasterDetail>
-  );
-}
-
-// ── RAID tab ────────────────────────────────────────────────────────────────
-// Software-RAID (mdadm) health. Enterprise-VMS parity: monitor arrays + alert on
-// degrade so a failed disk is swapped before a second failure loses footage. The VMS
-// does NOT build the array (OS/controller does) — it watches + reports.
-function RaidTab({ query }) {
-  if (query.isLoading) return <Loading label="Inspecting RAID arrays…" />;
-  if (query.isError) return <ErrorBox error={query.error} fallback="Failed to load RAID status" />;
-
-  const data = query.data || {};
-  const arrays = data.arrays || [];
-
-  // Host can't inspect software-RAID (non-Linux / mdadm absent) — honest banner.
-  if (!data.available) {
-    return (
-      <div className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] p-6">
-        <div className="flex items-start gap-3">
-          <Icon icon="heroicons-outline:information-circle" className="mt-0.5 text-lg text-nb-muted" />
-          <div>
-            <div className="text-sm font-medium text-nb-ink">RAID inspection not available on this host</div>
-            <p className="mt-1 text-sm text-nb-soft">
-              {data.reason || "Software-RAID (mdadm) is not present on this node."}
-            </p>
-            <p className="mt-2 text-xs text-nb-muted">
-              On a Linux recording node with an mdadm array, arrays and their health appear here
-              automatically, and a degraded array raises an alarm.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const degraded = arrays.filter((a) => a.health === "degraded" || a.health === "failed").length;
-  const rebuilding = arrays.filter((a) => a.health === "rebuilding").length;
+  const total = usage.total_bytes ?? 0;
+  const free = usage.free_bytes ?? 0;
+  const used = usage.used_bytes ?? (total && free ? total - free : 0);
+  const usedPct = usage.used_percent != null ? usage.used_percent : total > 0 ? (used / total) * 100 : 0;
+  const reachable = usage.reachable !== false && !reachableOffline;
 
   return (
     <>
-      <MetricRow
-        className="mb-4"
-        items={[
-          { label: "Arrays", value: arrays.length, icon: "heroicons-outline:server-stack", tone: "info" },
-          { label: "Degraded", value: degraded, icon: "heroicons-outline:exclamation-triangle", tone: degraded ? "bad" : "ok" },
-          { label: "Rebuilding", value: rebuilding, icon: "heroicons-outline:arrow-path", tone: rebuilding ? "warn" : "neutral" },
-        ]}
-      />
-      {arrays.length === 0 ? (
-        <EmptyState
-          icon="heroicons-outline:server-stack"
-          title="No RAID arrays detected"
-          subtitle="This node has no active software-RAID (mdadm) array."
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {arrays.map((arr) => (
-            <RaidArrayCard key={arr.device} arr={arr} />
-          ))}
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-nb-line px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-blue/40 bg-[rgba(96,165,250,.12)] text-nb-blueb">
+            <Icon icon="heroicons-outline:circle-stack" className="text-base" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold text-nb-ink">{node.name}</h1>
+            <p className="truncate font-mono text-[11px] text-nb-faint">{node.api_url || "—"}</p>
+          </div>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          <StatusBadge status={node.status} />
+          <QuietButton as={Link} href="/devices/recorders" icon="heroicons-outline:cog-6-tooth" className="!py-1.5 !text-xs">
+            Manage
+          </QuietButton>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {/* Read-only banner */}
+        <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-nb-blue/30 bg-[rgba(96,165,250,.08)] px-3 py-2 text-[12px] text-nb-soft">
+          <Icon icon="heroicons-outline:lock-closed" className="shrink-0 text-sm text-nb-blueb" />
+          Storage is owned and managed by the recorder. This is a read-only view.
+        </div>
+
+        {reachableOffline && (
+          <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-nb-crit/40 bg-nb-crit/10 px-3 py-2 text-[12px] text-nb-crit">
+            <Icon icon="heroicons-outline:exclamation-triangle" className="shrink-0 text-sm" />
+            This recorder is not reachable right now — its storage figures may be stale until it comes back online.
+          </div>
+        )}
+
+        {/* Disk usage */}
+        <SectionLabel>Disk usage</SectionLabel>
+        {usageQ.isLoading ? (
+          <InlineLoading />
+        ) : usageQ.isError ? (
+          <InlineError error={usageQ.error} fallback="Failed to load disk usage" />
+        ) : (
+          <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
+            {total > 0 ? (
+              <>
+                <div className="mb-2 h-2 overflow-hidden rounded-full border border-nb-line bg-black/40">
+                  <div className={`h-full rounded-full ${barColor(usedPct)}`} style={{ width: `${Math.min(100, usedPct)}%` }} />
+                </div>
+                <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-nb-soft">
+                  <span>{fmtBytes(used)} used ({Math.round(usedPct)}%)</span>
+                  <span>{fmtBytes(free)} free</span>
+                  <span>{fmtBytes(total)} total</span>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-nb-soft">
+                {reachable ? "No disk usage reported by this recorder." : "Usage unavailable while the recorder is unreachable."}
+              </p>
+            )}
+            {usedPct > 90 && total > 0 && (
+              <div className="mt-2 flex items-center gap-1 text-xs text-nb-crit">
+                <Icon icon="heroicons-outline:exclamation-triangle" className="text-xs" /> Storage nearly full
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* RAID */}
+        <SectionLabel className="mt-4">RAID health</SectionLabel>
+        <RaidSection query={raidQ} />
+
+        {/* Pools */}
+        <SectionLabel className="mt-4" count={pools.length}>Storage pools</SectionLabel>
+        {poolsQ.isLoading ? (
+          <InlineLoading />
+        ) : poolsQ.isError ? (
+          <InlineError error={poolsQ.error} fallback="Failed to load pools" />
+        ) : pools.length === 0 ? (
+          <EmptyNote>This recorder reports no storage pools.</EmptyNote>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {pools.map((p) => (
+              <PoolCard key={p.id} pool={p} />
+            ))}
+          </div>
+        )}
+
+        {/* Tier rules */}
+        <SectionLabel className="mt-4" count={rules.length}>Tier rules</SectionLabel>
+        {rulesQ.isLoading ? (
+          <InlineLoading />
+        ) : rulesQ.isError ? (
+          <InlineError error={rulesQ.error} fallback="Failed to load tier rules" />
+        ) : rules.length === 0 ? (
+          <EmptyNote>No tiering rules — recordings stay on their pool until retention removes them.</EmptyNote>
+        ) : (
+          <ul className="space-y-1.5">
+            {rules.map((r) => (
+              <TierRuleRow key={r.id} rule={r} poolNames={poolNames} />
+            ))}
+          </ul>
+        )}
+
+        {/* Upstream 3rd-party NVR storage */}
+        {nvrs.length > 0 && (
+          <>
+            <SectionLabel className="mt-4" count={nvrs.length}>Upstream NVR storage</SectionLabel>
+            <div className="space-y-2">
+              {nvrs.map((nvr) => (
+                <UpstreamNvrCard key={nvr.id} nodeId={node.id} nvr={nvr} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </>
+  );
+}
+
+// ── RAID ────────────────────────────────────────────────────────────────────
+function RaidSection({ query }) {
+  if (query.isLoading) return <InlineLoading />;
+  if (query.isError) return <InlineError error={query.error} fallback="Failed to load RAID status" />;
+
+  const data = query.data || {};
+  const list = data.arrays || (Array.isArray(data) ? data : []);
+
+  if (data.available === false) {
+    return (
+      <EmptyNote>
+        {data.reason || "This recorder has no software-RAID (mdadm) array — disks are used directly."}
+      </EmptyNote>
+    );
+  }
+  if (list.length === 0) {
+    return <EmptyNote>No RAID arrays reported by this recorder.</EmptyNote>;
+  }
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {list.map((arr) => (
+        <RaidArrayCard key={arr.device} arr={arr} />
+      ))}
+    </div>
   );
 }
 
@@ -625,36 +405,36 @@ function RaidArrayCard({ arr }) {
   const alarm = arr.health === "degraded" || arr.health === "failed";
   const pct = arr.rebuild_percent;
   return (
-    <div className={`rounded-[14px] border bg-[rgba(8,15,34,.5)] p-4 ${alarm ? "border-[rgba(248,113,113,.3)]" : "border-nb-line"}`}>
+    <div className={`rounded-[10px] border bg-[rgba(10,18,40,.5)] p-3 ${alarm ? "border-[rgba(248,113,113,.3)]" : "border-nb-line"}`}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 font-mono text-sm font-medium text-nb-ink">
-          <Icon icon="heroicons-outline:server-stack" className="text-base text-nb-muted" />
+        <div className="flex items-center gap-1.5 font-mono text-[13px] font-medium text-nb-ink">
+          <Icon icon="heroicons-outline:server-stack" className="text-sm text-nb-faint" />
           {arr.device}
         </div>
-        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${RAID_TONE[h.tone]}`}>
-          <Icon icon={h.icon} className="text-xs" /> {h.label}
+        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${RAID_TONE[h.tone]}`}>
+          <Icon icon={h.icon} className="text-[11px]" /> {h.label}
         </span>
       </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-2">
-          <div className="text-sm font-semibold tabular-nums text-nb-ink">{(arr.level || "—").toUpperCase()}</div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-nb-muted">Level</div>
+      <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
+        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-1.5">
+          <div className="text-[13px] font-semibold tabular-nums text-nb-ink">{(arr.level || "—").toString().toUpperCase()}</div>
+          <div className="mt-0.5 text-[9px] uppercase tracking-wide text-nb-faint">Level</div>
         </div>
-        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-2">
-          <div className="text-sm font-semibold tabular-nums text-nb-good">{arr.working_devices}/{arr.total_devices}</div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-nb-muted">Working</div>
-        </div>
-        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-2">
-          <div className={`text-sm font-semibold tabular-nums ${arr.failed_devices ? "text-nb-crit" : "text-nb-ink"}`}>
-            {arr.failed_devices}
+        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-1.5">
+          <div className="text-[13px] font-semibold tabular-nums text-nb-good">
+            {arr.working_devices ?? "—"}/{arr.total_devices ?? "—"}
           </div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-nb-muted">Failed</div>
+          <div className="mt-0.5 text-[9px] uppercase tracking-wide text-nb-faint">Working</div>
+        </div>
+        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-1.5">
+          <div className={`text-[13px] font-semibold tabular-nums ${arr.failed_devices ? "text-nb-crit" : "text-nb-ink"}`}>
+            {arr.failed_devices ?? 0}
+          </div>
+          <div className="mt-0.5 text-[9px] uppercase tracking-wide text-nb-faint">Failed</div>
         </div>
       </div>
-
       {arr.health === "rebuilding" && (
-        <div className="mt-3">
+        <div className="mt-2">
           <div className="mb-1 flex items-center justify-between text-[11px] text-nb-muted">
             <span>Rebuilding</span>
             {pct != null && <span className="tabular-nums">{pct}%</span>}
@@ -664,32 +444,164 @@ function RaidArrayCard({ arr }) {
           </div>
         </div>
       )}
-
       {alarm && (
-        <p className="mt-3 text-xs text-nb-crit">
-          Replace the failed disk and the array rebuilds automatically. Until then redundancy is lost.
+        <p className="mt-2 text-[11px] text-nb-crit">
+          Replace the failed disk on the recorder and the array rebuilds automatically. Until then redundancy is lost.
         </p>
       )}
-      {arr.state && (
-        <p className="mt-2 truncate font-mono text-[10px] text-nb-faint" title={arr.state}>{arr.state}</p>
+    </div>
+  );
+}
+
+// ── Pool card (read-only) ───────────────────────────────────────────────────
+function PoolCard({ pool }) {
+  const kind = POOL_KIND[pool.kind] || { label: pool.kind || "Pool", icon: "heroicons-outline:server" };
+  const u = pool.usage || {};
+  const cap = u.total_bytes ?? u.capacity_bytes ?? pool.max_size_bytes ?? 0;
+  const used = u.used_bytes ?? 0;
+  const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+  return (
+    <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
+          <Icon icon={kind.icon} className="text-sm" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-[13px] font-semibold text-nb-ink">{pool.name}</p>
+            {pool.is_default && (
+              <span className="rounded-full bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[9px] font-medium text-nb-blueb">Default</span>
+            )}
+          </div>
+          <p className="text-[11px] text-nb-soft">{kind.label}</p>
+        </div>
+      </div>
+      {pool.path && <p className="mt-1.5 truncate font-mono text-[10px] text-nb-faint" title={pool.path}>{pool.path}</p>}
+      {cap > 0 && (
+        <div className="mt-2">
+          <div className="mb-1 h-1.5 overflow-hidden rounded-full border border-nb-line bg-black/40">
+            <div className={`h-full rounded-full ${barColor(pct)}`} style={{ width: `${pct}%` }} />
+          </div>
+          <div className="flex justify-between text-[10px] text-nb-faint">
+            <span>{fmtBytes(used)} used</span>
+            <span>{fmtBytes(cap)} total</span>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-// ── Small shared bits ──────────────────────────────────────────────────────
-function Loading({ label }) {
+// ── Tier rule row (read-only) ───────────────────────────────────────────────
+const fmtAge = (h) => (h == null ? "—" : h >= 24 ? `${Math.round(h / 24)}d` : `${h}h`);
+
+function TierRuleRow({ rule, poolNames }) {
+  const src = poolNames[rule.source_pool_id] || rule.source_pool_name || rule.source || "—";
+  const dst = poolNames[rule.target_pool_id] || rule.target_pool_name || rule.target || "—";
+  const hours = rule.after_age_hours ?? rule.after_hours ?? rule.hours;
   return (
-    <div className="flex items-center justify-center gap-2 rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] py-20 text-sm text-nb-soft">
-      <Icon icon="svg-spinners:180-ring" className="text-base" /> {label}
+    <li className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-2">
+      <Icon icon="heroicons-outline:arrows-right-left" className="shrink-0 text-sm text-nb-blueb" />
+      {rule.name && <span className="shrink-0 text-[13px] font-medium text-nb-ink">{rule.name}</span>}
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-nb-soft">
+        <span className="truncate">{src}</span>
+        <Icon icon="heroicons-outline:arrow-long-right" className="shrink-0 text-sm text-nb-faint" />
+        <span className="truncate">{dst}</span>
+      </span>
+      <span className="shrink-0 font-mono text-[10.5px] text-nb-faint">after {fmtAge(hours)}</span>
+    </li>
+  );
+}
+
+// ── Upstream 3rd-party NVR storage ──────────────────────────────────────────
+function UpstreamNvrCard({ nodeId, nvr }) {
+  const q = useQuery({
+    queryKey: ["vms-node-upstream-nvr-storage", nodeId, nvr.id],
+    queryFn: () => vms.federation.storage.upstreamNvr(nodeId, nvr.id),
+    retry: false,
+  });
+
+  const data = q.data || {};
+  const disks = asItems(data.disks ? { items: data.disks } : data);
+  const available = data.available !== false;
+
+  return (
+    <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon icon="heroicons-outline:circle-stack" className="shrink-0 text-sm text-nb-faint" />
+          <p className="truncate text-[13px] font-medium text-nb-ink">{nvr.name}</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-2 py-0.5 text-[9.5px] uppercase tracking-wide text-nb-faint">
+          reported by recorder
+        </span>
+      </div>
+      {q.isLoading ? (
+        <InlineLoading />
+      ) : q.isError ? (
+        <InlineError error={q.error} fallback="Failed to load NVR storage" />
+      ) : !available ? (
+        <p className="mt-2 text-[12px] text-nb-soft">Storage figures are not yet available from this NVR.</p>
+      ) : disks.length === 0 ? (
+        <p className="mt-2 text-[12px] text-nb-soft">This NVR reported no disks.</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {disks.map((d, i) => {
+            const cap = d.total_bytes ?? d.capacity_bytes ?? 0;
+            const used = d.used_bytes ?? 0;
+            const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+            return (
+              <li key={d.id || d.name || i} className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] px-2.5 py-1.5">
+                <div className="flex items-center justify-between gap-2 text-[11.5px]">
+                  <span className="truncate font-mono text-nb-soft">{d.name || d.model || `Disk ${i + 1}`}</span>
+                  <span className="shrink-0 text-nb-faint">
+                    {d.status || (cap > 0 ? `${fmtBytes(used)} / ${fmtBytes(cap)}` : "—")}
+                  </span>
+                </div>
+                {cap > 0 && (
+                  <div className="mt-1 h-1 overflow-hidden rounded-full border border-nb-line bg-black/40">
+                    <div className={`h-full rounded-full ${barColor(pct)}`} style={{ width: `${pct}%` }} />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
 
-function ErrorBox({ error, fallback }) {
+// ── Small shared bits ───────────────────────────────────────────────────────
+function SectionLabel({ children, count, className = "" }) {
   return (
-    <div className="rounded-[14px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] py-10 text-center text-sm text-nb-crit">
-      {apiError(error, fallback)}
+    <div className={`mb-2 flex items-center gap-2 ${className}`}>
+      <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{children}</span>
+      {count != null && (
+        <span className="rounded-full border border-nb-line bg-white/5 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
+          {count}
+        </span>
+      )}
     </div>
+  );
+}
+
+function InlineLoading() {
+  return (
+    <p className="flex items-center gap-1.5 px-1 py-3 text-xs text-nb-faint">
+      <Icon icon="svg-spinners:180-ring" className="text-sm text-nb-blueb" /> Loading…
+    </p>
+  );
+}
+
+function InlineError({ error, fallback }) {
+  return <p className="px-1 py-3 text-xs text-nb-crit">{apiError(error, fallback)}</p>;
+}
+
+function EmptyNote({ children }) {
+  return (
+    <p className="rounded-[10px] border border-dashed border-nb-line px-3 py-4 text-center text-xs text-nb-faint">
+      {children}
+    </p>
   );
 }

@@ -1,33 +1,23 @@
-"""VMS storage domain (P3-B) — where recordings live + how long + tier + integrity.
+"""VMS recording-integrity domain — checksum/lock/verify only.
 
-Self-contained ``schemas`` + ``service`` + ``router`` (StoragePool + TierRule CRUD,
-pool usage, recording integrity/lock/verify), plus one background collaborator
-started in ``app.main`` lifespan:
+The storage DATA-PLANE (StoragePool/TierRule CRUD, per-pool usage, RAID
+monitoring, the retention+tiering sweep) is owned by the standalone NVR and has
+been retired from this VMS. What remains is the recording-integrity surface:
 
-  * ``RetentionTieringWorker`` — periodic estate-wide sweep: age + capacity retention
-    (deletes, NEVER touching locked recordings) and TierRule-driven hot→cold tiering
-    (local→S3/MinIO, verify, re-point). Graceful: unreachable pool / missing file →
-    log + skip, never crashes.
-
-Two routers are exported: ``router`` (``/vms/storage/*``) and ``rec_router``
-(``/vms/recordings/{id}/lock|unlock|verify``) — both share the ``/vms`` mount.
-
-Shared helpers (``compute_integrity``, S3 path scheme) live in ``service`` and are
-reused by the recording consumer (checksum-on-finalize) + the worker.
+  * ``rec_router`` — ``/vms/recordings/{id}/lock|unlock|verify``.
+  * ``StorageService`` — default-pool bootstrap (stamps ``storage_pool_id`` at
+    finalize) + recording lock/verify.
+  * ``compute_integrity`` — shared checksum helper reused by the recording
+    consumer (checksum-on-finalize) + the verify endpoint.
 """
 
 from __future__ import annotations
 
-from .router import rec_router, router
-from .raid_monitor import RaidMonitor
+from .router import rec_router
 from .service import StorageService, compute_integrity
-from .worker import RetentionTieringWorker
 
 __all__ = [
-    "router",
     "rec_router",
     "StorageService",
     "compute_integrity",
-    "RetentionTieringWorker",
-    "RaidMonitor",
 ]
