@@ -98,27 +98,19 @@ export default function FederatedCameraDetail({ camera }) {
             Snapshot
           </button>
           <span
-            title="This camera is owned by its recorder — read-only here"
+            title="Operational actions (PTZ, snapshot) run through the owning recorder; device config lives on the NVR"
             className="inline-flex items-center gap-1 rounded-full border border-[rgba(96,165,250,.3)] bg-[rgba(96,165,250,.08)] px-2 py-0.5 text-[10px] font-medium text-nb-blueb"
           >
-            <Icon icon="heroicons-outline:lock-closed" className="text-xs" />
-            Read-only
+            <Icon icon="heroicons-outline:bolt" className="text-xs" />
+            Via recorder
           </span>
           <StatusBadge status={camera.status} />
         </div>
       </div>
 
-      {/* Body — managed-by banner + live view + read-only facts. */}
+      {/* Body — live view + facts. Operational actions (PTZ, snapshot) run
+          through the recorder; device config authorship stays on the NVR. */}
       <div className="flex min-h-0 flex-1 flex-col px-4 py-3">
-        <div className="mb-3 flex shrink-0 items-start gap-2 rounded-lg border border-[rgba(96,165,250,.25)] bg-[rgba(96,165,250,.06)] px-3 py-2 text-[11px] leading-relaxed text-nb-soft">
-          <Icon icon="heroicons-outline:information-circle" className="mt-px shrink-0 text-sm text-nb-blueb" />
-          <span>
-            Managed by <span className="font-semibold text-nb-ink">{camera.node_name || "its recorder"}</span>. Configuration,
-            recording and device maintenance are controlled on the recorder (NVR). This VMS view is live + read-only —
-            plot it on a floor plan or view it on the wall like any other camera.
-          </span>
-        </div>
-
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-nb-line bg-black">
           <LivePlayer
             key={camera.id}

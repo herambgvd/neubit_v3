@@ -108,15 +108,6 @@ export default function CamerasPage() {
             </div>
           </header>
 
-          {/* Federated-view note — management lives on the owning recorder. */}
-          <div className="mx-2 mt-2 flex shrink-0 items-start gap-2 rounded-[10px] border border-[rgba(96,165,250,.25)] bg-[rgba(96,165,250,.06)] px-2.5 py-1.5 text-[10.5px] leading-relaxed text-nb-soft">
-            <Icon icon="heroicons-outline:information-circle" className="mt-px shrink-0 text-xs text-nb-blueb" />
-            <span>
-              Cameras are owned by their recorder. This is a read-only view — onboarding &amp;
-              management happen on the owning recorder.
-            </span>
-          </div>
-
           {/* Filters + status counts */}
           <div className="shrink-0 space-y-1.5 px-2 pb-2 pt-2">
             <label className="relative block">
