@@ -97,6 +97,43 @@ export const vms = {
     snapshotUrl: (nodeId, cameraId) =>
       `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/snapshot`,
 
+    // ── operate-THROUGH-node — operational actions PROXIED to the owning recorder
+    // The VMS never touches a node-owned camera directly; it asks the node to do it.
+    // Same seam as ptz/snapshot above. All best-effort — the node forwards to the
+    // device/recorder and echoes its result. Node-side gates apply; the VMS also
+    // hides each control behind the operator's own permission (see FederatedCameraDetail).
+    actions: {
+      // Manual recording — flip the node's recording on this camera on/off now.
+      recordStart: (nodeId, cameraId) =>
+        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording/start`, {})),
+      recordStop: (nodeId, cameraId) =>
+        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording/stop`, {})),
+      // Reboot the camera through its recorder's brand driver.
+      reboot: (nodeId, cameraId) =>
+        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/reboot`, {})),
+      // ── Clip export (job) — { from, to } (RFC3339) → { id, status }. Poll getExport
+      // until status is ready/done, then pull the mp4 as an authed blob (Bearer header,
+      // same idiom as export.downloadBlob) rather than a bare <a href>.
+      createExport: (nodeId, cameraId, from, to) =>
+        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`, { from, to })),
+      listExports: (nodeId, cameraId) =>
+        unwrap(api.get(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`)),
+      getExport: (nodeId, exportId) =>
+        unwrap(api.get(`/vms/federation/nodes/${nodeId}/exports/${exportId}`)),
+      downloadExportBlob: (nodeId, exportId) =>
+        api
+          .get(`/vms/federation/nodes/${nodeId}/exports/${exportId}/download`, { responseType: "blob" })
+          .then((r) => r.data),
+      // ── Evidence hold — retention-lock a [from,to] window of this camera's footage
+      // on the owning recorder (reason is a free-text note). Release cancels it.
+      holds: (nodeId, cameraId) =>
+        unwrap(api.get(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds`)),
+      holdCreate: (nodeId, cameraId, from, to, reason) =>
+        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds`, { from, to, reason })),
+      holdRelease: (nodeId, cameraId, from, to) =>
+        unwrap(api.delete(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds${qs({ from, to })}`)),
+    },
+
     // ── Storage (single-ownership) — READ-ONLY per recorder node ────────────
     // Storage is OWNED + managed by the standalone recorder; the VMS only reads it
     // through the node. All GET, read-only. Tagged with node_id/node_name.

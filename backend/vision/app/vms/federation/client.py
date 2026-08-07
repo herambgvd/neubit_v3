@@ -374,3 +374,171 @@ async def snapshot_node(
     except (ValueError, binascii.Error) as e:
         raise NodeUnavailable(f"could not decode node snapshot: {e}") from e
     return raw, content_type
+
+
+# ── operate-THROUGH-node (Phase-3, extended) — recording control, clip export,
+# evidence hold, and camera reboot. Each proxies the operator's action to the owning
+# NVR, which runs the real op. All mirror ptz_node's POST-with-credential shape and
+# raise NodeUnavailable on any non-2xx; the node authorises via X-Node-Credential
+# (whose grants now carry recording.control / export.create / evidence.* / camera.reboot).
+
+
+async def record_start_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """POST {api_url}/api/v1/nvr/estate/cameras/{id}/recording/start → the node starts
+    recording its own camera. Empty body; returns { status }. NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/recording/start"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(url, headers=_headers(credential), json={})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def record_stop_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """POST {api_url}/api/v1/nvr/estate/cameras/{id}/recording/stop → the node stops
+    recording its own camera. Empty body; returns { status }. NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/recording/stop"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(url, headers=_headers(credential), json={})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def reboot_camera_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """POST {api_url}/api/v1/nvr/estate/cameras/{id}/onvif/reboot → the node reboots its
+    own camera via ONVIF. Empty body; returns { "rebooting": true }. NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/onvif/reboot"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(url, headers=_headers(credential), json={})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def create_export_node(
+    api_url: str, camera_id: str, frm: str, to: str, *, credential: str | None = None
+) -> dict:
+    """POST {api_url}/api/v1/nvr/estate/exports → the node queues a clip export of its own
+    camera for [frm, to] (RFC3339). Returns 202 { id, status, ... }. NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports"
+    body = {"camera_id": camera_id, "from": frm, "to": to}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(url, headers=_headers(credential), json=body)
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def list_exports_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/exports?camera_id={id} → the node's export jobs for a
+    camera. Returns { items: [...] }. NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential), params={"camera_id": camera_id})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def get_export_node(api_url: str, export_id: str, *, credential: str | None = None) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/exports/{export_id} → one export job's status.
+    Returns { id, status, ... }. NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports/{export_id}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential))
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def download_export_node(
+    api_url: str, export_id: str, *, credential: str | None = None
+) -> tuple[bytes, str, str]:
+    """GET {api_url}/api/v1/nvr/estate/exports/{export_id}/download → the produced mp4,
+    streamed by the node as an attachment. These clips are short, so we load the body into
+    memory and return (bytes, media_type, filename); filename is parsed from the node's
+    Content-Disposition (falls back to ``export-{id}.mp4``). NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports/{export_id}/download"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential))
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    media_type = (r.headers.get("content-type") or "video/mp4").split(";", 1)[0].strip() or "video/mp4"
+    filename = f"export-{export_id}.mp4"
+    disp = r.headers.get("content-disposition") or ""
+    if "filename=" in disp:
+        parsed = disp.split("filename=", 1)[1].strip().strip('"').strip()
+        if parsed:
+            filename = parsed
+    return r.content, media_type, filename
+
+
+async def evidence_hold_node(
+    api_url: str, camera_id: str, frm: str, to: str, reason: str, *, credential: str | None = None
+) -> dict:
+    """POST {api_url}/api/v1/nvr/estate/cameras/{id}/holds → the node places an evidence
+    hold on its own camera over [frm, to] with a reason. Returns the node's hold JSON.
+    NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/holds"
+    body = {"from": frm, "to": to, "reason": reason}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(url, headers=_headers(credential), json=body)
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def evidence_release_node(
+    api_url: str, camera_id: str, frm: str, to: str, *, credential: str | None = None
+) -> dict:
+    """DELETE {api_url}/api/v1/nvr/estate/cameras/{id}/holds?from=&to= → the node releases
+    the evidence hold on its own camera over [frm, to]. Returns the node's JSON.
+    NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/holds"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.delete(url, headers=_headers(credential), params={"from": frm, "to": to})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}
+
+
+async def list_holds_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/holds?camera_id={id} → the node's active evidence
+    holds for a camera. Returns { items: [...] }. NodeUnavailable on non-2xx."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/holds"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential), params={"camera_id": camera_id})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    return r.json() or {}

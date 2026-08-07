@@ -33,6 +33,20 @@ PERM_READ = "vms.camera.read"
 PERM_LIVE = "vms.live.view"
 PERM_PLAYBACK = "vms.playback.view"
 PERM_PTZ = "vms.ptz.control"
+# operate-THROUGH-node (Phase-3, extended) operator perms. Vision declares its perms as
+# plain string literals passed to require_permission (no central registry; grants() does
+# super-admin/'*' bypass), so these are declared here exactly like PERM_PTZ above and
+# mirror the node-side grants the federation credential now carries.
+# These OPERATOR-facing gates must match the perms real VMS roles actually grant
+# (and the client's button-visibility gates) so a visible action never 403s. They
+# are the operator's right; the NODE separately enforces the federation credential's
+# own scoped grants (recording.control / export.create / evidence.* / camera.reboot).
+PERM_RECORDING = "vms.recording.control"  # manual record + evidence-write, as the local recording/evidence UI gates
+PERM_EXPORT = "vms.playback.view"         # clip export rides the playback/investigation right the app uses
+PERM_EVIDENCE_HOLD = "vms.recording.control"   # evidence write == recording.control (matches EvidenceLockModal)
+PERM_EVIDENCE_RELEASE = "vms.recording.control"
+PERM_EVIDENCE_READ = "vms.playback.view"
+PERM_CAMERA_REBOOT = "vms.config.manage"  # the real device-maintenance/reboot right (deviceMgmt.reboot)
 
 # Nodes we attempt to reach for a federated read (a draining/errored node is skipped).
 _REACHABLE = ("online", "unknown", "draining")
@@ -243,6 +257,256 @@ async def federated_recordings(
     payload["node_id"] = str(node.id)
     payload["node_name"] = node.name
     return payload
+
+
+# ── operate-THROUGH-node (Phase-3, extended) — recording control, clip export,
+# evidence hold/release, and camera reboot. Each resolves the MediaNode + credential
+# exactly like the PTZ route, proxies the operator's action to the owning NVR (which
+# runs the real op), maps NodeUnavailable→503, and returns the node's JSON (or the
+# streamed mp4 for a download). Gated on the vision operator perm matching the action.
+
+
+@router.post(
+    "/nodes/{node_id}/cameras/{camera_id}/recording/start",
+    dependencies=[Depends(require_permission(PERM_RECORDING))],
+)
+async def federated_recording_start(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """Start recording a federated camera THROUGH its recorder node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.record_start_node(node.api_url, camera_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
+
+
+@router.post(
+    "/nodes/{node_id}/cameras/{camera_id}/recording/stop",
+    dependencies=[Depends(require_permission(PERM_RECORDING))],
+)
+async def federated_recording_stop(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """Stop recording a federated camera THROUGH its recorder node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.record_stop_node(node.api_url, camera_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
+
+
+@router.post(
+    "/nodes/{node_id}/cameras/{camera_id}/reboot",
+    dependencies=[Depends(require_permission(PERM_CAMERA_REBOOT))],
+)
+async def federated_camera_reboot(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """Reboot a federated camera (ONVIF) THROUGH its recorder node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.reboot_camera_node(node.api_url, camera_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
+
+
+@router.post(
+    "/nodes/{node_id}/cameras/{camera_id}/exports",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def federated_export_create(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    body: Annotated[dict, Body(...)],
+) -> dict:
+    """Queue a clip export of a federated camera THROUGH its recorder node. ``body`` =
+    { from, to } (RFC3339). Returns the node-issued 202 { id, status, ... }."""
+    node = await _resolve_node(db, scope, node_id)
+    frm = str((body or {}).get("from") or "").strip()
+    to = str((body or {}).get("to") or "").strip()
+    try:
+        result = await fed.create_export_node(node.api_url, camera_id, frm, to, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
+
+
+@router.get(
+    "/nodes/{node_id}/cameras/{camera_id}/exports",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def federated_export_list(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """A federated camera's export jobs, listed THROUGH its recorder node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.list_exports_node(node.api_url, camera_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
+
+
+@router.get(
+    "/nodes/{node_id}/exports/{export_id}",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def federated_export_status(
+    node_id: str,
+    export_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """One export job's status, read THROUGH its recorder node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.get_export_node(node.api_url, export_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
+
+
+@router.get(
+    "/nodes/{node_id}/exports/{export_id}/download",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def federated_export_download(
+    node_id: str,
+    export_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> Response:
+    """Download a produced clip THROUGH its recorder node. The node streams the mp4; we
+    relay the bytes with the node's media-type and an attachment disposition so the browser
+    saves it directly. 503 if the node is unreachable."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        raw, media_type, filename = await fed.download_export_node(
+            node.api_url, export_id, credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    return Response(
+        content=raw,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post(
+    "/nodes/{node_id}/cameras/{camera_id}/holds",
+    dependencies=[Depends(require_permission(PERM_EVIDENCE_HOLD))],
+)
+async def federated_evidence_hold(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    body: Annotated[dict, Body(...)],
+) -> dict:
+    """Place an evidence hold on a federated camera THROUGH its recorder node. ``body`` =
+    { from, to, reason }. Returns the node-issued hold JSON."""
+    node = await _resolve_node(db, scope, node_id)
+    frm = str((body or {}).get("from") or "").strip()
+    to = str((body or {}).get("to") or "").strip()
+    reason = str((body or {}).get("reason") or "").strip()
+    try:
+        result = await fed.evidence_hold_node(
+            node.api_url, camera_id, frm, to, reason, credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
+
+
+@router.delete(
+    "/nodes/{node_id}/cameras/{camera_id}/holds",
+    dependencies=[Depends(require_permission(PERM_EVIDENCE_RELEASE))],
+)
+async def federated_evidence_release(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    from_: Annotated[str, Query(alias="from")],
+    to: str,
+) -> dict:
+    """Release an evidence hold on a federated camera THROUGH its recorder node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.evidence_release_node(
+            node.api_url, camera_id, from_, to, credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
+
+
+@router.get(
+    "/nodes/{node_id}/cameras/{camera_id}/holds",
+    dependencies=[Depends(require_permission(PERM_EVIDENCE_READ))],
+)
+async def federated_evidence_list(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """A federated camera's active evidence holds, listed THROUGH its recorder node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.list_holds_node(node.api_url, camera_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(result, dict):
+        result["node_id"] = str(node.id)
+        result["node_name"] = node.name
+    return result
 
 
 # ── storage read seam (Phase-1) — the recorder node OWNS storage; the VMS only READS.
