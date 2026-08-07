@@ -11,10 +11,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog } from "@/components/ui/kit";
+import { Button, ConfirmDialog, Modal } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, fmtRelative } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
 import StatusBadge, { StatusDot } from "./components/StatusBadge";
 import AddRecorderModal from "./components/AddRecorderModal";
@@ -318,7 +319,191 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }) {
         <p className="mt-3 text-[11px] text-[#7e93bf]">
           Cameras pinned to this recorder record to its local storage. Drain before deleting, then reassign its cameras to another recorder.
         </p>
+
+        {/* Federation trust — the credentials that let the VMS read + stream THROUGH
+            this recorder (single ownership: the node owns its cameras/storage). */}
+        <FederationTrust node={node} />
       </div>
     </section>
+  );
+}
+
+// Federation trust / credentials for one recorder node. Shows enrollment status,
+// lists issued credentials (grants + activity), lets an operator Enroll / Re-enroll
+// (the RAW secret is shown ONCE, copyable, with a warning) and Revoke a credential.
+// Gated on vms.config.manage, like the other recorder mutations.
+function FederationTrust({ node }) {
+  const qc = useQueryClient();
+  const { can } = useAuth();
+  const canManage = can("vms.config.manage");
+  const [issued, setIssued] = useState(null); // the just-enrolled RAW credential (show once)
+  const [copied, setCopied] = useState(false);
+
+  const credsQ = useQuery({
+    queryKey: ["vms-node-credentials", node.id],
+    queryFn: () => vms.mediaNodes.credentials(node.id),
+  });
+  const creds = useMemo(() => asItems(credsQ.data), [credsQ.data]);
+  const activeCount = creds.filter((c) => !c.revoked_at).length;
+  const enrolled = node.has_credential || activeCount > 0;
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["vms-node-credentials", node.id] });
+    qc.invalidateQueries({ queryKey: ["vms-media-nodes"] });
+  };
+
+  const enroll = useMutation({
+    mutationFn: () => vms.mediaNodes.enroll(node.id),
+    onSuccess: (data) => {
+      setIssued(data);
+      setCopied(false);
+      toast.success("Federation credential issued");
+      invalidate();
+    },
+    onError: (e) => toast.error(apiError(e, "Enroll failed")),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (credId) => vms.mediaNodes.revokeCredential(node.id, credId),
+    onSuccess: () => { toast.success("Credential revoked"); invalidate(); },
+    onError: (e) => toast.error(apiError(e, "Revoke failed")),
+  });
+
+  const copyRaw = async () => {
+    try {
+      await navigator.clipboard.writeText(issued.credential);
+      setCopied(true);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Copy failed — select and copy manually");
+    }
+  };
+
+  return (
+    <>
+      <div className="mb-2 mt-5 flex items-center justify-between">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Federation trust</p>
+        <span
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+            enrolled
+              ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] text-[#34d399]"
+              : "border-[rgba(160,150,245,.28)] bg-[rgba(150,180,245,.06)] text-[#9a92c8]"
+          }`}
+        >
+          <Icon icon={enrolled ? "heroicons-outline:shield-check" : "heroicons-outline:shield-exclamation"} className="text-[11px]" />
+          {enrolled ? "Enrolled" : "Not enrolled"}
+        </span>
+      </div>
+
+      <p className="mb-2 text-[11px] leading-relaxed text-[#7e93bf]">
+        A federation credential lets the VMS read this recorder&apos;s cameras and stream through it. The raw
+        secret is shown once at enrollment — store it on the recorder, then revoke + re-enroll to rotate it.
+      </p>
+
+      {credsQ.isLoading ? (
+        <p className="px-1 py-2 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
+      ) : credsQ.isError ? (
+        <p className="px-1 py-2 text-xs text-[#f87171]">{apiError(credsQ.error, "Failed to load credentials")}</p>
+      ) : creds.length === 0 ? (
+        <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-center text-xs text-[#9a92c8]">
+          No credentials issued yet. Enroll this recorder to establish federation trust.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {creds.map((c) => {
+            const revoked = !!c.revoked_at;
+            return (
+              <li
+                key={c.id}
+                className={`rounded-[10px] border px-3 py-2 ${
+                  revoked ? "border-[rgba(160,150,245,.18)] bg-[rgba(150,180,245,.03)] opacity-70" : "border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)]"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Icon icon="heroicons-outline:key" className="shrink-0 text-sm text-[#aec2e8]" />
+                    <span className="truncate text-[13px] font-medium text-[#f2f6ff]">{c.label || "credential"}</span>
+                    {revoked && (
+                      <span className="shrink-0 rounded-full border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] px-1.5 py-0.5 text-[9px] font-medium text-[#f87171]">Revoked</span>
+                    )}
+                  </span>
+                  {canManage && !revoked && (
+                    <button
+                      onClick={() => revoke.mutate(c.id)}
+                      disabled={revoke.isPending}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.08)] px-2 py-1 text-[11px] text-[#f87171] transition hover:bg-[rgba(248,113,113,.16)] disabled:opacity-50"
+                    >
+                      <Icon icon="heroicons-outline:no-symbol" className="text-[13px]" /> Revoke
+                    </button>
+                  )}
+                </div>
+                {Array.isArray(c.grants) && c.grants.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1 pl-6">
+                    {c.grants.map((g) => (
+                      <span key={g} className="rounded border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 pl-6 font-mono text-[10px] text-[#7e93bf]">
+                  <span>issued {c.created_at ? fmtRelative(c.created_at) : "—"}</span>
+                  <span>last used {c.last_used_at ? fmtRelative(c.last_used_at) : "never"}</span>
+                  {revoked && <span>revoked {fmtRelative(c.revoked_at)}</span>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {canManage && (
+        <Button
+          variant="secondary"
+          className="mt-2.5 !px-2.5 !py-1.5 !text-xs"
+          icon={enrolled ? "heroicons-outline:arrow-path" : "heroicons-outline:plus"}
+          onClick={() => enroll.mutate()}
+          disabled={enroll.isPending}
+        >
+          {enroll.isPending ? "Enrolling…" : enrolled ? "Re-enroll" : "Enroll"}
+        </Button>
+      )}
+
+      {/* The RAW credential — shown ONCE. */}
+      <Modal
+        open={!!issued}
+        onClose={() => setIssued(null)}
+        title="Federation credential"
+        footer={<Button variant="secondary" onClick={() => setIssued(null)}>Done</Button>}
+      >
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.08)] px-3 py-2 text-[12px] text-[#fbbf24]">
+            <Icon icon="heroicons-outline:exclamation-triangle" className="mt-0.5 shrink-0 text-sm" />
+            Copy this now — it is shown once and cannot be retrieved again. Store it on the recorder, then revoke + re-enroll to rotate.
+          </div>
+          <div>
+            <p className="mb-1 font-mono text-[10px] uppercase tracking-[1.4px] text-[#9a92c8]">Credential {issued?.label ? `· ${issued.label}` : ""}</p>
+            <div className="flex items-stretch gap-2">
+              <code className="min-w-0 flex-1 select-all break-all rounded-[8px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 font-mono text-[12px] text-[#f2f6ff]">
+                {issued?.credential}
+              </code>
+              <Button
+                variant="secondary"
+                className="!px-2.5"
+                icon={copied ? "heroicons-outline:check" : "heroicons-outline:clipboard"}
+                onClick={copyRaw}
+              >
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+          {Array.isArray(issued?.grants) && issued.grants.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {issued.grants.map((g) => (
+                <span key={g} className="rounded border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
+    </>
   );
 }

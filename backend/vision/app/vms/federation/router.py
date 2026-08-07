@@ -245,6 +245,123 @@ async def federated_recordings(
     return payload
 
 
+# ── storage read seam (Phase-1) — the recorder node OWNS storage; the VMS only READS.
+# READ-ONLY, gated on PERM_PLAYBACK (vms.playback.view) — the same permission the rest
+# of the federated reads (timeline/recordings/playback) use, and the one /vms/storage/*
+# reads on locally (no vms.storage.read perm exists). Node lookup + credential +
+# NodeUnavailable→503 handling exactly mirror the federated read routes above.
+
+
+@router.get(
+    "/nodes/{node_id}/storage/usage",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_storage_usage(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """The recorder node's OWN disk usage summary, read through the node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.get_node_storage_usage(node.api_url, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(payload, dict):
+        payload["node_id"] = str(node.id)
+        payload["node_name"] = node.name
+    return payload
+
+
+@router.get(
+    "/nodes/{node_id}/storage/raid",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_storage_raid(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """The recorder node's OWN RAID array health, read through the node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.get_node_storage_raid(node.api_url, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(payload, dict):
+        payload["node_id"] = str(node.id)
+        payload["node_name"] = node.name
+    return payload
+
+
+@router.get(
+    "/nodes/{node_id}/storage/pools",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_storage_pools(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """The recorder node's OWN storage pools, read through the node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.list_node_pools(node.api_url, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(payload, dict):
+        payload["node_id"] = str(node.id)
+        payload["node_name"] = node.name
+    return payload
+
+
+@router.get(
+    "/nodes/{node_id}/storage/tier-rules",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_storage_tier_rules(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """The recorder node's OWN tiering rules, read through the node."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.list_node_tier_rules(node.api_url, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if isinstance(payload, dict):
+        payload["node_id"] = str(node.id)
+        payload["node_name"] = node.name
+    return payload
+
+
+@router.get(
+    "/nodes/{node_id}/nvrs/{nvr_id}/storage",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_upstream_nvr_storage(
+    node_id: str,
+    nvr_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """A 3rd-party UPSTREAM NVR's HDDs (federated by this recorder), read through the
+    node. Returns {"available": false} when the node has no upstream storage for this
+    nvr yet (client returns None on the node's 404 — the feature may still be building)."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.get_upstream_nvr_storage(node.api_url, nvr_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    if payload is None:
+        return {"available": False, "node_id": str(node.id), "node_name": node.name}
+    if isinstance(payload, dict):
+        payload["node_id"] = str(node.id)
+        payload["node_name"] = node.name
+    return payload
+
+
 @router.post(
     "/nodes/{node_id}/cameras/{camera_id}/playback",
     dependencies=[Depends(require_permission(PERM_PLAYBACK))],

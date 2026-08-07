@@ -56,6 +56,9 @@ export const configConsoles = [
   // Federation is a System & Policy console on the HOME launcher — list it here too
   // so the ⌘K command palette can reach it like every other Configurations surface.
   { title: "Federation", icon: "heroicons-outline:share", link: "/federation", perm: "vms.camera.read", module: "vms" },
+  // Storage is a read-only, node-scoped view of each recorder's storage (single
+  // ownership — the recorder owns + manages it). Listed here so ⌘K can reach it.
+  { title: "Storage", icon: "heroicons-outline:circle-stack", link: "/storage", perm: "vms.camera.read", module: "vms" },
   { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
   { title: "Platform", icon: "heroicons-outline:squares-2x2", link: "/platform", perm: "settings.manage" },
   { title: "Audit", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },

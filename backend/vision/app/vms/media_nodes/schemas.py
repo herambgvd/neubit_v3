@@ -65,6 +65,9 @@ class MediaNodePublic(BaseModel):
     last_heartbeat: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    # Whether this node has a per-node federation credential enrolled (X-Node-Credential).
+    # The raw key is NEVER exposed here — only its presence, so the UI can show trust state.
+    has_credential: bool = False
     # Populated on the CREATE response only — reachability warning when the node did not
     # answer its health probe at register time (the row is still stored, marked offline).
     warning: Optional[str] = None
@@ -94,6 +97,7 @@ class MediaNodePublic(BaseModel):
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
                 "warning": warning,
+                "has_credential": bool((getattr(row, "credential", None) or "").strip()),
             }
         )
 
