@@ -109,6 +109,54 @@ const nvrTile = (nvrId, ch, nvrName) => ({
   nvrId,
   channel: ch.value,
 });
+// kind='federated' → a recorder-owned / 3rd-party-NVR (e.g. Lumina) camera surfaced
+// through the federation proxy. nodeId/realId address it on the remote node; the
+// synthetic `cameraId` (like nvrTile's) satisfies the player's truthy-id guards +
+// query keys — the real request is overridden by tileSource's sourceFn.
+// vms.federation.cameras() returns each camera's node-side id as `id` (there is no
+// `real_id` on the raw payload — that alias only exists after the Streaming console
+// remaps it). Use `id` (fall back to real_id if a caller pre-mapped it) so the tile
+// key + playback target are never `undefined`.
+const fedTile = (c) => {
+  const realId = c.real_id ?? c.id;
+  return {
+    key: `fed:${c.node_id}:${realId}`,
+    kind: "federated",
+    name: c.name,
+    cameraId: `${c.node_id}:${realId}`,
+    nodeId: c.node_id,
+    realId,
+    federated: true,
+  };
+};
+
+// Federated nodes expose NO recording-days endpoint, so DERIVE the month's footage
+// days client-side from a month-wide timeline: every returned range's local-day span
+// (a range may cross midnight → mark each local day it covers) is bucketed into
+// day-of-month numbers. Local Date methods honor the operator's tz (== TZ_OFFSET_MIN),
+// matching the server-side branches. Resilient to no footage (days:[]).
+async function fedRecordingDays(nodeId, realId, calMonth) {
+  const [y, m] = calMonth.split("-").map(Number); // m is 1-based
+  const monthStart = new Date(y, m - 1, 1, 0, 0, 0, 0);
+  const monthEnd = new Date(y, m, 0, 23, 59, 59, 999); // day 0 of next month = last day
+  const tl = await vms.federation.timeline(nodeId, realId, {
+    from: monthStart.toISOString(),
+    to: monthEnd.toISOString(),
+  });
+  const days = new Set();
+  for (const r of tl?.ranges || []) {
+    if (!r?.start) continue;
+    const startMs = new Date(r.start).getTime();
+    const endMs = startMs + (r.duration || 0) * 1000;
+    const cur = new Date(startMs);
+    cur.setHours(0, 0, 0, 0); // walk from the range's local start-day midnight
+    while (cur.getTime() <= endMs) {
+      if (cur.getFullYear() === y && cur.getMonth() === m - 1) days.add(cur.getDate());
+      cur.setDate(cur.getDate() + 1); // DST-safe local day step
+    }
+  }
+  return { year: y, month: m, days: [...days].sort((a, b) => a - b) };
+}
 
 export default function UnifiedPlayback({ onExportRange }) {
   const [day, setDay] = useState(todayStr());
@@ -119,7 +167,7 @@ export default function UnifiedPlayback({ onExportRange }) {
   const [seekMs, setSeekMs] = useState(null);
   const [seekNonce, setSeekNonce] = useState(0); // bumped ONLY on an explicit user scrub
   const [focusKey, setFocusKey] = useState(null); // tile expanded to full player
-  const [pickerKind, setPickerKind] = useState("camera"); // 'camera' | 'nvr'
+  const [pickerKind, setPickerKind] = useState("camera"); // 'camera' | 'nvr' | 'federated'
   // Recorded picker scaling (200+ cams): server-side search + site filter so the
   // rail never renders a wall of checkboxes. `camSearch` is the raw input;
   // `debouncedCamSearch` (250ms) is what the camera query actually keys on.
@@ -275,6 +323,18 @@ export default function UnifiedPlayback({ onExportRange }) {
     [nvrs, pickNvrId],
   );
 
+  // ── Federated (recorder-owned) picker data ───────────────────────────────
+  // Cameras owned by remote recorder nodes (3rd-party NVR channels, e.g. Lumina),
+  // surfaced through the federation proxy. Each carries node_id/real_id (its address
+  // on the node) + node_name/site_name for the label.
+  const fedCamsQ = useQuery({
+    queryKey: ["vms-federation-cameras", "playback-picker"],
+    queryFn: () => vms.federation.cameras(),
+    staleTime: 60_000,
+    enabled: pickerKind === "federated",
+  });
+  const fedCameras = useMemo(() => asItems(fedCamsQ.data), [fedCamsQ.data]);
+
   // ── Calendar footage marks ───────────────────────────────────────────────
   // The calendar tracks the FIRST-selected channel's footage-days for the month
   // in view (a checked channel takes priority; else the first loaded source). No
@@ -289,10 +349,12 @@ export default function UnifiedPlayback({ onExportRange }) {
             month: calMonth,
             tzOffsetMinutes: TZ_OFFSET_MIN,
           })
-        : vms.playback.recordingDays(calTrack.cameraId, {
-            month: calMonth,
-            tzOffsetMinutes: TZ_OFFSET_MIN,
-          }),
+        : calTrack?.kind === "federated"
+          ? fedRecordingDays(calTrack.nodeId, calTrack.realId, calMonth)
+          : vms.playback.recordingDays(calTrack.cameraId, {
+              month: calMonth,
+              tzOffsetMinutes: TZ_OFFSET_MIN,
+            }),
     enabled: !!calTrack,
     staleTime: 60_000,
     retry: false,
@@ -311,7 +373,9 @@ export default function UnifiedPlayback({ onExportRange }) {
       queryFn: () =>
         s.kind === "nvr"
           ? vms.nvrFootage.recordings(s.nvrId, s.channel, range)
-          : vms.playback.timeline(s.cameraId, { day }),
+          : s.kind === "federated"
+            ? vms.federation.timeline(s.nodeId, s.realId, { from: range.from, to: range.to })
+            : vms.playback.timeline(s.cameraId, { day }),
       enabled: !!s.key,
       staleTime: 30_000,
       retry: false,
@@ -332,7 +396,19 @@ export default function UnifiedPlayback({ onExportRange }) {
       const s = sources[i];
       const d = q.data;
       if (!d) return;
-      if (s?.kind === "nvr") {
+      if (s?.kind === "federated") {
+        // Federated node timeline: ranges carry {start, duration(sec), trigger_type}
+        // → convert each to a [start, start+duration] span (same shape as nvr/camera).
+        for (const r of d.ranges || []) {
+          if (!r?.start) continue;
+          const sMs = new Date(r.start).getTime();
+          spans.push({
+            s: sMs,
+            e: sMs + (r.duration || 0) * 1000,
+            trigger: r.trigger_type || r.trigger || "continuous",
+          });
+        }
+      } else if (s?.kind === "nvr") {
         // 3rd-party NVR ranges carry no trigger → neutral "continuous" (Normal).
         for (const r of asItems(d)) {
           if (!r?.start) continue;
@@ -503,7 +579,7 @@ export default function UnifiedPlayback({ onExportRange }) {
   // export flow the focus player uses (`onExportRange`). Camera tiles export by real
   // cameraId; NVR tiles don't have a native VMS export path → skip (button disabled).
   const downloadActive = useCallback(() => {
-    if (!activeSource || activeSource.kind === "nvr") return;
+    if (!activeSource || activeSource.kind === "nvr" || activeSource.kind === "federated") return;
     onExportRange?.({
       from: iso(windowStart),
       to: iso(windowEnd),
@@ -546,7 +622,8 @@ export default function UnifiedPlayback({ onExportRange }) {
   // the same onExportRange flow as the window-download. Camera tiles only (NVR has
   // no native VMS export path) — gated the same as downloadActive.
   const extractClip = useCallback(() => {
-    if (!hasSelection || !activeSource || activeSource.kind === "nvr") return;
+    if (!hasSelection || !activeSource || activeSource.kind === "nvr" || activeSource.kind === "federated")
+      return;
     onExportRange?.({
       from: iso(selFrom),
       to: iso(selTo),
@@ -568,9 +645,24 @@ export default function UnifiedPlayback({ onExportRange }) {
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
-  // Per-tile source/timeline overrides for NVR tiles.
-  const tileSource = (s) =>
-    s.kind === "nvr" ? (win) => vms.nvrFootage.playback(s.nvrId, s.channel, win) : null;
+  // Per-tile source overrides. NVR tiles pull from the client-NVR footage endpoint;
+  // federated tiles pull through the node proxy — which returns EITHER hls_url +
+  // webrtc_url (mediamtx proxy channels, same as live) OR playback_url (locally-
+  // recorded recorder cams, fmp4). Adapt whichever is present into the session shape
+  // usePlaybackSession/PlaybackPlayer consume (hls_url, webrtc_url, ranges, from, expires_at).
+  const tileSource = (s) => {
+    if (s.kind === "nvr") return (win) => vms.nvrFootage.playback(s.nvrId, s.channel, win);
+    if (s.kind === "federated")
+      return (win) =>
+        vms.federation.playback(s.nodeId, s.realId, win).then((r) => ({
+          hls_url: r.hls_url || r.playback_url,
+          webrtc_url: r.webrtc_url,
+          ranges: r.ranges,
+          from: r.start,
+          expires_at: r.expires_at,
+        }));
+    return null;
+  };
 
   // ── Rail channel list — recorded cameras (checkbox multi-select) ──────────
   // Cameras arrive already filtered server-side (search + site). Group them by
@@ -704,17 +796,18 @@ export default function UnifiedPlayback({ onExportRange }) {
               </span>
             </div>
 
-            {/* kind toggle [Recorded | NVR] */}
+            {/* kind toggle [Recorded | NVR | Recorder] */}
             <div className="mb-2 flex gap-1">
               {[
                 { k: "camera", label: "Recorded", icon: "heroicons-outline:video-camera" },
                 { k: "nvr", label: "NVR", icon: "heroicons:server-stack" },
+                { k: "federated", label: "Recorder", icon: "heroicons-outline:globe-alt" },
               ].map((t) => (
                 <button
                   key={t.k}
                   type="button"
                   onClick={() => setPickerKind(t.k)}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] transition ${
+                  className={`flex flex-1 items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-[12px] transition ${
                     pickerKind === t.k
                       ? "bg-[rgba(150,180,245,.08)] font-medium text-[#f2f6ff]"
                       : "text-[#9db0d8] hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
@@ -868,6 +961,49 @@ export default function UnifiedPlayback({ onExportRange }) {
                   })()
                 )}
               </div>
+            ) : pickerKind === "federated" ? (
+              /* Recorder cameras — flat checkbox list (node · site subtitle). */
+              <div className="space-y-1">
+                {fedCamsQ.isLoading ? (
+                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">Loading…</p>
+                ) : fedCameras.length === 0 ? (
+                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">No recorder cameras.</p>
+                ) : (
+                  fedCameras.map((c) => {
+                    const tile = fedTile(c);
+                    const on = isChecked(tile.key);
+                    const sub = [c.node_name, c.site_name].filter(Boolean).join(" · ");
+                    return (
+                      <label
+                        key={tile.key}
+                        title={c.name}
+                        className={`flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-[#f2f6ff] transition hover:bg-[rgba(150,180,245,.07)] ${
+                          !on && atCap ? "opacity-40" : ""
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={on}
+                          disabled={!on && atCap}
+                          onChange={() => toggleCheck(tile)}
+                        />
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                            on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
+                          }`}
+                        >
+                          {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{c.name}</span>
+                          {sub && <span className="block truncate text-[11px] text-[#9db0d8]">{sub}</span>}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
             ) : (
               <div className="space-y-2">
                 <Select
@@ -1009,7 +1145,17 @@ export default function UnifiedPlayback({ onExportRange }) {
                         coverageQs[sources.findIndex((s) => s.key === focusTile.key)]?.data,
                       ).map((r) => ({ start: r.start, end: r.end })),
                     })
-                  : null
+                  : focusTile.kind === "federated"
+                    ? () => ({
+                        coverage: (
+                          coverageQs[sources.findIndex((s) => s.key === focusTile.key)]?.data
+                            ?.ranges || []
+                        ).map((r) => ({
+                          start: r.start,
+                          end: iso(new Date(r.start).getTime() + (r.duration || 0) * 1000),
+                        })),
+                      })
+                    : null
               }
               onExportRange={(r) =>
                 onExportRange?.({ ...r, cameraId: focusTile.cameraId, cameraName: focusTile.name })
@@ -1040,6 +1186,11 @@ export default function UnifiedPlayback({ onExportRange }) {
                       {s.kind === "nvr" && (
                         <span className="rounded bg-sky-500/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
                           NVR
+                        </span>
+                      )}
+                      {s.kind === "federated" && (
+                        <span className="rounded bg-violet-500/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
+                          REC
                         </span>
                       )}
                     </div>
@@ -1182,8 +1333,8 @@ export default function UnifiedPlayback({ onExportRange }) {
                 <ToolBtn
                   icon="heroicons-outline:scissors"
                   title={
-                    activeSource?.kind === "nvr"
-                      ? "Clip extract unavailable for NVR channels"
+                    activeSource?.kind === "nvr" || activeSource?.kind === "federated"
+                      ? "Clip extract unavailable for recorder / NVR channels"
                       : !hasSelection
                         ? "Mark in + out to select a section to extract"
                         : `Extract clip ${readout(selFrom)}–${readout(selTo)}${
@@ -1191,7 +1342,12 @@ export default function UnifiedPlayback({ onExportRange }) {
                           }`
                   }
                   onClick={extractClip}
-                  disabled={!hasSelection || !activeSource || activeSource.kind === "nvr"}
+                  disabled={
+                    !hasSelection ||
+                    !activeSource ||
+                    activeSource.kind === "nvr" ||
+                    activeSource.kind === "federated"
+                  }
                 />
                 {hasSelection && (
                   <ToolBtn
@@ -1213,12 +1369,14 @@ export default function UnifiedPlayback({ onExportRange }) {
                 <ToolBtn
                   icon="heroicons-outline:arrow-down-tray"
                   title={
-                    activeSource?.kind === "nvr"
-                      ? "Export unavailable for NVR channels"
+                    activeSource?.kind === "nvr" || activeSource?.kind === "federated"
+                      ? "Export unavailable for recorder / NVR channels"
                       : `Download this whole window${activeSource ? ` · ${activeSource.name}` : ""}`
                   }
                   onClick={downloadActive}
-                  disabled={!activeSource || activeSource.kind === "nvr"}
+                  disabled={
+                    !activeSource || activeSource.kind === "nvr" || activeSource.kind === "federated"
+                  }
                 />
                 <ToolBtn
                   icon={
@@ -1242,8 +1400,10 @@ export default function UnifiedPlayback({ onExportRange }) {
                   {readout(selFrom)} – {readout(selTo)}
                   <span className="text-amber-400/70">({durReadout(selDurationMs)})</span>
                 </span>
-                {activeSource?.kind === "nvr" && (
-                  <span className="text-[11px] text-[#9db0d8]">Clip extract is unavailable for NVR channels.</span>
+                {(activeSource?.kind === "nvr" || activeSource?.kind === "federated") && (
+                  <span className="text-[11px] text-[#9db0d8]">
+                    Clip extract is unavailable for recorder / NVR channels.
+                  </span>
                 )}
               </div>
             )}

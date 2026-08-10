@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import LivePlayer from "./LivePlayer";
 import PtzOverlay from "./PtzOverlay";
 import StatusBadge from "./StatusBadge";
+import FederatedCameraActions from "./FederatedCameraActions";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { vms } from "../api";
@@ -136,6 +137,10 @@ export default function FederatedCameraDetail({ camera }) {
             </div>
           )}
         </div>
+
+        {/* Operate-through-node actions — each PROXIED to the owning recorder and
+            gated by the operator's own permission (hidden when they lack it). */}
+        <FederatedCameraActions camera={camera} />
 
         {/* Read-only facts we actually own (no fabricated config). */}
         <dl className="mt-3 grid shrink-0 grid-cols-2 gap-x-4 gap-y-2 text-[11px] sm:grid-cols-3">

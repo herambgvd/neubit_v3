@@ -396,20 +396,29 @@ class MediaNodeService:
     # proxy to the node's settings.manage-gated federation API via the shared-secret
     # service JWT (client.py handles the auth) — never X-Node-Credential.
     async def list_credentials(self, node_id: str) -> list[dict]:
-        """List the federation credentials the node has issued (id/label/grants/…)."""
+        """List the node's ACTIVE federation credentials. Single-credential invariant:
+        exactly one active credential per node (enroll rotates + revokes the rest), so
+        revoked rows are filtered out — the UI shows the one live credential."""
         row = await self._row(node_id)
         from app.vms.federation.client import NodeUnavailable, list_node_credentials
 
         try:
-            return await list_node_credentials(row.api_url or "")
+            creds = await list_node_credentials(row.api_url or "")
         except NodeUnavailable as exc:
             raise ConflictError(f"recorder unavailable: {exc}") from exc
+        return [c for c in creds if not c.get("revoked_at")]
 
     async def enroll_credential(self, node_id: str) -> dict:
         """Enrol a fresh scoped credential on the node, OVERWRITE the stored key with it,
-        and surface the raw credential ONCE ({credential, id, label, grants})."""
+        REVOKE every prior credential (one-active-credential-per-node invariant), and
+        surface the raw credential ONCE ({credential, id, label, grants})."""
         row = await self._row(node_id)
-        from app.vms.federation.client import NodeUnavailable, enroll_node_full
+        from app.vms.federation.client import (
+            NodeUnavailable,
+            enroll_node_full,
+            list_node_credentials,
+            revoke_node_credential,
+        )
 
         try:
             payload = await enroll_node_full(row.api_url or "")
@@ -418,10 +427,25 @@ class MediaNodeService:
         row.credential = payload.get("credential")
         row.updated_at = _utcnow()
         await self.db.commit()
+
+        # Rotate: revoke every OTHER credential the node holds so exactly one stays
+        # active. Best-effort — a failed revoke must not undo a successful enrol.
+        new_id = payload.get("id")
+        try:
+            for c in await list_node_credentials(row.api_url or ""):
+                cid = c.get("id")
+                if cid and cid != new_id and not c.get("revoked_at"):
+                    try:
+                        await revoke_node_credential(row.api_url or "", cid)
+                    except NodeUnavailable:
+                        log.warning("could not revoke stale credential %s on node %s", cid, node_id)
+        except NodeUnavailable:
+            log.warning("could not list credentials to rotate on node %s", node_id)
+
         # Surface the raw key ONCE — the node never returns it again.
         return {
             "credential": payload.get("credential"),
-            "id": payload.get("id"),
+            "id": new_id,
             "label": payload.get("label"),
             "grants": payload.get("grants"),
         }
