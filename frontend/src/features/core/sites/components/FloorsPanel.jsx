@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { ActionButton } from "@/components/console";
+import { ActionButton, RowAction } from "@/components/console";
 import { ConfirmDialog, Spinner } from "@/components/ui/kit";
 import { apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
@@ -109,13 +109,12 @@ export default function FloorsPanel({ site }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => setEditorFloor(f)} title="Open floor plan editor" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-nb-muted hover:bg-white/5 hover:text-blue-500">
-                    <Icon icon="heroicons-outline:map" className="text-sm" />
-                  </button>
-                  <button onClick={() => setEditing(f)} title="Edit" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-nb-muted hover:bg-white/5 hover:text-nb-ink">
-                    <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
-                  </button>
-                  <button
+                  <RowAction icon="heroicons-outline:map" title="Open floor plan editor" onClick={() => setEditorFloor(f)} />
+                  <RowAction icon="heroicons-outline:pencil-square" title="Edit" onClick={() => setEditing(f)} />
+                  <RowAction
+                    icon="heroicons-outline:trash"
+                    title="Delete"
+                    tone="danger"
                     onClick={() =>
                       setConfirm({
                         title: "Delete floor?",
@@ -127,11 +126,7 @@ export default function FloorsPanel({ site }) {
                         },
                       })
                     }
-                    title="Delete"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-500 hover:bg-red-500/10 hover:text-red-600"
-                  >
-                    <Icon icon="heroicons-outline:trash" className="text-sm" />
-                  </button>
+                  />
                 </div>
               </li>
             ))}

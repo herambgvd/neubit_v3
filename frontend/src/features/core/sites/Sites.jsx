@@ -130,6 +130,10 @@ export default function SitesConfigPage() {
 
           <PanelFooter>
             <CreateButton label="SITE" onClick={() => setMode("create")} />
+            <p className="mt-2.5 text-[10.5px] leading-relaxed text-nb-faint">
+              A site is a <b className="text-nb-blueb">physical location</b> — its floors, zones and
+              cameras hang off it, and user access is scoped by it.
+            </p>
           </PanelFooter>
         </ConsolePanel>
 

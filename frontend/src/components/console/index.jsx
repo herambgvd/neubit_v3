@@ -254,6 +254,80 @@ export function DangerButton(props) {
   return <Button variant="danger" {...props} />;
 }
 
+// --- RIGHT-hand context panel (Security posture, Role summary, …) ------------
+// Both panels had their own copy of these two; the copies had already drifted
+// (one grew a busy spinner and tones, the other stayed a hand-rolled <button>).
+// One definition each, so a stat row and a panel action look the same everywhere.
+
+// One "label ······ value" row inside a context panel's stat card.
+export function PanelStat({ label, value, tone = "ink" }) {
+  const c = {
+    ink: "text-nb-ink",
+    good: "text-nb-good",
+    warn: "text-nb-warn",
+    crit: "text-nb-crit",
+    blue: "text-nb-blueb",
+    faint: "text-nb-faint",
+  }[tone];
+  return (
+    <div className="flex items-center justify-between border-b border-nb-line/40 py-1.5 last:border-b-0">
+      <span className="text-[11.5px] text-nb-faint">{label}</span>
+      <span className={`font-mono text-[11.5px] ${c}`}>{value}</span>
+    </div>
+  );
+}
+
+// Full-width action button inside a context panel (CLONE THIS USER ▸, UNLOCK ▸).
+export function PanelAction({ icon, children, onClick, tone = "blue", disabled, busy }) {
+  const cls = {
+    blue: "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb hover:bg-[rgba(96,165,250,.16)]",
+    warn: "border-nb-warn/50 bg-nb-warn/10 text-nb-warn hover:bg-nb-warn/20",
+    good: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good hover:bg-[rgba(52,211,153,.16)]",
+  }[tone];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled || busy}
+      className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-[8px] border px-3 py-2 text-[11.5px] tracking-[.5px] transition disabled:opacity-50 ${cls}`}
+    >
+      <Icon icon={busy ? "svg-spinners:180-ring" : icon} className="text-[13px]" />
+      {children}
+    </button>
+  );
+}
+
+// Header action inside a detail pane (Edit) and its destructive icon-only sibling
+// (Delete). RoleDetail and UserDetail each hand-rolled these; the Delete buttons
+// had already diverged (one labelled, one a bare icon chip).
+export function PaneAction({ icon, title, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+    >
+      <Icon icon={icon} className="text-sm" />
+      {children}
+    </button>
+  );
+}
+
+export function PaneDeleteAction({ title = "Delete", onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] text-nb-crit transition hover:bg-[rgba(248,113,113,.18)]"
+    >
+      <Icon icon="heroicons-outline:trash" className="text-sm" />
+    </button>
+  );
+}
+
 // A create/edit form that FILLS a detail pane (as opposed to one in a modal).
 // Chrome deliberately mirrors kit's <Modal>: same header padding, same divider
 // rules, same footer — so "Create SOP" in a pane and "Add user" in a dialog read

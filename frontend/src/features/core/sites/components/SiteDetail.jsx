@@ -4,6 +4,7 @@
 // pills, threat-level select + close/edit/delete actions), a shared TabBar, and
 // the active tab body (info / floors / zones).
 import { Icon } from "@iconify/react";
+import { IconButton, PaneAction, PaneDeleteAction } from "@/components/console";
 import { TabBar } from "@/components/common";
 import { THREAT_PILL, THREAT_LEVELS, capitalize } from "../constants";
 import SiteInfoPanel from "./SiteInfoPanel";
@@ -56,15 +57,14 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
               className="!mt-0 !h-8 !text-xs"
             />
           </span>
-          <button onClick={onClose} title="Close" className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-muted hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb">
-            <Icon icon="heroicons-outline:x-mark" className="text-base" />
-          </button>
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted hover:border-nb-blue hover:text-nb-blueb">
-            <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-          </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.2)]">
-            <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
-          </button>
+          {/* Same header actions as UserDetail / RoleDetail. The × stays because
+              here an empty selection is a real state (the list keeps a `closed`
+              flag), unlike the other two consoles which re-select immediately. */}
+          <IconButton icon="heroicons-outline:x-mark" title="Close" onClick={onClose} className="h-8 w-8" />
+          <PaneAction icon="heroicons-outline:pencil-square" onClick={onEdit}>
+            Edit
+          </PaneAction>
+          <PaneDeleteAction title="Delete site" onClick={onDelete} />
         </div>
       </header>
 

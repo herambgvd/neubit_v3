@@ -7,6 +7,7 @@
 // are changed through EditUserModal, not here. Status and MFA stay as immediate
 // admin actions, since they are one-click operations rather than form edits.
 import { Icon } from "@iconify/react";
+import { PaneAction, PaneDeleteAction } from "@/components/console";
 import { Avatar } from "@/components/ui/kit";
 
 function Section({ icon, children, note }) {
@@ -110,22 +111,11 @@ export default function UserDetail({
           {status.toUpperCase()}
         </span>
         {canManage && (
-          <button
-            onClick={onEdit}
-            className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-          >
-            <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
-          </button>
+          <PaneAction icon="heroicons-outline:pencil-square" onClick={onEdit}>
+            Edit
+          </PaneAction>
         )}
-        {canManage && !isSelf && (
-          <button
-            onClick={onDelete}
-            title="Delete user"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] text-nb-crit transition hover:bg-[rgba(248,113,113,.18)]"
-          >
-            <Icon icon="heroicons-outline:trash" className="text-sm" />
-          </button>
-        )}
+        {canManage && !isSelf && <PaneDeleteAction title="Delete user" onClick={onDelete} />}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
