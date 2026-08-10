@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/kit";
 // field (Regenerate) — that row used to be hand-built with its own input classes,
 // so the Location code box didn't match the Name box next to it.
 export function FInput({
-  label, required, full, value, onChange, placeholder, type = "text", step, min, error, hint, action, mono,
+  label, required, full, value, onChange, placeholder, type = "text", inputMode, step, min, error, hint, action, mono,
 }) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
@@ -21,6 +21,7 @@ export function FInput({
       <div className={action ? "mt-1 flex gap-2" : ""}>
         <input
           type={type}
+          inputMode={inputMode}
           step={step}
           min={min}
           value={value === null || value === undefined ? "" : value}

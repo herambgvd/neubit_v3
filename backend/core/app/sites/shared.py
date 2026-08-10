@@ -9,7 +9,11 @@ GeoJSON polygon) are part of the API contract and must not drift.
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal, Optional
+
+ZIP_CODE_RE = re.compile(r"\d{3,10}")
+PHONE_RE = re.compile(r"\+?[\d\s()-]+")
 
 NAME_MAX_LENGTH = 100
 DESCRIPTION_MAX_LENGTH = 500
@@ -93,6 +97,33 @@ def validate_short(v: Optional[str]) -> Optional[str]:
         raise ValueError(
             f"Value must be {SHORT_STRING_MAX_LENGTH} characters or fewer",
         )
+    return v
+
+
+def validate_zip_code(v: Optional[str]) -> Optional[str]:
+    """Digits only — the UI offers a numeric field, this closes the API path."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if not ZIP_CODE_RE.fullmatch(v):
+        raise ValueError("Zip code must be 3 to 10 digits, numbers only")
+    return v
+
+
+def validate_phone(v: Optional[str]) -> Optional[str]:
+    """Numbers plus the usual ``+ ( ) -`` separators; letters are rejected."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if not PHONE_RE.fullmatch(v):
+        raise ValueError("Phone can only contain numbers, and + ( ) - separators")
+    digits = sum(c.isdigit() for c in v)
+    if digits < 7 or digits > 15:
+        raise ValueError("Phone must have 7 to 15 digits")
     return v
 
 

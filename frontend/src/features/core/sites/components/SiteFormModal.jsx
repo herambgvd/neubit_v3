@@ -15,7 +15,7 @@ import { sites as sitesApi } from "@/lib/api/sites";
 import { SITE_TYPES, THREAT_LEVELS, capitalize, generateLocationCode } from "../constants";
 import { FInput, FTextarea, FSelect, ImagePreviewCard, Section } from "./FormControls";
 import GeocodeButton from "./GeocodeButton";
-import { validateSite } from "../validation";
+import { sanitizePhone, sanitizeZip, validateSite } from "../validation";
 
 const FORM_ID = "site-form";
 
@@ -104,7 +104,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
 
   function submit(e) {
     e.preventDefault();
-    const found = validateSite({ name, emailAddress, latitude, longitude });
+    const found = validateSite({ name, emailAddress, latitude, longitude, zipCode, contactPhone });
     setErrors(found);
     if (Object.keys(found).length) return;
     saving.mutate({
@@ -221,7 +221,14 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
             <FInput label="Street" full value={street} onChange={setStreet} placeholder="Street address" />
             <FInput label="City" value={city} onChange={setCity} placeholder="City" />
             <FInput label="State / region" value={state} onChange={setState} placeholder="State or region" />
-            <FInput label="Zip code" value={zipCode} onChange={setZipCode} placeholder="Zip code" />
+            <FInput
+              label="Zip code"
+              inputMode="numeric"
+              value={zipCode}
+              onChange={(v) => { setZipCode(sanitizeZip(v)); clearError("zipCode"); }}
+              placeholder="Zip code"
+              error={errors.zipCode}
+            />
             <FInput label="Country" value={country} onChange={setCountry} placeholder="Country" />
           </div>
         </Section>
@@ -275,7 +282,14 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
         <Section title="Contact">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FInput label="Contact person" value={contactPerson} onChange={setContactPerson} placeholder="Contact person name" />
-            <FInput label="Contact phone" value={contactPhone} onChange={setContactPhone} placeholder="Contact phone number" />
+            <FInput
+              label="Contact phone"
+              inputMode="tel"
+              value={contactPhone}
+              onChange={(v) => { setContactPhone(sanitizePhone(v)); clearError("contactPhone"); }}
+              placeholder="Contact phone number"
+              error={errors.contactPhone}
+            />
             <FInput
               label="Email"
               type="email"

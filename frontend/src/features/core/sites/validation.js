@@ -5,6 +5,18 @@
 // ASCII-only, same rule the backend enforces (core/fields.AsciiEmail).
 const EMAIL_RE = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
+// Zip code and phone are numeric fields — letters used to sail straight through
+// to the API. Same rules the backend now enforces (sites/shared.py).
+const ZIP_RE = /^\d{3,10}$/;
+const PHONE_RE = /^\+?[\d\s()-]+$/;
+
+// Strip anything that can't belong in the field as the operator types, so a
+// letter never lands in the box in the first place.
+export const sanitizeZip = (v) => v.replace(/\D/g, "").slice(0, 10);
+export const sanitizePhone = (v) =>
+  // A "+" is only meaningful as a country-code prefix, so keep it at the front only.
+  (v.startsWith("+") ? "+" : "") + v.replace(/[^\d\s()-]/g, "").slice(0, 24);
+
 function coordError(value, label, limit) {
   if (value === "" || value == null) return undefined; // coordinates are optional
   const n = Number(value);
@@ -13,9 +25,22 @@ function coordError(value, label, limit) {
   return undefined;
 }
 
-export function validateSite({ name, emailAddress, latitude, longitude }) {
+export function validateSite({ name, emailAddress, latitude, longitude, zipCode, contactPhone }) {
   const errors = {};
   if (!name?.trim()) errors.name = "Site name is required.";
+
+  const zip = zipCode?.trim() || "";
+  if (zip && !ZIP_RE.test(zip)) errors.zipCode = "Zip code must be 3 to 10 digits, numbers only.";
+
+  const phone = contactPhone?.trim() || "";
+  if (phone) {
+    const digits = phone.replace(/\D/g, "");
+    if (!PHONE_RE.test(phone)) {
+      errors.contactPhone = "Phone can only contain numbers, and + ( ) - separators.";
+    } else if (digits.length < 7 || digits.length > 15) {
+      errors.contactPhone = "Phone must have 7 to 15 digits.";
+    }
+  }
 
   const email = emailAddress?.trim() || "";
   if (email) {
