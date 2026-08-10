@@ -10,14 +10,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ...core.fields import AsciiEmail
 from ..shared import (
     SiteType,
     ThreatLevel,
     validate_description,
     validate_name,
+    validate_phone,
     validate_short,
+    validate_zip_code,
 )
 
 
@@ -28,6 +31,16 @@ class Address(BaseModel):
     state: Optional[str] = None
     zip_code: Optional[str] = None
     country: Optional[str] = "India"
+
+
+class AddressIn(Address):
+    """Write-side address. The zip rule lives here, not on ``Address``, so rows
+    saved before the rule existed still deserialize into ``SitePublic``."""
+
+    @field_validator("zip_code")
+    @classmethod
+    def _zip(cls, v: Optional[str]) -> Optional[str]:
+        return validate_zip_code(v)
 
 
 class Coordinates(BaseModel):
@@ -55,11 +68,11 @@ class CreateSiteRequest(BaseModel):
     site_type: SiteType = "building"
     parent_id: Optional[str] = None
     threat_level: ThreatLevel = "normal"
-    address: Optional[Address] = None
+    address: Optional[AddressIn] = None
     coordinates: Optional[Coordinates] = None
     contact_person: Optional[str] = None
     contact_phone: Optional[str] = None
-    email_address: Optional[EmailStr] = None
+    email_address: Optional[AsciiEmail] = None
     image_url: Optional[str] = None
 
     @field_validator("name")
@@ -72,10 +85,15 @@ class CreateSiteRequest(BaseModel):
     def _desc(cls, v: Optional[str]) -> Optional[str]:
         return validate_description(v)
 
-    @field_validator("contact_person", "contact_phone")
+    @field_validator("contact_person")
     @classmethod
     def _shorts(cls, v: Optional[str]) -> Optional[str]:
         return validate_short(v)
+
+    @field_validator("contact_phone")
+    @classmethod
+    def _phone(cls, v: Optional[str]) -> Optional[str]:
+        return validate_phone(validate_short(v))
 
 
 class UpdateSiteRequest(BaseModel):
@@ -87,11 +105,11 @@ class UpdateSiteRequest(BaseModel):
     site_type: Optional[SiteType] = None
     parent_id: Optional[str] = None
     threat_level: Optional[ThreatLevel] = None
-    address: Optional[Address] = None
+    address: Optional[AddressIn] = None
     coordinates: Optional[Coordinates] = None
     contact_person: Optional[str] = None
     contact_phone: Optional[str] = None
-    email_address: Optional[EmailStr] = None
+    email_address: Optional[AsciiEmail] = None
     image_url: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -104,6 +122,16 @@ class UpdateSiteRequest(BaseModel):
     @classmethod
     def _desc(cls, v: Optional[str]) -> Optional[str]:
         return validate_description(v)
+
+    @field_validator("contact_person")
+    @classmethod
+    def _shorts(cls, v: Optional[str]) -> Optional[str]:
+        return validate_short(v)
+
+    @field_validator("contact_phone")
+    @classmethod
+    def _phone(cls, v: Optional[str]) -> Optional[str]:
+        return validate_phone(validate_short(v))
 
 
 class ThreatLevelUpdate(BaseModel):

@@ -19,13 +19,14 @@ import {
   CreateButton,
   EmptyPane,
 } from "@/components/console";
-import { Button, ConfirmDialog, Input, Modal } from "@/components/ui/kit";
+import { ConfirmDialog } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import RoleListItem from "./components/RoleListItem";
 import RoleDetail from "./components/RoleDetail";
 import RolePanel from "./components/RolePanel";
 import RoleFormModal from "./components/RoleFormModal";
+import CloneRoleModal from "./components/CloneRoleModal";
 
 const EMPTY = { name: "", description: "", permissions: [] };
 
@@ -183,10 +184,8 @@ export default function RolesPage() {
               groups={groups}
               catalogLoading={catalog.isLoading}
               canManage={canManage}
-              onClose={() => setSelectedId(null)}
               onEdit={() => openEdit(selectedRole)}
               onDelete={() => handleDelete(selectedRole)}
-              onClone={() => openClone(selectedRole)}
             />
           ) : (
             <EmptyPane
@@ -231,28 +230,14 @@ export default function RolesPage() {
         saving={saving}
       />
 
-      <Modal
-        open={!!cloneSrc}
-        onClose={() => setCloneSrc(null)}
-        staticBackdrop
-        title={cloneSrc ? `Clone ${cloneSrc.name}` : "Clone role"}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setCloneSrc(null)}>Cancel</Button>
-            <Button variant="action" disabled={cloneRole.isPending || !cloneName.trim()} onClick={() => cloneRole.mutate({ id: cloneSrc.id, name: cloneName.trim() })}>
-              {cloneRole.isPending ? "Cloning…" : "Create clone"}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <div className="rounded-[9px] border border-[rgba(96,165,250,.35)] bg-[rgba(96,165,250,.07)] px-3 py-2.5 text-xs text-nb-soft">
-            Copies all of <b className="text-nb-blueb">{cloneSrc?.name}</b>&rsquo;s permissions under a
-            new name — a fast starting point you can then trim down.
-          </div>
-          <Input label="New role name" required value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="Enter new role name (e.g. SOC Operator — night shift)" />
-        </div>
-      </Modal>
+      <CloneRoleModal
+        source={cloneSrc}
+        onClose={() => { setCloneSrc(null); setCloneName(""); }}
+        name={cloneName}
+        setName={setCloneName}
+        onClone={() => cloneRole.mutate({ id: cloneSrc.id, name: cloneName.trim() })}
+        cloning={cloneRole.isPending}
+      />
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} staticBackdrop />
     </ConsolePage>

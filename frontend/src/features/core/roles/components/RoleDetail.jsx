@@ -1,13 +1,14 @@
 "use client";
 
-// Right-pane detail for a selected role: header (icon, name, type/permission-count
-// pills + close/edit/delete actions) and a read-only body — description plus the
-// granted permissions grouped by catalog category. System roles are view-only
-// (Edit becomes "View", Delete hidden). Mirrors SiteDetail's shape.
+// CENTRE column — read-only role detail: header (icon, name, type/permission-count
+// pills + Edit/Delete) and a read-only body — description plus the granted
+// permissions grouped by catalog category. System roles are view-only (Edit becomes
+// "View", Delete hidden). Header actions mirror UserDetail's.
 import { Icon } from "@iconify/react";
+import { PaneAction, PaneDeleteAction } from "@/components/console";
 import { EmptyState } from "@/components/ui/kit";
 
-export default function RoleDetail({ role, groups, catalogLoading, canManage, onClose, onEdit, onDelete, onClone }) {
+export default function RoleDetail({ role, groups, catalogLoading, canManage, onEdit, onDelete }) {
   const granted = new Set(role.permissions || []);
   const all = granted.has("*");
 
@@ -39,32 +40,19 @@ export default function RoleDetail({ role, groups, catalogLoading, canManage, on
             </div>
           </div>
         </div>
+        {/* Same header actions as UserDetail: a labelled Edit, then Delete as the
+            red icon-only chip. (The × that used to sit here was dead — clearing the
+            selection just re-selected the first role on the next render.) */}
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={onClose}
-            title="Close"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-          >
-            <Icon icon="heroicons-outline:x-mark" className="text-base" />
-          </button>
-          <button
-            onClick={onEdit}
-            className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-          >
-            <Icon
+          {canManage && (
+            <PaneAction
               icon={role.is_system ? "heroicons-outline:eye" : "heroicons-outline:pencil-square"}
-              className="text-sm"
-            />{" "}
-            {role.is_system ? "View" : "Edit"}
-          </button>
-          {!role.is_system && (
-            <button
-              onClick={onDelete}
-              className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] px-2.5 py-1.5 text-xs text-nb-crit transition hover:bg-[rgba(248,113,113,.18)]"
+              onClick={onEdit}
             >
-              <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
-            </button>
+              {role.is_system ? "View" : "Edit"}
+            </PaneAction>
           )}
+          {canManage && !role.is_system && <PaneDeleteAction title="Delete role" onClick={onDelete} />}
         </div>
       </header>
 

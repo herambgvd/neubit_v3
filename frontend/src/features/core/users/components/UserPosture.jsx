@@ -4,42 +4,8 @@
 // stats + the recovery actions the mockup places here (clone, force sign-out, and
 // unlock when the account is locked). Reset-MFA + status live in the centre editor.
 import { Icon } from "@iconify/react";
+import { PanelAction as Action, PanelStat as Stat } from "@/components/console";
 import { fmtLogin } from "../format";
-
-function Stat({ label, value, tone = "ink" }) {
-  const c = {
-    ink: "text-nb-ink",
-    good: "text-nb-good",
-    warn: "text-nb-warn",
-    crit: "text-nb-crit",
-    faint: "text-nb-faint",
-  }[tone];
-  return (
-    <div className="flex items-center justify-between border-b border-nb-line/40 py-1.5 last:border-b-0">
-      <span className="text-[11.5px] text-nb-faint">{label}</span>
-      <span className={`font-mono text-[11.5px] ${c}`}>{value}</span>
-    </div>
-  );
-}
-
-function Action({ icon, children, onClick, tone = "blue", disabled, busy }) {
-  const cls = {
-    blue: "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb hover:bg-[rgba(96,165,250,.16)]",
-    warn: "border-nb-warn/50 bg-nb-warn/10 text-nb-warn hover:bg-nb-warn/20",
-    good: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good hover:bg-[rgba(52,211,153,.16)]",
-  }[tone];
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled || busy}
-      className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-[8px] border px-3 py-2 text-[11.5px] tracking-[.5px] transition disabled:opacity-50 ${cls}`}
-    >
-      <Icon icon={busy ? "svg-spinners:180-ring" : icon} className="text-[13px]" />
-      {children}
-    </button>
-  );
-}
 
 export default function UserPosture({ user, canManage, busyAction, onClone, onForceSignOut, onUnlock }) {
   const u = user;
