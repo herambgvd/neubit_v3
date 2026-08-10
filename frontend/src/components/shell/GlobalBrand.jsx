@@ -7,6 +7,7 @@
 // default "NeuBit" wordmark ("Neu" white, "Bit" teal) + tagline.
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useState } from "react";
 
 import { api } from "@/lib/api";
 
@@ -16,7 +17,11 @@ export default function GlobalBrand() {
     queryFn: () => api.get("/branding").then((r) => r.data),
     staleTime: 60_000,
   });
-  const logo = data?.logo_url;
+  // Only trust logo_url while it actually loads. A stale/deleted upload URL would
+  // otherwise render a broken-image glyph (browsers show the alt text next to it);
+  // onError flips this so we fall back to the text lockup instead.
+  const [imgFailed, setImgFailed] = useState(false);
+  const logo = data?.logo_url && !imgFailed ? data.logo_url : null;
 
   return (
     <Link
@@ -26,7 +31,12 @@ export default function GlobalBrand() {
     >
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={logo} alt={data?.app_name || "Logo"} className="h-6 max-w-[150px] object-contain" />
+        <img
+          src={logo}
+          alt={data?.app_name || "Logo"}
+          onError={() => setImgFailed(true)}
+          className="h-6 max-w-[150px] object-contain"
+        />
       ) : (
         <span className="flex flex-col leading-none">
           <span className="text-[17px] font-bold tracking-[0.3px]">
