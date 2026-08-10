@@ -41,7 +41,6 @@ export const LAUNCHER_MODES = [
         accent: "#67e8f9",
         tiles: [
           { icon: "heroicons:bell-alert", label: "Alarms", href: "/events", tone: "hot", perm: "neubit.read" },
-          { icon: "heroicons:magnifying-glass-circle", label: "Investigate", href: "/playback", tone: "teal", perm: "neubit.read", module: "vms" },
           { icon: "heroicons:chart-bar-square", label: "Video Analytics", soon: true },
         ],
       },
