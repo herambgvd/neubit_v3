@@ -68,7 +68,7 @@ export default function GeocodeButton({ apiKey, address, onResult }) {
 
   const disabled = missing.length > 0 || !isLoaded || busy || !!loadError;
   const title = loadError
-    ? "Google Maps failed to load — check the API key"
+    ? "Google Maps failed to load — no internet access, or check the API key"
     : missing.length
       ? `Fill in the ${missing.join(", ")} above first`
       : !isLoaded

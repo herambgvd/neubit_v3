@@ -1,3 +1,7 @@
+// Inlined icon data: URIs (generated — see scripts/build-icon-bundle.mjs).
+// Variables only, so this emits no CSS and is safe to pull in ahead of Tailwind.
+@import "icon-assets";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

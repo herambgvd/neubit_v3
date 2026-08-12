@@ -5,6 +5,9 @@ import { useState } from "react";
 import { Toaster } from "sonner";
 
 import { AuthProvider } from "@/lib/auth";
+// Side-effect import: registers the bundled Iconify icon set so nothing is
+// fetched from api.iconify.design at runtime (offline/air-gapped installs).
+import "@/lib/icons";
 import { ThemeProvider } from "@/components/theme";
 import TitleSync from "@/components/TitleSync";
 

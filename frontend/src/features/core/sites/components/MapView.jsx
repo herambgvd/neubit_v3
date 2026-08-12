@@ -145,8 +145,10 @@ export default function MapView({ apiKey, center, zoom, sites, selected, onSelec
         <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl text-red-500" />
         <p className="text-sm font-semibold text-nb-ink">Could not load Google Maps</p>
         <p className="max-w-md text-xs text-nb-muted">
-          Check the API key restrictions in Google Cloud Console — the key must be allowed for
-          the Maps JavaScript API and accept this origin as a referrer.
+          Google Maps is the one part of the console that needs internet access — on an offline
+          site it will always land here. Otherwise, check the API key restrictions in Google Cloud
+          Console: the key must be allowed for the Maps JavaScript API and accept this origin as a
+          referrer.
         </p>
       </div>
     );
