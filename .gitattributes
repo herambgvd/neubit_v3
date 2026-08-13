@@ -20,6 +20,10 @@
 *.mp4   binary
 *.webm  binary
 *.wasm  binary
+# Map data: MapLibre glyph ranges (public/map/fonts) and PMTiles archives.
+# `text=auto` guesses, and a mis-guess here silently corrupts labels on checkout.
+*.pbf     binary
+*.pmtiles binary
 *.gz    binary
 *.zip   binary
 *.tar   binary

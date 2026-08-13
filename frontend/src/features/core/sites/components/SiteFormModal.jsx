@@ -11,10 +11,12 @@ import { toast } from "sonner";
 import { Button, Modal } from "@/components/ui/kit";
 import { FieldLabel } from "@/components/common";
 import { api, apiError, fileUrl } from "@/lib/api";
+import { DEFAULT_TILES_URL } from "@/lib/map/config";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { SITE_TYPES, THREAT_LEVELS, capitalize, generateLocationCode } from "../constants";
 import { FInput, FTextarea, FSelect, ImagePreviewCard, Section } from "./FormControls";
 import GeocodeButton from "./GeocodeButton";
+import PickOnMapButton from "./PickOnMapButton";
 import { sanitizePhone, sanitizeZip, validateSite } from "../validation";
 
 const FORM_ID = "site-form";
@@ -60,8 +62,11 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
 
   // Escape-to-close lives in <Overlay>.
 
-  // Address → coordinates is only offered when this tenant has Google Maps turned
-  // on AND a key saved; same config the Sites Map reads, so it stays in one place.
+  // Same config the Sites Map reads, so the provider choice stays in one place.
+  // With Google on (and a key saved) the operator gets address→coordinates
+  // geocoding; otherwise they drop a pin on the offline basemap, which needs no
+  // internet. Either way there is always a way to fill the fields without typing
+  // decimals by hand.
   const mapsQ = useQuery({
     queryKey: ["maps-config"],
     queryFn: () => api.get("/settings/maps").then((r) => r.data),
@@ -69,6 +74,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
     retry: false,
   });
   const mapsKey = (mapsQ.data?.enabled && mapsQ.data?.api_key) || "";
+  const tilesUrl = mapsQ.data?.tiles_url || DEFAULT_TILES_URL;
 
   const saving = useMutation({
     mutationFn: async ({ body, file }) => {
@@ -245,7 +251,19 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
                   setGeoMatch(formatted);
                 }}
               />
-            ) : null
+            ) : (
+              <PickOnMapButton
+                tilesUrl={tilesUrl}
+                value={{ latitude, longitude }}
+                onResult={({ latitude: lat, longitude: lng }) => {
+                  setLatitude(lat.toFixed(6));
+                  setLongitude(lng.toFixed(6));
+                  setGeoMatch("");
+                  clearError("latitude");
+                  clearError("longitude");
+                }}
+              />
+            )
           }
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -276,7 +294,9 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }) {
           )}
           <p className="mt-2 text-[11px] text-nb-faint">
             Sites with coordinates appear as pins on the <b>Map view</b>.
-            {mapsKey ? " Fetch from address needs the full address above — street, city, state, zip code and country." : ""}
+            {mapsKey
+              ? " Fetch from address needs the full address above — street, city, state, zip code and country."
+              : " Pick on map drops a pin on the offline basemap — no internet needed."}
           </p>
         </Section>
         <Section title="Contact">

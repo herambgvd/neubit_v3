@@ -61,7 +61,24 @@ CATALOG: list[dict] = [
         "description": "Automatically delete audit entries older than this. 0 keeps them forever.",
         "public": False,
     },
+    # --- Maps ----------------------------------------------------------------
+    {
+        "key": "maps_tiles_url",
+        "type": "text",
+        "default": "/tiles/planet.pmtiles",
+        "group": "Maps",
+        "label": "Offline basemap archive",
+        "placeholder": "/tiles/planet.pmtiles",
+        "description": (
+            "URL of the self-hosted PMTiles world basemap the Sites Map draws when Google Maps "
+            "is off. Keep it same-origin so the map keeps working with no internet."
+        ),
+        "public": False,
+    },
     # --- Google Maps ---------------------------------------------------------
+    # Opt-in ONLY: with the toggle off (the default) the Sites Map runs on the
+    # offline basemap above, which needs no key and no internet.
+    #
     # The browser JS loader needs the api_key in-browser, so it is exposed to any
     # authenticated user via GET /settings/maps (NOT the unauthenticated /public
     # subset). The real security boundary is the HTTP-referrer restriction on the
@@ -72,7 +89,10 @@ CATALOG: list[dict] = [
         "default": False,
         "group": "Google Maps",
         "label": "Enable Google Maps",
-        "description": "Render the Sites Map with Google Maps. Requires an API key below.",
+        "description": (
+            "Draw the Sites Map with Google Maps instead of the offline basemap. "
+            "Requires internet access and an API key below."
+        ),
         "public": False,
     },
     {

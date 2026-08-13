@@ -272,6 +272,31 @@ services:
       - traefik.http.routers.web.entrypoints=web
       - traefik.http.services.web.loadbalancer.server.port=3000
 
+  # ── offline basemap tiles ───────────────────────────────────────
+  # Serves the self-hosted PMTiles world archive the Sites Map draws when Google
+  # Maps is off (the default). SELF-PROVISIONING: on first start, if deploy/tiles/
+  # holds no archive, the container extracts one from the Protomaps planet in the
+  # background — `docker compose up` is the only command anyone has to run.
+  #
+  # The extract is a multi-GB download, so nginx serves from the first second and
+  # the map simply fills in when the archive lands. Until then (and on an
+  # air-gapped host with no archive at all) the console shows a "basemap not
+  # installed" panel; nothing else is affected.
+  #
+  #   TILES_MAXZOOM   detail vs size — z8=543MB · z10=3.7GB · z12=17GB · z15=137GB
+  #   TILES_AUTO_PROVISION=0   never download; serve only what is already in
+  #                            deploy/tiles/ (the air-gapped setting)
+  tiles:
+    build: ./tiles-server
+    environment:
+      TILES_MAXZOOM: ${TILES_MAXZOOM:-10}
+      TILES_AUTO_PROVISION: ${TILES_AUTO_PROVISION:-1}
+    volumes:
+      - ./tiles:/data
+    networks: [neubit]
+    # Routed by the gateway's FILE provider (gateway/dynamic/routes.yml), not by
+    # Docker labels — the label provider is off in gateway/traefik.yml.
+
   # ── super-admin panel (separate app) ────────────────────────────
   admin-frontend:
     # PRODUCTION by default (standalone runner). API base is same-origin relative

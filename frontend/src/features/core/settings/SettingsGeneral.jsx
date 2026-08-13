@@ -37,7 +37,8 @@ export default function SettingsGeneralPage() {
   const catalog = cfg.data?.catalog || [];
   const groups = [...new Set(catalog.map((c) => c.group))];
   // "Google Maps" carries the most fields → give it its own full-width row; the
-  // other groups sit three-across above it.
+  // other groups flow three-per-row above it (four of them since "Maps" was added,
+  // so the last one wraps).
   const WIDE = "Google Maps";
   const topGroups = groups.filter((g) => g !== WIDE);
   const wideGroup = groups.includes(WIDE) ? WIDE : null;

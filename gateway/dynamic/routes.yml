@@ -12,6 +12,15 @@ http:
     #   core       (100)      — /api/|/health|/metrics|/files ALWAYS win otherwise
     #   admin      (50)       — the admin.localhost host, for what core didn't claim
     #   frontend   (1)        — catch-all operator console (localhost + any host)
+    tiles:
+      # Offline basemap — the PMTiles world archive the Sites Map draws from, read
+      # by the browser with HTTP range requests. Public map data, not tenant data,
+      # so no ForwardAuth: gating it would only add a per-tile auth round-trip.
+      # 110 to peel /tiles off before the SPA catch-all.
+      rule: "PathPrefix(`/tiles`)"
+      service: tiles
+      entryPoints: [web]
+      priority: 110
     ingest:
       # The versioned config API + ONLY the public webhook receiver (/ingest/hooks).
       # A bare /ingest prefix would swallow the operator UI's /ingest page → keep it narrow.
@@ -244,6 +253,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://mediamtx-r1:9996"
+    tiles:
+      loadBalancer:
+        servers:
+          - url: "http://tiles:80"
     frontend:
       loadBalancer:
         servers:

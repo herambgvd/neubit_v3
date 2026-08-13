@@ -362,17 +362,33 @@ export function Toggle({ checked, onChange, disabled }) {
 // background being cut off. Identical markup, different ancestry, different result.
 // Rendered at <body> there is no ancestry left to matter, so every overlay behaves the
 // same wherever in the tree it happens to be written.
+// Mount order of the open overlays, innermost last. Module-level because the
+// overlays are siblings portalled to <body> with no shared React ancestor.
+const overlayStack = [];
+
 export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justify-center p-4", children }) {
   // document is undefined during SSR/prerender; portal only once mounted.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // Escape closes the TOPMOST overlay only. Every Overlay listens on `document`,
+  // so without this stack a nested overlay's Escape fires both handlers: dismissing
+  // the site form's "Pick on map" picker also closed the form underneath it and
+  // threw away everything typed — the exact loss its `staticBackdrop` guards against.
   useEffect(() => {
+    const token = {};
+    overlayStack.push(token);
     function onKey(e) {
-      if (e.key === "Escape") onClose?.();
+      if (e.key !== "Escape") return;
+      if (overlayStack[overlayStack.length - 1] !== token) return;
+      onClose?.();
     }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      const i = overlayStack.indexOf(token);
+      if (i !== -1) overlayStack.splice(i, 1);
+    };
   }, [onClose]);
 
   if (!mounted) return null;
