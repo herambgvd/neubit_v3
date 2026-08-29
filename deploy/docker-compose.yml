@@ -257,6 +257,51 @@ services:
   # NVR recorder, not this VMS. The vision storage data-plane was removed, so no S3
   # cold tier is needed here.
 
+  # ── reporting store (schema owner, one-shot migrator) ───────────
+  # The IoT readings pipeline's database: neubit_reporting on the shared postgres
+  # (TimescaleDB 2.17 — the platform's first hypertable). Owns the `readings`
+  # hypertable, the `points` dimension, and the 1m/1h continuous aggregates.
+  #
+  # This container is NOT a server. It ensures the database exists, runs the
+  # migrations, reconciles the Timescale background policies against the
+  # VE_READINGS_* environment below, and exits. `restart: "no"` on purpose — a
+  # migrator that restarts forever is a migrator that is failing in a loop.
+  # The reading-writer (the NATS JetStream consumer that fills the schema) is a
+  # separate, long-running service.
+  #
+  # The reporting DB is the ONE place data from several services is gathered for
+  # querying — the documented exception to the platform's no-cross-service-reads
+  # rule. It reads no other service's private schema; data arrives over NATS.
+  reporting-migrate:
+    build:
+      context: ../backend
+      dockerfile: reporting/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_reporting
+      # ── Retention / compression knobs. Change these per deployment; different
+      # compliance regimes want very different windows. Raw short, rollups long.
+      # After editing: `docker compose up -d reporting-migrate` re-reconciles.
+      # Set any retention var to `off` to disable that policy entirely.
+      # Full documentation: backend/reporting/reporting/policies.py
+      VE_READINGS_CHUNK_INTERVAL: ${VE_READINGS_CHUNK_INTERVAL:-1 day}
+      VE_READINGS_COMPRESS_AFTER: ${VE_READINGS_COMPRESS_AFTER:-7 days}
+      VE_READINGS_1M_COMPRESS_AFTER: ${VE_READINGS_1M_COMPRESS_AFTER:-30 days}
+      VE_READINGS_1H_COMPRESS_AFTER: ${VE_READINGS_1H_COMPRESS_AFTER:-365 days}
+      VE_READINGS_RETENTION: ${VE_READINGS_RETENTION:-90 days}
+      VE_READINGS_1M_RETENTION: ${VE_READINGS_1M_RETENTION:-400 days}
+      VE_READINGS_1H_RETENTION: ${VE_READINGS_1H_RETENTION:-1825 days}
+      VE_READINGS_1M_REFRESH_START: ${VE_READINGS_1M_REFRESH_START:-2 hours}
+      VE_READINGS_1M_REFRESH_END: ${VE_READINGS_1M_REFRESH_END:-1 minute}
+      VE_READINGS_1M_REFRESH_EVERY: ${VE_READINGS_1M_REFRESH_EVERY:-1 minute}
+      VE_READINGS_1H_REFRESH_START: ${VE_READINGS_1H_REFRESH_START:-1 day}
+      VE_READINGS_1H_REFRESH_END: ${VE_READINGS_1H_REFRESH_END:-1 hour}
+      VE_READINGS_1H_REFRESH_EVERY: ${VE_READINGS_1H_REFRESH_EVERY:-5 minutes}
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    networks: [neubit]
+
   # ── operator console (Next.js) ──────────────────────────────────
   frontend:
     # PRODUCTION by default: builds the standalone runner image (node server.js).
