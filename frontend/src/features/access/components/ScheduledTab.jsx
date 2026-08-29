@@ -153,7 +153,7 @@ export default function ScheduledTab({ instanceId }) {
               key={t.key}
               type="button"
               onClick={() => setSub(t.key)}
-              className={`rounded px-2 py-1 text-[11px] font-medium ${
+              className={`rounded-sm px-2 py-1 text-[11px] font-medium ${
                 sub === t.key ? "bg-foreground text-background" : "bg-hover text-muted hover:text-foreground"
               }`}
             >

@@ -332,7 +332,7 @@ export default function MotionSearchModal({
                   }}
                   disabled={running}
                   title="Remove region"
-                  className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-fuchsia-500 text-white shadow hover:bg-fuchsia-400 disabled:opacity-40"
+                  className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-fuchsia-500 text-white shadow-sm hover:bg-fuchsia-400 disabled:opacity-40"
                 >
                   <Icon icon="heroicons-solid:x-mark" className="h-3 w-3" />
                 </button>
@@ -366,7 +366,7 @@ export default function MotionSearchModal({
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               disabled={running}
-              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)] disabled:opacity-60"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)] disabled:opacity-60"
             />
           </label>
           <label className="block">
@@ -376,7 +376,7 @@ export default function MotionSearchModal({
               value={to}
               onChange={(e) => setTo(e.target.value)}
               disabled={running}
-              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)] disabled:opacity-60"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)] disabled:opacity-60"
             />
           </label>
         </div>
@@ -490,7 +490,7 @@ export default function MotionSearchModal({
                       onClick={() => onSeekHit?.(h.start)}
                       className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[rgba(34,211,238,.08)]"
                     >
-                      <span className="flex h-5 w-5 items-center justify-center rounded bg-fuchsia-500/20 text-[10px] font-medium text-fuchsia-300">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-fuchsia-500/20 text-[10px] font-medium text-fuchsia-300">
                         {i + 1}
                       </span>
                       <span className="font-mono tabular-nums text-[#f2f6ff]">

@@ -16,7 +16,7 @@ export default function SiteCard({ site, onClose }) {
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+        className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
       >
         <Icon icon="heroicons-outline:x-mark" className="text-sm" />
       </button>
@@ -46,7 +46,7 @@ export default function SiteCard({ site, onClose }) {
           href="/sites"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-100"
+          className="inline-flex items-center gap-1 rounded-sm border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-100"
         >
           Configure
           <Icon icon="heroicons-outline:arrow-top-right-on-square" className="text-[10px]" />

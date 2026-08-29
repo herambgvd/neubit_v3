@@ -220,7 +220,7 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
             transition={{ duration: 0.6 }}
             className="max-w-lg"
           >
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur-sm">
               <span
                 className="h-1.5 w-1.5 animate-pulse rounded-full"
                 style={{ background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
@@ -305,7 +305,7 @@ export function AuthInput({ className = "", ...props }) {
     <input
       {...props}
       className={
-        "h-11 w-full rounded-lg border border-white/[0.1] bg-white/[0.03] px-3.5 text-sm text-white outline-none transition placeholder:text-white/30 hover:border-white/20 focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/20 " +
+        "h-11 w-full rounded-lg border border-white/[0.1] bg-white/[0.03] px-3.5 text-sm text-white outline-hidden transition placeholder:text-white/30 hover:border-white/20 focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/20 " +
         className
       }
     />

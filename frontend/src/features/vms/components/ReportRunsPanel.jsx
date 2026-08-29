@@ -96,7 +96,7 @@ export default function ReportRunsPanel({ schedule }) {
               <tr key={run.id} className="border-b border-card-border/40 last:border-0">
                 <td className="px-4 py-2 text-muted tabular-nums">{fmtDateTime(run.computed_at)}</td>
                 <td className="px-4 py-2">
-                  <span className="inline-flex items-center rounded bg-hover px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted">
+                  <span className="inline-flex items-center rounded-sm bg-hover px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted">
                     {run.export_format}
                   </span>
                 </td>
@@ -105,7 +105,7 @@ export default function ReportRunsPanel({ schedule }) {
                 </td>
                 <td className="px-4 py-2">
                   <span
-                    className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                    className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${
                       ok ? "bg-emerald-500/15 text-emerald-500" : "bg-red-500/15 text-red-500"
                     }`}
                     title={!ok && run.error ? run.error : undefined}

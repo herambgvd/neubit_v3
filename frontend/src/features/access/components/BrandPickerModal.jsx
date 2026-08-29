@@ -42,7 +42,7 @@ export default function BrandPickerModal({ onClose, onPick }) {
                   {brand.available ? (
                     <Icon icon="heroicons-outline:chevron-right" className="shrink-0 text-base text-muted" />
                   ) : (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded bg-hover px-2 py-0.5 text-[10px] font-medium text-muted">
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-hover px-2 py-0.5 text-[10px] font-medium text-muted">
                       <Icon icon="heroicons-outline:lock-closed" className="text-[10px]" />
                       Coming Soon
                     </span>

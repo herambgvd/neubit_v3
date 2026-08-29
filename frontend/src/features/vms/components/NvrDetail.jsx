@@ -233,7 +233,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
                   key={chNo ?? i}
                   className={`flex items-center gap-3 px-3 py-2 ${i ? "border-t border-card-border/50" : ""} ${on ? "bg-emerald-500/[0.04]" : ""}`}
                 >
-                  <span className="inline-flex h-7 w-9 shrink-0 items-center justify-center rounded bg-hover text-[11px] font-semibold tabular-nums text-muted">
+                  <span className="inline-flex h-7 w-9 shrink-0 items-center justify-center rounded-sm bg-hover text-[11px] font-semibold tabular-nums text-muted">
                     {chNo}
                   </span>
                   <div className="min-w-0 flex-1">

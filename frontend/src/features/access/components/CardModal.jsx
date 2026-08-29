@@ -191,7 +191,7 @@ function CardholderPicker({ selected, filtered, loading, search, open, onSearch,
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground outline-none focus:border-muted"
+        className="flex w-full items-center justify-between rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground outline-hidden focus:border-muted"
       >
         <span className={selected ? "text-foreground" : "text-muted"}>{selected ? label(selected) : "— none —"}</span>
         <span className="flex items-center gap-1">
@@ -204,7 +204,7 @@ function CardholderPicker({ selected, filtered, loading, search, open, onSearch,
                 onSelect(null);
               }}
               onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), onSelect(null))}
-              className="rounded p-0.5 text-muted hover:text-red-500"
+              className="rounded-sm p-0.5 text-muted hover:text-red-500"
             >
               <Icon icon="heroicons-outline:x-mark" className="text-xs" />
             </span>
@@ -221,7 +221,7 @@ function CardholderPicker({ selected, filtered, loading, search, open, onSearch,
               value={search}
               onChange={(e) => onSearch(e.target.value)}
               placeholder="Search by name / ID…"
-              className="w-full rounded-md border border-field bg-transparent px-2 py-1 text-xs text-foreground placeholder:text-muted outline-none focus:border-muted"
+              className="w-full rounded-md border border-field bg-transparent px-2 py-1 text-xs text-foreground placeholder:text-muted outline-hidden focus:border-muted"
             />
           </div>
           <ul className="max-h-44 overflow-y-auto">

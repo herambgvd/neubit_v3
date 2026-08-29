@@ -88,7 +88,7 @@ export default function RecordingTimeline({ recordings = [], day, onSeek }) {
         {spans.map((sp) => (
           <div
             key={sp.id}
-            className={`absolute top-1 bottom-1 rounded-sm ${BAR_COLOR[sp.trigger] || "bg-muted"} opacity-90`}
+            className={`absolute top-1 bottom-1 rounded-xs ${BAR_COLOR[sp.trigger] || "bg-muted"} opacity-90`}
             style={{ left: `${sp.leftPct}%`, width: `${sp.widthPct}%` }}
             title={TRIGGER_PRESETS[sp.trigger]?.label || sp.trigger}
           />

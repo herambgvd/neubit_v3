@@ -533,13 +533,13 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }) {
       <div className="flex min-h-0 flex-1 gap-3">
         <div className="relative min-w-0 flex-1">
           {floor?.floorplan_url ? null : (
-            <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-md border border-card-border bg-card/90 px-3 py-1.5 text-xs text-muted shadow">
+            <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-md border border-card-border bg-card/90 px-3 py-1.5 text-xs text-muted shadow-sm">
               <Icon icon="heroicons-outline:photo" className="mr-1 inline text-sm" />
               No floor plan uploaded yet
             </div>
           )}
           {editorMode === EDITOR_MODES.DEVICE_PLACE && (
-            <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-md border border-card-border bg-card/90 px-3 py-1.5 text-xs text-muted shadow">
+            <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-md border border-card-border bg-card/90 px-3 py-1.5 text-xs text-muted shadow-sm">
               <Icon icon="heroicons-outline:cursor-arrow-rays" className="mr-1 inline text-sm" />
               Drag a device from the right onto a zone. Drag to move; drag a selected
               camera&apos;s cone to rotate.

@@ -18,7 +18,7 @@ export function CanvasToolControls({ activeTool, onToolSelect, canvasScale = 1, 
 
   return (
     <div className="pointer-events-none absolute right-4 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-3">
-      <div className="pointer-events-auto w-20 rounded-3xl border border-card-border bg-card/95 p-3 shadow-2xl backdrop-blur">
+      <div className="pointer-events-auto w-20 rounded-3xl border border-card-border bg-card/95 p-3 shadow-2xl backdrop-blur-sm">
         <div className="mb-3 text-center text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">
           Tools
         </div>
@@ -33,7 +33,7 @@ export function CanvasToolControls({ activeTool, onToolSelect, canvasScale = 1, 
                 title={t.label}
                 className={`flex flex-col items-center gap-1 rounded-2xl border px-2 py-2 text-[11px] font-medium transition-all ${
                   active
-                    ? "border-transparent bg-foreground text-background shadow"
+                    ? "border-transparent bg-foreground text-background shadow-sm"
                     : "border-transparent text-muted hover:bg-hover"
                 }`}
               >
@@ -45,7 +45,7 @@ export function CanvasToolControls({ activeTool, onToolSelect, canvasScale = 1, 
         </div>
       </div>
 
-      <div className="pointer-events-auto w-20 rounded-3xl border border-card-border bg-card/95 p-3 text-center shadow-2xl backdrop-blur">
+      <div className="pointer-events-auto w-20 rounded-3xl border border-card-border bg-card/95 p-3 text-center shadow-2xl backdrop-blur-sm">
         <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Zoom</div>
         <div className="flex flex-col gap-2">
           <button

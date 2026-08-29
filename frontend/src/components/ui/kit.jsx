@@ -379,7 +379,7 @@ export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justi
   return createPortal(
     <div className={`fixed inset-0 z-50 flex ${wrapper}`}>
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-black/60 backdrop-blur-xs animate-fade-in"
         onClick={staticBackdrop ? undefined : onClose}
       />
       {children}

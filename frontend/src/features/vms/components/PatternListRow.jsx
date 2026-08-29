@@ -33,7 +33,7 @@ export default function PatternListRow({
           onSelect(item);
         }
       }}
-      className={`group relative flex cursor-pointer items-center gap-3 rounded-[10px] border px-2.5 py-2.5 outline-none transition ${
+      className={`group relative flex cursor-pointer items-center gap-3 rounded-[10px] border px-2.5 py-2.5 outline-hidden transition ${
         isSelected
           ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
           : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
@@ -91,7 +91,7 @@ function RowBtn({ icon, title, onClick, danger }) {
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded text-nb-muted transition ${
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-sm text-nb-muted transition ${
         danger ? "hover:bg-[rgba(248,113,113,.1)] hover:text-nb-crit" : "hover:bg-[rgba(96,165,250,.1)] hover:text-nb-blueb"
       }`}
     >

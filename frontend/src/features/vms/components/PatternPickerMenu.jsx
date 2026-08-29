@@ -45,7 +45,7 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] py-1 shadow-2xl backdrop-blur-sm">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] py-1 shadow-2xl backdrop-blur-xs">
           <div className="flex items-center justify-between px-3 py-1.5">
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Patterns</span>
             <div className="flex items-center gap-1">

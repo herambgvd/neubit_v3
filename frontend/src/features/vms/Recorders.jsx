@@ -139,9 +139,9 @@ export default function RecordersPage() {
                     <button
                       key={n.id}
                       onClick={() => setSelectedId(n.id)}
-                      className={`relative block w-full overflow-hidden rounded-[13px] border px-3 py-2.5 text-left backdrop-blur-sm transition ${isSel ? "border-[#22d3ee] bg-[rgba(34,211,238,.08)] shadow-[0_0_0_1px_rgba(34,211,238,.4)]" : "border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] hover:border-[rgba(34,211,238,.5)] hover:bg-[rgba(34,211,238,.06)]"}`}
+                      className={`relative block w-full overflow-hidden rounded-[13px] border px-3 py-2.5 text-left backdrop-blur-xs transition ${isSel ? "border-[#22d3ee] bg-[rgba(34,211,238,.08)] shadow-[0_0_0_1px_rgba(34,211,238,.4)]" : "border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] hover:border-[rgba(34,211,238,.5)] hover:bg-[rgba(34,211,238,.06)]"}`}
                     >
-                      {isSel && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l bg-[#22d3ee]" />}
+                      {isSel && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l-sm bg-[#22d3ee]" />}
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-1.5">
                           <span className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-[#34d399] shadow-[0_0_5px_#34d399]" : "bg-[#f87171] shadow-[0_0_5px_rgba(248,113,113,.6)]"}`} />
@@ -231,7 +231,7 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }) {
   const full = cap != null && used >= cap;
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-sm">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-xs">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(160,150,245,.22)] px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -305,7 +305,7 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }) {
               <li key={c.id} className="flex items-center gap-2 rounded-[10px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] px-3 py-1.5">
                 <StatusDot status={c.status} />
                 {c.nvr_channel_number != null && (
-                  <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
+                  <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
                     {c.nvr_channel_number}
                   </span>
                 )}
@@ -440,7 +440,7 @@ function FederationTrust({ node }) {
                 {Array.isArray(c.grants) && c.grants.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1 pl-6">
                     {c.grants.map((g) => (
-                      <span key={g} className="rounded border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
+                      <span key={g} className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
                     ))}
                   </div>
                 )}
@@ -498,7 +498,7 @@ function FederationTrust({ node }) {
           {Array.isArray(issued?.grants) && issued.grants.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {issued.grants.map((g) => (
-                <span key={g} className="rounded border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
+                <span key={g} className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
               ))}
             </div>
           )}

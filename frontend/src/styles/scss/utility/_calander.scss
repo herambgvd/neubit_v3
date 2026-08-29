@@ -35,7 +35,7 @@
     }
   }
   .react-calendar__tile {
-    @apply text-sm font-normal  capitalize w-8 h-8 flex flex-col  items-center  justify-center  rounded;
+    @apply text-sm font-normal  capitalize w-8 h-8 flex flex-col  items-center  justify-center  rounded-sm;
   }
   &.dark {
     .react-calendar {

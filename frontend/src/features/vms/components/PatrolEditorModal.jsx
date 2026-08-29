@@ -161,7 +161,7 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
                         min={1}
                         value={s.dwell_seconds}
                         onChange={(e) => patchStop(i, { dwell_seconds: e.target.value })}
-                        className="w-16 rounded-md border border-field bg-transparent px-2 py-1.5 text-sm text-foreground outline-none focus:border-muted"
+                        className="w-16 rounded-md border border-field bg-transparent px-2 py-1.5 text-sm text-foreground outline-hidden focus:border-muted"
                       />
                       <span className="text-xs text-muted">sec</span>
                     </div>

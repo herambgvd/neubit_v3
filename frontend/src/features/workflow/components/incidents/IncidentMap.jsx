@@ -142,10 +142,10 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
   const openIncident = (it) => router.push(`/events/${incId(it)}`);
 
   const mapSelCls =
-    "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-none transition focus:border-[rgba(34,211,238,.5)]";
+    "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-hidden transition focus:border-[rgba(34,211,238,.5)]";
 
   return (
-    <div className="overflow-hidden rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-sm">
+    <div className="overflow-hidden rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-xs">
       {/* Map toolbar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-3">
         <Icon icon="heroicons-outline:map-pin" className="text-base text-[#67e8f9]" />
@@ -249,7 +249,7 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
           )}
 
           {!planUrl && !floorsQ.isLoading && (
-            <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(9,16,36,.9)] px-3 py-1.5 text-xs text-[#aec2e8] shadow backdrop-blur-sm">
+            <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(9,16,36,.9)] px-3 py-1.5 text-xs text-[#aec2e8] shadow-sm backdrop-blur-xs">
               <Icon icon="heroicons-outline:photo" className="mr-1 inline text-sm" />
               No floor plan uploaded — showing zones on a grid
             </div>
@@ -287,7 +287,7 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#7e93bf]">
                 Unplaced at this site
-                <span className="rounded border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 text-[10px] text-[#aec2e8]">{unplaced.length}</span>
+                <span className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 text-[10px] text-[#aec2e8]">{unplaced.length}</span>
               </div>
               {unplaced.length === 0 ? (
                 <p className="px-1 text-[11px] text-[#7e93bf]">

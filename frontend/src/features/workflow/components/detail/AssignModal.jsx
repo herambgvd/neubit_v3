@@ -86,7 +86,7 @@ export default function AssignModal({ open, onClose, instanceId, currentAssignee
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search users…"
             autoFocus
-            className="h-10 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] pl-9 pr-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-[rgba(34,211,238,.5)]"
+            className="h-10 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] pl-9 pr-3 text-sm text-foreground placeholder:text-muted outline-hidden transition focus:border-[rgba(34,211,238,.5)]"
           />
         </div>
 

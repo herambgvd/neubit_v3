@@ -230,7 +230,7 @@ function FieldRow({ field, preview, onCheck, onName }) {
         onChange={(e) => onName(e.target.value)}
         disabled={!field.checked}
         onClick={(e) => e.stopPropagation()}
-        className="h-7 w-full rounded-[7px] border border-nb-line bg-[rgba(0,0,0,.35)] px-2 text-xs text-nb-blueb outline-none focus:border-nb-teal disabled:opacity-50"
+        className="h-7 w-full rounded-[7px] border border-nb-line bg-[rgba(0,0,0,.35)] px-2 text-xs text-nb-blueb outline-hidden focus:border-nb-teal disabled:opacity-50"
       />
       <span className="truncate font-mono text-[11px] text-nb-faint" title={field.path}>
         {field.path}

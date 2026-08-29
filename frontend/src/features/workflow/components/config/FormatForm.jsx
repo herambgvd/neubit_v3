@@ -150,13 +150,13 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
             type="color"
             value={/^#[0-9a-fA-F]{6}$/.test(colorCode) ? colorCode : "#ef4444"}
             onChange={(e) => setColorCode(e.target.value)}
-            className="h-7 w-9 cursor-pointer rounded border border-nb-line bg-transparent p-0.5"
+            className="h-7 w-9 cursor-pointer rounded-sm border border-nb-line bg-transparent p-0.5"
             title="Custom colour"
           />
           <input
             value={colorCode}
             onChange={(e) => setColorCode(e.target.value)}
-            className="h-8 w-28 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal"
+            className="h-8 w-28 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-hidden focus:border-nb-teal"
             placeholder="#ef4444"
           />
         </div>

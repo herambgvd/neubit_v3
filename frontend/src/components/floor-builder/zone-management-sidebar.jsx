@@ -37,7 +37,7 @@ function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDel
         <button
           type="button"
           onClick={onToggle}
-          className="rounded p-0.5 text-muted hover:bg-hover"
+          className="rounded-sm p-0.5 text-muted hover:bg-hover"
         >
           <Icon
             icon={expanded ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"}
@@ -45,7 +45,7 @@ function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDel
           />
         </button>
         <span
-          className="h-3 w-3 shrink-0 rounded-sm border border-card-border"
+          className="h-3 w-3 shrink-0 rounded-xs border border-card-border"
           style={{ backgroundColor: zone.color || "#2563eb" }}
         />
         <button
@@ -62,7 +62,7 @@ function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDel
           type="button"
           onClick={onEdit}
           title="Edit"
-          className="inline-flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-hover hover:text-foreground"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted hover:bg-hover hover:text-foreground"
         >
           <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
         </button>
@@ -70,7 +70,7 @@ function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDel
           type="button"
           onClick={onDelete}
           title="Delete"
-          className="inline-flex h-6 w-6 items-center justify-center rounded text-red-500 hover:bg-red-500/10 hover:text-red-600"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-red-500 hover:bg-red-500/10 hover:text-red-600"
         >
           <Icon icon="heroicons-outline:trash" className="text-sm" />
         </button>
@@ -183,7 +183,7 @@ function ZonePropertiesModal({ open, onClose, zone, onSave }) {
               type="color"
               value={form.color}
               onChange={(e) => update({ color: e.target.value })}
-              className="h-7 w-10 cursor-pointer rounded border border-card-border bg-transparent"
+              className="h-7 w-10 cursor-pointer rounded-sm border border-card-border bg-transparent"
             />
           </div>
         </div>

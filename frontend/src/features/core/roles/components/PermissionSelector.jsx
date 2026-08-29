@@ -66,7 +66,7 @@ export default function PermissionSelector({ groups, selected, loading, readOnly
                           checked={on}
                           disabled={readOnly}
                           onChange={() => onToggleKey(p.key)}
-                          className="mt-0.5 h-4 w-4 rounded border-nb-line text-nb-blue focus:ring-nb-line bg-[rgba(6,11,26,.5)]"
+                          className="mt-0.5 h-4 w-4 rounded-sm border-nb-line text-nb-blue focus:ring-nb-line bg-[rgba(6,11,26,.5)]"
                         />
                         <div className="min-w-0">
                           <div className="text-sm text-nb-ink">{p.label}</div>

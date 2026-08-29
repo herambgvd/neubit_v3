@@ -77,13 +77,13 @@ export default function TourFormModal({ open, tour, presets = [], onClose, onSub
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-ink">
                     {presetById.get(id)?.name || "(deleted preset)"}
                   </span>
-                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0} className="rounded p-0.5 text-nb-soft hover:bg-[rgba(150,180,245,.07)] hover:text-nb-tealb disabled:opacity-30">
+                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0} className="rounded-sm p-0.5 text-nb-soft hover:bg-[rgba(150,180,245,.07)] hover:text-nb-tealb disabled:opacity-30">
                     <Icon icon="heroicons-mini:chevron-up" className="text-xs" />
                   </button>
-                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === selected.length - 1} className="rounded p-0.5 text-nb-soft hover:bg-[rgba(150,180,245,.07)] hover:text-nb-tealb disabled:opacity-30">
+                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === selected.length - 1} className="rounded-sm p-0.5 text-nb-soft hover:bg-[rgba(150,180,245,.07)] hover:text-nb-tealb disabled:opacity-30">
                     <Icon icon="heroicons-mini:chevron-down" className="text-xs" />
                   </button>
-                  <button type="button" onClick={() => remove(id)} className="rounded p-0.5 text-nb-soft hover:bg-[rgba(248,113,113,.1)] hover:text-nb-crit">
+                  <button type="button" onClick={() => remove(id)} className="rounded-sm p-0.5 text-nb-soft hover:bg-[rgba(248,113,113,.1)] hover:text-nb-crit">
                     <Icon icon="heroicons-outline:x-mark" className="text-xs" />
                   </button>
                 </li>

@@ -207,7 +207,7 @@ export default function DirectoryCard({ canManage }) {
         <p className="flex items-start gap-2 text-[11px] text-nb-muted">
           <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0" />
           Live LDAP bind requires the server to have the ldap3 extra installed and reachable directory. Sync reports
-          <span className="mx-1 rounded bg-white/5 px-1">live: true</span> when a real bind was used.
+          <span className="mx-1 rounded-sm bg-white/5 px-1">live: true</span> when a real bind was used.
         </p>
       </div>
     </SecuritySection>

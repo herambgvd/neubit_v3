@@ -767,7 +767,7 @@ export default function PlaybackPlayer({
 
   // ── Standalone player ────────────────────────────────────────────────────
   return (
-    <div className={`overflow-hidden rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm ${className}`}>
+    <div className={`overflow-hidden rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-xs ${className}`}>
       {/* Video area */}
       <div className="relative aspect-video w-full bg-black">
         {useH265 && hlsUrl ? (
@@ -791,12 +791,12 @@ export default function PlaybackPlayer({
 
         {/* Time overlay */}
         {hlsUrl && !videoError && (
-          <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/60 px-2 py-0.5 text-xs text-white">
+          <div className="pointer-events-none absolute left-3 top-3 rounded-sm bg-black/60 px-2 py-0.5 text-xs text-white">
             {new Date(current ?? windowStart).toLocaleString(undefined, { hour12: false })}
           </div>
         )}
         {rate !== 1 && hlsUrl && (
-          <span className="pointer-events-none absolute right-3 top-3 rounded bg-black/60 px-2 py-0.5 text-xs text-white">
+          <span className="pointer-events-none absolute right-3 top-3 rounded-sm bg-black/60 px-2 py-0.5 text-xs text-white">
             {rate}×
           </span>
         )}
@@ -856,7 +856,7 @@ export default function PlaybackPlayer({
               setCurrent(null);
               setLocalPlaying(false);
             }}
-            className="h-8 rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-2.5 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+            className="h-8 rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-2.5 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
           />
           <CtrlBtn icon="heroicons-outline:camera" title="Snapshot" onClick={snapshot} disabled={!hlsUrl} plain />
           <CtrlBtn
@@ -925,7 +925,7 @@ export default function PlaybackPlayer({
         {/* G4 — motion-search hits plotted on the timeline (fuchsia). */}
         {motionHits.length > 0 && (
           <div className="mt-2 flex items-center gap-2 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1.5 text-[11px]">
-            <span className="inline-block h-2 w-3 rounded-sm bg-fuchsia-500/60" />
+            <span className="inline-block h-2 w-3 rounded-xs bg-fuchsia-500/60" />
             <span className="text-[#f2f6ff]">
               {motionHits.length} motion hit{motionHits.length === 1 ? "" : "s"} on the timeline
             </span>
@@ -962,7 +962,7 @@ export default function PlaybackPlayer({
               {activeBookmark.tags?.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {activeBookmark.tags.map((t) => (
-                    <span key={t} className="rounded bg-[rgba(150,180,245,.08)] px-1.5 py-0.5 text-[10px] text-[#aec2e8]">
+                    <span key={t} className="rounded-sm bg-[rgba(150,180,245,.08)] px-1.5 py-0.5 text-[10px] text-[#aec2e8]">
                       {t}
                     </span>
                   ))}

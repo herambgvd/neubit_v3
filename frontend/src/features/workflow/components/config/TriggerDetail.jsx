@@ -69,7 +69,7 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
               {conds.map((c, i) => (
                 <li key={i} className="px-3 py-2 text-xs font-mono text-nb-ink flex items-center gap-2 flex-wrap">
                   <span className="text-nb-faint">{c.path || c.field}</span>
-                  <span className="rounded bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] text-nb-faint">{OP_LABEL[c.op || c.operator] || c.op || c.operator}</span>
+                  <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] text-nb-faint">{OP_LABEL[c.op || c.operator] || c.op || c.operator}</span>
                   <span>{c.value == null ? "—" : String(c.value)}</span>
                 </li>
               ))}

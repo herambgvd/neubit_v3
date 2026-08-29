@@ -125,7 +125,7 @@ export default function DualAuthPanel() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-nb-ink">{r.action}</span>
-                    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLE[r.status] || "bg-white/5 text-nb-muted"}`}>
+                    <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLE[r.status] || "bg-white/5 text-nb-muted"}`}>
                       {r.status}
                     </span>
                   </div>

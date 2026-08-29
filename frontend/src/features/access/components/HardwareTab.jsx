@@ -102,7 +102,7 @@ export default function HardwareTab({ instanceId }) {
               key={s.key}
               type="button"
               onClick={() => setSection(s.key)}
-              className={`rounded px-2 py-1 text-[11px] font-medium ${
+              className={`rounded-sm px-2 py-1 text-[11px] font-medium ${
                 section === s.key ? "bg-foreground text-background" : "bg-hover text-muted hover:text-foreground"
               }`}
             >
@@ -110,7 +110,7 @@ export default function HardwareTab({ instanceId }) {
             </button>
           ))}
         </div>
-        <span className="ml-auto rounded bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{items.length}</span>
+        <span className="ml-auto rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{items.length}</span>
       </div>
 
       {/* Body */}

@@ -102,14 +102,14 @@ export default function ChannelMappingModal({ nvr, sites = [], onClose, onSucces
               return (
                 <div key={c.channel} className="flex items-center gap-3 rounded-lg border border-card-border bg-card px-3 py-2">
                   <Toggle checked={!!s.checked} onChange={(v) => setSelected((prev) => ({ ...prev, [c.channel]: { ...prev[c.channel], checked: v } }))} />
-                  <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded bg-hover text-[11px] font-semibold text-muted">
+                  <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-hover text-[11px] font-semibold text-muted">
                     {c.channel_number ?? c.channel}
                   </div>
                   <input
                     value={s.name || ""}
                     onChange={(e) => setSelected((prev) => ({ ...prev, [c.channel]: { ...prev[c.channel], name: e.target.value } }))}
                     placeholder={c.name || `Channel ${c.channel}`}
-                    className="h-9 flex-1 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
+                    className="h-9 flex-1 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-hidden focus:border-muted"
                   />
                   {c.main?.resolution && <span className="shrink-0 text-[11px] text-muted">{c.main.resolution}</span>}
                 </div>

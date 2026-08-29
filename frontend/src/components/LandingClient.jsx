@@ -349,7 +349,7 @@ export default function LandingPage() {
         />
         <div className="relative mx-auto max-w-7xl px-6 pt-20 pb-16 text-center lg:pt-24">
           <div className="hero-eyebrow flex justify-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur-sm">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }} />
               UNIFIED COMMAND &amp; CONTROL PLATFORM
             </div>
@@ -375,7 +375,7 @@ export default function LandingPage() {
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
             {PILLARS.map(({ icon: Icon, label }) => (
-              <span key={label} className="hero-badge inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.025] px-3 py-1.5 font-mono text-[11px] text-white/60 backdrop-blur">
+              <span key={label} className="hero-badge inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.025] px-3 py-1.5 font-mono text-[11px] text-white/60 backdrop-blur-sm">
                 <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} />
                 {label}
               </span>

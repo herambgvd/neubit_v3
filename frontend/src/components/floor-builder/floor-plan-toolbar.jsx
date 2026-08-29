@@ -39,7 +39,7 @@ export function FloorPlanToolbar({
                 onClick={() => !m.disabled && onModeChange?.(m.mode)}
                 className={`rounded-full px-4 py-1.5 transition ${
                   active
-                    ? "bg-foreground text-background shadow"
+                    ? "bg-foreground text-background shadow-sm"
                     : m.disabled
                       ? "text-muted/40 cursor-not-allowed"
                       : "text-muted hover:text-foreground"
@@ -47,7 +47,7 @@ export function FloorPlanToolbar({
               >
                 {m.label}
                 {m.disabled && (
-                  <span className="ml-1.5 rounded bg-hover px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted/70">
+                  <span className="ml-1.5 rounded-sm bg-hover px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted/70">
                     Soon
                   </span>
                 )}

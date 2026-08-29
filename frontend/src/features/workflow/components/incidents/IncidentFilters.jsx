@@ -8,7 +8,7 @@ import { titleize } from "@/lib/format";
 import { INCIDENT_STATUSES, PRIORITIES, INCIDENT_SOURCES } from "../../constants";
 
 const selCls =
-  "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-none transition focus:border-[rgba(34,211,238,.5)]";
+  "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-hidden transition focus:border-[rgba(34,211,238,.5)]";
 
 export default function IncidentFilters({
   qInput,
@@ -40,7 +40,7 @@ export default function IncidentFilters({
           value={qInput}
           onChange={(e) => onQInput(e.target.value)}
           placeholder="camera · rule · plate…"
-          className="h-9 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] pl-8 pr-7 font-mono text-[12px] text-[#f2f6ff] placeholder:text-[#7e93bf] outline-none transition focus:border-[rgba(34,211,238,.5)]"
+          className="h-9 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] pl-8 pr-7 font-mono text-[12px] text-[#f2f6ff] placeholder:text-[#7e93bf] outline-hidden transition focus:border-[rgba(34,211,238,.5)]"
         />
         {qInput ? (
           <button

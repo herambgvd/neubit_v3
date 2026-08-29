@@ -137,7 +137,7 @@ export default function CameraRail({
   };
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm">
+    <aside className="flex w-64 shrink-0 flex-col border-r border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-xs">
       {/* Search (centered, label-free) */}
       <div className="border-b border-[rgba(150,180,245,.22)] p-3">
         <label className="relative block">
@@ -149,7 +149,7 @@ export default function CameraRail({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search cameras…"
-            className="h-9 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-8 text-center text-sm text-[#f2f6ff] placeholder:text-[#7e93bf] outline-none focus:border-[rgba(34,211,238,.5)]"
+            className="h-9 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-8 text-center text-sm text-[#f2f6ff] placeholder:text-[#7e93bf] outline-hidden focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
       </div>

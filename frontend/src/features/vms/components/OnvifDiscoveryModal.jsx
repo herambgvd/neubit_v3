@@ -352,7 +352,7 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }) 
                     value={s.name || ""}
                     onChange={(e) => setSelected((prev) => ({ ...prev, [c.channel]: { ...prev[c.channel], name: e.target.value } }))}
                     placeholder={c.name || `Channel ${c.channel}`}
-                    className="h-9 flex-1 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 text-sm text-nb-ink placeholder:text-nb-faint outline-none focus:border-nb-blue"
+                    className="h-9 flex-1 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 text-sm text-nb-ink placeholder:text-nb-faint outline-hidden focus:border-nb-blue"
                   />
                   <div className="flex shrink-0 items-center gap-2 text-[11px] text-nb-faint">
                     {c.main?.resolution && <span>{c.main.resolution}</span>}

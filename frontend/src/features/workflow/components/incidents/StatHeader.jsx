@@ -22,7 +22,7 @@ function Tile({ icon, label, value, tone, active, onClick, hint }) {
       onClick={onClick}
       disabled={!clickable}
       title={hint}
-      className={`group relative flex items-center gap-3 rounded-[13px] border px-4 py-3 text-left backdrop-blur-sm transition ${
+      className={`group relative flex items-center gap-3 rounded-[13px] border px-4 py-3 text-left backdrop-blur-xs transition ${
         active
           ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.1)]"
           : "border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] hover:border-[rgba(34,211,238,.4)] hover:bg-[rgba(150,180,245,.07)]"

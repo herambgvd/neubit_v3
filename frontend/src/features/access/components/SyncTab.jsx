@@ -55,7 +55,7 @@ export default function SyncTab({ instanceId }) {
       <div className="flex flex-wrap items-center gap-2 border-b border-card-border pb-3">
         <Icon icon="heroicons-outline:clock" className="text-sm text-blue-500" />
         <span className="text-xs font-semibold text-foreground">Sync History</span>
-        <span className="rounded bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{jobs.length}</span>
+        <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{jobs.length}</span>
         <div className="ml-auto">
           <button
             type="button"
@@ -141,7 +141,7 @@ function JobRow({ job, open, onToggle }) {
             </div>
           )}
           {Array.isArray(job.errors) && job.errors.length > 0 && (
-            <pre className="max-h-40 overflow-auto rounded border border-red-500/20 bg-red-500/10 p-2 text-[10px] text-red-500">
+            <pre className="max-h-40 overflow-auto rounded-sm border border-red-500/20 bg-red-500/10 p-2 text-[10px] text-red-500">
               {JSON.stringify(job.errors, null, 2)}
             </pre>
           )}
@@ -168,7 +168,7 @@ function CountsCell({ counts }) {
       {entries.map(([k, v]) => {
         const c = typeof v === "object" && v !== null ? v : {};
         return (
-          <div key={k} className="rounded border border-card-border bg-hover px-2 py-1 text-[10px] leading-tight">
+          <div key={k} className="rounded-sm border border-card-border bg-hover px-2 py-1 text-[10px] leading-tight">
             <div className="mb-0.5 font-semibold uppercase tracking-wider text-muted">{k.replace(/_/g, " ")}</div>
             {typeof v === "object" && v !== null ? (
               <div className="flex gap-2">

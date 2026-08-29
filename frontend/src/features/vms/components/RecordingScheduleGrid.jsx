@@ -82,7 +82,7 @@ export default function RecordingScheduleGrid({ value, onChange }) {
                 : "border-card-border text-muted hover:bg-hover"
             }`}
           >
-            <span className={`inline-block h-3 w-3 rounded-sm ${m.swatch}`} />
+            <span className={`inline-block h-3 w-3 rounded-xs ${m.swatch}`} />
             {m.label}
           </button>
         ))}

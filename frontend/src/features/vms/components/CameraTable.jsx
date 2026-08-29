@@ -65,7 +65,7 @@ function RowMenu({ camera, onLive, onSnapshot, onEdit, onDevice, onDelete }) {
           const close = () => setOpen(false);
           if (!open) setTimeout(() => document.addEventListener("click", close, { once: true }), 0);
         }}
-        className="rounded p-1 text-muted hover:bg-hover hover:text-foreground"
+        className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground"
       >
         <Icon icon="heroicons-outline:ellipsis-vertical" className="text-sm" />
       </button>

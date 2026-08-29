@@ -38,10 +38,10 @@ export default function InstanceListCard({
           : "border-card-border hover:bg-hover"
       }`}
     >
-      {isSelected && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l bg-blue-500" />}
+      {isSelected && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l-sm bg-blue-500" />}
 
       <div className="flex items-start gap-2">
-        <div className="ml-3 mt-2.5 inline-flex h-6 w-6 items-center justify-center rounded bg-hover text-muted">
+        <div className="ml-3 mt-2.5 inline-flex h-6 w-6 items-center justify-center rounded-sm bg-hover text-muted">
           <Icon icon="heroicons-outline:server" className="text-sm" />
         </div>
         <div className="min-w-0 flex-1 py-2.5 pr-2">
@@ -63,7 +63,7 @@ export default function InstanceListCard({
               e.stopPropagation();
               setMenuOpen((o) => !o);
             }}
-            className="rounded p-1 text-muted hover:bg-hover hover:text-foreground"
+            className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground"
           >
             <Icon icon="heroicons-outline:ellipsis-vertical" className="text-sm" />
           </button>

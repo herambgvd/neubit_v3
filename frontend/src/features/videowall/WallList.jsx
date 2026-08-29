@@ -90,7 +90,7 @@ export default function WallList() {
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold text-nb-ink">{w.name}</span>
                     {!w.is_active && (
-                      <span className="rounded border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[9px] font-medium text-nb-faint">inactive</span>
+                      <span className="rounded-sm border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[9px] font-medium text-nb-faint">inactive</span>
                     )}
                   </div>
                   {w.description && <p className="mt-0.5 truncate text-xs text-nb-soft">{w.description}</p>}

@@ -700,7 +700,7 @@ export default function UnifiedPlayback({ onExportRange }) {
     >
       {/* ── Composer rail ──────────────────────────────────────────────────
           Calendar → Stream → Event filters → Channel multi-select (≤4) → Search. */}
-      <aside className="flex w-80 shrink-0 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm [transform:translateZ(0)]">
+      <aside className="flex w-80 shrink-0 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-xs [transform:translateZ(0)]">
         {/* composer — calendar · stream · event filters · channel multi-select */}
         <div className="scroll-themed min-h-0 flex-1 overflow-y-auto p-3">
           {/* ── Month calendar (footage days marked) ── */}
@@ -761,7 +761,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                     className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] text-[#f2f6ff] hover:bg-[rgba(150,180,245,.07)]"
                   >
                     <span
-                      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition ${
+                      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border transition ${
                         on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
                       }`}
                     >
@@ -835,7 +835,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                     value={camSearch}
                     onChange={(e) => setCamSearch(e.target.value)}
                     placeholder="Search cameras…"
-                    className="h-8 w-full rounded-lg border border-[rgba(150,180,245,.28)] bg-transparent pl-8 pr-3 text-[13px] text-[#f2f6ff] placeholder:text-[#7e93bf] outline-none focus:border-muted"
+                    className="h-8 w-full rounded-lg border border-[rgba(150,180,245,.28)] bg-transparent pl-8 pr-3 text-[13px] text-[#f2f6ff] placeholder:text-[#7e93bf] outline-hidden focus:border-muted"
                   />
                 </label>
                 <Select
@@ -884,14 +884,14 @@ export default function UnifiedPlayback({ onExportRange }) {
                             onChange={() => toggleCheck(tile)}
                           />
                           <span
-                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition ${
                               on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
                             }`}
                           >
                             {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
                           </span>
                           {c.nvr_channel_number != null && (
-                            <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-[rgba(150,180,245,.08)] px-1 font-mono text-[11px] font-semibold tabular-nums text-[#9db0d8]">
+                            <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm bg-[rgba(150,180,245,.08)] px-1 font-mono text-[11px] font-semibold tabular-nums text-[#9db0d8]">
                               {c.nvr_channel_number}
                             </span>
                           )}
@@ -989,7 +989,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                           onChange={() => toggleCheck(tile)}
                         />
                         <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition ${
                             on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
                           }`}
                         >
@@ -1051,13 +1051,13 @@ export default function UnifiedPlayback({ onExportRange }) {
                             onChange={() => toggleCheck(tile)}
                           />
                           <span
-                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition ${
                               on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
                             }`}
                           >
                             {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
                           </span>
-                          <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded bg-[rgba(150,180,245,.08)] px-1 font-mono text-[11px] font-semibold tabular-nums text-[#9db0d8]">
+                          <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm bg-[rgba(150,180,245,.08)] px-1 font-mono text-[11px] font-semibold tabular-nums text-[#9db0d8]">
                             {val}
                           </span>
                           <span className="truncate">{clean}</span>
@@ -1085,7 +1085,7 @@ export default function UnifiedPlayback({ onExportRange }) {
       </aside>
 
       {/* ── Main: grid (or focus) + master transport ────────────────────── */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-xs">
         {/* selected day + focus/clear (day is driven by the rail calendar now) */}
         <div className="flex shrink-0 items-center gap-2 border-b border-[rgba(160,150,245,.22)] px-3 py-2">
           <Icon icon="heroicons-outline:calendar-days" className="text-sm text-[#9db0d8]" />
@@ -1120,7 +1120,7 @@ export default function UnifiedPlayback({ onExportRange }) {
           ref={gridWrapRef}
           className={`min-h-0 flex-1 p-3 ${
             focusTile ? "scroll-themed overflow-y-auto" : "overflow-hidden"
-          } ${isFullscreen ? "bg-[rgba(8,15,34,.55)] backdrop-blur-sm" : ""}`}
+          } ${isFullscreen ? "bg-[rgba(8,15,34,.55)] backdrop-blur-xs" : ""}`}
         >
           {sources.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center text-[#9db0d8]">
@@ -1180,16 +1180,16 @@ export default function UnifiedPlayback({ onExportRange }) {
                   // instead of overflowing the bounded pane and breaking the page layout.
                   <div key={s.key} className="group relative h-full min-h-0 overflow-hidden">
                     <div className="absolute left-2 top-2 z-10 flex items-center gap-1.5">
-                      <span className="rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+                      <span className="rounded-sm bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
                         {s.name}
                       </span>
                       {s.kind === "nvr" && (
-                        <span className="rounded bg-sky-500/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
+                        <span className="rounded-sm bg-sky-500/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
                           NVR
                         </span>
                       )}
                       {s.kind === "federated" && (
-                        <span className="rounded bg-violet-500/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
+                        <span className="rounded-sm bg-violet-500/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
                           REC
                         </span>
                       )}
@@ -1276,7 +1276,7 @@ export default function UnifiedPlayback({ onExportRange }) {
                       on ? "text-[#f2f6ff]" : "text-[#9db0d8] line-through opacity-50"
                     }`}
                   >
-                    <span className={`h-2.5 w-3.5 rounded-sm ${TIMELINE_PALETTE[t].cls}`} />
+                    <span className={`h-2.5 w-3.5 rounded-xs ${TIMELINE_PALETTE[t].cls}`} />
                     {TIMELINE_PALETTE[t].label}
                   </button>
                 );

@@ -25,7 +25,7 @@
     &.select__control--is-disabled {
       @apply cursor-not-allowed;
       .select__indicator-separator {
-        @apply bg-slate-50 text-slate-800 placeholder:text-opacity-60;
+        @apply bg-slate-50 text-slate-800 placeholder:text-slate-800/60;
       }
     }
 
@@ -72,7 +72,7 @@
         cursor: pointer;
 
         &.select__option--is-focused {
-          @apply bg-secondary-500 text-slate-900 bg-opacity-30;
+          @apply bg-secondary-500 text-slate-900 bg-secondary-500/30;
         }
 
         &.select__option--is-selected {
@@ -186,7 +186,7 @@
       .select__option,
       .react-select__option {
         &.select__option--is-focused {
-          @apply bg-slate-500 text-slate-300 bg-opacity-50;
+          @apply bg-slate-500 text-slate-300 bg-slate-500/50;
         }
 
         &.select__option--is-selected {

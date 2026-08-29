@@ -200,7 +200,7 @@ export default function CommandPalette() {
   return (
     <div className="fixed inset-0 z-[70]">
       <div
-        className="fixed inset-0 animate-fade-in bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 animate-fade-in bg-black/60 backdrop-blur-xs"
         onClick={() => setOpen(false)}
       />
       <div
@@ -221,7 +221,7 @@ export default function CommandPalette() {
             }}
             onKeyDown={onInputKey}
             placeholder="Search pages, users, roles…"
-            className="h-12 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
+            className="h-12 w-full bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted"
             role="combobox"
             aria-expanded="true"
             aria-controls="cmd-list"
@@ -293,7 +293,7 @@ export default function CommandPalette() {
 
 function Kbd({ children }) {
   return (
-    <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded border border-card-border bg-hover px-1 font-mono text-[10px] text-muted">
+    <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm border border-card-border bg-hover px-1 font-mono text-[10px] text-muted">
       {children}
     </kbd>
   );

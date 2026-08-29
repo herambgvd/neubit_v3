@@ -140,7 +140,7 @@ export default function BookmarkModal({
             onChange={(e) => setTitle(e.target.value)}
             placeholder="What happened at this moment?"
             maxLength={255}
-            className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+            className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
 
@@ -151,7 +151,7 @@ export default function BookmarkModal({
               type="datetime-local"
               value={startTs}
               onChange={(e) => setStartTs(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
             />
           </label>
           <label className="block">
@@ -162,7 +162,7 @@ export default function BookmarkModal({
               type="datetime-local"
               value={endTs}
               onChange={(e) => setEndTs(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
             />
           </label>
         </div>
@@ -178,7 +178,7 @@ export default function BookmarkModal({
             rows={3}
             maxLength={4000}
             placeholder="Optional context…"
-            className="w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 py-2 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+            className="w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 py-2 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
 
@@ -191,7 +191,7 @@ export default function BookmarkModal({
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="intrusion, review, incident-42"
-            className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+            className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
           />
         </label>
       </div>

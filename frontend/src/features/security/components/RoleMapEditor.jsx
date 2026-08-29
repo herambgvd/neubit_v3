@@ -37,7 +37,7 @@ export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, o
               <div key={key} className="flex items-center gap-2 px-3 py-2 text-sm">
                 <code className="flex-1 truncate text-nb-ink">{key}</code>
                 <Icon icon="heroicons-outline:arrow-right" className="text-xs text-nb-muted" />
-                <span className="rounded bg-white/5 px-2 py-0.5 text-xs text-nb-ink">{role}</span>
+                <span className="rounded-sm bg-white/5 px-2 py-0.5 text-xs text-nb-ink">{role}</span>
                 {!disabled && (
                   <button className="text-nb-muted transition hover:text-red-500" onClick={() => remove(key)} title="Remove">
                     <Icon icon="heroicons-outline:x-mark" className="text-base" />
@@ -53,7 +53,7 @@ export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, o
               value={k}
               onChange={(e) => setK(e.target.value)}
               placeholder={keyLabel}
-              className="h-8 flex-1 rounded-md border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-nb-teal"
+              className="h-8 flex-1 rounded-md border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-hidden focus:border-nb-teal"
             />
             <Icon icon="heroicons-outline:arrow-right" className="text-xs text-nb-muted" />
             <input
@@ -61,7 +61,7 @@ export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, o
               onChange={(e) => setV(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
               placeholder="role"
-              className="h-8 w-32 rounded-md border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-nb-teal"
+              className="h-8 w-32 rounded-md border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-hidden focus:border-nb-teal"
             />
             <button
               onClick={add}

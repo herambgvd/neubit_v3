@@ -158,20 +158,20 @@ export default function FormBuilder({ form, onCancel, onSaved }) {
                   type="button"
                   onClick={() => updateField(i, { _collapsed: !f._collapsed })}
                   title={f._collapsed ? "Expand" : "Collapse"}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink"
                 >
                   <Icon icon={f._collapsed ? "heroicons-outline:chevron-right" : "heroicons-outline:chevron-down"} className="text-sm" />
                 </button>
                 <span className="text-xs font-semibold text-nb-ink">Field {i + 1}</span>
                 <span className="text-xs text-nb-faint truncate">{f.label || "(unnamed)"}</span>
                 <span className="ml-auto inline-flex items-center gap-0.5">
-                  <button type="button" onClick={() => moveField(i, i - 1)} disabled={i === 0} title="Move up" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink disabled:opacity-40 disabled:cursor-not-allowed">
+                  <button type="button" onClick={() => moveField(i, i - 1)} disabled={i === 0} title="Move up" className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink disabled:opacity-40 disabled:cursor-not-allowed">
                     <Icon icon="heroicons-outline:chevron-up" className="text-sm" />
                   </button>
-                  <button type="button" onClick={() => moveField(i, i + 1)} disabled={i === fields.length - 1} title="Move down" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink disabled:opacity-40 disabled:cursor-not-allowed">
+                  <button type="button" onClick={() => moveField(i, i + 1)} disabled={i === fields.length - 1} title="Move down" className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink disabled:opacity-40 disabled:cursor-not-allowed">
                     <Icon icon="heroicons-outline:chevron-down" className="text-sm" />
                   </button>
-                  <button type="button" onClick={() => removeField(i)} title="Delete field" className="inline-flex h-7 w-7 items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit">
+                  <button type="button" onClick={() => removeField(i)} title="Delete field" className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit">
                     <Icon icon="heroicons-outline:x-mark" className="text-sm" />
                   </button>
                 </span>

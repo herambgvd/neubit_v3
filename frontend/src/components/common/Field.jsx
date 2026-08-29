@@ -13,9 +13,9 @@ import SelectMenu from "./SelectMenu";
 
 // Base control classes (shared so raw inputs match Field visually).
 export const fieldClass =
-  "mt-1 h-10 w-full rounded-lg border border-nb-line bg-nb-field px-3 text-sm text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
+  "mt-1 h-10 w-full rounded-lg border border-nb-line bg-nb-field px-3 text-sm text-nb-ink placeholder:text-nb-faint outline-hidden transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
 export const areaClass =
-  "mt-1 w-full rounded-lg border border-nb-line bg-nb-field px-3 py-2 text-sm text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
+  "mt-1 w-full rounded-lg border border-nb-line bg-nb-field px-3 py-2 text-sm text-nb-ink placeholder:text-nb-faint outline-hidden transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
 
 export function FieldLabel({ children, required, className = "" }) {
   return (

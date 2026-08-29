@@ -157,7 +157,7 @@ export default function EventsFeed({ instanceId, doorIndex }) {
   }, [visibleEvents, autoScroll]);
 
   const selectCls =
-    "rounded-md border border-field bg-transparent px-2 py-1 text-[11px] text-muted outline-none focus:border-muted";
+    "rounded-md border border-field bg-transparent px-2 py-1 text-[11px] text-muted outline-hidden focus:border-muted";
   const btnCls =
     "inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted hover:bg-hover hover:text-foreground";
 
@@ -167,7 +167,7 @@ export default function EventsFeed({ instanceId, doorIndex }) {
       <div className="flex flex-wrap items-center gap-2 border-b border-card-border pb-3">
         <Icon icon="heroicons-outline:signal" className="text-sm text-blue-500" />
         <span className="text-xs font-semibold text-foreground">Live events</span>
-        <span className="rounded bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{visibleEvents.length}</span>
+        <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{visibleEvents.length}</span>
         <span className="ml-2 text-[10px] text-muted/70">
           {paused ? "paused" : connected ? "live" : "connecting…"}
         </span>
@@ -229,7 +229,7 @@ export default function EventsFeed({ instanceId, doorIndex }) {
                 key={c.key}
                 type="button"
                 onClick={() => setCategory(c.key)}
-                className={`rounded border px-2 py-0.5 text-[11px] font-medium ${
+                className={`rounded-sm border px-2 py-0.5 text-[11px] font-medium ${
                   active
                     ? "border-foreground bg-foreground text-background"
                     : "border-card-border text-muted hover:bg-hover hover:text-foreground"
@@ -256,7 +256,7 @@ export default function EventsFeed({ instanceId, doorIndex }) {
                 return (
                   <div
                     key={`alert:${eventKey(evt, idx)}`}
-                    className={`flex items-center gap-2 rounded px-2 py-1 text-[11px] ${
+                    className={`flex items-center gap-2 rounded-sm px-2 py-1 text-[11px] ${
                       unknown ? "bg-red-500/10 text-red-500" : "bg-emerald-500/10 text-emerald-500"
                     }`}
                   >
@@ -269,7 +269,7 @@ export default function EventsFeed({ instanceId, doorIndex }) {
                       {summarize(evt, { doorLabel, cardholderLabel, cardLabel })}
                     </span>
                     {count > 1 ? (
-                      <span className="ml-auto shrink-0 rounded bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold dark:bg-white/10">
+                      <span className="ml-auto shrink-0 rounded-sm bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold dark:bg-white/10">
                         x{count}
                       </span>
                     ) : null}
@@ -366,7 +366,7 @@ function EventRow({ event, cardholderById, doorById }) {
           <MetaField label="Cardholder" value={withId(cardholderLabel, event.cardholder_id || event.cardholder_ref)} />
           <MetaField label="Card" value={withId(cardLabel, event.card_id)} />
           {event.raw_payload && (
-            <pre className="col-span-3 mt-1 max-h-48 overflow-auto rounded border border-card-border bg-hover p-2 font-mono text-[10px] text-muted">
+            <pre className="col-span-3 mt-1 max-h-48 overflow-auto rounded-sm border border-card-border bg-hover p-2 font-mono text-[10px] text-muted">
               {JSON.stringify(event.raw_payload, null, 2)}
             </pre>
           )}

@@ -211,7 +211,7 @@ export function NbInput({ className = "", invalid = false, ...props }) {
       {...props}
       aria-invalid={invalid || undefined}
       className={
-        "w-full rounded-[10px] border bg-[#0b1228] px-[14px] py-[11px] text-[13.5px] text-[#f2f6ff] outline-none transition placeholder:text-[#9a92c8]/60 focus:ring-[3px] " +
+        "w-full rounded-[10px] border bg-[#0b1228] px-[14px] py-[11px] text-[13.5px] text-[#f2f6ff] outline-hidden transition placeholder:text-[#9a92c8]/60 focus:ring-[3px] " +
         (invalid
           ? "border-red-400/60 focus:border-red-400/80 focus:ring-red-500/10 "
           : "border-[rgba(160,150,245,.2)] focus:border-[rgba(34,211,238,.55)] focus:ring-[rgba(34,211,238,.08)] ") +

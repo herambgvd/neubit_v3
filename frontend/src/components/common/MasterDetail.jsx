@@ -69,7 +69,7 @@ export function ListPanel({
               value={search}
               onChange={(e) => onSearch(e.target.value)}
               placeholder={searchPlaceholder}
-              className="h-8 w-full rounded-lg border border-nb-line bg-nb-field pl-8 pr-3 text-[13px] text-nb-ink placeholder:text-nb-faint outline-none transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40"
+              className="h-8 w-full rounded-lg border border-nb-line bg-nb-field pl-8 pr-3 text-[13px] text-nb-ink placeholder:text-nb-faint outline-hidden transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40"
             />
           </label>
         </div>

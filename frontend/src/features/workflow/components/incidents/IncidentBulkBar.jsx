@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/kit";
 export default function IncidentBulkBar({ count, pending, onAction, onClear }) {
   if (count === 0) return null;
   return (
-    <div className="mb-3 flex items-center gap-2 rounded-[13px] border border-[rgba(34,211,238,.35)] bg-[rgba(34,211,238,.08)] px-3 py-2 backdrop-blur-sm">
+    <div className="mb-3 flex items-center gap-2 rounded-[13px] border border-[rgba(34,211,238,.35)] bg-[rgba(34,211,238,.08)] px-3 py-2 backdrop-blur-xs">
       <span className="font-mono text-sm font-semibold text-[#67e8f9]">{count} selected</span>
       <div className="ml-auto flex items-center gap-2">
         <Button variant="secondary" onClick={() => onAction("paused")} disabled={pending} className="!px-3 !py-1.5 text-xs">Pause</Button>

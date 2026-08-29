@@ -102,16 +102,16 @@ function Tile({ camera, health, siteName, selected, onToggleSelect, onLive, onSn
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-          <button type="button" title="Go live" onClick={() => onLive?.(camera)} className="rounded p-1 text-muted hover:bg-hover hover:text-foreground">
+          <button type="button" title="Go live" onClick={() => onLive?.(camera)} className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground">
             <Icon icon="heroicons-outline:play" className="text-sm" />
           </button>
-          <button type="button" title="Snapshot" onClick={() => onSnapshot?.(camera)} className="rounded p-1 text-muted hover:bg-hover hover:text-foreground">
+          <button type="button" title="Snapshot" onClick={() => onSnapshot?.(camera)} className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground">
             <Icon icon="heroicons-outline:camera" className="text-sm" />
           </button>
-          <button type="button" title="Edit" onClick={() => onEdit?.(camera)} className="rounded p-1 text-muted hover:bg-hover hover:text-foreground">
+          <button type="button" title="Edit" onClick={() => onEdit?.(camera)} className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground">
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
           </button>
-          <button type="button" title="Delete" onClick={() => onDelete?.(camera)} className="rounded p-1 text-red-500 hover:bg-red-500/10">
+          <button type="button" title="Delete" onClick={() => onDelete?.(camera)} className="rounded-sm p-1 text-red-500 hover:bg-red-500/10">
             <Icon icon="heroicons-outline:trash" className="text-sm" />
           </button>
         </div>

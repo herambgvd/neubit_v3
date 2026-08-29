@@ -204,7 +204,7 @@ function Section({ icon, title, count, loading, onAdd, addLabel, children }) {
       <div className="flex items-center gap-2 border-b border-card-border px-3 py-2">
         <Icon icon={icon} className="text-sm text-blue-500" />
         <span className="text-xs font-semibold text-foreground">{title}</span>
-        <span className="rounded bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{loading ? "…" : count}</span>
+        <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{loading ? "…" : count}</span>
         <div className="ml-auto">
           <Button variant="success" icon="heroicons-outline:plus" className="!px-2 !py-1 !text-[11px]" onClick={onAdd}>
             {addLabel}
@@ -237,10 +237,10 @@ function Empty({ label }) {
 function RowActions({ onEdit, onDelete }) {
   return (
     <div className="inline-flex items-center gap-1">
-      <button type="button" onClick={onEdit} title="Edit" className="rounded p-1 text-muted hover:bg-hover hover:text-foreground">
+      <button type="button" onClick={onEdit} title="Edit" className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground">
         <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
       </button>
-      <button type="button" onClick={onDelete} title="Delete" className="rounded p-1 text-red-500 hover:bg-red-500/10">
+      <button type="button" onClick={onDelete} title="Delete" className="rounded-sm p-1 text-red-500 hover:bg-red-500/10">
         <Icon icon="heroicons-outline:trash" className="text-sm" />
       </button>
     </div>
@@ -256,12 +256,12 @@ function DoorChips({ ids, doorsById }) {
       {visible.map((id) => {
         const d = doorsById.get(id);
         return (
-          <span key={id} title={id} className="inline-flex items-center rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-500">
+          <span key={id} title={id} className="inline-flex items-center rounded-sm bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-500">
             {d?.name || shortId(id)}
           </span>
         );
       })}
-      {overflow > 0 && <span className="inline-flex items-center rounded bg-hover px-1.5 py-0.5 text-[10px] text-muted">+{overflow}</span>}
+      {overflow > 0 && <span className="inline-flex items-center rounded-sm bg-hover px-1.5 py-0.5 text-[10px] text-muted">+{overflow}</span>}
     </div>
   );
 }

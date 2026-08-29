@@ -114,7 +114,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
                   return (
                     <div
                       key={i}
-                      className={`flex items-center justify-center overflow-hidden rounded border px-1 text-center text-[10px] ${
+                      className={`flex items-center justify-center overflow-hidden rounded-sm border px-1 text-center text-[10px] ${
                         cid
                           ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb"
                           : "border-nb-line bg-[rgba(6,11,26,.3)] text-nb-faint"

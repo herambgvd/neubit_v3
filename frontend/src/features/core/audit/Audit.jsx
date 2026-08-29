@@ -74,7 +74,7 @@ function RetentionControl() {
           min="0"
           value={days}
           onChange={(e) => setDays(e.target.value)}
-          className="w-16 rounded-[7px] border border-nb-line bg-[rgba(0,0,0,.35)] px-2 py-1 font-mono text-[12px] text-nb-blueb outline-none focus:border-nb-teal"
+          className="w-16 rounded-[7px] border border-nb-line bg-[rgba(0,0,0,.35)] px-2 py-1 font-mono text-[12px] text-nb-blueb outline-hidden focus:border-nb-teal"
         />
         <span className="text-[11px] text-nb-faint">days</span>
         <span className="flex-1" />
@@ -135,7 +135,7 @@ export default function AuditPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search actor or action…"
-                className="w-full bg-transparent text-[12.5px] text-nb-muted outline-none placeholder:text-nb-faint"
+                className="w-full bg-transparent text-[12.5px] text-nb-muted outline-hidden placeholder:text-nb-faint"
               />
             </div>
           </div>

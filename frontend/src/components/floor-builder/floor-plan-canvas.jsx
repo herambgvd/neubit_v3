@@ -770,7 +770,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
       <canvas ref={canvasRef} className="block h-full w-full" />
       {dropHover && (
         <div
-          className={`pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm ${
+          className={`pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-xs ${
             dropHover.valid
               ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
               : "border-red-500/40 bg-red-500/10 text-red-600"
@@ -784,7 +784,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
         </div>
       )}
       {!floorplanUrl && (
-        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted shadow border border-card-border">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-md bg-card/90 px-3 py-1.5 text-xs text-muted shadow-sm border border-card-border">
           Upload a floor plan to begin
         </div>
       )}

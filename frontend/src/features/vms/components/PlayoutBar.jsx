@@ -114,7 +114,7 @@ export default function PlayoutBar({ camera, onClose }) {
   };
 
   return (
-    <div className="shrink-0 border-t border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.82)] px-3 py-2 backdrop-blur-sm">
+    <div className="shrink-0 border-t border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.82)] px-3 py-2 backdrop-blur-xs">
       {/* Transport row */}
       <div className="flex items-center gap-2">
         <Btn icon="heroicons-solid:backward" title="Previous event" disabled />

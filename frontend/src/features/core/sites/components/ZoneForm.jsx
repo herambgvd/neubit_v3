@@ -98,7 +98,7 @@ export default function ZoneForm({ zone, onCancel, onSaved }) {
           <FieldLabel>Color</FieldLabel>
           <div className="mt-1 flex items-center gap-2">
             <input type="color" value={color || "#6366F1"} onChange={(e) => setColor(e.target.value)} className="h-10 w-16 rounded-md border border-nb-line cursor-pointer bg-transparent" />
-            <input value={color || ""} onChange={(e) => setColor(e.target.value)} className="h-10 flex-1 rounded-md border border-nb-line bg-transparent px-3 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal" />
+            <input value={color || ""} onChange={(e) => setColor(e.target.value)} className="h-10 flex-1 rounded-md border border-nb-line bg-transparent px-3 text-sm font-mono text-nb-ink outline-hidden focus:border-nb-teal" />
           </div>
         </div>
         <FInput label="Max occupancy" type="number" min={0} value={maxOccupancy} onChange={setMaxOccupancy} placeholder="Max occupancy" />

@@ -33,10 +33,10 @@ export default function BulkActionBar({
 
   const reset = () => setMode(null);
   const inputCls =
-    "h-8 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 text-sm text-nb-ink placeholder:text-nb-faint outline-none focus:border-nb-blue";
+    "h-8 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 text-sm text-nb-ink placeholder:text-nb-faint outline-hidden focus:border-nb-blue";
 
   return (
-    <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.85)] px-3 py-2 shadow-2xl backdrop-blur">
+    <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.85)] px-3 py-2 shadow-2xl backdrop-blur-sm">
       <span className="inline-flex items-center gap-1.5 rounded-lg border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] px-2.5 py-1 text-xs font-medium text-nb-blueb">
         <Icon icon="heroicons-outline:check-circle" className="text-sm" /> {count} selected
       </span>
@@ -161,7 +161,7 @@ export default function BulkActionBar({
         </div>
       )}
 
-      <button type="button" onClick={onClear} className="ml-1 rounded p-1 text-nb-muted transition hover:bg-[rgba(96,165,250,.1)] hover:text-nb-blueb" title="Clear selection">
+      <button type="button" onClick={onClear} className="ml-1 rounded-sm p-1 text-nb-muted transition hover:bg-[rgba(96,165,250,.1)] hover:text-nb-blueb" title="Clear selection">
         <Icon icon="heroicons-outline:x-mark" className="text-sm" />
       </button>
     </div>

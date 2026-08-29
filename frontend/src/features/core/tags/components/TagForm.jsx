@@ -97,7 +97,7 @@ export default function TagForm({ tag, onCancel, onSaved }) {
                   setColor(e.target.value);
                   clearErr("color");
                 }}
-                className={`h-10 flex-1 rounded-md border border-nb-line bg-transparent px-3 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal ${errors.color ? "!border-red-500" : ""}`}
+                className={`h-10 flex-1 rounded-md border border-nb-line bg-transparent px-3 text-sm font-mono text-nb-ink outline-hidden focus:border-nb-teal ${errors.color ? "!border-red-500" : ""}`}
               />
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">

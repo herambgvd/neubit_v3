@@ -78,14 +78,14 @@ export default function LinkageScheduleEditor({ value = {}, onChange }) {
                           type="time"
                           value={w[0] || "00:00"}
                           onChange={(e) => patchWindow(key, i, 0, e.target.value)}
-                          className="h-8 rounded-md border border-field bg-transparent px-2 text-[11px] text-foreground outline-none focus:border-muted"
+                          className="h-8 rounded-md border border-field bg-transparent px-2 text-[11px] text-foreground outline-hidden focus:border-muted"
                         />
                         <span className="text-[11px] text-muted">–</span>
                         <input
                           type="time"
                           value={w[1] || "23:59"}
                           onChange={(e) => patchWindow(key, i, 1, e.target.value)}
-                          className="h-8 rounded-md border border-field bg-transparent px-2 text-[11px] text-foreground outline-none focus:border-muted"
+                          className="h-8 rounded-md border border-field bg-transparent px-2 text-[11px] text-foreground outline-hidden focus:border-muted"
                         />
                         <button
                           type="button"

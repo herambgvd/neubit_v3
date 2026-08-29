@@ -39,7 +39,7 @@ export default function MonitorTile({
           {monitor.name}
         </span>
         {isDecoder && (
-          <span className="rounded border border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.12)] px-1 font-mono text-[8px] font-semibold uppercase tracking-[.8px] text-[#fbbf24]">
+          <span className="rounded-sm border border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.12)] px-1 font-mono text-[8px] font-semibold uppercase tracking-[.8px] text-[#fbbf24]">
             Decoder
           </span>
         )}
@@ -51,7 +51,7 @@ export default function MonitorTile({
             type="button"
             title="Clear monitor"
             onClick={onClearMonitor}
-            className="rounded p-0.5 text-[#9a92c8] transition hover:bg-[rgba(248,113,113,.15)] hover:text-[#f87171]"
+            className="rounded-sm p-0.5 text-[#9a92c8] transition hover:bg-[rgba(248,113,113,.15)] hover:text-[#f87171]"
           >
             <Icon icon="heroicons-outline:x-circle" className="text-[11px]" />
           </button>

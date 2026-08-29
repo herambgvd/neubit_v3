@@ -106,7 +106,7 @@ export function PanelSearch({ value, onChange, placeholder = "Search…" }) {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full bg-transparent text-[12.5px] text-nb-muted outline-none placeholder:text-nb-faint"
+          className="w-full bg-transparent text-[12.5px] text-nb-muted outline-hidden placeholder:text-nb-faint"
         />
       </div>
     </div>

@@ -186,13 +186,13 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
             {cards.length > 0 && (
               <ul className="mb-2 space-y-1">
                 {cards.map((c) => (
-                  <li key={c.card_id} className="flex items-center justify-between rounded bg-hover px-2 py-1.5 text-xs">
+                  <li key={c.card_id} className="flex items-center justify-between rounded-sm bg-hover px-2 py-1.5 text-xs">
                     <span className="font-mono text-muted">{c.card_id}</span>
                     <button
                       type="button"
                       onClick={() => removeCard.mutate(c.card_id)}
                       disabled={removeCard.isPending}
-                      className="rounded p-1 text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
+                      className="rounded-sm p-1 text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
                       title="Remove card"
                     >
                       <Icon icon="heroicons-outline:x-mark" className="text-xs" />
@@ -206,7 +206,7 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
                 value={newCardId}
                 onChange={(e) => setNewCardId(e.target.value)}
                 placeholder="Card code (e.g. 0123456)"
-                className="flex-1 rounded-md border border-field bg-transparent px-2 py-1 text-xs text-foreground placeholder:text-muted outline-none focus:border-muted"
+                className="flex-1 rounded-md border border-field bg-transparent px-2 py-1 text-xs text-foreground placeholder:text-muted outline-hidden focus:border-muted"
               />
               <Button
                 type="button"
@@ -238,7 +238,7 @@ function GroupSelector({ allGroups, selected, onChange }) {
           <span className="text-[11px] text-muted/70">No groups assigned</span>
         ) : (
           selectedGroups.map((g) => (
-            <span key={g.group_id} className="inline-flex items-center gap-1 rounded bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-500">
+            <span key={g.group_id} className="inline-flex items-center gap-1 rounded-sm bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-500">
               {g.name}
               <button type="button" onClick={() => onChange(selected.filter((id) => id !== g.group_id))} className="hover:text-red-500">
                 <Icon icon="heroicons-outline:x-mark" className="text-xs" />

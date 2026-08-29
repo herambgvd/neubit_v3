@@ -214,7 +214,7 @@ export default function CameraEventsPage() {
             value={day}
             max={todayStr()}
             onChange={(e) => setDay(e.target.value)}
-            className="h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-none focus:border-muted"
+            className="h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-hidden focus:border-muted"
           />
         </FilterField>
         {(cameraId || eventType || severity || ack || day) && (
@@ -239,7 +239,7 @@ export default function CameraEventsPage() {
         <div className="flex items-center gap-2 border-b border-card-border px-3 py-2 text-xs">
           <Icon icon="heroicons-outline:signal" className="text-sm text-blue-500" />
           <span className="font-semibold text-foreground">Events</span>
-          <span className="rounded bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{events.length}</span>
+          <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{events.length}</span>
           {total > events.length && <span className="text-[10px] text-muted/70">of {total}</span>}
           <button
             type="button"

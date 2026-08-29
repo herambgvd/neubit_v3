@@ -99,7 +99,7 @@ function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }) {
       <div
         aria-disabled="true"
         title="Coming soon"
-        className="relative h-[186px] w-[186px] select-none rounded-[16px] border border-[rgba(167,139,250,.28)] opacity-50 backdrop-blur-sm"
+        className="relative h-[186px] w-[186px] select-none rounded-[16px] border border-[rgba(167,139,250,.28)] opacity-50 backdrop-blur-xs"
         style={{ background: "linear-gradient(155deg,rgba(167,139,250,.12),rgba(34,211,238,.04) 70%)" }}
       >
         <Icon icon={icon} className="absolute left-1/2 top-7 -translate-x-1/2 text-[58px] text-[#c4b5fd]" />
@@ -116,7 +116,7 @@ function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }) {
   return (
     <Link
       href={href}
-      className={`group relative block h-[186px] w-[186px] rounded-[16px] border border-[rgba(160,150,245,.22)] backdrop-blur-sm transition-[transform,box-shadow,border-color,background] duration-150 hover:z-10 hover:scale-[1.1] ${toneRing[tone]}`}
+      className={`group relative block h-[186px] w-[186px] rounded-[16px] border border-[rgba(160,150,245,.22)] backdrop-blur-xs transition-[transform,box-shadow,border-color,background] duration-150 hover:z-10 hover:scale-[1.1] ${toneRing[tone]}`}
       style={{ background: toneBg[tone] }}
     >
       <Icon

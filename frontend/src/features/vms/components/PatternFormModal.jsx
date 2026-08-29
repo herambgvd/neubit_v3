@@ -154,7 +154,7 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
                       }`}
                     >
                       <span
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
                           checked ? "border-nb-blue bg-nb-blue text-white" : "border-nb-line"
                         }`}
                       >

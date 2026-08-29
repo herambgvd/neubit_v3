@@ -218,7 +218,7 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
                   type="datetime-local"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+                  className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
                 />
               </label>
               <label className="block">
@@ -227,7 +227,7 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
                   type="datetime-local"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+                  className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
                 />
               </label>
             </div>

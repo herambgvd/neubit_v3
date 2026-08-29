@@ -52,7 +52,7 @@ export default function SectionTabs({ tabs, label, icon }) {
               >
                 <Icon icon={t.icon} className="text-[14px]" />
                 {t.title}
-                <span className="rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-[rgba(150,180,245,.1)] text-nb-faint">
+                <span className="rounded-sm px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-[rgba(150,180,245,.1)] text-nb-faint">
                   Soon
                 </span>
               </span>

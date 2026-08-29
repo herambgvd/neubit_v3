@@ -126,7 +126,7 @@ export default function NvrPage() {
                       onClick={() => setSelectedId(n.id)}
                       className={`relative block w-full rounded-lg border px-3 py-2.5 text-left transition ${isSel ? "border-foreground bg-hover" : "border-card-border hover:bg-hover"}`}
                     >
-                      {isSel && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l bg-blue-500" />}
+                      {isSel && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l-sm bg-blue-500" />}
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate text-xs font-semibold text-foreground">{n.name}</p>
                         <StatusBadge status={n.status} />

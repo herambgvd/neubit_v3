@@ -108,12 +108,12 @@ export default function TemplateForm({ template, onCancel, onSaved }) {
       )}
       <div>
         <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Body <span className="text-nb-crit ml-1">*</span></label>
-        <textarea rows={5} value={body} onChange={(e) => { setBody(e.target.value); if (errors.body) setErrors((p) => ({ ...p, body: undefined })); }} className={`mt-1 w-full rounded-lg border border-nb-line bg-transparent px-3 py-2 text-sm font-mono text-nb-ink placeholder:text-nb-faint outline-none focus:border-nb-teal ${errors.body ? "!border-nb-crit" : ""}`} placeholder="Incident {{instance_name}} moved {{from_state}} → {{to_state}}." />
+        <textarea rows={5} value={body} onChange={(e) => { setBody(e.target.value); if (errors.body) setErrors((p) => ({ ...p, body: undefined })); }} className={`mt-1 w-full rounded-lg border border-nb-line bg-transparent px-3 py-2 text-sm font-mono text-nb-ink placeholder:text-nb-faint outline-hidden focus:border-nb-teal ${errors.body ? "!border-nb-crit" : ""}`} placeholder="Incident {{instance_name}} moved {{from_state}} → {{to_state}}." />
         {errors.body && <p className="mt-1 text-xs text-nb-crit">{errors.body}</p>}
         <div className="mt-2 flex flex-wrap gap-1.5">
           <span className="text-[11px] text-nb-faint">Variables:</span>
           {TEMPLATE_VARS.map((v) => (
-            <button key={v} type="button" onClick={() => setBody((b) => `${b}{{${v}}}`)} className="text-[11px] font-mono rounded bg-[rgba(8,15,34,.5)] border border-nb-line px-1.5 py-0.5 text-nb-faint hover:text-nb-ink hover:bg-[rgba(96,165,250,.1)]">{`{{${v}}}`}</button>
+            <button key={v} type="button" onClick={() => setBody((b) => `${b}{{${v}}}`)} className="text-[11px] font-mono rounded-sm bg-[rgba(8,15,34,.5)] border border-nb-line px-1.5 py-0.5 text-nb-faint hover:text-nb-ink hover:bg-[rgba(96,165,250,.1)]">{`{{${v}}}`}</button>
           ))}
         </div>
       </div>

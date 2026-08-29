@@ -93,7 +93,7 @@ export default function AlarmCard({
 
   return (
     <div
-      className={`group relative flex overflow-hidden rounded-[13px] border bg-[rgba(150,180,245,.04)] backdrop-blur-sm transition hover:bg-[rgba(150,180,245,.07)] ${
+      className={`group relative flex overflow-hidden rounded-[13px] border bg-[rgba(150,180,245,.04)] backdrop-blur-xs transition hover:bg-[rgba(150,180,245,.07)] ${
         isNew ? "border-[rgba(34,211,238,.5)] ring-1 ring-[rgba(34,211,238,.25)]" : "border-[rgba(150,180,245,.22)]"
       } ${selected ? "!border-[rgba(34,211,238,.6)]" : ""}`}
     >

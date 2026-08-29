@@ -49,7 +49,7 @@ export default function PatternHud({
         visible ? "opacity-100" : "opacity-0"
       }`}
     >
-      <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/10 bg-black/80 px-3 py-2 shadow-2xl backdrop-blur">
+      <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/10 bg-black/80 px-3 py-2 shadow-2xl backdrop-blur-sm">
         <span className="inline-flex items-center gap-1.5 pl-1.5">
           <Icon icon="heroicons-solid:squares-2x2" className="text-sm text-[#67e8f9]" />
           <span className="max-w-[12rem] truncate text-xs font-semibold text-white">{patternName}</span>

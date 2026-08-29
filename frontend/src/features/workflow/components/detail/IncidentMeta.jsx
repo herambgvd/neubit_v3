@@ -117,7 +117,7 @@ export default function IncidentMeta({ instance, currentStateName }) {
             <span className="inline-flex items-center gap-1.5">
               {fmtDateTime(inst.sla_deadline)}
               {sla && (
-                <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${sla.color}`}>
+                <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${sla.color}`}>
                   {sla.breached ? "Breached" : sla.label.replace(/^SLA\s*/, "")}
                 </span>
               )}

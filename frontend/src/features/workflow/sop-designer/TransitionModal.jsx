@@ -254,7 +254,7 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
                       <p className="text-[11px] text-nb-muted">
                         Available placeholders:{" "}
                         {["{instance_name}", "{from_state}", "{to_state}", "{priority}"].map((p) => (
-                          <code key={p} className="mr-1 rounded bg-[rgba(96,165,250,.1)] px-1">{p}</code>
+                          <code key={p} className="mr-1 rounded-sm bg-[rgba(96,165,250,.1)] px-1">{p}</code>
                         ))}
                       </p>
                     </div>
@@ -325,7 +325,7 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
       <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
         <label className="relative block border-b border-nb-line">
           <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-muted" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-nb-ink outline-none" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-nb-ink outline-hidden" />
         </label>
         <div className="max-h-40 overflow-y-auto">
           {usersQ.isLoading ? (

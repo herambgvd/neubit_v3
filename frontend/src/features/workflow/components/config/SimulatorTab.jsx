@@ -247,8 +247,8 @@ function ResultPanel({ result }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-nb-faint font-mono">
-        <span className="rounded bg-[rgba(96,165,250,.1)] px-1.5 py-0.5">{result.event_type || "—"}</span>
-        {result.alert_code && <span className="rounded bg-[rgba(96,165,250,.1)] px-1.5 py-0.5">code: {result.alert_code}</span>}
+        <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5">{result.event_type || "—"}</span>
+        {result.alert_code && <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5">code: {result.alert_code}</span>}
       </div>
 
       {/* Matched triggers */}

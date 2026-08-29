@@ -141,7 +141,7 @@ function Picker({ value, onChange, options, placeholder }) {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-[6px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.6)] px-1.5 py-0.5 font-mono text-[11px] text-[#d7f7e9] outline-none focus:border-[rgba(34,211,238,.5)]"
+      className="rounded-[6px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.6)] px-1.5 py-0.5 font-mono text-[11px] text-[#d7f7e9] outline-hidden focus:border-[rgba(34,211,238,.5)]"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value} className="bg-[#0b1428]">
@@ -220,7 +220,7 @@ function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }) {
                 }`}
               />
               {cam && (
-                <span className="mt-0.5 whitespace-nowrap rounded bg-black/60 px-1 font-mono text-[9px] text-[#d7f7e9] opacity-0 transition group-hover:opacity-100">
+                <span className="mt-0.5 whitespace-nowrap rounded-sm bg-black/60 px-1 font-mono text-[9px] text-[#d7f7e9] opacity-0 transition group-hover:opacity-100">
                   {cam.name}
                 </span>
               )}

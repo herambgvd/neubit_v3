@@ -28,7 +28,7 @@ export default function ReasonModal({ action, pending, onCancel, onSubmit }) {
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         autoFocus
-        className="mt-1 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted outline-none focus:border-muted"
+        className="mt-1 w-full rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted outline-hidden focus:border-muted"
         placeholder="Add context for this action"
       />
     </Modal>

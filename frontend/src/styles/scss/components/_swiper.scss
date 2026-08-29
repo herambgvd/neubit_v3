@@ -13,9 +13,9 @@
   .swiper-pagination-bullet {
     height: 2px;
     width: 24px;
-    @apply rounded-[1px] bg-white bg-opacity-70;
+    @apply rounded-[1px] bg-white/70;
     &.swiper-pagination-bullet-active {
-      @apply bg-opacity-100;
+      @apply bg-white;
     }
   }
 }

@@ -13,13 +13,13 @@ export default function ColorField({ label, value, onChange }) {
           type="color"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+          className="h-8 w-10 cursor-pointer rounded-sm border-0 bg-transparent p-0"
         />
         <input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full bg-transparent text-sm text-nb-ink outline-none"
+          className="w-full bg-transparent text-sm text-nb-ink outline-hidden"
         />
       </div>
     </div>

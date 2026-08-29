@@ -119,7 +119,7 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search cameras…"
-                className="h-8 w-full rounded-md border border-field bg-transparent pl-7 pr-2 text-xs text-foreground placeholder:text-muted outline-none focus:border-muted"
+                className="h-8 w-full rounded-md border border-field bg-transparent pl-7 pr-2 text-xs text-foreground placeholder:text-muted outline-hidden focus:border-muted"
               />
             </label>
           </div>

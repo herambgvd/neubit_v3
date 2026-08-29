@@ -66,7 +66,7 @@ export default function CardsTab({ instanceId }) {
 
   const th = "px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-muted";
   const selectCls =
-    "rounded-md border border-field bg-transparent px-2 py-1 text-[11px] text-muted outline-none focus:border-muted";
+    "rounded-md border border-field bg-transparent px-2 py-1 text-[11px] text-muted outline-hidden focus:border-muted";
 
   return (
     <div className="flex h-full flex-col">
@@ -74,7 +74,7 @@ export default function CardsTab({ instanceId }) {
       <div className="flex flex-wrap items-center gap-2 border-b border-card-border pb-3">
         <Icon icon="heroicons-outline:credit-card" className="text-sm text-blue-500" />
         <span className="text-xs font-semibold text-foreground">Cards</span>
-        <span className="rounded bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{items.length}</span>
+        <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{items.length}</span>
 
         <div className="relative ml-2">
           <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted" />
@@ -82,7 +82,7 @@ export default function CardsTab({ instanceId }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by card code"
-            className="w-56 rounded-md border border-field bg-transparent py-1 pl-7 pr-2 text-[11px] text-foreground placeholder:text-muted outline-none focus:border-muted"
+            className="w-56 rounded-md border border-field bg-transparent py-1 pl-7 pr-2 text-[11px] text-foreground placeholder:text-muted outline-hidden focus:border-muted"
           />
         </div>
 
@@ -149,7 +149,7 @@ export default function CardsTab({ instanceId }) {
                           type="button"
                           onClick={() => setEditTarget(c)}
                           title="Edit"
-                          className="rounded p-1 text-muted hover:bg-hover hover:text-foreground"
+                          className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground"
                         >
                           <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
                         </button>
@@ -168,7 +168,7 @@ export default function CardsTab({ instanceId }) {
                               },
                             })
                           }
-                          className="rounded p-1 text-red-500 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded-sm p-1 text-red-500 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Icon icon="heroicons-outline:trash" className="text-sm" />
                         </button>

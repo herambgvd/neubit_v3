@@ -452,7 +452,7 @@ function PatrolMenu({ patrols, loading, canControl, onStart, onStop, onDelete, o
                 <span className="min-w-0 flex-1 truncate text-[12px] text-white/90">
                   {p.name || `Patrol ${p.id}`}
                   {running && (
-                    <span className="ml-1.5 rounded bg-emerald-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-300">
+                    <span className="ml-1.5 rounded-sm bg-emerald-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-300">
                       Running
                     </span>
                   )}
@@ -493,7 +493,7 @@ function MenuIcon({ icon, title, onClick, danger }) {
       type="button"
       title={title}
       onClick={onClick}
-      className={`shrink-0 rounded p-1 transition ${
+      className={`shrink-0 rounded-sm p-1 transition ${
         danger ? "text-white/50 hover:bg-red-500/20 hover:text-red-300" : "text-white/60 hover:bg-white/10 hover:text-white"
       }`}
     >

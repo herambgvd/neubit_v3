@@ -143,7 +143,7 @@ export default function FederationPage() {
                       : "border-nb-line bg-[rgba(10,18,40,.5)] hover:border-nb-blue/60 hover:bg-[rgba(96,165,250,.06)]"
                   }`}
                 >
-                  {isSel && <span className="absolute inset-y-0 left-0 w-0.5 rounded-l bg-nb-blue" />}
+                  {isSel && <span className="absolute inset-y-0 left-0 w-0.5 rounded-l-sm bg-nb-blue" />}
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
                       <span

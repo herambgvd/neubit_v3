@@ -82,7 +82,7 @@ export default function WallToolbar({
   const gridMode = viewMode !== "map"; // grid or split show the layout picker
 
   return (
-    <div className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 backdrop-blur-sm">
+    <div className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 backdrop-blur-xs">
       {/* Identity */}
       <div className="flex min-w-0 items-center gap-2">
         {/* Home — back to the metro launcher (the wall has no global header). */}
@@ -285,7 +285,7 @@ function TourControl({ tour, onStart, onStop, onInterval }) {
         <Icon icon="heroicons-mini:chevron-down" className="ml-0.5 text-sm" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-40 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] p-2 shadow-2xl backdrop-blur-sm">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-40 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] p-2 shadow-2xl backdrop-blur-xs">
           <p className="px-1 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">
             Dwell per page
           </p>

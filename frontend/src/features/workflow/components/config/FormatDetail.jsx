@@ -95,7 +95,7 @@ function PresentationPanel({ f }) {
           <div>
             <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">Colour</div>
             <div className="mt-1 flex items-center gap-2 text-sm text-nb-ink">
-              <span className="h-4 w-4 rounded border border-nb-line" style={{ background: f.color_code || "#ef4444" }} />
+              <span className="h-4 w-4 rounded-sm border border-nb-line" style={{ background: f.color_code || "#ef4444" }} />
               <span className="font-mono">{f.color_code || "—"}</span>
             </div>
           </div>

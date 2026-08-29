@@ -43,7 +43,7 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 p-4 pt-[12vh]" onMouseDown={onClose}>
       <div
-        className="w-full max-w-md overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.95)] shadow-2xl backdrop-blur-sm"
+        className="w-full max-w-md overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.95)] shadow-2xl backdrop-blur-xs"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-[rgba(160,150,245,.22)] px-3">
@@ -53,9 +53,9 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={`Add camera to tile ${tileIndex != null ? tileIndex + 1 : ""}…`}
-            className="h-11 flex-1 bg-transparent text-sm text-[#f2f6ff] placeholder:text-[#7e93bf] outline-none"
+            className="h-11 flex-1 bg-transparent text-sm text-[#f2f6ff] placeholder:text-[#7e93bf] outline-hidden"
           />
-          <kbd className="rounded border border-[rgba(150,180,245,.22)] px-1.5 py-0.5 font-mono text-[10px] text-[#7e93bf]">Esc</kbd>
+          <kbd className="rounded-sm border border-[rgba(150,180,245,.22)] px-1.5 py-0.5 font-mono text-[10px] text-[#7e93bf]">Esc</kbd>
         </div>
         <ul className="max-h-80 overflow-y-auto p-1.5">
           {filtered.length === 0 ? (

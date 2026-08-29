@@ -87,7 +87,7 @@ export default function DeviceUsers({ cameraId }) {
                   title="Remove user"
                   onClick={() => del.mutate(u.username)}
                   disabled={del.isPending}
-                  className="rounded p-1 text-red-500 hover:bg-red-500/10"
+                  className="rounded-sm p-1 text-red-500 hover:bg-red-500/10"
                 >
                   <Icon icon="heroicons-outline:trash" className="text-sm" />
                 </button>

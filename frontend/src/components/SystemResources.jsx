@@ -112,8 +112,8 @@ function SkeletonTile() {
     <Card className="p-4 flex items-center gap-3">
       <div className="h-[58px] w-[58px] rounded-full bg-hover animate-pulse shrink-0" />
       <div className="space-y-2">
-        <div className="h-3 w-16 rounded bg-hover animate-pulse" />
-        <div className="h-2.5 w-20 rounded bg-hover animate-pulse" />
+        <div className="h-3 w-16 rounded-sm bg-hover animate-pulse" />
+        <div className="h-2.5 w-20 rounded-sm bg-hover animate-pulse" />
       </div>
     </Card>
   );

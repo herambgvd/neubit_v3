@@ -198,7 +198,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
           <div className="space-y-2">
             {conditions.map((c, i) => (
               <div key={i} className="flex items-center gap-2">
-                <input value={c.path} onChange={(e) => updateCond(i, { path: e.target.value })} placeholder="payload.path" className="h-9 flex-1 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal" />
+                <input value={c.path} onChange={(e) => updateCond(i, { path: e.target.value })} placeholder="payload.path" className="h-9 flex-1 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-hidden focus:border-nb-teal" />
                 <span className="w-36 shrink-0">
                   <SelectMenu
                     value={c.op}
@@ -207,8 +207,8 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
                     className="!mt-0 !h-9"
                   />
                 </span>
-                <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-none focus:border-nb-teal" />
-                <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
+                <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-hidden focus:border-nb-teal" />
+                <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded-sm text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
               </div>
             ))}
           </div>
@@ -312,7 +312,7 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }) {
       <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
         <label className="relative block border-b border-nb-line">
           <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-faint" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-nb-ink outline-none" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-nb-ink outline-hidden" />
         </label>
         <div className="max-h-40 overflow-y-auto">
           {usersQ.isLoading ? (

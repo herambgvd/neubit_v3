@@ -97,7 +97,7 @@ export default function TriggerTestModal({ open, trigger, onClose }) {
             value={eventType}
             onChange={(e) => setEventType(e.target.value)}
             placeholder="e.g. fire.alarm"
-            className="mt-1 h-10 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm font-mono text-nb-ink outline-none focus:border-nb-teal"
+            className="mt-1 h-10 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm font-mono text-nb-ink outline-hidden focus:border-nb-teal"
           />
         </div>
 
@@ -107,7 +107,7 @@ export default function TriggerTestModal({ open, trigger, onClose }) {
             value={payloadText}
             onChange={(e) => setPayloadText(e.target.value)}
             spellCheck={false}
-            className="mt-1 h-52 w-full rounded-lg border border-nb-line bg-transparent px-3 py-2 text-xs font-mono text-nb-ink outline-none focus:border-nb-teal"
+            className="mt-1 h-52 w-full rounded-lg border border-nb-line bg-transparent px-3 py-2 text-xs font-mono text-nb-ink outline-hidden focus:border-nb-teal"
           />
           {parseError && <p className="mt-1 text-xs text-nb-crit">JSON error: {parseError}</p>}
         </div>

@@ -15,7 +15,7 @@ export default function FormFieldInput({ field, value, error, onChange }) {
       {fieldRequired(field) && <span className="text-red-500 ml-1">*</span>}
     </label>
   );
-  const cls = `mt-1 h-10 w-full rounded-lg border ${error ? "border-red-500" : "border-field"} bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted`;
+  const cls = `mt-1 h-10 w-full rounded-lg border ${error ? "border-red-500" : "border-field"} bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-hidden transition focus:border-muted`;
   const options = Array.isArray(field.options)
     ? field.options.map((o) => (typeof o === "object" ? o : { value: o, label: o }))
     : [];
@@ -29,7 +29,7 @@ export default function FormFieldInput({ field, value, error, onChange }) {
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder || ""}
-          className={`mt-1 w-full rounded-lg border ${error ? "border-red-500" : "border-field"} bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted outline-none transition focus:border-muted`}
+          className={`mt-1 w-full rounded-lg border ${error ? "border-red-500" : "border-field"} bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted outline-hidden transition focus:border-muted`}
         />
       ) : field.type === "boolean" ? (
         <label className="mt-1 flex items-center gap-2 text-sm text-foreground cursor-pointer">

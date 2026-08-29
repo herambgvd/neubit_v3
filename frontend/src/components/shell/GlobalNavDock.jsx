@@ -348,7 +348,7 @@ export default function GlobalNavDock({ home = false }) {
               body line-height, so the badge grew taller than its row and collided
               with the search icon. The ⌘ and K are separate flex children so they
               get real spacing — mashed together they read as one glyph. */}
-          <kbd className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-card-border px-1.5 font-mono text-[10px] leading-none">
+          <kbd className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded-sm border border-card-border px-1.5 font-mono text-[10px] leading-none">
             <span className="text-[11px]">⌘</span>
             <span>K</span>
           </kbd>

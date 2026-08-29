@@ -89,7 +89,7 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto p-4 py-[6vh]">
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-black/60 backdrop-blur-xs animate-fade-in"
         onClick={() => (save.isPending ? null : onClose?.())}
       />
       <form

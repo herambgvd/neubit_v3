@@ -115,7 +115,7 @@ export default function NvrFootage() {
             value={fromDate}
             max={todayStr()}
             onChange={(e) => setFromDate(e.target.value)}
-            className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+            className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-hidden focus:border-muted"
           />
         </div>
         <div>
@@ -125,7 +125,7 @@ export default function NvrFootage() {
             value={toDate}
             max={todayStr()}
             onChange={(e) => setToDate(e.target.value)}
-            className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+            className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-hidden focus:border-muted"
           />
         </div>
         <Button variant="secondary" icon="heroicons-outline:magnifying-glass" onClick={() => searchQ.refetch()} disabled={!nvrId || channel === ""}>

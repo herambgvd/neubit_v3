@@ -103,7 +103,7 @@ export default function LayoutPicker({ layoutKey, onChange }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-[13.5rem] rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] p-2 shadow-2xl backdrop-blur-sm">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-[13.5rem] rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] p-2 shadow-2xl backdrop-blur-xs">
           <p className="px-1 pb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">
             Grid layout
           </p>

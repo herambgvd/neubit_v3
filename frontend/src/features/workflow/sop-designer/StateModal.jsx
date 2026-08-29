@@ -107,7 +107,7 @@ export default function StateModal({ sopId, state, defaults, onClose, onSaved })
                 title={c}
               />
             ))}
-            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-7 w-9 rounded border border-nb-line bg-transparent cursor-pointer" title="Custom color" />
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-7 w-9 rounded-sm border border-nb-line bg-transparent cursor-pointer" title="Custom color" />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-sm text-nb-ink">

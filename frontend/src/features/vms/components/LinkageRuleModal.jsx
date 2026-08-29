@@ -280,7 +280,7 @@ function PickList({ items, selected, onToggle, empty, loading }) {
         return (
           <label
             key={it.id}
-            className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-[11px] ${on ? "bg-[rgba(96,165,250,.1)] text-nb-blueb" : "text-nb-soft hover:bg-[rgba(96,165,250,.06)]"}`}
+            className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-[11px] ${on ? "bg-[rgba(96,165,250,.1)] text-nb-blueb" : "text-nb-soft hover:bg-[rgba(96,165,250,.06)]"}`}
           >
             <input type="checkbox" checked={on} onChange={() => onToggle(it.id)} />
             <span className="truncate">{it.label}</span>

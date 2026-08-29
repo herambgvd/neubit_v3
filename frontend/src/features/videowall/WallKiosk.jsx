@@ -112,7 +112,7 @@ export default function WallKiosk({ wallId, monitorId }) {
 
       {/* Auto-hiding identity overlay */}
       <div
-        className={`pointer-events-none absolute left-3 top-3 z-30 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 backdrop-blur-sm transition-opacity duration-500 ${
+        className={`pointer-events-none absolute left-3 top-3 z-30 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 backdrop-blur-xs transition-opacity duration-500 ${
           chromeOn ? "opacity-100" : "opacity-0"
         }`}
       >

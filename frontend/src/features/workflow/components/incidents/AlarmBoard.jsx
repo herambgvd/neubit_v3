@@ -36,7 +36,7 @@ export default function AlarmBoard({
 
   if (loading) {
     return (
-      <div className="flex justify-center rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] py-16 backdrop-blur-sm">
+      <div className="flex justify-center rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] py-16 backdrop-blur-xs">
         <Icon icon="svg-spinners:180-ring" className="text-2xl text-[#67e8f9]" />
       </div>
     );
@@ -44,7 +44,7 @@ export default function AlarmBoard({
 
   if (rows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] py-20 text-center backdrop-blur-sm">
+      <div className="flex flex-col items-center justify-center rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] py-20 text-center backdrop-blur-xs">
         <Icon icon="heroicons-outline:shield-check" className="mb-3 text-4xl text-[#67e8f9] opacity-70" />
         <p className="font-medium text-[#f2f6ff]">No active alarms</p>
         <p className="mt-1 text-sm text-[#7e93bf]">
@@ -86,7 +86,7 @@ export default function AlarmBoard({
       </div>
 
       {showPager && (
-        <div className="mt-3 flex items-center justify-between rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-4 py-2.5 font-mono text-[11px] text-[#aec2e8] backdrop-blur-sm">
+        <div className="mt-3 flex items-center justify-between rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-4 py-2.5 font-mono text-[11px] text-[#aec2e8] backdrop-blur-xs">
           <span>
             {showingFrom}–{showingTo} of {total || rows.length}
           </span>

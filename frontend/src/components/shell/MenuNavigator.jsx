@@ -55,7 +55,7 @@ function Cell({ item, onGo }) {
       >
         <Icon icon={item.icon} className="text-[17px] shrink-0" />
         <span className="truncate">{item.title}</span>
-        <span className="ml-auto rounded border border-[rgba(160,150,245,.3)] px-1.5 py-px font-mono text-[9px] uppercase tracking-[.6px] text-[#8f8ac0]">
+        <span className="ml-auto rounded-sm border border-[rgba(160,150,245,.3)] px-1.5 py-px font-mono text-[9px] uppercase tracking-[.6px] text-[#8f8ac0]">
           Soon
         </span>
       </span>

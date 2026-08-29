@@ -112,7 +112,7 @@ export default function WallCell({
               e.stopPropagation();
               onClear?.();
             }}
-            className="rounded bg-black/50 p-1 text-white/85 backdrop-blur-sm transition hover:bg-red-500/70 hover:text-white"
+            className="rounded-sm bg-black/50 p-1 text-white/85 backdrop-blur-xs transition hover:bg-red-500/70 hover:text-white"
           >
             <Icon icon="heroicons-outline:x-mark" className="text-[11px]" />
           </button>

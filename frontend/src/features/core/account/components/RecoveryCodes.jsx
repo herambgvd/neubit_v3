@@ -20,7 +20,7 @@ export default function RecoveryCodes({ codes, onClose }) {
       </div>
       <div className="grid grid-cols-2 gap-1.5 font-mono text-[13px] text-foreground">
         {codes.map((c) => (
-          <div key={c} className="rounded bg-card border border-card-border px-2 py-1 text-center">
+          <div key={c} className="rounded-sm bg-card border border-card-border px-2 py-1 text-center">
             {c}
           </div>
         ))}

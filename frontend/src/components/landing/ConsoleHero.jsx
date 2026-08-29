@@ -386,7 +386,7 @@ function StatusBar({ time }) {
           {[0, 1, 2, 3, 4].map((i) => (
             <motion.span
               key={i}
-              className="h-2.5 w-[3px] rounded-sm"
+              className="h-2.5 w-[3px] rounded-xs"
               style={{ background: i < 4 ? ACCENT : "rgba(245,158,11,0.8)" }}
               animate={{ opacity: [0.4, 1, 0.4] }}
               transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.18 }}

@@ -317,7 +317,7 @@ export default function RegionDrawModal({
                   }}
                 >
                   {cfg.hasSensitivity && typeof s.sensitivity === "number" && (
-                    <span className="pointer-events-none absolute left-0.5 top-0.5 rounded bg-black/60 px-1 text-[9px] font-mono text-white/90">
+                    <span className="pointer-events-none absolute left-0.5 top-0.5 rounded-sm bg-black/60 px-1 text-[9px] font-mono text-white/90">
                       {Math.round(s.sensitivity * 100)}%
                     </span>
                   )}
@@ -330,7 +330,7 @@ export default function RegionDrawModal({
                       }}
                       disabled={save.isPending}
                       title="Remove"
-                      className={`absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full ${cfg.removeBtnClass} text-white shadow hover:opacity-80 disabled:opacity-40`}
+                      className={`absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full ${cfg.removeBtnClass} text-white shadow-sm hover:opacity-80 disabled:opacity-40`}
                     >
                       <Icon icon="heroicons-solid:x-mark" className="h-3 w-3" />
                     </button>

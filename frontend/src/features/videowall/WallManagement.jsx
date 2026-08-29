@@ -152,7 +152,7 @@ export default function WallManagement() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search walls…"
-                className="w-full bg-transparent text-[12.5px] text-nb-muted outline-none placeholder:text-nb-faint"
+                className="w-full bg-transparent text-[12.5px] text-nb-muted outline-hidden placeholder:text-nb-faint"
               />
             </div>
           </div>
@@ -447,7 +447,7 @@ function WallDetail({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-base font-semibold text-nb-ink">{wall.name}</h2>
-            {!wall.is_active && <span className="rounded border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">inactive</span>}
+            {!wall.is_active && <span className="rounded-sm border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">inactive</span>}
           </div>
           <p className="mt-0.5 text-xs text-nb-soft">
             {wall.rows}×{wall.cols} monitor grid{wall.description ? ` · ${wall.description}` : ""}
@@ -557,7 +557,7 @@ function WallDetail({
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium text-nb-ink">
                     {t.name}
-                    {t.is_running && <span className="ml-1.5 rounded border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-1 text-[9px] font-semibold text-nb-blueb">RUNNING</span>}
+                    {t.is_running && <span className="ml-1.5 rounded-sm border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-1 text-[9px] font-semibold text-nb-blueb">RUNNING</span>}
                   </span>
                   <span className="text-[11px] text-nb-faint">
                     {(t.preset_ids || []).length} presets · {t.dwell_seconds}s dwell
@@ -598,7 +598,7 @@ function WallDetail({
                 type="button"
                 title="Test connection"
                 onClick={() => testDecoder(d)}
-                className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb"
+                className="rounded-sm p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:signal" className="text-sm" />
               </button>
@@ -647,12 +647,12 @@ function TabList({ loading, items, emptyIcon, emptyText, addLabel, canManage, on
                 <div className="flex shrink-0 items-center gap-0.5">
                   {extraAction && extraAction(it)}
                   {onEdit && (
-                    <button type="button" title="Edit" onClick={() => onEdit(it)} className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb">
+                    <button type="button" title="Edit" onClick={() => onEdit(it)} className="rounded-sm p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb">
                       <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
                     </button>
                   )}
                   {onDelete && (
-                    <button type="button" title="Delete" onClick={() => onDelete(it)} className="rounded p-1.5 text-nb-muted transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit">
+                    <button type="button" title="Delete" onClick={() => onDelete(it)} className="rounded-sm p-1.5 text-nb-muted transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit">
                       <Icon icon="heroicons-outline:trash" className="text-sm" />
                     </button>
                   )}

@@ -154,7 +154,7 @@ export default function MultiPlayback() {
           value={day}
           max={todayStr()}
           onChange={(e) => setDay(e.target.value)}
-          className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+          className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-hidden focus:border-muted"
         />
         <div className="w-56">
           <Select
@@ -184,7 +184,7 @@ export default function MultiPlayback() {
             {selected.map((id) => (
               <div key={id} className="relative">
                 <div className="absolute left-2 top-2 z-10 flex items-center gap-2">
-                  <span className="rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+                  <span className="rounded-sm bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
                     {cameraNames[id] || String(id).slice(0, 8)}
                   </span>
                 </div>

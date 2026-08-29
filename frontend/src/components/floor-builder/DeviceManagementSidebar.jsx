@@ -98,7 +98,7 @@ function PlacedRow({ placement, inventory, isSelected, onSelect, onDelete }) {
         type="button"
         onClick={() => onDelete?.(placement, name)}
         title="Remove from floor"
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-red-500 transition hover:bg-red-500/10 hover:text-red-600"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-red-500 transition hover:bg-red-500/10 hover:text-red-600"
       >
         <Icon icon="heroicons-outline:trash" className="text-sm" />
       </button>

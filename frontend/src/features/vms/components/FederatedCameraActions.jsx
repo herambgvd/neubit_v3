@@ -292,7 +292,7 @@ function FedHoldModal({ camera, onClose }) {
               type="datetime-local"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-none focus:border-nb-blueb"
+              className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-blueb"
             />
           </label>
           <label className="block">
@@ -301,7 +301,7 @@ function FedHoldModal({ camera, onClose }) {
               type="datetime-local"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-none focus:border-nb-blueb"
+              className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-blueb"
             />
           </label>
         </div>
@@ -314,7 +314,7 @@ function FedHoldModal({ camera, onClose }) {
             onChange={(e) => setReason(e.target.value)}
             placeholder="operator hold"
             maxLength={2000}
-            className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-none focus:border-nb-blueb"
+            className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-blueb"
           />
         </label>
       </div>
@@ -446,7 +446,7 @@ function FedExportModal({ camera, onClose }) {
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               disabled={pending || ready}
-              className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-none focus:border-nb-blueb disabled:opacity-50"
+              className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-blueb disabled:opacity-50"
             />
           </label>
           <label className="block">
@@ -456,7 +456,7 @@ function FedExportModal({ camera, onClose }) {
               value={to}
               onChange={(e) => setTo(e.target.value)}
               disabled={pending || ready}
-              className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-none focus:border-nb-blueb disabled:opacity-50"
+              className="h-9 w-full rounded-lg border border-nb-line bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-blueb disabled:opacity-50"
             />
           </label>
         </div>

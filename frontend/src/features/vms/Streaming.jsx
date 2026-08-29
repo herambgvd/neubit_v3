@@ -801,7 +801,7 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }) {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] py-1 shadow-2xl backdrop-blur-sm">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] py-1 shadow-2xl backdrop-blur-xs">
           <div className="flex items-center justify-between px-3 py-1.5">
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Saved layouts</span>
             <button
@@ -843,7 +843,7 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }) {
                     type="button"
                     title="Delete"
                     onClick={() => onDelete(l.id)}
-                    className="shrink-0 rounded p-1 text-[#7e93bf] hover:bg-red-500/10 hover:text-red-500"
+                    className="shrink-0 rounded-sm p-1 text-[#7e93bf] hover:bg-red-500/10 hover:text-red-500"
                   >
                     <Icon icon="heroicons-outline:trash" className="text-xs" />
                   </button>

@@ -38,7 +38,7 @@ export default function SettingField({ item, value, onChange }) {
               value={value ?? ""}
               placeholder={item.placeholder || ""}
               onChange={(e) => onChange(e.target.value)}
-              className="w-full rounded-md border border-nb-line bg-transparent px-3 py-2 pr-10 text-sm text-nb-ink placeholder:text-nb-muted outline-none transition focus:border-nb-teal"
+              className="w-full rounded-md border border-nb-line bg-transparent px-3 py-2 pr-10 text-sm text-nb-ink placeholder:text-nb-muted outline-hidden transition focus:border-nb-teal"
             />
             <button
               type="button"

@@ -181,7 +181,7 @@ function WallTile({
           Real data only (federated cameras carry node_name); omitted for local
           cameras so we never invent a source. */}
       {camera?.node_name && (
-        <span className="pointer-events-none absolute right-2 top-2 z-10 rounded-[7px] border border-white/20 bg-black/35 px-1.5 py-px font-mono text-[10px] text-[#d7f7e9] backdrop-blur-sm">
+        <span className="pointer-events-none absolute right-2 top-2 z-10 rounded-[7px] border border-white/20 bg-black/35 px-1.5 py-px font-mono text-[10px] text-[#d7f7e9] backdrop-blur-xs">
           {camera.node_name}
         </span>
       )}

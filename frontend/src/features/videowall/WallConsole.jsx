@@ -206,7 +206,7 @@ export default function WallConsole({ wallId }) {
       style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
     >
       {/* Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[rgba(160,150,245,.22)] bg-[rgba(10,18,40,.55)] px-3 py-2 backdrop-blur-sm">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[rgba(160,150,245,.22)] bg-[rgba(10,18,40,.55)] px-3 py-2 backdrop-blur-xs">
         <Link
           href="/wall"
           className="inline-flex h-8 items-center gap-1 rounded-[8px] px-2 text-xs font-medium text-[#aec2e8] transition hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
@@ -364,7 +364,7 @@ function PresetMenu({ presets, onApply, onSave }) {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-sm">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-xs">
           <div className="flex items-center justify-between px-3 py-1.5">
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Presets</span>
             <button
@@ -429,7 +429,7 @@ function TourMenu({ tours, onToggle }) {
         {running ? running.name : "Tours"}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-sm">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-xs">
           <div className="px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Tours</div>
           {tours.length === 0 ? (
             <div className="px-3 py-3 text-xs text-[#9a92c8]">No tours — create one in Wall management.</div>

@@ -106,7 +106,7 @@ export default function CameraEventRow({ event, cameraName, incidentId = null, o
             </div>
 
             {open && raw && (
-              <pre className="mt-2 max-h-48 overflow-auto rounded border border-card-border bg-hover p-2 font-mono text-[10px] text-muted">
+              <pre className="mt-2 max-h-48 overflow-auto rounded-sm border border-card-border bg-hover p-2 font-mono text-[10px] text-muted">
                 {JSON.stringify(raw, null, 2)}
               </pre>
             )}

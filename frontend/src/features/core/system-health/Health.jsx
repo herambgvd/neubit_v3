@@ -152,8 +152,8 @@ function SkeletonTile() {
     <SectionCard className="flex items-center gap-3">
       <div className="h-[58px] w-[58px] shrink-0 animate-pulse rounded-full bg-white/5" />
       <div className="space-y-2">
-        <div className="h-3 w-16 animate-pulse rounded bg-white/5" />
-        <div className="h-2.5 w-20 animate-pulse rounded bg-white/5" />
+        <div className="h-3 w-16 animate-pulse rounded-sm bg-white/5" />
+        <div className="h-2.5 w-20 animate-pulse rounded-sm bg-white/5" />
       </div>
     </SectionCard>
   );

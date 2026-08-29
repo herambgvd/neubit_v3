@@ -173,7 +173,7 @@ export default function ReportsPage() {
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+            className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-hidden focus:border-muted"
           />
         </div>
         <div>
@@ -182,7 +182,7 @@ export default function ReportsPage() {
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-none focus:border-muted"
+            className="h-9 rounded-lg border border-field bg-transparent px-3 text-sm text-foreground outline-hidden focus:border-muted"
           />
         </div>
         <div className="ml-auto flex items-end gap-2">
@@ -288,7 +288,7 @@ export default function ReportsPage() {
                         <td className="px-4 py-2.5 text-muted">{s.next_run_at ? fmtDateTime(s.next_run_at) : "—"}</td>
                         <td className="px-4 py-2.5">
                           <span
-                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                            className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${
                               s.enabled ? "bg-emerald-500/15 text-emerald-500" : "bg-hover text-muted"
                             }`}
                           >

@@ -362,7 +362,7 @@ export default function ScrubBar({
         {blocks.map((b) => (
           <div
             key={b.key}
-            className={`absolute bottom-2 top-6 rounded-sm ${BLOCK_COLOR[b.trigger] || "bg-blue-500/70"}`}
+            className={`absolute bottom-2 top-6 rounded-xs ${BLOCK_COLOR[b.trigger] || "bg-blue-500/70"}`}
             style={{ left: `${b.leftPct}%`, width: `${b.widthPct}%` }}
           />
         ))}
@@ -386,7 +386,7 @@ export default function ScrubBar({
             }}
             onMouseEnter={() => setHitHover({ leftPct: h.leftPct, label: `${h.label} · ${hhmmss(h.ms)}` })}
             onMouseLeave={() => setHitHover(null)}
-            className="absolute bottom-0.5 top-0.5 z-[13] cursor-pointer rounded-sm border border-fuchsia-400/70 bg-fuchsia-500/40 ring-1 ring-fuchsia-400/40 hover:bg-fuchsia-500/60"
+            className="absolute bottom-0.5 top-0.5 z-[13] cursor-pointer rounded-xs border border-fuchsia-400/70 bg-fuchsia-500/40 ring-1 ring-fuchsia-400/40 hover:bg-fuchsia-500/60"
             style={{ left: `${h.leftPct}%`, width: `${h.widthPct}%` }}
           />
         ))}
@@ -394,7 +394,7 @@ export default function ScrubBar({
         {/* Motion-hit hover tooltip */}
         {hitHover && (
           <div
-            className="pointer-events-none absolute -top-6 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-fuchsia-900/90 px-1.5 py-0.5 text-[10px] text-fuchsia-100"
+            className="pointer-events-none absolute -top-6 z-20 -translate-x-1/2 whitespace-nowrap rounded-sm bg-fuchsia-900/90 px-1.5 py-0.5 text-[10px] text-fuchsia-100"
             style={{ left: `${hitHover.leftPct}%` }}
           >
             {hitHover.label}
@@ -437,7 +437,7 @@ export default function ScrubBar({
           <div key={f.key}>
             {f.widthPct > 0 && (
               <div
-                className="pointer-events-none absolute bottom-1.5 z-[14] h-1 rounded-sm bg-sky-400/60"
+                className="pointer-events-none absolute bottom-1.5 z-[14] h-1 rounded-xs bg-sky-400/60"
                 style={{ left: `${f.leftPct}%`, width: `${f.widthPct}%` }}
               />
             )}
@@ -457,7 +457,7 @@ export default function ScrubBar({
               className="absolute -bottom-0.5 z-[16] -translate-x-1/2 cursor-pointer text-sky-400 hover:text-sky-300"
               style={{ left: `${f.leftPct}%` }}
             >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 drop-shadow">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 drop-shadow-sm">
                 <path d="M5 2a1 1 0 00-1 1v14a1 1 0 002 0v-4.586l1.293 1.293a1 1 0 001.414 0l1.586-1.586a1 1 0 011.414 0L14 13.414A1 1 0 0016 12.7V4.3a1 1 0 00-.553-.894L14 2.7V3a1 1 0 01-1.447.894l-1.106-.553a1 1 0 00-.894 0L9.447 3.894A1 1 0 018 3V2H5z" />
               </svg>
             </button>
@@ -467,7 +467,7 @@ export default function ScrubBar({
         {/* Bookmark hover tooltip (title + time) */}
         {bmHover && (
           <div
-            className="pointer-events-none absolute -bottom-6 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-sky-900/90 px-1.5 py-0.5 text-[10px] text-sky-100"
+            className="pointer-events-none absolute -bottom-6 z-20 -translate-x-1/2 whitespace-nowrap rounded-sm bg-sky-900/90 px-1.5 py-0.5 text-[10px] text-sky-100"
             style={{ left: `${bmHover.leftPct}%` }}
           >
             {bmHover.title} · {bmHover.time}
@@ -477,7 +477,7 @@ export default function ScrubBar({
         {/* Marker hover tooltip (event type + time) */}
         {markerHover && (
           <div
-            className="pointer-events-none absolute -top-6 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-black/85 px-1.5 py-0.5 text-[10px] text-white"
+            className="pointer-events-none absolute -top-6 z-20 -translate-x-1/2 whitespace-nowrap rounded-sm bg-black/85 px-1.5 py-0.5 text-[10px] text-white"
             style={{ left: `${markerHover.leftPct}%` }}
           >
             {markerHover.label} · {markerHover.time}
@@ -492,7 +492,7 @@ export default function ScrubBar({
               style={{ left: `${hover.pct * 100}%` }}
             />
             <div
-              className="pointer-events-none absolute -top-0.5 z-20 -translate-x-1/2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] text-white"
+              className="pointer-events-none absolute -top-0.5 z-20 -translate-x-1/2 rounded-sm bg-black/80 px-1.5 py-0.5 text-[10px] text-white"
               style={{ left: `${hover.pct * 100}%` }}
             >
               {hhmmss(hover.ms)}

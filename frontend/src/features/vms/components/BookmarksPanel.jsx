@@ -30,7 +30,7 @@ export default function BookmarksPanel({
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
       {/* Bookmarks */}
-      <section className="rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm">
+      <section className="rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-xs">
         <header className="flex items-center gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-3">
           <Icon icon="heroicons-outline:bookmark" className="text-base text-sky-400" />
           <h3 className="text-sm font-semibold text-[#f2f6ff]">Bookmarks</h3>
@@ -66,7 +66,7 @@ export default function BookmarksPanel({
                   {b.tags?.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {b.tags.map((t) => (
-                        <span key={t} className="rounded bg-[rgba(150,180,245,.08)] px-1.5 py-0.5 text-[10px] text-[#aec2e8]">
+                        <span key={t} className="rounded-sm bg-[rgba(150,180,245,.08)] px-1.5 py-0.5 text-[10px] text-[#aec2e8]">
                           {t}
                         </span>
                       ))}
@@ -84,7 +84,7 @@ export default function BookmarksPanel({
       </section>
 
       {/* Evidence holds */}
-      <section className="rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-sm">
+      <section className="rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-xs">
         <header className="flex items-center gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-3">
           <Icon icon="heroicons-outline:lock-closed" className="text-base text-amber-500" />
           <h3 className="text-sm font-semibold text-[#f2f6ff]">Evidence holds</h3>

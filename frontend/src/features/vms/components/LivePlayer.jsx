@@ -752,7 +752,7 @@ function LivePlayer({
           Bottom-right so it never collides with the tile's own top-right toolbar. */}
       {!busy && !playError && (
         <div
-          className={`absolute bottom-2 right-2 z-20 flex items-center gap-0.5 rounded-[9px] border border-white/15 bg-black/55 p-0.5 backdrop-blur-sm transition-opacity ${
+          className={`absolute bottom-2 right-2 z-20 flex items-center gap-0.5 rounded-[9px] border border-white/15 bg-black/55 p-0.5 backdrop-blur-xs transition-opacity ${
             zoom > 1 ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >

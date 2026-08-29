@@ -1,6 +1,7 @@
 module.exports = {
   plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
+    // Tailwind v4 ships its own vendor-prefixing (Lightning CSS), so autoprefixer
+    // is no longer part of the chain.
+    "@tailwindcss/postcss": {},
   },
 }

@@ -157,7 +157,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] text-muted">Window {i + 1}</span>
                   {windows.length > 1 && (
-                    <button type="button" onClick={() => removeWindow(i)} className="rounded p-1 text-muted hover:bg-red-500/10 hover:text-red-500">
+                    <button type="button" onClick={() => removeWindow(i)} className="rounded-sm p-1 text-muted hover:bg-red-500/10 hover:text-red-500">
                       <Icon icon="heroicons-outline:x-mark" className="text-xs" />
                     </button>
                   )}
@@ -170,7 +170,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
                         key={d.value}
                         type="button"
                         onClick={() => updateWindow(i, { days: on ? w.days.filter((x) => x !== d.value) : [...w.days, d.value].sort() })}
-                        className={`rounded px-2 py-1 text-[10px] font-medium uppercase ${
+                        className={`rounded-sm px-2 py-1 text-[10px] font-medium uppercase ${
                           on ? "bg-foreground text-background" : "bg-hover text-muted hover:text-foreground"
                         }`}
                       >
@@ -195,7 +195,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
           <div className="mb-2 mt-1 flex flex-wrap gap-1">
             {holidays.length === 0 && <span className="text-[11px] text-muted/70">None</span>}
             {holidays.map((h) => (
-              <span key={h} className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-500">
+              <span key={h} className="inline-flex items-center gap-1 rounded-sm bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-500">
                 {h}
                 <button type="button" onClick={() => setHolidays((hs) => hs.filter((x) => x !== h))} className="hover:text-red-500">
                   <Icon icon="heroicons-outline:x-mark" className="text-xs" />
@@ -208,7 +208,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
               type="date"
               value={newHoliday}
               onChange={(e) => setNewHoliday(e.target.value)}
-              className="rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground outline-none focus:border-muted"
+              className="rounded-lg border border-field bg-transparent px-3 py-2 text-sm text-foreground outline-hidden focus:border-muted"
             />
             <Button type="button" variant="success" icon="heroicons-outline:plus" className="!px-2 !py-1 !text-xs" disabled={!newHoliday} onClick={addHoliday}>
               Add
