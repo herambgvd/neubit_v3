@@ -214,3 +214,41 @@ Schema changes happen in the writer, in one place.
 4. Conflux ships as a cloud-hosted software gateway — not to sites, not
    air-gapped. Deployment-weight arguments that assume per-site installs do not
    apply.
+
+---
+
+## 9. Open questions from Phase C (2026-08-30) — settle these before Phase B
+
+Phase A (schema) and Phase C (gateway publisher) are done. Four things surfaced
+that this contract did not settle. The writer must not guess at them.
+
+**1. `{conn_id}` in the subject: UUID or slug?**
+Conflux's *wire* identity is the connection **slug**, frozen at creation so a
+rename does not repoint subscribers. §2 says `conn_id`, so Phase C put the
+**UUID** in the subject, matching `payload.conn_id`. A consumer parsing the
+subject and a consumer reading the body therefore get the same value. If the
+platform would rather see slugs on the wire, that is a contract change.
+
+**2. §1 undersold the work.** It presented the publisher fix as two changes in
+`nats.go`. In fact nothing in the publisher path carried `tenant_id`,
+`device_id` or `point_id` — the `Publisher` interface only ever received the
+connection slug and tags. §3's body and §5's `PRIMARY KEY (point_id, ts)` both
+need those ids, so Phase C added `model.Origin` (slug+tags *and* tenant+ids),
+assembled in the engine, threaded through every publisher, and persisted on the
+outbox as an additive `origin` column so a replayed reading keeps the identity it
+had when measured. MQTT/Kafka/webhook wire behaviour is unchanged.
+
+**3. The `EVENTS` stream is unbounded and this is now urgent-ish.**
+Measured: `max_msgs=-1, max_bytes=-1, max_age=0`, file storage. The bridge is
+live and steady-state is ~37 msg/min (~53k/day, ~21 MB/day) from one idle
+313-point broker. Nothing drains it yet.
+**Phase B's first task is a dedicated `tenant.*.iot.>` stream with real limits**,
+not widening `EVENTS` — that would change retention for every other domain event
+on the platform. Note NATS monitoring is NOT enabled in
+`deploy/docker-compose.yml` (the command is `-js -sd /data` with no `-m 8222`),
+so stream state cannot be inspected over HTTP until that is added.
+
+**4. The alert body shape was invented, not specified.** §3 covers readings only.
+Phase C used the same wrapper with `event: "alert"` and
+`payload: {conn_id, alert}`. This is the one shape nothing in this document
+authorised — confirm or change it before a consumer depends on it.
