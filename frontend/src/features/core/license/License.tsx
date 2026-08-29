@@ -1,0 +1,58 @@
+"use client";
+
+// License — review license status and apply renewals. Thin orchestrator: owns
+// the license query, the token input state and the apply mutation; wires the
+// LicenseOverview (status/modules/features) + UpdateLicensePanel columns.
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { toast } from "sonner";
+
+import { LoadingBlock } from "@/components/console";
+import { api, apiError } from "@/lib/api";
+import LicenseOverview from "./components/LicenseOverview";
+import TenantEntitlements from "./components/TenantEntitlements";
+import UpdateLicensePanel from "./components/UpdateLicensePanel";
+
+export default function LicensePage() {
+  const qc = useQueryClient();
+  const [token, setToken] = useState("");
+
+  const license = useQuery<any>({
+    queryKey: ["license"],
+    queryFn: () => api.get("/license").then((r) => r.data),
+  });
+
+  const apply = useMutation<any, any, any>({
+    mutationFn: (body: any) => api.post("/license", body),
+    onSuccess: () => {
+      toast.success("License updated");
+      qc.invalidateQueries({ queryKey: ["license"] });
+      setToken("");
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const lic = license.data;
+
+  return (
+    <div className="space-y-3">
+      {/* The tenant's own plan/modules/limits (multi-tenant). */}
+      <TenantEntitlements />
+
+      {/* The platform / on-prem signed license (renew here). */}
+      {license.isLoading ? (
+        <LoadingBlock />
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-3">
+          <LicenseOverview lic={lic} />
+          <UpdateLicensePanel
+            token={token}
+            setToken={setToken}
+            onApply={() => apply.mutate({ token: token.trim() })}
+            applying={apply.isPending}
+          />
+        </div>
+      )}
+    </div>
+  );
+}

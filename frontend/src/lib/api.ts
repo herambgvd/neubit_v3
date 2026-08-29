@@ -1,0 +1,77 @@
+// Axios instance wired to the edge backend (/api/v1). Attaches the JWT on every
+// request; on 401 it clears the session and bounces to /login; on LICENSE_EXPIRED
+// it routes to the "License Expired" screen so an admin can renew.
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
+
+import type { ApiErrorBody } from "./types";
+
+// API base resolution — host-agnostic by default:
+//   • If NEXT_PUBLIC_API_URL is set, honour it (e.g. the admin panel → admin.localhost).
+//   • Otherwise use a SAME-ORIGIN RELATIVE base ("") → all calls hit "/api/v1" on the
+//     very host the operator opened (localhost, a LAN IP, or a domain), routed by the
+//     gateway. This means one build runs on ANY IP/host with no rebuild — the whole
+//     system "just works" on the server's IP without baking a hostname in.
+const BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+export const ACCESS_KEY = "vizor.access";
+export const REFRESH_KEY = "vizor.refresh";
+
+export const tokens = {
+  get access(): string | null {
+    return typeof window !== "undefined" ? localStorage.getItem(ACCESS_KEY) : null;
+  },
+  get refresh(): string | null {
+    return typeof window !== "undefined" ? localStorage.getItem(REFRESH_KEY) : null;
+  },
+  set(access?: string | null, refresh?: string | null) {
+    if (typeof window === "undefined") return;
+    if (access) localStorage.setItem(ACCESS_KEY, access);
+    if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
+  },
+  clear(): void {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+  },
+};
+
+export const api = axios.create({ baseURL: `${BASE}/api/v1` });
+
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const t = tokens.access;
+  if (t) config.headers.Authorization = `Bearer ${t}`;
+  return config;
+});
+
+api.interceptors.response.use(
+  (r) => r,
+  (error: AxiosError<ApiErrorBody>) => {
+    const code = error?.response?.data?.error?.code;
+    if (typeof window !== "undefined") {
+      if (error?.response?.status === 401) {
+        tokens.clear();
+        if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
+      } else if (code === "LICENSE_EXPIRED") {
+        window.location.href = "/license-expired";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Unwrap the uniform error envelope { error: { code, message } } into a string.
+export function apiError(error: unknown, fallback = "Something went wrong"): string {
+  const e = error as AxiosError<ApiErrorBody> | undefined;
+  return e?.response?.data?.error?.message || e?.message || fallback;
+}
+
+// Resolve a backend file reference to an absolute URL the browser can load.
+// The backend returns object URLs relative to its own origin ("/files/<key>"),
+// but the UI runs on a different port in dev — so prefix the backend base.
+// Pass either a "/files/..." url or a raw storage key.
+export function fileUrl(ref?: string | null): string | null {
+  if (!ref) return null;
+  if (/^https?:\/\//.test(ref)) return ref;      // already absolute (e.g. S3 presigned)
+  const path = ref.startsWith("/files/") ? ref : `/files/${ref.replace(/^\//, "")}`;
+  return `${BASE}${path}`;
+}
