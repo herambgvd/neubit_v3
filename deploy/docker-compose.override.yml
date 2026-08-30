@@ -45,6 +45,17 @@ services:
       - ../backend/kernel:/opt/kernel
     command: bash -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
 
+  dashboards:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/dashboards/app:/app/app
+      # Mount migrations too so a newly-added revision applies on restart (the
+      # start command runs `alembic upgrade head` before uvicorn).
+      - ../backend/dashboards/migrations:/app/migrations
+      - ../backend/kernel:/opt/kernel
+    command: bash -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
+
   # ── frontends: DEV hot-reload. The base compose builds the PRODUCTION standalone
   # image (node server.js); here we build only the `deps` stage (has node_modules),
   # bind-mount the source over it, and run `npm run dev`. So `docker compose up`

@@ -33,6 +33,16 @@ http:
       entryPoints: [web]
       priority: 110
       middlewares: [api-protected]
+    dashboards:
+      # Dashboard + widget DEFINITIONS under /api/v1/dashboards. The widgets' DATA
+      # is not here — it comes from /api/v1/bi/query on the reading-writer, which
+      # owns the readings schema. A bare /dashboards prefix would swallow the
+      # operator UI's own /dashboards page, so keep this narrow.
+      rule: "PathPrefix(`/api/v1/dashboards`)"
+      service: dashboards
+      entryPoints: [web]
+      priority: 110
+      middlewares: [api-protected]
     reading-writer:
       # Building Intelligence read API under /api/v1/bi. ONLY that prefix: the
       # rest of the reading-writer (/health, /readyz, /metrics, /stats) stays an
@@ -209,6 +219,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://vision:8000"
+    dashboards:
+      loadBalancer:
+        servers:
+          - url: "http://dashboards:8000"
     reading-writer:
       loadBalancer:
         servers:
