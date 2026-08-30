@@ -16,18 +16,50 @@
 //    wrongly, which is a chart lying about when nothing was measured;
 //  * `resolution_reason` has to reach the renderer so a chart can print which
 //    store answered it;
-//  * the min/max band comes back as its own array, aligned to the rows.
+//  * the min/max band comes back as its own array, aligned to the rows;
+//  * and the SELECT's aggregates are matched back onto the columns, because the
+//    executor names a value column after its measure and a chart that claims its
+//    slices are parts of a whole has to be able to tell a sum from an average.
 //
 // NULL passes through as NULL. It is never flattened to zero: "no sample in this
 // bucket" and "the reading was zero" are different facts.
 
-import type { QueryResult } from "../spec";
+import type { QueryResult, WidgetSpec } from "../spec";
 import type { Cell, ChartData } from "./types";
 
 /** True when a column holds ISO timestamps we should plot on a time axis. */
 const ISO = /^\d{4}-\d{2}-\d{2}T/;
 
-export function toChartData(result: QueryResult): ChartData {
+/** Which aggregate produced each column, where that can be known FOR CERTAIN.
+ *
+ *  The executor returns column names, not the aggregates behind them, so this
+ *  reads them back off the spec that asked the question. It matches positionally
+ *  and only when the positions are unambiguous:
+ *
+ *   * a grouped table selects one column per `select` item, in order;
+ *   * a time series selects ONE measure and spreads it across a column per
+ *     series, so every non-time column shares that one aggregate.
+ *
+ *  Anything else — a count that does not line up, a spec that was not passed —
+ *  returns `undefined`, and every consumer treats that as "unknown" rather than
+ *  as a default. Guessing here would put a wrong aggregate on a column, which is
+ *  worse than not knowing. */
+function columnAggregates(result: QueryResult, spec?: WidgetSpec): (string | null)[] | undefined {
+  const select = spec?.query?.select;
+  if (!select?.length) return undefined;
+  const columns = result.columns || [];
+
+  if (spec?.query?.time_series) {
+    if (select.length !== 1) return undefined;
+    const agg = select[0]?.aggregate ?? null;
+    return columns.map((_, i) => (i === (result.label_index ?? 0) ? null : agg));
+  }
+
+  if (select.length !== columns.length) return undefined;
+  return select.map((item) => (item.measure ? (item.aggregate ?? null) : null));
+}
+
+export function toChartData(result: QueryResult, spec?: WidgetSpec): ChartData {
   const columns = result.columns || [];
   const timeCol = result.label_index ?? 0;
   const rows: Cell[][] = (result.rows || []).map((r) =>
@@ -47,6 +79,7 @@ export function toChartData(result: QueryResult): ChartData {
     rows,
     labelIndex: timeCol,
     resolutionReason: result.resolution_reason,
+    aggregates: columnAggregates(result, spec),
   };
 }
 

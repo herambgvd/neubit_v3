@@ -11,14 +11,21 @@
 // Changed, and the first change is the whole reason this file is longer than
 // theirs:
 //
-// * **It refuses to draw a share of a non-additive metric.** Theirs pies
-//   whatever the second column holds. Ours knows the column NAME is the metric
-//   (`adapt.fromAggregate` names it `avg` / `min` / `max` / `first` / `last`, or
-//   `samples` for a count), and a "share of the total" is only a fact when the
-//   parts add up to the whole. Eight points' AVERAGES do not sum to anything —
-//   a 23% slice on a pie of average voltages is a number the data never
-//   contained. This is the same rule the executor already enforces for grouped
-//   value metrics (contract §4), applied one layer further out.
+// * **It refuses to draw a share of a non-additive aggregate.** Theirs pies
+//   whatever the second column holds. A "share of the total" is only a fact when
+//   the parts add up to the whole: that is true of a SUM and a COUNT and false
+//   of an average, a min, a max or a last — eight points' average voltages do not
+//   sum to anything, so a 23% slice on that ring is a number the data never
+//   contained. This is the executor's own rule for incomparable series
+//   (contract §4) applied one layer further out.
+//
+//   Getting that answer needed a deliberate ADDITION to the chart-data contract:
+//   `ChartData.aggregates`, filled by `adapt.ts` from the widget's spec. The
+//   generalised executor names a value column after its MEASURE, so `sum(value)`
+//   and `avg(value)` arrive under the same column name and `{columns, rows}`
+//   alone cannot tell them apart. The addition is optional and the refusal is
+//   one-sided: when the aggregate is UNKNOWN the chart draws, because refusing
+//   on a hunch is its own kind of dishonesty. See `types.ts`.
 // * **Nulls are dropped, not zeroed.** A point with no reading in the window is
 //   absent from the ring; it is not a slice of size zero, and it is not counted
 //   into the denominator. `ChartWidget` prints the sample count alongside.
@@ -37,34 +44,43 @@ import ChartNotice from "./notice";
 import type { ChartProps, EChartsClickParams } from "./types";
 import { numericColumns } from "./types";
 
-/** Metrics whose parts genuinely sum to the whole. `samples` is the sample
- *  COUNT — the one quantity in this store that is meaningful without a unit and
- *  additive across points, which is exactly why "events per camera" and "alarms
- *  per zone" are the queries this chart is for. `count` and `sum` are listed
- *  ahead of a dataset that publishes them; they cost nothing to allow now and
- *  save a silent refusal later. */
-const ADDITIVE = new Set(["samples", "count", "sum", "total"]);
+/** Aggregates whose parts genuinely sum to the whole.
+ *
+ *  `count` is the one quantity in this store that is meaningful without a unit
+ *  and additive across groups, which is exactly why "events per camera" and
+ *  "alarms per zone" are the queries this chart is for. `sum` joins it for a
+ *  dataset that publishes an additive measure.
+ *
+ *  `count_distinct` is NOT here, and that is the case worth spelling out: the
+ *  distinct badge-holders seen at four doors do not add up to the distinct
+ *  badge-holders seen in the building, because a person who used two doors is
+ *  counted twice. A ring of distinct counts sums to more than the whole. */
+const ADDITIVE = new Set(["count", "sum"]);
 
 export default function PieChart({ data, options, onEvents }: ChartProps) {
   const t = chartTheme();
   const rows = data?.rows || [];
   const decimals = options?.decimals;
 
-  // The first numeric column is the metric; the last is always the sample count.
   const valueIdx = numericColumns(data)[0];
-  const metric = valueIdx === undefined ? "" : String(data.columns[valueIdx] ?? "");
 
   if (valueIdx === undefined) {
     return <ChartNotice>Nothing numeric to divide up.</ChartNotice>;
   }
 
-  if (!ADDITIVE.has(metric.toLowerCase())) {
+  const label = String(data.columns[valueIdx] ?? "value");
+  // `undefined` means the producer did not say — see the header. Only a KNOWN
+  // non-additive aggregate refuses.
+  const aggregate = data.aggregates?.[valueIdx] ?? null;
+
+  if (aggregate && !ADDITIVE.has(aggregate.toLowerCase())) {
     return (
       <ChartNotice>
-        A share of a total needs a metric whose parts add up to the whole.
-        “{metric}” does not: these values are separate readings, not portions of
-        one quantity. Switch the metric to Samples, or use a bar chart to compare
-        them.
+        A share of a total needs values whose parts add up to the whole, and
+        “{aggregate}” of {label} does not — these are separate readings, not
+        portions of one quantity, so a percentage of their sum would be a number
+        the data never contained. Aggregate by Sum or Count, or use a bar chart
+        to compare them.
       </ChartNotice>
     );
   }
@@ -116,7 +132,7 @@ export default function PieChart({ data, options, onEvents }: ChartProps) {
     },
     series: [
       {
-        name: metric,
+        name: label,
         type: "pie",
         radius: ["42%", "68%"],
         center: ["50%", "44%"],

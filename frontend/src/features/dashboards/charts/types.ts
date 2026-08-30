@@ -32,6 +32,25 @@ export interface ChartData {
    *  plain English, straight from the executor. A chart prints it rather than
    *  implying a precision it does not have. */
   resolutionReason?: string;
+  /** HOW each column was aggregated — `"sum"`, `"avg"`, `"count"`, … — aligned
+   *  with `columns`, `null` for a column that is a dimension rather than a
+   *  measure, and the whole field `undefined` when the caller does not know.
+   *
+   *  This is an ADDITION to the contract and it is worth saying why, because the
+   *  rest of `ChartData` is deliberately just names and numbers. A pie chart
+   *  claims that its slices are PARTS OF A WHOLE. That claim is true of a sum or
+   *  a count and false of an average — eight points' average voltages do not add
+   *  up to anything, and drawing them as a ring asserts a total the data never
+   *  contained (contract §4). Nothing else in `{columns, rows}` can distinguish
+   *  the two: since the query layer was generalised the executor names the value
+   *  column after the MEASURE (`"Reading value"`), not the aggregate, so
+   *  `sum(value)` and `avg(value)` come back under identical column names.
+   *
+   *  So the aggregate is carried explicitly, and every part of it degrades to
+   *  "unknown" rather than to a guess: a producer that does not fill it in leaves
+   *  it `undefined`, and a chart that cannot prove a column is non-additive draws
+   *  it rather than refusing on a hunch. */
+  aggregates?: (string | null)[];
 }
 
 /** Presentation options a widget carries. Free-form on the wire (`spec.options`)

@@ -132,8 +132,12 @@ export function WidgetBody({
 
   const chart = useMemo(() => {
     if (!result) return null;
-    return { data: toChartData(result), band: seriesBand(result) };
-  }, [result]);
+    // The SPEC goes in alongside the result: the executor names a value column
+    // after its measure, so only the spec knows whether that column is a sum or
+    // an average — and a pie chart cannot honestly draw a share of the latter.
+    // See `charts/types.ts` on `ChartData.aggregates`.
+    return { data: toChartData(result, spec), band: seriesBand(result) };
+  }, [result, spec]);
 
   if (issue) {
     return (
