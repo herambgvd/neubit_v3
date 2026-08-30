@@ -72,3 +72,17 @@ services:
       - ../admin-frontend:/app
       - /app/node_modules
       - /app/.next
+
+  # ── reading-writer: DEV hot-reload. Same pattern as the other Python services.
+  # The pipeline lives in the lifespan, so a reload tears the JetStream consumer
+  # down and rebuilds it — which is safe (durable consumer, nothing acked that was
+  # not written) but does mean an edit costs a few seconds of consumption. The
+  # `reporting` package is mounted too: it owns the schema this service imports.
+  reading-writer:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/reading-writer/app:/app/app
+      - ../backend/reporting:/opt/reporting
+      - ../backend/kernel:/opt/kernel
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/reporting/reporting

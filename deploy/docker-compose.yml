@@ -21,6 +21,11 @@ volumes:
   # `up --force-recreate` silently deletes them and `/files/<key>` starts 404ing
   # while the DB still holds the image_url. S3 deployments don't use this path.
   corefiles:
+  # JetStream's file store. `-sd /data` had NO volume behind it, so every stream,
+  # every message and every durable consumer lived in the nats container's
+  # writable layer — a `docker compose up --force-recreate` silently wiped the
+  # event spine, and the services quietly re-created empty streams on reconnect.
+  natsdata:
 
 services:
 
@@ -65,8 +70,22 @@ services:
 
   nats:
     image: nats:2.10-alpine
-    command: ["-js", "-sd", "/data"]
+    # -m 8222 enables the HTTP monitoring endpoint. Without it, port 8222 was
+    # published but nothing listened on it, so stream/consumer state could not be
+    # inspected over HTTP at all — every "is the bus backed up?" question needed a
+    # throwaway nats-box container on the docker network. Monitoring is read-only
+    # (no publish, no admin), so exposing it costs nothing and answers:
+    #   curl -s localhost:8222/jsz?streams=1 | jq
+    #   curl -s localhost:8222/varz | jq .
+    command: ["-js", "-sd", "/data", "-m", "8222"]
     ports: ["4222:4222", "8222:8222"]
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     networks: [neubit]
 
   # ── infra-control sidecar (privileged) ──────────────────────────
@@ -300,6 +319,56 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
+    networks: [neubit]
+
+  # ── reading-writer (IoT pipeline, Phase B) ──────────────────────
+  # The ONLY thing that writes the `readings` hypertable. A durable QUEUE-GROUP
+  # JetStream consumer on `IOT_READINGS` (subjects `tenant.*.iot.>`), filtered to
+  # `tenant.*.iot.reading.>` — alerts are events, not measurements, and have no
+  # row here.
+  #
+  # REDUNDANCY: scale it. `docker compose up -d --scale reading-writer=2` and NATS
+  # distributes messages between the replicas, because every replica binds the
+  # SAME durable name. No leader election, nothing to configure per replica. (Drop
+  # the host port binding below if you scale beyond one.)
+  #
+  # It imports the schema from the `reporting` package and never redeclares it; it
+  # does not run migrations — `reporting-migrate` owns that.
+  reading-writer:
+    build:
+      context: ../backend
+      dockerfile: reading-writer/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_reporting
+      # ── the stream this service OWNS (created/converged at startup) ─────────
+      # Bounded on BOTH size and age; whichever binds first wins. See
+      # backend/reading-writer/app/config.py for how these numbers were chosen.
+      VE_IOT_STREAM_MAX_BYTES: ${VE_IOT_STREAM_MAX_BYTES:-8589934592}
+      VE_IOT_STREAM_MAX_AGE_SEC: ${VE_IOT_STREAM_MAX_AGE_SEC:-604800}
+      # ── batching: flush on N rows or T ms, whichever comes first ────────────
+      VE_READINGS_BATCH_ROWS: ${VE_READINGS_BATCH_ROWS:-500}
+      VE_READINGS_BATCH_MS: ${VE_READINGS_BATCH_MS:-1000}
+      VE_READINGS_QUEUE_BATCHES: ${VE_READINGS_QUEUE_BATCHES:-4}
+      # ── ack: only after the batch is durably written ────────────────────────
+      VE_READINGS_ACK_WAIT_SEC: ${VE_READINGS_ACK_WAIT_SEC:-120}
+      VE_READINGS_MAX_ACK_PENDING: ${VE_READINGS_MAX_ACK_PENDING:-5000}
+      # ── tenant resolution: the gateway's tenant key → a platform tenant UUID.
+      # The live aeon feed publishes the literal key `default`, which is not a
+      # UUID, and `readings.tenant_id` is `uuid NOT NULL`. Map it, or unmapped
+      # keys get a stable synthetic UUID and a loud warning. See app/tenants.py.
+      VE_READINGS_TENANT_MAP: ${VE_READINGS_TENANT_MAP:-}
+      VE_READINGS_DEFAULT_TENANT_ID: ${VE_READINGS_DEFAULT_TENANT_ID:-}
+      # ── observability ──────────────────────────────────────────────────────
+      VE_READINGS_LAG_WARN: ${VE_READINGS_LAG_WARN:-10000}
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+      reporting-migrate: { condition: service_completed_successfully }
+    # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
+    # an operational surface, not a tenant API.
+    ports: ["8020:8000"]
+    restart: unless-stopped
     networks: [neubit]
 
   # ── operator console (Next.js) ──────────────────────────────────
