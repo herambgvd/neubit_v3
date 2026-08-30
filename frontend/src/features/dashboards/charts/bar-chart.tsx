@@ -17,10 +17,10 @@
 // * **Numeric series only** (`numericColumns`) — our aggregate table carries a
 //   device-name column theirs never had. See `types.ts`.
 // * **`animation`** respects `prefers-reduced-motion`.
-// * The value formatter is `fmtValue`, which never appends a unit.
+// * The value formatter is the widget's own (`number-format.ts`): a unit appears only when the author asserted one, attributed on the tile.
 
 import { CHART_FONT, CHART_PALETTE, chartTheme } from "../chart-theme";
-import { fmtValue } from "../spec";
+import { formatterFor } from "../number-format";
 import { ECHARTS_PROPS, ReactEChartsCore, motionOptions } from "./echarts";
 import type { ChartProps } from "./types";
 import { numericColumns } from "./types";
@@ -28,7 +28,12 @@ import { numericColumns } from "./types";
 export default function BarChart({ data, options, onEvents }: ChartProps) {
   const t = chartTheme();
   const rows = data?.rows || [];
-  const decimals = options?.decimals;
+  // ONE formatter per widget, built from its options, so the axis, the tooltip
+  // and any value label cannot spell the same number differently. It appends the
+  // author's stated unit when there is one — and the widget footer attributes it
+  // (`number-format.unitNote`), because a unit here is a person's claim, never
+  // something read from the data (contract §4).
+  const fmt = formatterFor(options);
 
   // Only the FIRST numeric column is drawn. The aggregate table also carries the
   // sample count, and plotting a value against its own sample count on one pair
@@ -51,14 +56,14 @@ export default function BarChart({ data, options, onEvents }: ChartProps) {
       backgroundColor: t.tooltipBg,
       borderColor: t.tooltipBorder,
       textStyle: { color: t.tooltipText, ...CHART_FONT },
-      valueFormatter: (v: any) => fmtValue(typeof v === "number" ? v : null, decimals),
+      valueFormatter: (v: any) => fmt(typeof v === "number" ? v : null),
     },
     xAxis: {
       type: "value",
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: { lineStyle: { color: t.splitLine } },
-      axisLabel: { color: t.text, ...CHART_FONT, formatter: (v: number) => fmtValue(v, decimals) },
+      axisLabel: { color: t.text, ...CHART_FONT, formatter: (v: number) => fmt(v) },
     },
     yAxis: {
       type: "category",

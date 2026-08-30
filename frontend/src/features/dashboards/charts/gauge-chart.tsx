@@ -36,10 +36,10 @@
 // * **`animation`** respects `prefers-reduced-motion` — including
 //   `detail.valueAnimation`, which is a separate switch and is the one that
 //   counts the number up.
-// * The formatter is `fmtValue`, which never appends a unit.
+// * The formatter is the widget's own (`number-format.ts`): a unit appears only when the author asserted one, attributed on the tile.
 
 import { CHART_FONT, CHART_PALETTE, chartTheme } from "../chart-theme";
-import { fmtValue } from "../spec";
+import { formatterFor } from "../number-format";
 import { ECHARTS_PROPS, ReactEChartsCore, motionOptions } from "./echarts";
 import ChartNotice from "./notice";
 import type { ChartProps } from "./types";
@@ -48,7 +48,12 @@ import { numericColumns } from "./types";
 export default function GaugeChart({ data, options, onEvents }: ChartProps) {
   const t = chartTheme();
   const rows = data?.rows || [];
-  const decimals = options?.decimals;
+  // ONE formatter per widget, built from its options, so the axis, the tooltip
+  // and any value label cannot spell the same number differently. It appends the
+  // author's stated unit when there is one — and the widget footer attributes it
+  // (`number-format.unitNote`), because a unit here is a person's claim, never
+  // something read from the data (contract §4).
+  const fmt = formatterFor(options);
   const motion = motionOptions();
 
   const valueIdx = numericColumns(data)[0];
@@ -129,7 +134,7 @@ export default function GaugeChart({ data, options, onEvents }: ChartProps) {
           // two numbers that make the dial readable are the ones the basis line
           // under it names — where the scale starts and where it ends.
           formatter: (v: number) =>
-            v === min || v === max ? fmtValue(v, decimals) : "",
+            v === min || v === max ? fmt(v) : "",
         },
         pointer: { itemStyle: { color: t.tooltipText }, width: 4 },
         anchor: { show: true, size: 6, itemStyle: { color: t.tooltipText } },
@@ -151,7 +156,7 @@ export default function GaugeChart({ data, options, onEvents }: ChartProps) {
           // Below the pivot so the needle never crosses the number, and above
           // the two endpoint labels at the foot of the arc.
           offsetCenter: [0, "42%"],
-          formatter: (v: number) => fmtValue(v, decimals),
+          formatter: (v: number) => fmt(v),
         },
         // ECharts renders `name` under the dial. It carries the basis of the
         // scale, because a dial whose endpoints came from somewhere the reader

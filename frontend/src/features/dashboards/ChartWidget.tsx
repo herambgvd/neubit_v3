@@ -50,6 +50,7 @@ import { datasets as datasetsApi, widgetQuery } from "./api";
 import { contextKeyFor } from "./dashboard-context";
 import type { QueryContext } from "./dashboard-context";
 import { isDrillable } from "./drill";
+import { unitNote } from "./number-format";
 import type { DrillPoint } from "./drill";
 import { seriesBand, toChartData } from "./charts/adapt";
 // All chart renderers are dynamically imported client-only — ECharts is
@@ -259,6 +260,19 @@ export function WidgetBody({
           {result.resolution_reason}
         </span>
         <ContextBadge result={result} />
+        {/* A unit shown on this widget is its AUTHOR's assertion, not something
+            read from the store — contract §4 bans the software inventing one,
+            and the honest way to allow a person to state one is to attribute it
+            wherever it appears. */}
+        {unitNote(spec.options) ? (
+          <span
+            className="flex shrink-0 items-center gap-1 text-nb-warn"
+            title={unitNote(spec.options) as string}
+          >
+            <Icon icon="heroicons:pencil-square" className="text-[10px]" />
+            stated unit
+          </span>
+        ) : null}
         {result.truncated ? (
           // `matched` counts the SERIES or GROUPS the query found, which is the
           // same unit the widget draws — so "showing 8 of 37" compares two of

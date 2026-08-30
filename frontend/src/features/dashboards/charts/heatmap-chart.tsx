@@ -43,10 +43,10 @@
 //   navy `HEATMAP_RAMP` from `chart-theme.ts`. Their `splitArea` chequerboard is
 //   dropped — it fights a dark ground.
 // * **`animation`** respects `prefers-reduced-motion`.
-// * The formatter is `fmtValue`, which never appends a unit.
+// * The formatter is the widget's own (`number-format.ts`): a unit appears only when the author asserted one, attributed on the tile.
 
 import { CHART_FONT, HEATMAP_RAMP, chartTheme } from "../chart-theme";
-import { fmtValue } from "../spec";
+import { formatterFor } from "../number-format";
 import { ECHARTS_PROPS, ReactEChartsCore, motionOptions } from "./echarts";
 import ChartNotice from "./notice";
 import type { Cell, ChartProps, EChartsClickParams } from "./types";
@@ -90,7 +90,12 @@ function bucketLabels(cells: Cell[]): string[] {
 export default function HeatmapChart({ data, options, onEvents }: ChartProps) {
   const t = chartTheme();
   const rows = data?.rows || [];
-  const decimals = options?.decimals;
+  // ONE formatter per widget, built from its options, so the axis, the tooltip
+  // and any value label cannot spell the same number differently. It appends the
+  // author's stated unit when there is one — and the widget footer attributes it
+  // (`number-format.unitNote`), because a unit here is a person's claim, never
+  // something read from the data (contract §4).
+  const fmt = formatterFor(options);
   const seriesIdx = numericColumns(data);
 
   if (!rows.length || !seriesIdx.length) {
@@ -164,7 +169,7 @@ export default function HeatmapChart({ data, options, onEvents }: ChartProps) {
       textStyle: { color: t.tooltipText, ...CHART_FONT },
       formatter: (p: EChartsClickParams) => {
         const [xi, yi, v] = p.data as number[];
-        return `${ys[yi]}<br/>${xs[xi]} · ${fmtValue(v, decimals)}`;
+        return `${ys[yi]}<br/>${xs[xi]} · ${fmt(v)}`;
       },
     },
     xAxis: {
@@ -198,7 +203,7 @@ export default function HeatmapChart({ data, options, onEvents }: ChartProps) {
       // Relative scale: say so rather than printing 0 and 1, which are not
       // values anything measured.
       text: shared ? undefined : ["high\nper row", "low"],
-      ...(shared ? { formatter: (v: number) => fmtValue(v, decimals) } : { showLabel: false }),
+      ...(shared ? { formatter: (v: number) => fmt(v) } : { showLabel: false }),
       inRange: { color: HEATMAP_RAMP },
     },
     series: [

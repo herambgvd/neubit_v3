@@ -44,6 +44,7 @@ import { datasets as datasetsApi } from "./api";
 import type { DashboardConfig } from "./dashboard-context";
 import { DEFAULT_SIZE } from "./constants";
 import QueryBuilderForm from "./QueryBuilderForm";
+import WidgetNumberFormat from "./widget-number-format";
 import { VIZ_TIME_SERIES, WINDOWS, migrateSpec, newSpec, specIssue } from "./spec";
 import type { Dataset, QueryResult, SpecQuery, Viz, WidgetSpec } from "./spec";
 import { WIDGET_TYPES, widgetTypeDef } from "./widget-types";
@@ -262,6 +263,14 @@ export default function WidgetEditor({
                 })),
               ]}
             />
+
+            <div>
+              <FieldLabel hint="how these numbers are spelled">Number format</FieldLabel>
+              <WidgetNumberFormat
+                options={spec.options || {}}
+                onChange={(next) => setSpec((sp) => (sp ? { ...sp, options: next } : sp))}
+              />
+            </div>
 
             {ds ? (
               <QueryBuilderForm

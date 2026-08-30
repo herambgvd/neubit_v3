@@ -24,11 +24,11 @@
 //   console's existing BI trend chart, because a 1-hour average otherwise hides a
 //   spike completely.
 // * **`animation`** respects `prefers-reduced-motion`.
-// * No `valueFormatter` from their `@/lib/format`; ours is `fmtValue`, which
+// * No `valueFormatter` from their `@/lib/format`; ours is `number-format.ts`, which
 //   never appends a unit — there is none on the wire (pipeline contract §11/§12).
 
 import { CHART_FONT, CHART_PALETTE, chartTheme } from "../chart-theme";
-import { fmtValue } from "../spec";
+import { formatterFor } from "../number-format";
 import { ECHARTS_PROPS, ReactEChartsCore, motionOptions } from "./echarts";
 import type { ChartProps } from "./types";
 import { numericColumns } from "./types";
@@ -42,7 +42,12 @@ export default function LineChart({ data, options, onEvents, band }: LineChartPr
   const t = chartTheme();
   const rows = data?.rows || [];
   const seriesIdx = numericColumns(data);
-  const decimals = options?.decimals;
+  // ONE formatter per widget, built from its options, so the axis, the tooltip
+  // and any value label cannot spell the same number differently. It appends the
+  // author's stated unit when there is one — and the widget footer attributes it
+  // (`number-format.unitNote`), because a unit here is a person's claim, never
+  // something read from the data (contract §4).
+  const fmt = formatterFor(options);
 
   const series: any[] = seriesIdx.map((i) => ({
     name: data.columns[i],
@@ -97,7 +102,7 @@ export default function LineChart({ data, options, onEvents, band }: LineChartPr
       borderColor: t.tooltipBorder,
       textStyle: { color: t.tooltipText, ...CHART_FONT },
       axisPointer: { lineStyle: { color: t.axis } },
-      valueFormatter: (v: any) => fmtValue(typeof v === "number" ? v : null, decimals),
+      valueFormatter: (v: any) => fmt(typeof v === "number" ? v : null),
     },
     legend:
       seriesIdx.length > 1
@@ -131,7 +136,7 @@ export default function LineChart({ data, options, onEvents, band }: LineChartPr
       axisLabel: {
         color: t.text,
         ...CHART_FONT,
-        formatter: (v: number) => fmtValue(v, decimals),
+        formatter: (v: number) => fmt(v),
       },
     },
     series,

@@ -15,23 +15,28 @@
 //   dash for `null`, which is the behaviour this data most needs — it is repeated
 //   here deliberately so nobody "tidies" it into `?? 0`. A point with no sample in
 //   the window has NO value; showing 0 would invent a reading.
-// * The number formatter is `fmtValue`, which never appends a unit — there is
+// * The number formatter is the widget's own (`number-format.ts`). It appends a unit ONLY when this widget's author stated one, and the tile attributes it — there is
 //   none on the wire (pipeline contract §11/§12).
 // * `max-w-[1px] truncate` on the text cells so a long device tag cannot force
 //   the table wider than its widget.
 
-import { fmtValue } from "../spec";
+import { formatterFor } from "../number-format";
 import type { Cell, ChartProps } from "./types";
 
 export default function DataTable({ data, options }: ChartProps) {
   const columns = data?.columns || [];
   const rows = data?.rows || [];
-  const decimals = options?.decimals;
+  // ONE formatter per widget, built from its options, so the axis, the tooltip
+  // and any value label cannot spell the same number differently. It appends the
+  // author's stated unit when there is one — and the widget footer attributes it
+  // (`number-format.unitNote`), because a unit here is a person's claim, never
+  // something read from the data (contract §4).
+  const fmt = formatterFor(options);
 
   function renderCell(cell: Cell): string {
     // null is NOT zero — see the header.
     if (cell === null || cell === undefined) return "—";
-    if (typeof cell === "number") return fmtValue(cell, decimals);
+    if (typeof cell === "number") return fmt(cell);
     return String(cell);
   }
 

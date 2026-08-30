@@ -34,11 +34,11 @@
 //   to 100.
 // * **Theme**: navy tokens and the console's 10px type, not their zinc defaults.
 // * **`animation`** respects `prefers-reduced-motion`.
-// * The value formatter is `fmtValue`, which never appends a unit — there is
+// * The value formatter is the widget's own (`number-format.ts`). A unit appears only when the author asserted one — there is
 //   none on the wire (pipeline contract §11/§12).
 
 import { CHART_FONT, CHART_PALETTE, chartTheme } from "../chart-theme";
-import { fmtValue } from "../spec";
+import { formatterFor } from "../number-format";
 import { ECHARTS_PROPS, ReactEChartsCore, motionOptions } from "./echarts";
 import ChartNotice from "./notice";
 import type { ChartProps, EChartsClickParams } from "./types";
@@ -60,7 +60,12 @@ const ADDITIVE = new Set(["count", "sum"]);
 export default function PieChart({ data, options, onEvents }: ChartProps) {
   const t = chartTheme();
   const rows = data?.rows || [];
-  const decimals = options?.decimals;
+  // ONE formatter per widget, built from its options, so the axis, the tooltip
+  // and any value label cannot spell the same number differently. It appends the
+  // author's stated unit when there is one — and the widget footer attributes it
+  // (`number-format.unitNote`), because a unit here is a person's claim, never
+  // something read from the data (contract §4).
+  const fmt = formatterFor(options);
 
   const valueIdx = numericColumns(data)[0];
 
@@ -118,7 +123,7 @@ export default function PieChart({ data, options, onEvents }: ChartProps) {
       // absolute number. Both are wanted: the share is the point of the chart
       // and the count is what makes it checkable.
       formatter: (p: EChartsClickParams) =>
-        `${p.name}<br/>${fmtValue(Number(p.value), decimals)} · ${
+        `${p.name}<br/>${fmt(Number(p.value))} · ${
           total > 0 ? ((Number(p.value) / total) * 100).toFixed(1) : "0.0"
         }%`,
     },

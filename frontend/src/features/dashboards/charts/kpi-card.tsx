@@ -26,7 +26,7 @@
 //   report at different rates that difference is the thing most worth knowing.
 // * A null value prints an em dash, never a zero.
 
-import { fmtValue } from "../spec";
+import { formatterFor } from "../number-format";
 import type { ChartProps } from "./types";
 import { numericColumns } from "./types";
 
@@ -41,6 +41,10 @@ export default function KpiCard({ data, options }: ChartProps) {
       </div>
     );
   }
+
+  // ONE formatter for the tile, built from its options. A unit appears only when
+  // this widget's author stated one, and the footer attributes it.
+  const fmt = formatterFor(options);
 
   const valueIdx = numericColumns(data)[0];
   const raw = valueIdx === undefined ? null : row[valueIdx];
@@ -58,7 +62,7 @@ export default function KpiCard({ data, options }: ChartProps) {
         className="font-mono text-[clamp(1.5rem,3.2vw,2.4rem)] leading-none text-nb-ink"
         title={value === null ? "no reading in this window" : String(value)}
       >
-        {fmtValue(value, options?.decimals)}
+        {fmt(value)}
       </div>
       <div className="min-w-0 max-w-full truncate text-[11.5px] text-nb-soft" title={label}>
         {label}
