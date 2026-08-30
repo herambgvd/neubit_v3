@@ -131,6 +131,12 @@ export default function AppLayout({ children }: any) {
     pathname === "/platform" ||
     // Audit console — bounded pane; the entries table scrolls internally.
     pathname === "/audit" ||
+    // Building Intelligence consoles. Portfolio scrolls internally (ConsoleScroll);
+    // Energy / HVAC are master-detail like the config surfaces. All three use
+    // ConsolePage, whose height math (`-my-3` bleed) assumes this bounded pane.
+    pathname === "/bi/portfolio" ||
+    pathname === "/bi/energy" ||
+    pathname === "/bi/hvac" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 

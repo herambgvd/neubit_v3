@@ -83,30 +83,57 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     ],
   },
   {
-    // Building Intelligence is entirely coming-soon in this phase — every tile renders
-    // SOON on both surfaces (never a fabricated destination or figure).
+    // Building Intelligence — the IoT reading store, surfaced. The mode is no longer
+    // wholesale `soon`: three Sense tiles have real data behind them and are built.
+    // The rest stay SOON, INDIVIDUALLY, and the rule that made the whole mode `soon`
+    // still governs each one: never a fabricated destination or figure.
+    //
+    // Built (backed by `neubit_reporting`, served by the reading-writer's /bi API):
+    //   Portfolio          — every category that has reported, with real counts
+    //   Energy & Metering  — category=energy · 18 devices / 260 points
+    //   HVAC & Assets      — category=hvac   ·  7 devices /  36 points
+    //
+    // Left SOON, and why — each is a data gap, not a schedule:
+    //   IAQ & Environment      ZERO environment points exist in the store. There is
+    //                          nothing to render, and a stand-in would be a lie.
+    //   Ratings                A rating needs a benchmark and a unit. The wire carries
+    //                          neither (points.unit is empty for every point by design,
+    //                          contract §11/§12), so any score would be invented.
+    //   Insights & Correlation Correlation across categories needs to know what each
+    //                          point MEASURES. Nothing on the wire says, so a
+    //                          correlation would be between two unnamed numbers.
+    //
+    // NOT LISTED, and it should be discussed: `water` is genuinely reporting — 2
+    // devices / 10 points (a sump pump and a flow meter) — and has no tile. The
+    // Portfolio screen shows the category honestly, with "no console yet" on its card,
+    // rather than a seventh tile being added here unilaterally.
+    //
+    // Gating: `bi.read` (registered in core's permission catalog under "Building
+    // Intelligence" and enforced by the reading-writer) + the `analytics` module
+    // ("Dashboards & Reports"), which is also what the backend router is mounted
+    // behind. A caller without either sees SOON rather than a 403.
     id: "int",
     label: "Building Intelligence",
     glow: "rgba(167,139,250,.55)",
     layout: "row",
-    soon: true,
     groups: [
       {
         title: "Sense",
         accent: "#67e8f9",
         tiles: [
-          { icon: "heroicons:building-office-2", label: "Portfolio" },
-          { icon: "heroicons:cog-8-tooth", label: "HVAC & Assets" },
-          { icon: "heroicons:bolt", label: "Energy & Metering" },
-          { icon: "heroicons:sparkles", label: "IAQ & Environment" },
+          { icon: "heroicons:building-office-2", label: "Portfolio", href: "/bi/portfolio", tone: "att", perm: "bi.read", module: "analytics" },
+          { icon: "heroicons:cog-8-tooth", label: "HVAC & Assets", href: "/bi/hvac", tone: "teal", perm: "bi.read", module: "analytics" },
+          { icon: "heroicons:bolt", label: "Energy & Metering", href: "/bi/energy", tone: "att", perm: "bi.read", module: "analytics" },
+          // No environment points exist. Stays SOON until some do.
+          { icon: "heroicons:sparkles", label: "IAQ & Environment", soon: true },
         ],
       },
       {
         title: "Think",
         accent: "#c4b5fd",
         tiles: [
-          { icon: "heroicons:star", label: "Ratings" },
-          { icon: "heroicons:chart-pie", label: "Insights & Correlation" },
+          { icon: "heroicons:star", label: "Ratings", soon: true },
+          { icon: "heroicons:chart-pie", label: "Insights & Correlation", soon: true },
         ],
       },
     ],
