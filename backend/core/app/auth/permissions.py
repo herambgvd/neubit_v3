@@ -134,6 +134,22 @@ class CorePerm:
     # permissions claim. A key that is not in this catalog can only ever be held
     # by a wildcard admin, which is not a usable permission model.
     BI_READ = "bi.read"
+    # Dashboard builder — the no-code dashboards over the reading store. READ =
+    # list and open a dashboard; MANAGE = create / edit / delete / arrange it.
+    # Enforced by the `dashboards` service
+    # (`backend/dashboards/app/dashboards/router.py`). A widget's DATA is still
+    # gated by `bi.read` on the reading-writer, so a user who can open a
+    # dashboard but cannot read the store sees the canvas and empty widgets
+    # rather than numbers they are not entitled to.
+    DASHBOARDS_READ = "dashboards.read"
+    DASHBOARDS_MANAGE = "dashboards.manage"
+    # --- Ingest (external webhooks / event ingestion) ----------------------
+    # Enforced by the ingest service (`backend/ingest/app/ingest/router.py`) and,
+    # until now, MISSING from this catalog — so no role could grant them and only
+    # a wildcard admin could reach Ingest at all. Registering a key here is not
+    # book-keeping: it is what makes the permission grantable.
+    INGEST_READ = "ingest.read"
+    INGEST_MANAGE = "ingest.manage"
     # --- Enterprise security (P6-D) ---------------------------------------
     # Manage the security surface: 2FA-enforcement policy, LDAP/AD directory,
     # OIDC SSO. Held by a tenant's security admin.
@@ -201,6 +217,22 @@ PERMISSIONS.register(
         "Read the IoT reading store: category summaries, devices, points and "
         "time series. Read-only — nothing in this API writes.",
     ),
+    Permission(
+        CorePerm.DASHBOARDS_READ,
+        "View dashboards",
+        "Dashboards",
+        "Open the dashboards built over the reading store. The widgets' data is "
+        "gated separately by 'View building intelligence' (bi.read).",
+    ),
+    Permission(
+        CorePerm.DASHBOARDS_MANAGE,
+        "Build / edit dashboards",
+        "Dashboards",
+        "Create, rename and delete dashboards, add widgets and arrange the canvas.",
+    ),
+    # --- Ingest ------------------------------------------------------------
+    Permission(CorePerm.INGEST_READ, "View ingest categories / webhooks / events", "Ingest"),
+    Permission(CorePerm.INGEST_MANAGE, "Create / edit ingest webhooks + rules", "Ingest"),
     # --- Enterprise security ----------------------------------------------
     Permission(CorePerm.SECURITY_MANAGE, "Manage 2FA policy / LDAP / SSO", "Security"),
     Permission(CorePerm.DUALAUTH_APPROVE, "Approve four-eyes requests", "Security"),
