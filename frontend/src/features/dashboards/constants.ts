@@ -50,7 +50,13 @@ export const GRID_MARGIN: [number, number] = [10, 10];
  *  to make a builder feel unfinished. */
 export const DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
   line: { w: 6, h: 5 },
+  // Wide by default and taller than a bar chart: its whole advantage is showing
+  // many rows at once, and a 4-wide tile squeezes the time axis to nothing.
+  heatmap: { w: 8, h: 5 },
   bar: { w: 4, h: 5 },
+  // A donut needs square-ish room for the ring plus a legend under it.
+  pie: { w: 4, h: 5 },
+  gauge: { w: 3, h: 4 },
   stat: { w: 3, h: 3 },
   table: { w: 6, h: 5 },
 };

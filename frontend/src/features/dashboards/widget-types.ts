@@ -12,10 +12,13 @@
 // * **Seven types, not eleven.** See the ported/skipped list below.
 // * `kpi` is spelled `stat` here, matching the label the rest of this console
 //   uses for a single-number tile.
-// * **This file is now the ONE registry.** `spec.ts` derives `Viz` and `VIZ_KIND`
-//   from the array below rather than keeping a second hand-maintained list, so
-//   adding a chart type is one entry here plus its renderer — it can no longer
-//   half-land, registered in the palette but unknown to the editor.
+// * **This file is now the ONE registry.** `spec.ts` derives `Viz` and
+//   `VIZ_TIME_SERIES` from the array below rather than keeping a second
+//   hand-maintained list, so adding a chart type is one entry here plus its
+//   renderer — it can no longer half-land, registered in the palette but unknown
+//   to the editor. That mattered immediately: a `viz` the editor's steering map
+//   does not know falls through to `undefined`, and the widget then asks the
+//   executor for the wrong shape without anything failing loudly.
 //
 // `hint` is shown under the label in the picker. It says what the widget is FOR,
 // which is the thing a person choosing between seven of them actually needs.
@@ -64,9 +67,10 @@ export interface WidgetTypeDef {
   /** An @iconify/react name (heroicons), not a component. */
   icon: string;
   hint: string;
-  /** Which result shape the executor must return for it. `spec.VIZ_KIND` is
-   *  built from this field, so the two cannot disagree. */
-  shape: "series" | "aggregate";
+  /** Does this chart want buckets over TIME (one column per bucket), or one row
+   *  per group? `spec.VIZ_TIME_SERIES` is built from this field, so the palette
+   *  and the editor's steering cannot disagree. */
+  timeSeries: boolean;
 }
 
 export const WIDGET_TYPES = [
@@ -75,49 +79,49 @@ export const WIDGET_TYPES = [
     label: "Time series",
     icon: "heroicons:presentation-chart-line",
     hint: "How values moved across the window, one line per point.",
-    shape: "series",
+    timeSeries: true,
   },
   {
     type: "heatmap",
     label: "Heatmap",
     icon: "heroicons:squares-2x2",
     hint: "Time across, one row per point. Reads many more series than a line chart can.",
-    shape: "series",
+    timeSeries: true,
   },
   {
     type: "bar",
     label: "Bar",
     icon: "heroicons:chart-bar",
     hint: "Compare points, devices or categories over the window.",
-    shape: "aggregate",
+    timeSeries: false,
   },
   {
     type: "pie",
     label: "Share",
     icon: "heroicons:chart-pie",
     hint: "What fraction of a countable total each group accounts for.",
-    shape: "aggregate",
+    timeSeries: false,
   },
   {
     type: "gauge",
     label: "Gauge",
     icon: "heroicons:signal",
     hint: "One value against the range the rest of the scope covers.",
-    shape: "aggregate",
+    timeSeries: false,
   },
   {
     type: "stat",
     label: "Stat",
     icon: "heroicons:hashtag",
     hint: "A single headline number, with the samples behind it.",
-    shape: "aggregate",
+    timeSeries: false,
   },
   {
     type: "table",
     label: "Table",
     icon: "heroicons:table-cells",
     hint: "Every row of the aggregate, values and sample counts.",
-    shape: "aggregate",
+    timeSeries: false,
   },
 ] as const satisfies readonly WidgetTypeDef[];
 
@@ -125,11 +129,11 @@ export const WIDGET_TYPES = [
  *  the array the palette renders. */
 export type WidgetTypeName = (typeof WIDGET_TYPES)[number]["type"];
 
-/** `viz` → the result shape the executor must return. The one mapping; `spec.ts`
- *  re-exports it as `VIZ_KIND` for the call sites that already name it that. */
-export const WIDGET_TYPE_SHAPE = Object.fromEntries(
-  WIDGET_TYPES.map((w) => [w.type, w.shape]),
-) as Record<WidgetTypeName, "series" | "aggregate">;
+/** `viz` → does it want time buckets. The one mapping; `spec.ts` re-exports it
+ *  as `VIZ_TIME_SERIES` for the call sites that already name it that. */
+export const WIDGET_TYPE_TIME_SERIES = Object.fromEntries(
+  WIDGET_TYPES.map((w) => [w.type, w.timeSeries]),
+) as Record<WidgetTypeName, boolean>;
 
 export const WIDGET_TYPE_OPTIONS = WIDGET_TYPES.map((w) => ({ value: w.type, label: w.label }));
 

@@ -111,17 +111,25 @@ export default function GaugeChart({ data, options, onEvents }: ChartProps) {
         // silently rewriting it.
         progress: { show: true, width: 10, itemStyle: { color: CHART_PALETTE[0] } },
         axisLine: { lineStyle: { width: 10, color: [[1, t.gaugeTrack]] } },
-        // Five arcs, not ECharts' ten: at widget size the default tick labels
-        // overlap into an unreadable band, and the two endpoints plus three
-        // interior marks are all a gauge is ever read to.
-        splitNumber: 5,
+        // Four arcs, not ECharts' ten: at widget size ten split marks read as a
+        // hatched band rather than as a scale.
+        splitNumber: 4,
         axisTick: { show: false },
         splitLine: { distance: -19, length: 7, lineStyle: { color: t.axis } },
         axisLabel: {
-          distance: 12,
+          // Well inside the arc. ECharts' default (15) puts the labels on top of
+          // the track at widget size, and a tick label sitting across the arc it
+          // is labelling is worse than no tick label.
+          distance: 20,
           color: t.text,
           ...CHART_FONT,
-          formatter: (v: number) => fmtValue(v, decimals),
+          // ONLY the endpoints are labelled. The interior splits stay as marks:
+          // readings on this platform run to six figures (243,496 as it happens),
+          // and five of those around a tile-sized dial overlap into a smear. The
+          // two numbers that make the dial readable are the ones the basis line
+          // under it names — where the scale starts and where it ends.
+          formatter: (v: number) =>
+            v === min || v === max ? fmtValue(v, decimals) : "",
         },
         pointer: { itemStyle: { color: t.tooltipText }, width: 4 },
         anchor: { show: true, size: 6, itemStyle: { color: t.tooltipText } },
@@ -140,7 +148,9 @@ export default function GaugeChart({ data, options, onEvents }: ChartProps) {
           color: t.tooltipText,
           fontSize: 22,
           fontFamily: "ui-monospace, SFMono-Regular, monospace",
-          offsetCenter: [0, "36%"],
+          // Below the pivot so the needle never crosses the number, and above
+          // the two endpoint labels at the foot of the arc.
+          offsetCenter: [0, "42%"],
           formatter: (v: number) => fmtValue(v, decimals),
         },
         // ECharts renders `name` under the dial. It carries the basis of the

@@ -28,9 +28,13 @@
 // server generates the statement. See the backend spec module — that decision is
 // not reopened.
 
+import { WIDGET_TYPE_TIME_SERIES } from "./widget-types";
+import type { WidgetTypeName } from "./widget-types";
+
 export const SPEC_VERSION = 2;
 
-export type Viz = "line" | "bar" | "stat" | "table";
+// DERIVED from `widget-types.ts` — see the note above `VIZ_TIME_SERIES`.
+export type Viz = WidgetTypeName;
 
 /** Aggregates the builder can ask for. Ported from the reference product's
  *  `AGGREGATE_OPTIONS`, plus first/last which this platform's stores can answer.
@@ -228,12 +232,12 @@ export interface QueryResult {
  *  time; a bar/stat/table asks for one row per group. Flipping this when the
  *  chart type changes is what stops a bar chart asking for time buckets it
  *  cannot draw. */
-export const VIZ_TIME_SERIES: Record<Viz, boolean> = {
-  line: true,
-  bar: false,
-  stat: false,
-  table: false,
-};
+// Re-exported from `widget-types.ts`, which is the ONE catalog of chart types.
+// The palette, the editor's picker and this steering map are built from the same
+// array, so a chart type cannot be offered in the palette while this map returns
+// `undefined` for it — which reads as `false` and would quietly ask the executor
+// for a grouped table when the chart wanted time buckets.
+export const VIZ_TIME_SERIES: Record<Viz, boolean> = WIDGET_TYPE_TIME_SERIES;
 
 export const WINDOWS: { hours: number; label: string }[] = [
   { hours: 1, label: "1H" },
