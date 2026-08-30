@@ -74,8 +74,13 @@ export function isDrillable(spec: WidgetSpec): boolean {
 export function defaultBreakdown(spec: WidgetSpec, ds: Dataset | undefined, pinned: string): string | null {
   if (!ds) return null;
   const used = new Set<string>([pinned, ...(spec.query.group_by || [])]);
-  const next = ds.dimensions.find((d) => !used.has(d.key));
-  return next?.key || null;
+  const free = ds.dimensions.filter((d) => !used.has(d.key));
+  // Prefer a dimension a person can READ. A dataset's first free dimension is
+  // very often an id (`point_id`), and a detail table of forty uuids answers
+  // nothing — the tag beside it is the same breakdown in words. Ids remain
+  // selectable in the picker; they are just not the opening move.
+  const readable = free.find((d) => d.type !== "uuid");
+  return (readable || free[0])?.key || null;
 }
 
 /** Widget state + a clicked point → the DETAIL widget's state.

@@ -48,7 +48,7 @@ import { drillDimension } from "./drill";
 import FilterBar from "./filter-bar";
 import VariablesPanel from "./variables-panel";
 import WidgetPalette from "./widget-palette";
-import { newSpec } from "./spec";
+import { migrateSpec, newSpec } from "./spec";
 import type { Dataset, Viz } from "./spec";
 import WidgetEditor from "./WidgetEditor";
 import type { EditorValue } from "./WidgetEditor";
@@ -347,16 +347,17 @@ export default function DashboardView({ id }: { id: string }) {
             onDropType={addOfType}
             context={ctx.context}
             onDrill={(widget, point) => {
+              // MIGRATE FIRST. A stored v1 spec has no `select` and no
+              // `dataset`, so deriving a drill straight off it silently produces
+              // nothing — which is exactly how this went unnoticed until a click
+              // on a real v1 widget did nothing at all. The canvas holds stored
+              // specs; everything downstream of here works in v2.
+              const spec = migrateSpec(widget.spec);
               // Which dimension the clicked point identifies is decided from the
-              // widget's SPEC, not guessed from the click — see `drill.ts`.
-              const dimension = drillDimension(widget.spec);
+              // SPEC, not guessed from the click — see `drill.ts`.
+              const dimension = drillDimension(spec);
               if (!dimension) return;
-              setDrill({
-                spec: widget.spec,
-                title: widget.title,
-                dimension,
-                value: point.name,
-              });
+              setDrill({ spec, title: widget.title, dimension, value: point.name });
             }}
           />
         </div>
