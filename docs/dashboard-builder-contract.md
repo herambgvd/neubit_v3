@@ -51,10 +51,20 @@ Requirements:
   `readings_1m` / `readings_1h`) and the executor picks by window — charts read a
   rollup, raw only inside a bounded window. Query cost must stay independent of
   ingest rate; sensors and event streams have wildly different rates.
-- Permission per dataset, registered in core's catalog so a role can actually
-  grant it. **Note the bug not to repeat:** `ingest.read`/`ingest.manage` were
-  gated by the backend but never added to the catalog, so no role could grant
-  them and only a wildcard admin could reach Ingest.
+- Permission per dataset, and a role must actually be able to grant it. **Note
+  the bug not to repeat:** `ingest.read`/`ingest.manage` were gated by the
+  backend but never added to core's catalog, so no role could grant them and
+  only a wildcard admin could reach Ingest.
+
+  **Correction (2026-08-30).** This section first said the permission goes "in
+  core's catalog", which reads as a code edit — and that is wrong. If
+  registration is data, a static catalog reintroduces exactly the release
+  coupling this section removes: a new domain could register a dataset but
+  nobody could be granted access to it until core shipped. The catalog therefore
+  has a **dynamic half**: a service registers its permission alongside its
+  dataset, and role validation accepts static and registered permissions alike,
+  with static winning on a clash. An unregistered permission is still refused,
+  so the guarantee that a role cannot grant something meaningless survives.
 
 ## 3. SQL is GENERATED on the server, never accepted from a client
 
@@ -85,6 +95,8 @@ Carried from the v1 executor and not negotiable:
 
 - **Never invent a unit.** `points.unit` is NULL for every IoT point because the
   source payloads carry none. A fabricated `kW` on an axis is worse than a blank.
+  Generalised, this is a dataset capability: a dataset may name a unit *column*,
+  and must never assert a unit that is not in the data.
 - **A value metric cannot be grouped across incomparable series.** Averaging a
   power factor with a voltage is meaningless; the v1 executor refuses it and says
   what to do instead. Generalise the rule, do not drop it.
