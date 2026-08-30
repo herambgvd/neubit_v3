@@ -132,6 +132,13 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         title: "Think",
         accent: "#c4b5fd",
         tiles: [
+          // The no-code dashboard builder over the same reading store. Gated by
+          // `dashboards.read` (the dashboards service — definitions) + the
+          // `analytics` module. A caller also needs `bi.read` to see the widgets'
+          // DATA, which the reading-writer enforces; that is deliberately NOT the
+          // gate here, because "can open the console but the widgets say they
+          // could not run" is the honest state to show, not a hidden tile.
+          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/dashboards", tone: "att", perm: "dashboards.read", module: "analytics" },
           { icon: "heroicons:star", label: "Ratings", soon: true },
           { icon: "heroicons:chart-pie", label: "Insights & Correlation", soon: true },
         ],

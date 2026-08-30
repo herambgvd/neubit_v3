@@ -90,3 +90,76 @@
   -ms-overflow-style: none;       /* legacy Edge/IE */
 }
 .scroll-none::-webkit-scrollbar { width: 0; height: 0; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Dashboard builder — overrides for the two third-party stylesheets the module
+   imports (`react-grid-layout/css/styles.css` and `react-resizable/css/styles.css`,
+   pulled in by features/dashboards/GridCanvas.tsx).
+
+   They are the one part of the ported grid that arrives with a look of its own:
+   a light-grey resize handle drawn as a background-image data URI, a red-tinted
+   placeholder, and CSS transitions on every tile. Left alone they read as another
+   product's chrome sitting inside this console, so they are re-pointed at the
+   navy tokens here rather than fought with `!important` at the call site.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/* The drop shadow of the tile being dragged. RGL sets `z-index: 3` and a
+   `will-change: transform`; only the visual needs changing. */
+.react-grid-item.react-draggable-dragging {
+  box-shadow: 0 16px 40px rgba(4, 8, 20, 0.55);
+  opacity: 0.92;
+}
+
+/* Where the tile will land. RGL's default is a red-tinted block. */
+.react-grid-item.react-grid-placeholder {
+  background: rgba(103, 232, 249, 0.12);
+  border: 1px dashed rgba(103, 232, 249, 0.45);
+  border-radius: 12px;
+  opacity: 1;
+}
+
+/* react-resizable draws its handle as an inline SVG data URI in a dark grey that
+   disappears on navy. Replaced with two drawn corner rules — no image, themed,
+   and visible on the panel background. */
+.react-resizable-handle::after { display: none; }
+.react-resizable-handle {
+  background-image: none;
+  padding: 0;
+}
+.react-grid-item > .react-resizable-handle.react-resizable-handle-se {
+  width: 14px;
+  height: 14px;
+  right: 3px;
+  bottom: 3px;
+  border-right: 2px solid var(--field-border);
+  border-bottom: 2px solid var(--field-border);
+  border-bottom-right-radius: 4px;
+  transition: border-color 0.15s ease;
+}
+.react-grid-item:hover > .react-resizable-handle.react-resizable-handle-se {
+  border-color: #67e8f9;
+}
+
+/* The dashboard widgets' own small motions, defined here so the reduced-motion
+   rule below can switch every one of them off in one place. */
+@keyframes nb-skeleton-pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.45 } }
+.nb-skeleton { animation: nb-skeleton-pulse 1.6s ease-in-out infinite; }
+
+@keyframes nb-dot-pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.25 } }
+.nb-pulse { animation: nb-dot-pulse 1.4s ease-in-out infinite; }
+
+/* prefers-reduced-motion. RGL animates every tile's transform and its placeholder
+   by default and offers no option to stop; ECharts is handled in JS
+   (features/dashboards/charts/echarts.ts `motionOptions`), because a canvas
+   animation is not reachable from CSS at all. Both halves are needed — this rule
+   alone would leave the charts animating. */
+@media (prefers-reduced-motion: reduce) {
+  .react-grid-item,
+  .react-grid-item.cssTransforms,
+  .react-grid-item.react-grid-placeholder,
+  .react-resizable-handle {
+    transition: none !important;
+  }
+  .nb-skeleton,
+  .nb-pulse { animation: none !important; }
+}
