@@ -51,6 +51,8 @@ import { Icon } from "@iconify/react";
 
 import type { DashboardWidget } from "./api";
 import ChartWidget from "./ChartWidget";
+import type { QueryContext } from "./dashboard-context";
+import type { DrillPoint } from "./drill";
 import { GRID_MARGIN } from "./constants";
 
 /** The internal drag-and-drop MIME type for "a new widget of this type". Never
@@ -83,6 +85,13 @@ export interface GridCanvasProps {
   onEdit?: (widget: DashboardWidget) => void;
   onRemove?: (widget: DashboardWidget) => void;
   onDropType?: (type: string) => void;
+  /** The page's filters/variables/window, passed straight through to every
+   *  widget. The canvas has no opinion about it — a widget decides for itself
+   *  which of it applies (`query.ignore_*`). */
+  context?: QueryContext | null;
+  /** A point was clicked on a chart. Carries enough for the drill-down to derive
+   *  new builder state from it. */
+  onDrill?: (widget: DashboardWidget, point: DrillPoint) => void;
 }
 
 export default function GridCanvas({
@@ -94,6 +103,8 @@ export default function GridCanvas({
   onEdit,
   onRemove,
   onDropType,
+  context,
+  onDrill,
 }: GridCanvasProps) {
   const layoutItems = useMemo<GridItem[]>(
     () =>
@@ -183,6 +194,8 @@ export default function GridCanvas({
               draggable={editable}
               onEdit={editable && onEdit ? () => onEdit(widget) : null}
               onRemove={editable && onRemove ? () => onRemove(widget) : null}
+              context={context}
+              onDrill={onDrill ? (point) => onDrill(widget, point) : undefined}
             />
           </div>
         ))}

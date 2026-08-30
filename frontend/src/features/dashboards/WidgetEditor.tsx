@@ -41,6 +41,7 @@ import { Button, Input, Modal, Select } from "@/components/ui/kit";
 import { Segmented } from "@/components/console";
 
 import { datasets as datasetsApi } from "./api";
+import type { DashboardConfig } from "./dashboard-context";
 import { DEFAULT_SIZE } from "./constants";
 import QueryBuilderForm from "./QueryBuilderForm";
 import { VIZ_TIME_SERIES, WINDOWS, migrateSpec, newSpec, specIssue } from "./spec";
@@ -70,9 +71,13 @@ export default function WidgetEditor({
   onClose,
   onSave,
   saving,
+  config,
 }: {
   open: boolean;
   initial?: EditorValue | null;
+  /** The dashboard's filters and variables, so this widget can bind a filter to
+   *  a variable and opt out of the page's filters one at a time. */
+  config?: DashboardConfig;
   onClose: () => void;
   onSave: (value: EditorValue & { size: { w: number; h: number } }) => void;
   saving?: boolean;
@@ -259,7 +264,12 @@ export default function WidgetEditor({
             />
 
             {ds ? (
-              <QueryBuilderForm ds={ds} query={spec.query} onChange={patchQuery} />
+              <QueryBuilderForm
+                ds={ds}
+                query={spec.query}
+                onChange={patchQuery}
+                config={config}
+              />
             ) : null}
           </div>
 

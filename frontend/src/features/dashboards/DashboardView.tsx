@@ -36,14 +36,22 @@ import { useAuth } from "@/lib/auth";
 
 import { dashboards } from "./api";
 import type { DashboardDetail, DashboardWidget } from "./api";
-import GridCanvas, { WIDGET_DND_TYPE } from "./GridCanvas";
+import GridCanvas from "./GridCanvas";
 import type { GridItem } from "./GridCanvas";
 import { PERM_MANAGE } from "./constants";
+import { datasets as datasetsApi } from "./api";
+import { useDashboardContext } from "./dashboard-context";
+import type { DashboardConfig } from "./dashboard-context";
+import DrillDialog from "./drill-dialog";
+import type { DrillState } from "./drill-dialog";
+import { drillDimension } from "./drill";
+import FilterBar from "./filter-bar";
+import VariablesPanel from "./variables-panel";
+import WidgetPalette from "./widget-palette";
 import { newSpec } from "./spec";
-import type { Viz } from "./spec";
+import type { Dataset, Viz } from "./spec";
 import WidgetEditor from "./WidgetEditor";
 import type { EditorValue } from "./WidgetEditor";
-import { WIDGET_TYPES } from "./widget-types";
 
 export default function DashboardView({ id }: { id: string }) {
   const router = useRouter();
@@ -59,12 +67,30 @@ export default function DashboardView({ id }: { id: string }) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingWidget, setEditingWidget] = useState<DashboardWidget | null>(null);
   const [confirm, setConfirm] = useState<any>(null);
+  const [varsOpen, setVarsOpen] = useState(false);
+  const [drill, setDrill] = useState<DrillState | null>(null);
 
   const dashQ = useQuery<DashboardDetail>({
     queryKey: ["dashboard", id],
     queryFn: () => dashboards.get(id),
   });
   const dash = dashQ.data;
+
+  // The page's own builder state — which filters it offers, which variables it
+  // carries. The CHOSEN values are not in here: they live in the URL, so a
+  // filtered view is a link and nobody saves their selection onto everyone else.
+  const config: DashboardConfig = useMemo(() => dash?.config || {}, [dash?.config]);
+  const ctx = useDashboardContext(config);
+
+  // Every dataset this caller can chart. Needed by the drill-down, which has to
+  // know a dataset's dimensions to offer a breakdown. Cached across the page.
+  const dsQ = useQuery<{ items: Dataset[] }>({
+    queryKey: ["bi-datasets"],
+    queryFn: () => datasetsApi.list(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const datasetOf = (key?: string) => (dsQ.data?.items || []).find((d) => d.key === key);
 
   // Leaving edit mode drops unsaved geometry rather than silently keeping it
   // around to be written by some later save.
@@ -156,6 +182,16 @@ export default function DashboardView({ id }: { id: string }) {
       toast.success("Widget saved");
     },
     onError: (e) => toast.error(apiError(e, "Could not save the widget")),
+  });
+
+  const saveConfigM = useMutation({
+    mutationFn: (next: DashboardConfig) => dashboards.update(id, { config: next }),
+    onSuccess: () => {
+      setVarsOpen(false);
+      invalidate();
+      toast.success("Filters saved");
+    },
+    onError: (e) => toast.error(apiError(e, "Could not save the filters")),
   });
 
   const removeWidgetM = useMutation({
@@ -271,34 +307,13 @@ export default function DashboardView({ id }: { id: string }) {
         </div>
       </div>
 
+      <FilterBar state={ctx} onEditVariables={editing ? () => setVarsOpen(true) : undefined} />
+
       <div className="flex min-h-0 flex-1 gap-3">
         {editing ? (
           // The widget palette. Click OR drag — the drag path is the ported
           // `onDropType` handler on the canvas.
-          <div className="hidden w-[188px] shrink-0 flex-col gap-1.5 overflow-y-auto rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-2.5 lg:flex">
-            <span className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">
-              Add a widget
-            </span>
-            {WIDGET_TYPES.map((w) => (
-              <button
-                key={w.type}
-                type="button"
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(WIDGET_DND_TYPE, w.type);
-                  e.dataTransfer.effectAllowed = "copy";
-                }}
-                onClick={() => addOfType(w.type)}
-                className="flex cursor-grab flex-col gap-0.5 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2.5 py-2 text-left transition hover:border-nb-line2 active:cursor-grabbing"
-              >
-                <span className="flex items-center gap-1.5 text-[11.5px] text-nb-ink">
-                  <Icon icon={w.icon} className="text-[14px] text-nb-violetb" />
-                  {w.label}
-                </span>
-                <span className="text-[10px] leading-snug text-nb-faint">{w.hint}</span>
-              </button>
-            ))}
-          </div>
+          <WidgetPalette onAdd={addOfType} />
         ) : null}
 
         {/* `min-w-0` is load-bearing, not tidying. A flex child defaults to
@@ -330,6 +345,19 @@ export default function DashboardView({ id }: { id: string }) {
               })
             }
             onDropType={addOfType}
+            context={ctx.context}
+            onDrill={(widget, point) => {
+              // Which dimension the clicked point identifies is decided from the
+              // widget's SPEC, not guessed from the click — see `drill.ts`.
+              const dimension = drillDimension(widget.spec);
+              if (!dimension) return;
+              setDrill({
+                spec: widget.spec,
+                title: widget.title,
+                dimension,
+                value: point.name,
+              });
+            }}
           />
         </div>
       </div>
@@ -337,6 +365,7 @@ export default function DashboardView({ id }: { id: string }) {
       <WidgetEditor
         open={editorOpen}
         initial={editorInitial}
+        config={config}
         saving={addWidgetM.isPending || updateWidgetM.isPending}
         onClose={() => {
           setEditorOpen(false);
@@ -344,6 +373,21 @@ export default function DashboardView({ id }: { id: string }) {
           setSeed(null);
         }}
         onSave={(v) => (editingWidget ? updateWidgetM.mutate(v) : addWidgetM.mutate(v))}
+      />
+
+      <VariablesPanel
+        open={varsOpen}
+        config={config}
+        saving={saveConfigM.isPending}
+        onClose={() => setVarsOpen(false)}
+        onSave={(next) => saveConfigM.mutate(next)}
+      />
+
+      <DrillDialog
+        drill={drill}
+        dataset={datasetOf(drill?.spec.query.dataset)}
+        context={ctx.context}
+        onClose={() => setDrill(null)}
       />
 
       <ConfirmDialog

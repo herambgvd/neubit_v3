@@ -474,6 +474,15 @@ def migrate_v1(raw: dict) -> dict:
             "limit": limit,
         }
 
+    # The dashboard-context opt-outs are carried ACROSS the migration rather than
+    # being dropped. v1 never had them, so a genuinely old spec has none — but a
+    # v1 spec that has been given one (by the API, or by a half-migrated write)
+    # means it, and silently discarding it would make a widget follow a filter its
+    # author had explicitly excluded it from.
+    for key in ("ignore_filters", "ignore_all_filters", "ignore_window"):
+        if key in q:
+            query[key] = q[key]
+
     return {
         "spec_version": 2,
         "viz": viz,

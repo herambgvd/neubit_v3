@@ -21,6 +21,7 @@
 
 import { api } from "@/lib/api";
 
+import type { QueryContext } from "./dashboard-context";
 import type { Dataset, QueryResult, WidgetSpec } from "./spec";
 
 const DASH = "/dashboards";
@@ -53,6 +54,11 @@ export interface DashboardWidget {
 }
 
 export interface DashboardDetail extends DashboardSummary {
+  /** The page's own builder state: which filters it offers, what variables it
+   *  carries. Definitions only — the CHOSEN values live in the URL, so a
+   *  filtered view is a link rather than something one person saved onto
+   *  everybody else's page. */
+  config: import("./dashboard-context").DashboardConfig;
   widgets: DashboardWidget[];
 }
 
@@ -103,11 +109,18 @@ export const widgetQuery = {
    *  encoding it into a query string would be a second, lossy serialisation of a
    *  shape that is already defined.
    *
+   *  `context` is the DASHBOARD's contribution — its global filters, its variables
+   *  and its shared window. It is an OBJECT of keys and values, not a string: the
+   *  server merges it into the widget's state and binds every value as a query
+   *  parameter. The reference substitutes `{{name}}` into stored SQL instead;
+   *  see `dashboard-context.ts` for why that mechanism did not come across.
+   *
    *  Note what is NOT sent: SQL. The client sends state and the server generates
    *  the statement — there is no endpoint on this platform that accepts SQL from
    *  a browser (builder contract §3). The statement comes BACK on the result, as
    *  a read-only echo. */
-  run: (spec: WidgetSpec): Promise<QueryResult> => unwrap(api.post("/bi/query", spec)),
+  run: (spec: WidgetSpec, context?: QueryContext | null): Promise<QueryResult> =>
+    unwrap(api.post("/bi/query", context ? { spec, context } : spec)),
 
   /** What the backend's spec supports. Fetched rather than hard-coded so the
    *  editor's options and the validator that rejects them cannot disagree. */

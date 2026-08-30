@@ -47,6 +47,10 @@ import { Icon } from "@iconify/react";
 import { apiError } from "@/lib/api";
 
 import { datasets as datasetsApi, widgetQuery } from "./api";
+import { contextKeyFor } from "./dashboard-context";
+import type { QueryContext } from "./dashboard-context";
+import { isDrillable } from "./drill";
+import type { DrillPoint } from "./drill";
 import { seriesBand, toChartData } from "./charts/adapt";
 // All chart renderers are dynamically imported client-only — ECharts is
 // browser-only, and a dashboard with no line chart on it should not pay for one.
@@ -71,6 +75,14 @@ export interface ChartWidgetProps {
   /** Chrome only: the header doubles as the drag handle in edit mode. */
   draggable?: boolean;
   refreshMs?: number;
+  /** What the DASHBOARD contributes — its global filters, its variables and its
+   *  shared window. An object of keys and values; the server merges it into this
+   *  widget's state and binds every value. Absent in the editor's preview, which
+   *  has no page around it. */
+  context?: QueryContext | null;
+  /** A point on the chart was clicked. The parent derives new builder state from
+   *  it (`drill.ts`) and opens the detail. */
+  onDrill?: (point: DrillPoint) => void;
 }
 
 /** The widget BODY — fetch, states, renderer. Exported on its own because the
@@ -80,10 +92,14 @@ export interface ChartWidgetProps {
 export function WidgetBody({
   spec: storedSpec,
   refreshMs = REFRESH_MS,
+  context,
+  onDrill,
   onResult,
 }: {
   spec: WidgetSpec;
   refreshMs?: number;
+  context?: QueryContext | null;
+  onDrill?: (point: DrillPoint) => void;
   /** Handed the raw result when one arrives. The editor uses it for the
    *  read-only echo of the statement the SERVER generated — so what a person
    *  inspects is what actually ran, not a second guess at it. */
@@ -114,8 +130,12 @@ export function WidgetBody({
   const q = useQuery<any>({
     // The spec IS the cache key. Change a metric and it is a different question,
     // so it must be a different cache entry — not a stale render with a new label.
-    queryKey: ["widget-query", JSON.stringify(spec)],
-    queryFn: () => widgetQuery.run(spec),
+    //
+    // The context is keyed per-widget (`contextKeyFor`) rather than wholesale:
+    // a tile that opted out of every dashboard filter must not refetch when one
+    // changes, because for that tile nothing changed.
+    queryKey: ["widget-query", JSON.stringify(spec), context ? contextKeyFor(spec, context) : ""],
+    queryFn: () => widgetQuery.run(spec, context),
     enabled: !issue,
     refetchInterval: refreshMs > 0 ? refreshMs : false,
     retry: false,
@@ -184,6 +204,23 @@ export function WidgetBody({
   const Chart = CHART_COMPONENTS[spec.viz];
   const hasRows = chart.data.rows.length > 0;
 
+  // ECharts hands a click back with `name` (the category, or the series name on a
+  // time series) and `seriesName`. Which of the two identifies the pinned
+  // dimension is decided by `drill.drillDimension` reading the SPEC — not by
+  // guessing from the params, because a bar chart's `name` and a line chart's
+  // `seriesName` mean different things and using the wrong one silently drills
+  // into the wrong thing.
+  const drillEvents =
+    onDrill && isDrillable(spec)
+      ? {
+          click: (params: any) => {
+            const label = spec.query.time_series ? params?.seriesName : params?.name;
+            if (typeof label !== "string" || !label) return;
+            onDrill({ name: label, value: typeof params?.value === "number" ? params.value : null });
+          },
+        }
+      : undefined;
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
@@ -198,7 +235,12 @@ export function WidgetBody({
             loaded fine — update the console, or change the chart type.
           </div>
         ) : hasRows ? (
-          <Chart data={chart.data} options={spec.options} band={chart.band} />
+          <Chart
+            data={chart.data}
+            options={spec.options}
+            band={chart.band}
+            onEvents={drillEvents}
+          />
         ) : (
           <div className="flex h-full items-center justify-center px-4 text-center text-[11.5px] text-nb-faint">
             No readings in this window.
@@ -216,6 +258,7 @@ export function WidgetBody({
         <span className="truncate" title={result.resolution_reason}>
           {result.resolution_reason}
         </span>
+        <ContextBadge result={result} />
         {result.truncated ? (
           // `matched` counts the SERIES or GROUPS the query found, which is the
           // same unit the widget draws — so "showing 8 of 37" compares two of
@@ -246,6 +289,35 @@ export function WidgetBody({
   );
 }
 
+/** One chip saying what the page did to this widget.
+ *
+ *  It exists because of a specific failure mode: a viewer picks a site, twenty
+ *  tiles move and two do not, and there is nothing on the page explaining
+ *  whether those two are broken, irrelevant or deliberately excluded. The
+ *  executor already knows which — `context_notes` — so the tile says it.
+ *
+ *  Silence when a filter simply applied: chrome on nineteen tiles to explain the
+ *  one is the wrong trade. */
+function ContextBadge({ result }: { result: QueryResult }) {
+  const notes = result.context_notes || [];
+  const optedOut = notes.filter((n) => n.kind === "opted_out");
+  const skipped = notes.filter((n) => n.kind === "skipped");
+  if (!optedOut.length && !skipped.length) return null;
+  const first = optedOut[0] || skipped[0];
+  return (
+    <span
+      className="ml-auto flex shrink-0 items-center gap-1 text-nb-faint"
+      title={[...optedOut, ...skipped].map((n) => n.reason).join("; ")}
+    >
+      <Icon
+        icon={optedOut.length ? "heroicons:lock-closed" : "heroicons:minus-circle"}
+        className="text-[10px]"
+      />
+      {optedOut.length ? "not filtered" : first?.reason || "filter skipped"}
+    </span>
+  );
+}
+
 export default function ChartWidget({
   title,
   spec,
@@ -253,6 +325,8 @@ export default function ChartWidget({
   onRemove,
   draggable,
   refreshMs,
+  context,
+  onDrill,
 }: ChartWidgetProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.55)] transition-colors hover:border-nb-line2">
@@ -304,7 +378,7 @@ export default function ChartWidget({
         )}
       </div>
       <div className="min-h-0 flex-1">
-        <WidgetBody spec={spec} refreshMs={refreshMs} />
+        <WidgetBody spec={spec} refreshMs={refreshMs} context={context} onDrill={onDrill} />
       </div>
     </div>
   );

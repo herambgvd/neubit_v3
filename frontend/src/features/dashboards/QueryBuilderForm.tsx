@@ -39,6 +39,7 @@ import { Button, Input, Select } from "@/components/ui/kit";
 import { Segmented } from "@/components/console";
 
 import { datasets as datasetsApi } from "./api";
+import type { DashboardConfig } from "./dashboard-context";
 import {
   AGGREGATE_LABEL,
   FILTER_OP_LABEL,
@@ -94,10 +95,15 @@ function ValueInput({
   dataset,
   filter,
   onChange,
+  variableNames,
 }: {
   dataset: string;
   filter: Filter;
   onChange: (patch: Partial<Filter>) => void;
+  /** Names of the dashboard's variables. A filter can take its value from one
+   *  instead of from a literal — which is what lets one control on the page drive
+   *  a condition on only the widgets that want it. */
+  variableNames: string[];
 }) {
   const dim = filter.column;
   const q = useQuery<any>({
@@ -111,6 +117,27 @@ function ValueInput({
 
   if (NO_VALUE_OPS.includes(filter.op)) {
     return <div className="text-[10.5px] leading-[30px] text-nb-faint">no value needed</div>;
+  }
+  if (filter.variable) {
+    // Bound to a dashboard variable. What it resolves to is decided on the
+    // server, so there is nothing to type here — and nothing is substituted:
+    // the NAME is a dictionary key, the VALUE it yields is a bind parameter.
+    return (
+      <Select
+        value={filter.variable}
+        onChange={(e: any) =>
+          onChange(
+            e.target.value
+              ? { variable: e.target.value }
+              : { variable: null, value: "", values: [] },
+          )
+        }
+        options={[
+          { value: "", label: "Use a fixed value instead…" },
+          ...variableNames.map((n) => ({ value: n, label: `Variable: ${n}` })),
+        ]}
+      />
+    );
   }
   if (filter.op === "in") {
     // A multi-select would be a bigger component than this earns; a comma list is
@@ -174,15 +201,24 @@ export default function QueryBuilderForm({
   ds,
   query,
   onChange,
+  config,
 }: {
   ds: Dataset;
   query: SpecQuery;
   onChange: (patch: Partial<SpecQuery>) => void;
+  /** The DASHBOARD's filters and variables, when this widget is being edited on
+   *  a page that has any. Two things depend on it: a filter can take its value
+   *  from a variable instead of a literal, and the widget can opt out of the
+   *  page's filters one at a time. Absent when a widget is edited outside a
+   *  dashboard — the section simply does not render. */
+  config?: DashboardConfig;
 }) {
   const [showAdvanced, setShowAdvanced] = useState(
     (query.having || []).length > 0 || (query.group_by || []).length > 1,
   );
 
+  const variableNames = (config?.variables || []).map((v) => v.name);
+  const dashFilters = (config?.filters || []).filter((f) => f.dataset === ds.key);
   const dimOptions = ds.dimensions.map((d) => ({ value: d.key, label: d.label }));
   const measureOptions = ds.measures.map((m) => ({ value: m.key, label: m.label }));
   const select = query.select || [];
@@ -382,6 +418,7 @@ export default function QueryBuilderForm({
               <ValueInput
                 dataset={ds.key}
                 filter={f}
+                variableNames={variableNames}
                 onChange={(patch) =>
                   onChange({
                     filters: filters.map((x, j) => (j === i ? { ...x, ...patch } : x)),
@@ -391,22 +428,101 @@ export default function QueryBuilderForm({
             </Row>
           ))}
         </div>
-        <Button
-          variant="ghost"
-          className="mt-1.5"
-          icon="heroicons:plus"
-          onClick={() =>
-            onChange({
-              filters: [
-                ...filters,
-                { column: ds.dimensions[0]?.key || "", op: "=", value: "" },
-              ],
-            })
-          }
-        >
-          Add filter
-        </Button>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <Button
+            variant="ghost"
+            icon="heroicons:plus"
+            onClick={() =>
+              onChange({
+                filters: [
+                  ...filters,
+                  { column: ds.dimensions[0]?.key || "", op: "=", value: "" },
+                ],
+              })
+            }
+          >
+            Add filter
+          </Button>
+          {variableNames.length ? (
+            <Button
+              variant="ghost"
+              icon="heroicons:variable"
+              onClick={() =>
+                onChange({
+                  filters: [
+                    ...filters,
+                    {
+                      column: ds.dimensions[0]?.key || "",
+                      op: "=",
+                      variable: variableNames[0],
+                    },
+                  ],
+                })
+              }
+            >
+              Filter by a variable
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {/* ── the DASHBOARD's filters, and opting out of them ─────────────── */}
+      {config && (dashFilters.length > 0 || config.window) ? (
+        <div>
+          <FieldLabel hint="applied by the page, not by this widget">
+            Dashboard filters
+          </FieldLabel>
+          <div className="space-y-1 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.45)] p-2">
+            {dashFilters.map((f) => {
+              const off =
+                !!query.ignore_all_filters || (query.ignore_filters || []).includes(f.id);
+              return (
+                <label
+                  key={f.id}
+                  className="flex items-center gap-2 text-[11.5px] text-nb-soft"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-nb-blue"
+                    checked={!off}
+                    disabled={!!query.ignore_all_filters}
+                    onChange={(e) =>
+                      onChange({
+                        ignore_filters: e.target.checked
+                          ? (query.ignore_filters || []).filter((k) => k !== f.id)
+                          : [...(query.ignore_filters || []), f.id],
+                      })
+                    }
+                  />
+                  Follow “{f.label || f.column}”
+                </label>
+              );
+            })}
+            <label className="flex items-center gap-2 text-[11.5px] text-nb-soft">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-nb-blue"
+                checked={!!query.ignore_all_filters}
+                onChange={(e) => onChange({ ignore_all_filters: e.target.checked })}
+              />
+              Ignore every dashboard filter
+            </label>
+            <label className="flex items-center gap-2 text-[11.5px] text-nb-soft">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-nb-blue"
+                checked={!!query.ignore_window}
+                onChange={(e) => onChange({ ignore_window: e.target.checked })}
+              />
+              Keep this widget&apos;s own time window
+            </label>
+            <p className="pt-0.5 text-[10.5px] leading-snug text-nb-faint">
+              A widget that opts out says so on its own footer, so a viewer is
+              never left wondering why one tile did not move.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {/* ── ordering + limit ───────────────────────────────────────────── */}
       {!query.time_series ? (

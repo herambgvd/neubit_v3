@@ -156,6 +156,14 @@ export interface Filter {
   value?: string | number | null;
   value2?: string | number | null;
   values?: (string | number)[];
+  /** The NAME of a dashboard variable supplying this filter's value.
+   *
+   *  Not a template. The name is a key the server looks up in a dict; what it
+   *  resolves to lands in `value`/`values` and is bound as a query parameter like
+   *  every other value. See `dashboard-context.ts` and the backend's
+   *  `context.py` — the reference's `{{name}}` substitution is the one thing
+   *  deliberately not ported. */
+  variable?: string | null;
 }
 
 export interface Having {
@@ -192,6 +200,13 @@ export interface SpecQuery {
   order_by?: OrderBy[];
   limit: number;
   band?: boolean;
+  /** Dashboard-filter ids this widget ignores. Stored state, not session state:
+   *  "this tile deliberately shows the whole estate" is a decision its author
+   *  made and it has to survive a reload. */
+  ignore_filters?: string[];
+  ignore_all_filters?: boolean;
+  /** Keep the widget's own window when the page changes its own. */
+  ignore_window?: boolean;
 }
 
 export interface WidgetSpec {
@@ -220,6 +235,11 @@ export interface QueryResult {
   matched: number;
   truncated: boolean;
   band: [number | null, number | null][] | null;
+  /** What the DASHBOARD contributed to this widget, and what it declined to —
+   *  a filter skipped because the widget opted out, or because its dataset has
+   *  no such dimension. Reported rather than left to be inferred from a chart
+   *  that did not move. */
+  context_notes?: import("./dashboard-context").ContextNote[];
   /** A read-only ECHO of the statement the SERVER generated. Shown in the
    *  builder so a person can see exactly what will run. Nothing anywhere accepts
    *  SQL back — see the backend spec module. */
@@ -322,6 +342,15 @@ export function specIssue(spec: WidgetSpec, ds?: Dataset): string | null {
   const pinned = new Set<string>([...(q.group_by || [])]);
   if (q.series_by) pinned.add(q.series_by);
   for (const f of q.filters || []) {
+    // A variable-bound filter pins its dimension OPTIMISTICALLY: what the
+    // variable resolves to is decided on the server, so this cannot know whether
+    // it will be one value or empty. Steering the author towards "this will work"
+    // and letting the executor refuse the one case where it does not is better
+    // than refusing to draw a widget the page can perfectly well answer.
+    if (f.variable && (f.op === "=" || f.op === "in")) {
+      pinned.add(f.column);
+      continue;
+    }
     if (f.op === "=" && f.value !== undefined && f.value !== null && `${f.value}` !== "") {
       pinned.add(f.column);
     }
@@ -462,6 +491,13 @@ function migrateV1(raw: any): WidgetSpec {
       filters,
       limit,
     };
+  }
+
+  // Carried ACROSS the migration, mirroring the backend's `migrate_v1`: a v1
+  // spec that has been given an opt-out means it, and dropping it would make a
+  // widget follow a filter its author explicitly excluded it from.
+  for (const key of ["ignore_filters", "ignore_all_filters", "ignore_window"] as const) {
+    if (q[key] !== undefined) (query as any)[key] = q[key];
   }
 
   return { spec_version: SPEC_VERSION, viz, query, options: { ...(raw?.options || {}) } };
