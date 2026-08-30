@@ -511,3 +511,231 @@ async def point_meta(
         )
     )
     return {r["point_id"]: r for r in rows}
+
+
+# ── Widget spec execution ────────────────────────────────────────────────────
+#
+# The dashboard builder's queries. They live here, with every other statement
+# against this schema, rather than in a dashboards service — contract §7 gives
+# the readings schema ONE owner, and a second service SELECTing these tables is
+# the second place the schema can drift. The dashboards service stores widget
+# definitions; this file is the only thing that runs them.
+#
+# Nothing below is assembled from caller-supplied text. The only interpolated
+# values are chosen from closed dicts in THIS file (`_VIEWS`, `_GROUPS`); every
+# caller value is a bind parameter. That property is what replaces a SQL guard.
+
+# Points a scope selects. The tenant bind is here for the same reason it is on
+# every other statement: a widget cannot widen its own scope, because the value
+# comes from the JWT.
+_SCOPE_SQL = """
+    SELECT p.point_id, p.point_tag, p.device_id, p.device_tag, p.category,
+           p.device_type, p.type, p.unit
+      FROM points p
+     WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       {filters}
+"""
+
+
+def _scope_filters(scope, *, numeric_only: bool) -> tuple[str, dict]:
+    """Translate a `spec.Scope` into SQL fragments + binds.
+
+    Every branch appends a FIXED fragment and one bind — there is no path by which
+    a caller's string becomes SQL.
+    """
+    filters: list[str] = []
+    params: dict = {}
+
+    if scope.type == "points":
+        filters.append("AND p.point_id = ANY(CAST(:pids AS uuid[]))")
+        params["pids"] = [str(p) for p in scope.point_ids]
+    elif scope.type == "device":
+        if scope.device_id is not None:
+            filters.append("AND p.device_id = :device_id")
+            params["device_id"] = str(scope.device_id)
+        else:
+            filters.append("AND p.device_tag = :device_tag")
+            params["device_tag"] = scope.device_tag
+    elif scope.type == "category":
+        # "" is the real, answerable question "what has nothing classified?".
+        if scope.category == "":
+            filters.append("AND p.category IS NULL")
+        else:
+            filters.append("AND p.category = :category")
+            params["category"] = scope.category
+    # scope.type == "all" adds nothing but the tenant filter.
+
+    if numeric_only:
+        # A text point has no `num`; including it in a value metric would show a
+        # permanently blank row. `count` (samples) applies to every point, so it
+        # does not pass numeric_only.
+        filters.append("AND p.type = 'num'")
+
+    return " ".join(filters), params
+
+
+async def scope_points(
+    db: AsyncSession, tenant: uuid.UUID | None, scope, *, limit: int, numeric_only: bool
+) -> tuple[list[dict], int]:
+    """Resolve a scope to concrete points, plus how many it MATCHED.
+
+    The count comes back separately so a widget can say "showing 12 of 37" rather
+    than presenting a truncated answer as a complete one. Ordering is stable
+    (device, point) so the same widget renders the same points every time.
+    """
+    filters, extra = _scope_filters(scope, numeric_only=numeric_only)
+    base = _SCOPE_SQL.format(filters=filters)
+    params = {"tenant": str(tenant) if tenant else None, **extra}
+
+    matched = (await db.execute(text(f"SELECT count(*) FROM ({base}) s"), params)).scalar_one()
+    rows = _rows(
+        await db.execute(
+            text(f"{base} ORDER BY p.device_tag, p.point_tag LIMIT :limit"),
+            {**params, "limit": limit},
+        )
+    )
+    return rows, int(matched)
+
+
+# The reading source, normalised so ONE aggregate statement covers all three
+# stores. A rollup already has these columns; raw is projected onto them (one
+# sample = a one-row bucket), which is the same trick `_RAW_SERIES_SQL` uses.
+_SRC_ROLLUP = """
+        SELECT r.point_id, r.bucket, r.sample_count,
+               r.num_min, r.num_max, r.num_avg, r.num_first, r.num_last
+          FROM {view} r
+         WHERE r.point_id = ANY(CAST(:pids AS uuid[]))
+           AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+           AND r.bucket >= :start AND r.bucket < :end
+"""
+
+_SRC_RAW = """
+        SELECT r.point_id, r.ts AS bucket, 1 AS sample_count,
+               r.num AS num_min, r.num AS num_max, r.num AS num_avg,
+               r.num AS num_first, r.num AS num_last
+          FROM readings r
+         WHERE r.point_id = ANY(CAST(:pids AS uuid[]))
+           AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+           AND r.ts >= :start AND r.ts < :end
+"""
+
+
+def _src(resolution: str) -> str:
+    if resolution == "raw":
+        return _SRC_RAW
+    # KeyError here is a programming error, not caller input: `resolution` has
+    # already been narrowed to the Literal set by the spec model.
+    return _SRC_ROLLUP.format(view=_VIEWS[resolution])
+
+
+# Per-point aggregation over the window.
+#
+# `avg` is WEIGHTED by sample_count. A plain avg-of-averages would give a bucket
+# holding two samples the same weight as one holding sixty, which on a feed whose
+# devices report at different rates is simply the wrong number.
+#
+# `first`/`last` use array_agg with a FILTER rather than a window function so all
+# six metrics come out of one grouped pass. The FILTER matters: a bucket whose
+# num_last is NULL (nothing numeric in it) must not become the "last value".
+_AGG_POINT_SQL = """
+    WITH src AS ({src})
+    SELECT src.point_id                                        AS key,
+           coalesce(sum(src.sample_count), 0)::bigint          AS samples,
+           min(src.num_min)                                    AS v_min,
+           max(src.num_max)                                    AS v_max,
+           CASE WHEN sum(src.sample_count) > 0
+                THEN sum(src.num_avg * src.sample_count) / sum(src.sample_count)
+           END                                                 AS v_avg,
+           (array_agg(src.num_first ORDER BY src.bucket ASC)
+              FILTER (WHERE src.num_first IS NOT NULL))[1]     AS v_first,
+           (array_agg(src.num_last ORDER BY src.bucket DESC)
+              FILTER (WHERE src.num_last IS NOT NULL))[1]      AS v_last
+      FROM src
+     GROUP BY src.point_id
+"""
+
+# Roll several points up into one row. Reachable ONLY with metric="count" (the
+# spec refuses anything else), so this deliberately computes nothing but sample
+# volume — there is no unit on the wire, and a summed mixture of a power factor
+# and a voltage would be a number with no meaning.
+_GROUPS = {
+    "device": "coalesce(p.device_id::text, p.device_tag)",
+    "category": "coalesce(p.category, '')",
+}
+
+_AGG_GROUP_SQL = """
+    WITH src AS ({src})
+    SELECT {key_expr}                                  AS key,
+           max(coalesce({label_expr}, '')) 	           AS label,
+           coalesce(sum(src.sample_count), 0)::bigint  AS samples,
+           count(DISTINCT src.point_id)                AS points
+      FROM src
+      JOIN points p ON p.point_id = src.point_id
+     GROUP BY {key_expr}
+     ORDER BY 3 DESC
+     LIMIT :limit
+"""
+
+_GROUP_LABELS = {"device": "p.device_tag", "category": "p.category"}
+
+
+async def aggregate_by_point(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    point_ids: list[uuid.UUID],
+    start: dt.datetime,
+    end: dt.datetime,
+    resolution: str,
+) -> dict[uuid.UUID, dict]:
+    """All six metrics per point in one pass, keyed by point_id."""
+    if not point_ids:
+        return {}
+    stmt = text(_AGG_POINT_SQL.format(src=_src(resolution)))
+    rows = _rows(
+        await db.execute(
+            stmt,
+            {
+                "pids": [str(p) for p in point_ids],
+                "tenant": str(tenant) if tenant else None,
+                "start": start,
+                "end": end,
+            },
+        )
+    )
+    return {r["key"]: r for r in rows}
+
+
+async def aggregate_by_group(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    point_ids: list[uuid.UUID],
+    start: dt.datetime,
+    end: dt.datetime,
+    resolution: str,
+    group_by: str,
+    limit: int,
+) -> list[dict]:
+    """Sample volume per device or per category. See `_AGG_GROUP_SQL`."""
+    if not point_ids:
+        return []
+    stmt = text(
+        _AGG_GROUP_SQL.format(
+            src=_src(resolution),
+            key_expr=_GROUPS[group_by],
+            label_expr=_GROUP_LABELS[group_by],
+        )
+    )
+    return _rows(
+        await db.execute(
+            stmt,
+            {
+                "pids": [str(p) for p in point_ids],
+                "tenant": str(tenant) if tenant else None,
+                "start": start,
+                "end": end,
+                "limit": limit,
+            },
+        )
+    )

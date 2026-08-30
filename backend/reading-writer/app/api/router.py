@@ -30,7 +30,9 @@ from kernel.errors import ValidationError
 from reporting.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import execute as ex
 from . import queries as q
+from . import spec as widget_spec
 from .schemas import (
     ActivityBucket,
     DeviceListResponse,
@@ -38,6 +40,7 @@ from .schemas import (
     SeriesResponse,
     SummaryResponse,
 )
+from .spec import QueryResult
 
 # The permission key this API gates on. Registered in core's catalog
 # (`app/auth/permissions.py`, group "Building Intelligence") so a tenant admin can
@@ -295,6 +298,72 @@ async def series(
             for pid in allowed
         ],
     )
+
+
+# ── Widget query (the dashboard builder's executor) ───────────────────────────
+
+
+@bi_router.post(
+    "/query",
+    response_model=QueryResult,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def query(db: Db, scope: Caller, body: dict) -> QueryResult:
+    """Execute ONE widget spec and return its data.
+
+    This is the read path behind every dashboard widget. It lives here, not in
+    the dashboards service, for the same reason the rest of this router does:
+    contract §7 gives the readings schema one owner, and the owner serves its own
+    reads. The dashboards service stores widget definitions and never opens this
+    database.
+
+    The body is a widget spec (`app.api.spec`) — a STRUCTURED description of a
+    scope, a metric, a window, a rollup and a chart type. It is deliberately not
+    SQL; see that module for why, at length.
+
+    POST rather than GET because a spec is a nested object with a point-id list,
+    and encoding that into a query string would be a second, lossy serialisation
+    of a shape that is already defined. Nothing here writes — the verb is about
+    the request body, not the effect.
+
+    Gating is identical to every other route on this router: `bi.read`, the
+    `analytics` module, an unexpired licence, and a tenant taken from the token
+    claim and never from the request. A spec naming another tenant's points
+    resolves to zero points, because the scope query is tenant-filtered before a
+    single reading is read.
+    """
+    return await ex.run(db, _tenant(scope), widget_spec.parse(body))
+
+
+@bi_router.get(
+    "/query/capabilities",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def capabilities() -> dict:
+    """What this build's spec supports — the builder reads it instead of guessing.
+
+    A frontend that hard-codes the metric list drifts from the backend the moment
+    one is added or removed. Serving it means the widget editor's options and the
+    validator that rejects them can never disagree.
+    """
+    return {
+        "spec_version": widget_spec.SPEC_VERSION,
+        "kinds": ["series", "aggregate"],
+        "metrics": ["avg", "min", "max", "last", "first", "count"],
+        "rollups": ["auto", "1m", "1h", "raw"],
+        "scope_types": ["points", "device", "category", "all"],
+        "group_by": ["point", "device", "category"],
+        # Chart types THIS BUILD's UI draws. The executor does not validate `viz`
+        # at all (see spec.py), so this list is advisory: it tells the editor what
+        # to offer, and adding to it never invalidates a stored dashboard.
+        "viz": ["line", "bar", "stat", "table"],
+        "max_series": widget_spec.MAX_SERIES,
+        "max_rows": widget_spec.MAX_ROWS,
+        "max_hours": widget_spec.MAX_HOURS,
+        "raw_max_minutes": q.RAW_MAX_MINUTES,
+        # The rule a builder must show rather than let a user discover as a 400.
+        "grouped_metrics": ["count"],
+    }
 
 
 @bi_router.get("/whoami", dependencies=[Depends(require_permission(PERM_READ))])
