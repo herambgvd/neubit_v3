@@ -334,13 +334,21 @@ function Radar() {
                 animate={{ opacity: [1, 0.4, 1] }}
                 transition={{ duration: 2, repeat: Infinity, delay: b.d }}
               />
+              {/* The ripple animates `r`, so its start value has to come from
+                  `initial` — NOT from a static r="" attribute. framer-motion
+                  renders SVG geometry from its own tracked values, and a plain
+                  attribute never enters them: on the first frame it wrote
+                  r="undefined" and the browser rejected it once per blip
+                  ("<circle> attribute r: Expected length"). The animation
+                  recovered on frame two, so it looked fine and only ever
+                  showed up in the console. */}
               <motion.circle
                 cx={b.x}
                 cy={b.y}
-                r="1.6"
                 fill="none"
                 stroke={SEV_COLOR[b.sev]}
                 strokeWidth="0.5"
+                initial={{ r: 1.6, opacity: 0.6 }}
                 animate={{ r: [1.6, 6], opacity: [0.6, 0] }}
                 transition={{ duration: 2.4, repeat: Infinity, delay: b.d, ease: "easeOut" }}
               />
