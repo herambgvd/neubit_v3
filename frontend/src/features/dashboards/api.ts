@@ -21,7 +21,7 @@
 
 import { api } from "@/lib/api";
 
-import type { QueryResult, WidgetSpec } from "./spec";
+import type { Dataset, QueryResult, WidgetSpec } from "./spec";
 
 const DASH = "/dashboards";
 
@@ -96,17 +96,44 @@ export const dashboards = {
   ): Promise<DashboardDetail> => unwrap(api.put(`${DASH}/${id}/layout`, { items })),
 };
 
-// ── The executor ────────────────────────────────────────────────────────────
+// ── The executor + the dataset registry ─────────────────────────────────────
 
 export const widgetQuery = {
-  /** Run one widget spec. POST because a spec is a nested object with a point-id
-   *  list; encoding that into a query string would be a second, lossy
-   *  serialisation of a shape that is already defined. Nothing here writes. */
+  /** Run one widget's BUILDER STATE. POST because the state is a nested object;
+   *  encoding it into a query string would be a second, lossy serialisation of a
+   *  shape that is already defined.
+   *
+   *  Note what is NOT sent: SQL. The client sends state and the server generates
+   *  the statement — there is no endpoint on this platform that accepts SQL from
+   *  a browser (builder contract §3). The statement comes BACK on the result, as
+   *  a read-only echo. */
   run: (spec: WidgetSpec): Promise<QueryResult> => unwrap(api.post("/bi/query", spec)),
 
   /** What the backend's spec supports. Fetched rather than hard-coded so the
    *  editor's options and the validator that rejects them cannot disagree. */
   capabilities: (): Promise<any> => unwrap(api.get("/bi/query/capabilities")),
+};
+
+export const datasets = {
+  /** Every dataset this caller may read. Registered as DATA in the reporting
+   *  store, so one that a domain published five minutes ago is here now — the
+   *  builder discovers it, nothing in this console names it. */
+  list: (): Promise<{ total: number; items: Dataset[]; aggregates: string[]; filter_ops: string[] }> =>
+    unwrap(api.get("/bi/datasets")),
+
+  get: (key: string): Promise<Dataset> => unwrap(api.get(`/bi/datasets/${key}`)),
+
+  /** Distinct values of one dimension, for a filter picker. Without it the
+   *  builder would be a form full of free-text boxes: a person filtering on
+   *  `category` would have to know the gateway spells it `hvac`. */
+  values: (
+    key: string,
+    column: string,
+    search?: string,
+  ): Promise<{ column: string; label: string; items: { value: string | null; count: number }[] }> =>
+    unwrap(
+      api.get(`/bi/datasets/${key}/values`, { params: { column, search: search || undefined } }),
+    ),
 };
 
 export default dashboards;

@@ -40,34 +40,21 @@
 // `resolution_reason` — which store answered and what that means for freshness —
 // so a chart never implies a precision it does not have.
 
-import { useMemo } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { apiError } from "@/lib/api";
 
-import { widgetQuery } from "./api";
+import { datasets as datasetsApi, widgetQuery } from "./api";
 import { seriesBand, toChartData } from "./charts/adapt";
-import type { WidgetSpec } from "./spec";
-import { specIssue } from "./spec";
-
 // All chart renderers are dynamically imported client-only — ECharts is
 // browser-only, and a dashboard with no line chart on it should not pay for one.
-const chartLoading = () => (
-  <div className="flex h-full items-center justify-center text-[11px] text-nb-faint">
-    Loading chart…
-  </div>
-);
-const dyn = (loader: () => Promise<{ default: React.ComponentType<any> }>) =>
-  dynamic(loader, { ssr: false, loading: chartLoading });
-
-const CHART_COMPONENTS: Record<string, React.ComponentType<any>> = {
-  line: dyn(() => import("./charts/line-chart")),
-  bar: dyn(() => import("./charts/bar-chart")),
-  stat: dyn(() => import("./charts/kpi-card")),
-  table: dyn(() => import("./charts/data-table")),
-};
+// The map itself lives next to the renderers and next to `widget-types.ts`, so a
+// palette entry without a renderer is caught where both lists are visible.
+import { CHART_COMPONENTS } from "./charts/registry";
+import type { Dataset, QueryResult, WidgetSpec } from "./spec";
+import { migrateSpec, specIssue } from "./spec";
 
 // How often a widget re-reads. The building publishes on a ~5 minute cycle, so
 // 60s is comfortably inside it without turning a 20-widget dashboard into a
@@ -91,15 +78,38 @@ export interface ChartWidgetProps {
  *  what gets saved. A separate preview path would drift, and it would drift first
  *  on the states below. */
 export function WidgetBody({
-  spec,
+  spec: storedSpec,
   refreshMs = REFRESH_MS,
+  onResult,
 }: {
   spec: WidgetSpec;
   refreshMs?: number;
+  /** Handed the raw result when one arrives. The editor uses it for the
+   *  read-only echo of the statement the SERVER generated — so what a person
+   *  inspects is what actually ran, not a second guess at it. */
+  onResult?: (r: QueryResult) => void;
 }) {
+  // A stored v1 (IoT-shaped) spec is brought forward HERE, at the one boundary
+  // where a saved widget becomes a running one — the same translation the server
+  // does on read. Without it a v1 widget would fail the client-side validator
+  // with "pick a dataset" over a query the server can answer perfectly well.
+  const spec = useMemo(() => migrateSpec(storedSpec), [storedSpec]);
+
+  // The dataset this widget charts — its dimensions, measures and the aggregates
+  // each measure permits. Loaded so the client-side validator can mirror the
+  // server's honesty rules; a widget still renders if it has not arrived (the
+  // server is the authority, this is only steering). Cached across widgets.
+  const dsQ = useQuery<{ items: Dataset[] }>({
+    queryKey: ["bi-datasets"],
+    queryFn: () => datasetsApi.list(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const ds = (dsQ.data?.items || []).find((d) => d.key === spec.query.dataset);
+
   // Ask the client-side validator first: an unanswerable spec should say what is
-  // missing rather than fire a request that comes back 400.
-  const issue = specIssue(spec);
+  // missing rather than fire a request that comes back 422.
+  const issue = specIssue(spec, ds);
 
   const q = useQuery<any>({
     // The spec IS the cache key. Change a metric and it is a different question,
@@ -111,7 +121,14 @@ export function WidgetBody({
     retry: false,
   });
 
-  const result = q.data;
+  const result: QueryResult | undefined = q.data;
+
+  useEffect(() => {
+    if (result && onResult) onResult(result);
+    // `onResult` is a setState in practice; keying on the result alone keeps this
+    // from re-firing on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   const chart = useMemo(() => {
     if (!result) return null;
@@ -196,20 +213,21 @@ export function WidgetBody({
           {result.resolution_reason}
         </span>
         {result.truncated ? (
-          // `matched` counts POINTS. A grouped aggregate's rows are devices or
-          // categories, so the executor reports matched=0 there and the caption
-          // says "top N" — comparing 8 devices to 314 points would be nonsense.
+          // `matched` counts the SERIES or GROUPS the query found, which is the
+          // same unit the widget draws — so "showing 8 of 37" compares two of
+          // the same thing.
           <span
             className="ml-auto shrink-0 text-nb-warn"
-            title={
-              result.matched
-                ? `the scope matched ${result.matched} points; this widget shows fewer`
-                : "the scope had more groups than this widget shows"
-            }
+            title={`the query matched ${result.matched}; this widget shows fewer`}
           >
-            {result.matched
-              ? `showing ${result.shape === "series" ? result.series.length : result.rows.length} of ${result.matched}`
-              : `top ${result.rows.length}`}
+            {/* A split time-series draws one COLUMN per series; everything else
+                draws one ROW per group. Counting the wrong one would say
+                "showing 24 of 3". */}
+            {`showing ${
+              spec.query.time_series && spec.query.series_by
+                ? Math.max(result.columns.length - 1, 0)
+                : result.rows.length
+            } of ${result.matched}`}
           </span>
         ) : null}
       </div>

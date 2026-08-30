@@ -41,6 +41,16 @@ export interface WidgetOptions {
   decimals?: number;
   /** Draw the min→max envelope behind a single series. */
   band?: boolean;
+  /** Gauge only: the range the value is read against. STATED by the widget's
+   *  author — the gauge invents neither, and falls back to the spread of the
+   *  rest of the scope rather than to a 0–100 dial nothing measured. */
+  min?: number;
+  max?: number;
+  /** Heatmap only: colour every row on ONE absolute scale instead of
+   *  normalising each row to its own min→max. Opt-in, because a shared ramp
+   *  across points is only meaningful if they measure the same thing, and
+   *  nothing on the wire says they do. */
+  sharedScale?: boolean;
   [key: string]: any;
 }
 

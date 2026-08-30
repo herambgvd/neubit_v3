@@ -27,22 +27,34 @@
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 
-import { BarChart, LineChart } from "echarts/charts";
+import { BarChart, GaugeChart, HeatmapChart, LineChart, PieChart } from "echarts/charts";
 import {
   GridComponent,
   LegendComponent,
   MarkLineComponent,
   TooltipComponent,
+  VisualMapComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 
 echarts.use([
   LineChart,
   BarChart,
+  // Added with the chart-set port. Each of these three is one ECharts chart
+  // module, not a second library: pie and gauge are self-contained, and heatmap
+  // reuses the `GridComponent` the line and bar charts already pull in. The
+  // three 3-D types the reference also ships were left out precisely because
+  // they would have meant adding `echarts-gl` here.
+  PieChart,
+  GaugeChart,
+  HeatmapChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
   MarkLineComponent,
+  // Only the heatmap needs it — it is what turns a value into a colour, and
+  // ECharts will silently paint every cell the same shade without it.
+  VisualMapComponent,
   CanvasRenderer,
 ]);
 

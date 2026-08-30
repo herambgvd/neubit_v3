@@ -40,6 +40,12 @@ export interface ChartThemeTokens {
   tooltipText: string;
   /** The min→max envelope behind a single series. */
   band: string;
+  /** The unfilled part of a gauge's arc — the range the value has not reached. */
+  gaugeTrack: string;
+  /** A heatmap cell the query returned no value for. Deliberately the widget's
+   *  own background rather than the low end of the ramp, so "no reading" reads
+   *  as a hole in the grid instead of as a low reading. */
+  heatEmpty: string;
 }
 
 export function chartTheme(): ChartThemeTokens {
@@ -51,8 +57,34 @@ export function chartTheme(): ChartThemeTokens {
     tooltipBorder: "#24325c", // --field-border
     tooltipText: "#f2f6ff", // nb-ink
     band: "rgba(103,232,249,.13)",
+    gaugeTrack: "rgba(160,150,245,.14)",
+    heatEmpty: "transparent",
   };
 }
+
+/** Sequential ramp for the heatmap, low → high.
+ *
+ *  The reference's is emerald/lime (`#10312a → #a3e635`), which is a different
+ *  product's identity dropped onto a navy console. This one is five NeuBit
+ *  tokens from `docs/design-tokens.md` — the primary scale rising into the teal
+ *  accents — chosen so lightness increases monotonically across the ramp. That
+ *  matters more than hue: a sequential scale whose middle is lighter than its
+ *  end is read backwards.
+ *
+ *  **The floor is primary-800, deliberately NOT the widget's background.** The
+ *  first version of this ramp started at `#0b1228` (nb-field), which is the
+ *  console's own panel colour — and the lowest cells then painted themselves
+ *  invisible, so a genuine LOW reading looked exactly like a bucket with no
+ *  reading at all. That is the "absence renders as absence" rule broken from the
+ *  other direction, and it is not visible in a screenshot of a chart whose data
+ *  happens to be flat. Every step of this ramp must read as a painted cell. */
+export const HEATMAP_RAMP = [
+  "#203071", // primary-800 — low, but unmistakably a cell
+  "#2A3F96", // primary-700
+  "#4669fa", // primary-500
+  "#22d3ee", // nb-teal
+  "#67e8f9", // nb-tealb
+];
 
 /** Shared categorical palette used by every chart. NeuBit console accents
  *  (`docs/design-tokens.md` §2), ordered for maximum separation across the first
