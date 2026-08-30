@@ -51,6 +51,7 @@ import { contextKeyFor } from "./dashboard-context";
 import type { QueryContext } from "./dashboard-context";
 import { isDrillable } from "./drill";
 import { unitNote } from "./number-format";
+import { DEFAULT_REFRESH_MS, refreshMsFor } from "./widget-refresh";
 import type { DrillPoint } from "./drill";
 import { applyCalcFields } from "./calc-fields";
 import { seriesBand, toChartData } from "./charts/adapt";
@@ -62,10 +63,10 @@ import { CHART_COMPONENTS } from "./charts/registry";
 import type { Dataset, QueryResult, WidgetSpec } from "./spec";
 import { migrateSpec, specIssue } from "./spec";
 
-// How often a widget re-reads. The building publishes on a ~5 minute cycle, so
-// 60s is comfortably inside it without turning a 20-widget dashboard into a
-// steady stream of requests.
-const REFRESH_MS = 60_000;
+// How often a widget re-reads, when it does not say otherwise. Lives in
+// `widget-refresh.tsx` next to the control that overrides it, so the default and
+// the picker cannot drift.
+const REFRESH_MS = DEFAULT_REFRESH_MS;
 
 export interface ChartWidgetProps {
   title?: string;
@@ -129,6 +130,11 @@ export function WidgetBody({
   // missing rather than fire a request that comes back 422.
   const issue = specIssue(spec, ds);
 
+  // A widget may set its own interval; `refreshMs` from the caller (the editor's
+  // preview passes 0) still wins, because a preview polling while you type is
+  // noise.
+  const pollMs = refreshMs === 0 ? 0 : refreshMsFor(spec.options);
+
   const q = useQuery<any>({
     // The spec IS the cache key. Change a metric and it is a different question,
     // so it must be a different cache entry — not a stale render with a new label.
@@ -139,7 +145,7 @@ export function WidgetBody({
     queryKey: ["widget-query", JSON.stringify(spec), context ? contextKeyFor(spec, context) : ""],
     queryFn: () => widgetQuery.run(spec, context),
     enabled: !issue,
-    refetchInterval: refreshMs > 0 ? refreshMs : false,
+    refetchInterval: pollMs > 0 ? pollMs : false,
     retry: false,
   });
 

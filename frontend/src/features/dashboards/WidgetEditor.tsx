@@ -45,6 +45,7 @@ import type { DashboardConfig } from "./dashboard-context";
 import { DEFAULT_SIZE } from "./constants";
 import QueryBuilderForm from "./QueryBuilderForm";
 import WidgetCalcFields from "./widget-calc-fields";
+import WidgetRefresh from "./widget-refresh";
 import WidgetNumberFormat from "./widget-number-format";
 import { VIZ_TIME_SERIES, WINDOWS, migrateSpec, newSpec, specIssue } from "./spec";
 import type { Dataset, QueryResult, SpecQuery, Viz, WidgetSpec } from "./spec";
@@ -285,6 +286,11 @@ export default function WidgetEditor({
                 onChange={(next) => setSpec((sp) => (sp ? { ...sp, options: next } : sp))}
               />
             </div>
+
+            <WidgetRefresh
+              options={spec.options || {}}
+              onChange={(next) => setSpec((sp) => (sp ? { ...sp, options: next } : sp))}
+            />
 
             {ds ? (
               <QueryBuilderForm

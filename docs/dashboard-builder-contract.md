@@ -137,7 +137,27 @@ place a past one is brought forward; use it.
 4. The frontend dev container is fragile — `/app/node_modules` is an anonymous
    volume Docker seeds from the HOST directory, so it can end up with macOS
    binaries or a corrupt Turbopack cache. Adding a dependency will make you hit
-   this. Recovery: `docker compose up -d --force-recreate frontend`, and if
-   lightningcss fails to load,
+   this. Recovery: `docker compose up -d --force-recreate --renew-anon-volumes
+   frontend` — **`--renew-anon-volumes` is required**; plain `--force-recreate`
+   keeps the anonymous volume and therefore keeps the corrupt Turbopack cache,
+   which is how this reads as "the recovery does not work". If lightningcss then
+   fails to load,
    `docker exec neubit-v3-frontend-1 npm install --no-save lightningcss-linux-arm64-musl@1.32.0`.
    Do not conclude your code broke the app.
+
+## 8. Cache control, and why the builder does not offer one (2026-08-30)
+
+§5 lists "refresh and cache control" as in scope. The REFRESH half is built: a
+widget picks its own polling interval. The CACHE half is deliberately not, and
+this is a §4 consequence rather than an omission.
+
+The reference's control sets a server-side TTL on a cached query result. Here
+every result carries `resolution` and `resolution_reason` — which store answered
+and what that means for freshness — and a widget prints that line. A TTL layered
+on top lets a tile print "1-minute rollup, real-time" over a number that is five
+minutes old, which is precisely the quiet precision claim §4 exists to prevent.
+
+If result caching is wanted, it belongs in the executor, where it can amend the
+reason line to say the result was served from a cache and how old that cache is.
+It does not belong in a per-widget option that changes the number's age without
+changing what the widget says about it.
