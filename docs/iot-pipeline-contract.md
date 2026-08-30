@@ -595,3 +595,41 @@ rows (§6) — there is no retirement path and no delete API — so a test point
 permanent. That is a real gap, not a display bug: `points` needs either a
 retention rule on `last_seen_at` or an explicit retire, and the counts stay
 slightly wrong until it has one.
+
+---
+
+## 14. A second consumer on the same store (2026-08-30)
+
+`neubit_reporting` now has two writers, and the split is deliberate.
+
+| | writes |
+|---|---|
+| `reading-writer` | `readings` / `points` and their rollups. Unchanged; §7 still holds. |
+| `reporting-projector` | the relations declared in `reporting_projections` — domain events, starting with access control. |
+
+The projector (`backend/projector`) is a sibling, not an extension: it copies this
+contract's §4 and §6 behaviours verbatim — durable pull consumer, batch on N rows
+or T ms, one INSERT per batch, `ON CONFLICT DO NOTHING` on a natural key, ack only
+after a durable write, NAK the whole batch on failure, pause the fetcher while the
+database is down, count malformed messages by reason — because those are
+properties of a durable consumer, not of the IoT domain. The differences are only
+the ones the domain forces: `EVENTS` instead of `IOT_READINGS`, smaller batches
+(domain events arrive at human rates, so the timer is what fires), and per-
+projection counters instead of one set.
+
+Two things this change fixed on the IoT side:
+
+* `_fetch_loop` caught only `nats.errors.TimeoutError`. nats-py also raises
+  `asyncio.TimeoutError` when the client-side wait expires, so a QUIET gateway
+  logged `fetch failed:` with an empty message every second and parked a
+  permanent `last_error` on `/stats` and `/readyz`. Both timeouts are now the
+  idle path. A health surface that cries wolf while nothing is wrong is worse
+  than no health surface.
+* Nothing else. The readings pipeline is otherwise untouched.
+
+What has NOT changed: there is still exactly ONE read path over this store
+(`reading-writer`'s `/api/v1/bi/...`). The projector serves no tenant API. A
+second query path over the same tables is exactly the drift §8 rule 2 is about.
+
+See `docs/dashboard-builder-contract.md` §9 for the projection registry, the
+per-domain recipe, and the ownership table.
