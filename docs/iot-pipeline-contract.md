@@ -99,7 +99,7 @@ existing event body shape (`{tenant_id, domain, event, payload}`).
     "device_tag": "B2_Main Incomer",
     "point_id":   "47c0e4f6-…",
     "point_tag":  "PF_pf",
-    "env": { "src": …, "v": 0.98, "u": "", "ts": 1756450000000, "q": 0, "kind": "" }
+    "env": { "src": …, "v": 0.98, "u": "", "ts": 1756450000, "q": 0, "kind": "" }
   }
 }
 ```
@@ -115,23 +115,71 @@ properties of it matter downstream and must survive:
 - **`ts` is the reading's own timestamp**, not the time it was published or
   written. Replay from the outbox can deliver a reading minutes late; the row
   must carry when it was *measured*.
+- **`ts` is in epoch SECONDS.** `model.Envelope.Ts` is `int64` and its own
+  comment says "source timestamp, epoch seconds"; the live feed confirms it. An
+  earlier version of the example above showed a millisecond value and was wrong.
+  The writer's parser (`app/envelope.py`) decides by magnitude and scales
+  milliseconds/microseconds if they ever appear, so a unit change on the gateway
+  would not silently write rows into the year 58000 — but seconds is the contract.
 
 ---
 
 ## 4. JetStream configuration
 
-`EVENTS` already exists (`subjects=["tenant.>"]`) and therefore already captures
-these subjects. Check its retention and limits before relying on it: a stream
-sized for occasional domain events is not sized for a sensor feed. If it is not
-suitable, add a dedicated stream for `tenant.*.iot.>` rather than widening
-`EVENTS` and changing the retention of everything else.
+Two streams. They must not overlap: NATS refuses overlapping subjects between
+streams on one account, and that constraint is what forces the split below.
 
-The writer consumes as a **durable queue-group consumer**. That is what gives
-redundancy without any coordination code: run two or more writer replicas and
-NATS distributes messages between them. No leader election, nothing to configure
-per replica.
+| stream | subjects | limits |
+|---|---|---|
+| `EVENTS` | an explicit list of domains — `tenant.*.access.>`, `.core.`, `.device.`, `.erasure.`, `.fire.`, `.ingest.`, `.notify.`, `.sites.`, `.tags.`, `.tenant.`, `.vms.`, `.workflow.` | unbounded (unchanged) |
+| `IOT_READINGS` | `tenant.*.iot.>` | `max_bytes` 8 GiB, `max_age` 7 days, `max_msg_size` 1 MiB, `discard: old` |
 
----
+`EVENTS` used to be `tenant.>`, which subsumed the sensor feed. It is now an
+explicit domain list, held in ONE place per language and kept identical across
+them:
+
+* `backend/kernel/kernel/events.py` → `EVENTS_SUBJECTS`
+* `backend/core/app/core/events_nats.py` → `EVENTS_SUBJECTS` (a deliberate copy;
+  core's image does not ship the kernel package)
+* the Go `gokernel/events` in the `nvr` repo still creates `EVENTS` with
+  `tenant.>`; that call now fails harmlessly and is swallowed, but the list
+  should be brought over next time that repo is touched.
+
+**⚠ A NEW DOMAIN MUST BE ADDED TO THAT LIST.** Otherwise its events land on a
+subject no stream captures: the realtime SSE relays still see them (they use core
+NATS, at-most-once, and never needed a stream) but there is no persistence and no
+durable consumer can be created on it.
+
+`add_stream` only ever CREATES. Both Python clients now read the stream back and
+`update_stream` it when the subject list has drifted, so a change to the list
+reaches a running deployment instead of being swallowed as "already exists".
+
+**Sizing of `IOT_READINGS`, from measurement.** One idle 313-point Modbus/MQTT
+broker produces ~37 msg/min ≈ 53k/day ≈ 21 MB/day (envelopes are ~450 B). The
+stream is a REPLAY BUFFER, not the archive — the archive is the `readings`
+hypertable and its own retention (§5). Seven days covers far more writer downtime
+than this is meant to survive; 8 GiB is ~380 MB/day against that age limit, i.e.
+~18x the measured single-broker rate, so age binds until roughly 18 brokers and
+size takes over after that. `discard: old` means a full stream drops the OLDEST
+messages and never becomes backpressure on the gateway. Every limit is an
+environment variable (`VE_IOT_STREAM_*`).
+
+NATS monitoring is now enabled (`-m 8222` in `deploy/docker-compose.yml`; the port
+was already published but nothing listened on it), so stream and consumer state
+are answerable over HTTP:
+
+    curl -s 'localhost:8222/jsz?streams=1&config=1' | jq
+    curl -s localhost:8222/healthz
+
+JetStream's file store also has a named volume now (`natsdata:/data`). It had
+none: every stream, message and durable consumer lived in the nats container's
+writable layer, so any `--force-recreate` silently wiped the event spine and the
+services quietly re-created empty streams on reconnect.
+
+The writer consumes as a **durable queue-group consumer** — a durable PULL
+consumer, which is inherently shared: every replica binds the same durable name
+and NATS distributes between them. `docker compose up -d --scale reading-writer=2`
+is the whole redundancy story. No leader election, nothing per-replica.
 
 ## 5. Schema
 
@@ -217,7 +265,7 @@ Schema changes happen in the writer, in one place.
 
 ---
 
-## 9. Open questions from Phase C (2026-08-30) — settle these before Phase B
+## 9. Open questions from Phase C (2026-08-30) — ALL SETTLED, see §10
 
 Phase A (schema) and Phase C (gateway publisher) are done. Four things surfaced
 that this contract did not settle. The writer must not guess at them.
@@ -252,3 +300,67 @@ so stream state cannot be inspected over HTTP until that is added.
 Phase C used the same wrapper with `event: "alert"` and
 `payload: {conn_id, alert}`. This is the one shape nothing in this document
 authorised — confirm or change it before a consumer depends on it.
+
+---
+
+## 10. What Phase B settled (2026-08-30)
+
+Phase B is the reading-writer: `backend/reading-writer/`, service
+`reading-writer`, consuming `tenant.*.iot.reading.>` off `IOT_READINGS` into
+`neubit_reporting.readings`. §9's four open items:
+
+1. **conn_id in the subject: UUID.** Confirmed, unchanged. The writer reads
+   `payload.conn_id` and never parses the subject, so it is indifferent — but
+   consumers that DO parse the subject get the same value as the body.
+2. **§1 undersold the work** — noted, nothing to change.
+3. **The unbounded `EVENTS` stream** — fixed. See the rewritten §4.
+4. **The alert body shape** — CONFIRMED as Phase C sent it
+   (`{tenant_id, domain: "iot", event: "alert", payload: {conn_id, alert}}`).
+   Alerts are events, not measurements: they get no row in `readings`, and the
+   writer's consumer filter deliberately excludes them. They are captured by
+   `IOT_READINGS` (subjects `tenant.*.iot.>`) so they are durable and replayable,
+   but nothing on the platform consumes them yet.
+
+### One thing this document did not anticipate: the tenant key is not a UUID
+
+§2 says a connection without a tenant "uses the platform's default tenant id".
+The gateway does something different: it publishes ITS OWN default tenant key,
+which is the literal string `default` — the live aeon feed is on
+`tenant.default.iot.reading.…` and `"tenant_id": "default"` in the body. But
+`readings.tenant_id` is `uuid NOT NULL` (§5), so that key has to be resolved.
+
+The writer resolves it (`app/tenants.py`), in this order: a key that parses as a
+UUID is used as-is; otherwise `VE_READINGS_TENANT_MAP` (`key=uuid,…`); otherwise
+`VE_READINGS_DEFAULT_TENANT_ID`; otherwise a deterministic UUIDv5 of the key,
+with a WARNING and a non-zero `reading_writer_unmapped_tenant_keys` metric.
+Dropping the reading was the alternative and it is silent data loss.
+
+**This is a live deployment decision, deliberately left unmade.** Until
+`VE_READINGS_TENANT_MAP` names a real platform tenant, readings land under a
+synthetic tenant id that the UI does not know. Either configure the gateway
+connection with the platform tenant UUID (the clean fix, and then rule 1 applies
+and no mapping is needed), or set the map in `deploy/.env`.
+
+### Writer behaviour, as built (§6 made concrete)
+
+* **Batch on N rows or T ms, whichever comes first** (`VE_READINGS_BATCH_ROWS`
+  500 / `VE_READINGS_BATCH_MS` 1000). One code path at any rate.
+* **Ack only after the batch is durably written.** A batch is ONE transaction —
+  points upsert and readings insert together — so a failure mid-write leaves
+  nothing behind. On failure the writer retries in place twice and then NAKs the
+  whole batch: nothing was acked, JetStream redelivers, and
+  `ON CONFLICT DO NOTHING` absorbs any row a successful retry already stored.
+* **Never blocks the bus on the database.** A bounded queue of batches sits
+  between the fetcher and the writer; when it fills the fetcher stops pulling and
+  the backlog stays in JetStream, where it is bounded and visible as
+  `consumer_pending`. The gateway's publish is acked by the NATS server and is
+  never affected.
+* **Database down → the fetcher pauses** rather than burning ack_wait timers; a
+  `SELECT 1` prober resumes it.
+* **Malformed messages are acked, counted and logged** with a reason
+  (`reading_writer_malformed_by_reason{reason=…}`). Redelivering a message that
+  can never become a row would block the stream behind it. This is the only place
+  the writer discards anything, and it is never silent.
+* **Observability**: `:8020/health` (liveness), `/readyz` (503 on database down,
+  NATS disconnected, or lag over `VE_READINGS_LAG_WARN`), `/metrics`
+  (Prometheus), `/stats` (the same as JSON).
