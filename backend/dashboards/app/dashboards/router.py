@@ -72,6 +72,7 @@ def _detail(row) -> DashboardDetail:
         grid_cols=row.grid_cols,
         row_height=row.row_height,
         widget_count=len(row.widgets),
+        config=row.config or {},
         created_at=row.created_at,
         updated_at=row.updated_at,
         widgets=[WidgetPublic.model_validate(w) for w in row.widgets],

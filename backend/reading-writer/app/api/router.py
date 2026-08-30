@@ -31,6 +31,7 @@ from reporting.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import builder
+from . import context
 from . import execute as ex
 from . import permsync
 from . import queries as q
@@ -409,13 +410,27 @@ async def query(db: Db, scope: Caller, who: Who, body: dict) -> QueryResult:
     required to read it, and the tenant comes from the token claim and never from
     the request. A spec naming another tenant's rows returns nothing, because
     every generated statement carries the tenant bind.
+
+    The body may also carry a DASHBOARD CONTEXT (`{spec, context}`) — the page's
+    global filters, its variables and its shared window. That context is merged
+    into the widget's builder STATE before validation, so everything the page
+    contributes is checked by the same rules and BOUND by the same generator as
+    everything the widget's author wrote. It is emphatically not substituted into
+    a query string; `context.py` is the whole argument for why, and what to check.
     """
-    spec = widget_spec.parse(body)
+    spec, ctx = widget_spec.parse_request(body)
     ds = await registry.get(db, spec.query.dataset)
     if not _allowed(who, ds):
         raise ForbiddenError(f"missing permission(s): {ds.permission}")
+    # BEFORE `validated`: a filter the page contributed must face the same
+    # comparability and window rules as one the widget carries, and a page filter
+    # that pins an incomparable measure to one series legitimately makes an
+    # otherwise-refused widget answerable.
+    notes = context.resolve(spec, ctx, ds)
     spec.query.validated(ds)
-    return await ex.run(db, _tenant(scope), ds, spec)
+    result = await ex.run(db, _tenant(scope), ds, spec)
+    result.context_notes = [n.model_dump() for n in notes]
+    return result
 
 
 @bi_router.get("/query/capabilities")

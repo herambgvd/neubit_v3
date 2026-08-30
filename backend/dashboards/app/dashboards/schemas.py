@@ -28,7 +28,14 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+import re
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# A dashboard variable's name. Never emitted into SQL — the executor looks it up
+# as a dict key — but a name is still a name, and a loud refusal at the edge beats
+# a variable that silently never resolves.
+NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # A dashboard's canvas. 12 columns is the convention every grid layout in this
 # space uses; the bounds exist so a stored value cannot make the canvas unusable.
@@ -55,6 +62,80 @@ class WidgetSpecEnvelope:
         if not isinstance(spec.get("query"), dict):
             raise ValidationError("widget spec must carry a query object")
         return spec
+
+
+MAX_DASH_FILTERS = 12
+MAX_DASH_VARIABLES = 30
+
+
+class DashboardConfigEnvelope:
+    """Structural check for a dashboard's page-level state (filters, variables).
+
+    The SAME argument as ``WidgetSpecEnvelope`` above, and it is worth restating
+    because it is the reason this is a shape check and not a model. A dashboard
+    filter names a DATASET DIMENSION — `category`, `door_name` — and the dataset
+    registry lives in the reading-writer, which owns ``neubit_reporting``. For
+    this service to validate that a filter's column exists it would have to read
+    that store, which is precisely the cross-service read the platform bans and
+    the second place the registry could drift from itself.
+
+    So: bounded, well-formed, and no opinion about meaning. A filter naming a
+    dimension that does not exist is caught by the executor, with a message
+    naming the column — which is the component that actually knows.
+
+    What IS enforced here is size, because an unbounded JSON blob on a row every
+    page load reads is a denial-of-service with extra steps.
+    """
+
+    @staticmethod
+    def check(config: Any) -> dict:
+        from kernel.errors import ValidationError
+
+        if config is None:
+            return {}
+        if not isinstance(config, dict):
+            raise ValidationError("dashboard config must be an object")
+        unknown = set(config) - {"filters", "variables", "window"}
+        if unknown:
+            raise ValidationError(
+                f"unknown dashboard config field(s): {', '.join(sorted(unknown))}"
+            )
+        filters = config.get("filters", [])
+        if not isinstance(filters, list):
+            raise ValidationError("dashboard config filters must be a list")
+        if len(filters) > MAX_DASH_FILTERS:
+            raise ValidationError(
+                f"a dashboard offers at most {MAX_DASH_FILTERS} filters; more than "
+                "that is a form, not a filter bar"
+            )
+        for f in filters:
+            if not isinstance(f, dict):
+                raise ValidationError("each dashboard filter must be an object")
+            if not isinstance(f.get("id"), str) or not f["id"].strip():
+                raise ValidationError("each dashboard filter needs an id")
+            if not isinstance(f.get("column"), str) or not f["column"].strip():
+                raise ValidationError("each dashboard filter must name a column")
+        ids = [f["id"] for f in filters]
+        if len(set(ids)) != len(ids):
+            raise ValidationError("two dashboard filters share an id")
+        variables = config.get("variables", [])
+        if not isinstance(variables, list):
+            raise ValidationError("dashboard config variables must be a list")
+        if len(variables) > MAX_DASH_VARIABLES:
+            raise ValidationError(f"a dashboard defines at most {MAX_DASH_VARIABLES} variables")
+        for v in variables:
+            if not isinstance(v, dict):
+                raise ValidationError("each dashboard variable must be an object")
+            name = v.get("name")
+            if not isinstance(name, str) or not NAME_RE.match(name):
+                raise ValidationError(
+                    f"{name!r} is not a usable variable name — letters, digits and "
+                    "underscores, not starting with a digit"
+                )
+        names = [v["name"] for v in variables]
+        if len(set(names)) != len(names):
+            raise ValidationError("two dashboard variables share a name")
+        return config
 
 
 class Geometry(BaseModel):
@@ -146,6 +227,12 @@ class DashboardCreate(BaseModel):
     slug: str | None = Field(default=None, max_length=160)
     grid_cols: int = Field(default=12, ge=MIN_COLS, le=MAX_COLS)
     row_height: int = Field(default=56, ge=MIN_ROW_H, le=MAX_ROW_H)
+    config: dict | None = None
+
+    @field_validator("config")
+    @classmethod
+    def _cfg(cls, v: dict | None) -> dict | None:
+        return None if v is None else DashboardConfigEnvelope.check(v)
 
 
 class DashboardUpdate(BaseModel):
@@ -155,6 +242,12 @@ class DashboardUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=1024)
     grid_cols: int | None = Field(default=None, ge=MIN_COLS, le=MAX_COLS)
     row_height: int | None = Field(default=None, ge=MIN_ROW_H, le=MAX_ROW_H)
+    config: dict | None = None
+
+    @field_validator("config")
+    @classmethod
+    def _cfg(cls, v: dict | None) -> dict | None:
+        return None if v is None else DashboardConfigEnvelope.check(v)
 
 
 class DashboardSummary(BaseModel):
@@ -174,6 +267,10 @@ class DashboardSummary(BaseModel):
 
 
 class DashboardDetail(DashboardSummary):
+    # The page-level filters and variables. On the DETAIL only: the list view
+    # renders no filter bar, and shipping every dashboard's config in a list of
+    # fifty is payload nobody reads.
+    config: dict = Field(default_factory=dict)
     widgets: list[WidgetPublic] = Field(default_factory=list)
 
 

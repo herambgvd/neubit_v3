@@ -115,6 +115,7 @@ class DashboardService:
             description=(data.description or None),
             grid_cols=data.grid_cols,
             row_height=data.row_height,
+            config=data.config or {},
             created_by=created_by,
         )
         self.db.add(row)
@@ -136,6 +137,8 @@ class DashboardService:
             row.grid_cols = data.grid_cols
         if data.row_height is not None:
             row.row_height = data.row_height
+        if data.config is not None:
+            row.config = data.config
         await self.db.commit()
         await self.db.refresh(row)
         return row

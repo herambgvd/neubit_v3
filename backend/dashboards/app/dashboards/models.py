@@ -85,6 +85,20 @@ class Dashboard(Base):
     grid_cols: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("12"))
     row_height: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("56"))
 
+    # The page-level builder state: its global filters, its variables, and the
+    # window they share. OPAQUE here, exactly as ``DashboardWidget.spec`` is
+    # opaque, and for the same reason — a filter names a dataset dimension, and
+    # the dataset registry lives in the reading-writer. This service would have
+    # to open ``neubit_reporting`` to have an opinion about it, which is the
+    # cross-service read the platform bans.
+    #
+    # What it therefore stores is DEFINITIONS, never values-in-flight: which
+    # filters this dashboard offers, what each is bound to, and what it defaults
+    # to. The chosen value of a filter right now is session state and lives in the
+    # URL, so a filtered view is a shareable link rather than a thing one person
+    # saved onto everyone else's page.
+    config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+
     # Who made it. Informational — authorisation is the permission + the tenant,
     # never ownership, because a dashboard is a team artefact.
     created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)

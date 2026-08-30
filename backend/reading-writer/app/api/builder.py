@@ -134,8 +134,24 @@ class Filter(BaseModel):
     value: str | float | int | bool | None = None
     value2: str | float | int | bool | None = None
     values: list[str | float | int | bool] = Field(default_factory=list)
+    # The NAME of a dashboard variable supplying this filter's value.
+    #
+    # This is how a widget says "whichever site the page is showing" without any
+    # template language and without anything being substituted into a query. The
+    # name is a dict key looked up in Python (`context.resolve`); what it resolves
+    # to lands in `value`/`values` and is BOUND by `sqlgen._predicate` like every
+    # other value. The name itself never reaches SQL, and there is deliberately no
+    # `raw` escape hatch — the reference needs one only because its variables are
+    # spliced into query text.
+    variable: str | None = Field(default=None, max_length=64)
 
     def complete(self) -> bool:
+        if self.variable:
+            # Unresolved. `context.resolve` either fills it in or drops the
+            # filter, and it runs before validation — so a `variable` still set
+            # here means the widget was executed with no dashboard context, and
+            # an unresolved predicate must never quietly become no predicate.
+            return False
         if self.op in ("is null", "is not null"):
             return True
         if self.op == "in":
@@ -212,6 +228,22 @@ class BuilderQuery(BaseModel):
     # line widget with one series; the executor answers it with two extra columns
     # rather than the frontend inventing a range it did not measure.
     band: bool = False
+
+    # ── opting out of the dashboard's context ────────────────────────────────
+    #
+    # These live in the WIDGET's stored state rather than in the session, because
+    # "this tile deliberately shows the whole estate while the rest of the page is
+    # scoped to one site" is a property of the widget its author decided on, and
+    # it must survive a reload, a share and somebody else opening the page.
+    #
+    # `ignore_filters` names dashboard-filter IDs. It is never used in SQL — it is
+    # a set membership test in `context.resolve`.
+    ignore_filters: list[str] = Field(default_factory=list, max_length=20)
+    ignore_all_filters: bool = False
+    # Keep the widget's own time window when the page changes its own. A
+    # "last 24 hours" comparison tile beside a "this week" chart is a legitimate
+    # thing to build, and it is a lie if the page silently retimes it.
+    ignore_window: bool = False
 
     # ── validation against a DATASET ─────────────────────────────────────────
 

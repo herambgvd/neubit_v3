@@ -103,6 +103,49 @@ def parse(raw: dict) -> BuilderSpec:
         raise ValidationError(_pydantic_message(exc)) from exc
 
 
+def parse_request(body: dict) -> tuple[BuilderSpec, "QueryContext | None"]:
+    """Parse the `/bi/query` body: a bare spec, or a spec plus a DASHBOARD CONTEXT.
+
+    Two accepted shapes, and the discriminator is structural rather than a version
+    flag:
+
+        {spec_version: 2, viz: …, query: {…}}          a bare widget spec
+        {spec: {…}, context: {filters, variables, window}}   a widget on a page
+
+    The bare form is not legacy support to be removed later — the widget editor's
+    preview and any one-off execution genuinely have no dashboard around them, and
+    an API that forces an empty envelope on them is worse for no gain.
+
+    The context is still STATE. There is no shape here in which SQL, a column
+    name, an operator fragment or a template can arrive: `extra="forbid"` on every
+    model, a filter's `column` is a registry dimension KEY, and a variable is a
+    name mapped to a VALUE. See `context.py` for the full argument.
+    """
+    from .context import QueryContext  # local: context imports builder, spec imports both
+
+    if not isinstance(body, dict):
+        raise ValidationError("request body must be an object")
+    if "spec" not in body:
+        return parse(body), None
+    if "spec_version" in body:
+        raise ValidationError(
+            "send either a bare widget spec or {spec, context}, not both shapes at once"
+        )
+    unknown = set(body) - {"spec", "context"}
+    if unknown:
+        raise ValidationError(f"unexpected field(s): {', '.join(sorted(unknown))}")
+    spec = parse(body.get("spec") or {})
+    raw_ctx = body.get("context")
+    if raw_ctx is None:
+        return spec, None
+    if not isinstance(raw_ctx, dict):
+        raise ValidationError("context must be an object")
+    try:
+        return spec, QueryContext.model_validate(raw_ctx)
+    except PydanticValidationError as exc:
+        raise ValidationError(_pydantic_message(exc)) from exc
+
+
 # ── The result shape ─────────────────────────────────────────────────────────
 #
 # ONE shape, for every dataset and every chart: named columns and positional
@@ -147,3 +190,9 @@ class TableResult(BaseModel):
     # builder's "show me the query" panel. It is an ECHO of what the server
     # generated; nothing anywhere accepts SQL back.
     sql: str = ""
+
+    # What the DASHBOARD contributed, and what it declined to. A page-wide filter
+    # that did not apply to this widget — because the widget opted out, or because
+    # its dataset has no such dimension — is reported rather than left for the
+    # viewer to infer from a chart that did not move. See `context.ContextNote`.
+    context_notes: list[dict] = Field(default_factory=list)
