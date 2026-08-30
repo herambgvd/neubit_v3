@@ -404,6 +404,67 @@ services:
     restart: unless-stopped
     networks: [neubit]
 
+  # ── reporting-projector (domain events → the reporting store) ───
+  # The ONLY thing that writes the relations declared in
+  # `neubit_reporting.reporting_projections`. One durable pull consumer per
+  # projection; access control is the first, on EVENTS / `tenant.*.access.>`.
+  #
+  # WHY IT EXISTS: the platform bans services from reading each other's
+  # databases, and `neubit_reporting` is the documented exception FOR QUERYING —
+  # not a licence to open `neubit_access`. So a domain publishes on the spine and
+  # this consumes the spine. It opens one database and never another.
+  #
+  # ADDING A DOMAIN IS AN INSERT, NOT A RELEASE. A row in `reporting_projections`
+  # declares the subject, the target relation and its columns, the rollups and the
+  # `dashboard_datasets` row to publish. This service re-reads that table every
+  # VE_PROJECTOR_RELOAD_SEC, creates what the spec declares (additively — see
+  # backend/projector/app/ensure.py) and starts consuming. No rebuild, no
+  # migration, no builder release.
+  #
+  # REDUNDANCY: scale it. Every replica binds the SAME durable name per
+  # projection, so NATS distributes messages between them.
+  reporting-projector:
+    build:
+      context: ../backend
+      dockerfile: projector/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_reporting
+      # ── batching: flush on N rows or T ms, whichever comes first ────────────
+      # Smaller than the reading-writer's 500 on purpose: domain events arrive at
+      # human rates, so the timer is what fires and a bigger row threshold would
+      # only delay a swipe reaching the store.
+      VE_PROJECTOR_BATCH_ROWS: ${VE_PROJECTOR_BATCH_ROWS:-200}
+      VE_PROJECTOR_BATCH_MS: ${VE_PROJECTOR_BATCH_MS:-1000}
+      VE_PROJECTOR_QUEUE_BATCHES: ${VE_PROJECTOR_QUEUE_BATCHES:-4}
+      # ── ack: only after the batch is durably written ────────────────────────
+      VE_PROJECTOR_ACK_WAIT_SEC: ${VE_PROJECTOR_ACK_WAIT_SEC:-120}
+      VE_PROJECTOR_MAX_ACK_PENDING: ${VE_PROJECTOR_MAX_ACK_PENDING:-2000}
+      # ── how fast a newly-inserted projection starts being collected ─────────
+      VE_PROJECTOR_RELOAD_SEC: ${VE_PROJECTOR_RELOAD_SEC:-30}
+      # Set to 0 in a deployment where the projected relations are managed out of
+      # band; the projector then writes only into relations that already exist.
+      VE_PROJECTOR_ENSURE_RELATIONS: ${VE_PROJECTOR_ENSURE_RELATIONS:-1}
+      # ── tenant resolution ──────────────────────────────────────────────────
+      # A system-scoped event's subject segment is the literal `platform`, which
+      # is not a uuid, and the projected relations declare `tenant_id uuid NOT
+      # NULL`. Map it, or unmapped keys get a stable synthetic UUID and a loud
+      # warning. Same three rules (and the same namespace) as the reading-writer.
+      VE_PROJECTOR_TENANT_MAP: ${VE_PROJECTOR_TENANT_MAP:-}
+      VE_PROJECTOR_DEFAULT_TENANT_ID: ${VE_PROJECTOR_DEFAULT_TENANT_ID:-}
+      # ── observability ──────────────────────────────────────────────────────
+      VE_PROJECTOR_LAG_WARN: ${VE_PROJECTOR_LAG_WARN:-5000}
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+      reporting-migrate: { condition: service_completed_successfully }
+    # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
+    # an operational surface, not a tenant API. The builder reads the datasets it
+    # registers through the reading-writer's /api/v1/bi/... — one query path.
+    ports: ["8021:8000"]
+    restart: unless-stopped
+    networks: [neubit]
+
   # ── operator console (Next.js) ──────────────────────────────────
   frontend:
     # PRODUCTION by default: builds the standalone runner image (node server.js).

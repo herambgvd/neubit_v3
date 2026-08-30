@@ -1,0 +1,166 @@
+"""What the projector knows about itself, and how it says so.
+
+The pipeline contract's rule — "backpressure must be visible ... silent data loss
+is the worst outcome available here" — is not about IoT, it is about durable
+consumers, so it applies here unchanged. Everything that can go wrong has a
+counter, and the ones that mean LOSS (malformed messages, failed batches) are
+separate from the ones that mean SLOW (queue depth, consumer lag), because the
+response to each is different.
+
+Counters are PER PROJECTION. A single aggregate number would let a healthy access
+projection hide a fire projection that has been failing every batch for an hour,
+which is precisely the kind of silence this exists to prevent.
+
+Three surfaces:
+  * `GET /health`   liveness. 200 while the process is alive.
+  * `GET /readyz`   readiness. 503 when the database is down, the bus is
+                    disconnected, a projection was refused, or lag is over
+                    `VE_PROJECTOR_LAG_WARN`.
+  * `GET /metrics`  Prometheus text, hand-rolled (no new dependency).
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import asdict, dataclass, field
+
+
+@dataclass
+class ProjectionMetrics:
+    key: str = ""
+    relation: str = ""
+    subject: str = ""
+    durable: str = ""
+
+    messages_received: int = 0
+    rows_inserted: int = 0        # rows the database actually stored
+    rows_duplicate: int = 0       # ON CONFLICT DO NOTHING skipped them — replay, normal
+    batches_written: int = 0
+
+    messages_malformed: int = 0   # acked, can never become a row
+    malformed_reasons: dict = field(default_factory=dict)
+    batch_write_failures: int = 0
+    batches_nakd: int = 0
+
+    queue_depth: int = 0
+    queue_capacity: int = 0
+    consumer_pending: int = 0     # JetStream: undelivered. THE lag number.
+    consumer_ack_pending: int = 0
+    consumer_redelivered: int = 0
+
+    last_write_at: float | None = None
+    running: bool = False
+
+    def note_malformed(self, reason: str) -> None:
+        self.messages_malformed += 1
+        self.malformed_reasons[reason] = self.malformed_reasons.get(reason, 0) + 1
+
+
+@dataclass
+class Metrics:
+    started_at: float = field(default_factory=time.time)
+
+    projections: dict = field(default_factory=dict)   # key -> ProjectionMetrics
+    # Projections in the table that could not be started, and why. Non-empty
+    # turns /readyz red: a domain that believes it is being collected and is not
+    # is the worst failure this service has.
+    refused: dict = field(default_factory=dict)
+
+    unmapped_tenant_keys: int = 0
+    nats_connected: bool = False
+    db_healthy: bool = True
+    last_error: str | None = None
+    last_error_at: float | None = None
+    last_reload_at: float | None = None
+
+    def projection(self, key: str) -> ProjectionMetrics:
+        m = self.projections.get(key)
+        if m is None:
+            m = ProjectionMetrics(key=key)
+            self.projections[key] = m
+        return m
+
+    def note_error(self, exc: BaseException) -> None:
+        self.last_error = f"{type(exc).__name__}: {exc}"[:500]
+        self.last_error_at = time.time()
+
+    @property
+    def max_pending(self) -> int:
+        return max((p.consumer_pending for p in self.projections.values()), default=0)
+
+    def snapshot(self) -> dict:
+        return {
+            "uptime_sec": round(time.time() - self.started_at, 1),
+            "nats_connected": self.nats_connected,
+            "db_healthy": self.db_healthy,
+            "unmapped_tenant_keys": self.unmapped_tenant_keys,
+            "last_error": self.last_error,
+            "last_error_at": self.last_error_at,
+            "last_reload_at": self.last_reload_at,
+            "refused": dict(self.refused),
+            "projections": {k: asdict(v) for k, v in sorted(self.projections.items())},
+        }
+
+    def prometheus(self) -> str:
+        p = "projector_"
+        lines: list[str] = []
+
+        def g(name: str, value, typ: str, help_: str) -> None:
+            lines.append(f"# HELP {p}{name} {help_}")
+            lines.append(f"# TYPE {p}{name} {typ}")
+            lines.append(f"{p}{name} {value}")
+
+        g("nats_connected", int(self.nats_connected), "gauge", "1 when connected to NATS.")
+        g("db_healthy", int(self.db_healthy), "gauge",
+          "1 when the last batch write succeeded.")
+        g("projections_running", sum(1 for x in self.projections.values() if x.running),
+          "gauge", "Projections with a live consumer.")
+        g("projections_refused", len(self.refused), "gauge",
+          "Projections in the registry that could not be started. NON-ZERO MEANS A "
+          "DOMAIN BELIEVES IT IS BEING COLLECTED AND IS NOT.")
+        g("unmapped_tenant_keys", self.unmapped_tenant_keys, "gauge",
+          "Distinct publisher tenant keys with no VE_PROJECTOR_TENANT_MAP entry.")
+        g("uptime_sec", round(time.time() - self.started_at, 1), "gauge", "Process uptime.")
+
+        def per(name: str, typ: str, help_: str, pick) -> None:
+            lines.append(f"# HELP {p}{name} {help_}")
+            lines.append(f"# TYPE {p}{name} {typ}")
+            for key, m in sorted(self.projections.items()):
+                lines.append(f'{p}{name}{{projection="{key}"}} {pick(m)}')
+
+        per("messages_received_total", "counter", "Events taken off the bus.",
+            lambda m: m.messages_received)
+        per("rows_inserted_total", "counter", "Event rows durably stored.",
+            lambda m: m.rows_inserted)
+        per("rows_duplicate_total", "counter",
+            "Rows skipped by ON CONFLICT DO NOTHING (replay — expected, not an error).",
+            lambda m: m.rows_duplicate)
+        per("batches_written_total", "counter", "Batches committed.", lambda m: m.batches_written)
+        per("messages_malformed_total", "counter",
+            "Messages acked because they can never become a row. NON-ZERO MEANS DATA LOSS.",
+            lambda m: m.messages_malformed)
+        per("batch_write_failures_total", "counter",
+            "Batches that failed to commit. Nothing was acked; NATS redelivers them.",
+            lambda m: m.batch_write_failures)
+        per("batches_nakd_total", "counter", "Batches handed back to NATS for redelivery.",
+            lambda m: m.batches_nakd)
+        per("queue_depth", "gauge", "Batches buffered between the fetcher and the writer.",
+            lambda m: m.queue_depth)
+        per("consumer_pending", "gauge",
+            "JetStream messages not yet delivered to this consumer. This is the lag.",
+            lambda m: m.consumer_pending)
+        per("consumer_ack_pending", "gauge", "Delivered but unacked.",
+            lambda m: m.consumer_ack_pending)
+        per("consumer_redelivered", "gauge", "Redelivered messages.",
+            lambda m: m.consumer_redelivered)
+        per("last_write_age_sec", "gauge",
+            "Seconds since this projection's last committed batch. -1 = never.",
+            lambda m: round(time.time() - m.last_write_at, 1) if m.last_write_at else -1)
+
+        for key, m in sorted(self.projections.items()):
+            for reason, count in sorted(m.malformed_reasons.items()):
+                safe = reason.replace('"', "")
+                lines.append(
+                    f'{p}malformed_by_reason{{projection="{key}",reason="{safe}"}} {count}'
+                )
+        return "\n".join(lines) + "\n"

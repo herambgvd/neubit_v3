@@ -97,3 +97,16 @@ services:
       - ../backend/reporting:/opt/reporting
       - ../backend/kernel:/opt/kernel
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/reporting/reporting
+
+  # ── reporting-projector: DEV hot-reload. Same pattern as the reading-writer.
+  # The consumers live in the lifespan, so a reload tears every durable consumer
+  # down and rebuilds it — safe (nothing is acked that was not written) but it
+  # costs a few seconds of consumption per edit.
+  reporting-projector:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/projector/app:/app/app
+      - ../backend/reporting:/opt/reporting
+      - ../backend/kernel:/opt/kernel
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/reporting/reporting
