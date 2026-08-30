@@ -44,6 +44,7 @@ import { datasets as datasetsApi } from "./api";
 import type { DashboardConfig } from "./dashboard-context";
 import { DEFAULT_SIZE } from "./constants";
 import QueryBuilderForm from "./QueryBuilderForm";
+import WidgetCalcFields from "./widget-calc-fields";
 import WidgetNumberFormat from "./widget-number-format";
 import { VIZ_TIME_SERIES, WINDOWS, migrateSpec, newSpec, specIssue } from "./spec";
 import type { Dataset, QueryResult, SpecQuery, Viz, WidgetSpec } from "./spec";
@@ -263,6 +264,19 @@ export default function WidgetEditor({
                 })),
               ]}
             />
+
+            <div>
+              <FieldLabel hint="worked out from the columns above, in the browser">
+                Calculated fields
+              </FieldLabel>
+              <WidgetCalcFields
+                options={spec.options || {}}
+                // The columns the PREVIEW actually returned, so a typo is named
+                // against real column names rather than guessed ones.
+                columns={lastResult?.columns || []}
+                onChange={(next) => setSpec((sp) => (sp ? { ...sp, options: next } : sp))}
+              />
+            </div>
 
             <div>
               <FieldLabel hint="how these numbers are spelled">Number format</FieldLabel>

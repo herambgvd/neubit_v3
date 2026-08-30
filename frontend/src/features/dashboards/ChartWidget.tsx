@@ -52,6 +52,7 @@ import type { QueryContext } from "./dashboard-context";
 import { isDrillable } from "./drill";
 import { unitNote } from "./number-format";
 import type { DrillPoint } from "./drill";
+import { applyCalcFields } from "./calc-fields";
 import { seriesBand, toChartData } from "./charts/adapt";
 // All chart renderers are dynamically imported client-only — ECharts is
 // browser-only, and a dashboard with no line chart on it should not pay for one.
@@ -157,7 +158,14 @@ export function WidgetBody({
     // after its measure, so only the spec knows whether that column is a sum or
     // an average — and a pie chart cannot honestly draw a share of the latter.
     // See `charts/types.ts` on `ChartData.aggregates`.
-    return { data: toChartData(result, spec), band: seriesBand(result) };
+    // Calculated fields are appended AFTER the executor's result, in the browser,
+    // over rows the server already aggregated. They never touch the query — see
+    // `calc-fields.ts` for why that property is the whole reason a free-text
+    // formula box is safe here when nothing else in this module is one.
+    return {
+      data: applyCalcFields(toChartData(result, spec), spec.options?.calc_fields),
+      band: seriesBand(result),
+    };
   }, [result, spec]);
 
   if (issue) {
