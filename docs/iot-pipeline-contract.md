@@ -414,3 +414,89 @@ BI energy dashboard is worse than a blank one.
 Note `points.type` currently holds the reading KIND (`num` / `text`), not the
 device type. Those are two different things and need two columns; do not overload
 the one that exists.
+
+---
+
+## 12. What Phase D settled (2026-08-30)
+
+Phase D is done: the classification reaches the store. `points.category` went from
+0 of 314 rows to **306 of 314**, and the distribution reproduces the gateway's own
+(energy 18 devices / 260 points, hvac 7 / 36, water 2 / 10).
+
+**The wire.** §3's payload gains two OPTIONAL fields, exactly as §11 asked:
+
+```json
+"device_category": "energy",
+"device_type": "distribution-board"
+```
+
+Both `omitempty`. An unclassified device sends neither rather than sending `""`.
+On the gateway they ride on `model.Origin` (Phase C's carrier), assembled in the
+engine where connection, device and point are held together, so a reading
+replayed from the outbox carries the classification the device had WHEN IT WAS
+MEASURED. An outbox row written before these fields existed unmarshals with them
+empty and replays with them absent — which the writer reads as "unknown" and
+leaves the stored value alone. That is the whole reason they are optional.
+
+**The store.** `points` gains a `device_type` column (migration
+`0003_points_device_class`) plus `ix_points_tenant_category` for the BI filter.
+`points.type` is untouched and still means the reading KIND (`num`/`text`); the
+device's equipment kind is a different fact and got its own column, per §11.
+
+Two writer rules, both enforced in `backend/reading-writer/app/store.py`:
+
+* **Missing never clobbers.** `category` and `device_type` are upserted through
+  `COALESCE(excluded, stored)`. A message that says nothing leaves the stored
+  value alone, so an operator's correction survives the next reading.
+  *Verified:* a message published with no `device_category` for a point whose
+  category was `energy` updated `last_seen_at` and inserted its reading, and the
+  category stayed `energy`.
+* **Changed does follow.** A message carrying a value overwrites. The point cache
+  now keys on a FINGERPRINT of the dimension fields as well as the touch
+  interval, so a reclassification is re-upserted on the very next reading rather
+  than up to `point_touch_sec` later. *Verified live:* `B2_Main Incomer` moved
+  energy → other → energy in the gateway and `points` followed each way on the
+  next real aeon reading.
+
+**Units are still empty and still correct.** All 313 aeon points report `env.u`
+empty because the MQTT payloads carry no unit. Nothing was inferred.
+
+### Two gateway bugs Phase D had to fix to make any of this work
+
+Both were invisible from the outside and both silently discarded an operator's
+intent. Neither is about the message body; they are why a corrected category
+never left the gateway.
+
+1. **`UpdateDeviceScoped` never wrote `category` or `type`.**
+   (`edge/internal/config/tenants.go`.) The API validated the new category, set
+   it on the struct and returned it in the 200 response — so the UI showed the
+   change — while `UPDATE devices SET tag=?, config=?` persisted nothing. The
+   unscoped `UpdateDevice` had always written both. Device classification was
+   therefore uneditable through the API, silently, for its whole life.
+
+2. **The engine's worker fingerprint ignored `category`/`type`.**
+   (`edge/internal/engine/engine.go`.) A running worker holds its own copy of
+   `model.Device`, and that copy fills every published `Origin`. With the
+   classification outside the fingerprint, `Reload()` left the worker running and
+   the wire kept announcing the old category until the process restarted.
+   Reclassifying a device now restarts its worker — the same cost as retagging
+   it, and the only way the running copy gets refreshed.
+
+### Corrections to this document
+
+* **§11 says "the `gateway` pseudo-device carries none, correctly".** TWO aeon
+  devices carry no category, not one: `gateway` and `B1 Guard Room`. The counts
+  in §11 are right (18+7+2+1 = 28 of 30); the parenthetical is not.
+* **`fire` is 1 device with 1 point, and that point has never produced a
+  reading.** So `category='fire'` does not appear in `points` and cannot until
+  `ddcg/fire/pub` publishes: the writer creates a dimension row only from a
+  reading, by design (§6). A `points` distribution is a distribution of what has
+  REPORTED, not of what is configured.
+
+### Known, left alone
+
+* `points.unit` is still assigned unconditionally, so a message with no `env.u`
+  writes NULL over a stored unit. Harmless today — the gateway is the only
+  source of units and no operator can set one on the platform — but it is the
+  same shape as the bug §11 called out for `category`. If units ever become
+  editable, `unit` needs the same COALESCE.

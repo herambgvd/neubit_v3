@@ -4,7 +4,18 @@ The wire format is the pipeline contract §3 body:
 
     {"tenant_id", "domain": "iot", "event": "reading",
      "payload": {conn_id, device_id, device_tag, point_id, point_tag,
+                 device_category?, device_type?,
                  env: {src, v, raw, u, ts, q, kind, s}}}
+
+``device_category`` / ``device_type`` are OPTIONAL (contract §11): the gateway
+omits them for a device it has not classified rather than sending ``""``. An
+absent field means "unknown" and must not become an empty string here, because
+the store uses ``None`` to mean "leave whatever is already stored alone".
+
+UNITS ARE NEVER INFERRED. ``env.u`` is stored when present and left empty when
+not — all 313 live aeon points report it empty because the source payloads carry
+no unit, and that is the truth about them. Guessing "kW" from a point tag would
+put a confident wrong unit on an energy dashboard.
 
 Three properties of `env` are load-bearing and this module exists to preserve
 them exactly:
@@ -67,7 +78,12 @@ class ParsedReading:
     device_tag: str | None
     point_tag: str | None
     unit: str | None
+    # What the DEVICE is (contract §11) — the BI category and the equipment
+    # kind. ``None`` means the message said NOTHING about it, which is
+    # "unknown", not "clear it". The store relies on that distinction.
     category: str | None
+    device_type: str | None
+    # The reading KIND — "num"/"text". A different fact from device_type.
     type: str | None
     meta: dict | None
 
@@ -198,10 +214,17 @@ def parse(data: bytes, resolve_tenant) -> ParsedReading:
         device_id=_as_uuid(payload.get("device_id")),
         device_tag=_clean(payload.get("device_tag"), 255),
         point_tag=_clean(payload.get("point_tag"), 255),
+        # Never inferred from the point tag — see the module docstring.
         unit=_clean(env.get("u"), 64),
-        # The gateway sends no operator-facing category today; take one from
-        # `meta` if it ever does rather than inventing one from the protocol.
-        category=_clean((meta or {}).get("category"), 128),
+        # The device's BI category and equipment kind, as the gateway classified
+        # it (contract §11). `meta.category` is the pre-§11 fallback: a gateway
+        # that carried it there keeps working. Absent everywhere → None →
+        # "unknown", and the store leaves the stored value untouched.
+        category=_clean(
+            payload.get("device_category") or (meta or {}).get("category"), 128
+        ),
+        device_type=_clean(payload.get("device_type"), 64),
+        # The reading KIND, which is what `points.type` has always held.
         type="text" if txt is not None else "num",
         meta=dim_meta or None,
     )

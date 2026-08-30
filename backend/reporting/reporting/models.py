@@ -78,9 +78,25 @@ class Point(Base):
     # Engineering unit ("kW", "degC", ""). Free text: it comes from the device.
     unit: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    # Operator-facing grouping ("energy", "hvac", ...) and the point's data type
-    # ("num" / "text" / ...) as the gateway classifies it.
+    # What the DEVICE is (contract §11), as the gateway classifies it. These are
+    # what Building Intelligence filters its category views on — HVAC & Assets,
+    # Energy & Metering, IAQ & Environment — and the gateway is their only
+    # source: nothing on the platform can derive them.
+    #
+    # `category` is the BI domain and comes from a closed-ish vocabulary the
+    # gateway seeds ("energy", "hvac", "water", "fire", ...). `device_type` is
+    # the equipment kind ("meter", "chiller", "ups") and is open text.
+    #
+    # The writer treats a MISSING value as "unknown" and never overwrites a
+    # stored one with NULL (see reading-writer's store.py): an operator can
+    # correct a classification, and the next reading must not wipe it. A CHANGED
+    # value does follow — a reclassified meter shows up here.
     category: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    device_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # The READING KIND — "num" or "text" — i.e. which of readings.num/readings.txt
+    # this point fills. NOT the device type; those are two different things and
+    # this column is deliberately not overloaded with the other one.
     type: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Anything else the gateway knows that is not worth a column yet. Kept out of
@@ -100,6 +116,8 @@ class Point(Base):
         Index("ix_points_device", "device_id"),
         # "show me the points on this device, by tag" — the browse path.
         Index("ix_points_tenant_device_tag", "tenant_id", "device_tag", "point_tag"),
+        # "every point in this tenant's Energy & Metering view" — the BI filter.
+        Index("ix_points_tenant_category", "tenant_id", "category"),
     )
 
 

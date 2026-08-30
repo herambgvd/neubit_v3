@@ -10,6 +10,14 @@ is expected and normal, not an error. ``PRIMARY KEY (point_id, ts)`` is what mak
 a redelivery a no-op instead of a hard duplicate-key failure that would poison the
 whole batch.
 
+**A missing device classification never clears a stored one.** ``category`` and
+``device_type`` are optional on the wire (contract §11): the gateway omits them
+for a device it has not classified. An absent field means "unknown", so those two
+columns are upserted through ``COALESCE(excluded, stored)`` — a message with no
+category leaves the stored one alone, and an operator's correction survives the
+next reading. A message that DOES carry a value still overwrites, because a
+reclassified device must show up here.
+
 **The dimension row is upserted from the message.** An unknown ``point_id`` does
 not cost the reading (contract §6) — the ``points`` row is written from what the
 message already carries, in the SAME transaction, before the readings. There is
@@ -32,6 +40,7 @@ import logging
 import uuid
 
 from reporting.models import Point, Reading
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,19 +72,28 @@ class PointCache:
     Process-local on purpose: with several replicas each keeps its own view, and
     the worst case is that a point is upserted a few times per interval instead
     of once. The upsert is idempotent, so that costs nothing but a row lock.
+
+    A point is ALSO re-upserted the moment its dimension values change, not only
+    when the interval expires. Without that, reclassifying a device in the
+    gateway would appear to do nothing here for up to ``touch_sec`` — which
+    reads exactly like the bug this whole change fixes. The fingerprint is of
+    the message's dimension fields, so an unchanged point still costs nothing.
     """
 
     def __init__(self, touch_sec: int) -> None:
         self._touch_sec = touch_sec
-        self._seen: dict[uuid.UUID, float] = {}
+        self._seen: dict[uuid.UUID, tuple[float, int]] = {}
 
-    def due(self, point_id: uuid.UUID, now: float) -> bool:
-        last = self._seen.get(point_id)
-        return last is None or (now - last) >= self._touch_sec
+    def due(self, point_id: uuid.UUID, fingerprint: int, now: float) -> bool:
+        seen = self._seen.get(point_id)
+        if seen is None:
+            return True
+        last, fp = seen
+        return fp != fingerprint or (now - last) >= self._touch_sec
 
-    def mark(self, point_ids, now: float) -> None:
-        for pid in point_ids:
-            self._seen[pid] = now
+    def mark(self, marks: dict, now: float) -> None:
+        for pid, fingerprint in marks.items():
+            self._seen[pid] = (now, fingerprint)
 
     def forget_all(self) -> None:
         """Drop the cache after a failed write, so the next attempt re-upserts."""
@@ -95,11 +113,22 @@ def _point_values(r: ParsedReading, now: dt.datetime) -> dict:
         "point_tag": r.point_tag,
         "unit": r.unit,
         "category": r.category,
+        "device_type": r.device_type,
         "type": r.type,
         "meta": r.meta,
         "first_seen_at": now,
         "last_seen_at": now,
     }
+
+
+def _fingerprint(r: ParsedReading) -> int:
+    """Hash of the dimension fields, so a CHANGED point re-upserts immediately."""
+    return hash(
+        (
+            r.tenant_id, r.conn_id, r.device_id, r.device_tag, r.point_tag,
+            r.unit, r.category, r.device_type, r.type,
+        )
+    )
 
 
 async def write_batch(
@@ -113,9 +142,12 @@ async def write_batch(
     # "ON CONFLICT DO UPDATE command cannot affect row a second time" if one
     # statement presents the same key twice, so this is required, not tidiness.
     due: dict[uuid.UUID, dict] = {}
+    marks: dict[uuid.UUID, int] = {}
     for r in rows:
-        if cache.due(r.point_id, now_mono):
+        fp = _fingerprint(r)
+        if cache.due(r.point_id, fp, now_mono):
             due[r.point_id] = _point_values(r, now)
+            marks[r.point_id] = fp
 
     points_upserted = 0
     if due:
@@ -131,7 +163,16 @@ async def write_batch(
                 "device_tag": stmt.excluded.device_tag,
                 "point_tag": stmt.excluded.point_tag,
                 "unit": stmt.excluded.unit,
-                "category": stmt.excluded.category,
+                # The two OPTIONAL fields (contract §11). COALESCE, not a plain
+                # assignment: a message that says nothing about the device's
+                # category must not blank one an operator corrected. A message
+                # that DOES carry one still wins, so a reclassification follows.
+                "category": func.coalesce(
+                    stmt.excluded.category, Point.__table__.c.category
+                ),
+                "device_type": func.coalesce(
+                    stmt.excluded.device_type, Point.__table__.c.device_type
+                ),
                 "type": stmt.excluded.type,
                 "meta": stmt.excluded.meta,
                 # first_seen_at is NOT overwritten: it means what it says.
@@ -162,5 +203,8 @@ async def write_batch(
     inserted = result.rowcount if result.rowcount is not None and result.rowcount >= 0 else 0
 
     await session.commit()
-    cache.mark(due.keys(), now_mono)
+    # Only what was actually upserted: marking a point the batch skipped would
+    # push its touch interval forward forever and `last_seen_at` would stop
+    # moving.
+    cache.mark(marks, now_mono)
     return WriteResult(len(seen), inserted, points_upserted)
