@@ -72,6 +72,53 @@ def require_permission(*permissions: str):
     return _dep
 
 
+def require_service_permission(*permissions: str):
+    """Like ``require_permission``, but also accepts a SERVICE token.
+
+    Every other satellite on this platform authorises locally by VERIFYING the
+    core-minted JWT with the shared secret — there is no user row behind a
+    background caller (`vision`'s `mint_service_token` is the worked example: a
+    superadmin token with a fixed system `sub`). Core itself has always required a
+    real `users` row, which is right for an operator surface and wrong for a
+    service-to-service one: the reading-writer registering its dataset permissions
+    has no user to be.
+
+    So: a token that carries `is_superadmin` (or the permission itself) in its
+    CLAIMS is accepted without a user lookup. The signature is the authority —
+    minting one already requires the platform secret. A normal operator bearer
+    still goes down the user path and is checked against their role.
+    """
+
+    async def _dep(
+        cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+        db: AsyncSession = Depends(get_db),
+    ) -> User | None:
+        if cred is None:
+            raise UnauthorizedError("missing bearer token")
+        try:
+            payload = decode_token(cred.credentials)
+        except jwt.PyJWTError:
+            raise UnauthorizedError("invalid or expired token")
+        if payload.get("type") != "access":
+            raise UnauthorizedError("not an access token")
+        claims = payload.get("permissions") or []
+        if payload.get("is_superadmin") or "*" in claims:
+            return None
+        user = await db.get(User, uuid.UUID(payload["sub"]))
+        if user is None or not user.is_active:
+            # Fall back to the claims themselves for a service principal that has
+            # been granted the key explicitly rather than as a superadmin.
+            if all(p in claims for p in permissions):
+                return None
+            raise UnauthorizedError("user not found or inactive")
+        missing = [p for p in permissions if not user.role.grants(p)]
+        if missing:
+            raise ForbiddenError(f"missing permission(s): {', '.join(missing)}")
+        return user
+
+    return _dep
+
+
 def user_has(user: User, permission: str) -> bool:
     return user.role.grants(permission)
 

@@ -388,6 +388,12 @@ services:
       VE_READINGS_DEFAULT_TENANT_ID: ${VE_READINGS_DEFAULT_TENANT_ID:-}
       # ── observability ──────────────────────────────────────────────────────
       VE_READINGS_LAG_WARN: ${VE_READINGS_LAG_WARN:-10000}
+      # ── dashboard datasets → core's permission catalog ─────────────────────
+      # A dataset is registered as DATA and names the permission needed to read
+      # it. This service publishes those keys to core so a ROLE CAN GRANT THEM;
+      # without it only a wildcard admin could ever open the dataset (the
+      # ingest.read bug). Best-effort — core being down never fails a chart.
+      VE_CORE_URL: ${VE_CORE_URL:-http://core:8000}
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }

@@ -158,6 +158,13 @@ class CorePerm:
     # else. Deliberately SEPARATE from security.manage so the approver is a
     # distinct privileged role, not just whoever configures security.
     DUALAUTH_APPROVE = "dualauth.approve"
+    # --- Runtime permission registration (service-to-service) --------------
+    # Lets a satellite publish the permission keys IT enforces into this catalog
+    # so a role can grant them. Needed because the dashboard builder's datasets
+    # are registered as DATA (an INSERT into the reporting store) and each names
+    # the permission required to read it — a key core cannot know at build time.
+    # Held by a service token, never by an operator role.
+    PERMISSION_REGISTER = "permission.register"
 
 
 PERMISSIONS.register(
@@ -236,4 +243,12 @@ PERMISSIONS.register(
     # --- Enterprise security ----------------------------------------------
     Permission(CorePerm.SECURITY_MANAGE, "Manage 2FA policy / LDAP / SSO", "Security"),
     Permission(CorePerm.DUALAUTH_APPROVE, "Approve four-eyes requests", "Security"),
+    # --- Runtime permission registration -----------------------------------
+    Permission(
+        CorePerm.PERMISSION_REGISTER,
+        "Register permission keys (service-to-service)",
+        "System",
+        "Lets a satellite service publish the permission keys it enforces into "
+        "this catalog so a role can grant them.",
+    ),
 )

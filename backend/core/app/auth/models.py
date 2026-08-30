@@ -182,3 +182,31 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class PermissionRegistration(Base):
+    """A permission key registered at RUNTIME by a satellite service.
+
+    The static catalog in ``permissions.py`` is the authority on anything the
+    code itself enforces. This table is for keys the code cannot know at build
+    time — today, the per-dataset read permissions the dashboard builder's
+    registry declares: a dataset is registered with an INSERT into
+    ``neubit_reporting.dashboard_datasets`` and it names the permission required
+    to read it.
+
+    Without this, such a key fails ``PERMISSIONS.unknown()`` on role create and no
+    role can ever grant it — which is precisely the ``ingest.read`` bug the
+    builder contract tells us not to repeat.
+    """
+
+    __tablename__ = "permission_registrations"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    group_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # Which service registered it. A stale key should be diagnosable, not a mystery.
+    source: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

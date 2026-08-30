@@ -28,8 +28,14 @@ from ..core.storage import get_storage
 from ..db.base import get_db
 from ..tenancy.scope import scope_of
 from .cookies import clear_refresh_cookie, set_refresh_cookie
-from .deps import get_current_sid, get_current_user, require_permission
+from .deps import (
+    get_current_sid,
+    get_current_user,
+    require_permission,
+    require_service_permission,
+)
 from .models import User
+from . import dynamic_permissions
 from .permissions import PERMISSIONS, CorePerm
 from .schemas import (
     AccessOut,
@@ -480,8 +486,37 @@ async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_d
 
 # --- permission catalog (for the role editor UI) -----------------------------
 @router.get("/permissions")
-async def permissions(_: User = Depends(require_permission(CorePerm.ROLE_READ))) -> dict:
-    return {"groups": PERMISSIONS.grouped()}
+async def permissions(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission(CorePerm.ROLE_READ)),
+) -> dict:
+    """The role editor's catalog: the static keys plus the ones services
+    registered at runtime (see `dynamic_permissions`). A key that is enforced but
+    not listed here can only ever be held by a wildcard admin, which is not a
+    usable permission model — that was the `ingest.read` bug."""
+    return {"groups": await dynamic_permissions.grouped(db)}
+
+
+@router.post("/permissions/registrations")
+async def register_permissions(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_service_permission(CorePerm.PERMISSION_REGISTER)),
+) -> dict:
+    """Publish the permission keys a satellite enforces, so a role can grant them.
+
+    Service-to-service (a short-lived superadmin service token), idempotent, and
+    additive only: a registration can never redefine a key the static catalog
+    already owns. The dashboard builder calls this with one key per registered
+    dataset, which is what makes "registration is data, not code" hold all the
+    way through to the role editor.
+    """
+    source = str(body.get("source") or "unknown")
+    perms = body.get("permissions") or []
+    if not isinstance(perms, list):
+        raise ValidationError("permissions must be a list")
+    written = await dynamic_permissions.register(db, source=source, permissions=perms)
+    return {"registered": written}
 
 
 # --- roles (dynamic RBAC) ----------------------------------------------------
