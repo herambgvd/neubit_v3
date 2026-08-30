@@ -230,8 +230,14 @@ class Pipeline:
                 continue
             try:
                 msgs = await self._psub.fetch(self.cfg.batch_rows, timeout=timeout)
-            except NatsTimeoutError:
-                continue  # idle feed — the T half of "N rows or T ms"
+            except (NatsTimeoutError, asyncio.TimeoutError):
+                # Idle feed — the T half of "N rows or T ms". BOTH exceptions:
+                # nats-py raises its own TimeoutError when the pull request
+                # expires server-side and asyncio's when the client-side wait
+                # does. Only the first was caught, so a quiet gateway logged
+                # "fetch failed:" with an empty message every second and left a
+                # spurious `last_error` on /stats and /readyz.
+                continue
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — a bad pull must not kill the loop
