@@ -1,7 +1,7 @@
 """NATS + JetStream event bus client, shared across neubit_v3 services.
 
 Mirrors the platform core's ``app.core.events_nats`` so every service connects to
-the same JetStream ``EVENTS`` stream (subjects ``tenant.>``) and publishes with a
+the same JetStream ``EVENTS`` stream (subjects: see ``EVENTS_SUBJECTS``) and publishes with a
 consistent subject scheme + envelope. Cross-domain communication between core,
 ingest, and workflow rides on this spine.
 
@@ -32,6 +32,69 @@ from typing import Any, Awaitable, Callable
 from .config import get_settings
 
 log = logging.getLogger("kernel.events")
+
+# ── the EVENTS stream's subject list ─────────────────────────────────────────
+# EVENTS used to capture ``tenant.>`` — literally every subject on the platform.
+# That stopped being safe when the IoT bridge went live: a sensor feed on a
+# stream configured ``max_msgs=-1, max_bytes=-1, max_age=0`` is an unbounded
+# disk leak, and EVENTS has to stay unbounded-ish because it carries low-volume
+# domain events that are worth keeping.
+#
+# NATS refuses overlapping subjects between two streams on one account, so the
+# sensor feed cannot get its own bounded stream while EVENTS still claims
+# ``tenant.>``. EVENTS is therefore narrowed to an EXPLICIT list of domains, and
+# ``tenant.*.iot.>`` belongs to the bounded ``IOT_READINGS`` stream instead
+# (see deploy/README-nats.md and the pipeline contract §4).
+#
+# ⚠ ADDING A NEW DOMAIN? Add it here, or its events are published to a subject
+# no stream captures: core NATS delivery (the realtime SSE relays) still works,
+# but there is no JetStream persistence and no durable consumer can be created
+# on it. This list is the one place to change — kernel, core and gokernel all
+# ensure the same stream.
+EVENTS_STREAM = "EVENTS"
+EVENTS_SUBJECTS = [
+    "tenant.*.access.>",
+    "tenant.*.core.>",
+    "tenant.*.device.>",
+    "tenant.*.erasure.>",
+    "tenant.*.fire.>",
+    "tenant.*.ingest.>",
+    "tenant.*.notify.>",
+    "tenant.*.sites.>",
+    "tenant.*.tags.>",
+    "tenant.*.tenant.>",
+    "tenant.*.vms.>",
+    "tenant.*.workflow.>",
+]
+
+
+async def ensure_events_stream(js) -> None:
+    """Create EVENTS, or converge an existing one onto :data:`EVENTS_SUBJECTS`.
+
+    ``add_stream`` only ever CREATES — on an existing stream it raises and every
+    caller here used to swallow that, so a subject-list change would never reach
+    a running deployment. Update explicitly, and only when the list differs, so
+    this stays a no-op on a converged stack.
+
+    Never raises: a service must still boot when JetStream is unhappy.
+    """
+    try:
+        info = await js.stream_info(EVENTS_STREAM)
+    except Exception:
+        try:
+            await js.add_stream(name=EVENTS_STREAM, subjects=list(EVENTS_SUBJECTS))
+        except Exception as e:  # concurrent create by another service — fine
+            log.info("EVENTS stream ensure note: %s", e)
+        return
+
+    if sorted(info.config.subjects or []) != sorted(EVENTS_SUBJECTS):
+        try:
+            info.config.subjects = list(EVENTS_SUBJECTS)
+            await js.update_stream(config=info.config)
+            log.info("EVENTS stream subjects converged to %s", EVENTS_SUBJECTS)
+        except Exception as e:  # e.g. it would overlap another stream
+            log.warning("EVENTS stream subject update failed: %s", e)
+
 
 
 def subject(tenant_id: str | None, domain: str, event: str) -> str:
@@ -74,10 +137,7 @@ class EventBus:
 
             self._nc = await nats.connect(url, name=f"neubit-{self.source}")
             self._js = self._nc.jetstream()
-            try:
-                await self._js.add_stream(name="EVENTS", subjects=["tenant.>"])
-            except Exception:
-                pass  # already exists (created by whichever service connects first)
+            await ensure_events_stream(self._js)
             log.info("NATS connected: %s", url)
         except Exception as e:  # broker down / lib missing → degrade gracefully
             log.warning("NATS connect failed (%s) — events are no-ops", e)
