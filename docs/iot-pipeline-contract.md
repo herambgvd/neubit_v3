@@ -335,11 +335,25 @@ UUID is used as-is; otherwise `VE_READINGS_TENANT_MAP` (`key=uuid,…`); otherwi
 with a WARNING and a non-zero `reading_writer_unmapped_tenant_keys` metric.
 Dropping the reading was the alternative and it is silent data loss.
 
-**This is a live deployment decision, deliberately left unmade.** Until
-`VE_READINGS_TENANT_MAP` names a real platform tenant, readings land under a
-synthetic tenant id that the UI does not know. Either configure the gateway
-connection with the platform tenant UUID (the clean fix, and then rule 1 applies
-and no mapping is needed), or set the map in `deploy/.env`.
+**Settled 2026-08-30, and it MUST be set on every deployment.** On this machine:
+
+    VE_READINGS_TENANT_MAP=default=c8ca5b7b-050d-4a10-8b06-0f4836d92397
+
+The gateway's `default` key maps to the platform's `bharti` tenant. Verified:
+after setting it, a fresh aeon cycle landed 313 rows under the real tenant with
+`unmapped_tenant_keys` at 0, and the 1,879 rows already written under the
+synthetic id were moved and the aggregates refreshed.
+
+`deploy/.env` is gitignored and there is no `.env.example`, so **this value does
+not travel with the repo** — a fresh deployment starts with readings under a
+synthetic tenant the UI cannot see, and nothing fails loudly except the metric.
+Set it before pointing a gateway at a new platform.
+
+The mapping exists because the two systems have two tenant namespaces: conflux
+tenants are its own strings (`default`), platform tenants are UUIDs. A per-key
+env var does not scale past a handful of gateways. The durable fix is for a
+conflux tenant to carry the platform tenant UUID as a field, so the mapping
+lives in data rather than in configuration that someone has to remember.
 
 ### Writer behaviour, as built (§6 made concrete)
 
