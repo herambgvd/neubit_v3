@@ -500,3 +500,98 @@ never left the gateway.
   source of units and no operator can set one on the platform — but it is the
   same shape as the bug §11 called out for `category`. If units ever become
   editable, `unit` needs the same COALESCE.
+
+---
+
+## 13. The READ side (Phase E, 2026-08-30)
+
+Nothing exposed `neubit_reporting` over HTTP, so Building Intelligence had no way
+to see any of this. Phase E adds the read API — **in the reading-writer**, not in
+a new service.
+
+**Why there.** §7 gives the readings schema ONE owner. A separate "analytics API"
+container would have to open `neubit_reporting` and SELECT tables it does not own,
+which is a cross-service read and a second place the schema can drift. The owner
+serves its own reads, importing the same `reporting.models`. Everything on the
+read path is SELECT-only; the writer is still the only thing that writes.
+
+    backend/reading-writer/app/api/{router,queries,schemas}.py
+
+**Surface** — `{api_prefix}/bi/…`, i.e. `/api/v1/bi/…`:
+
+| endpoint | answers | reads |
+|---|---|---|
+| `GET /bi/summary` | what is reporting, by category, + estate totals + reading extent | `points`, plus one `readings_1h` aggregate for the current hour |
+| `GET /bi/activity?hours=` | hourly SAMPLE volume per category | `readings_1h` (real-time CAgg) |
+| `GET /bi/devices?category&device_type&search` | devices that have REPORTED | `points`, grouped |
+| `GET /bi/points?device_id&…&with_latest` | a device's points + each one's LATEST value | `points` + RAW over a bounded lookback |
+| `GET /bi/series?point_id=…&hours&resolution` | a chart | `readings_1m` / `readings_1h`; `raw` only inside a 3-hour window |
+
+**Which store answers what, and why.** This is the part that must not drift.
+
+* **Charts read the ROLLUPS.** `resolution=auto` (what every screen uses) picks
+  `readings_1m` up to a 3-hour window and `readings_1h` beyond it. That is what
+  makes query cost independent of ingest rate (§5) — the reason the aggregates
+  exist at all. The response carries `resolution` and a one-line
+  `resolution_reason` so a screen can PRINT which store answered instead of
+  implying a precision it does not have.
+* **`resolution=raw` is bounded.** Over 180 minutes it is a 400 naming the
+  rollup to ask for. Silently downgrading a raw request would make the chart lie.
+* **Current values read RAW, deliberately.** `readings_1m` is `materialized_only`
+  with a ~2 minute freshness floor, so it cannot answer "what is it NOW".
+  `/bi/points` reads raw with `DISTINCT ON (point_id)` inside a 60-minute
+  lookback — an index walk down `PRIMARY KEY (point_id, ts)`, bounded, so its
+  cost does not grow with history. A point with nothing in the window returns
+  `latest: null`; it never returns an older value dressed as the current one.
+* `readings_1h` is real-time, so the current partial hour IS current. The UI
+  draws that bar faded and says so.
+
+**Authorization** follows `ingest`'s pattern exactly — the core-minted JWT is
+verified locally (shared `VE_JWT_SECRET`), no round trip to core:
+
+* permission `bi.read`, registered in core's catalog
+  (`core/app/auth/permissions.py`, group "Building Intelligence") so a role can
+  actually grant it. *Note for whoever touches ingest next:* `ingest.read` /
+  `ingest.manage` are NOT in that catalog, so today only a wildcard admin can
+  hold them. Same bug class, still open.
+* module `analytics` ("Dashboards & Reports") + `require_active_license()` on the
+  router mount.
+* **tenant scope comes from the token claim and is never a query parameter.**
+  Every statement carries a `:tenant` bind filled from `get_scope()`. A
+  super-admin (no tenant claim) passes NULL and sees every tenant, which is
+  `kernel.auth.scoped()`'s semantics everywhere else. `/bi/series` resolves its
+  point ids against `points` FIRST and drops any that are not the caller's, so a
+  known-good point id from another tenant returns an empty series rather than
+  data. *Verified:* a token minted for a different tenant uuid returns `[]` /
+  zero from every endpoint, including `/bi/series` with a real Bharti point id.
+
+**Routing.** `gateway/dynamic/routes.yml` gains a `reading-writer` router for
+`PathPrefix('/api/v1/bi')` ONLY, at priority 110 with `api-protected`. The rest
+of the service (`/health`, `/readyz`, `/metrics`, `/stats`) stays an operational
+surface on the container port and is deliberately NOT routed — a bare `/metrics`
+prefix here would also collide with core's.
+
+### What Phase E did NOT build, and why
+
+* **IAQ & Environment stays SOON.** There are ZERO `environment` points. A tile
+  is not a schedule promise; filling it would be fabrication.
+* **Ratings / Insights & Correlation stay SOON.** A rating needs a benchmark and
+  a unit; a correlation needs to know what each point MEASURES. `points.unit` is
+  empty for every point by design (§11/§12) and nothing on the wire says what a
+  tag means, so both would be numbers nobody measured.
+* **`water` has no launcher tile** and Phase E did not add one unilaterally. It
+  is genuinely reporting (2 devices / 10 points — a sump pump and a flow meter),
+  so the Portfolio screen shows the category with an explicit "no console yet"
+  marker rather than hiding it. Adding a seventh tile is a product decision.
+* **No unit, anywhere.** Not in the API, not on a screen, not on a chart axis.
+
+### One thing the store now shows that is not a building point
+
+`4F-5F Light DB / PHASE_B_TEXT_PROBE` is the synthetic text-kind reading injected
+while Phase B was being tested. It stopped reporting at 06:01 and is still in
+`points`, so it counts as a 7th point on that device and as one of the 8
+unclassified points on every BI screen. The writer only ever INSERTS dimension
+rows (§6) — there is no retirement path and no delete API — so a test point is
+permanent. That is a real gap, not a display bug: `points` needs either a
+retention rule on `last_seen_at` or an explicit retire, and the counts stay
+slightly wrong until it has one.
