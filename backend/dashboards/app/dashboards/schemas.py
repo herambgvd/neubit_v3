@@ -42,6 +42,10 @@ NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MIN_COLS, MAX_COLS = 4, 24
 MIN_ROW_H, MAX_ROW_H = 24, 200
 MAX_WIDGETS = 40
+# How many snapshots a dashboard keeps. Bounded because a person dragging widgets
+# around all afternoon would otherwise grow the table without limit for a feature
+# nobody scrolls that far back in.
+MAX_VERSIONS = 30
 
 
 class WidgetSpecEnvelope:
@@ -277,3 +281,32 @@ class DashboardDetail(DashboardSummary):
 class DashboardListResponse(BaseModel):
     total: int
     items: list[DashboardSummary]
+
+
+class VersionSummary(BaseModel):
+    """One history row. No snapshot — a list of thirty of them would ship the
+    whole dashboard thirty times for a drawer that shows a date and a label."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    version: int
+    label: str
+    created_at: datetime
+    created_by: uuid.UUID | None = None
+    widget_count: int = 0
+
+
+class VersionDetail(VersionSummary):
+    """One version WITH its snapshot, for the diff and the restore preview."""
+
+    snapshot: dict = Field(default_factory=dict)
+
+
+class VersionListResponse(BaseModel):
+    total: int
+    items: list[VersionSummary]
+    max_versions: int = MAX_VERSIONS
+    # What the dashboard looks like right now, in the SAME shape as a snapshot, so
+    # the diff view compares like with like instead of reassembling the live state
+    # from a different response.
+    current: dict = Field(default_factory=dict)

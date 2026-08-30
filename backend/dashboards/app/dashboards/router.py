@@ -42,6 +42,9 @@ from .schemas import (
     DashboardUpdate,
     LayoutSave,
     WidgetCreate,
+    VersionDetail,
+    VersionListResponse,
+    VersionSummary,
     WidgetPublic,
     WidgetUpdate,
 )
@@ -56,8 +59,11 @@ router = APIRouter(prefix="/dashboards", tags=["Dashboards"])
 async def _service(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> DashboardService:
-    return DashboardService(db, scope)
+    # The principal rides along for the version history's attribution only.
+    # Authorisation stays the permission plus the tenant.
+    return DashboardService(db, scope, actor=principal.user_id)
 
 
 Svc = Annotated[DashboardService, Depends(_service)]
@@ -185,3 +191,59 @@ async def delete_widget(svc: Svc, dashboard_id: str, widget_id: str) -> Response
 async def save_layout(svc: Svc, dashboard_id: str, body: LayoutSave) -> DashboardDetail:
     """Persist the whole arrangement in one write. See `service.save_layout`."""
     return _detail(await svc.save_layout(dashboard_id, body.items))
+
+
+# ── version history ──────────────────────────────────────────────────────────
+#
+# A saved dashboard is work somebody did, and the failure this prevents is the
+# ordinary one: an edit that seemed right, a reload, and no way back. Reading
+# history needs only `dashboards.read` — seeing what a dashboard used to look
+# like is not a write. RESTORING is a write and needs `dashboards.manage`.
+
+
+def _summary(row) -> VersionSummary:
+    return VersionSummary(
+        version=row.version,
+        label=row.label,
+        created_at=row.created_at,
+        created_by=row.created_by,
+        widget_count=len((row.snapshot or {}).get("widgets") or []),
+    )
+
+
+@router.get(
+    "/{dashboard_id}/versions",
+    response_model=VersionListResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def list_versions(svc: Svc, dashboard_id: str) -> VersionListResponse:
+    rows = await svc.versions(dashboard_id)
+    return VersionListResponse(
+        total=len(rows),
+        items=[_summary(r) for r in rows],
+        current=await svc.current_snapshot(dashboard_id),
+    )
+
+
+@router.get(
+    "/{dashboard_id}/versions/{number}",
+    response_model=VersionDetail,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def get_version(svc: Svc, dashboard_id: str, number: int) -> VersionDetail:
+    row = await svc.version(dashboard_id, number)
+    return VersionDetail(**_summary(row).model_dump(), snapshot=row.snapshot or {})
+
+
+@router.post(
+    "/{dashboard_id}/versions/{number}/restore",
+    response_model=DashboardDetail,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def restore_version(svc: Svc, dashboard_id: str, number: int) -> DashboardDetail:
+    """Put the dashboard back to a stored version.
+
+    The state being discarded is snapshotted first, as its own version, so a
+    restore is itself undoable — see `service.restore`.
+    """
+    return _detail(await svc.restore(dashboard_id, number))

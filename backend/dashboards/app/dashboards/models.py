@@ -45,6 +45,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -151,3 +152,56 @@ class DashboardWidget(Base):
     )
 
     dashboard: Mapped[Dashboard] = relationship(back_populates="widgets")
+
+
+class DashboardVersion(Base):
+    """One SNAPSHOT of a whole dashboard, taken after every change that saved.
+
+    A saved dashboard is work somebody did. The failure this table prevents is
+    the ordinary one: an edit that seemed right, a reload, and the previous
+    arrangement gone with no way back. It is not an audit log — it exists to be
+    RESTORED from.
+
+    **The snapshot is the whole dashboard, not a delta.** Deltas need every
+    intermediate version to be intact to reconstruct one, so a pruned or corrupt
+    row poisons everything after it; a snapshot is independently restorable and a
+    dashboard is a few kilobytes of JSON. The diff is computed BETWEEN two
+    snapshots when somebody asks for it (client-side, `version-diff.ts`), which
+    keeps this table free of any opinion about what a change means.
+
+    `version` is a per-dashboard counter, not a global one, so "version 3" is a
+    thing a person can say out loud. The unique constraint is what makes two
+    concurrent writes fail loudly rather than both claiming the same number.
+
+    ``tenant_id`` is here for the same two reasons it is on the widget: generic
+    right-to-erase (``kernel.lifecycle.erase_tenant_data`` walks tables that HAVE
+    the column), and a second lock on every by-id route.
+    """
+
+    __tablename__ = "dashboard_versions"
+    __table_args__ = (
+        UniqueConstraint("dashboard_id", "version", name="uq_dashboard_versions_number"),
+        Index("ix_dashboard_versions_dashboard", "dashboard_id", "version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+
+    dashboard_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("dashboards.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # What changed, in a few words, written by the service that made the change
+    # ("widget added", "layout saved"). Not free text from the client: a label
+    # nobody can trust is worse than a timestamp on its own.
+    label: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("''"))
+
+    # The whole dashboard at that moment: name, description, geometry, config and
+    # every widget. Opaque, like `DashboardWidget.spec` and for the same reason.
+    snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )

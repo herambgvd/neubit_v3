@@ -13,16 +13,17 @@ not laziness.
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 
 from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError, ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Dashboard, DashboardWidget
-from .schemas import MAX_WIDGETS
+from .models import Dashboard, DashboardVersion, DashboardWidget
+from .schemas import MAX_VERSIONS, MAX_WIDGETS
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -32,10 +33,17 @@ def slugify(name: str) -> str:
     return s[:150] or "dashboard"
 
 
+log = logging.getLogger(__name__)
+
+
 class DashboardService:
-    def __init__(self, db: AsyncSession, scope: Scope) -> None:
+    def __init__(self, db: AsyncSession, scope: Scope, actor: uuid.UUID | None = None) -> None:
         self.db = db
         self.scope = scope
+        # WHO is making the change, for the version history's attribution. It is
+        # informational only — authorisation is the permission plus the tenant,
+        # never ownership, because a dashboard is a team artefact.
+        self.actor = actor
 
     # The tenant stamped on rows this caller creates. A super-admin has no tenant
     # claim and writes a NULL-tenant (platform) row, which is the same semantics
@@ -125,6 +133,9 @@ class DashboardService:
             await self.db.rollback()
             raise ConflictError("a dashboard with that name already exists") from exc
         await self.db.refresh(row)
+        await self._record_version(row, "created")
+        await self.db.commit()
+        await self.db.refresh(row)
         return row
 
     async def update(self, dashboard_id: str, data) -> Dashboard:
@@ -137,8 +148,10 @@ class DashboardService:
             row.grid_cols = data.grid_cols
         if data.row_height is not None:
             row.row_height = data.row_height
-        if data.config is not None:
+        changed_config = data.config is not None
+        if changed_config:
             row.config = data.config
+        await self._record_version(row, "filters saved" if changed_config else "settings changed")
         await self.db.commit()
         await self.db.refresh(row)
         return row
@@ -150,6 +163,177 @@ class DashboardService:
         # SQL delete can leave orphans behind.
         await self.db.delete(row)
         await self.db.commit()
+
+    # ── version history ──────────────────────────────────────────────────────
+    #
+    # A snapshot is taken AFTER every change that saved, so version N is "what the
+    # dashboard looked like once change N had landed" — which is the thing a
+    # person means when they say "put it back to how it was this morning".
+    #
+    # Two decisions worth stating:
+    #
+    # * **The snapshot is the whole dashboard, not a delta.** Restoring from a
+    #   delta chain means every link has to survive; a snapshot restores on its
+    #   own. A dashboard is a few kilobytes of JSON and this is not a hot path.
+    # * **Restoring WRITES a new version first.** The state you are about to
+    #   discard is itself somebody's work, and an undo that cannot be undone is
+    #   how you lose an afternoon twice.
+
+    @staticmethod
+    def _snapshot(dashboard: Dashboard) -> dict:
+        return {
+            "name": dashboard.name,
+            "description": dashboard.description,
+            "grid_cols": dashboard.grid_cols,
+            "row_height": dashboard.row_height,
+            "config": dashboard.config or {},
+            "widgets": [
+                {
+                    "id": w.id,
+                    "title": w.title,
+                    "spec": w.spec,
+                    "x": w.x,
+                    "y": w.y,
+                    "w": w.w,
+                    "h": w.h,
+                }
+                for w in sorted(dashboard.widgets, key=lambda w: (w.y, w.x, w.id))
+            ],
+        }
+
+    async def _record_version(self, dashboard: Dashboard, label: str) -> None:
+        """Snapshot the dashboard as it stands. Called INSIDE the caller's
+        transaction, before its commit, so a change and its history entry land
+        together or not at all — a version that records a change that was rolled
+        back is worse than no version.
+
+        Best effort in one respect only: it never raises past the caller. A
+        history write failing must not fail the edit somebody just made.
+        """
+        try:
+            await self.db.refresh(dashboard)
+            latest = (
+                await self.db.execute(
+                    select(func.max(DashboardVersion.version)).where(
+                        DashboardVersion.dashboard_id == dashboard.id
+                    )
+                )
+            ).scalar()
+            self.db.add(
+                DashboardVersion(
+                    tenant_id=dashboard.tenant_id,
+                    dashboard_id=dashboard.id,
+                    version=int(latest or 0) + 1,
+                    label=label[:120],
+                    snapshot=self._snapshot(dashboard),
+                    created_by=self.actor,
+                )
+            )
+            await self._prune_versions(dashboard.id)
+        except Exception:  # noqa: BLE001 — history must not break editing
+            # LOGGED, not swallowed silently. A history that quietly stopped
+            # recording is indistinguishable from a dashboard nobody edited, and
+            # the first time anyone finds out is when they need to restore.
+            log.warning("could not record a version for dashboard %s", dashboard.id, exc_info=True)
+            return
+
+    async def _prune_versions(self, dashboard_id: str) -> None:
+        """Keep the newest `MAX_VERSIONS`. Unbounded history on a dashboard
+        somebody drags around all afternoon is a table that grows without limit
+        for a feature nobody scrolls that far back in."""
+        rows = (
+            await self.db.execute(
+                select(DashboardVersion.id)
+                .where(DashboardVersion.dashboard_id == dashboard_id)
+                .order_by(DashboardVersion.version.desc())
+                .offset(MAX_VERSIONS - 1)
+            )
+        ).scalars().all()
+        if rows:
+            await self.db.execute(delete(DashboardVersion).where(DashboardVersion.id.in_(rows)))
+
+    async def versions(self, dashboard_id: str) -> list[DashboardVersion]:
+        dashboard = await self.get(dashboard_id)  # tenant check
+        return list(
+            (
+                await self.db.execute(
+                    select(DashboardVersion)
+                    .where(DashboardVersion.dashboard_id == dashboard.id)
+                    .order_by(DashboardVersion.version.desc())
+                )
+            ).scalars()
+        )
+
+    async def version(self, dashboard_id: str, number: int) -> DashboardVersion:
+        from kernel.errors import NotFoundError
+
+        dashboard = await self.get(dashboard_id)
+        row = (
+            await self.db.execute(
+                select(DashboardVersion).where(
+                    DashboardVersion.dashboard_id == dashboard.id,
+                    DashboardVersion.version == number,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise NotFoundError(f"this dashboard has no version {number}")
+        assert_owned(row, self.scope, message="version not found")
+        return row
+
+    async def current_snapshot(self, dashboard_id: str) -> dict:
+        """What the dashboard looks like RIGHT NOW, in snapshot shape — so the
+        diff view can compare a stored version against the live dashboard without
+        the browser having to reassemble it from two different response shapes."""
+        return self._snapshot(await self.get(dashboard_id))
+
+    async def restore(self, dashboard_id: str, number: int) -> Dashboard:
+        """Put a dashboard back to a stored version.
+
+        The state being discarded is snapshotted FIRST, as its own version, so a
+        restore is undoable. Widgets are matched by id: one that exists in both is
+        updated in place (keeping its id, so anything that references it still
+        does), one only in the snapshot is recreated with its original id, and one
+        only in the present is removed.
+        """
+        dashboard = await self.get(dashboard_id)
+        target = await self.version(dashboard_id, number)
+        await self._record_version(dashboard, f"before restoring version {number}")
+
+        snap = target.snapshot or {}
+        dashboard.name = snap.get("name") or dashboard.name
+        dashboard.description = snap.get("description")
+        dashboard.grid_cols = int(snap.get("grid_cols") or dashboard.grid_cols)
+        dashboard.row_height = int(snap.get("row_height") or dashboard.row_height)
+        dashboard.config = snap.get("config") or {}
+
+        wanted = {w["id"]: w for w in (snap.get("widgets") or []) if isinstance(w, dict) and w.get("id")}
+        present = {w.id: w for w in dashboard.widgets}
+
+        for wid, w in present.items():
+            if wid not in wanted:
+                await self.db.delete(w)
+        for wid, data in wanted.items():
+            row = present.get(wid)
+            if row is None:
+                # Recreated with its ORIGINAL id. A restore that renumbers every
+                # widget would make a second restore of the same version produce
+                # a different dashboard.
+                row = DashboardWidget(id=wid, tenant_id=dashboard.tenant_id, dashboard_id=dashboard.id)
+                self.db.add(row)
+            row.title = str(data.get("title") or "")[:160]
+            row.spec = data.get("spec") or row.spec
+            row.x, row.y = int(data.get("x") or 0), int(data.get("y") or 0)
+            row.w, row.h = int(data.get("w") or 4), int(data.get("h") or 4)
+
+        await self.db.commit()
+        await self.db.refresh(dashboard)
+        # The restored state gets its own version too, so the history reads as a
+        # sequence of states rather than skipping the one that is now live.
+        await self._record_version(dashboard, f"restored version {number}")
+        await self.db.commit()
+        await self.db.refresh(dashboard)
+        return dashboard
 
     # ── widgets ──────────────────────────────────────────────────────────────
 
@@ -189,6 +373,9 @@ class DashboardService:
         )
         self.db.add(row)
         await self.db.commit()
+        await self.db.refresh(dashboard)
+        await self._record_version(dashboard, f"added “{row.title or 'untitled'}”")
+        await self.db.commit()
         await self.db.refresh(row)
         return row
 
@@ -203,12 +390,19 @@ class DashboardService:
             if value is not None:
                 setattr(row, field, value)
         await self.db.commit()
+        dashboard = await self.get(dashboard_id)
+        await self._record_version(dashboard, f"edited “{row.title or 'untitled'}”")
+        await self.db.commit()
         await self.db.refresh(row)
         return row
 
     async def delete_widget(self, dashboard_id: str, widget_id: str) -> None:
         row = await self._widget(dashboard_id, widget_id)
+        title = row.title or "untitled"
         await self.db.delete(row)
+        await self.db.commit()
+        dashboard = await self.get(dashboard_id)
+        await self._record_version(dashboard, f"removed “{title}”")
         await self.db.commit()
 
     async def save_layout(self, dashboard_id: str, items) -> Dashboard:
@@ -235,6 +429,9 @@ class DashboardService:
                     f"the canvas is {dashboard.grid_cols} columns wide"
                 )
             widget.x, widget.y, widget.w, widget.h = item.x, item.y, item.w, item.h
+        await self.db.commit()
+        await self.db.refresh(dashboard)
+        await self._record_version(dashboard, "layout saved")
         await self.db.commit()
         await self.db.refresh(dashboard)
         return dashboard

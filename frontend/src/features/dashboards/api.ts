@@ -62,6 +62,29 @@ export interface DashboardDetail extends DashboardSummary {
   widgets: DashboardWidget[];
 }
 
+export interface VersionSummary {
+  version: number;
+  label: string;
+  created_at: string;
+  created_by: string | null;
+  widget_count: number;
+}
+
+export interface VersionDetail extends VersionSummary {
+  /** The whole dashboard at that moment. Fetched per version rather than shipped
+   *  with the list — thirty snapshots is the dashboard thirty times over. */
+  snapshot: Record<string, any>;
+}
+
+export interface VersionListResponse {
+  total: number;
+  items: VersionSummary[];
+  max_versions: number;
+  /** The live dashboard in the SAME shape as a snapshot, so a diff compares like
+   *  with like instead of the browser reassembling it. */
+  current: Record<string, any>;
+}
+
 export const dashboards = {
   list: (): Promise<{ total: number; items: DashboardSummary[] }> => unwrap(api.get(DASH)),
 
@@ -96,6 +119,18 @@ export const dashboards = {
   /** The whole canvas geometry in ONE write — see the backend's `save_layout`.
    *  A drag reflows several widgets; saving them individually could leave the
    *  arrangement half-persisted. */
+  /** What this dashboard looked like, newest first. Reading history needs only
+   *  `dashboards.read` — seeing an old state is not a write. */
+  versions: (id: string): Promise<VersionListResponse> => unwrap(api.get(`${DASH}/${id}/versions`)),
+
+  version: (id: string, version: number): Promise<VersionDetail> =>
+    unwrap(api.get(`${DASH}/${id}/versions/${version}`)),
+
+  /** Put the dashboard back. The state being discarded is snapshotted first, so
+   *  a restore is itself undoable — see the service. Needs `dashboards.manage`. */
+  restoreVersion: (id: string, version: number): Promise<DashboardDetail> =>
+    unwrap(api.post(`${DASH}/${id}/versions/${version}/restore`, {})),
+
   saveLayout: (
     id: string,
     items: { id: string; x: number; y: number; w: number; h: number }[],

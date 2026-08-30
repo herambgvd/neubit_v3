@@ -47,6 +47,7 @@ import type { DrillState } from "./drill-dialog";
 import { drillDimension } from "./drill";
 import FilterBar from "./filter-bar";
 import VariablesPanel from "./variables-panel";
+import VersionHistoryDrawer from "./version-history-drawer";
 import WidgetPalette from "./widget-palette";
 import { migrateSpec, newSpec } from "./spec";
 import type { Dataset, Viz } from "./spec";
@@ -69,6 +70,7 @@ export default function DashboardView({ id }: { id: string }) {
   const [confirm, setConfirm] = useState<any>(null);
   const [varsOpen, setVarsOpen] = useState(false);
   const [drill, setDrill] = useState<DrillState | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const dashQ = useQuery<DashboardDetail>({
     queryKey: ["dashboard", id],
@@ -294,6 +296,14 @@ export default function DashboardView({ id }: { id: string }) {
               </Button>
             </>
           ) : null}
+          <Button
+            variant="ghost"
+            icon="heroicons:clock"
+            onClick={() => setHistoryOpen(true)}
+            title="Version history"
+          >
+            History
+          </Button>
           {canManage ? (
             <Segmented
               value={editing ? "edit" : "view"}
@@ -389,6 +399,19 @@ export default function DashboardView({ id }: { id: string }) {
         dataset={datasetOf(drill?.spec.query.dataset)}
         context={ctx.context}
         onClose={() => setDrill(null)}
+      />
+
+      <VersionHistoryDrawer
+        open={historyOpen}
+        dashboardId={id}
+        canManage={canManage}
+        onClose={() => setHistoryOpen(false)}
+        onRestored={() => {
+          // A restore replaces every widget, so any un-saved geometry now names
+          // widgets that may not exist. Dropping it is the only honest move.
+          setPendingLayout(null);
+          invalidate();
+        }}
       />
 
       <ConfirmDialog
