@@ -126,6 +126,14 @@ class CorePerm:
     VMS_WALL_VIEW = "vms.wall.view"
     VMS_WALL_CONTROL = "vms.wall.control"
     VMS_WALL_MANAGE = "vms.wall.manage"
+    # --- Building Intelligence --------------------------------------------
+    # The IoT reading store's READ side, enforced by the reading-writer
+    # (`backend/reading-writer/app/api/router.py`) — the schema's owner serves
+    # its own reads (contract §7). Registered HERE, like the VMS keys above, so
+    # a tenant admin can grant it in the role editor and it rides in the JWT
+    # permissions claim. A key that is not in this catalog can only ever be held
+    # by a wildcard admin, which is not a usable permission model.
+    BI_READ = "bi.read"
     # --- Enterprise security (P6-D) ---------------------------------------
     # Manage the security surface: 2FA-enforcement policy, LDAP/AD directory,
     # OIDC SSO. Held by a tenant's security admin.
@@ -185,6 +193,14 @@ PERMISSIONS.register(
     Permission(CorePerm.VMS_WALL_VIEW, "View video walls + live state", "VMS"),
     Permission(CorePerm.VMS_WALL_CONTROL, "Drive video-wall live state (push / presets / tours)", "VMS"),
     Permission(CorePerm.VMS_WALL_MANAGE, "Create / edit video walls, monitors, presets, tours", "VMS"),
+    # --- Building Intelligence ---------------------------------------------
+    Permission(
+        CorePerm.BI_READ,
+        "View building intelligence (energy / HVAC / water readings)",
+        "Building Intelligence",
+        "Read the IoT reading store: category summaries, devices, points and "
+        "time series. Read-only — nothing in this API writes.",
+    ),
     # --- Enterprise security ----------------------------------------------
     Permission(CorePerm.SECURITY_MANAGE, "Manage 2FA policy / LDAP / SSO", "Security"),
     Permission(CorePerm.DUALAUTH_APPROVE, "Approve four-eyes requests", "Security"),

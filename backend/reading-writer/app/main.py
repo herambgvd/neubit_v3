@@ -1,7 +1,9 @@
 """Reading-writer service — HTTP surface + process lifecycle.
 
-The HTTP server exists only so the pipeline can be *watched*. It serves no
-business API: this service's job is on the bus.
+Two surfaces, and they are deliberately different kinds of thing.
+
+**Operational** — how the pipeline is watched. Not routed through the gateway;
+an operator reaches it on the container port.
 
     GET /health   liveness — 200 while the process is up
     GET /readyz   readiness — 503 when the database is down, NATS is
@@ -12,6 +14,14 @@ business API: this service's job is on the bus.
 ``/readyz`` is what a load balancer or an operator should page on. It goes red
 for the two conditions that mean readings are not landing, and stays green while
 the writer is merely busy.
+
+**Tenant API** — ``{api_prefix}/bi/...``, the Building Intelligence read API
+(``app.api``). It is here rather than in a new service because contract §7 gives
+the readings schema ONE owner and the platform bans cross-service reads: a
+separate analytics container would have to SELECT tables it does not own. It is
+JWT-authorized, permission-gated (``bi.read``) and tenant-scoped exactly like
+every other satellite, and it is SELECT-only — this service is still the only
+thing that WRITES the schema.
 """
 
 from __future__ import annotations
@@ -20,10 +30,14 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
+from kernel.auth import require_active_license, require_feature
 from kernel.config import get_settings
+from kernel.errors import register_error_handlers
 
+from .api import bi_router
 from .config import WriterConfig
 from .metrics import Metrics
 from .pipeline import Pipeline
@@ -57,6 +71,30 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Neubit Reading Writer", lifespan=lifespan)
+register_error_handlers(app)
+
+_settings = get_settings()
+
+# The operator console may call this satellite directly in dev (:3000 → :8020)
+# instead of through the gateway. Mirror ingest's policy (shared kernel settings).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings.cors_origins,
+    allow_origin_regex=_settings.cors_origin_regex,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Building Intelligence read API. Gated the way ingest gates its config router:
+# the tenant's module (`analytics` — "Dashboards & Reports") plus a tenant that
+# is neither suspended nor past its licence grace. Per-route the permission is
+# `bi.read`. Super-admins bypass both gates.
+app.include_router(
+    bi_router,
+    prefix=_settings.api_prefix,
+    dependencies=[Depends(require_feature("analytics")), Depends(require_active_license())],
+)
 
 
 @app.get("/health")
