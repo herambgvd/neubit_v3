@@ -378,3 +378,39 @@ lives in data rather than in configuration that someone has to remember.
 * **Observability**: `:8020/health` (liveness), `/readyz` (503 on database down,
   NATS disconnected, or lag over `VE_READINGS_LAG_WARN`), `/metrics`
   (Prometheus), `/stats` (the same as JSON).
+
+---
+
+## 11. Device metadata must reach the store (Phase D)
+
+Building Intelligence filters by what a device IS — HVAC & Assets, Energy &
+Metering, IAQ & Environment are category views. The gateway already classifies:
+of the 30 aeon devices, 28 carry a category (energy 18, hvac 7, water 2, fire 1;
+the `gateway` pseudo-device carries none, correctly).
+
+**None of it reaches `points`.** Measured: `category_set=0` of 314 rows. The §3
+body carries `conn_id, device_id, device_tag, point_id, point_tag, env` and
+nothing about what the device is, so the writer has nothing to store and every
+BI category view would be empty.
+
+Add to the §3 payload, alongside the existing device fields:
+
+```json
+"device_category": "energy",
+"device_type": "meter"
+```
+
+Both optional — omit rather than send empty strings, and the writer must treat a
+missing value as "unknown", not overwrite a known value with NULL. A device's
+category can be corrected by an operator later, so the writer should update
+`points` when the value changes rather than only on first insert.
+
+**`unit` stays empty and that is correct, not a bug.** All 313 aeon points report
+`env.u` empty — the source MQTT payloads carry no unit. The writer should keep
+storing `env.u` when present. Inferring a unit from a point tag (`PF`, `kW`,
+`A`) is a separate feature and must not be smuggled in here: a guessed unit on a
+BI energy dashboard is worse than a blank one.
+
+Note `points.type` currently holds the reading KIND (`num` / `text`), not the
+device type. Those are two different things and need two columns; do not overload
+the one that exists.
