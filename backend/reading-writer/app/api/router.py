@@ -22,16 +22,19 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from typing import Annotated
+from typing import Annotated, get_args
 
 from fastapi import APIRouter, Depends, Query
-from kernel.auth import Scope, get_scope, require_permission
-from kernel.errors import ValidationError
+from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
+from kernel.errors import ForbiddenError, ValidationError
 from reporting.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import builder
 from . import execute as ex
+from . import permsync
 from . import queries as q
+from . import registry
 from . import spec as widget_spec
 from .schemas import (
     ActivityBucket,
@@ -40,7 +43,7 @@ from .schemas import (
     SeriesResponse,
     SummaryResponse,
 )
-from .spec import QueryResult
+from .spec import TableResult as QueryResult
 
 # The permission key this API gates on. Registered in core's catalog
 # (`app/auth/permissions.py`, group "Building Intelligence") so a tenant admin can
@@ -52,6 +55,7 @@ bi_router = APIRouter(prefix="/bi", tags=["Building Intelligence"])
 
 Db = Annotated[AsyncSession, Depends(get_db)]
 Caller = Annotated[Scope, Depends(get_scope)]
+Who = Annotated[Principal, Depends(get_principal)]
 
 
 def _tenant(scope: Scope) -> uuid.UUID | None:
@@ -300,69 +304,144 @@ async def series(
     )
 
 
-# ── Widget query (the dashboard builder's executor) ───────────────────────────
+# ── The dashboard builder ────────────────────────────────────────────────────
+#
+# Three routes and no fourth: what datasets exist, what one of them contains, and
+# run a widget's state against it. There is deliberately NO route that accepts
+# SQL — see `spec.py` and the builder contract §3. The generator lives in
+# `sqlgen.py` and runs here, on the server, or it does not run.
 
 
-@bi_router.post(
-    "/query",
-    response_model=QueryResult,
-    dependencies=[Depends(require_permission(PERM_READ))],
-)
-async def query(db: Db, scope: Caller, body: dict) -> QueryResult:
-    """Execute ONE widget spec and return its data.
+def _allowed(who: Principal, ds: registry.Dataset) -> bool:
+    """Whether this caller may read this dataset. Each dataset declares its own
+    permission (contract §2), so `bi.read` is the IoT dataset's key rather than a
+    blanket gate over everything the builder can see."""
+    return who.grants(ds.permission)
 
-    This is the read path behind every dashboard widget. It lives here, not in
-    the dashboards service, for the same reason the rest of this router does:
+
+@bi_router.get("/datasets")
+async def datasets(db: Db, who: Who) -> dict:
+    """What this caller can chart.
+
+    Read straight from the registry table, so a dataset a domain registered five
+    minutes ago is here now — no release of this service, which is the whole point
+    of the registry (contract §2). Datasets the caller may not read are omitted
+    rather than shown-and-refused: an inventory of other people's data is itself
+    information.
+    """
+    found = await registry.load(db)
+    # Publish the permission keys to core's catalog so a role can grant them.
+    # Best-effort and debounced; a chart never waits on it.
+    await permsync.sync(list(found.values()))
+    items = [ds.public() for ds in found.values() if _allowed(who, ds)]
+    return {
+        "total": len(items),
+        "items": items,
+        "spec_version": widget_spec.SPEC_VERSION,
+        # Everything the editor needs to render its pickers without hard-coding a
+        # list that can drift from what the server accepts.
+        "aggregates": list(get_args(registry.BuilderAggregate)),
+        "filter_ops": list(get_args(builder.FilterOp)),
+        "max_series": builder.MAX_SERIES,
+        "max_rows": builder.MAX_ROWS,
+        "max_hours": builder.MAX_HOURS,
+    }
+
+
+@bi_router.get("/datasets/{key}")
+async def dataset(key: str, db: Db, who: Who) -> dict:
+    ds = await registry.get(db, key)
+    if not _allowed(who, ds):
+        raise ForbiddenError(f"missing permission(s): {ds.permission}")
+    return ds.public()
+
+
+@bi_router.get("/datasets/{key}/values")
+async def dataset_values(
+    key: str,
+    db: Db,
+    scope: Caller,
+    who: Who,
+    column: str,
+    search: str | None = None,
+    hours: Annotated[int, Query(ge=1, le=24 * 90)] = 24 * 7,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> dict:
+    """The distinct values of one DIMENSION, for a filter picker.
+
+    Without this the builder would be a form full of free-text boxes: a person
+    filtering on `category` has to know the gateway spells it `hvac`. It is the
+    same generated-SQL path as everything else — `column` is a dimension KEY that
+    must exist in the registry, never a column name that reaches SQL unchecked.
+    """
+    ds = await registry.get(db, key)
+    if not _allowed(who, ds):
+        raise ForbiddenError(f"missing permission(s): {ds.permission}")
+    return await ex.distinct_values(
+        db,
+        _tenant(scope),
+        ds,
+        column=column,
+        search=search,
+        hours=hours,
+        limit=limit,
+    )
+
+
+@bi_router.post("/query", response_model=QueryResult)
+async def query(db: Db, scope: Caller, who: Who, body: dict) -> QueryResult:
+    """Execute ONE widget's BUILDER STATE and return its data.
+
+    This is the read path behind every dashboard widget. It lives here, not in the
+    dashboards service, for the same reason the rest of this router does: pipeline
     contract §7 gives the readings schema one owner, and the owner serves its own
     reads. The dashboards service stores widget definitions and never opens this
     database.
 
-    The body is a widget spec (`app.api.spec`) — a STRUCTURED description of a
-    scope, a metric, a window, a rollup and a chart type. It is deliberately not
-    SQL; see that module for why, at length.
+    The body is a widget SPEC — a structured description of a dataset, some
+    columns, an aggregate, a window and a resolution. **It is not SQL and there is
+    no field in which SQL can arrive**: every model is `extra="forbid"`, so a body
+    carrying `sql` or `where` is a 400 naming the field. The server generates the
+    statement (`sqlgen.py`); the client never sees one except as a read-only echo
+    on the result.
 
-    POST rather than GET because a spec is a nested object with a point-id list,
-    and encoding that into a query string would be a second, lossy serialisation
-    of a shape that is already defined. Nothing here writes — the verb is about
-    the request body, not the effect.
-
-    Gating is identical to every other route on this router: `bi.read`, the
-    `analytics` module, an unexpired licence, and a tenant taken from the token
-    claim and never from the request. A spec naming another tenant's points
-    resolves to zero points, because the scope query is tenant-filtered before a
-    single reading is read.
+    Gating is per DATASET, not per router: each dataset declares the permission
+    required to read it, and the tenant comes from the token claim and never from
+    the request. A spec naming another tenant's rows returns nothing, because
+    every generated statement carries the tenant bind.
     """
-    return await ex.run(db, _tenant(scope), widget_spec.parse(body))
+    spec = widget_spec.parse(body)
+    ds = await registry.get(db, spec.query.dataset)
+    if not _allowed(who, ds):
+        raise ForbiddenError(f"missing permission(s): {ds.permission}")
+    spec.query.validated(ds)
+    return await ex.run(db, _tenant(scope), ds, spec)
 
 
-@bi_router.get(
-    "/query/capabilities",
-    dependencies=[Depends(require_permission(PERM_READ))],
-)
-async def capabilities() -> dict:
+@bi_router.get("/query/capabilities")
+async def capabilities(db: Db, who: Who) -> dict:
     """What this build's spec supports — the builder reads it instead of guessing.
 
-    A frontend that hard-codes the metric list drifts from the backend the moment
-    one is added or removed. Serving it means the widget editor's options and the
-    validator that rejects them can never disagree.
+    A frontend that hard-codes the aggregate list drifts from the backend the
+    moment one is added or removed. Serving it means the widget editor's options
+    and the validator that rejects them can never disagree.
     """
+    found = await registry.load(db)
     return {
         "spec_version": widget_spec.SPEC_VERSION,
-        "kinds": ["series", "aggregate"],
-        "metrics": ["avg", "min", "max", "last", "first", "count"],
-        "rollups": ["auto", "1m", "1h", "raw"],
-        "scope_types": ["points", "device", "category", "all"],
-        "group_by": ["point", "device", "category"],
+        "shape": "table",
+        "aggregates": list(get_args(registry.BuilderAggregate)),
+        "filter_ops": list(get_args(builder.FilterOp)),
+        "datasets": [
+            {"key": ds.key, "name": ds.name} for ds in found.values() if _allowed(who, ds)
+        ],
         # Chart types THIS BUILD's UI draws. The executor does not validate `viz`
         # at all (see spec.py), so this list is advisory: it tells the editor what
         # to offer, and adding to it never invalidates a stored dashboard.
         "viz": ["line", "bar", "stat", "table"],
-        "max_series": widget_spec.MAX_SERIES,
-        "max_rows": widget_spec.MAX_ROWS,
-        "max_hours": widget_spec.MAX_HOURS,
-        "raw_max_minutes": q.RAW_MAX_MINUTES,
-        # The rule a builder must show rather than let a user discover as a 400.
-        "grouped_metrics": ["count"],
+        "max_series": builder.MAX_SERIES,
+        "max_rows": builder.MAX_ROWS,
+        "max_hours": builder.MAX_HOURS,
     }
 
 
