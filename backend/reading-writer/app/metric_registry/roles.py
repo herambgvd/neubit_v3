@@ -49,7 +49,24 @@ ROLE_DEFS: dict[str, dict] = {
     "energy_register": {
         "dimension": "energy",
         "label": "Energy register",
-        "description": "A cumulative energy register (the kind a consumption is a last−first over).",
+        "description": (
+            "A cumulative LIFETIME energy register (the kind a consumption is a "
+            "last−first over). Bind only registers that measure a SUPPLY without "
+            "double-counting: an incomer bound alongside its own sub-meters would "
+            "count the same energy twice."
+        ),
+    },
+    "energy_period_total": {
+        "dimension": "energy",
+        "label": "Period energy total",
+        "description": (
+            "A period-scoped kWh total (TodayKWH, YestKWH, This_MonthKWH…) that "
+            "resets each period. It is genuinely in kWh — the UNIT is true — but "
+            "it is not a lifetime register, so it must never be a consumption "
+            "input: last−first over a value that resets daily is not a "
+            "measurement. The register-vs-period distinction lives HERE, in "
+            "roles, not in units."
+        ),
     },
     "active_power": {
         "dimension": "power",
@@ -66,6 +83,11 @@ ROLE_DEFS: dict[str, dict] = {
 _RULES: list[tuple[re.Pattern[str], str, str]] = [
     (re.compile(r"^iwt$", re.I), "inlet_water_temp", "the tag is `IWT` — entering water temperature by this estate's convention"),
     (re.compile(r"^owt$", re.I), "outlet_water_temp", "the tag is `OWT` — leaving water temperature by this estate's convention"),
+    # Period-scoped totals FIRST: `This_Year_KWH` ends in `_kwh` and would
+    # otherwise be offered as a lifetime register — a trap, because binding a
+    # value that resets each period into a last−first consumption fabricates
+    # negative deltas. Order is load-bearing; first match wins.
+    (re.compile(r"^(today|yest|this_|last_).*kwh$", re.I), "energy_period_total", "the tag names a period-scoped kWh total (today/yesterday/month/year) — not a lifetime register"),
     (re.compile(r"^(.+_)?kwh$", re.I), "energy_register", "the tag names a kWh register"),
     (re.compile(r"^(tot ?kw|kw_l[123])$", re.I), "active_power", "the tag names active power"),
 ]
