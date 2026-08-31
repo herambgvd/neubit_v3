@@ -17,8 +17,19 @@ NEUBIT_DIR=/opt/neubit
 LOG=/var/log/neubit-boot.log
 COMPOSE_FILES=(-f "$NEUBIT_DIR/docker-compose.yml" -f "$NEUBIT_DIR/docker-compose.appliance.yml")
 
-exec >>"$LOG" 2>&1
-echo "=== boot.sh $(date -u '+%Y-%m-%dT%H:%M:%SZ') ==="
+# The log is for the UNATTENDED paths, which have no console to write to. It is
+# NOT for `status`: that is what an operator runs when the console is not
+# answering, and the README tells them to. Redirecting its output into a file
+# they then have to know about turns the diagnostic into a second problem —
+# observed on the first customer install, where `boot.sh status` printed a blank
+# line and the answer was sitting in the log behind it.
+case "${1:-boot}" in
+  status|stop) ;;
+  *)
+    exec >>"$LOG" 2>&1
+    echo "=== boot.sh $(date -u '+%Y-%m-%dT%H:%M:%SZ') ==="
+    ;;
+esac
 
 start_engine() {
   if docker info >/dev/null 2>&1; then

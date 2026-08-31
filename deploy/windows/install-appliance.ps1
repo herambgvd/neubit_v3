@@ -410,6 +410,36 @@ function Set-FirewallRules {
     Write-Ok "allowed inbound TCP/$ConsolePort (Windows Firewall)"
 }
 
+function Write-AutoLogonInstructions {
+    # ══ THE STEP THAT IS NOT DONE YET ════════════════════════════════════════
+    #
+    # Printed on EVERY outcome, deliberately. It lived in the success branch
+    # only, so the one run that timed out told an engineer the install had
+    # failed and never mentioned the step still owed — on an install that had in
+    # fact completed. Whether the console answered in time has nothing to do with
+    # whether this machine can restart on its own.
+    #
+    # The appliance starts from a LOGON task; see the header for why no boot task
+    # can work. A server that reboots to a sign-in screen serves nothing until
+    # somebody signs in.
+    Write-Host ''
+    Write-Host '  ONE STEP LEFT - without it this server does NOT come back on its own.' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host "  The appliance starts when $OwnerAccount signs in. Make Windows do that:"
+    Write-Host ''
+    Write-Host '    1. netplwiz'
+    Write-Host '    2. clear  "Users must enter a user name and password to use this computer"'
+    Write-Host "    3. choose $OwnerAccount, enter its password, OK"
+    Write-Host '    4. reboot, sign in to NOTHING, and browse to this box from another machine'
+    Write-Host ''
+    Write-Host '  Step 4 is the only proof. Everything before it works just as well on a' -ForegroundColor DarkGray
+    Write-Host '  machine that never restarts unattended.' -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host '  Lock the console afterwards if the machine is reachable by people: set a' -ForegroundColor DarkGray
+    Write-Host '  screen saver with "On resume, display logon screen". Locking keeps the' -ForegroundColor DarkGray
+    Write-Host '  session - and the appliance - running.' -ForegroundColor DarkGray
+}
+
 function Register-LogonTask {
     # AT LOGON, as the account that owns the distro — not at startup, and not as
     # SYSTEM. See the header for why neither of those is available any more.
@@ -604,6 +634,45 @@ $importScript = @"
 Invoke-InSession -Script $importScript -What 'distro import' | Out-Null
 Write-Ok "$DistroName imported for $OwnerAccount"
 
+<#
+Refresh /opt/neubit/boot.sh from the payload directory when one is shipped there.
+
+boot.sh is baked INTO the distro, which means a one-line fix to the appliance's
+own init used to cost a full 2.9 GB rebake and a redelivery to site. That is the
+wrong price for the script most likely to need a field fix, and it was paid the
+first time boot.sh was found swallowing its own `status` output on a customer
+machine.
+
+Same file, same commit — build-appliance.ps1 stages it beside the installer as
+well as inside the tarball, so this overwrites like with like. Best effort: no
+boot.sh beside the installer means an older payload layout, and the baked one is
+correct for it.
+#>
+$bootShHost = Join-Path $PayloadDir 'boot.sh'
+if (Test-Path -LiteralPath $bootShHost) {
+    # Normalised HERE, in PowerShell, rather than with a sed inside the distro.
+    # The sed needed a carriage return in its pattern, and every layer between this
+    # file and bash wants its own escaping for that — the first attempt ended up
+    # embedding a real CR byte in this script, in a repo whose .gitattributes
+    # normalises line endings. `r`n is PowerShell's own escape and cannot be
+    # misread by anything downstream, because nothing downstream sees it.
+    $bootShLf = Join-Path $env:ProgramData 'Neubit\VMS\install\boot.sh'
+    New-Item -ItemType Directory -Force -Path (Split-Path $bootShLf) | Out-Null
+    [IO.File]::WriteAllText($bootShLf, ((Get-Content -LiteralPath $bootShHost -Raw) -replace "`r`n", "`n"))
+    $bootShWsl = '/mnt/' + $bootShLf.Substring(0,1).ToLower() + $bootShLf.Substring(2).Replace('\','/')
+    try {
+        Invoke-InSession -Quiet -What 'refresh boot.sh' -Script @"
+    wsl.exe -d $DistroName -u root -- cp '$bootShWsl' /opt/neubit/boot.sh
+    wsl.exe -d $DistroName -u root -- chmod +x /opt/neubit/boot.sh
+    if (`$LASTEXITCODE -ne 0) { throw "refreshing boot.sh failed with `$LASTEXITCODE" }
+"@ | Out-Null
+        Write-Ok 'boot.sh refreshed from the payload'
+    } catch {
+        Write-Warn "could not refresh boot.sh: $($_.Exception.Message)"
+        Write-Warn 'the copy baked into the distro will be used'
+    }
+}
+
 # ── 6. configuration ─────────────────────────────────────────────────────────
 Write-Step 'Writing the appliance configuration'
 
@@ -762,14 +831,48 @@ Enable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Nul
 Write-Step 'Starting the appliance'
 Start-ScheduledTask -TaskName $TaskName
 
+# Start-ScheduledTask returns as soon as the request is accepted, not when the
+# task runs. Asking afterwards separates "the stack is still coming up" from
+# "nothing was ever launched" — two identical-looking silences.
+Start-Sleep -Seconds 3
+$taskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($taskInfo -and $taskInfo.LastRunTime -and $taskInfo.LastRunTime -gt (Get-Date).AddMinutes(-5)) {
+    Write-Ok "logon task ran at $($taskInfo.LastRunTime)"
+} else {
+    Write-Warn 'the logon task does not report a recent run; watch the boot log if the console does not appear'
+}
+
+<#
+The first boot is the long one, and this used to give it six minutes.
+
+That is not enough and the failure was ugly: on the first customer install every
+container was up and healthy, the console answered perfectly, and the installer
+had already printed "The console did not answer within six minutes" and exited 1
+— telling an engineer on a customer's site that a completed install had failed.
+The stack has 15 containers and a first boot that builds the whole schema from
+the ORM metadata before uvicorn binds a port.
+
+So: wait longer, say what is happening while waiting, and when it does time out
+ASK THE STACK before pronouncing. A console that has not answered yet is not the
+same fault as a stack that never started, and the operator should not have to
+know that to read the last line of an installer.
+#>
 Write-Step 'Waiting for the console'
-$deadline = (Get-Date).AddMinutes(6)
+Write-Host '    first boot builds the database schema; this can take several minutes' -ForegroundColor DarkGray
+$waitMinutes = 15
+$deadline = (Get-Date).AddMinutes($waitMinutes)
 $ready = $false
+$nextTick = (Get-Date).AddSeconds(30)
 while ((Get-Date) -lt $deadline) {
     try {
         $r = Invoke-WebRequest -Uri "http://127.0.0.1:$ConsolePort/health" -UseBasicParsing -TimeoutSec 5
         if ($r.StatusCode -eq 200) { $ready = $true; break }
     } catch { }
+    if ((Get-Date) -gt $nextTick) {
+        $left = [int]($deadline - (Get-Date)).TotalMinutes
+        Write-Host "    still waiting - ${left} min left" -ForegroundColor DarkGray
+        $nextTick = (Get-Date).AddSeconds(60)
+    }
     Start-Sleep -Seconds 5
 }
 
@@ -794,38 +897,40 @@ if ($ready) {
         Write-Host '    password  the one you passed as -AdminPassword'
     }
 
-    # ── the step that is not done yet ────────────────────────────────────────
-    #
-    # Said here, loudly, because everything above looks finished and is not. The
-    # appliance starts from a LOGON task — see the header for why no boot task can
-    # work — so a server that reboots to a sign-in screen serves nothing until
-    # somebody signs in. Every other note in this script describes something that
-    # already happened; this one describes work still owed.
-    Write-Host ''
-    Write-Host '  ONE STEP LEFT - without it this server does NOT come back on its own.' -ForegroundColor Yellow
-    Write-Host ''
-    Write-Host "  The appliance starts when $OwnerAccount signs in. Make Windows do that:"
-    Write-Host ''
-    Write-Host '    1. netplwiz'
-    Write-Host '    2. clear  "Users must enter a user name and password to use this computer"'
-    Write-Host "    3. choose $OwnerAccount, enter its password, OK"
-    Write-Host '    4. reboot, sign in to NOTHING, and browse to this box from another machine'
-    Write-Host ''
-    Write-Host '  Step 4 is the only proof. Everything before it works just as well on a' -ForegroundColor DarkGray
-    Write-Host '  machine that never restarts unattended.' -ForegroundColor DarkGray
-    Write-Host ''
-    Write-Host '  Lock the console afterwards if the machine is reachable by people: set a' -ForegroundColor DarkGray
-    Write-Host '  screen saver with "On resume, display logon screen". Locking keeps the' -ForegroundColor DarkGray
-    Write-Host '  session - and the appliance - running.' -ForegroundColor DarkGray
+    Write-AutoLogonInstructions
+
 } else {
-    Write-Warn 'The console did not answer within six minutes.'
+    Write-Warn "The console did not answer within $waitMinutes minutes."
     Write-Host ''
-    Write-Host '  The first boot initialises the database, which is slow on a mechanical disk.' -ForegroundColor DarkGray
-    Write-Host '  Look at what it is doing with:' -ForegroundColor DarkGray
+
+    # Ask the stack rather than guessing, because the two cases need opposite
+    # actions and the operator cannot tell them apart from silence.
+    $running = @(& wsl.exe -d $DistroName -u root -- docker ps --format '{{.Names}}' 2>$null |
+                 ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+    if ($running.Count -gt 0) {
+        Write-Host "  The stack IS running - $($running.Count) containers up." -ForegroundColor Green
+        Write-Host ''
+        Write-Host '  EVERYTHING THIS INSTALLER DOES IS DONE. Do not re-run it. The console is'
+        Write-Host '  most likely still finishing its first boot; open it in a browser:'
+        Write-Host ''
+        Write-Host "    http://localhost"
+        Write-Host ''
+        Write-Host '  If it is still refused in a few minutes:' -ForegroundColor DarkGray
+    } else {
+        Write-Host '  No containers are running. The stack did not start.' -ForegroundColor Yellow
+        Write-Host ''
+        Write-Host '  Look at what happened with:' -ForegroundColor DarkGray
+    }
     Write-Host ''
     Write-Host "    wsl -d $DistroName -u root -- tail -50 /var/log/neubit-boot.log" -ForegroundColor DarkGray
     Write-Host "    wsl -d $DistroName -u root -- /opt/neubit/boot.sh status" -ForegroundColor DarkGray
     Write-Host ''
-    exit 1
+
+    if ($running.Count -gt 0) { Write-AutoLogonInstructions }
+
+    # exit 1 ONLY when something is actually wrong. A running stack whose console
+    # is slow is not a failed install, and saying so cost a site visit's worth of
+    # confidence the first time.
+    if ($running.Count -eq 0) { exit 1 }
 }
 Write-Host ''

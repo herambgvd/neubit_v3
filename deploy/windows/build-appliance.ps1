@@ -371,6 +371,14 @@ ls -la /opt/neubit /opt/gateway
     }
 }
 finally {
+    # Save the rootfs BEFORE $Work is deleted. probe-system-wsl.ps1 needs one to
+    # exercise the check that decides whether a box can run the appliance at all,
+    # and a skipped gate reads like a passed gate to somebody on a customer site.
+    if (Test-Path -LiteralPath $RootfsTar) {
+        New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+        Copy-Item -LiteralPath $RootfsTar -Destination (Join-Path $OutDir 'rootfs.tar') -Force
+    }
+
     if ($KeepBuildDistro) {
         Write-Warn "build distro $BuildDistro kept (-KeepBuildDistro)"
     } else {
@@ -384,6 +392,21 @@ Write-Step 'Staging the install scripts'
 foreach ($f in @('install-appliance.ps1', 'uninstall-appliance.ps1', 'probe-system-wsl.ps1', 'README.md')) {
     Copy-Item -LiteralPath (Join-Path $WindowsDir $f) -Destination $OutDir -Force
     Write-Ok $f
+}
+
+# boot.sh goes BESIDE the installer as well as inside the tarball. It is the
+# appliance's own init, so it is the script most likely to need a field fix, and
+# baked in it costs a 2.9 GB rebake and a redelivery to change one line. The
+# installer copies this one over the baked copy, so a fix ships in a 30 KB bundle.
+# Same file, same commit, so the two cannot disagree.
+Copy-Item -LiteralPath (Join-Path $InDistro 'boot.sh') -Destination $OutDir -Force
+Write-Ok 'boot.sh'
+
+$probeRootfs = Join-Path $OutDir 'rootfs.tar'
+if (Test-Path -LiteralPath $probeRootfs) {
+    Write-Ok ("rootfs.tar  {0:N0} MB  (for probe-system-wsl.ps1)" -f ((Get-Item $probeRootfs).Length / 1MB))
+} else {
+    Write-Warn 'rootfs.tar was not staged - probe-system-wsl.ps1 will skip its main check'
 }
 @{ version = $Version; built = (Get-Date).ToUniversalTime().ToString('o'); distro = 'neubit-vms' } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutDir 'appliance.json') -Encoding utf8
