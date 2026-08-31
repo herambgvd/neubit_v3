@@ -217,8 +217,7 @@ machine.
 ## Networking: two gates, and both are shut by default
 
 WSL2's default NAT publishes a distro's ports to the host's **loopback only**. So
-the desktop shell on the appliance itself needs no work at all — it reaches
-`http://127.0.0.1` today — and a LAN browser is refused.
+out of the box a LAN browser is refused, which is half the product missing.
 
 The installer opens both gates:
 
@@ -231,6 +230,26 @@ The installer opens both gates:
    Windows refused the identical URL, with nothing in any log mentioning a
    firewall. It presents as a server that is up and unreachable — the single most
    likely support ticket for this product.
+
+### `http://localhost` does not work on the appliance itself
+
+Turning mirroring on takes loopback away, and this surprises everyone who meets it.
+Mirrored mode makes the distro share the **host's** loopback, and Docker's published
+port is not on it: the DNAT rule Docker installs sits in `PREROUTING` and covers
+traffic arriving on an interface, while loopback would need `docker-proxy`, which is
+not listening. Measured on the first customer machine:
+
+```
+direct to the container (172.18.0.4)  : 200
+the distro's eth0       (10.24.103.39): 200
+loopback                (127.0.0.1)   : 000
+```
+
+So **use the machine's LAN address, on the appliance as well as from the network.**
+`install-appliance.ps1` probes every local IPv4 and prints the one that answered;
+that is the address to give the customer. An operator who tries `localhost` on the
+box, finds it refused and concludes the appliance is down will be wrong, and the
+installer says so out loud for exactly that reason.
 
 `.wslconfig` is machine-wide. The uninstaller deliberately leaves it, and says so,
 rather than silently reverting a global network setting another distro may depend on.

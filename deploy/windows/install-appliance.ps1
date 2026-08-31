@@ -857,17 +857,52 @@ ASK THE STACK before pronouncing. A console that has not answered yet is not the
 same fault as a stack that never started, and the operator should not have to
 know that to read the last line of an installer.
 #>
+<#
+══ WHY THIS DOES NOT ASK LOCALHOST ═══════════════════════════════════════════
+
+It used to ask only http://127.0.0.1/health, and on the first customer install it
+never got an answer from a console that was serving perfectly the whole time.
+
+Under networkingMode=mirrored the distro shares the HOST'S loopback, and Docker's
+published port is not reachable there. The DNAT rule Docker installs sits in
+PREROUTING and covers traffic arriving on an interface; loopback would need
+docker-proxy, and it is not listening. Measured on that machine:
+
+    direct to the container (172.18.0.4)  : 200
+    the distro's eth0       (10.24.103.39): 200
+    loopback                (127.0.0.1)   : 000
+
+Loopback is the single address that cannot work under the networking mode this
+installer itself configures, and it was the only one being tried.
+
+So every local IPv4 is a candidate, loopback last. Which one answers is worth
+knowing rather than hiding: it is the address the operator will hand to the
+customer, and "http://localhost" printed as if it worked would send the next
+engineer chasing a console that is up.
+#>
 Write-Step 'Waiting for the console'
 Write-Host '    first boot builds the database schema; this can take several minutes' -ForegroundColor DarkGray
+
+$candidates = @(
+    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and $_.PrefixOrigin -ne 'WellKnown' } |
+        Select-Object -ExpandProperty IPAddress -Unique
+) + '127.0.0.1'
+Write-Host ("    trying " + ($candidates -join ', ')) -ForegroundColor DarkGray
+
 $waitMinutes = 15
 $deadline = (Get-Date).AddMinutes($waitMinutes)
 $ready = $false
+$readyHost = $null
 $nextTick = (Get-Date).AddSeconds(30)
-while ((Get-Date) -lt $deadline) {
-    try {
-        $r = Invoke-WebRequest -Uri "http://127.0.0.1:$ConsolePort/health" -UseBasicParsing -TimeoutSec 5
-        if ($r.StatusCode -eq 200) { $ready = $true; break }
-    } catch { }
+while ((Get-Date) -lt $deadline -and -not $ready) {
+    foreach ($addr in $candidates) {
+        try {
+            $r = Invoke-WebRequest -Uri "http://${addr}:$ConsolePort/health" -UseBasicParsing -TimeoutSec 5
+            if ($r.StatusCode -eq 200) { $ready = $true; $readyHost = $addr; break }
+        } catch { }
+    }
+    if ($ready) { break }
     if ((Get-Date) -gt $nextTick) {
         $left = [int]($deadline - (Get-Date)).TotalMinutes
         Write-Host "    still waiting - ${left} min left" -ForegroundColor DarkGray
@@ -878,13 +913,17 @@ while ((Get-Date) -lt $deadline) {
 
 Write-Host ''
 if ($ready) {
-    $lan = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and $_.PrefixOrigin -ne 'WellKnown' } |
-            Select-Object -First 1 -ExpandProperty IPAddress)
     Write-Host '  Neubit VMS is running.' -ForegroundColor Green
     Write-Host ''
-    Write-Host "    on this machine   http://localhost"
-    if ($lan) { Write-Host "    from the network  http://$lan" }
+    Write-Host "    http://$readyHost" -ForegroundColor Green
+    Write-Host ''
+    Write-Host '  That is the address that answered, and the one to give the customer.' -ForegroundColor DarkGray
+    if ($readyHost -ne '127.0.0.1') {
+        # Not a footnote. Somebody WILL try localhost on this machine, find it
+        # refused, and conclude the appliance is down.
+        Write-Host '  http://localhost does NOT work here: mirrored networking shares this' -ForegroundColor DarkGray
+        Write-Host '  machine loopback with the distro, and the published port is not on it.' -ForegroundColor DarkGray
+    }
     Write-Host ''
     Write-Host '  Sign in with the bootstrap administrator, then change its password:'
     Write-Host ''
@@ -911,9 +950,9 @@ if ($ready) {
         Write-Host "  The stack IS running - $($running.Count) containers up." -ForegroundColor Green
         Write-Host ''
         Write-Host '  EVERYTHING THIS INSTALLER DOES IS DONE. Do not re-run it. The console is'
-        Write-Host '  most likely still finishing its first boot; open it in a browser:'
+        Write-Host '  most likely still finishing its first boot; try these in a browser:'
         Write-Host ''
-        Write-Host "    http://localhost"
+        foreach ($addr in $candidates) { Write-Host "    http://$addr" }
         Write-Host ''
         Write-Host '  If it is still refused in a few minutes:' -ForegroundColor DarkGray
     } else {
