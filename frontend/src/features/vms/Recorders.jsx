@@ -12,7 +12,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { Button, ConfirmDialog, Modal } from "@/components/ui/kit";
-import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
+import { MasterDetail, ListPanel, EmptyDetail, Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -336,8 +336,9 @@ function FederationTrust({ node }) {
   const qc = useQueryClient();
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
-  const [issued, setIssued] = useState(null); // the just-enrolled RAW credential (show once)
+  const [issued, setIssued] = useState(null); // the just-issued RAW credential (show once)
   const [copied, setCopied] = useState(false);
+  const [pairCode, setPairCode] = useState(null); // non-null while the pair dialog is open
 
   const credsQ = useQuery({
     queryKey: ["vms-node-credentials", node.id],
@@ -361,6 +362,21 @@ function FederationTrust({ node }) {
       invalidate();
     },
     onError: (e) => toast.error(apiError(e, "Enroll failed")),
+  });
+
+  // Pairing is the bootstrap for a recorder deployed on its OWN box: it has its own
+  // VE_JWT_SECRET, so the shared-secret enrol above cannot authenticate to it. The
+  // operator mints a one-use code on that recorder's console and enters it here.
+  const pair = useMutation({
+    mutationFn: () => vms.mediaNodes.pair(node.id, pairCode.trim()),
+    onSuccess: (data) => {
+      setPairCode(null);
+      setIssued(data);
+      setCopied(false);
+      toast.success("Paired — federation credential stored");
+      invalidate();
+    },
+    onError: (e) => toast.error(apiError(e, "Pairing failed")),
   });
 
   const revoke = useMutation({
@@ -396,17 +412,31 @@ function FederationTrust({ node }) {
       </div>
 
       <p className="mb-2 text-[11px] leading-relaxed text-[#7e93bf]">
-        A federation credential lets the VMS read this recorder&apos;s cameras and stream through it. The raw
-        secret is shown once at enrollment — store it on the recorder, then revoke + re-enroll to rotate it.
+        A federation credential lets the VMS read this recorder&apos;s cameras and stream through it. Pair with a
+        code minted on the recorder when it is a separate deployment; enroll only works when the recorder shares
+        this stack&apos;s signing secret. The raw secret is shown once — copy it before closing.
       </p>
 
       {credsQ.isLoading ? (
         <p className="px-1 py-2 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
       ) : credsQ.isError ? (
-        <p className="px-1 py-2 text-xs text-[#f87171]">{apiError(credsQ.error, "Failed to load credentials")}</p>
+        node.has_credential ? (
+          // Listing a recorder's keys needs settings.manage on the recorder, which a
+          // pairing-issued credential deliberately never holds. For a separately
+          // deployed box this call is EXPECTED to fail — the VMS holds a working key
+          // and simply cannot enumerate the recorder's own list. Showing a red error
+          // would report a broken federation that is in fact working as designed.
+          <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-xs text-[#9a92c8]">
+            This VMS holds a credential for this recorder. The recorder&apos;s own credential list is
+            managed on the recorder and is not readable from here — revoke keys on its console.
+          </p>
+        ) : (
+          <p className="px-1 py-2 text-xs text-[#f87171]">{apiError(credsQ.error, "Failed to load credentials")}</p>
+        )
       ) : creds.length === 0 ? (
         <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-center text-xs text-[#9a92c8]">
-          No credentials issued yet. Enroll this recorder to establish federation trust.
+          No credentials issued yet. Pair this recorder with a code from its console — or enroll it,
+          if it shares this stack&apos;s signing secret.
         </p>
       ) : (
         <ul className="space-y-1.5">
@@ -456,16 +486,59 @@ function FederationTrust({ node }) {
       )}
 
       {canManage && (
-        <Button
-          variant="secondary"
-          className="mt-2.5 !px-2.5 !py-1.5 !text-xs"
-          icon={enrolled ? "heroicons-outline:arrow-path" : "heroicons-outline:plus"}
-          onClick={() => enroll.mutate()}
-          disabled={enroll.isPending}
-        >
-          {enroll.isPending ? "Enrolling…" : enrolled ? "Re-enroll" : "Enroll"}
-        </Button>
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            className="!px-2.5 !py-1.5 !text-xs"
+            icon="heroicons-outline:key"
+            onClick={() => setPairCode("")}
+          >
+            {enrolled ? "Re-pair with code" : "Pair with code"}
+          </Button>
+          <Button
+            variant="secondary"
+            className="!px-2.5 !py-1.5 !text-xs"
+            icon={enrolled ? "heroicons-outline:arrow-path" : "heroicons-outline:plus"}
+            onClick={() => enroll.mutate()}
+            disabled={enroll.isPending}
+          >
+            {enroll.isPending ? "Enrolling…" : enrolled ? "Re-enroll" : "Enroll"}
+          </Button>
+        </div>
       )}
+
+      {/* Pair — the code an operator minted on the recorder's own console. */}
+      <Modal
+        open={pairCode !== null}
+        onClose={() => setPairCode(null)}
+        title="Pair with recorder"
+        footer={
+          <>
+            <div className="flex-1" />
+            <Button variant="secondary" onClick={() => setPairCode(null)} disabled={pair.isPending}>Cancel</Button>
+            <Button
+              variant="success"
+              onClick={() => pair.mutate()}
+              disabled={pair.isPending || !(pairCode || "").trim()}
+            >
+              {pair.isPending ? "Pairing…" : "Pair"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[12px] leading-relaxed text-[#7e93bf]">
+            On the recorder&apos;s console open <span className="text-[#aec2e8]">Federation → Pair central VMS</span> and
+            mint a code. It is one-use and expires in 15 minutes.
+          </p>
+          <Field
+            label="Pairing code"
+            value={pairCode || ""}
+            onChange={(e) => setPairCode(e.target.value)}
+            placeholder="8FK2N-9QTXW"
+          />
+        </div>
+      </Modal>
 
       {/* The RAW credential — shown ONCE. */}
       <Modal

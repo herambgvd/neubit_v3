@@ -1,7 +1,12 @@
 "use client";
 
 // Add / edit a MediaNode (recorder) — a standalone recorder machine (its own
-// MediaMTX + storage) that cameras are pinned to. Manual path only. On save →
+// MediaMTX + storage) that cameras are pinned to. Manual path only.
+//
+// A recorder deployed on its OWN box has its own JWT secret, so this VMS cannot
+// authenticate to it out of the box; the operator mints a one-use pairing code on
+// that recorder's console and enters it here, and the backend trades it for a scoped
+// credential during create. A refused code fails the create — see api.js. On save →
 // POST /vms/media-nodes (or PATCH when editing). If the box is unreachable at
 // create time the backend still saves it and returns a `warning` — surfaced as a
 // warning toast by the caller. Mirrors AddNvrModal.
@@ -26,8 +31,10 @@ export default function AddRecorderModal({ node, onClose, onSuccess }) {
           rtsp_base: node.rtsp_base || "",
           label: node.label || "",
           capacity_channels: node.capacity_channels ?? "",
+          // Kept present (and disabled below) so the field stays controlled on edit.
+          pairing_code: "",
         }
-      : { name: "", api_url: "", hls_base: "", webrtc_base: "", rtsp_base: "", label: "", capacity_channels: "" },
+      : { name: "", api_url: "", hls_base: "", webrtc_base: "", rtsp_base: "", label: "", capacity_channels: "", pairing_code: "" },
   );
   const [errors, setErrors] = useState({});
 
@@ -44,6 +51,9 @@ export default function AddRecorderModal({ node, onClose, onSuccess }) {
         label: form.label.trim() || undefined,
         capacity_channels:
           form.capacity_channels === "" ? undefined : Number(form.capacity_channels) || undefined,
+        // Create-only, and only when supplied: on edit the node already holds a
+        // credential, and re-pairing is a deliberate act from the detail panel.
+        pairing_code: editing ? undefined : form.pairing_code.trim() || undefined,
       };
       return editing ? vms.mediaNodes.update(node.id, body) : vms.mediaNodes.create(body);
     },
@@ -104,9 +114,22 @@ export default function AddRecorderModal({ node, onClose, onSuccess }) {
           required
           value={form.api_url}
           onChange={(e) => set({ api_url: e.target.value })}
-          placeholder="http://10.0.0.20:9997"
+          placeholder="http://10.0.0.20:8000"
           error={errors.api_url}
-          hint="The recorder's control API endpoint. Saved even if unreachable now."
+          hint="The recorder's node API (port 8000 by default) — NOT its operator console on 8080, which serves the browser and does not forward federation credentials. Saved even if unreachable now."
+        />
+
+        <Field
+          label="Pairing code"
+          value={form.pairing_code}
+          onChange={(e) => set({ pairing_code: e.target.value })}
+          placeholder="e.g. 8FK2N-9QTXW"
+          disabled={editing}
+          hint={
+            editing
+              ? "Pairing is done from the recorder's detail panel."
+              : "Mint this on the recorder's own console (Federation → Pair central VMS). Required when the recorder is a separate deployment; leave blank only when it shares this stack's VE_JWT_SECRET."
+          }
         />
 
         <div className="grid grid-cols-3 gap-3">

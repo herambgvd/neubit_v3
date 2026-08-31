@@ -221,6 +221,21 @@ class MediaNodeService:
             or 0
         )
 
+    @staticmethod
+    def _used_channels(row: MediaNode, pinned: int) -> int:
+        """The number to show as "used" for one recorder.
+
+        Two kinds of recorder, two sources of truth. A node we PIN cameras to is
+        counted from our own ``Camera`` rows. A FEDERATED node owns its cameras —
+        they were never rows here — so the only honest count is the one the node
+        reported to the heartbeat. A federated node also hosts anything we pinned
+        to it, so its own number already includes those; taking it whole is right,
+        not an approximation.
+        """
+        if (getattr(row, "credential", None) or "").strip() and row.used_channels:
+            return int(row.used_channels)
+        return pinned
+
     # ── CRUD ────────────────────────────────────────────────────────────
     async def create(self, body: MediaNodeCreate, *, probe: bool = True) -> MediaNodePublic:
         # Name is unique within the caller's tenant (like NVR/camera/instance names).
@@ -263,11 +278,41 @@ class MediaNodeService:
                     f"{_health_url(body.api_url)} — it will come online on the next heartbeat"
                 )
 
-        # Phase-2 trust: enrol a per-node scoped credential so subsequent estate
-        # calls use X-Node-Credential (not the ambient shared-secret JWT). Best-effort
-        # — a node that can't enrol (older recorder, unreachable) simply keeps None and
-        # falls back to the service JWT.
-        if row.status == "online" and body.api_url:
+        # Phase-2 trust: obtain a per-node scoped credential, so every later estate call
+        # travels as X-Node-Credential instead of the ambient shared-secret JWT.
+        #
+        # There are two bootstraps because there are two deployments. Enrolment signs its
+        # call with ``VE_JWT_SECRET`` and therefore only works where the recorder and this
+        # VMS were brought up as ONE stack. A recorder on its own box has its own secret
+        # and would answer 401 — for that one, an operator mints a pairing code on the
+        # recorder's console and supplies it here.
+        #
+        # When a code is supplied it is authoritative: a REFUSED code fails the create.
+        # Falling back to enrolment there would register a node that looks trusted, holds
+        # no usable credential, 401s on every subsequent call, and hides the one thing the
+        # operator could actually fix — the code they mistyped or let expire.
+        if body.pairing_code and body.api_url:
+            from app.vms.federation.client import (
+                NodePairingRejected,
+                NodeUnavailable,
+                pair_node,
+            )
+
+            try:
+                payload = await pair_node(body.api_url, body.pairing_code)
+                row.credential = payload.get("credential")
+            except NodePairingRejected as exc:
+                raise ValidationError(str(exc)) from exc
+            except NodeUnavailable as exc:
+                # Unreachable is not a bad code — nothing was spent on the node, so the
+                # row is still registered (as everywhere else here) and the SAME code can
+                # be traded from the detail page once networking is fixed.
+                log.warning("media node %s: pairing deferred, node unreachable: %s", body.name, exc)
+                warning = (
+                    f"recorder registered but could not be reached to pair ({exc}) — "
+                    f"pair it from the recorder's detail page once it is online"
+                )
+        elif row.status == "online" and body.api_url:
             try:
                 from app.vms.federation.client import enroll_node
 
@@ -326,7 +371,10 @@ class MediaNodeService:
             counts = {nid: int(c) for nid, c in res.all()}
 
         return MediaNodeListResponse(
-            items=[MediaNodePublic.from_row(r, used=counts.get(r.id, 0)) for r in rows],
+            items=[
+                MediaNodePublic.from_row(r, used=self._used_channels(r, counts.get(r.id, 0)))
+                for r in rows
+            ],
             total=total,
             skip=skip,
             limit=limit,
@@ -334,7 +382,9 @@ class MediaNodeService:
 
     async def get(self, node_id: str) -> MediaNodePublic:
         row = await self._row(node_id)
-        return MediaNodePublic.from_row(row, used=await self._assigned_camera_count(node_id))
+        return MediaNodePublic.from_row(
+            row, used=self._used_channels(row, await self._assigned_camera_count(node_id))
+        )
 
     async def update(self, node_id: str, body: MediaNodeUpdate) -> MediaNodePublic:
         row = await self._row(node_id)
@@ -448,6 +498,39 @@ class MediaNodeService:
             "id": new_id,
             "label": payload.get("label"),
             "grants": payload.get("grants"),
+        }
+
+    async def pair_credential(self, node_id: str, code: str) -> dict:
+        """Trade a pairing code for a scoped credential on an ALREADY-registered node and
+        store it, replacing whatever the row held.
+
+        Unlike ``enroll_credential`` this does NOT rotate the node's other credentials.
+        Revoking one requires settings.manage, which a pairing-issued credential
+        deliberately does not carry — a federated VMS must never be able to reach back and
+        revoke keys on the recorder. Stale keys are revoked by an operator on the
+        recorder's own console, which is the only place that authority lives.
+
+        The raw credential is surfaced ONCE ({credential, id, label, grants}); the node
+        never returns it again.
+        """
+        from app.vms.federation.client import NodePairingRejected, NodeUnavailable, pair_node
+
+        row = await self._row(node_id)
+        try:
+            payload = await pair_node(row.api_url or "", code)
+        except NodePairingRejected as exc:
+            raise ValidationError(str(exc)) from exc
+        except NodeUnavailable as exc:
+            raise ValidationError(f"recorder unreachable: {exc}") from exc
+        row.credential = payload.get("credential")
+        await self.db.commit()
+        return {
+            "credential": payload.get("credential"),
+            "id": payload.get("id"),
+            "label": payload.get("label"),
+            "grants": payload.get("grants") or [],
+            "node_id": payload.get("node_id"),
+            "node_name": payload.get("node_name"),
         }
 
     async def revoke_credential(self, node_id: str, cred_id: str) -> None:
@@ -740,6 +823,38 @@ async def _heartbeat_one(node: MediaNode, *, timeout: float | None = None) -> No
         used = _used_channels_from_status(payload)
         if used is not None:
             node.used_channels = used
+        else:
+            # The /health payload carries no count, so for a FEDERATED recorder ask
+            # the node itself. Its cameras are node-authoritative — they are not
+            # ``Camera`` rows here — so counting our own table reports 0 for a
+            # recorder plainly hosting cameras, which is how "0 / 128" ends up on
+            # screen beside a working 5-camera box.
+            #
+            # Only for nodes holding a credential: without one the call would 401
+            # every cycle, and a node with no federation trust has no cameras of
+            # its own for us to count anyway.
+            count = await _federated_camera_count(node, timeout=timeout)
+            if count is not None:
+                node.used_channels = count
     else:
         node.status = "offline"
     node.updated_at = now
+
+
+async def _federated_camera_count(node: MediaNode, *, timeout: float | None = None) -> int | None:
+    """How many cameras the recorder itself hosts, or None when it cannot be asked.
+
+    Best-effort by design: a node that is momentarily unreachable, or answers an
+    error, leaves ``used_channels`` at its last known value rather than dropping the
+    reading to 0 — a transient blip must not read as "the recorder lost its cameras".
+    """
+    credential = (getattr(node, "credential", None) or "").strip()
+    if not credential or not node.api_url:
+        return None
+    from app.vms.federation.client import list_estate_cameras
+
+    try:
+        return len(await list_estate_cameras(node.api_url, credential))
+    except Exception as exc:  # noqa: BLE001 — a count must never break the heartbeat
+        log.debug("node %s: camera count unavailable: %s", node.id, exc)
+        return None

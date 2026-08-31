@@ -29,6 +29,14 @@ class NodeUnavailable(Exception):
     """A federated recorder node could not be reached / answered non-2xx."""
 
 
+class NodePairingRejected(Exception):
+    """The recorder REFUSED a pairing code — unknown, already spent, or expired.
+
+    Distinct from ``NodeUnavailable`` on purpose: the node was reached and answered,
+    so retrying or waiting for a heartbeat will not help. Only a fresh code will.
+    """
+
+
 def _headers(credential: str | None) -> dict:
     """Auth for an estate call. Prefer the node's per-node federation credential
     (Phase-2, scoped) as X-Node-Credential; fall back to the ambient service JWT
@@ -67,6 +75,56 @@ async def enroll_node(api_url: str) -> str:
     media-node CREATE probe, which just stores the key). See ``enroll_node_full`` for
     the full enrolment payload."""
     return (await enroll_node_full(api_url)).get("credential")
+
+
+def _node_error_message(r: httpx.Response, fallback: str) -> str:
+    """The node's own error text, so the operator reads WHY a call was refused rather
+    than a status code. Both kernels emit ``{"error": {"code", "message"}}``."""
+    try:
+        body = r.json() or {}
+    except ValueError:
+        return fallback
+    err = body.get("error")
+    if isinstance(err, dict) and err.get("message"):
+        return str(err["message"])
+    return fallback
+
+
+async def pair_node(api_url: str, code: str, *, label: str = "neubit_v3 VMS") -> dict:
+    """Trade a recorder-minted PAIRING CODE for this VMS's own scoped credential.
+
+    The credential-free bootstrap. ``enroll_node_full`` signs its call with the shared
+    ``VE_JWT_SECRET``, so it only works where the recorder and the VMS were deployed as
+    one stack; a recorder on its own box has its own secret and would answer 401. This
+    presents instead a short-lived, one-use code an operator minted on that recorder's
+    console and carried here — which is what makes an independently deployed recorder
+    onboardable at all.
+
+    Returns the node's full 201 payload ({credential, id, label, grants, node_id,
+    node_name}); the raw ``credential`` is surfaced ONCE and stored on the node row.
+
+    The two failure modes are deliberately DIFFERENT exceptions, because the fixes are
+    different: a refused code is the operator's to correct (retype it, or mint a fresh
+    one), while an unreachable node is a networking problem the onboarding flow can ride
+    out. Collapsing them would either hard-fail a reachable-later recorder or silently
+    register a node whose code was simply wrong.
+    """
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/pair"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.post(url, json={"code": code, "label": label})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code in (400, 401, 403, 429):
+        raise NodePairingRejected(
+            _node_error_message(r, "the recorder refused this pairing code")
+        )
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    payload = r.json() or {}
+    if not payload.get("credential"):
+        raise NodePairingRejected("pairing returned no credential")
+    return payload
 
 
 async def list_estate_cameras(api_url: str, credential: str | None = None) -> list[dict]:
