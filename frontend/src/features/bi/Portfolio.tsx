@@ -246,7 +246,7 @@ export default function Portfolio() {
                 <SectionHead
                   icon="heroicons:map"
                   title="Floor-wise"
-                  desc="Where the estate is anchored. points.site_id / floor_id / zone_id exist; nothing populates them yet, so every point is UNPLACED and says so. It is not bucketed into a floor that does not exist."
+                  desc="Where the estate is anchored. A point with no floor counts as UNPLACED and is shown as one — never folded into a floor it was not placed on. Placement is a device-level statement made on the Placement screen; nothing is ever inferred from a device tag."
                 />
                 {s.placement ? (
                   <>
@@ -283,12 +283,21 @@ export default function Portfolio() {
                     </li>
                   ))}
                 </ul>
-                <p className="mt-2 border-t border-nb-line/50 pt-2 text-[11px] leading-relaxed text-nb-faint">
-                  No placement is inferred. The gateway wire carries none, and a
-                  floor parsed out of a device tag would be right for most of an
-                  estate and silently wrong for the rest — which is worse than
-                  “unplaced”.
-                </p>
+                <div className="mt-2 border-t border-nb-line/50 pt-2">
+                  <p className="text-[11px] leading-relaxed text-nb-faint">
+                    No placement is inferred. The gateway wire carries none, and a
+                    floor parsed out of a device tag would be right for most of an
+                    estate and silently wrong for the rest — which is worse than
+                    “unplaced”. An operator places a DEVICE and its points follow.
+                  </p>
+                  <Link
+                    href="/bi/placement"
+                    className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-nb-blueb hover:underline"
+                  >
+                    <Icon icon="heroicons:map-pin" className="text-sm" />
+                    Place devices
+                  </Link>
+                </div>
               </SectionCard>
 
               <SectionCard>

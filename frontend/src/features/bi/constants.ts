@@ -11,6 +11,13 @@
 // "Building Intelligence" so a role can actually grant it.
 export const PERM_READ = "bi.read";
 
+// The WRITE key. Two things use it and they are the same kind of decision:
+// PLACING a device in a site / floor / zone (where a part of the estate is) and
+// RETIRING a point (what is part of it at all). Neither ever touches a
+// measurement. Registered in core's catalog beside bi.read, so it is grantable
+// in the role editor rather than reachable only by a wildcard admin.
+export const PERM_MANAGE = "bi.manage";
+
 // Module the routes are gated by — "Dashboards & Reports" in the core module
 // catalog. Building Intelligence is analytics over the reading store, so it rides
 // that entitlement rather than inventing an eighth module.

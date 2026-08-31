@@ -132,6 +132,12 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           { icon: "heroicons:building-office-2", label: "Portfolio", href: "/bi/portfolio", tone: "att", perm: "bi.read", module: "analytics" },
           { icon: "heroicons:cog-8-tooth", label: "HVAC & Assets", href: "/bi/hvac", tone: "teal", perm: "bi.read", module: "analytics" },
           { icon: "heroicons:bolt", label: "Energy & Metering", href: "/bi/energy", tone: "att", perm: "bi.read", module: "analytics" },
+          // Where the estate IS. `points.site_id / floor_id / zone_id` existed for
+          // a while with nothing able to write them; this is the screen that does.
+          // Gated on `bi.read` to LOOK (the worklist is a read of the estate) and
+          // `bi.manage` to write — the button, not the tile, carries the second
+          // key, so a viewer sees what is unplaced rather than a 403.
+          { icon: "heroicons:map-pin", label: "Placement", href: "/bi/placement", tone: "att", perm: "bi.read", module: "analytics" },
           // No environment points exist. Stays SOON until some do.
           { icon: "heroicons:sparkles", label: "IAQ & Environment", soon: true },
         ],

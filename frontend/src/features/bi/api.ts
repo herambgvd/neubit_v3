@@ -105,6 +105,45 @@ export const bi = {
   // implying a precision it does not have.
   series: ({ point_id, hours, start, end, resolution }: any) =>
     unwrap(api.get(`${BI}/series${qs({ point_id, hours, start, end, resolution })}`)),
+
+  // ── PLACEMENT ─ where a device is, and the write that says so ──────────────
+  //
+  // The truth is one row per DEVICE (`device_locations`), not per point: a
+  // placement is a fact about a box, and this estate is 29 devices to 314
+  // points. `points.site_id / floor_id / zone_id` are a derivation of it, so a
+  // point that reports for the first time inherits its device's placement.
+  //
+  // THREE THINGS THIS CLIENT MUST NOT DO, all of them contract §4:
+  //   • It never sends a site/floor/zone NAME. The server resolves every id
+  //     against core and copies the label from core's answer; a name from a
+  //     browser is a label nothing checked.
+  //   • It never derives a floor from `tag_prefix`. That field groups the LIST
+  //     so an operator can select twelve devices at once; the floor is still
+  //     theirs to pick. `4F-3F AC DB` names two floors, so a convention is not
+  //     data.
+  //   • It never hides an unplaced device. Unplaced is the state this screen
+  //     exists to change, not one to filter away.
+  placement: {
+    devices: ({ placed, search, limit, offset }: any = {}) =>
+      unwrap(api.get(`${BI}/placement/devices${qs({ placed, search, limit, offset })}`)),
+
+    // Bulk by construction: every device in one call goes to the SAME place.
+    place: ({ device_ids, site_id, floor_id, zone_id }: any) =>
+      unwrap(api.post(`${BI}/placement/devices`, { device_ids, site_id, floor_id, zone_id })),
+
+    // A separate call rather than a nullable site_id, so an omitted field can
+    // never be destructive. The points go back to UNPLACED, not to a default.
+    unplace: ({ device_ids }: any) =>
+      unwrap(api.post(`${BI}/placement/devices/unplace`, { device_ids })),
+
+    // The point-level OVERRIDE — the sub-meter that is genuinely not where its
+    // panel is. The exception, not the unit of work.
+    placePoints: ({ point_ids, site_id, floor_id, zone_id }: any) =>
+      unwrap(api.post(`${BI}/placement/points`, { point_ids, site_id, floor_id, zone_id })),
+
+    resetPoints: ({ point_ids }: any) =>
+      unwrap(api.post(`${BI}/placement/points/reset`, { point_ids })),
+  },
 };
 
 export default bi;
