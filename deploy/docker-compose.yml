@@ -28,7 +28,15 @@ services:
   gateway:
     image: traefik:v3.1
     command: ["--configFile=/etc/traefik/traefik.yml"]
-    ports: ["80:80", "8090:8080"]              # 8090 = dashboard (dev)
+    # The ONLY published port in this file. Everything else -- the datastores, core,
+    # the Next servers, the Traefik dashboard -- is reachable on the compose network
+    # and is published for DEVELOPMENT ONLY, from docker-compose.override.yml.
+    #
+    # An appliance install runs this file alone. Publishing postgres/redis/nats here
+    # put the database on the customer's LAN; publishing the frontend on :3000 also
+    # handed operators a port that serves the UI but 404s every /api/v1 call, because
+    # the console's API base is same-origin relative and only this gateway routes it.
+    ports: ["80:80"]
     volumes:
       - ../gateway/traefik.yml:/etc/traefik/traefik.yml:ro
       - ../gateway/dynamic:/etc/traefik/dynamic:ro
@@ -39,7 +47,6 @@ services:
   postgres:
     image: timescale/timescaledb:2.17.2-pg16
     env_file: .env
-    ports: ["5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Creates neubit_ingest + neubit_workflow — but ONLY on a fresh volume
@@ -47,15 +54,32 @@ services:
       # create them manually (see deploy/postgres/init-service-dbs.sh header).
       - ./postgres/init-service-dbs.sh:/docker-entrypoint-initdb.d/10-init-service-dbs.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      # NOT `pg_isready -U $$POSTGRES_USER`. That returns 0 as soon as ANY server
+      # answers, INCLUDING the temporary one the entrypoint runs while it executes
+      # initdb and /docker-entrypoint-initdb.d -- so `depends_on: service_healthy`
+      # gated on nothing. On a first boot against an empty volume, core, ingest,
+      # vision, access and workflow all raced ahead and exited 1 with
+      # ConnectionRefusedError. Invisible on any existing volume; fatal on every
+      # fresh install. (It also probed a database named "neubit" -- pg_isready
+      # defaults dbname to the user -- and reported healthy straight through the
+      # resulting `FATAL: database "neubit" does not exist`.)
+      #
+      # Two things must be true before a dependant may connect, so check both:
+      #   1. the REAL server is listening on TCP. The init server runs with
+      #      listen_addresses='' , so -h forces a genuine answer.
+      #   2. init-service-dbs.sh has finished. neubit_nvr is the last database it
+      #      creates, so its existence is the completion marker.
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" && psql -U "$$POSTGRES_USER" -d neubit_nvr -c 'SELECT 1' >/dev/null 2>&1
       interval: 5s
-      timeout: 3s
-      retries: 15
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     networks: [neubit]
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -66,7 +90,7 @@ services:
   nats:
     image: nats:2.10-alpine
     command: ["-js", "-sd", "/data"]
-    ports: ["4222:4222", "8222:8222"]
+    # 4222 + 8222 published for development only -- see the override.
     networks: [neubit]
 
   # ── infra-control sidecar (privileged) ──────────────────────────
@@ -97,18 +121,20 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       nats: { condition: service_started }
-    ports: ["8000:8000"]
-    # The 0001 baseline builds the full current schema from the ORM metadata
-    # (create_all), so the later incremental deltas (0002-0010) would collide on a
-    # fresh DB. Create the baseline schema, then stamp head to record the deltas as
-    # applied. (Existing DBs upgrading from an older schema are out of scope here.)
+    # See deploy/migrate.sh. This used to be an UNCONDITIONAL
+    # `alembic upgrade 0001 && alembic stamp head`, which is right for a fresh DB
+    # (the baseline builds the current schema from ORM metadata, so the later
+    # deltas would collide) but silently WRONG for an existing one: `stamp` marks
+    # every later revision applied without running it, so an existing database
+    # never receives a new column and the API 500s on the missing field.
+    # migrate.sh picks per database instead of assuming.
     command: >
-      bash -c "alembic upgrade 0001 &&
-               alembic stamp head &&
+      bash -c "/usr/local/bin/neubit-migrate 0001 &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes:
       # Persist uploaded blobs across rebuilds — see the `corefiles` volume note.
       - corefiles:/app/data
+      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
     networks: [neubit]
     labels:
       - traefik.enable=true
@@ -135,9 +161,12 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
+    # 0001_ingest is a metadata baseline — see deploy/migrate.sh.
     command: >
-      bash -c "alembic upgrade head &&
+      bash -c "/usr/local/bin/neubit-migrate 0001_ingest &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
     networks: [neubit]
 
   # ── workflow service (Python / neubit_common) ───────────────────
@@ -202,9 +231,12 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_started }
+    # 0001_access_baseline is a metadata baseline — see deploy/migrate.sh.
     command: >
-      bash -c "alembic upgrade head &&
+      bash -c "/usr/local/bin/neubit-migrate 0001_access_baseline &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
     networks: [neubit]
 
   # ── vision — VMS control-plane (Python / neubit kernel) ─────────
@@ -248,8 +280,12 @@ services:
       # (read) and the retention/tiering worker can DELETE + COPY them (write) — same
       # /recordings path as mediamtx + nvr so the on-disk paths match.
       - recordings:/recordings
+      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
+    # 0001_vision_baseline is a metadata baseline. This service is the one the P0
+    # spike caught failing on a fresh database — 0025 tried to ADD a column the
+    # baseline had already created. See deploy/migrate.sh.
     command: >
-      bash -c "alembic upgrade head &&
+      bash -c "/usr/local/bin/neubit-migrate 0001_vision_baseline &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks: [neubit]
 
@@ -264,7 +300,6 @@ services:
     build: ../frontend
     env_file: .env
     depends_on: [core]
-    ports: ["3000:3000"]
     networks: [neubit]
     labels:
       - traefik.enable=true

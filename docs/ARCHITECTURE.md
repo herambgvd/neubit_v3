@@ -246,7 +246,7 @@ plugin marketplace). Design the module seams cleanly now so we *can* extract one
 | Object store | S3-compatible (per-tenant buckets) |
 | Media | **MediaMTX + ffmpeg** (external; Go orchestrates via REST) — recording + **H.264 and H.265** + WebRTC/HLS + control API |
 | Frontend (web) | **Next.js** (platform_base Vercel theme, JS) + TanStack Query, modular monolith |
-| Desktop app | **Wails** (Go backend + reuse the web UI → native app) — see §14 |
+| Desktop app | **Electron** (loads the same web console over HTTP) — see §15 |
 | Observability | OpenTelemetry + Prometheus + Grafana |
 | Secrets | SOPS + age |
 | Drivers | Go; sidecars (Python for BACnet, etc.) behind the capability contract |
@@ -306,7 +306,7 @@ reversible. If the Python auth hot-path ever becomes a bottleneck, extract just 
 2. Drivers = **polyglot**; BACnet = Python sidecar, SignalR = thin Go driver / small sidecar.
 3. Tenant isolation = **DB-per-tenant** (§10).
 4. Deployment = **cloud multi-tenant + on-prem single-tenant, one codebase.**
-5. Frontend = **modular monolith** (not micro-frontends); desktop via **Wails** (§14).
+5. Frontend = **modular monolith** (not micro-frontends); desktop via **Electron** (§15).
 6. Gateway = **Traefik**; event bus = **NATS + JetStream**.
 
 ---
@@ -359,16 +359,30 @@ A native desktop operator client is required (alongside browser + mobile). It is
 another client of the same protocol-first backend** — same Traefik API + NATS events + direct
 MediaMTX video — so it changes nothing in the backend architecture.
 
-- **Recommended: Wails** (Go backend shell + **reuse the web UI** via native webview) — fits
-  the Go stack, one UI codebase serves web + desktop, small native binary (no bundled
-  Chromium like Electron).
-- **On-prem win:** a desktop client on the operator LAN pulls video **directly from the
-  on-site MediaMTX** (low latency, no cloud round-trip) and can do local recording/export.
-- **Caveat:** a very dense local video wall (many simultaneous GPU-decoded streams) can
-  stress a webview. Start with Wails + WebRTC/HLS for the operator console; if a heavy
-  native video wall is later required, add a native video-render layer behind the same UI.
-- Electron is the fallback only if maximum cross-platform maturity is needed over binary
-  size; Tauri is viable but reintroduces Rust (which we are otherwise retiring).
+> **DECIDED: Electron. Built, and shipping in `desktop/`.** This section recommended Wails
+> until 2026-08-27; the caveat below is what reversed it, and the reversal is recorded here
+> rather than quietly edited away, so nobody re-opens the question from the old text.
+> Reasoning and delivery phases: [`DESKTOP_APPLIANCE_PLAN.md`](DESKTOP_APPLIANCE_PLAN.md).
+
+- **The caveat came true.** "A very dense local video wall (many simultaneous GPU-decoded
+  streams) can stress a webview — if a heavy native video wall is later required, add a
+  native video-render layer behind the same UI." That layer is now required: the NVR's
+  roadmap hands `neubit_v3` the native libVLC decode addon, the dense wall and joystick/PTZ
+  HID. Wails renders in the OS webview (WebView2 / WKWebView) and has **no native-addon
+  surface to hang a GPU decode path off**. Electron has N-API + `cmake-js`. §15's own
+  conditional therefore resolves to Electron.
+- **There is still ONE UI codebase** — Wails' main attraction, and it is not lost.
+  `frontend/src/lib/api.js` resolves its API base from `window.location`, so the shell loads
+  the *same build* a LAN browser loads, over HTTP, through the same gateway. There is no
+  desktop build of the console and no feature flag: parity cannot drift because there is only
+  one artifact. `frontend/src/lib/desktop.js` carries the rule that keeps it that way.
+- **On-prem win, unchanged:** a desktop client on the operator LAN pulls video directly from
+  the on-site MediaMTX, and can do local recording and export.
+- **What the shell adds** is only what a browser tab structurally cannot do: bind a physical
+  monitor to a wall monitor and keep it there across a restart, write exports to a folder the
+  operator chose, live in the tray, and — later — host the native decode addon.
+- Tauri stays rejected: it reintroduces Rust, which we are retiring, and has the same
+  no-native-video-layer problem as Wails.
 
 ---
 
