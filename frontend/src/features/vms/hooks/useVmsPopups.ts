@@ -25,8 +25,7 @@ export function useVmsPopups({ enabled = true }: any = {}) {
   useEffect(() => {
     if (!enabled) return;
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
-    const token = tokens.access;
-    if (!token) return;
+    if (!tokens.access) return;
 
     let es = null;
     let closed = false;
@@ -55,6 +54,12 @@ export function useVmsPopups({ enabled = true }: any = {}) {
 
     const connect = () => {
       if (closed) return;
+      // Read the token at CONNECT time, not from the mount-time closure: when the
+      // access token expires the server drops the stream, and the retry below must
+      // reconnect with the token lib/api.ts stored after its 401→refresh — a
+      // captured 12h-old token would just 401 forever.
+      const token = tokens.access;
+      if (!token) return;
       const url =
         `${api.defaults.baseURL}/realtime/vms-events` + `?token=${encodeURIComponent(token)}`;
       es = new EventSource(url);
