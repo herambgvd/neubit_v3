@@ -47,10 +47,20 @@ consumer's backlog drains from wherever it stopped.
 MALFORMED MESSAGES
 ------------------
 A message that can never become a row (no ``point_id``, unparseable ``ts``) is
-acked and counted under ``reading_writer_messages_malformed_total`` with a
-reason label. Redelivering it forever would block the batch behind it. This is
-the one place the writer discards data, and it is counted and logged so it is
-never silent.
+copied to the ``EVENTS_DLQ`` stream — body intact, refusal reason in ``Nbt-Dlq-*``
+headers, same subject scheme and header names as the kernel and Go buses — and
+then ``term()``'d, all on its FIRST delivery. Redelivering it forever would block
+the batch behind it, and this consumer runs ``max_deliver=-1``, so JetStream's
+own dead-letter trigger can never fire: without the explicit copy there would be
+no DLQ path at all. It used to be ``ack()``'d instead, which was a PERMANENT
+SILENT DROP — counted and logged, but the body was nowhere and nothing could
+replay it (contract §18). Now it is parked for 30 days and counted twice:
+``messages_malformed_total`` (refused) and ``messages_dead_lettered_total``
+(parked; the two differing means a DLQ write failed and the body really is gone).
+
+Only a *shape* refusal takes this path. A transient failure (database down) keeps
+its retry/NAK behaviour above — terminating on an outage would turn every blip
+into data loss.
 """
 
 from __future__ import annotations
@@ -62,6 +72,7 @@ import time
 
 import nats
 from nats.errors import TimeoutError as NatsTimeoutError
+from kernel.events import dead_letter, ensure_dlq_stream
 from nats.js.api import (
     AckPolicy,
     ConsumerConfig,
@@ -91,6 +102,15 @@ def _is_timeout(exc: BaseException) -> bool:
     return bool(names & {"QueryCanceledError", "CancelledError_", "QueryCanceledError_"}) or (
         "canceling statement due to statement timeout" in str(exc)
     )
+
+
+def _delivery_count(msg) -> int:
+    """This message's JetStream delivery count, defaulting to 1."""
+    try:
+        return int(msg.metadata.num_delivered)
+    except Exception:  # noqa: BLE001 — metadata parse must never block an ack decision
+        return 1
+
 
 log = logging.getLogger("reading-writer.pipeline")
 
@@ -134,6 +154,11 @@ class Pipeline:
         self._js = self._nc.jetstream()
 
         await self._ensure_stream()
+        # The dead-letter stream poison messages are parked in, so the term()
+        # in the fetch loop is "stop redelivering", never "throw away". Python
+        # owns this stream's limit convergence (contract §4), and this service
+        # can connect before any kernel-bus service has created it. Never raises.
+        await ensure_dlq_stream(self._js)
         await self._bind_consumer()
 
         self._running = True
@@ -267,12 +292,26 @@ class Pipeline:
                     rows.append(parse(msg.data, self.tenants.resolve))
                     keep.append(msg)
                 except Malformed as bad:
-                    # Can never become a row. Ack it — an un-ackable poison
-                    # message would be redelivered forever — but COUNT it.
+                    # Can never become a row, and redelivery cannot change that.
+                    # Park the body in EVENTS_DLQ with the refusal in headers,
+                    # then term() so it stops being redelivered — on the FIRST
+                    # delivery, because with max_deliver=-1 there is no budget
+                    # that would ever park it for us. (This used to ack(), which
+                    # dropped the body permanently and silently — contract §18.)
                     self.m.note_malformed(bad.reason)
-                    log.warning("dropping malformed message on %s: %s", msg.subject, bad.reason)
+                    log.warning(
+                        "malformed message on %s: %s — dead-lettering",
+                        msg.subject, bad.reason,
+                    )
+                    if await dead_letter(
+                        self._js, msg,
+                        consumer=self.cfg.durable,
+                        reason=bad.reason,
+                        delivery=_delivery_count(msg),
+                    ):
+                        self.m.messages_dead_lettered += 1
                     with contextlib.suppress(Exception):
-                        await msg.ack()
+                        await msg.term()
             self.m.unmapped_tenant_keys = len(self.tenants.unmapped)
 
             if rows:

@@ -152,12 +152,15 @@ def _env_int(name: str, default: int) -> int:
 # time, matching the defaults below; it must NOT gain an UpdateStream call, or
 # the two sides would rewrite each other's config on every restart.
 #
-# SIZING. The DLQ receives only from this bus's terminal failures — the
-# reading-writer and the projector have `max_deliver=-1` and no DLQ path at all,
-# so the IoT feed's volume never reaches here. EVENTS itself holds ~137 messages
-# / 72 KB in steady state at ~530 B an envelope, so 1 GiB is on the order of two
-# million dead letters: a number a working system cannot reach, and a hard stop
-# for a poison-message storm that is redelivered five times and then parked.
+# SIZING. The DLQ receives this bus's terminal failures plus the IoT pipelines'
+# POISON — the reading-writer and the projector run `max_deliver=-1`, so their
+# malformed messages are parked here explicitly (module-level `dead_letter`) on
+# first delivery rather than by any redelivery budget. Poison is refusal-rate,
+# not feed-rate: a healthy gateway contributes nothing, and a gateway publishing
+# 100% garbage at the measured 37 msg/min is still only ~24 MB/day against 1 GiB.
+# EVENTS itself holds ~137 messages / 72 KB in steady state at ~530 B an
+# envelope, so 1 GiB is on the order of two million dead letters: a number a
+# working system cannot reach, and a hard stop for a poison-message storm.
 # AGE is the limit that will actually bind: 30 days is long enough that nobody
 # loses evidence of a failure they have not looked at yet, and short enough that
 # a forgotten DLQ is not a permanent disk leak. `max_msgs` stays -1 because two
@@ -175,6 +178,46 @@ DLQ_MAX_MSGS = _env_int("VE_DLQ_STREAM_MAX_MSGS", -1)
 def _nak_delay(delivery: int) -> float:
     """Exponential backoff on the delivery count, capped at NAK_MAX_DELAY."""
     return min(NAK_BASE_DELAY * (2 ** max(0, delivery - 1)), NAK_MAX_DELAY)
+
+
+async def dead_letter(js, msg, *, consumer: str, reason: str, delivery: int) -> bool:
+    """Copy a refused message to EVENTS_DLQ under ``dlq.<original subject>``.
+
+    The parking half of ``term()``: a message about to be terminated is published
+    to the DLQ stream first, with the refusal reason in its headers, so "stop
+    redelivering" never becomes "throw away". Module-level rather than a bus
+    method because the IoT pipelines (reading-writer, projector) consume raw
+    JetStream without an :class:`EventBus` and must park poison the SAME way —
+    the ``dlq.`` subject prefix and the ``Nbt-Dlq-*`` header names below match
+    the Go bus (nvr repo, ``gokernel/events``) byte for byte, so one dead-letter
+    view reads both languages.
+
+    Returns True when the message was parked. A DLQ write failure is logged
+    loudly and returns False — and the caller must STILL terminate, because a
+    message we cannot park is still a message we must stop redelivering.
+    """
+    if js is None:
+        return False
+    headers = {
+        "Nbt-Dlq-Origin-Subject": msg.subject,
+        "Nbt-Dlq-Consumer": consumer,
+        "Nbt-Dlq-Deliveries": str(delivery),
+        "Nbt-Dlq-Reason": reason,
+        "Nbt-Dlq-At": dt.datetime.now(dt.timezone.utc).isoformat(),
+    }
+    try:
+        await js.publish(DLQ_SUBJECT_PREFIX + msg.subject, msg.data, headers=headers)
+    except Exception as e:  # noqa: BLE001 — never let a DLQ failure block the term
+        log.error(
+            "DLQ publish failed for %s (%s) — message dropped: %s",
+            msg.subject, consumer, e,
+        )
+        return False
+    log.error(
+        "dead-lettered %s (%s) after %d deliveries: %s",
+        msg.subject, consumer, delivery, reason,
+    )
+    return True
 
 
 async def ensure_dlq_stream(js) -> None:
@@ -489,36 +532,8 @@ class EventBus:
         await _quiet(msg.ack())
 
     async def _dead_letter(self, msg, durable: str, reason: str, delivery: int) -> None:
-        """Copy an unprocessable message to EVENTS_DLQ under `dlq.<original subject>`.
-
-        A DLQ write failure is logged loudly but never blocks the terminate — a
-        message we cannot park is still a message we must stop redelivering. The
-        subject and headers match the Go bus byte for byte so one dead-letter view
-        covers both.
-        """
-        if self._js is None:
-            return
-        headers = {
-            "Nbt-Dlq-Origin-Subject": msg.subject,
-            "Nbt-Dlq-Consumer": durable,
-            "Nbt-Dlq-Deliveries": str(delivery),
-            "Nbt-Dlq-Reason": reason,
-            "Nbt-Dlq-At": dt.datetime.now(dt.timezone.utc).isoformat(),
-        }
-        try:
-            await self._js.publish(
-                DLQ_SUBJECT_PREFIX + msg.subject, msg.data, headers=headers
-            )
-        except Exception as e:
-            log.error(
-                "DLQ publish failed for %s (%s) — message dropped: %s",
-                msg.subject, durable, e,
-            )
-            return
-        log.error(
-            "dead-lettered %s (%s) after %d deliveries: %s",
-            msg.subject, durable, delivery, reason,
-        )
+        """Park a refused message in EVENTS_DLQ — see the module-level helper."""
+        await dead_letter(self._js, msg, consumer=durable, reason=reason, delivery=delivery)
 
     def is_connected(self) -> bool:
         return self._nc is not None

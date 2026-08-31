@@ -38,7 +38,8 @@ class ProjectionMetrics:
     rows_enriched: int = 0        # an existing row gained a value it did not have
     batches_written: int = 0
 
-    messages_malformed: int = 0   # acked, can never become a row
+    messages_malformed: int = 0        # can never become a row; term'd
+    messages_dead_lettered: int = 0    # ...whose body was parked in EVENTS_DLQ
     malformed_reasons: dict = field(default_factory=dict)
     batch_write_failures: int = 0
     batches_nakd: int = 0
@@ -166,8 +167,13 @@ class Metrics:
             lambda m: m.rows_enriched)
         per("batches_written_total", "counter", "Batches committed.", lambda m: m.batches_written)
         per("messages_malformed_total", "counter",
-            "Messages acked because they can never become a row. NON-ZERO MEANS DATA LOSS.",
+            "Messages refused because they can never become a row. Parked in "
+            "EVENTS_DLQ then terminated — recoverable there for 30 days.",
             lambda m: m.messages_malformed)
+        per("messages_dead_lettered_total", "counter",
+            "Refused messages whose body reached EVENTS_DLQ. LESS THAN "
+            "malformed_total means a DLQ write failed and those bodies are gone.",
+            lambda m: m.messages_dead_lettered)
         per("batch_write_failures_total", "counter",
             "Batches that failed to commit. Nothing was acked; NATS redelivers them.",
             lambda m: m.batch_write_failures)

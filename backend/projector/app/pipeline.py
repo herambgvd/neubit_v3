@@ -46,10 +46,19 @@ consumer's backlog drains from wherever it stopped.
 MALFORMED MESSAGES
 ------------------
 A message that can never become a row (missing a required field, an unparseable
-event time) is acked and counted under `projector_messages_malformed_total` with
-a reason label. Redelivering it forever would block the batch behind it. This is
-the one place the projector discards data, and it is counted and logged so it is
-never silent.
+event time) is copied to the `EVENTS_DLQ` stream — body intact, refusal reason in
+`Nbt-Dlq-*` headers, the same subject scheme and header names the kernel and Go
+buses use — and then `term()`'d, all on its FIRST delivery. Redelivering it
+forever would block the batch behind it, and these consumers run
+`max_deliver=-1`, so JetStream's own dead-letter trigger can never fire: without
+the explicit copy there is no DLQ path at all. It used to be `ack()`'d, which was
+a permanent silent drop — counted, logged, body nowhere (contract §18: two alerts
+died exactly that way). Now it is parked for 30 days and counted twice:
+`messages_malformed_total` (refused) and `messages_dead_lettered_total` (parked;
+the two differing means a DLQ write failed and that body really is gone).
+
+Only a *shape* refusal takes this path; a transient failure (database down) keeps
+the retry/NAK behaviour above.
 
 A NOTE ON THE `EVENTS` STREAM
 -----------------------------
@@ -68,6 +77,7 @@ import logging
 import time
 
 import nats
+from kernel.events import dead_letter, ensure_dlq_stream
 from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.api import AckPolicy, ConsumerConfig
 from reporting.db import database
@@ -96,6 +106,15 @@ def _is_timeout(exc: BaseException) -> bool:
     return bool(names & {"QueryCanceledError", "QueryCanceledError_"}) or (
         "canceling statement due to statement timeout" in str(exc)
     )
+
+
+def _delivery_count(msg) -> int:
+    """This message's JetStream delivery count, defaulting to 1."""
+    try:
+        return int(msg.metadata.num_delivered)
+    except Exception:  # noqa: BLE001 — metadata parse must never block an ack decision
+        return 1
+
 
 log = logging.getLogger("projector.pipeline")
 
@@ -231,15 +250,26 @@ class Worker:
                     rows.append(extract(msg.data, proj, self.tenants.resolve))
                     keep.append(msg)
                 except Malformed as bad:
-                    # Can never become a row. Ack it — an un-ackable poison
-                    # message would be redelivered forever — but COUNT it.
+                    # Can never become a row, and redelivery cannot change that.
+                    # Park the body in EVENTS_DLQ with the refusal in headers,
+                    # then term() so it stops being redelivered — on the FIRST
+                    # delivery, because with max_deliver=-1 there is no budget
+                    # that would ever park it for us. (This used to ack(), which
+                    # dropped the body permanently and silently — contract §18.)
                     self.pm.note_malformed(bad.reason)
                     log.warning(
-                        "projection %s: dropping malformed message on %s: %s",
+                        "projection %s: malformed message on %s: %s — dead-lettering",
                         self.row.key, msg.subject, bad.reason,
                     )
+                    if await dead_letter(
+                        self._js, msg,
+                        consumer=proj.source.durable,
+                        reason=bad.reason,
+                        delivery=_delivery_count(msg),
+                    ):
+                        self.pm.messages_dead_lettered += 1
                     with contextlib.suppress(Exception):
-                        await msg.ack()
+                        await msg.term()
             self.m.unmapped_tenant_keys = len(self.tenants.unmapped)
 
             if rows:
@@ -369,6 +399,11 @@ class Projector:
         )
         self.m.nats_connected = True
         self._js = self._nc.jetstream()
+
+        # The dead-letter stream poison messages are parked in, so the workers'
+        # term() is "stop redelivering", never "throw away". Python owns this
+        # stream's limit convergence (contract §4). Never raises.
+        await ensure_dlq_stream(self._js)
 
         self._running = True
         await self.reload()

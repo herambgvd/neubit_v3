@@ -1124,9 +1124,17 @@ its shape.
 
 ## 18. Poison messages on this pipeline are ACKED, not dead-lettered (2026-08-31)
 
-Found while bounding `EVENTS_DLQ` (§4) and deliberately NOT fixed here, because
-each is a behaviour change to a live consumer and none of them is a disk leak.
-Written down so the next person does not rediscover them from a data gap.
+> **CLOSED 2026-09-01.** All four defects below are fixed. The reading-writer and
+> the projector now copy a malformed message to `EVENTS_DLQ` (body intact,
+> refusal reason in the same `Nbt-Dlq-*` headers the Go bus writes) and `term()`
+> it on FIRST delivery — `kernel.events.dead_letter` is the one Python
+> implementation both use. `kernel.events` gained the `Unprocessable` marker
+> (Go's `events.Unprocessable` equivalent: unmarked errors stay retryable,
+> marked ones dead-letter + term on delivery 1). `kernel.lifecycle`'s offboard
+> and provision handlers no longer catch-and-ack a retryable failure. And the
+> projector runs a DLQ watch (`app/dlq_watch.py`): counts by subject/reason on
+> `/stats`, a log line per new dead letter. The paragraphs below are the record
+> of what the defect WAS.
 
 **The reading-writer and the projector have no dead-letter path at all, by
 construction.** Both resolve a message that can never become a row by `ack()`ing

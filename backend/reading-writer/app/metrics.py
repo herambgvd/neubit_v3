@@ -35,7 +35,8 @@ class Metrics:
     points_upserted: int = 0
 
     # ── loss / error ──────────────────────────────────────────────────────────
-    messages_malformed: int = 0             # acked, cannot ever become a row
+    messages_malformed: int = 0             # can never become a row; term'd
+    messages_dead_lettered: int = 0         # ...whose body was parked in EVENTS_DLQ
     malformed_reasons: dict = field(default_factory=dict)
     batch_write_failures: int = 0           # NOT acked → NATS redelivers
     batches_nakd: int = 0
@@ -113,7 +114,11 @@ class Metrics:
         m("points_upserted_total", self.points_upserted, "counter",
           "Dimension rows created or refreshed.")
         m("messages_malformed_total", self.messages_malformed, "counter",
-          "Messages acked because they can never become a row. NON-ZERO MEANS DATA LOSS.")
+          "Messages refused because they can never become a row. Parked in EVENTS_DLQ "
+          "then terminated — recoverable there for 30 days.")
+        m("messages_dead_lettered_total", self.messages_dead_lettered, "counter",
+          "Refused messages whose body reached EVENTS_DLQ. LESS THAN malformed_total "
+          "means a DLQ write failed and those bodies are gone.")
         m("batch_write_failures_total", self.batch_write_failures, "counter",
           "Batches that failed to commit. Nothing was acked; NATS redelivers them.")
         m("batches_nakd_total", self.batches_nakd, "counter",
