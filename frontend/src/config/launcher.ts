@@ -103,6 +103,14 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     //                          point MEASURES. Nothing on the wire says, so a
     //                          correlation would be between two unnamed numbers.
     //
+    // MOVED OUT: Dashboards. The no-code builder was filed here under "Think" and
+    // it is not a Building Intelligence feature — it is domain-agnostic, it already
+    // charts door-access events and IoT faults as readily as readings, and VMS and
+    // fire register the same way. Filing it here labelled it as BI and sent anyone
+    // looking for a door-access chart to the wrong mode. It now sits in
+    // Configurations → Reporting & Dashboards, with its `perm`/`module` gating
+    // unchanged.
+    //
     // NOT LISTED, and it should be discussed: `water` is genuinely reporting — 2
     // devices / 10 points (a sump pump and a flow meter) — and has no tile. The
     // Portfolio screen shows the category honestly, with "no console yet" on its card,
@@ -132,13 +140,12 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         title: "Think",
         accent: "#c4b5fd",
         tiles: [
-          // The no-code dashboard builder over the same reading store. Gated by
-          // `dashboards.read` (the dashboards service — definitions) + the
-          // `analytics` module. A caller also needs `bi.read` to see the widgets'
-          // DATA, which the reading-writer enforces; that is deliberately NOT the
-          // gate here, because "can open the console but the widgets say they
-          // could not run" is the honest state to show, not a hidden tile.
-          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/dashboards", tone: "att", perm: "dashboards.read", module: "analytics" },
+          // Dashboards USED to be here and has moved to Configurations → Reporting
+          // & Dashboards. It is the domain-agnostic builder — it already charts
+          // access-control events and IoT faults as readily as readings — so
+          // filing it under Building Intelligence labelled it as a BI feature and
+          // told an operator looking for a door-access chart to look in the wrong
+          // place. Its gating went with it, unchanged.
           { icon: "heroicons:star", label: "Ratings", soon: true },
           { icon: "heroicons:chart-pie", label: "Insights & Correlation", soon: true },
         ],
@@ -161,6 +168,25 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           { icon: "heroicons:shield-exclamation", label: "Security", href: "/config/security", tone: "blue", perm: "security.manage" },
           { icon: "heroicons:squares-2x2", label: "Platform", href: "/platform", tone: "blue", perm: "settings.manage" },
           { icon: "heroicons:share", label: "Federation", href: "/federation", tone: "blue", perm: "vms.camera.read", module: "vms" },
+        ],
+      },
+      {
+        // Reporting & Dashboards. The builder is DOMAIN-AGNOSTIC: a widget names a
+        // dataset from the registry, and the registry already carries IoT
+        // readings, door-access events and IoT faults, with VMS and fire arriving
+        // the same way (one row each, no release). It belongs beside the other
+        // cross-cutting configuration surfaces, not inside the one domain it
+        // happened to be built against first.
+        title: "Reporting & Dashboards",
+        accent: "#93c5fd",
+        tiles: [
+          // Gated by `dashboards.read` (the dashboards service — the definitions)
+          // + the `analytics` module. A caller ALSO needs each dataset's own read
+          // permission to see the widgets' DATA, which the reading-writer
+          // enforces per dataset; that is deliberately NOT the gate here, because
+          // "can open the console but the widgets say they could not run" is the
+          // honest state to show, not a hidden tile. Unchanged by the move.
+          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/dashboards", tone: "blue", perm: "dashboards.read", module: "analytics" },
         ],
       },
       {
