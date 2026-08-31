@@ -80,7 +80,21 @@ services:
     # volume seeded once and never refreshed, so a newly added dependency was
     # simply absent no matter how many times the image was rebuilt.
     entrypoint: ["/usr/local/bin/dev-entrypoint.sh"]
-    command: ["npm", "run", "dev"]
+    # --webpack, NOT Turbopack, and only here — `npm run dev` stays generic so a
+    # native Linux checkout is unaffected.
+    #
+    # Turbopack's persistent cache does not survive this environment. It failed
+    # repeatedly, in three different shapes: a corrupt SST file
+    # ("Failed to restore task data"), an endless "Another write batch or
+    # compaction is already active", and finally a build that emitted every
+    # chunk EXCEPT `chunks/ssr/[turbopack]_runtime.js`, so every route 500'd on
+    # `Cannot find module` with a routes-manifest that was never written. That
+    # last one reproduced on a brand-new empty volume with 29 GB free, which is
+    # what ruled out disk pressure and the macOS bind mount as the cause.
+    #
+    # webpack dev serves the same app on the first try. The cost is a slower
+    # cold start; the benefit is a dev server that comes back up.
+    command: ["npm", "run", "dev", "--", "--webpack"]
     environment:
       WATCHPACK_POLLING: "true"
     volumes:
