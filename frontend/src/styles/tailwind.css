@@ -19,7 +19,22 @@
    specificity at zero so `dark:` behaves exactly like it did in v3. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
+/* `static`, NOT a bare `@theme`. Tailwind 4 TREE-SHAKES theme variables that no
+   utility class happens to reference, and emits nothing for the rest — with no
+   warning and no build failure, so the loss is silent. It was not hypothetical
+   here: 81 of the 118 variables declared in this block were absent from the
+   served stylesheet, including the ENTIRE `--shadow-*` elevation scale, every
+   `--animate-*` keyframe alias, and most of the 50–900 colour ramps. Anything
+   reading those variables directly — inline styles, SCSS, a chart's colour
+   lookup, a `var(--shadow-base2)` in a component — got nothing back.
+
+   `@theme static` emits every declaration regardless of use, which is what a
+   design-token contract requires: the tokens exist because they are the
+   vocabulary, not because something already happens to spend them. See
+   docs/design-tokens.md §8.
+
+   VERIFY BY FETCHING THE COMPILED STYLESHEET, not by reading this file. */
+@theme static {
   /* ── NeuBit command-console palette (fixed hexes; do not flip with theme) ── */
   --color-nb-bg: #0c1530;
   --color-nb-bg2: #0a1024;
