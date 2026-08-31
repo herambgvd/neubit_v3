@@ -47,9 +47,12 @@ services:
     ports: ["5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Creates neubit_ingest + neubit_workflow — but ONLY on a fresh volume
-      # (Postgres runs initdb scripts on first init only). On an existing volume
-      # create them manually (see deploy/postgres/init-service-dbs.sh header).
+      # The per-service databases, on a FRESH volume. Postgres runs initdb
+      # scripts on first init only, so this alone left every service added after
+      # a deployment's volume was created needing a manual `createdb`. The
+      # `db-init` service below runs the SAME script on every `up`, which is what
+      # actually keeps an existing volume in step; this hook stays so a fresh
+      # volume has its databases before anything else starts.
       - ./postgres/init-service-dbs.sh:/docker-entrypoint-initdb.d/10-init-service-dbs.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
@@ -57,6 +60,31 @@ services:
       timeout: 3s
       retries: 15
     networks: [neubit]
+
+  # ── per-service databases, on EVERY start ───────────────────────
+  # The initdb hook above only fires on a fresh volume, so it cannot create a
+  # database for a service added later — that needed a manual `createdb` on
+  # every existing deployment, documented in a comment nobody reads until a
+  # service is already restart-looping on "database does not exist". This runs
+  # the same idempotent script against the running server on every `up`, so the
+  # list in that script is the single source of truth for both cases.
+  #
+  # It exits 0 when everything exists, and NON-ZERO when a database is missing
+  # and could not be created — services depend on `service_completed_successfully`,
+  # so a failure stops the stack here rather than surfacing as a restart loop.
+  db-init:
+    image: timescale/timescaledb:2.17.2-pg16
+    env_file: .env
+    environment:
+      PGHOST: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: ["bash", "/init-service-dbs.sh"]
+    volumes:
+      - ./postgres/init-service-dbs.sh:/init-service-dbs.sh:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [neubit]
+    restart: "no"
 
   redis:
     image: redis:7-alpine
@@ -114,6 +142,7 @@ services:
       OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       nats: { condition: service_started }
     ports: ["8000:8000"]
@@ -154,6 +183,7 @@ services:
       VE_INGEST_PUBLIC_BASE_URL: ${VE_INGEST_PUBLIC_BASE_URL:-http://localhost}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
     command: >
       bash -c "alembic upgrade head &&
@@ -183,6 +213,7 @@ services:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_dashboards
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
     command: >
       bash -c "alembic upgrade head &&
@@ -203,6 +234,7 @@ services:
       VE_WORKFLOW_INLINE_CORRELATION: "1"
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       nats: { condition: service_started }
     command: >
@@ -250,6 +282,7 @@ services:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_access
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
     command: >
       bash -c "alembic upgrade head &&
@@ -291,6 +324,7 @@ services:
       VE_ENFORCE_H264_WEB: ${VE_ENFORCE_H264_WEB:-true}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
     volumes:
       # P3-B: mount the shared recordings volume so vision can CHECKSUM segments
@@ -348,6 +382,7 @@ services:
       VE_READINGS_1H_REFRESH_EVERY: ${VE_READINGS_1H_REFRESH_EVERY:-5 minutes}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
     restart: "no"
     networks: [neubit]
 
@@ -424,6 +459,7 @@ services:
       VE_CORE_URL: ${VE_CORE_URL:-http://core:8000}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
       reporting-migrate: { condition: service_completed_successfully }
     # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
@@ -500,6 +536,7 @@ services:
       VE_PROJECTOR_LAG_WARN: ${VE_PROJECTOR_LAG_WARN:-5000}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
       reporting-migrate: { condition: service_completed_successfully }
     # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
