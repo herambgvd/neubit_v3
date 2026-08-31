@@ -32,6 +32,11 @@ class MediaNodeCreate(BaseModel):
     capacity_channels: int = Field(default=128, ge=0)
     # Optional cosmetic host label (defaults to api_url's host if omitted server-side).
     host: Optional[str] = Field(default=None, max_length=255)
+    # One-use pairing code minted on the recorder's own console. Present when the
+    # recorder is an INDEPENDENT deployment (its own VE_JWT_SECRET), which is the case
+    # a shared-secret enrolment cannot serve. Write-only: it is spent during create and
+    # never stored or echoed back — only the credential it buys is kept.
+    pairing_code: Optional[str] = Field(default=None, max_length=64)
 
 
 class MediaNodeUpdate(BaseModel):

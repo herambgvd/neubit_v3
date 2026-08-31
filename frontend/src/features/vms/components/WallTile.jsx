@@ -54,6 +54,7 @@ function WallTile({
   spotlight = false, // fills the whole wall → room for the PTZ overlay
   railDragging = false,
   onAssign, // (cameraId, index) — from rail drag / picker
+  onAssignMany, // (cameraIds[], index) — a whole rail branch dropped here
   onSwap, // (fromIndex, index) — from tile→tile drag
   onClose, // (index)
   onSpotlight, // (index) — promote this tile to fill the wall
@@ -84,12 +85,25 @@ function WallTile({
   }, [fedNodeId, fedRealId]);
 
   const onDragOver = (e) => {
-    // Accept both a rail camera and another tile being dragged over.
-    if (e.dataTransfer.types.includes("text/camera-id") || e.dataTransfer.types.includes("text/tile-index")) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      if (!dropActive) setDropActive(true);
-    }
+    // Accept a rail camera, a whole rail branch (a recorder), or another tile.
+    const types = e.dataTransfer.types;
+    const fromTile = types.includes("text/tile-index");
+    const fromRail = types.includes("text/camera-id") || types.includes("text/camera-ids");
+    if (!fromTile && !fromRail) return;
+
+    e.preventDefault();
+    // dropEffect MUST agree with the source's effectAllowed. A mismatch resolves
+    // to "none" and the browser then refuses the drop — silently, and AFTER
+    // preventDefault, so the tile still highlights and still says DROP HERE while
+    // nothing can ever land on it. That is exactly what a hardcoded "move" did to
+    // every drag out of the rail, which marks its drags "copy" (the camera stays
+    // in the list). Tile-to-tile was unaffected and hid the bug: WallTile's own
+    // dragstart says "move", which agreed with the constant.
+    //
+    // So the effect follows the SOURCE: a tile being rearranged moves, a camera
+    // being taken from the rail copies.
+    e.dataTransfer.dropEffect = fromTile ? "move" : "copy";
+    if (!dropActive) setDropActive(true);
   };
   const onDragLeave = () => setDropActive(false);
   const onDrop = (e) => {
@@ -99,6 +113,21 @@ function WallTile({
     if (tileIdx !== "" && tileIdx != null && String(tileIdx) !== String(index)) {
       onSwap?.(Number(tileIdx), index);
       return;
+    }
+    // A whole branch: fill from THIS tile onward, so where the operator dropped
+    // decides where the recorder lands rather than always the top-left.
+    const many = e.dataTransfer.getData("text/camera-ids");
+    if (many) {
+      try {
+        const ids = JSON.parse(many);
+        if (Array.isArray(ids) && ids.length) {
+          onAssignMany?.(ids, index);
+          return;
+        }
+      } catch {
+        // A malformed payload is not worth failing a drop over; fall through to
+        // the single-camera path, which will simply find nothing and no-op.
+      }
     }
     const id = e.dataTransfer.getData("text/camera-id");
     if (id) onAssign?.(id, index);

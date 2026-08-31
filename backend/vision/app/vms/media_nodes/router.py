@@ -13,6 +13,8 @@ Endpoints:
   * ``GET    /media-nodes/{id}``   — detail.
   * ``PATCH  /media-nodes/{id}``   — edit (name/api_url/bases/label/capacity/status).
   * ``DELETE /media-nodes/{id}``   — remove (blocked while cameras are still assigned).
+  * ``POST   /media-nodes/{id}/pair`` — trade a recorder-minted pairing code for a
+    scoped credential (the bootstrap for an independently deployed recorder).
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, get_scope, require_permission
@@ -144,6 +147,32 @@ async def enroll_media_node_credential(
     """Enrol a fresh scoped credential on the node, store it, and surface the raw key
     ONCE ({credential, id, label, grants}) — the node never returns it again."""
     return await svc.enroll_credential(node_id)
+
+
+class PairRequest(BaseModel):
+    """Body of a re-pair: just the code an operator read off the recorder's console."""
+
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=1, max_length=64)
+
+
+@router.post(
+    "/media-nodes/{node_id}/pair",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def pair_media_node(
+    node_id: str,
+    body: PairRequest,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> dict:
+    """Trade a recorder-minted pairing code for a scoped credential and store it.
+
+    The re-pair path for a node that was registered before it could be reached, or whose
+    credential was revoked on the recorder. ``POST /media-nodes/{id}/enroll`` remains the
+    shared-secret route, which only a co-located recorder answers.
+    """
+    return await svc.pair_credential(node_id, body.code)
 
 
 @router.delete(

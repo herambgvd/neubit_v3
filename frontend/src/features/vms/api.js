@@ -342,8 +342,11 @@ export const vms = {
   //   GET    /vms/media-nodes → { items }
   //   GET    /vms/media-nodes/{id} → node
   //   POST   /vms/media-nodes { name, api_url, hls_base?, webrtc_base?, rtsp_base?,
-  //            label?, capacity_channels? } → node (may carry `warning` if the box
-  //            was unreachable at create time — saved anyway).
+  //            label?, capacity_channels?, pairing_code? } → node (may carry `warning`
+  //            if the box was unreachable at create time — saved anyway). A supplied
+  //            `pairing_code` is write-only and spent during create; a code the
+  //            recorder REFUSES fails the create rather than registering an untrusted
+  //            node that would 401 on every later call.
   //   PATCH  /vms/media-nodes/{id} — any subset incl. status (allow "draining").
   //   DELETE /vms/media-nodes/{id} — 409/400 with an error if cameras still assigned.
   mediaNodes: {
@@ -361,8 +364,15 @@ export const vms = {
     //            created_at, last_used_at, revoked_at }] }
     //   POST   /vms/media-nodes/{id}/enroll → 201 { credential (RAW), id, label, grants[] }
     //   DELETE /vms/media-nodes/{id}/credentials/{credId} → 204
+    // Two bootstraps, for two deployments. `enroll` signs its call with the shared
+    // VE_JWT_SECRET, so only a recorder brought up as part of THIS stack answers it —
+    // an independently deployed box has its own secret and 401s. For that one an
+    // operator mints a one-use code on the recorder's console and `pair` trades it.
+    // Same 201 body either way: { credential (RAW), id, label, grants[] }.
+    //   POST /vms/media-nodes/{id}/pair { code } → 201
     credentials: (id) => unwrap(api.get(`/vms/media-nodes/${id}/credentials`)),
     enroll: (id) => unwrap(api.post(`/vms/media-nodes/${id}/enroll`, {})),
+    pair: (id, code) => unwrap(api.post(`/vms/media-nodes/${id}/pair`, { code })),
     revokeCredential: (id, credId) =>
       unwrap(api.delete(`/vms/media-nodes/${id}/credentials/${credId}`)),
   },
