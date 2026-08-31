@@ -342,3 +342,63 @@ a dash still occupies the slot a number would and reads as "we measured, and it
 was nothing". The badge's colour is deliberately not semantic — up is not good
 and down is not bad (a rise in samples is neither, a rise in faults is bad), and
 nothing on this wire says which way round any measure runs.
+
+## 11. Derived measures — a value that is a function of TWO series (2026-08-31)
+
+Every measure the registry could express was a function of ONE column of one
+series. That is the whole of what a meter reports and almost none of what a
+building engineer asks. The worked case is chiller ΔT — leaving water temperature
+minus entering water temperature, `OWT − IWT` — which is the headline diagnosis on
+this product's own mockup and was not expressible even though both points have
+been reporting since the store existed.
+
+Two additions to the physical-aggregate vocabulary carry it, and both are closed
+forms rather than SQL fragments:
+
+* **`where: {dimension, equals}`** on any physical aggregate → `FILTER (WHERE …)`.
+  The dimension is a registry KEY resolved through `Definition.dimension()`; the
+  value is BOUND. A composite passes its filter down to any child that has none,
+  so a two-sided definition states it once.
+* **`difference: {left, right}`** → `(left) − (right)` over the same rows.
+
+That is the whole mechanism, and it is deliberately in the REGISTRY rather than
+in the executor. A `if device_type == 'chiller'` branch in `sqlgen.py` would make
+ΔT work and make the next derived value — a pressure drop, a cooling-tower
+approach, a power factor from kW and kVA — another branch in the one file that
+has to stay domain-agnostic. **The mechanism generalises; the row is specific.**
+The next derived value is an INSERT.
+
+Three rules the first row had to meet, and they apply to every one after it:
+
+1. **Nothing is written back.** A derived value is computed at query time. Stored,
+   it becomes a second copy of a number that can be wrong in a second way, and it
+   ages silently the moment the formula is corrected.
+2. **Only LINEAR aggregates may be differenced.** `avg(A) − avg(B)` is the mean
+   difference because the mean is linear. `min(A) − min(B)` is NOT the minimum
+   difference: the two minima can fall in different samples. The registry model
+   cannot check this — it does not know what a measure means — so `delta_t` offers
+   `avg` and `last` and deliberately not `min`, `max` or `sum`, and the reviewer of
+   the row is the check. A definition that offers `min` of a difference is lying.
+3. **Absence propagates, and here it MATTERS.** Neither side is coalesced, so a
+   bucket where only one point reported yields NULL. On this metric that is not a
+   nicety: a ΔT near zero IS the fault being looked for, so a fabricated zero would
+   read as a critical diagnosis.
+
+Comparability is inherited from the reading value and for the same reason: no unit
+is on the wire, so nothing says the two tags are degrees of anything, and a mean
+ΔT across four chillers could be combining quantities that are not the same. The
+measure is declared incomparable within `device_id` / `device_tag`, and the
+executor refuses to aggregate it unpinned with a message naming what to do.
+
+**No threshold, anywhere.** The mockup states "1.8°C vs 5–7°C design"; the design
+figure is a property of the machine and it is in nobody's database here. A
+threshold invented to make a row turn red is a diagnosis this platform has not
+earned, so the console prints ΔT and a person reads it.
+
+*Verified on live data:* `1F York Chiller01` reports `OWT 9.3` / `IWT 7.0`, and
+`/bi/query` returns ΔT `2.30` for it from `readings_1h`; the unpinned form is
+refused by name. **A real finding that was left alone:** both Khem chillers return
+a NEGATIVE ΔT (−3.85 and −12.10), i.e. the water they return is colder than the
+water they take in. Either those two devices have their tags the other way round
+on the gateway or they are not running as chillers. Nothing here corrects the
+sign — an `abs()` would hide a genuine configuration fault behind a plausible number.

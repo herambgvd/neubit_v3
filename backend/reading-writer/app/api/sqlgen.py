@@ -127,50 +127,107 @@ def _dim_sql(d: Definition, key: str) -> str:
     return qual(alias, dim.column)
 
 
-def _phys_sql(agg: PhysicalAgg, time_col: str) -> str:
+def _phys_sql(
+    d: Definition,
+    agg: PhysicalAgg,
+    time_col: str,
+    b: "_Binds",
+    outer_where=None,
+) -> str:
     """One physical aggregate → SQL. The function name is a CLOSED vocabulary
     (`registry.PhysFn`), so nothing here concatenates a caller's or a registry
-    row's SQL — only a name this file knows and a column it has quoted."""
-    if agg.fn == "count_star":
-        return "count(*)"
+    row's SQL — only a name this file knows and a column it has quoted.
+
+    A `where` becomes `FILTER (WHERE <dimension> = <bind>)`. The dimension is a
+    registry KEY resolved through `Definition.dimension()` and the value is BOUND,
+    so a filtered aggregate is exactly as safe as an unfiltered one. A composite
+    (`ratio`, `difference`) passes its own filter DOWN to any child that has none,
+    which is what lets a two-sided definition state its filter once.
+
+    `difference` is how a DERIVED value is expressed — `avg(OWT) − avg(IWT)` is
+    two filtered aggregates over the same relation, subtracted at query time.
+    Nothing is written back to `readings`; NULL on either side propagates to NULL,
+    which is the correct answer for a bucket where one side did not report and is
+    contract §4 arriving for free.
+    """
+    where = agg.where or outer_where
+
     if agg.fn == "ratio":
-        num = _phys_sql(agg.numerator, time_col)  # type: ignore[arg-type]
-        den = _phys_sql(agg.denominator, time_col)  # type: ignore[arg-type]
+        num = _phys_sql(d, agg.numerator, time_col, b, where)  # type: ignore[arg-type]
+        den = _phys_sql(d, agg.denominator, time_col, b, where)  # type: ignore[arg-type]
         # nullif → a group with no denominator is NULL, not a division error and
         # emphatically not zero (contract §4: absence renders as absence).
         return f"({num}) / nullif(({den}), 0)::double precision"
-    col = qual(BASE, agg.column or "")
-    if agg.fn == "count":
-        return f"count({col})"
-    if agg.fn == "count_distinct":
-        return f"count(DISTINCT {col})"
-    if agg.fn in ("first", "last"):
-        # TimescaleDB's ordered aggregates, ordered by the RELATION's own time
-        # column — so "last" means last in time, not last in scan order.
-        return f"{agg.fn}({col}, {qual(BASE, time_col)})"
-    if agg.fn in ("sum", "min", "max", "avg"):
-        return f"{agg.fn}({col})"
-    raise InvalidIdentifier(f"unsupported aggregate function {agg.fn!r}")
+    if agg.fn == "difference":
+        left = _phys_sql(d, agg.left, time_col, b, where)    # type: ignore[arg-type]
+        right = _phys_sql(d, agg.right, time_col, b, where)  # type: ignore[arg-type]
+        # No coalesce on either side, deliberately. A bucket where only one of the
+        # two series reported has no measured difference, and 0 would be a number
+        # nobody measured.
+        return f"(({left}) - ({right}))"
+
+    if agg.fn == "count_star":
+        base = "count(*)"
+    else:
+        col = qual(BASE, agg.column or "")
+        if agg.fn == "count":
+            base = f"count({col})"
+        elif agg.fn == "count_distinct":
+            base = f"count(DISTINCT {col})"
+        elif agg.fn in ("first", "last"):
+            # TimescaleDB's ordered aggregates, ordered by the RELATION's own time
+            # column — so "last" means last in time, not last in scan order.
+            base = f"{agg.fn}({col}, {qual(BASE, time_col)})"
+        elif agg.fn in ("sum", "min", "max", "avg"):
+            base = f"{agg.fn}({col})"
+        else:
+            raise InvalidIdentifier(f"unsupported aggregate function {agg.fn!r}")
+
+    if where is not None:
+        dim = d.dimension(where.dimension)
+        lhs = _dim_sql(d, where.dimension)
+        base = f"{base} FILTER (WHERE {lhs} = {_cast(dim, b.add(_coerce(dim, where.equals)))})"
+    return base
 
 
-def _measure_sql(d: Definition, rel: Relation, measure_key: str, aggregate: str) -> str:
+def _measure_phys(d: Definition, rel: Relation, measure_key: str, aggregate: str) -> PhysicalAgg:
     m: Measure = d.measure(measure_key)
     if aggregate not in m.aggregates:
         raise ValidationError(f"'{aggregate}' is not available for '{m.label}'")
-    by_rel = m.physical.get(rel.key) or {}
-    phys = by_rel.get(aggregate)
+    phys = (m.physical.get(rel.key) or {}).get(aggregate)
     if phys is None:
         raise ValidationError(
             f"'{m.label}' cannot be computed as '{aggregate}' from the "
             f"'{rel.key}' store"
         )
-    return _phys_sql(phys, rel.time_column)
+    return phys
 
 
-def _select_sql(d: Definition, rel: Relation, item: SelectItem) -> str:
+def _measure_sql(
+    d: Definition, rel: Relation, measure_key: str, aggregate: str, b: "_Binds"
+) -> str:
+    return _phys_sql(d, _measure_phys(d, rel, measure_key, aggregate), rel.time_column, b)
+
+
+def _measure_dims(d: Definition, rel: Relation, measure_key: str, aggregate: str) -> list[str]:
+    """Which DIMENSIONS a measure's own filters reference.
+
+    A filtered aggregate can name a dimension that lives on a JOIN — `point_tag`
+    is on `points`, not on the rollup — so the join has to be planned for even
+    though the widget never selected, grouped or filtered by it. Without this a
+    derived measure generates SQL naming an alias that is not in the FROM clause.
+    """
+    try:
+        phys = _measure_phys(d, rel, measure_key, aggregate)
+    except ValidationError:
+        return []
+    return [n.where.dimension for n in phys.walk() if n.where]
+
+
+def _select_sql(d: Definition, rel: Relation, item: SelectItem, b: "_Binds") -> str:
     if item.dimension:
         return _dim_sql(d, item.dimension)
-    return _measure_sql(d, rel, item.measure or "", item.aggregate or "")
+    return _measure_sql(d, rel, item.measure or "", item.aggregate or "", b)
 
 
 # ── predicates ───────────────────────────────────────────────────────────────
@@ -228,7 +285,7 @@ def _predicate(lhs: str, dim: Dimension, f: Filter, b: _Binds) -> str:
 
 
 def _having(d: Definition, rel: Relation, h: Having, b: _Binds) -> str:
-    lhs = _measure_sql(d, rel, h.measure, h.aggregate)
+    lhs = _measure_sql(d, rel, h.measure, h.aggregate, b)
     if h.op == "is null":
         return f"({lhs}) IS NULL"
     if h.op == "is not null":
@@ -314,6 +371,15 @@ def build(
         dim_keys.append(q.series_by)
     if q.series_label:
         dim_keys.append(q.series_label)
+    # A DERIVED measure filters on a dimension the widget never named — `delta_t`
+    # picks the `OWT` and `IWT` point tags — and that dimension can live on a
+    # join. Plan for it, or the generated SQL references an alias that is not in
+    # the FROM clause.
+    for item in q.select:
+        if item.measure:
+            dim_keys += _measure_dims(d, rel, item.measure, item.aggregate or "")
+    for h in q.having:
+        dim_keys += _measure_dims(d, rel, h.measure, h.aggregate)
     joins = _joins_sql(d, _sources(d, [k for k in dim_keys if k]))
 
     time_col = qual(BASE, rel.time_column)
@@ -335,7 +401,7 @@ def build(
             columns.append({"name": COL_SERIES_LABEL, "role": "series_label"})
 
     for idx, item in enumerate(q.select):
-        expr = _select_sql(d, rel, item)
+        expr = _select_sql(d, rel, item, b)
         alias = item.out_name
         select_sql.append(f"{expr} AS {quote_ident(alias)}")
         columns.append(
@@ -360,10 +426,10 @@ def build(
         m = d.measure(m_item.measure or "")
         if "min" in m.aggregates and "max" in m.aggregates:
             select_sql.append(
-                f"{_measure_sql(d, rel, m.key, 'min')} AS {quote_ident(COL_BAND_LO)}"
+                f"{_measure_sql(d, rel, m.key, 'min', b)} AS {quote_ident(COL_BAND_LO)}"
             )
             select_sql.append(
-                f"{_measure_sql(d, rel, m.key, 'max')} AS {quote_ident(COL_BAND_HI)}"
+                f"{_measure_sql(d, rel, m.key, 'max', b)} AS {quote_ident(COL_BAND_HI)}"
             )
             columns.append({"name": COL_BAND_LO, "role": "band_lo"})
             columns.append({"name": COL_BAND_HI, "role": "band_hi"})

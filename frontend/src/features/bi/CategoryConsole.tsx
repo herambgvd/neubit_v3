@@ -43,6 +43,7 @@ import {
 import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 
+import DeltaT, { hasDeltaT } from "./components/DeltaT";
 import TrendChart from "./components/TrendChart";
 import { bi } from "./api";
 import { categoryMeta, deviceTypeLabel, fmtReading, qualityTone } from "./constants";
@@ -246,6 +247,22 @@ export default function CategoryConsole({ category }: { category: string }) {
                 <InfoCell label="Numeric / text" value={`${selected.numeric_points} / ${selected.text_points}`} mono />
                 <InfoCell label="First seen" value={fmtRelative(selected.first_seen_at)} />
               </div>
+
+              {/* ΔT — the first DERIVED value: a function of two of this
+                  device's points, computed by the server at query time. Shown
+                  only when the device publishes BOTH sides, because a card that
+                  is permanently empty on every meter in the estate is noise
+                  rather than honesty. */}
+              {hasDeltaT(points) ? (
+                <div className="px-5 pb-3">
+                  <DeltaT
+                    deviceId={selected.device_id}
+                    deviceTag={selected.device_tag}
+                    hours={hours}
+                    accent={meta.accent}
+                  />
+                </div>
+              ) : null}
 
               {/* Trend — always a rollup. */}
               <div className="px-5 pb-3">

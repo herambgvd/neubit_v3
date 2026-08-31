@@ -59,7 +59,14 @@ _TTL_SEC = 20.0
 # The aggregate functions a MEASURE may map onto. Closed on purpose — a registry
 # row supplies a function NAME from this set plus a column name, never SQL.
 PhysFn = Literal[
-    "sum", "min", "max", "avg", "count", "count_distinct", "count_star", "first", "last", "ratio"
+    "sum", "min", "max", "avg", "count", "count_distinct", "count_star", "first", "last",
+    # Composites. Neither is a SQL fragment: each names its children, which are
+    # themselves closed-vocabulary aggregates.
+    "ratio",
+    # A DERIVED value: one aggregate minus another, over the same rows. See
+    # `PhysicalAgg` for why this and `where` are the whole mechanism a derived
+    # measure needs, and why it is registry data rather than a special case.
+    "difference",
 ]
 
 # The aggregates a BUILDER may ask for. Ported verbatim from the reference's
@@ -75,13 +82,68 @@ def _ident(name: str, what: str) -> str:
     return name
 
 
+class PhysWhere(BaseModel):
+    """Restrict one aggregate to the rows where a DIMENSION equals a value.
+
+    This is what lets a measure be a function of two different SERIES in the same
+    relation rather than of one column — the missing half of a derived value. It
+    becomes `FILTER (WHERE <dimension> = <bind>)`, so the value is a BOUND
+    parameter and the dimension is a registry KEY resolved through
+    `Definition.dimension()`; neither is a column name or a literal reaching SQL
+    unchecked.
+
+    Equality only. `in`, `like` and ranges would each widen what a registry row
+    can express against the executor, and nothing needs them: a derived value
+    picks named series.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dimension: str
+    equals: str
+
+
 class PhysicalAgg(BaseModel):
     """How one (measure, aggregate) pair is computed against one relation.
 
-    `ratio` is the only composite form and it exists for a real reason: the hourly
-    average of a reading is `sum(num_sum) / sum(num_count)`, because
-    `avg(num_avg)` would weight a bucket holding two samples the same as one
-    holding sixty. Everything else is `fn(column)`.
+    Two composite forms, and each exists for a concrete reason:
+
+    * `ratio` — the hourly average of a reading is `sum(num_sum)/sum(num_count)`,
+      because `avg(num_avg)` would weight a bucket holding two samples the same as
+      one holding sixty.
+
+    * `difference` — a DERIVED value: one aggregate minus another. Combined with
+      `where`, that is the whole mechanism. `ΔT` on a chiller is
+      `avg(OWT) − avg(IWT)`: two aggregates over the same relation, each filtered
+      to one series, subtracted.
+
+      This is deliberately a registry capability rather than a hard-coded chiller
+      case in the executor. The registry ROW is domain-specific (it names the tags
+      `OWT` and `IWT`); the MECHANISM is not, so the next derived value — a
+      pressure drop, an approach temperature, a power factor from kW and kVA — is
+      another INSERT rather than another branch in `sqlgen.py`.
+
+      **Nothing is written back.** A derived value is computed at query time from
+      the rows already stored. It never becomes a row in `readings`: a stored
+      derivation is a second copy of a number that can be wrong in a second way,
+      and it silently ages if the formula is corrected.
+
+      **Absence propagates.** A bucket where one side has no sample yields NULL,
+      not zero, because SQL arithmetic with NULL is NULL. That is the correct
+      answer — a chiller that reported its entering temperature and not its
+      leaving one has no measured ΔT — and it is contract §4 arriving for free
+      rather than needing a coalesce nobody should write.
+
+      **Only LINEAR aggregates may be differenced, and the registry has to say
+      so.** `avg(A) − avg(B)` is the mean difference; `min(A) − min(B)` is NOT the
+      minimum difference, because min is not linear and the two minima can fall in
+      different samples. This model cannot check that — it does not know what a
+      measure means — so a definition that offers `min` of a difference is a
+      definition that is lying, and the reviewer of the registry row is the check.
+      See the `delta_t` measure's own `aggregates` list, which is `avg` and
+      `last` and deliberately not `min`/`max`/`sum`.
+
+    Everything else is `fn(column)`.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -90,12 +152,22 @@ class PhysicalAgg(BaseModel):
     column: str | None = None
     numerator: "PhysicalAgg | None" = None
     denominator: "PhysicalAgg | None" = None
+    left: "PhysicalAgg | None" = None
+    right: "PhysicalAgg | None" = None
+    # Applies to this aggregate, and — for a composite — to any child that does
+    # not declare its own. That keeps a two-sided definition readable: a `ratio`
+    # states its filter once instead of on both halves, and the halves can still
+    # override it.
+    where: PhysWhere | None = None
 
     @model_validator(mode="after")
     def _check(self) -> "PhysicalAgg":
         if self.fn == "ratio":
             if self.numerator is None or self.denominator is None:
                 raise ValueError("ratio needs a numerator and a denominator")
+        elif self.fn == "difference":
+            if self.left is None or self.right is None:
+                raise ValueError("difference needs a left and a right")
         elif self.fn == "count_star":
             if self.column is not None:
                 raise ValueError("count_star takes no column")
@@ -103,7 +175,18 @@ class PhysicalAgg(BaseModel):
             if not self.column:
                 raise ValueError(f"{self.fn} needs a column")
             _ident(self.column, "measure column")
+        if self.where is not None:
+            _ident(self.where.dimension, "filtered-aggregate dimension")
         return self
+
+    def walk(self) -> "list[PhysicalAgg]":
+        """This node and every child, so a validator or the generator can see the
+        whole tree without knowing which composite it is looking at."""
+        out = [self]
+        for child in (self.numerator, self.denominator, self.left, self.right):
+            if child is not None:
+                out.extend(child.walk())
+        return out
 
 
 PhysicalAgg.model_rebuild()
@@ -282,6 +365,17 @@ class Definition(BaseModel):
             for rel, by_agg in m.physical.items():
                 if rel not in rel_keys:
                     raise ValueError(f"measure {m.key!r} maps unknown relation {rel!r}")
+                # A filtered aggregate names a DIMENSION KEY, and the generator
+                # resolves it through `Definition.dimension()`. Checking it here
+                # means a typo is a dataset that refuses to load with a reason,
+                # not a 500 the first time somebody charts it.
+                for phys in by_agg.values():
+                    for node in phys.walk():
+                        if node.where and node.where.dimension not in dim_keys:
+                            raise ValueError(
+                                f"measure {m.key!r} filters on {node.where.dimension!r}, "
+                                "which is not a dimension of this dataset"
+                            )
                 for agg in m.aggregates:
                     if agg not in by_agg:
                         raise ValueError(
