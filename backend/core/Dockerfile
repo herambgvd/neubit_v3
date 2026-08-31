@@ -17,6 +17,8 @@ COPY pyproject.toml ./
 COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini ./
+COPY migrate.sh ./
+RUN chmod +x /app/migrate.sh
 RUN uv pip install --system --no-cache -e ".[messaging,tasks,reports,system,storage,sites]"
 
 EXPOSE 8000

@@ -117,13 +117,14 @@ services:
       redis: { condition: service_healthy }
       nats: { condition: service_started }
     ports: ["8000:8000"]
-    # The 0001 baseline builds the full current schema from the ORM metadata
-    # (create_all), so the later incremental deltas (0002-0010) would collide on a
-    # fresh DB. Create the baseline schema, then stamp head to record the deltas as
-    # applied. (Existing DBs upgrading from an older schema are out of scope here.)
+    # `migrate.sh`, NOT `alembic upgrade head` and NOT the old
+    # `upgrade 0001 && stamp head`. The 0001 baseline is a create_all() of the
+    # live ORM metadata, so on a FRESH database the later deltas collide, while on
+    # an EXISTING one a blanket `stamp head` marks every unapplied migration as
+    # done and it silently never runs. The script picks the right branch per
+    # database — see the long comment at the top of backend/core/migrate.sh.
     command: >
-      bash -c "alembic upgrade 0001 &&
-               alembic stamp head &&
+      bash -c "./migrate.sh &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes:
       # Persist uploaded blobs across rebuilds — see the `corefiles` volume note.
@@ -169,8 +170,10 @@ services:
   # service that owns the readings schema (contract §7). This one never opens
   # neubit_reporting, so there is no second query path against those tables.
   #
-  # `alembic upgrade head` (NOT core's `upgrade 0001 && stamp head`, which stamps
-  # every later revision as applied without running it).
+  # `alembic upgrade head` — the ordinary path, which is right here because this
+  # service's baseline is a real migration rather than a create_all() of the live
+  # ORM metadata. Core is the odd one out and runs `migrate.sh` instead; do not
+  # copy core's command here.
   dashboards:
     build:
       context: ../backend

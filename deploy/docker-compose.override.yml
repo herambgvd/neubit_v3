@@ -31,9 +31,12 @@ services:
     volumes:
       - ../backend/core/app:/app/app
       # Mount migrations too so newly-added Alembic revisions apply on restart
-      # (the start command runs `alembic upgrade` before uvicorn).
+      # (the start command runs `./migrate.sh` before uvicorn).
       - ../backend/core/migrations:/app/migrations
-    command: bash -c "alembic upgrade 0001 && alembic stamp head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"
+      # The migrate script is part of the schema bring-up and changes with the
+      # migrations, so mount it alongside them rather than baking dev to an old copy.
+      - ../backend/core/migrate.sh:/app/migrate.sh
+    command: bash -c "./migrate.sh && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"
 
   vision:
     environment:
