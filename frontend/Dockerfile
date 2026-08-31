@@ -8,6 +8,17 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --legacy-peer-deps
+# Record WHICH lockfile produced this tree. The dev entrypoint compares this
+# stamp against the lockfile on disk and reinstalls when they differ — which is
+# what makes `docker compose build` after adding a dependency actually reach a
+# running dev container, instead of being invisible behind a volume that was
+# seeded once and never again.
+RUN sha256sum package-lock.json | cut -d' ' -f1 > node_modules/.neubit-install-stamp || true
+# Dev-only start-up self-check (see the script for the four failures it repairs).
+# Copied into every stage's base so the dev override can use it; the production
+# runner never invokes it.
+COPY dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
+RUN chmod +x /usr/local/bin/dev-entrypoint.sh
 
 # builder — compile the optimized production build (Next standalone output).
 FROM node:20-alpine AS builder
