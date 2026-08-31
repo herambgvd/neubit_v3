@@ -177,6 +177,12 @@ async def write_batch(
                 "meta": stmt.excluded.meta,
                 # first_seen_at is NOT overwritten: it means what it says.
                 "last_seen_at": stmt.excluded.last_seen_at,
+                # A point that is REPORTING is not retired, whatever anyone
+                # said about it last month. An explicit retire is a statement
+                # about the present, not a permanent ban, so a reading clears
+                # it and the point returns to BI's counts with its whole
+                # history — none of which retirement ever touched.
+                "retired_at": None,
             },
         )
         await session.execute(stmt)

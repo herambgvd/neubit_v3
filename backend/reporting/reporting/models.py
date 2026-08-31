@@ -43,6 +43,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -110,6 +111,21 @@ class Point(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+    # When an operator RETIRED this point. NULL = live and counted in every
+    # Building Intelligence figure; non-NULL = excluded from those counts while
+    # every reading it ever produced stays exactly where it is.
+    #
+    # This is only the EXPLICIT half of retirement. The other half is a horizon:
+    # a point whose `last_seen_at` is older than VE_READINGS_RETIRE_AFTER_DAYS is
+    # treated as retired at query time without writing anything here, so a
+    # building full of decommissioned meters does not need an operator to walk
+    # it. Both halves self-heal — the writer clears `retired_at` the moment a
+    # reading arrives, because a point that is reporting is not retired,
+    # whatever anyone said about it last month.
+    retired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     __table_args__ = (
         Index("ix_points_tenant", "tenant_id"),
         Index("ix_points_conn", "conn_id"),
@@ -118,6 +134,14 @@ class Point(Base):
         Index("ix_points_tenant_device_tag", "tenant_id", "device_tag", "point_tag"),
         # "every point in this tenant's Energy & Metering view" — the BI filter.
         Index("ix_points_tenant_category", "tenant_id", "category"),
+        # The live set, which is what every BI count actually reads. Partial:
+        # almost every point is live, so the retired tail costs nothing to carry.
+        Index(
+            "ix_points_tenant_live",
+            "tenant_id",
+            "last_seen_at",
+            postgresql_where=text("retired_at IS NULL"),
+        ),
     )
 
 

@@ -405,6 +405,15 @@ services:
       #     silence is visible. Deliberately well under the statement timeout.
       VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS:-60000}
       VE_READINGS_WRITE_STALL_SEC: ${VE_READINGS_WRITE_STALL_SEC:-20}
+      # ── retirement: when a point stops counting ────────────────────────────
+      # A point that stops reporting used to count toward every Building
+      # Intelligence figure forever, and the only way out was to DELETE the
+      # dimension row — which orphans its readings. A point whose last_seen_at is
+      # older than this is treated as retired at QUERY TIME (nothing is written,
+      # nothing is deleted) and drops out of the counts; it returns the instant a
+      # reading arrives. 0 disables the horizon and leaves only explicit
+      # retirement via POST /bi/points/{id}/retire.
+      VE_READINGS_RETIRE_AFTER_DAYS: ${VE_READINGS_RETIRE_AFTER_DAYS:-30}
       # ── observability ──────────────────────────────────────────────────────
       VE_READINGS_LAG_WARN: ${VE_READINGS_LAG_WARN:-10000}
       # ── dashboard datasets → core's permission catalog ─────────────────────

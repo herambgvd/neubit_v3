@@ -134,6 +134,11 @@ class CorePerm:
     # permissions claim. A key that is not in this catalog can only ever be held
     # by a wildcard admin, which is not a usable permission model.
     BI_READ = "bi.read"
+    # RETIRE / un-retire a measurement point. The only write in the Building
+    # Intelligence API, and separate from bi.read on purpose: reading the estate
+    # and deciding what is no longer part of it are different jobs. It changes a
+    # COUNT, never a measurement — retiring a point deletes nothing.
+    BI_MANAGE = "bi.manage"
     # Dashboard builder — the no-code dashboards over the reading store. READ =
     # list and open a dashboard; MANAGE = create / edit / delete / arrange it.
     # Enforced by the `dashboards` service
@@ -223,6 +228,13 @@ PERMISSIONS.register(
         "Building Intelligence",
         "Read the IoT reading store: category summaries, devices, points and "
         "time series. Read-only — nothing in this API writes.",
+    ),
+    Permission(
+        CorePerm.BI_MANAGE,
+        "Retire measurement points",
+        "Building Intelligence",
+        "Mark a point as no longer part of the estate so it stops counting toward "
+        "the portfolio figures, and restore one. Never deletes a reading.",
     ),
     Permission(
         CorePerm.DASHBOARDS_READ,

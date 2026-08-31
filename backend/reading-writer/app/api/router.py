@@ -51,6 +51,11 @@ from .spec import TableResult as QueryResult
 # actually grant it in the role editor — a key no catalog knows about can only
 # ever be held by a wildcard admin.
 PERM_READ = "bi.read"
+# The ONE write in this API. Retiring a point changes a COUNT, never a
+# measurement — the readings stay exactly where they are — but deciding what is
+# still part of the estate is a different job from reading it, so it is a
+# different key. Registered in core's catalog beside bi.read.
+PERM_MANAGE = "bi.manage"
 
 bi_router = APIRouter(prefix="/bi", tags=["Building Intelligence"])
 
@@ -141,6 +146,7 @@ async def devices(
     category: str | None = None,
     device_type: str | None = None,
     search: str | None = None,
+    include_retired: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> DeviceListResponse:
@@ -158,6 +164,7 @@ async def devices(
         search=search,
         limit=limit,
         offset=offset,
+        include_retired=include_retired,
     )
     return DeviceListResponse(total=total, items=rows)
 
@@ -179,6 +186,7 @@ async def points(
     type: str | None = None,
     search: str | None = None,
     with_latest: bool = True,
+    include_retired: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PointListResponse:
@@ -205,12 +213,51 @@ async def points(
         limit=limit,
         offset=offset,
         with_latest=with_latest,
+        include_retired=include_retired,
     )
     return PointListResponse(
         total=total,
         items=rows,
         latest_lookback_minutes=q.LATEST_LOOKBACK_MINUTES,
     )
+
+
+@bi_router.post(
+    "/points/{point_id}/retire",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def retire_point(db: Db, scope: Caller, point_id: uuid.UUID) -> dict:
+    """Retire a point: stop counting it, delete nothing.
+
+    A point that stops reporting used to count toward every Building
+    Intelligence figure forever, and the only way out was to DELETE the
+    dimension row — which orphans its readings, because `readings` has no
+    foreign key to `points`. This sets `retired_at` instead: the point drops out
+    of the summary, the device rollups and the activity chart, and every reading
+    it ever produced stays exactly where it is and is still queryable by id.
+
+    It is not permanent. The writer clears `retired_at` on the next reading,
+    because a point that is reporting is not retired whatever anyone said about
+    it last month. Retiring a LIVE point therefore hides it only until it speaks
+    again — which is the honest behaviour, not a bug.
+
+    Tenant-scoped: a caller can only retire a point in their own tenant.
+    """
+    return await q.set_retired(db, _tenant(scope), point_id, retired=True)
+
+
+@bi_router.post(
+    "/points/{point_id}/unretire",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def unretire_point(db: Db, scope: Caller, point_id: uuid.UUID) -> dict:
+    """Undo an explicit retire, restoring the point to the counts.
+
+    Clears `retired_at` only. It cannot bring back a point that is retired by the
+    `last_seen_at` HORIZON — nothing but a new reading can do that, and that is
+    the point of the horizon.
+    """
+    return await q.set_retired(db, _tenant(scope), point_id, retired=False)
 
 
 # ── Series ───────────────────────────────────────────────────────────────────

@@ -30,6 +30,7 @@ same way here so one filter builder covers both halves.
 from __future__ import annotations
 
 import datetime as dt
+import os
 import uuid
 
 from sqlalchemy import text
@@ -50,6 +51,46 @@ LATEST_LOOKBACK_MINUTES = 60
 # The live gateway publishes on a ~5 minute cycle, so 15 minutes is three missed
 # cycles — long enough not to flicker, short enough to notice a dead device.
 FRESH_MINUTES = 15
+
+# ── retirement ───────────────────────────────────────────────────────────────
+# A point that stops reporting used to count toward every Building Intelligence
+# figure forever: a decommissioned meter, a renamed tag, a one-off test point
+# were all permanent members of `total_points`, and the only way out was to
+# DELETE the dimension row — which orphans its readings, since `readings` has no
+# foreign key to `points`.
+#
+# A point is LIVE when it is neither explicitly retired nor past the horizon:
+#
+#   retired_at IS NULL                                  (nobody retired it), AND
+#   last_seen_at >= now() - RETIRE_AFTER_DAYS           (it reported recently)
+#
+# Both halves matter. The horizon needs no operator and self-heals, so a building
+# nobody curates still reports honest numbers; the explicit flag is for a point
+# that is gone NOW and should not wait a month. Neither deletes anything — a
+# retired point's readings stay exactly where they are, and it returns to the
+# counts the instant a reading arrives (the writer clears `retired_at`).
+#
+# Set VE_READINGS_RETIRE_AFTER_DAYS=0 to disable the horizon and rely only on
+# explicit retirement.
+RETIRE_AFTER_DAYS = max(0, int((os.getenv("VE_READINGS_RETIRE_AFTER_DAYS") or "30").strip() or 30))
+
+# The predicate, in one place. `:retire_days = 0` short-circuits the horizon so
+# the same SQL serves both configurations.
+LIVE_POINT = (
+    "p.retired_at IS NULL "
+    "AND (:retire_days = 0 "
+    "     OR p.last_seen_at >= now() - make_interval(days => :retire_days))"
+)
+
+
+def _live(include_retired: bool = False) -> str:
+    """The retirement predicate as a SQL fragment, or TRUE when retired rows are wanted.
+
+    Browse surfaces take `include_retired=true` so a retired point remains
+    REACHABLE — it is excluded from the counts, not hidden from the operator who
+    wants to see what was retired and why the total moved.
+    """
+    return "TRUE" if include_retired else LIVE_POINT
 
 # Ceilings. A chart that asks for 500 series or 100k buckets is a bug, and it
 # should fail loudly at the edge rather than becoming a slow query.
@@ -74,6 +115,7 @@ _SUMMARY_SQL = text(
            max(p.last_seen_at)                             AS last_seen_at
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND """ + LIVE_POINT + """
      GROUP BY p.category
      ORDER BY count(*) DESC
     """
@@ -87,6 +129,7 @@ _DEVICE_TYPES_SQL = text(
            count(DISTINCT coalesce(p.device_id::text, p.device_tag)) AS devices
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND """ + LIVE_POINT + """
      GROUP BY p.category, p.device_type
      ORDER BY count(*) DESC
     """
@@ -125,16 +168,34 @@ _TOTALS_SQL = text(
            max(p.last_seen_at)                             AS last_seen_at
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND """ + LIVE_POINT + """
+    """
+)
+
+# The RETIRED half of the same tenant, so the UI can say "313 points (4 retired)"
+# rather than showing a total that silently shrank by four.
+_RETIRED_TOTALS_SQL = text(
+    """
+    SELECT count(*)                                        AS points_retired
+      FROM points p
+     WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND NOT (""" + LIVE_POINT + """)
     """
 )
 
 
 async def summary(db: AsyncSession, tenant: uuid.UUID | None) -> dict:
-    params = {"tenant": str(tenant) if tenant else None, "fresh": FRESH_MINUTES}
+    params = {
+        "tenant": str(tenant) if tenant else None,
+        "fresh": FRESH_MINUTES,
+        "retire_days": RETIRE_AFTER_DAYS,
+    }
+    nofresh = {"tenant": params["tenant"], "retire_days": RETIRE_AFTER_DAYS}
     cats = _rows(await db.execute(_SUMMARY_SQL, params))
-    types = _rows(await db.execute(_DEVICE_TYPES_SQL, {"tenant": params["tenant"]}))
+    types = _rows(await db.execute(_DEVICE_TYPES_SQL, nofresh))
     extent = _rows(await db.execute(_EXTENT_SQL, {"tenant": params["tenant"]}))
     seen = _rows(await db.execute(_TOTALS_SQL, params))
+    retired = _rows(await db.execute(_RETIRED_TOTALS_SQL, nofresh))
 
     by_cat: dict[object, list[dict]] = {}
     for t in types:
@@ -164,6 +225,12 @@ async def summary(db: AsyncSession, tenant: uuid.UUID | None) -> dict:
         "tenant_id": tenant,
         "generated_at": dt.datetime.now(dt.timezone.utc),
         "fresh_minutes": FRESH_MINUTES,
+        # The horizon in force, so a caller can see WHY a point stopped counting
+        # rather than watching a total change for no visible reason.
+        "retire_after_days": RETIRE_AFTER_DAYS,
+        # Excluded from every count above — retired explicitly or past the
+        # horizon. Their readings are untouched; this is a count, not a deletion.
+        "total_points_retired": int((retired[0] if retired else {}).get("points_retired") or 0),
         "categories": categories,
         # From _TOTALS_SQL, not summed from `categories` — see its comment.
         "total_devices": int(row.get("devices") or 0),
@@ -185,6 +252,9 @@ _ACTIVITY_SQL = text(
       JOIN points p ON p.point_id = r.point_id
      WHERE r.bucket >= now() - make_interval(hours => :hours)
        AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+       -- A retired point's HISTORY is intact in readings_1h; it is simply not
+       -- charted alongside the live estate. Retiring never deletes a bucket.
+       AND p.retired_at IS NULL AND (:retire_days = 0      OR p.last_seen_at >= now() - make_interval(days => :retire_days))
      GROUP BY r.bucket, p.category
      ORDER BY r.bucket
     """
@@ -201,7 +271,11 @@ async def activity(db: AsyncSession, tenant: uuid.UUID | None, hours: int) -> li
     rows = _rows(
         await db.execute(
             _ACTIVITY_SQL,
-            {"tenant": str(tenant) if tenant else None, "hours": hours},
+            {
+                "tenant": str(tenant) if tenant else None,
+                "hours": hours,
+                "retire_days": RETIRE_AFTER_DAYS,
+            },
         )
     )
     return [
@@ -232,6 +306,7 @@ _DEVICES_SQL = """
            max(p.last_seen_at)                             AS last_seen_at
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND {live}
        {search}
      GROUP BY p.device_id, coalesce(p.device_id::text, p.device_tag)
     {having}
@@ -281,10 +356,18 @@ async def devices(
     search: str | None,
     limit: int,
     offset: int,
+    include_retired: bool = False,
 ) -> tuple[int, list[dict]]:
     having, search_sql, extra = _device_filters(category, device_type, search)
-    base = _DEVICES_SQL.format(search=search_sql, having=having)
-    params = {"tenant": str(tenant) if tenant else None, "fresh": FRESH_MINUTES, **extra}
+    base = _DEVICES_SQL.format(
+        search=search_sql, having=having, live=_live(include_retired)
+    )
+    params = {
+        "tenant": str(tenant) if tenant else None,
+        "fresh": FRESH_MINUTES,
+        "retire_days": RETIRE_AFTER_DAYS,
+        **extra,
+    }
 
     total = (
         await db.execute(text(f"SELECT count(*) FROM ({base}) d"), params)
@@ -303,9 +386,12 @@ async def devices(
 
 _POINTS_SQL = """
     SELECT p.point_id, p.point_tag, p.device_id, p.device_tag, p.category,
-           p.device_type, p.type, p.unit, p.first_seen_at, p.last_seen_at
+           p.device_type, p.type, p.unit, p.first_seen_at, p.last_seen_at,
+           p.retired_at,
+           NOT (p.retired_at IS NULL AND (:retire_days = 0      OR p.last_seen_at >= now() - make_interval(days => :retire_days)))                     AS retired
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND {live}
        {filters}
 """
 
@@ -338,9 +424,13 @@ async def points(
     limit: int,
     offset: int,
     with_latest: bool,
+    include_retired: bool = False,
 ) -> tuple[int, list[dict]]:
     filters: list[str] = []
-    params: dict = {"tenant": str(tenant) if tenant else None}
+    params: dict = {
+        "tenant": str(tenant) if tenant else None,
+        "retire_days": RETIRE_AFTER_DAYS,
+    }
     if device_id is not None:
         filters.append("AND p.device_id = :device_id")
         params["device_id"] = str(device_id)
@@ -360,7 +450,9 @@ async def points(
         filters.append("AND (p.point_tag ILIKE :search OR p.device_tag ILIKE :search)")
         params["search"] = f"%{search}%"
 
-    base = _POINTS_SQL.format(filters=" ".join(filters))
+    base = _POINTS_SQL.format(
+        filters=" ".join(filters), live=_live(include_retired)
+    )
     total = (await db.execute(text(f"SELECT count(*) FROM ({base}) q"), params)).scalar_one()
     rows = _rows(
         await db.execute(
@@ -530,3 +622,60 @@ async def point_meta(
 # What remains in this file is what the HAND-BUILT BI screens use — /summary,
 # /activity, /devices, /points, /series. Those are fixed screens with fixed
 # questions, not a builder, and they are not generated.
+
+
+# ── Retirement ───────────────────────────────────────────────────────────────
+# The ONLY write in this module, and it writes one nullable timestamp on the
+# dimension row. It never touches `readings`: retiring a point removes it from
+# the counts, not from the record. See LIVE_POINT for what "retired" means.
+
+_SET_RETIRED_SQL = text(
+    """
+    UPDATE points p
+       SET retired_at = CASE WHEN :retired THEN now() ELSE NULL END
+     WHERE p.point_id = :point_id
+       AND (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+    RETURNING p.point_id, p.point_tag, p.device_tag, p.last_seen_at, p.retired_at
+    """
+)
+
+
+async def set_retired(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    point_id: uuid.UUID,
+    *,
+    retired: bool,
+) -> dict:
+    """Set or clear `points.retired_at`. Tenant-scoped; raises if there is no such point."""
+    from kernel.errors import NotFoundError
+
+    row = (
+        await db.execute(
+            _SET_RETIRED_SQL,
+            {
+                "retired": retired,
+                "point_id": str(point_id),
+                "tenant": str(tenant) if tenant else None,
+            },
+        )
+    ).mappings().first()
+    if row is None:
+        raise NotFoundError(f"no point {point_id}")
+    await db.commit()
+    return {
+        "point_id": str(row["point_id"]),
+        "point_tag": row["point_tag"],
+        "device_tag": row["device_tag"],
+        "last_seen_at": row["last_seen_at"],
+        "retired_at": row["retired_at"],
+        # True by either route, so the caller sees the effective state rather
+        # than only the flag it just wrote.
+        "retired": row["retired_at"] is not None
+        or (
+            RETIRE_AFTER_DAYS > 0
+            and row["last_seen_at"] is not None
+            and (dt.datetime.now(dt.timezone.utc) - row["last_seen_at"]).days
+            >= RETIRE_AFTER_DAYS
+        ),
+    }

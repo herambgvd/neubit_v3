@@ -69,6 +69,12 @@ class SummaryResponse(BaseModel):
     total_devices: int
     total_points: int
     total_points_reporting: int
+    # Points EXCLUDED from every count above: retired explicitly, or last seen
+    # longer ago than `retire_after_days`. Their readings are untouched — this is
+    # a count of what stopped being counted, not of what was deleted.
+    total_points_retired: int = 0
+    # The horizon in force (days). 0 = horizon off, explicit retirement only.
+    retire_after_days: int = 0
     # Oldest / newest reading actually stored for this tenant, so a screen can
     # say what window it is allowed to ask about instead of guessing.
     first_reading_at: dt.datetime | None
@@ -122,6 +128,12 @@ class PointRow(BaseModel):
     unit: str | None
     first_seen_at: dt.datetime | None
     last_seen_at: dt.datetime | None
+    # When an operator retired this point (NULL = never explicitly retired).
+    retired_at: dt.datetime | None = None
+    # True when the point is retired by EITHER route — explicitly, or by falling
+    # past the `last_seen_at` horizon. Only ever true on a listing that ASKED for
+    # retired rows; the default listing excludes them from the results entirely.
+    retired: bool = False
     latest: LatestValue | None = None
 
 
