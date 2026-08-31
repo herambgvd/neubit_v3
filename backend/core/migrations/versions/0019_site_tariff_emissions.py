@@ -1,6 +1,6 @@
 """sites: TIME-OF-USE TARIFF SLABS and EMISSION FACTORS — homes, not values
 
-Revision ID: 0019_site_tariff_slabs_emission_factors
+Revision ID: 0019_site_tariff_emissions
 Revises: 0018_site_building_facts
 Create Date: 2026-08-31
 
@@ -44,7 +44,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0019_site_tariff_slabs_emission_factors"
+revision = "0019_site_tariff_emissions"
 down_revision = "0018_site_building_facts"
 branch_labels = None
 depends_on = None
