@@ -124,6 +124,80 @@ properties of it matter downstream and must survive:
 
 ---
 
+### The alert body
+
+§9 item 4 recorded that this shape was invented rather than specified. This is
+now the specified shape.
+
+    tenant.{tenant_id}.iot.alert.{conn_id}
+
+```json
+{
+  "tenant_id": "default",
+  "domain": "iot",
+  "event": "alert",
+  "payload": {
+    "conn_id":         "e39a8b77-…",
+    "device_id":       "1010cb50-…",
+    "point_id":        "ef18ceb5-…",
+    "device_category": "energy",
+    "device_type":     "incomer",
+    "alert": {
+      "id":       "e5a0205e-…",
+      "type":     "rule",
+      "severity": "critical",
+      "src":      { "proto": "mqtt", "conn": "aeon", "dev": "B2_Main Incomer",
+                    "addr": "aeonhwj/B2_Main Incomer/CAvg_A" },
+      "message":  "CAvg_A at 113.47 A — above 100 A",
+      "ts":       1788165290,
+      "acked":    false
+    }
+  }
+}
+```
+
+`alert` is `model.Alert` unchanged — do not flatten or rename it. `alert.ts` is
+epoch SECONDS and is when the alert was RAISED, not when it was published; an
+outbox replay can deliver it minutes late.
+
+The four fields beside `conn_id` are the identity the platform can key on, and
+they are the only thing not already inside `alert`. `alert.src` carries the WIRE
+identity — connection slug, device tag, and a protocol-native address such as a
+Modbus register or an MQTT topic — and nothing on the platform is keyed on any
+of it. Tags are deliberately not repeated.
+
+- `device_id` — what a cross-domain alert queue groups by; joins `points`.
+- `point_id` — `readings`/`points`' primary key, so an alert can be opened onto
+  the series that raised it.
+- `device_category`, `device_type` — what the device IS, so an alert is
+  attributable to energy vs hvac vs water with no lookup.
+
+**All four are OPTIONAL and follow §11's rules exactly**: omitted rather than
+sent as `""`, and a missing value means "unknown" — a consumer must never
+overwrite a stored value with NULL because a message said nothing. That is the
+replay contract: an alert buffered before these fields existed replays from an
+Origin that has none of them and publishes none of them.
+
+Alerts remain events, not measurements: no row in `readings`, and the
+reading-writer's filter still excludes them. `reporting-projector` consumes them
+into `neubit_reporting.iot_alerts`.
+
+**Known gap, both halves named.** `conn_id` is NOT `omitempty`, so a
+pre-Phase-C outbox row — which has only the wire slug — marshals it as `""`, and
+the projector rejects the message with `bad_uuid:conn_id`. That is silent loss
+on the oldest replays. The same applies to the reading body's `conn_id`,
+`device_id` and `point_id`. Fixing it is a contract decision: either omit those
+when unknown, or have the projector tolerate a non-UUID connection key. The
+subject is unaffected — `connToken` already falls back to the slug.
+
+**`iot_alerts` has no columns for the new fields yet.** It stores the wire
+identity (`conn_slug`, `proto`, `device_tag`, `point_addr`) and nothing keyed,
+so the console still cannot group alerts by category: the gateway half is done,
+the store half is not. When it lands it must follow §12's COALESCE rule —
+missing never clobbers.
+
+---
+
 ## 4. JetStream configuration
 
 Two streams. They must not overlap: NATS refuses overlapping subjects between
@@ -314,7 +388,7 @@ Phase B is the reading-writer: `backend/reading-writer/`, service
    consumers that DO parse the subject get the same value as the body.
 2. **§1 undersold the work** — noted, nothing to change.
 3. **The unbounded `EVENTS` stream** — fixed. See the rewritten §4.
-4. **The alert body shape** — CONFIRMED as Phase C sent it
+4. **The alert body shape** — CONFIRMED as Phase C sent it — superseded by §3's alert-body block, which adds four optional identity/classification fields
    (`{tenant_id, domain: "iot", event: "alert", payload: {conn_id, alert}}`).
    Alerts are events, not measurements: they get no row in `readings`, and the
    writer's consumer filter deliberately excludes them. They are captured by
