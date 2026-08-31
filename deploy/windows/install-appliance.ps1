@@ -608,7 +608,12 @@ Write-Ok "$DistroName imported for $OwnerAccount"
 Write-Step 'Writing the appliance configuration'
 
 # The bulk path as the distro sees it: D:\NeubitData -> /mnt/d/NeubitData.
-$bulkWsl = '/mnt/' + $BulkDir.Substring(0,1).ToLower() + ($BulkDir.Substring(2) -replace '\','/')
+#
+# .Replace(), not -replace. The right-hand side of -replace is a REGULAR
+# EXPRESSION and a lone backslash is not a valid one, so every ordinary Windows
+# path threw "The regular expression pattern \ is not valid" here -- one line into
+# the configuration step, with the 2.9 GB import already behind it.
+$bulkWsl = '/mnt/' + $BulkDir.Substring(0,1).ToLower() + $BulkDir.Substring(2).Replace('\','/')
 
 <#
 ══ /opt/neubit/.env IS GENERATED HERE, AND WITHOUT IT NOTHING STARTS ══════════
@@ -706,7 +711,7 @@ sed -E 's/^(POSTGRES_PASSWORD|VE_JWT_SECRET|VE_SECRETS_KEY|OPS_AGENT_TOKEN|VE_DA
 $envShPath = Join-Path $env:ProgramData 'Neubit\VMS\install\write-env.sh'
 New-Item -ItemType Directory -Force -Path (Split-Path $envShPath) | Out-Null
 [IO.File]::WriteAllText($envShPath, $envSh)
-$envShWsl = '/mnt/' + $envShPath.Substring(0,1).ToLower() + ($envShPath.Substring(2) -replace '\','/')
+$envShWsl = '/mnt/' + $envShPath.Substring(0,1).ToLower() + $envShPath.Substring(2).Replace('\','/')
 
 $envScript = @"
     `$ErrorActionPreference = 'Continue'
