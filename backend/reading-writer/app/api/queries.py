@@ -667,7 +667,7 @@ async def series(
 
 _POINT_META_SQL = text(
     """
-    SELECT p.point_id, p.point_tag, p.device_tag, p.unit
+    SELECT p.point_id, p.point_tag, p.device_tag, p.unit, p.category, p.device_id
       FROM points p
      WHERE p.point_id = ANY(CAST(:pids AS uuid[]))
        AND (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
@@ -949,3 +949,196 @@ async def alerts(
         ],
         "items": items,
     }
+
+
+# ── Correlation ──────────────────────────────────────────────────────────────
+#
+# The arithmetic behind Building Intelligence → Insights & Correlation.
+#
+# WHY THIS IS HONEST WITHOUT A UNIT. Pearson's r is dimensionless: it is the
+# covariance of two series divided by the product of their standard deviations,
+# so every unit cancels. Two series that carry no unit still have a defined
+# correlation, and the series are NOT anonymous — each one is named by the
+# source's own `device_tag` / `point_tag`. "4F Khem Chiller01 / IWT against
+# B2_Main Incomer / KWH is +0.62 over 168 aligned hours" is a statement about
+# measured numbers, and every word of it came from the store.
+#
+# WHAT THE SCREEN MUST NOT DO with the number is a UI concern and is stated on
+# the screen itself: r is association, not causation, and nothing here ranks
+# causes or explains a bill.
+#
+# FOUR RULES THIS QUERY ENFORCES, because a coefficient without them misleads:
+#
+# 1. **It reads the ROLLUPS, never `readings`.** Same store as every chart
+#    (contract §5), and the resolution is returned so the screen can print it.
+#    There is no raw path: an r over raw samples would be an r over whatever
+#    happened to be co-timestamped, which is not the same question.
+# 2. **Only OVERLAPPING buckets count.** The join is on the bucket timestamp, so
+#    two series are compared where both actually reported and nowhere else. `n`
+#    — the number of buckets that overlapped — is returned with every
+#    coefficient, because a 0.98 over 4 buckets is noise.
+# 3. **A FROZEN series has no correlation.** Pearson divides by the standard
+#    deviation; a series with one distinct value has a standard deviation of
+#    zero, so r is UNDEFINED, not 0.00. Postgres `corr()` already returns NULL
+#    there — the variance columns below are carried so the answer can say WHICH
+#    side was flat instead of just going blank. Three of the four chillers on
+#    this deployment are frozen, so this is the normal case, not the edge one.
+# 4. **Absence renders as absence.** A pair with no overlapping bucket does not
+#    appear in the join at all and is filled in by the caller as `no_overlap`.
+#    It is never a zero.
+
+# Below this many overlapping buckets a coefficient is not reported at all. Two
+# points define a line, so r over n=2 is ±1 by construction and carries no
+# information; three is the smallest n where the number means anything, and even
+# then the screen prints n beside it.
+MIN_CORRELATION_BUCKETS = 3
+
+# Ceiling on how many series may be compared in one request. Pair count is
+# quadratic (12 series = 66 pairs), and a matrix wider than this is unreadable
+# before it is expensive.
+MAX_CORRELATION_POINTS = 12
+
+# Aligned sample pairs returned for the two-series scatter. Capped so a 90-day
+# 1-minute window cannot return a million points to a browser.
+MAX_SCATTER_SAMPLES = 2000
+
+_CORR_STATS_SQL = """
+    SELECT r.point_id,
+           count(r.num_avg)                    AS n,
+           count(DISTINCT r.num_avg)           AS distinct_values,
+           min(r.num_avg)                      AS min,
+           max(r.num_avg)                      AS max,
+           avg(r.num_avg)                      AS mean,
+           var_samp(r.num_avg)                 AS variance,
+           min(r.bucket)                       AS first_bucket,
+           max(r.bucket)                       AS last_bucket
+      FROM {view} r
+     WHERE r.point_id = ANY(CAST(:pids AS uuid[]))
+       AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+       AND r.bucket >= :start AND r.bucket < :end
+       AND r.num_avg IS NOT NULL
+     GROUP BY r.point_id
+"""
+
+# The pairwise join. `a.point_id < b.point_id` is what makes each unordered pair
+# appear exactly once (r is symmetric, so the other half of the matrix is the
+# same numbers mirrored and computing it twice would only be slower).
+_CORR_PAIRS_SQL = """
+    WITH s AS (
+        SELECT r.point_id, r.bucket AS t, r.num_avg AS v
+          FROM {view} r
+         WHERE r.point_id = ANY(CAST(:pids AS uuid[]))
+           AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+           AND r.bucket >= :start AND r.bucket < :end
+           AND r.num_avg IS NOT NULL
+    )
+    SELECT a.point_id      AS a_id,
+           b.point_id      AS b_id,
+           count(*)        AS n,
+           min(a.t)        AS overlap_start,
+           max(a.t)        AS overlap_end,
+           corr(a.v, b.v)  AS r,
+           var_samp(a.v)   AS var_a,
+           var_samp(b.v)   AS var_b
+      FROM s a
+      JOIN s b ON b.t = a.t AND a.point_id < b.point_id
+     GROUP BY a.point_id, b.point_id
+"""
+
+# The aligned pairs themselves, for the two-series scatter. Same join, same
+# buckets — the picture and the coefficient are computed from one definition of
+# "overlapping", so they cannot disagree.
+_CORR_SCATTER_SQL = """
+    WITH s AS (
+        SELECT r.point_id, r.bucket AS t, r.num_avg AS v
+          FROM {view} r
+         WHERE r.point_id = ANY(CAST(:pids AS uuid[]))
+           AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+           AND r.bucket >= :start AND r.bucket < :end
+           AND r.num_avg IS NOT NULL
+    )
+    SELECT a.t AS t, a.v AS a, b.v AS b
+      FROM s a
+      JOIN s b ON b.t = a.t AND a.point_id = CAST(:a_id AS uuid) AND b.point_id = CAST(:b_id AS uuid)
+     ORDER BY a.t
+     LIMIT :limit
+"""
+
+
+async def correlation_stats(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    point_ids: list[uuid.UUID],
+    start: dt.datetime,
+    end: dt.datetime,
+    resolution: str,
+) -> dict[uuid.UUID, dict]:
+    """Per-series shape over the window: n, spread, and whether it is FROZEN.
+
+    A point with no row here reported nothing in the window; a point with
+    `distinct_values = 1` reported the same number every time, which is what
+    makes its correlation undefined rather than zero.
+    """
+    rows = _rows(
+        await db.execute(
+            text(_CORR_STATS_SQL.format(view=_VIEWS[resolution])),
+            {
+                "pids": [str(p) for p in point_ids],
+                "tenant": str(tenant) if tenant else None,
+                "start": start,
+                "end": end,
+            },
+        )
+    )
+    return {r["point_id"]: r for r in rows}
+
+
+async def correlation_pairs(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    point_ids: list[uuid.UUID],
+    start: dt.datetime,
+    end: dt.datetime,
+    resolution: str,
+) -> list[dict]:
+    """Pearson r per unordered pair, over the buckets both series actually filled."""
+    return _rows(
+        await db.execute(
+            text(_CORR_PAIRS_SQL.format(view=_VIEWS[resolution])),
+            {
+                "pids": [str(p) for p in point_ids],
+                "tenant": str(tenant) if tenant else None,
+                "start": start,
+                "end": end,
+            },
+        )
+    )
+
+
+async def correlation_scatter(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    a_id: uuid.UUID,
+    b_id: uuid.UUID,
+    start: dt.datetime,
+    end: dt.datetime,
+    resolution: str,
+) -> list[dict]:
+    """The aligned (bucket, a, b) triples behind one pair's coefficient."""
+    return _rows(
+        await db.execute(
+            text(_CORR_SCATTER_SQL.format(view=_VIEWS[resolution])),
+            {
+                "pids": [str(a_id), str(b_id)],
+                "tenant": str(tenant) if tenant else None,
+                "start": start,
+                "end": end,
+                "a_id": str(a_id),
+                "b_id": str(b_id),
+                "limit": MAX_SCATTER_SAMPLES,
+            },
+        )
+    )

@@ -84,7 +84,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
   },
   {
     // Building Intelligence — the IoT reading store, surfaced. The mode is no longer
-    // wholesale `soon`: three Sense tiles have real data behind them and are built.
+    // wholesale `soon`: most of it has real data behind it and is built.
     // The rest stay SOON, INDIVIDUALLY, and the rule that made the whole mode `soon`
     // still governs each one: never a fabricated destination or figure.
     //
@@ -92,16 +92,32 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     //   Portfolio          — every category that has reported, with real counts
     //   Energy & Metering  — category=energy · 18 devices / 260 points
     //   HVAC & Assets      — category=hvac   ·  7 devices /  36 points
+    //   Water              — category=water  ·  2 devices /  10 points
+    //   Insights & Corr.   — Pearson r between any two reporting series
     //
     // Left SOON, and why — each is a data gap, not a schedule:
     //   IAQ & Environment      ZERO environment points exist in the store. There is
     //                          nothing to render, and a stand-in would be a lie.
-    //   Ratings                A rating needs a benchmark and a unit. The wire carries
-    //                          neither (points.unit is empty for every point by design,
-    //                          contract §11/§12), so any score would be invented.
-    //   Insights & Correlation Correlation across categories needs to know what each
-    //                          point MEASURES. Nothing on the wire says, so a
-    //                          correlation would be between two unnamed numbers.
+    //   Ratings                See the Ratings note below — it is blocked on INPUTS
+    //                          that have no home on this platform yet, not on the
+    //                          readings.
+    //
+    // CORRECTED 2026-08-31 — the reason given here for Insights & Correlation was
+    // WRONG, and it is worth saying so rather than quietly deleting it. It read:
+    // "correlation across categories needs to know what each point MEASURES;
+    // nothing on the wire says, so a correlation would be between two unnamed
+    // numbers." Both halves are false:
+    //
+    //   • Pearson's r is DIMENSIONLESS — a covariance over two standard
+    //     deviations — so the units cancel and a missing `points.unit` does not
+    //     block it. (It does block a RATING: kWh/m²/yr is a unit statement.)
+    //   • The series are not unnamed. Every one carries `device_tag` and
+    //     `point_tag`, the SOURCE's own labels, stored as sent.
+    //
+    // What is genuinely forbidden is INTERPRETING the coefficient — naming a
+    // driver, ranking causes, saying "because". The screen says that on itself,
+    // shows n beside every r, prints which rollup answered, and renders a frozen
+    // series as UNDEFINED rather than as 0.00. So the tile is BUILT.
     //
     // MOVED OUT: Dashboards. The no-code builder was filed here under "Think" and
     // it is not a Building Intelligence feature — it is domain-agnostic, it already
@@ -117,9 +133,8 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     // console yet" on its card rather than hide it. The tile is the destination
     // that caption was waiting for.
     //
-    // This opens WATER and nothing else. IAQ, Ratings and Insights stay SOON
-    // because they have no data behind them, and a category having earned a tile
-    // is not an argument that they have.
+    // That change opened WATER and nothing else. IAQ still has no data behind
+    // it, and a category having earned a tile is not an argument that it has.
     //
     // Gating: `bi.read` (registered in core's permission catalog under "Building
     // Intelligence" and enforced by the reading-writer) + the `analytics` module
@@ -161,7 +176,9 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // told an operator looking for a door-access chart to look in the wrong
           // place. Its gating went with it, unchanged.
           { icon: "heroicons:star", label: "Ratings", soon: true },
-          { icon: "heroicons:chart-pie", label: "Insights & Correlation", soon: true },
+          // BUILT 2026-08-31. Same gating as every Sense tile — `bi.read` +
+          // `analytics` — so a caller without either sees SOON, not a 403.
+          { icon: "heroicons:chart-pie", label: "Insights & Correlation", href: "/bi/insights", tone: "att", perm: "bi.read", module: "analytics" },
         ],
       },
     ],

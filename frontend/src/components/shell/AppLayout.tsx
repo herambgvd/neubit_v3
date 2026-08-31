@@ -141,6 +141,7 @@ export default function AppLayout({ children }: any) {
     pathname === "/bi/energy" ||
     pathname === "/bi/hvac" ||
     pathname === "/bi/water" ||
+    pathname === "/bi/insights" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 

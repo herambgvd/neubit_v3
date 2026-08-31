@@ -40,6 +40,7 @@ from . import spec as widget_spec
 from .schemas import (
     ActivityBucket,
     AlertListResponse,
+    CorrelationResponse,
     DeviceListResponse,
     PointListResponse,
     SeriesResponse,
@@ -438,6 +439,251 @@ async def series(
             }
             for pid in allowed
         ],
+    )
+
+
+# ── Correlation ──────────────────────────────────────────────────────────────
+
+
+@bi_router.get(
+    "/correlation",
+    response_model=CorrelationResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def correlation(
+    db: Db,
+    scope: Caller,
+    point_id: Annotated[list[uuid.UUID], Query(min_length=2)],
+    start: dt.datetime | None = None,
+    end: dt.datetime | None = None,
+    resolution: str = "auto",
+    hours: Annotated[int, Query(ge=1, le=24 * 90)] = 168,
+) -> CorrelationResponse:
+    """Pearson correlation between measured series, pairwise, over aligned buckets.
+
+    This endpoint exists because the coefficient does NOT need a unit. r is a
+    ratio of a covariance to two standard deviations, so the units cancel; and
+    the series are not anonymous — each carries the source's own `device_tag` and
+    `point_tag`, which is what the response labels it with. What the number does
+    NOT license is an interpretation, and nothing here supplies one: no ranking
+    of causes, no "driver", no explanation.
+
+    Everything a reader needs in order to distrust an answer travels with it:
+
+    * `n` — the buckets that actually overlapped. A pair that never overlapped
+      is `status="no_overlap"` with `r=None`, never a zero.
+    * a FROZEN series (one distinct value) has zero variance, so every r
+      involving it is UNDEFINED — `status="undefined_frozen"`, naming the flat
+      side. Postgres `corr()` returns NULL there and this does not paper over it.
+    * `resolution` / `resolution_reason` — which rollup answered. There is no raw
+      path at all here, and `auto` is never silently downgraded.
+    """
+    tenant = _tenant(scope)
+    ids: list[uuid.UUID] = []
+    for p in point_id:
+        if p not in ids:
+            ids.append(p)
+    if len(ids) < 2:
+        raise ValidationError("correlation needs two distinct points")
+    if len(ids) > q.MAX_CORRELATION_POINTS:
+        raise ValidationError(
+            f"at most {q.MAX_CORRELATION_POINTS} series per request "
+            f"(asked for {len(ids)}); a wider matrix is unreadable before it is expensive"
+        )
+
+    start_at, end_at = _window(start, end, hours)
+
+    # RAW IS NOT AN OPTION. Correlating raw samples would correlate whatever
+    # happened to share a timestamp, which is a different question from the one
+    # this screen asks; and contract §5 puts analysis on the rollups.
+    if resolution == "auto":
+        resolution, reason = q.choose_resolution(start_at, end_at)
+    elif resolution in ("1m", "1h"):
+        _, reason = q.choose_resolution(start_at, end_at)
+        reason = (
+            "1-minute rollup (readings_1m); materialized-only, so the newest "
+            "~2 minutes may not be included yet"
+            if resolution == "1m"
+            else "1-hour rollup (readings_1h); real-time aggregate, current hour included"
+        )
+    else:
+        raise ValidationError(
+            "resolution must be one of: auto, 1m, 1h — correlation is computed on "
+            "the rollups, never on raw readings"
+        )
+
+    # Resolve labels FIRST; this is also the tenant check (see `series`). A point
+    # that does not come back is not the caller's and is dropped before a single
+    # reading is read.
+    meta = await q.point_meta(db, tenant, ids)
+    allowed = [p for p in ids if p in meta]
+    if len(allowed) < 2:
+        raise ValidationError("correlation needs two points visible to this caller")
+
+    stats = await q.correlation_stats(
+        db, tenant, point_ids=allowed, start=start_at, end=end_at, resolution=resolution
+    )
+    rows = await q.correlation_pairs(
+        db, tenant, point_ids=allowed, start=start_at, end=end_at, resolution=resolution
+    )
+
+    def _label(pid: uuid.UUID) -> str:
+        m = meta[pid]
+        return f"{m['device_tag'] or '?'} / {m['point_tag'] or '?'}"
+
+    series_out: list[dict] = []
+    frozen: set[uuid.UUID] = set()
+    silent: set[uuid.UUID] = set()
+    for pid in allowed:
+        st = stats.get(pid)
+        n = int(st["n"]) if st else 0
+        distinct = int(st["distinct_values"]) if st else 0
+        is_frozen = n > 0 and distinct <= 1
+        if is_frozen:
+            frozen.add(pid)
+        if n == 0:
+            silent.add(pid)
+        series_out.append(
+            {
+                "point_id": pid,
+                "point_tag": meta[pid]["point_tag"],
+                "device_tag": meta[pid]["device_tag"],
+                "category": meta[pid]["category"],
+                "unit": meta[pid]["unit"],
+                "buckets": n,
+                "distinct_values": distinct,
+                "frozen": is_frozen,
+                "min": st["min"] if st else None,
+                "max": st["max"] if st else None,
+                "mean": st["mean"] if st else None,
+                "first_bucket": st["first_bucket"] if st else None,
+                "last_bucket": st["last_bucket"] if st else None,
+            }
+        )
+
+    found = {(r["a_id"], r["b_id"]): r for r in rows}
+    pairs_out: list[dict] = []
+    for i, a in enumerate(allowed):
+        for b in allowed[i + 1 :]:
+            row = found.get((a, b)) or found.get((b, a))
+            n = int(row["n"]) if row else 0
+            flat = [p for p in (a, b) if p in frozen]
+
+            if n == 0:
+                # Absence renders as absence. Say WHICH kind of absence it is:
+                # a series that reported nothing at all is a different problem
+                # from two series that reported at times that never met.
+                quiet = [p for p in (a, b) if p in silent]
+                if quiet:
+                    why = (
+                        f"{' and '.join(_label(p) for p in quiet)} reported no numeric "
+                        f"bucket in this window"
+                    )
+                else:
+                    why = "the two series never filled the same bucket in this window"
+                pairs_out.append(
+                    {"a": a, "b": b, "n": 0, "r": None, "status": "no_overlap", "reason": why}
+                )
+                continue
+
+            if flat:
+                pairs_out.append(
+                    {
+                        "a": a,
+                        "b": b,
+                        "n": n,
+                        "r": None,
+                        "status": "undefined_frozen",
+                        "reason": (
+                            f"undefined — {' and '.join(_label(p) for p in flat)} "
+                            f"reported one value for all {n} overlapping buckets, so its "
+                            f"standard deviation is zero and Pearson's r has no value "
+                            f"(this is not a correlation of zero)"
+                        ),
+                        "overlap_start": row["overlap_start"],
+                        "overlap_end": row["overlap_end"],
+                    }
+                )
+                continue
+
+            if n < q.MIN_CORRELATION_BUCKETS:
+                pairs_out.append(
+                    {
+                        "a": a,
+                        "b": b,
+                        "n": n,
+                        "r": None,
+                        "status": "too_few",
+                        "reason": (
+                            f"only {n} overlapping bucket(s); below "
+                            f"{q.MIN_CORRELATION_BUCKETS} a coefficient is determined by "
+                            f"the arithmetic rather than by the building"
+                        ),
+                        "overlap_start": row["overlap_start"],
+                        "overlap_end": row["overlap_end"],
+                    }
+                )
+                continue
+
+            r_val = row["r"]
+            if r_val is None:
+                # corr() went NULL for a reason the distinct-value check did not
+                # catch (a series flat only across the OVERLAP, for instance).
+                pairs_out.append(
+                    {
+                        "a": a,
+                        "b": b,
+                        "n": n,
+                        "r": None,
+                        "status": "undefined_frozen",
+                        "reason": (
+                            f"undefined — one of the two series did not vary across the "
+                            f"{n} overlapping buckets, so its standard deviation is zero"
+                        ),
+                        "overlap_start": row["overlap_start"],
+                        "overlap_end": row["overlap_end"],
+                    }
+                )
+                continue
+
+            pairs_out.append(
+                {
+                    "a": a,
+                    "b": b,
+                    "n": n,
+                    "r": float(r_val),
+                    "status": "ok",
+                    "reason": f"Pearson r over {n} aligned {resolution} buckets",
+                    "overlap_start": row["overlap_start"],
+                    "overlap_end": row["overlap_end"],
+                }
+            )
+
+    samples: list[dict] = []
+    truncated = False
+    if len(allowed) == 2:
+        raw = await q.correlation_scatter(
+            db,
+            tenant,
+            a_id=allowed[0],
+            b_id=allowed[1],
+            start=start_at,
+            end=end_at,
+            resolution=resolution,
+        )
+        samples = [{"t": r["t"], "a": r["a"], "b": r["b"]} for r in raw]
+        truncated = len(samples) >= q.MAX_SCATTER_SAMPLES
+
+    return CorrelationResponse(
+        resolution=resolution,
+        resolution_reason=reason,
+        start=start_at,
+        end=end_at,
+        min_buckets=q.MIN_CORRELATION_BUCKETS,
+        series=series_out,
+        pairs=pairs_out,
+        samples=samples,
+        samples_truncated=truncated,
     )
 
 

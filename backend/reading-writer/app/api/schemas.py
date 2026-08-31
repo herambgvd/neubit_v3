@@ -319,3 +319,83 @@ class AlertListResponse(BaseModel):
 # `PlacementSummary` above STAYS. It is a READ over `points` on `/bi/summary`, and
 # it is still true whichever surface wrote the placement: placed / unplaced is a
 # fact about this store, not about a screen.
+
+
+# ── Correlation ──────────────────────────────────────────────────────────────
+#
+# Insights & Correlation. See `queries.correlation_pairs` for the arithmetic and
+# the four rules it enforces. What matters HERE is that every field a reader
+# needs in order to distrust a coefficient is on the response beside it:
+#
+#   • `n`                   how many buckets actually overlapped
+#   • `resolution`          which store answered, printed, never downgraded
+#   • `status` / `reason`   why a coefficient is absent, in words
+#   • `frozen`              a one-value series, whose r is UNDEFINED, not 0
+#
+# There is no `strength` word, no "significant" flag and no p-value. A p-value
+# over autocorrelated building time-series with an n the operator did not choose
+# would be a stronger claim than the data supports, and this file does not make
+# claims the store cannot back.
+
+
+class CorrelationSeries(BaseModel):
+    """One of the series being compared, and its shape over the window."""
+
+    point_id: uuid.UUID
+    point_tag: str | None
+    device_tag: str | None
+    category: str | None
+    # Passed through exactly as stored. Null on every point that no operator has
+    # confirmed a unit for — and never needed by the coefficient, which is
+    # dimensionless.
+    unit: str | None
+    # Buckets this series filled inside the window. 0 = it reported nothing.
+    buckets: int
+    distinct_values: int
+    # One distinct value over the whole window: the series never moved, so its
+    # standard deviation is 0 and every correlation involving it is undefined.
+    frozen: bool
+    min: float | None = None
+    max: float | None = None
+    mean: float | None = None
+    first_bucket: dt.datetime | None = None
+    last_bucket: dt.datetime | None = None
+
+
+class CorrelationPair(BaseModel):
+    """One unordered pair. `r` is present only when it is actually defined."""
+
+    a: uuid.UUID
+    b: uuid.UUID
+    # Overlapping buckets. Reported even when `r` is null, because "they never
+    # overlapped" and "they overlapped 400 times and one side was flat" are
+    # different facts and must not render the same.
+    n: int
+    r: float | None = None
+    # "ok" | "no_overlap" | "too_few" | "undefined_frozen"
+    status: str
+    # Plain words for the screen. Always set, including when status is "ok".
+    reason: str
+    overlap_start: dt.datetime | None = None
+    overlap_end: dt.datetime | None = None
+
+
+class ScatterSample(BaseModel):
+    t: dt.datetime
+    a: float
+    b: float
+
+
+class CorrelationResponse(BaseModel):
+    resolution: str
+    resolution_reason: str
+    start: dt.datetime
+    end: dt.datetime
+    min_buckets: int
+    series: list[CorrelationSeries]
+    pairs: list[CorrelationPair]
+    # Only when exactly two series were asked for: the aligned bucket pairs the
+    # coefficient was computed from, so the picture and the number come out of
+    # one definition of "overlapping".
+    samples: list[ScatterSample] = Field(default_factory=list)
+    samples_truncated: bool = False

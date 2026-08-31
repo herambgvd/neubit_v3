@@ -13,6 +13,7 @@
 //   GET /bi/devices   ?category&device_type&search&limit&offset
 //   GET /bi/points    ?device_id|device_tag&category&type&search&with_latest
 //   GET /bi/series    ?point_id(xN)&start&end&hours&resolution=auto|1m|1h|raw
+//   GET /bi/correlation ?point_id(x2..12)&hours&resolution=auto|1m|1h
 //
 // `/bi/devices` is also the floor-plan editor's IoT palette (see
 // lib/api/deviceInventory.ts): a device is placeable because it has reported,
@@ -109,6 +110,26 @@ export const bi = {
   // implying a precision it does not have.
   series: ({ point_id, hours, start, end, resolution }: any) =>
     unwrap(api.get(`${BI}/series${qs({ point_id, hours, start, end, resolution })}`)),
+
+  // CORRELATION. Two or more series, compared pairwise over the buckets they
+  // BOTH filled, read from the same rollups every chart reads.
+  //
+  // Why this needs no unit: Pearson's r is a covariance over two standard
+  // deviations, so units cancel — and the series are not anonymous, they carry
+  // the source's own `device_tag` / `point_tag`. What the coefficient does not
+  // license is an INTERPRETATION, and neither this client nor the server
+  // supplies one: no ranking of causes, no "driver", no explanation.
+  //
+  // Every field the screen needs in order to be honest comes back with it:
+  // `n` (buckets that actually overlapped), `resolution` (+ the reason, printed
+  // verbatim), and a `status`/`reason` per pair for the cases where r does not
+  // exist — a FROZEN series has zero variance and therefore an UNDEFINED r, not
+  // a zero. There is no `raw` resolution here at all.
+  //
+  // Passing exactly two point ids also returns the aligned (t, a, b) samples the
+  // coefficient was computed from, so the scatter and the number cannot disagree.
+  correlation: ({ point_id, hours, start, end, resolution }: any) =>
+    unwrap(api.get(`${BI}/correlation${qs({ point_id, hours, start, end, resolution })}`)),
 
   // ── PLACEMENT ─ NOT HERE ────────────────────────────────────────────────
   //
