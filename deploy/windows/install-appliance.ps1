@@ -157,7 +157,11 @@ nobody was watching while the log recorded "exit code 1".
 function Invoke-InSession {
     param(
         [Parameter(Mandatory)][string] $Script,
-        [string] $What = 'command'
+        [string] $What = 'command',
+        # For blocks whose output is a value this script reads rather than progress
+        # an operator should see. Without it an internal check answers the console
+        # with a bare 'ABSENT' between two unrelated steps.
+        [switch] $Quiet
     )
 
     $block = [scriptblock]::Create($Script)
@@ -172,7 +176,7 @@ function Invoke-InSession {
     try {
         $out = & $block 2>&1 | ForEach-Object {
             $line = $_.ToString()
-            Write-Host "    $line" -ForegroundColor DarkGray
+            if (-not $Quiet) { Write-Host "    $line" -ForegroundColor DarkGray }
             $line
         }
     }
@@ -185,7 +189,7 @@ function Invoke-InSession {
 <# Whether this account already has the distro. Asked as this account, because
    that is now the only account that can have it — see the header. #>
 function Test-DistroPresent {
-    $out = Invoke-InSession -What 'distro check' -Script @'
+    $out = Invoke-InSession -What 'distro check' -Quiet -Script @'
     $names = (wsl.exe --list --quiet) -replace "`0", '' -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     if ($names -contains 'neubit-vms') { 'PRESENT' } else { 'ABSENT' }
 '@
@@ -283,10 +287,17 @@ function Set-MirroredNetworking {
     # the file claims the LAN is open — so on those machines this writes what is
     # actually true instead, and says so out loud.
     #
-    # localhostForwarding is what a STANDALONE install runs on: the appliance and
-    # the desktop shell are the same box, the shell asks 127.0.0.1, and NAT
-    # forwards it. It defaults to true; it is pinned here so a pre-existing
-    # .wslconfig that turned it off cannot take the console down.
+    # localhostForwarding belongs ONLY to the NAT branch. It is what a standalone
+    # install runs on there: the appliance and the shell are the same box, the shell
+    # asks 127.0.0.1, and NAT forwards it. Under mirrored networking it means
+    # nothing — the distro is on the host's own stack — and current WSL says so on
+    # every single invocation:
+    #
+    #     wsl: The wsl2.localhostForwarding setting has no effect when using
+    #          mirrored networking mode
+    #
+    # on stderr, where it cost a 2.9 GB import. Writing a key that does nothing is
+    # cheap; writing one the tool argues with on every call is not.
     $cfg = Join-Path $env:USERPROFILE '.wslconfig'
     $build = [Environment]::OSVersion.Version.Build
     $canMirror = $build -ge 22621
@@ -301,9 +312,7 @@ function Set-MirroredNetworking {
 # connection refused, with nothing in any log to explain it.
 [wsl2]
 networkingMode=mirrored
-localhostForwarding=true
 '@
-        $marker = 'networkingMode\s*=\s*mirrored'
     } else {
         $desired = @'
 # Written by the Neubit VMS installer.
@@ -319,10 +328,14 @@ localhostForwarding=true
 [wsl2]
 localhostForwarding=true
 '@
-        $marker = 'localhostForwarding\s*=\s*true'
     }
 
-    if ((Test-Path -LiteralPath $cfg) -and ((Get-Content -LiteralPath $cfg -Raw) -match $marker)) {
+    # Compare the whole file, not a marker line. A marker match said "already
+    # configured" for any file that merely mentioned the right key — including one
+    # this installer wrote in an older shape, which is how a machine kept a
+    # .wslconfig that made wsl.exe complain on every call.
+    $existing = if (Test-Path -LiteralPath $cfg) { (Get-Content -LiteralPath $cfg -Raw) } else { '' }
+    if ($existing.Trim() -eq $desired.Trim()) {
         Write-Ok "networking already configured for $OwnerAccount ($cfg)"
     } else {
         Set-Content -LiteralPath $cfg -Value $desired -Encoding ascii
@@ -535,7 +548,12 @@ if ($present -and -not $Force) {
 
 $payloadWsl = $Payload
 $importScript = @"
-    `$ErrorActionPreference = 'Stop'
+    # NOT 'Stop'. wsl.exe writes ordinary notices to stderr, PowerShell 5.1 wraps
+    # each one in a NativeCommandError, and under 'Stop' the first is terminating —
+    # so a warning about an unrelated .wslconfig key aborted a 2.9 GB import that
+    # had not started yet. The exit code below is what decides, as it should be for
+    # a native program. Same reasoning as the prerequisite check above.
+    `$ErrorActionPreference = 'Continue'
     `$names = (wsl.exe --list --quiet) -replace "``0", '' -split "``r?``n" | ForEach-Object { `$_.Trim() }
     if (`$names -contains '$DistroName') {
         wsl.exe --unregister $DistroName
