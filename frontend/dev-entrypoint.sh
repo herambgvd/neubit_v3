@@ -82,6 +82,45 @@ fi
 # cache away and start it once more. A cache is by definition disposable; the
 # cost of being wrong is one slow compile, and the cost of not doing it is a dev
 # server that is dead until somebody remembers this failure mode.
+# A .next produced by a DIFFERENT BUILDER than the one about to run.
+#
+# THE FAILURE THIS EXISTS FOR: the dev server starts, reports healthy, and
+# serves every page 200 — but a specific route's client chunk is never emitted,
+# so the browser fetches /_next/static/chunks/app/(app)/<route>/page.js, gets a
+# 404, and throws ChunkLoadError. Next's error boundary then reloads, which
+# fetches the same missing chunk again. The page sits in a reload loop while
+# every health check and every log line says the server is fine.
+#
+# It happened because this volume accumulated three builders' output at once: a
+# production build (BUILD_ID, standalone/, hashed static/chunks names), leftover
+# Turbopack artifacts (server/chunks/[turbopack]_runtime.js), and the current
+# webpack dev tree. Two routes never recompiled and nothing said so.
+#
+# None of the checks above catch it: node_modules is fine, and the dev server
+# does not die — it is the SILENT half of this class of failure, which is why it
+# gets its own check rather than being folded into the crash-retry below.
+#
+# Clearing .next costs one slow first compile. Leaving it costs a dev server
+# that looks healthy and cannot be used.
+mixed=""
+if [ -f .next/BUILD_ID ] || [ -d .next/standalone ]; then
+  mixed="a production build (BUILD_ID/standalone) — this is a dev container"
+else
+  case "$*" in
+    *--webpack*)
+      if [ -n "$(find .next -name '*turbopack*' -print -quit 2>/dev/null)" ]; then
+        mixed="Turbopack output, but this container runs webpack"
+      fi
+      ;;
+  esac
+fi
+if [ -n "$mixed" ]; then
+  echo "[dev-entrypoint] CLEARING .next: it holds $mixed"
+  # The directory is a volume mount point and cannot be removed ("Resource
+  # busy"), so empty it rather than delete it.
+  find .next -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+fi
+
 if [ "${NEUBIT_RESET_NEXT_CACHE:-0}" = "1" ]; then
   echo "[dev-entrypoint] NEUBIT_RESET_NEXT_CACHE=1 — clearing .next"
   rm -rf .next

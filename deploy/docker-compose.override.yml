@@ -115,6 +115,29 @@ services:
       # and the entrypoint above usually means nobody has to.
       - frontend_node_modules:/app/node_modules
       - frontend_next:/app/.next
+      #
+      # ADDING A VOLUME HERE NEEDS `--force-recreate`, NOT `restart`.
+      # `docker compose restart` reuses the existing container, which keeps the
+      # mount set it was CREATED with. Both volumes above sat in this file while
+      # the running container had only the `../frontend:/app` bind — `docker
+      # inspect` listed them, but `/proc/mounts` inside the container did not,
+      # and a write to /app/.next landed in the HOST checkout.
+      #
+      # That is what put a host-side production build (BUILD_ID, standalone/,
+      # hashed chunk names) and stale Turbopack output into the dev server's
+      # .next. Two routes then never emitted a client chunk, the browser 404'd
+      # on /_next/static/chunks/app/(app)/<route>/page.js, and Next's error
+      # boundary reloaded into the same missing chunk — a reload loop while
+      # every health check stayed green.
+      #
+      # It also meant the container and the host shared ONE node_modules, so
+      # the container's `npm ci` overwrote the host's darwin binaries with
+      # linux-musl ones and any host-side `npm install` broke the container.
+      # The entrypoint's "native addons are not ELF" repair was fighting that,
+      # not a corrupt install.
+      #
+      # To check: `docker exec <c> cat /proc/mounts | grep /app` must show
+      # /app/.next and /app/node_modules on their own devices, not just /app.
 
   admin-frontend:
     build:
