@@ -99,6 +99,74 @@ class FloorRow(BaseModel):
     last_seen_at: dt.datetime | None
 
 
+class SiteCategoryCount(BaseModel):
+    """One category's device/point counts within a site (or the unplaced row)."""
+
+    category: str | None
+    devices: int
+    points: int
+
+
+class SiteAlerts(BaseModel):
+    """Alert volume attributed to one site over a bounded window.
+
+    Attribution is through the DEVICE's placement (an alert carries no site of
+    its own); an alert on an unplaced or unknown device counts to the unplaced
+    pseudo-row, never to a site it was not pinned on. `by_severity` keys are the
+    gateway's own vocabulary (`critical` / `warning` / `info`), untranslated.
+    """
+
+    hours: int
+    total: int = 0
+    by_severity: dict[str, int] = Field(default_factory=dict)
+
+
+class SiteKwh(BaseModel):
+    """The measured-consumption slot, gated on operator-confirmed kWh units.
+
+    `status`:
+      * `blocked`  — zero confirmed registers (this deployment's state); the
+        slot renders "—" with `reason` naming the fix, never 0 kWh.
+      * `no_data`  — registers confirmed but none produced a usable delta.
+      * `measured` — `consumption_kwh` is a real `last − first` sum over the
+        confirmed registers, with the double-counting caveat in `reason`.
+    """
+
+    confirmed_points: int
+    window_hours: int
+    consumption_kwh: float | None = None
+    status: str
+    reason: str
+
+
+class SiteRow(BaseModel):
+    """One leaderboard row: a site from the `site_facts` mirror — or the
+    unplaced pseudo-row (`site_id: null`), which is a real state, not filler.
+
+    `score` is NULL until the metric registry defines one; the field exists so
+    the screen reads a SLOT rather than hardcoding a dash, and a future score
+    lights it up without a frontend change. `city` / `gross_floor_area_sqm`
+    are the mirror's facts and NULL means NOT RECORDED.
+    """
+
+    site_id: uuid.UUID | None
+    site_name: str | None
+    placed: bool
+    is_active: bool | None = None
+    gross_floor_area_sqm: float | None = None
+    city: str | None = None
+    occupancy: int | None = None
+    devices: int
+    points: int
+    points_reporting: int
+    last_seen_at: dt.datetime | None = None
+    categories: list[SiteCategoryCount] = Field(default_factory=list)
+    alerts: SiteAlerts
+    score: float | None = None
+    score_reason: str | None = None
+    kwh: SiteKwh
+
+
 class SummaryResponse(BaseModel):
     tenant_id: uuid.UUID | None
     generated_at: dt.datetime
@@ -124,6 +192,10 @@ class SummaryResponse(BaseModel):
     # floor that does not exist.
     placement: PlacementSummary | None = None
     floors: list[FloorRow] = Field(default_factory=list)
+    # The leaderboard's row set: every site the `site_facts` mirror carries plus
+    # the unplaced pseudo-row. Shaped for N sites — one site is simply N=1.
+    sites: list[SiteRow] = Field(default_factory=list)
+    site_alert_hours: int = 24
 
 
 class DeviceRow(BaseModel):

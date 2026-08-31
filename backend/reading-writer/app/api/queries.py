@@ -198,6 +198,7 @@ async def summary(db: AsyncSession, tenant: uuid.UUID | None) -> dict:
     retired = _rows(await db.execute(_RETIRED_TOTALS_SQL, nofresh))
     placed = _rows(await db.execute(_PLACEMENT_SQL, nofresh))
     floors = _rows(await db.execute(_BY_FLOOR_SQL, params))
+    sites = await sites_breakdown(db, tenant, params, nofresh)
 
     by_cat: dict[object, list[dict]] = {}
     for t in types:
@@ -245,6 +246,10 @@ async def summary(db: AsyncSession, tenant: uuid.UUID | None) -> dict:
         # because a floor-wise surface with no rows looks broken while "0 of 314
         # points are placed" is a fact.
         "placement": _placement(placed[0] if placed else {}),
+        # The leaderboard's row set: every site the `site_facts` mirror carries,
+        # plus the unplaced pseudo-row. Shaped for N sites; one site is just N=1.
+        "sites": sites,
+        "site_alert_hours": SITE_ALERT_HOURS,
         "floors": [
             {
                 "floor_id": f["floor_id"],
@@ -329,6 +334,252 @@ _BY_FLOOR_SQL = text(
      ORDER BY (p.floor_id IS NULL), count(*) DESC
     """
 )
+
+
+# ── Sites ────────────────────────────────────────────────────────────────────
+#
+# The per-SITE breakdown behind the Portfolio leaderboard. The row set is the
+# `site_facts` mirror (a site exists on the leaderboard because core published
+# it, whether or not anything is placed there) PLUS one "unplaced" pseudo-row for
+# the points no site owns — same rule as the floor list: the points nothing has
+# placed are a real group, and folding them into a site would misstate both.
+#
+# What is DELIBERATELY NOT here:
+#   • No score. Nothing on this platform defines one yet (the metric registry
+#     will); the field is present and NULL so the screen reads a slot, not a
+#     hardcoded dash.
+#   • No derived consumption unless an operator has confirmed kWh registers at
+#     the site — see the `kwh` block below.
+
+# The alert window for the per-site severity counts. Matches the Portfolio fault
+# queue so the leaderboard chip and the queue answer about the same stretch.
+SITE_ALERT_HOURS = 24
+
+_BY_SITE_SQL = text(
+    """
+    SELECT p.site_id                                       AS site_id,
+           max(p.site_name)                                AS site_name,
+           count(DISTINCT coalesce(p.device_id::text, p.device_tag)) AS devices,
+           count(*)                                        AS points,
+           count(*) FILTER (
+               WHERE p.last_seen_at >= now() - make_interval(mins => :fresh)
+           )                                               AS points_reporting,
+           max(p.last_seen_at)                             AS last_seen_at,
+           count(*) FILTER (
+               WHERE p.unit_source = 'operator' AND lower(btrim(p.unit)) = 'kwh'
+           )                                               AS kwh_points
+      FROM points p
+     WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND """ + LIVE_POINT + """
+     GROUP BY p.site_id
+    """
+)
+
+_SITE_CATEGORIES_SQL = text(
+    """
+    SELECT p.site_id                                       AS site_id,
+           p.category                                      AS category,
+           count(DISTINCT coalesce(p.device_id::text, p.device_tag)) AS devices,
+           count(*)                                        AS points
+      FROM points p
+     WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND """ + LIVE_POINT + """
+     GROUP BY p.site_id, p.category
+     ORDER BY count(*) DESC
+    """
+)
+
+# Alerts carry no site of their own; a device's placement is the only anchor.
+# The join is through the DISTINCT device→site map from `points` (placement is a
+# device-level statement, so every point of a device agrees). An alert whose
+# device is unplaced — or that carries no device_id at all — lands in the
+# NULL-site bucket, never in a site it was not placed on.
+_SITE_ALERTS_SQL = text(
+    """
+    SELECT ds.site_id                                      AS site_id,
+           a.severity                                      AS severity,
+           count(*)                                        AS alerts
+      FROM iot_alerts a
+      LEFT JOIN (
+           SELECT DISTINCT p.device_id, p.site_id
+             FROM points p
+            WHERE p.device_id IS NOT NULL AND p.site_id IS NOT NULL
+      ) ds ON ds.device_id = a.device_id
+     WHERE a.ts >= now() - make_interval(hours => :alert_hours)
+       AND (CAST(:tenant AS uuid) IS NULL OR a.tenant_id = CAST(:tenant AS uuid))
+     GROUP BY ds.site_id, a.severity
+    """
+)
+
+# `SELECT f.*` on purpose: the mirror is another agent's surface and is about to
+# grow columns (city/location among them). Reading whatever is there and picking
+# keys defensively means a new fact flows through without an edit here — and an
+# absent one reads as NULL, which renders as "—" with its reason, never as a
+# stand-in.
+_SITE_FACTS_SQL = text(
+    """
+    SELECT f.*
+      FROM site_facts f
+     WHERE (CAST(:tenant AS uuid) IS NULL OR f.tenant_id = CAST(:tenant AS uuid))
+     ORDER BY f.site_name NULLS LAST
+    """
+)
+
+
+def _site_kwh(kwh_points: int, consumption: float | None) -> dict:
+    """The measured-consumption slot for one site, gated on confirmed units.
+
+    ZERO confirmed registers is the state this deployment is in, and it renders
+    as BLOCKED with the fix named — never as 0 kWh, which would be a measurement
+    nobody made.
+    """
+    if kwh_points <= 0:
+        return {
+            "confirmed_points": 0,
+            "window_hours": SITE_ALERT_HOURS,
+            "consumption_kwh": None,
+            "status": "blocked",
+            "reason": "no kWh register confirmed — confirm units in Ratings",
+        }
+    if consumption is None:
+        return {
+            "confirmed_points": kwh_points,
+            "window_hours": SITE_ALERT_HOURS,
+            "consumption_kwh": None,
+            "status": "no_data",
+            "reason": (
+                f"{kwh_points} confirmed kWh register(s), but no usable hourly "
+                "bucket in the window (no data, or every register decreased)"
+            ),
+        }
+    return {
+        "confirmed_points": kwh_points,
+        "window_hours": SITE_ALERT_HOURS,
+        "consumption_kwh": consumption,
+        "status": "measured",
+        "reason": (
+            f"sum of {kwh_points} operator-confirmed kWh register(s), last−first "
+            f"per register over {SITE_ALERT_HOURS}h. NOTE: a sum over every "
+            "confirmed register can double-count an incomer against its own "
+            "sub-meters; the Ratings screen takes the operator's meter list "
+            "for the authoritative figure"
+        ),
+    }
+
+
+async def _site_consumption(
+    db: AsyncSession, tenant: uuid.UUID | None, site_id
+) -> float | None:
+    """Measured kWh over the site's confirmed registers, from the hourly rollup.
+
+    Reuses the Ratings arithmetic (`last − first` with the monotonic guard) so
+    this figure and a rating computed over the same registers cannot disagree.
+    Returns None when no register produced a usable delta.
+    """
+    # Lazy import: `rating` imports from this module at load time.
+    from . import rating as rt
+
+    meters = await rt.candidate_meters(db, tenant, site_id)
+    if not meters:
+        return None
+    end = dt.datetime.now(dt.timezone.utc)
+    start = end - dt.timedelta(hours=SITE_ALERT_HOURS)
+    regs = await rt.registers(
+        db, tenant, point_ids=[m["point_id"] for m in meters], start=start, end=end
+    )
+    total: float | None = None
+    for m in meters:
+        row = rt.meter_row(m, regs.get(m["point_id"]))
+        if row["status"] == "ok" and row["consumption_kwh"] is not None:
+            total = (total or 0.0) + float(row["consumption_kwh"])
+    return total
+
+
+async def sites_breakdown(
+    db: AsyncSession, tenant: uuid.UUID | None, params: dict, nofresh: dict
+) -> list[dict]:
+    facts = _rows(await db.execute(_SITE_FACTS_SQL, {"tenant": params["tenant"]}))
+    by_site = {r["site_id"]: r for r in _rows(await db.execute(_BY_SITE_SQL, params))}
+    cats = _rows(await db.execute(_SITE_CATEGORIES_SQL, nofresh))
+    alerts = _rows(
+        await db.execute(
+            _SITE_ALERTS_SQL,
+            {"tenant": params["tenant"], "alert_hours": SITE_ALERT_HOURS},
+        )
+    )
+
+    cats_by_site: dict[object, list[dict]] = {}
+    for c in cats:
+        cats_by_site.setdefault(c["site_id"], []).append(
+            {
+                "category": c["category"],
+                "devices": int(c["devices"]),
+                "points": int(c["points"]),
+            }
+        )
+    alerts_by_site: dict[object, dict] = {}
+    for a in alerts:
+        bucket = alerts_by_site.setdefault(a["site_id"], {"total": 0, "by_severity": {}})
+        sev = a["severity"] or "unknown"
+        bucket["by_severity"][sev] = bucket["by_severity"].get(sev, 0) + int(a["alerts"])
+        bucket["total"] += int(a["alerts"])
+
+    def row(site_id, fact: dict | None) -> dict:
+        agg = by_site.get(site_id) or {}
+        kwh_points = int(agg.get("kwh_points") or 0)
+        fact = fact or {}
+        return {
+            "site_id": site_id,
+            "site_name": fact.get("site_name") or agg.get("site_name"),
+            "placed": site_id is not None,
+            "is_active": fact.get("is_active"),
+            # Facts the mirror may or may not carry yet. `.get` on purpose —
+            # an absent column is NULL, and NULL renders as "—" with its reason.
+            "gross_floor_area_sqm": fact.get("gross_floor_area_sqm"),
+            "city": fact.get("city") or fact.get("location"),
+            "occupancy": fact.get("occupancy"),
+            "devices": int(agg.get("devices") or 0),
+            "points": int(agg.get("points") or 0),
+            "points_reporting": int(agg.get("points_reporting") or 0),
+            "last_seen_at": agg.get("last_seen_at"),
+            "categories": cats_by_site.get(site_id, []),
+            "alerts": {
+                "hours": SITE_ALERT_HOURS,
+                "total": alerts_by_site.get(site_id, {}).get("total", 0),
+                "by_severity": alerts_by_site.get(site_id, {}).get("by_severity", {}),
+            },
+            # NULL until the metric registry defines one. The screen reads this
+            # SLOT — it does not hardcode the dash — so a registry-supplied
+            # score lights up without a frontend release.
+            "score": None,
+            "score_reason": "no score defined — metric registry pending",
+            "kwh": _site_kwh(kwh_points, None),
+        }
+
+    out = [row(f["site_id"], f) for f in facts]
+    # Sites the point store knows that the mirror does not (should not happen —
+    # placement writes come from core, which also feeds the mirror — but a row
+    # silently dropped from the leaderboard would hide real devices).
+    known = {f["site_id"] for f in facts}
+    for sid, agg in by_site.items():
+        if sid is not None and sid not in known:
+            out.append(row(sid, None))
+    # The unplaced pseudo-row, always last and always present when it is
+    # non-empty — "121 points no site owns" is a fact, not clutter.
+    unplaced = by_site.get(None)
+    if unplaced and int(unplaced.get("points") or 0) > 0:
+        out.append(row(None, None))
+
+    # Fill measured consumption only where an operator confirmed registers —
+    # everywhere else the blocked state from `row()` stands.
+    for r in out:
+        if r["site_id"] is None:
+            continue
+        kwh_points = int((by_site.get(r["site_id"]) or {}).get("kwh_points") or 0)
+        if kwh_points > 0:
+            consumption = await _site_consumption(db, tenant, r["site_id"])
+            r["kwh"] = _site_kwh(kwh_points, consumption)
+    return out
 
 
 _ACTIVITY_SQL = text(
@@ -446,8 +697,15 @@ async def devices(
     limit: int,
     offset: int,
     include_retired: bool = False,
+    site_id: uuid.UUID | None = None,
 ) -> tuple[int, list[dict]]:
     having, search_sql, extra = _device_filters(category, device_type, search)
+    # Site scope (Portfolio drill-down). Placement is a DEVICE-level statement
+    # (every point of a device carries its pin), so a plain WHERE on the point
+    # rows cannot split a device the way a category filter would.
+    if site_id is not None:
+        search_sql += " AND p.site_id = :site_id"
+        extra["site_id"] = str(site_id)
     base = _DEVICES_SQL.format(
         search=search_sql, having=having, live=_live(include_retired)
     )
@@ -514,6 +772,7 @@ async def points(
     offset: int,
     with_latest: bool,
     include_retired: bool = False,
+    site_id: uuid.UUID | None = None,
 ) -> tuple[int, list[dict]]:
     filters: list[str] = []
     params: dict = {
@@ -535,6 +794,9 @@ async def points(
     if point_type:
         filters.append("AND p.type = :point_type")
         params["point_type"] = point_type
+    if site_id is not None:
+        filters.append("AND p.site_id = :site_id")
+        params["site_id"] = str(site_id)
     if search:
         filters.append("AND (p.point_tag ILIKE :search OR p.device_tag ILIKE :search)")
         params["search"] = f"%{search}%"

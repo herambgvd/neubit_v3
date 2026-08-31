@@ -203,6 +203,7 @@ async def devices(
     category: str | None = None,
     device_type: str | None = None,
     search: str | None = None,
+    site_id: uuid.UUID | None = None,
     include_retired: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -222,6 +223,10 @@ async def devices(
         limit=limit,
         offset=offset,
         include_retired=include_retired,
+        # Portfolio drill-down: scope to the points placed at one site. There is
+        # no "unplaced" sentinel here — the unplaced row links to the floor
+        # plan, because its fix is placement, not a filtered console.
+        site_id=site_id,
     )
     return DeviceListResponse(total=total, items=rows)
 
@@ -242,6 +247,7 @@ async def points(
     category: str | None = None,
     type: str | None = None,
     search: str | None = None,
+    site_id: uuid.UUID | None = None,
     with_latest: bool = True,
     include_retired: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
@@ -271,6 +277,7 @@ async def points(
         offset=offset,
         with_latest=with_latest,
         include_retired=include_retired,
+        site_id=site_id,
     )
     return PointListResponse(
         total=total,
