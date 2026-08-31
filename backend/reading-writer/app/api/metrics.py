@@ -109,6 +109,7 @@ async def evaluate_metric(
     scope: Caller,
     metric: str,
     device_id: uuid.UUID | None = None,
+    site_id: uuid.UUID | None = None,
     start: dt.datetime | None = None,
     end: dt.datetime | None = None,
     hours: Annotated[int | None, Query(ge=1, le=24 * 90)] = None,
@@ -117,9 +118,13 @@ async def evaluate_metric(
     """Evaluate a metric over a window, showing the working.
 
     Reads the ROLLUPS only and states which; a guard failure comes back as a
-    structured `{status, reason}` per device — never a 0, never a null that
+    structured `{status, reason}` per item — never a 0, never a null that
     renders as one. The definition VERSION used is the one effective at the
     window's end, so an old window keeps the formula it was measured under.
+
+    Scope decides the item shape: a device-scope metric answers per device
+    (`device_id` pins one; `site_id` narrows the fan-out to one site's
+    devices); a site-scope metric answers per site (`site_id` pins one).
     """
     now = dt.datetime.now(dt.timezone.utc)
     if start is None and end is None:
@@ -133,7 +138,8 @@ async def evaluate_metric(
     try:
         return await evaluator.evaluate(
             db, _tenant(scope), metric,
-            device_id=device_id, start=start, end=end, resolution=resolution,
+            device_id=device_id, site_id=site_id,
+            start=start, end=end, resolution=resolution,
         )
     except evaluator.EvaluationError as exc:
         raise ValidationError(str(exc)) from exc

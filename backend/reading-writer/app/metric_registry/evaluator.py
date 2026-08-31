@@ -18,8 +18,27 @@ never a null that renders as 0, never infinity. The statuses:
     undefined_frozen    an input has ONE distinct value over the window — zero
                         variance — and the definition demands `non_frozen`.
                         Names the flat input (Insights' discipline, inherited).
+    missing_fact        a site-fact input (area, occupancy) is NOT RECORDED —
+                        the refusal names the fact and where it is recorded
+    no_benchmark        the formula grades against a benchmark standard and one
+                        of ITS inputs is missing: no standard seeded, or the
+                        site's climate zone / AC-share category not set
     blocked             arithmetic refused (division by zero) or a composite
-                        component refused
+                        component refused — a composite of a refusal is a
+                        refusal, and the item carries EVERY component's own
+                        {status, reason} so a dash can explain itself
+
+SITE SCOPE (contract §21). `applies_to.scope: "site"` evaluates per SITE over
+the `site_facts` mirror instead of per device. Inputs may then be site facts
+(`source: "site_fact"`) or site-wide role bindings; aggregation `consumption`
+is `last − first` per bound register (monotonic-guarded, a decreased register
+is excluded and reported, exactly `/bi/rating`'s arithmetic), summed across
+the role's registers. `annualize()` in a consumption formula scales over the
+COVERED span (first→last bucket), not the requested window — the same
+definition `/bi/rating` uses, so the two paths cannot disagree. A composite at
+site scope fans device-scope components out over the site's devices and takes
+the arithmetic mean of the ok values; ANY device refusal refuses the
+component, naming each device's own status.
 
 READS ROLLUPS ONLY. `resolution=auto` picks 1m/1h exactly as the charts do and
 the choice travels back with its reason; `raw` is refused by name, not
@@ -96,6 +115,8 @@ _DEVICES_SQL = """
 _AGG_SQL = """
     SELECT point_id,
            count(*)                                        AS buckets,
+           min(bucket)                                     AS first_bucket,
+           max(bucket)                                     AS last_bucket,
            sum(sample_count)                               AS samples,
            -- The SAMPLE-weighted mean, sum/count — the same definition the
            -- dataset registry's `ratio` aggregate uses, so the registry and a
@@ -134,7 +155,9 @@ _BUCKET_COL = {
 }
 
 
-async def _devices_for(db: AsyncSession, tenant, applies_to: dict) -> list[dict]:
+async def _devices_for(
+    db: AsyncSession, tenant, applies_to: dict, *, site_id=None
+) -> list[dict]:
     where, params = "", {}
     if applies_to.get("category"):
         where += " AND p.category = :category"
@@ -142,6 +165,9 @@ async def _devices_for(db: AsyncSession, tenant, applies_to: dict) -> list[dict]
     if applies_to.get("device_type"):
         where += " AND p.device_type = :device_type"
         params["device_type"] = applies_to["device_type"]
+    if site_id is not None:
+        where += " AND p.site_id = CAST(:site AS uuid)"
+        params["site"] = str(site_id)
     sql = _DEVICES_SQL.format(live=LIVE_POINT, filters=where)
     return _rows(
         await db.execute(
@@ -161,38 +187,59 @@ async def evaluate(
     tenant: uuid.UUID | None,
     key: str,
     *,
-    device_id: uuid.UUID | None,
+    device_id: uuid.UUID | None = None,
+    site_id: uuid.UUID | None = None,
     start: dt.datetime,
     end: dt.datetime,
     resolution: str = "auto",
     _depth: int = 0,
 ) -> dict:
-    """Evaluate `key` over [start, end) for one device or for every device the
-    definition applies to. Top-level shape is always the same; each device's
-    outcome is its own `{status, ...}`."""
+    """Evaluate `key` over [start, end) — per device (scope "device", the §20
+    shape) or per site (scope "site"). Top-level shape is always the same;
+    each item's outcome is its own `{status, ...}`."""
     defn = await registry.effective(db, tenant, key, end)
     if defn is None:
         raise EvaluationError(f"no metric `{key}` is effective at {end.isoformat()}")
     res, res_reason = pick_resolution(start, end, resolution)
     table = "readings_1m" if res == "1m" else "readings_1h"
-
-    if device_id is not None:
-        devices = [{"device_id": device_id, "device_tag": None}]
-    else:
-        devices = await _devices_for(db, tenant, defn.get("applies_to") or {})
+    scope = (defn.get("applies_to") or {}).get("scope", "device")
 
     items = []
-    for d in devices:
-        if defn["kind"] == "composite":
-            item = await _evaluate_composite(
-                db, tenant, defn, d["device_id"], start, end, res, _depth
-            )
+    if scope == "site":
+        sites = await _sites_for(db, tenant, site_id)
+        if site_id is not None and not sites:
+            raise EvaluationError("no such site in this tenant's reporting store")
+        for site in sites:
+            if defn["kind"] == "composite":
+                item = await _evaluate_site_composite(
+                    db, tenant, defn, site, start, end, res, _depth
+                )
+            else:
+                item = await _evaluate_site_formula(
+                    db, tenant, defn, site, start, end, table
+                )
+            item["site_id"] = str(site["site_id"])
+            if site.get("site_name"):
+                item["site_name"] = site["site_name"]
+            items.append(item)
+    else:
+        if device_id is not None:
+            devices = [{"device_id": device_id, "device_tag": None}]
         else:
-            item = await _evaluate_formula(db, tenant, defn, d["device_id"], start, end, table)
-        item["device_id"] = str(d["device_id"])
-        if d.get("device_tag"):
-            item["device_tag"] = d["device_tag"]
-        items.append(item)
+            devices = await _devices_for(
+                db, tenant, defn.get("applies_to") or {}, site_id=site_id
+            )
+        for d in devices:
+            if defn["kind"] == "composite":
+                item = await _evaluate_composite(
+                    db, tenant, defn, d["device_id"], start, end, res, _depth
+                )
+            else:
+                item = await _evaluate_formula(db, tenant, defn, d["device_id"], start, end, table)
+            item["device_id"] = str(d["device_id"])
+            if d.get("device_tag"):
+                item["device_tag"] = d["device_tag"]
+            items.append(item)
 
     return {
         "metric": defn["key"],
@@ -435,7 +482,6 @@ async def _evaluate_composite(
     if depth >= _MAX_COMPOSITE_DEPTH:
         return _refusal("blocked", f"composite nesting deeper than {_MAX_COMPOSITE_DEPTH} is refused")
     parts = []
-    total = 0.0
     for c in defn["components"]:
         sub = await evaluate(
             db, tenant, c["metric"],
@@ -443,21 +489,37 @@ async def _evaluate_composite(
             _depth=depth + 1,
         )
         item = sub["items"][0]
-        if item["status"] != "ok":
-            return _refusal(
-                "blocked",
-                f"component `{c['metric']}` did not evaluate "
-                f"({item['status']}: {item['reason']}) — a composite of a refusal is a refusal",
-            )
-        total += float(c["weight"]) * float(item["value"])
         parts.append(
             {
                 "metric": c["metric"],
                 "version": sub["version"],
                 "weight": c["weight"],
-                "value": item["value"],
+                "status": item["status"],
+                "value": item.get("value"),
+                "reason": item.get("reason"),
             }
         )
+    return _compose(defn, parts)
+
+
+def _compose(defn: dict, parts: list[dict]) -> dict:
+    """Weighted sum when EVERY component evaluated; a structured refusal that
+    still carries every component's own {status, reason} otherwise — a
+    composite of a refusal is a refusal, and the dash it renders as must be
+    able to explain itself input by input."""
+    refused = [p for p in parts if p["status"] != "ok"]
+    if refused:
+        named = "; ".join(
+            f"`{p['metric']}` {p['status']}: {p['reason']}" for p in refused
+        )
+        out = _refusal(
+            "blocked",
+            f"{len(refused)} of {len(parts)} component(s) did not evaluate — a "
+            f"composite of a refusal is a refusal. {named}",
+        )
+        out["components"] = parts
+        return out
+    total = sum(float(p["weight"]) * float(p["value"]) for p in parts)
     working = " + ".join(f"{p['weight']:g} × {p['metric']}({p['value']:g})" for p in parts)
     return {
         "status": "ok",
@@ -467,3 +529,432 @@ async def _evaluate_composite(
         "components": parts,
         "arithmetic": f"{working} = {total:g}",
     }
+
+
+# ── SITE SCOPE (contract §21) ────────────────────────────────────────────────
+
+_SITES_SQL = """
+    SELECT f.site_id, f.site_name, f.gross_floor_area_sqm, f.occupancy
+      FROM site_facts f
+     WHERE (CAST(:tenant AS uuid) IS NULL OR f.tenant_id = CAST(:tenant AS uuid))
+       AND (CAST(:site AS uuid) IS NULL OR f.site_id = CAST(:site AS uuid))
+     ORDER BY f.site_name NULLS LAST
+"""
+
+_SITE_ROLE_POINTS_SQL = """
+    SELECT p.point_id, p.point_tag, p.device_id, p.device_tag, p.unit,
+           p.unit_source, r.role
+      FROM point_roles r
+      JOIN points p ON p.point_id = r.point_id
+     WHERE p.site_id = CAST(:site AS uuid)
+       AND r.role = ANY(CAST(:roles AS varchar[]))
+       AND (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND {live}
+     ORDER BY p.device_tag NULLS LAST, p.point_tag NULLS LAST
+"""
+
+_BENCHMARK_SQL = """
+    SELECT key, version, title, citation, source_url, bands, notes
+      FROM benchmark_standards
+     WHERE key = :key
+     ORDER BY created_at DESC
+     LIMIT 1
+"""
+
+_BENCHMARK_CONFIG_SQL = """
+    SELECT site_id, standard_key, climate_zone, ac_category
+      FROM benchmark_site_config
+     WHERE site_id = CAST(:site AS uuid)
+"""
+
+
+async def _sites_for(db: AsyncSession, tenant, site_id) -> list[dict]:
+    return _rows(
+        await db.execute(
+            text(_SITES_SQL),
+            {"tenant": str(tenant) if tenant else None,
+             "site": str(site_id) if site_id else None},
+        )
+    )
+
+
+async def resolve_benchmark(db: AsyncSession, tenant, site_id) -> dict:
+    """The band edges a `benchmark_score()` grades against — or the reason
+    there are none. Returns {"ok": True, best, worst, standard, version, zone,
+    ac_category, band_table, citation} or {"ok": False, "reason": ...}.
+
+    Every miss names ITS missing input: the honest states are different and
+    the screen must be able to say which one this is.
+    """
+    cfg_rows = _rows(
+        await db.execute(text(_BENCHMARK_CONFIG_SQL), {"site": str(site_id)})
+    )
+    cfg = cfg_rows[0] if cfg_rows else {}
+    key = (cfg.get("standard_key") or "bee_star_office") if cfg else "bee_star_office"
+    std_rows = _rows(await db.execute(text(_BENCHMARK_SQL), {"key": key}))
+    if not std_rows:
+        return {
+            "ok": False,
+            "reason": (
+                "no benchmark standard sourced — `benchmark_standards` holds no "
+                f"row for `{key}`; a band table enters only with a citation"
+            ),
+        }
+    std = std_rows[0]
+    zone = cfg.get("climate_zone") if cfg else None
+    ac = cfg.get("ac_category") if cfg else None
+    if not zone:
+        return {
+            "ok": False,
+            "standard": std["key"], "version": std["version"],
+            "reason": (
+                f"climate zone not set for this site — {std['title']} "
+                f"({std['version']}) bands are climate-zone-specific; record the "
+                f"zone on the site's benchmark config"
+            ),
+        }
+    if not ac:
+        return {
+            "ok": False,
+            "standard": std["key"], "version": std["version"],
+            "reason": (
+                f"air-conditioned-share category not set for this site — "
+                f"{std['title']} ({std['version']}) publishes different bands for "
+                f">50% and <50% conditioned built-up area"
+            ),
+        }
+    zones = (std["bands"] or {}).get("zones") or {}
+    table = (zones.get(zone) or {}).get(ac)
+    if not table:
+        return {
+            "ok": False,
+            "standard": std["key"], "version": std["version"],
+            "reason": (
+                f"{std['title']} ({std['version']}) has no band table for zone "
+                f"`{zone}` / category `{ac}` — the recorded config names a table "
+                f"the standard does not publish"
+            ),
+        }
+    # Best edge: the 5-star threshold (below it, the best band). Worst edge:
+    # the 1-star upper bound (above it the scheme awards no star → score 0).
+    best = min(b["max"] for b in table if b.get("max") is not None and b.get("min") is None)
+    worst = max(b["max"] for b in table if b.get("max") is not None)
+    return {
+        "ok": True, "best": float(best), "worst": float(worst),
+        "standard": std["key"], "version": std["version"], "title": std["title"],
+        "zone": zone, "ac_category": ac, "band_table": table,
+        "citation": std["citation"], "unit": (std["bands"] or {}).get("unit"),
+    }
+
+
+def _band_for(table: list[dict], value: float) -> dict | None:
+    """The star band `value` falls in, reading the table as published: a band
+    is (min, max]-shaped with the 5-star row open below. Above the worst upper
+    bound there is NO band — the scheme awards no star, and this returns None
+    rather than pretending the bottom band stretches forever."""
+    for b in sorted(table, key=lambda b: b["stars"], reverse=True):
+        lo, hi = b.get("min"), b.get("max")
+        if (lo is None or value >= lo) and (hi is None or value < hi):
+            return b
+    return None
+
+
+async def _evaluate_site_formula(
+    db: AsyncSession, tenant, defn: dict, site: dict, start, end, table: str
+) -> dict:
+    inputs: dict = defn["inputs"]
+    guards: list = defn.get("guards") or []
+    tree = expr.parse(defn["formula"])
+
+    env: dict[str, float] = {}
+    input_report: list[dict] = []
+    window_days = (end - start).total_seconds() / 86400.0
+    covered_days: float | None = None
+
+    role_names = {
+        name: spec for name, spec in inputs.items()
+        if spec.get("source", "points") == "points"
+    }
+    by_role: dict[str, list[dict]] = {}
+    if role_names:
+        rows = _rows(
+            await db.execute(
+                text(_SITE_ROLE_POINTS_SQL.format(live=LIVE_POINT)),
+                {
+                    "site": str(site["site_id"]),
+                    "roles": list({spec["role"] for spec in role_names.values()}),
+                    "tenant": str(tenant) if tenant else None,
+                    "retire_days": RETIRE_AFTER_DAYS,
+                },
+            )
+        )
+        for r in rows:
+            by_role.setdefault(r["role"], []).append(r)
+
+    for name, spec in inputs.items():
+        if spec.get("source", "points") == "site_fact":
+            fact = spec["fact"]
+            fact_def = registry.FACT_DEFS[fact]
+            v = site.get(fact)
+            if v is None:
+                return _refusal(
+                    "missing_fact",
+                    f"input `{name}`: site fact `{fact}` ({fact_def['label']}) is "
+                    f"NOT RECORDED for this site — record it in "
+                    f"{fact_def['recorded_at']}; nothing is defaulted or estimated",
+                )
+            env[name] = float(v)
+            input_report.append(
+                {"input": name, "source": "site_fact", "fact": fact,
+                 "value": float(v), "unit": spec.get("unit")}
+            )
+            continue
+
+        role = spec["role"]
+        agg = spec.get("aggregation", "avg")
+        candidates = by_role.get(role) or []
+        if not candidates:
+            return _refusal(
+                "missing_role",
+                f"no point at this site is confirmed in role `{role}` "
+                f"(input `{name}`) — confirm one on the Metric Roles screen",
+            )
+        if "units_confirmed" in guards:
+            bad = [c for c in candidates if c["unit_source"] != "operator"]
+            if bad:
+                named = ", ".join(f"`{c['point_tag']}`" for c in bad)
+                return _refusal(
+                    "unit_unconfirmed",
+                    f"input `{name}`: no operator has confirmed a unit for {named} "
+                    f"— the metric does not compute on an assumed unit",
+                )
+        want_unit = spec.get("unit")
+        if want_unit is not None:
+            off = [c for c in candidates if c["unit"] != want_unit]
+            if off:
+                named = ", ".join(f"`{c['point_tag']}`=`{c['unit']}`" for c in off)
+                return _refusal(
+                    "unit_mismatch",
+                    f"input `{name}` requires `{want_unit}` and {named}",
+                )
+
+        if agg == "consumption":
+            pids = [str(c["point_id"]) for c in candidates]
+            aggs = {
+                r["point_id"]: r
+                for r in _rows(
+                    await db.execute(
+                        text(_AGG_SQL.format(table=table)),
+                        {"pids": pids,
+                         "tenant": str(tenant) if tenant else None,
+                         "start": start, "end": end},
+                    )
+                )
+            }
+            registers = []
+            total = 0.0
+            usable = 0
+            first_b: dt.datetime | None = None
+            last_b: dt.datetime | None = None
+            for c in candidates:
+                a = aggs.get(c["point_id"])
+                row = {"point_id": str(c["point_id"]), "point_tag": c["point_tag"],
+                       "device_tag": c["device_tag"]}
+                if not a or a["agg_first"] is None or a["agg_last"] is None:
+                    row.update(status="no_data",
+                               reason="no bucket in this window")
+                    registers.append(row)
+                    continue
+                first, last = float(a["agg_first"]), float(a["agg_last"])
+                delta = last - first
+                if delta < 0:
+                    # A reset, rollover or replaced device. Excluded and SAID —
+                    # never an absolute value (rating.py's rule, same words).
+                    row.update(status="register_decreased", first=first, last=last,
+                               reason=f"register went from {first:g} down to "
+                                      f"{last:g}; no consumption can be derived")
+                    registers.append(row)
+                    continue
+                row.update(status="ok", first=first, last=last, delta=delta,
+                           buckets=int(a["buckets"] or 0))
+                registers.append(row)
+                total += delta
+                usable += 1
+                fb, lb = a["first_bucket"], a["last_bucket"]
+                first_b = fb if first_b is None or fb < first_b else first_b
+                last_b = lb if last_b is None or lb > last_b else last_b
+            if usable == 0:
+                out = _refusal(
+                    "no_data",
+                    f"input `{name}`: none of the {len(candidates)} register(s) "
+                    f"in role `{role}` produced a usable delta in this window",
+                )
+                out["registers"] = registers
+                return out
+            # Covered span across the usable registers — what annualize() (if
+            # present) scales over, exactly as /bi/rating does.
+            if first_b is not None and last_b is not None:
+                covered_days = max(
+                    (last_b - first_b).total_seconds() / 86400.0, 0.0
+                )
+            env[name] = total
+            input_report.append(
+                {"input": name, "role": role, "aggregation": "consumption",
+                 "value": total, "unit": want_unit,
+                 "registers": registers, "days_covered": covered_days}
+            )
+        else:
+            if len(candidates) > 1:
+                tags = ", ".join(str(c["point_tag"]) for c in candidates)
+                return _refusal(
+                    "ambiguous_role",
+                    f"{len(candidates)} points ({tags}) are confirmed in role "
+                    f"`{role}` at this site and aggregation `{agg}` needs exactly "
+                    f"one — a metric cannot pick; `consumption` is the "
+                    f"aggregation that sums registers",
+                )
+            c = candidates[0]
+            a_rows = _rows(
+                await db.execute(
+                    text(_AGG_SQL.format(table=table)),
+                    {"pids": [str(c["point_id"])],
+                     "tenant": str(tenant) if tenant else None,
+                     "start": start, "end": end},
+                )
+            )
+            if not a_rows or a_rows[0][f"agg_{agg}"] is None:
+                return _refusal(
+                    "no_data",
+                    f"input `{name}` (`{c['point_tag']}`) has no samples in the "
+                    f"window at this resolution — absence is absence, not zero",
+                )
+            v = float(a_rows[0][f"agg_{agg}"])
+            env[name] = v
+            input_report.append(
+                {"input": name, "role": role, "aggregation": agg,
+                 "point_tag": c["point_tag"], "value": v, "unit": c["unit"]}
+            )
+
+    # Benchmark context, resolved AFTER the measured inputs and BEFORE the
+    # arithmetic: a missing AREA reports as missing_fact (the actionable gap),
+    # and only a site whose measurements all resolve gets asked "against what
+    # standard?" — each missing benchmark input is then named precisely.
+    benchmark = None
+    bench_note = None
+    if expr.uses(tree, "benchmark_score"):
+        resolved = await resolve_benchmark(db, tenant, site["site_id"])
+        if not resolved.get("ok"):
+            out = _refusal("no_benchmark", resolved["reason"])
+            if resolved.get("standard"):
+                out["benchmark"] = {k: resolved.get(k) for k in ("standard", "version")}
+            out["inputs"] = input_report
+            return out
+        benchmark = {"best": resolved["best"], "worst": resolved["worst"]}
+        bench_note = {
+            "standard": resolved["standard"], "version": resolved["version"],
+            "zone": resolved["zone"], "ac_category": resolved["ac_category"],
+            "best_edge": resolved["best"], "worst_edge": resolved["worst"],
+            "citation": resolved["citation"],
+        }
+
+    # annualize() over a consumption formula scales the COVERED span; a formula
+    # with no consumption input keeps the requested window.
+    effective_days = covered_days if covered_days is not None else window_days
+    if expr.uses(tree, "annualize") and (not effective_days or effective_days <= 0):
+        return _refusal(
+            "no_data",
+            "annualize() needs a covered span and the usable registers span "
+            "less than one bucket — there is no interval to annualise over",
+        )
+    try:
+        value = expr.evaluate(tree, env, window_days=effective_days, benchmark=benchmark)
+    except expr.EvalRefusal as e:
+        out = _refusal(e.status, e.reason)
+        out["inputs"] = input_report
+        return out
+
+    out = {
+        "status": "ok",
+        "value": value,
+        "unit": (defn.get("output") or {}).get("unit"),
+        "dimension": (defn.get("output") or {}).get("dimension"),
+        "inputs": input_report,
+        "arithmetic": f"{defn['formula']} = {expr.render(tree, env)} = {value:g}",
+    }
+    if covered_days is not None:
+        out["days_covered"] = covered_days
+    if bench_note:
+        out["benchmark"] = bench_note
+    return out
+
+
+async def _evaluate_site_composite(
+    db: AsyncSession, tenant, defn: dict, site: dict, start, end, res, depth
+) -> dict:
+    """A site-scope composite: site-scope components evaluate for THIS site;
+    device-scope components fan out over the site's applicable devices and
+    combine as the arithmetic mean of the ok values — ANY device refusal
+    refuses the component, with every device's own status attached."""
+    if depth >= _MAX_COMPOSITE_DEPTH:
+        return _refusal("blocked", f"composite nesting deeper than {_MAX_COMPOSITE_DEPTH} is refused")
+    parts = []
+    for c in defn["components"]:
+        sub_defn = await registry.effective(db, tenant, c["metric"], end)
+        if sub_defn is None:
+            parts.append({"metric": c["metric"], "weight": c["weight"],
+                          "status": "blocked", "value": None,
+                          "reason": f"no metric `{c['metric']}` is effective at {end.isoformat()}"})
+            continue
+        sub_scope = (sub_defn.get("applies_to") or {}).get("scope", "device")
+        sub = await evaluate(
+            db, tenant, c["metric"],
+            site_id=site["site_id"], start=start, end=end, resolution=res,
+            _depth=depth + 1,
+        )
+        part = {"metric": c["metric"], "version": sub["version"], "weight": c["weight"]}
+        if sub_scope == "site":
+            item = sub["items"][0] if sub["items"] else _refusal(
+                "no_data", "site not present in the reporting mirror")
+            part.update(status=item["status"], value=item.get("value"),
+                        reason=item.get("reason"))
+            if item.get("inputs"):
+                part["inputs"] = item["inputs"]
+            if item.get("benchmark"):
+                part["benchmark"] = item["benchmark"]
+        else:
+            devices = [
+                {"device_id": i.get("device_id"), "device_tag": i.get("device_tag"),
+                 "status": i["status"], "value": i.get("value"),
+                 "reason": i.get("reason")}
+                for i in sub["items"]
+            ]
+            part["devices"] = devices
+            if not devices:
+                part.update(status="missing_role", value=None,
+                            reason=f"no applicable device at this site for `{c['metric']}`")
+            else:
+                refused = [d for d in devices if d["status"] != "ok"]
+                if refused:
+                    named = "; ".join(
+                        f"{d.get('device_tag') or d['device_id']} "
+                        f"({d['status']}: {d['reason']})" for d in refused
+                    )
+                    part.update(
+                        status="blocked", value=None,
+                        reason=(
+                            f"{len(refused)} of {len(devices)} device(s) refused "
+                            f"— a composite of a refusal is a refusal. {named}"
+                        ),
+                    )
+                else:
+                    vals = [float(d["value"]) for d in devices]
+                    mean = sum(vals) / len(vals)
+                    part.update(
+                        status="ok", value=mean,
+                        arithmetic=(
+                            "mean(" + ", ".join(f"{v:g}" for v in vals) + f") = {mean:g} "
+                            f"over {len(vals)} device(s)"
+                        ),
+                    )
+        parts.append(part)
+    return _compose(defn, parts)

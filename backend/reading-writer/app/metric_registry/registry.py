@@ -40,6 +40,30 @@ KINDS = ("formula", "composite")
 # rejected at registration like everything else.
 GUARDS = ("roles_present", "units_confirmed", "same_unit", "non_frozen")
 
+# Site facts a SITE-scope definition may name as inputs (`source: "site_fact"`).
+# Closed, like the role vocabulary and for the same reason: an open string
+# would let a formula name a column nobody mirrors. Each carries the unit the
+# type-checker binds the input to, and WHERE the fact is recorded — the
+# evaluator prints that in the refusal when the fact is NULL.
+FACT_DEFS: dict[str, dict] = {
+    "gross_floor_area_sqm": {
+        "unit": "m2",
+        "label": "Gross floor area",
+        "recorded_at": "Configurations → Sites → Building",
+    },
+    "occupancy": {
+        "unit": "",
+        "label": "Occupancy",
+        "recorded_at": "Configurations → Sites → Building",
+    },
+}
+
+# Applies-to scopes. "device" evaluates per device (the §20 shape); "site"
+# evaluates per site over the `site_facts` mirror — inputs may then be
+# site facts and site-wide role bindings, and a composite fans a device-scope
+# component out over the site's devices (contract §21).
+SCOPES = ("device", "site")
+
 
 class RegistrationError(ValueError):
     """The definition is rejected, with the reason. Nothing is stored."""
@@ -67,7 +91,7 @@ def _qty_from_spec(spec: dict, where: str) -> Qty:
     return Qty(dim, None)
 
 
-_AGGREGATIONS = ("avg", "last", "first", "min", "max", "sum")
+_AGGREGATIONS = ("avg", "last", "first", "min", "max", "sum", "consumption")
 
 
 def typecheck(defn: dict) -> None:
@@ -75,6 +99,9 @@ def typecheck(defn: dict) -> None:
     kind = defn.get("kind", "formula")
     if kind not in KINDS:
         raise RegistrationError(f"kind must be one of {KINDS}")
+    scope = (defn.get("applies_to") or {}).get("scope", "device")
+    if scope not in SCOPES:
+        raise RegistrationError(f"applies_to.scope must be one of {SCOPES}")
     inputs: dict = defn.get("inputs") or {}
     guards = defn.get("guards") or []
     for g in guards:
@@ -100,6 +127,39 @@ def typecheck(defn: dict) -> None:
     for name, spec in inputs.items():
         if not name.isidentifier():
             raise RegistrationError(f"input name `{name}` is not a valid identifier")
+        source = spec.get("source", "points")
+        if source == "site_fact":
+            # A fact about the SITE, read from the site_facts mirror — legal
+            # only on a site-scope definition, because a device has no area.
+            if scope != "site":
+                raise RegistrationError(
+                    f"input `{name}` reads a site fact, which needs applies_to.scope = 'site'"
+                )
+            fact = spec.get("fact")
+            fact_def = FACT_DEFS.get(fact or "")
+            if fact_def is None:
+                raise RegistrationError(
+                    f"input `{name}` names site fact `{fact}`, which is not in the "
+                    f"fact vocabulary ({', '.join(sorted(FACT_DEFS))})"
+                )
+            q = _qty_from_spec(spec, f"input `{name}`")
+            expected = qty_of_unit(fact_def["unit"])
+            if q.dimension != expected.dimension:
+                raise RegistrationError(
+                    f"input `{name}`: site fact `{fact}` is `{expected.dimension}`, "
+                    f"but the input declares `{q.dimension}`"
+                )
+            if spec.get("aggregation") is not None:
+                raise RegistrationError(
+                    f"input `{name}`: a site fact is a single recorded value; "
+                    f"it takes no aggregation"
+                )
+            env[name] = q
+            continue
+        if source != "points":
+            raise RegistrationError(
+                f"input `{name}`: source must be 'points' (default) or 'site_fact'"
+            )
         role = spec.get("role")
         if role is not None:
             role_def = ROLE_DEFS.get(role)
@@ -118,6 +178,15 @@ def typecheck(defn: dict) -> None:
         agg = spec.get("aggregation", "avg")
         if agg not in _AGGREGATIONS:
             raise RegistrationError(f"input `{name}`: aggregation `{agg}` is not one of {_AGGREGATIONS}")
+        if agg == "consumption":
+            # last − first per register, monotonic-guarded, summed over every
+            # point bound to the role in scope. Meaningful only for cumulative
+            # ENERGY registers — a consumption of a temperature is nothing.
+            if q.dimension != "energy":
+                raise RegistrationError(
+                    f"input `{name}`: aggregation `consumption` is a register "
+                    f"subtraction and needs dimension `energy`, not `{q.dimension}`"
+                )
         env[name] = q
 
     try:
