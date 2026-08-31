@@ -219,6 +219,14 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // this screen is where a new sensor domain becomes configuration.
           // Writes need `bi.manage`; the tile gates like every Sense tile.
           { icon: "heroicons:adjustments-horizontal", label: "Metric Roles", href: "/bi/metrics", tone: "att", perm: "bi.read", module: "analytics" },
+          // BUILT 2026-09-01. The VIEWING door for built dashboards. The builder
+          // stays in Configurations → Reporting & Dashboards (authoring is
+          // configuration); this card is where someone goes every morning to
+          // LOOK at one — a horizontal strip of names, click, open. Gated by
+          // `dashboards.read` (the definitions); the widgets' data is separately
+          // gated by `bi.read` on the reading-writer, and the two compose
+          // honestly.
+          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/bi/dashboards", tone: "att", perm: "dashboards.read", module: "analytics" },
         ],
       },
     ],
