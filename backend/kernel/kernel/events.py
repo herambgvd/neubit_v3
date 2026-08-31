@@ -19,6 +19,18 @@ runs standalone without a broker.
     await bus.connect()
     await bus.publish(subject(tenant_id, "fire", "alarm.raised"), {"zone": 3})
     await bus.subscribe("tenant.*.fire.>", handler, durable="workflow-fire")
+
+HANDLER FAILURES COME IN TWO KINDS, AND A HANDLER MUST SAY WHICH. On a durable
+subscription the handler's exit is the ack decision: return → ack, raise → NAK
+and retry with backoff up to MAX_DELIVER, then dead-letter. Raising
+:class:`Unprocessable` instead — ``raise Unprocessable(f"…: {exc}") from exc``
+to wrap a caught error, or raise it directly — says redelivery cannot change the
+outcome, and the message is dead-lettered + terminated on its FIRST delivery
+rather than after five identical failures. Use it for a tenant mismatch, a
+malformed payload, a record already in a terminal state; never for a failure a
+working dependency would have made succeed. An unmarked exception stays
+retryable, which is the safe default. Same semantics as the Go bus's
+``events.Unprocessable`` / ``Retryable`` (nvr repo, gokernel/events).
 """
 
 from __future__ import annotations
@@ -81,10 +93,12 @@ EVENTS_SUBJECTS = [
 # Every durable subscription now ends in exactly one of three terminal states:
 #
 #   ack()   the handler returned normally, i.e. the work is durably done. Only then.
-#   nak()   the handler raised; retry with exponential backoff, up to MAX_DELIVER.
-#   term()  the message can never succeed (undecodable, or the retry budget is
-#           spent). It is copied to EVENTS_DLQ first, so terminating is not silent
-#           loss, then dropped so it stops being redelivered forever.
+#   nak()   the handler raised a RETRYABLE error; retry with exponential backoff,
+#           up to MAX_DELIVER.
+#   term()  the message can never succeed (undecodable, refused via
+#           `Unprocessable`, or the retry budget is spent). It is copied to
+#           EVENTS_DLQ first, so terminating is not silent loss, then dropped so
+#           it stops being redelivered forever.
 #
 # This mirrors the Go bus in the nvr repo (gokernel/events/events.go) deliberately:
 # both sides consume the same EVENTS stream and park failures in the same
@@ -104,6 +118,47 @@ NAK_MAX_DELAY = 60.0
 # a dead letter can never be re-consumed into the loop that produced it.
 DLQ_STREAM = "EVENTS_DLQ"
 DLQ_SUBJECT_PREFIX = "dlq."
+
+
+# ── retryable vs. non-retryable handler failures ─────────────────────────────
+#
+# NAK means "try me again", and the retry budget exists because SOME failures
+# are transient — the database is down, a dependency is briefly unreachable, a
+# lock timed out. Those genuinely may succeed next time.
+#
+# A failure that depends on nothing but the message and the stored state does
+# NOT change on redelivery. A cross-tenant mismatch, a record that does not
+# exist, a record already in a terminal state, a payload the handler cannot make
+# sense of: the next four deliveries fail identically, a backoff apart, and the
+# message reaches the DLQ anyway — five times the work, five times the log
+# noise, and the dead letter arrives minutes late carrying a delivery count that
+# suggests a flaky dependency rather than a refusal.
+#
+# So a handler must SAY which kind its error is. Raising `Unprocessable` marks
+# the non-retryable kind and `_deliver` dead-letters + terminates it on the
+# first delivery. A bare exception stays retryable, which is the safe default:
+# retrying something doomed costs latency, whereas terminating something
+# transient is data loss dressed up as a decision. This mirrors the Go bus's
+# `events.Unprocessable` / `Retryable` exactly, so the two languages' consumers
+# park refusals the same way.
+class Unprocessable(Exception):
+    """A handler failure that redelivery cannot change — dead-letter, don't retry.
+
+    Raise it directly with the refusal reason, or wrap a caught exception::
+
+        raise Unprocessable(f"tenant_id {tid!r} is not a uuid") from exc
+
+    The durable delivery path (`EventBus._deliver`) parks the message in
+    EVENTS_DLQ with this reason in the `Nbt-Dlq-Reason` header and terminates it
+    on the CURRENT delivery. Never use it for a failure that a working
+    dependency would have made succeed — that kind must stay a bare raise.
+    """
+
+
+def retryable(exc: BaseException) -> bool:
+    """Whether a handler failure should be redelivered. Everything not marked
+    :class:`Unprocessable` is retryable — the safe default."""
+    return not isinstance(exc, Unprocessable)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -396,10 +451,12 @@ class EventBus:
         restarts); omit it for an ephemeral core subscription.
 
         On the durable path the HANDLER'S OUTCOME IS THE ACK DECISION: returning
-        normally acks, raising retries with backoff up to :data:`MAX_DELIVER` and
-        then dead-letters to ``EVENTS_DLQ``. See the delivery/ack policy note above
-        — a handler must not return until its work is durably persisted, must let
-        its failures propagate rather than swallowing them, and must be idempotent.
+        normally acks; raising retries with backoff up to :data:`MAX_DELIVER` and
+        then dead-letters to ``EVENTS_DLQ``; raising :class:`Unprocessable`
+        dead-letters + terminates on the FIRST delivery, for a refusal redelivery
+        cannot change. See the delivery/ack policy note above — a handler must not
+        return until its work is durably persisted, must let its failures
+        propagate rather than swallowing them, and must be idempotent.
         """
         if self._nc is None:
             return
@@ -511,6 +568,19 @@ class EventBus:
 
         try:
             await handler(env)
+        except Unprocessable as e:
+            # Non-retryable by the handler's own word: the next four deliveries
+            # would fail identically. Park it and stop, on delivery 1 rather
+            # than delivery 5.
+            event_id = env.get("event_id") if isinstance(env, dict) else None
+            log.error(
+                "event handler REFUSED %s (%s) event=%s on delivery %d: %s — "
+                "not retryable, dead-lettering now",
+                pattern, durable, event_id, delivery, e,
+            )
+            await self._dead_letter(msg, durable, f"unprocessable: {e}", delivery)
+            await _quiet(msg.term())
+            return
         except Exception as e:
             event_id = env.get("event_id") if isinstance(env, dict) else None
             if delivery >= MAX_DELIVER:
