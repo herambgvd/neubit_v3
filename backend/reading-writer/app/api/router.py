@@ -1122,3 +1122,6 @@ async def whoami(scope: Caller) -> dict:
         "tenant_id": str(scope.tenant_id) if scope.tenant_id else None,
         "is_platform": scope.is_platform,
     }
+
+
+from .metrics import metrics_router as _metrics_router; bi_router.include_router(_metrics_router)  # noqa: E401,E402,E702 — metric registry (/bi/metrics/*), owned by app/api/metrics.py
