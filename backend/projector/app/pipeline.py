@@ -118,6 +118,12 @@ def _delivery_count(msg) -> int:
 
 log = logging.getLogger("projector.pipeline")
 
+# Consecutive fetch failures before the worker assumes its consumer is gone and
+# recreates it. Small on purpose: three is enough to rule out a single flake,
+# and every second spent "retrying" a deleted durable is a second the projection
+# consumes nothing while looking alive.
+REBIND_AFTER_FAILURES = 3
+
 
 class Worker:
     """One projection's consumer. Owns its durable, its queue and its two tasks."""
@@ -140,11 +146,9 @@ class Worker:
         self._js = None
         self._running = False
 
-    async def start(self, js) -> None:
-        self._js = js
+    def _consumer_config(self) -> ConsumerConfig:
         src = self.row.spec.source
-        await self._converge_consumer(js, src)
-        cfg = ConsumerConfig(
+        return ConsumerConfig(
             durable_name=src.durable,
             filter_subject=src.subject,
             ack_policy=AckPolicy.EXPLICIT,
@@ -152,15 +156,22 @@ class Worker:
             max_ack_pending=self.cfg.max_ack_pending,
             max_deliver=-1,      # never give up on an event
         )
+
+    async def start(self, js) -> None:
+        self._js = js
+        src = self.row.spec.source
+        await self._converge_consumer(js, src)
         # A DURABLE PULL consumer. Every replica of this service binds the SAME
         # durable name per projection, so NATS distributes messages between them.
         # That is the redundancy story: `--scale reporting-projector=2`, no leader
         # election, nothing per-replica.
         self._psub = await js.pull_subscribe(
-            src.subject, durable=src.durable, stream=src.stream, config=cfg
+            src.subject, durable=src.durable, stream=src.stream,
+            config=self._consumer_config(),
         )
         self._running = True
         self.pm.running = True
+        self.pm.consuming = True
         self._tasks = [
             asyncio.create_task(self._fetch_loop(), name=f"pj-fetch-{self.row.key}"),
             asyncio.create_task(self._write_loop(), name=f"pj-write-{self.row.key}"),
@@ -204,6 +215,46 @@ class Worker:
         with contextlib.suppress(Exception):
             await js.delete_consumer(src.stream, src.durable)
 
+    async def _rebind(self) -> None:
+        """Recreate this projection's consumer and re-bind the pull subscription.
+
+        The exit from the deleted-durable wedge: `pull_subscribe` with the full
+        ConsumerConfig CREATES the durable when it is missing, exactly like the
+        first bind at start. When the durable was genuinely deleted, the new one
+        starts at the beginning of the stream and REPLAYS it — safe and correct
+        here for the same reason `_converge_consumer` relies on: every write
+        goes through the natural key, so a replay re-inserts nothing and shows
+        up only as `rows_duplicate` while the projection catches back up.
+
+        Failure is fine (NATS itself may be down): the fetch loop keeps failing,
+        `consuming` stays False, /readyz stays red, and the next streak lands
+        back here.
+        """
+        src = self.row.spec.source
+        if self._psub is not None:
+            # Drop the old subscription's inbox first; a dead psub held forever
+            # would leak one core subscription per rebind.
+            with contextlib.suppress(Exception):
+                await self._psub.unsubscribe()
+        try:
+            self._psub = await self._js.pull_subscribe(
+                src.subject, durable=src.durable, stream=src.stream,
+                config=self._consumer_config(),
+            )
+        except Exception as exc:  # noqa: BLE001 — keep failing visibly, retry next streak
+            self.m.note_error(exc)
+            log.error(
+                "projection %s: could not re-bind durable %s on %s: %s",
+                self.row.key, src.durable, src.stream, exc,
+            )
+            return
+        log.warning(
+            "projection %s: re-bound durable %s on %s after repeated fetch failures — "
+            "if the durable had been deleted, the stream REPLAYS from the start "
+            "(idempotent: duplicates are absorbed by the natural key)",
+            self.row.key, src.durable, src.stream,
+        )
+
     async def stop(self) -> None:
         self._running = False
         self.pm.running = False
@@ -218,6 +269,7 @@ class Worker:
     async def _fetch_loop(self) -> None:
         timeout = max(self.cfg.batch_ms, 1) / 1000.0
         proj = self.row.spec
+        failures = 0  # CONSECUTIVE failed pulls; any answered pull resets it
         while self._running:
             if not self.m.db_healthy:
                 # Nothing to gain from pulling messages we cannot write; the
@@ -234,15 +286,37 @@ class Worker:
                 # log a warning every second and park a spurious `last_error` on
                 # /stats. A health surface that cries wolf while nothing is wrong
                 # is worse than no health surface.
+                #
+                # An idle timeout is an ANSWER from a live consumer, so it also
+                # resets the failure streak below.
+                failures = 0
+                self.pm.consuming = True
                 continue
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — a bad pull must not kill the loop
+                # This branch used to sleep 1s and retry FOREVER — which, when
+                # the durable had been deleted out of band, meant every pull
+                # failed identically (ServiceUnavailableError), the projection
+                # consumed nothing, and /readyz stayed green throughout. Now a
+                # streak of failures (i) turns `consuming` off, which turns
+                # /readyz red, and (ii) recreates the consumer, which is the
+                # only exit when the durable is gone.
                 self.m.note_error(exc)
-                log.warning("projection %s: fetch failed: %s", self.row.key, exc)
+                self.pm.fetch_failures += 1
+                failures += 1
+                log.warning(
+                    "projection %s: fetch failed (%d in a row): %s",
+                    self.row.key, failures, exc,
+                )
+                if failures >= REBIND_AFTER_FAILURES:
+                    self.pm.consuming = False
+                    await self._rebind()
                 await asyncio.sleep(1.0)
                 continue
 
+            failures = 0
+            self.pm.consuming = True
             self.pm.messages_received += len(msgs)
             keep, rows = [], []
             for msg in msgs:

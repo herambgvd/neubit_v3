@@ -105,12 +105,16 @@ async def readyz() -> JSONResponse:
     # read as NOT ready even in the instant before the watchdog flips db_healthy.
     stalled = metrics.write_stalled_sec()
     stuck = stalled >= config.write_stall_sec
+    # A projection whose pulls keep failing (a durable deleted out of band, say)
+    # is consuming NOTHING; before this flag, /readyz stayed green through that.
+    not_consuming = metrics.not_consuming
     ready = (
         metrics.db_healthy
         and not stuck
         and metrics.nats_connected
         and not lagging
         and not metrics.refused
+        and not not_consuming
     )
     reasons = []
     if stuck:
@@ -126,6 +130,8 @@ async def readyz() -> JSONResponse:
         reasons.append(f"consumer lag {metrics.max_pending} > {config.lag_warn}")
     for key, why in sorted(metrics.refused.items()):
         reasons.append(f"projection '{key}' refused: {why}")
+    for key in not_consuming:
+        reasons.append(f"projection '{key}' is not consuming (pulls failing; rebinding)")
     return JSONResponse(
         status_code=200 if ready else 503,
         content={"ready": ready, "reasons": reasons, **metrics.snapshot()},

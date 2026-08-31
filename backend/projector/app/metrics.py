@@ -52,6 +52,13 @@ class ProjectionMetrics:
 
     last_write_at: float | None = None
     running: bool = False
+    # False while the fetch loop is failing repeatedly — e.g. the durable was
+    # deleted out of band, where every pull errors while the projection quietly
+    # consumes NOTHING. The loop rebinds itself; this flag is what stops /readyz
+    # reading green in the meantime. Only a fetch that gets an ANSWER (messages,
+    # or a clean idle timeout) sets it back to True.
+    consuming: bool = True
+    fetch_failures: int = 0
 
     def note_malformed(self, reason: str) -> None:
         self.messages_malformed += 1
@@ -106,6 +113,13 @@ class Metrics:
     @property
     def max_pending(self) -> int:
         return max((p.consumer_pending for p in self.projections.values()), default=0)
+
+    @property
+    def not_consuming(self) -> list:
+        """Projections that are supposed to be running but whose fetch loop is
+        failing — a consumer that receives nothing while /readyz would otherwise
+        stay green, which is the silence this flag exists to break."""
+        return sorted(k for k, p in self.projections.items() if p.running and not p.consuming)
 
     def snapshot(self) -> dict:
         return {
@@ -188,6 +202,14 @@ class Metrics:
             lambda m: m.consumer_ack_pending)
         per("consumer_redelivered", "gauge", "Redelivered messages.",
             lambda m: m.consumer_redelivered)
+        per("consuming", "gauge",
+            "1 while the fetch loop is getting answers. 0 = pulls are failing "
+            "(e.g. the durable was deleted out of band); the loop rebinds itself "
+            "and /readyz is red until it does.",
+            lambda m: int(m.consuming))
+        per("fetch_failures_total", "counter",
+            "Failed pulls (excluding clean idle timeouts).",
+            lambda m: m.fetch_failures)
         per("last_write_age_sec", "gauge",
             "Seconds since this projection's last committed batch. -1 = never.",
             lambda m: round(time.time() - m.last_write_at, 1) if m.last_write_at else -1)
