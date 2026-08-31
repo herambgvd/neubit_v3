@@ -211,6 +211,14 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // BUILT 2026-08-31. Same gating as every Sense tile — `bi.read` +
           // `analytics` — so a caller without either sees SOON, not a 403.
           { icon: "heroicons:chart-pie", label: "Insights & Correlation", href: "/bi/insights", tone: "att", perm: "bi.read", module: "analytics" },
+          // BUILT 2026-08-31. Where an operator binds a point to a metric ROLE
+          // (inlet_water_temp, energy_register, …) the way the Ratings UNITS
+          // tab binds a unit: suggestions from tag conventions, labelled as
+          // suggestions; nothing stored without confirmation. The metric
+          // registry (contract §20) evaluates only over confirmed roles, so
+          // this screen is where a new sensor domain becomes configuration.
+          // Writes need `bi.manage`; the tile gates like every Sense tile.
+          { icon: "heroicons:adjustments-horizontal", label: "Metric Roles", href: "/bi/metrics", tone: "att", perm: "bi.read", module: "analytics" },
         ],
       },
     ],
