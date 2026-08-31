@@ -7,7 +7,7 @@ identical to neubit_v2 so the API contract is unchanged.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -234,3 +234,140 @@ class SiteListResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+# ── Time-of-Use tariff slabs (migration 0019) ─────────────────────────────────
+#
+# The scalar `energy_tariff_per_kwh` above stays: it is the legitimate simple
+# case. PRECEDENCE: if any slab with `effective_from` on or before the date
+# being priced exists, the slab set overrides the scalar ENTIRELY for that
+# date; an hour no slab covers has NO price (absence, never a fallback into the
+# scalar). The scalar applies only when no slab set is in effect.
+#
+# `PUT /sites/{id}/tariff-slabs` is a FULL REPLACE — the same retraction
+# property as building-facts: an explicit empty list clears the set, because a
+# wrong rate an operator cannot take back is worse than none.
+
+
+class TariffSlabIn(BaseModel):
+    """One window. Minutes since midnight; `end < start` WRAPS midnight
+    (22:00 → 06:00); `end == start` is refused (full day is 0 → 1440).
+
+    Coverage of the 24h cycle is NOT enforced here: a partial tariff is a
+    partial statement, and the UI warns about gaps/overlaps rather than the
+    server inventing filler slabs.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=64)
+    start_minute: int = Field(ge=0, lt=1440)
+    end_minute: int = Field(gt=0, le=1440)
+    rate_per_kwh: float = Field(gt=0, le=1_000_000)
+    currency: str = Field(min_length=1, max_length=8)
+    effective_from: date
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("A slab needs a name")
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def _cur(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not v:
+            raise ValueError("A rate needs a currency — a bare 8.5 is not a price")
+        return v
+
+    @field_validator("end_minute")
+    @classmethod
+    def _window(cls, v: int, info) -> int:
+        start = info.data.get("start_minute")
+        if start is not None and v == start:
+            raise ValueError(
+                "A window cannot start and end at the same minute — use 0 → 1440 for a full day"
+            )
+        return v
+
+
+class TariffSlabsUpdate(BaseModel):
+    """The whole list, every time. An empty list CLEARS the site's slabs and
+    the scalar tariff (if recorded) is in effect again."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slabs: list[TariffSlabIn] = Field(max_length=200)
+
+
+class TariffSlabPublic(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+
+    slab_id: str
+    site_id: str
+    name: str
+    start_minute: int
+    end_minute: int
+    rate_per_kwh: float
+    currency: str
+    effective_from: date
+    position: int
+    created_at: datetime
+
+
+class TariffSlabListResponse(BaseModel):
+    items: list[TariffSlabPublic]
+    total: int
+
+
+# ── Emission factors (migration 0019) ─────────────────────────────────────────
+
+
+class EmissionFactorIn(BaseModel):
+    """kg CO2 per kWh with a REQUIRED source. The operator says where the
+    number came from; a factor with no citation is an invented figure and the
+    platform refuses to hold one. One factor per `effective_from` — two on the
+    same date would be a contradiction, not a history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kg_co2_per_kwh: float = Field(gt=0, le=1000)
+    source: str = Field(min_length=3, max_length=512)
+    effective_from: date
+
+    @field_validator("source")
+    @classmethod
+    def _source(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError(
+                "A factor needs its source — where does this number come from?"
+            )
+        return v
+
+
+class EmissionFactorsUpdate(BaseModel):
+    """Full replace; an empty list clears (the retraction property)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    factors: list[EmissionFactorIn] = Field(max_length=50)
+
+
+class EmissionFactorPublic(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+
+    factor_id: str
+    site_id: str
+    kg_co2_per_kwh: float
+    source: str
+    effective_from: date
+    created_at: datetime
+
+
+class EmissionFactorListResponse(BaseModel):
+    items: list[EmissionFactorPublic]
+    total: int

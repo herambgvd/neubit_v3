@@ -20,8 +20,12 @@ from ...tenancy.scope import Scope, get_scope
 from .schemas import (
     BuildingFactsUpdate,
     CreateSiteRequest,
+    EmissionFactorListResponse,
+    EmissionFactorsUpdate,
     SiteListResponse,
     SitePublic,
+    TariffSlabListResponse,
+    TariffSlabsUpdate,
     ThreatLevelUpdate,
     UpdateSiteRequest,
 )
@@ -129,6 +133,79 @@ async def set_building_facts(
     about a site. Nothing on this route infers a value.
     """
     return await svc.set_building_facts(site_id, body, actor=actor)
+
+
+@router.get(
+    "/{site_id}/tariff-slabs",
+    response_model=TariffSlabListResponse,
+    dependencies=[Depends(require_permission("sites.read"))],
+)
+async def get_tariff_slabs(
+    site_id: str,
+    svc: Annotated[SiteService, Depends(_service)],
+) -> TariffSlabListResponse:
+    items = await svc.get_tariff_slabs(site_id)
+    return TariffSlabListResponse(items=items, total=len(items))
+
+
+@router.put(
+    "/{site_id}/tariff-slabs",
+    response_model=TariffSlabListResponse,
+)
+async def set_tariff_slabs(
+    site_id: str,
+    body: TariffSlabsUpdate,
+    svc: Annotated[SiteService, Depends(_service)],
+    actor: User = Depends(require_permission("sites.update")),
+) -> TariffSlabListResponse:
+    """Replace the site's Time-of-Use tariff slabs — the WHOLE list, every time.
+
+    Full-replace for the same reason `building-facts` is: a PATCH built on
+    `exclude_none=True` cannot say "take this back", and a wrong rate an
+    operator cannot retract is worse than none. An explicit empty list clears
+    the set and the scalar tariff (if recorded) is in effect again.
+
+    PRECEDENCE: when any slab is in effect for a date, the slabs override the
+    scalar ENTIRELY; an hour no slab covers has no price. Coverage is not
+    enforced and no filler slab is invented — the UI warns about gaps/overlaps.
+    Gated by `sites.update`, like every other fact about a site.
+    """
+    items = await svc.set_tariff_slabs(site_id, body, actor=actor)
+    return TariffSlabListResponse(items=items, total=len(items))
+
+
+@router.get(
+    "/{site_id}/emission-factors",
+    response_model=EmissionFactorListResponse,
+    dependencies=[Depends(require_permission("sites.read"))],
+)
+async def get_emission_factors(
+    site_id: str,
+    svc: Annotated[SiteService, Depends(_service)],
+) -> EmissionFactorListResponse:
+    items = await svc.get_emission_factors(site_id)
+    return EmissionFactorListResponse(items=items, total=len(items))
+
+
+@router.put(
+    "/{site_id}/emission-factors",
+    response_model=EmissionFactorListResponse,
+)
+async def set_emission_factors(
+    site_id: str,
+    body: EmissionFactorsUpdate,
+    svc: Annotated[SiteService, Depends(_service)],
+    actor: User = Depends(require_permission("sites.update")),
+) -> EmissionFactorListResponse:
+    """Replace the site's emission factors (kg CO2/kWh) — full list, every time.
+
+    Every factor carries a REQUIRED `source`: the operator states where the
+    number came from, because a factor with no citation is exactly the
+    fabrication this platform forbids. An explicit empty list clears the set
+    (the retraction property). Nothing here defaults, infers or seeds a value.
+    """
+    items = await svc.set_emission_factors(site_id, body, actor=actor)
+    return EmissionFactorListResponse(items=items, total=len(items))
 
 
 @router.delete(
