@@ -204,8 +204,8 @@ if ($build -ge 22000) {
     Note 'Without it the desktop app still works on this machine, but the web console'
     Note 'is unreachable from the LAN without a portproxy refreshed at every boot.'
 }
-$sysCfg = Join-Path $env:SystemRoot 'System32\config\systemprofile\.wslconfig'
-Note "SYSTEM's .wslconfig: $(if (Test-Path $sysCfg) { 'present' } else { 'absent (the installer writes it)' })"
+$myCfg = Join-Path $env:USERPROFILE '.wslconfig'
+Note "this account's .wslconfig: $(if (Test-Path -LiteralPath $myCfg) { 'present' } else { 'absent (the installer writes it)' })"
 
 # ── 6 ────────────────────────────────────────────────────────────────────────
 Head 'The Hyper-V firewall can be opened for WSL'
@@ -242,9 +242,10 @@ Write-Host ''
 if ($Fail -eq 0) {
     Write-Host '  This box can run the appliance as designed.' -ForegroundColor Green
     Write-Host ''
-    Write-Host '  STILL UNPROVEN by this probe: that the boot task actually fires after a' -ForegroundColor DarkGray
-    Write-Host '  real reboot with nobody signed in. Only a reboot proves that. Install,' -ForegroundColor DarkGray
-    Write-Host '  reboot, sign in to NOTHING, and browse to the box from another machine.' -ForegroundColor DarkGray
+    Write-Host '  STILL UNPROVEN by this probe: that the machine signs itself in and the' -ForegroundColor DarkGray
+    Write-Host '  logon task starts the stack. Only a reboot proves that. Install, set' -ForegroundColor DarkGray
+    Write-Host '  auto-logon with netplwiz, reboot, touch NOTHING, and browse to this box' -ForegroundColor DarkGray
+    Write-Host '  from another machine.' -ForegroundColor DarkGray
 } else {
     Write-Host '  Read the FAIL lines above before installing.
   Only a reboot proves the last mile: install, reboot, touch nothing, and browse

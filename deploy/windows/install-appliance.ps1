@@ -479,7 +479,7 @@ if ($wslCode -ne 0) {
 }
 Write-Ok (($wslVersion -split "`r?`n" | Where-Object { $_ -match 'WSL version' }) -join '')
 
-$conflicts = Get-PortConflicts
+$conflicts = @(Get-PortConflicts)
 if ($conflicts.Count -gt 0) {
     foreach ($c in $conflicts) { Write-Warn "port $($c.Port) is already in use by $($c.Owner)" }
     if (-not $Force) {
