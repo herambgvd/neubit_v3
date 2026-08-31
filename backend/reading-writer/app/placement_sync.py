@@ -162,8 +162,15 @@ class PlacementSync:
                 await self._task
             self._task = None
         if self._nc is not None:
+            # Bounded drain, then close — same as site_facts_sync.stop(). A pull
+            # consumer has nothing buffered to flush (every message is acked as
+            # it is applied), so an unbounded drain() here can only ever make a
+            # shutdown hang, which on a reloading dev server looks like the
+            # service died.
             with contextlib.suppress(Exception):
-                await self._nc.drain()
+                await asyncio.wait_for(self._nc.drain(), timeout=2.0)
+            with contextlib.suppress(Exception):
+                await self._nc.close()
             self._nc = None
         self.stats.connected = False
 
