@@ -68,6 +68,59 @@ EVENTS_SUBJECTS = [
 ]
 
 
+# ── delivery / ack policy ────────────────────────────────────────────────────
+#
+# A durable JetStream subscription is at-least-once: the server holds a message
+# until the consumer acknowledges it, and redelivers every AckWait until it does.
+# nats-py's default `manual_ack=False` acks a message BEFORE the callback's
+# outcome is known, so a handler that raises had its message acknowledged and
+# discarded — the failure existed only as a log line and the event was gone. That
+# is silent data loss, and it is what this bus did until this comment was written.
+#
+# Every durable subscription now ends in exactly one of three terminal states:
+#
+#   ack()   the handler returned normally, i.e. the work is durably done. Only then.
+#   nak()   the handler raised; retry with exponential backoff, up to MAX_DELIVER.
+#   term()  the message can never succeed (undecodable, or the retry budget is
+#           spent). It is copied to EVENTS_DLQ first, so terminating is not silent
+#           loss, then dropped so it stops being redelivered forever.
+#
+# This mirrors the Go bus in the nvr repo (gokernel/events/events.go) deliberately:
+# both sides consume the same EVENTS stream and park failures in the same
+# EVENTS_DLQ stream under the same `dlq.<original subject>` subject and the same
+# `Nbt-Dlq-*` headers, so one dead-letter view covers both languages.
+#
+# THE CONTRACT FOR HANDLERS: raising is how a handler says "not done, retry me".
+# A handler must not return normally until its work is durably persisted, and
+# must not catch-and-swallow its own failures. It must also be IDEMPOTENT — a
+# redelivery after a partial success is expected, not exceptional.
+ACK_WAIT = 30.0        # seconds before JetStream redelivers an unacked message
+MAX_DELIVER = 5        # retry budget before a message is dead-lettered
+NAK_BASE_DELAY = 2.0   # first retry delay, in seconds; doubles per attempt
+NAK_MAX_DELAY = 60.0
+
+# A SEPARATE stream, deliberately outside the EVENTS subject allowlist above, so
+# a dead letter can never be re-consumed into the loop that produced it.
+DLQ_STREAM = "EVENTS_DLQ"
+DLQ_SUBJECT_PREFIX = "dlq."
+
+
+def _nak_delay(delivery: int) -> float:
+    """Exponential backoff on the delivery count, capped at NAK_MAX_DELAY."""
+    return min(NAK_BASE_DELAY * (2 ** max(0, delivery - 1)), NAK_MAX_DELAY)
+
+
+async def ensure_dlq_stream(js) -> None:
+    """Create EVENTS_DLQ if absent. Never raises — a service must still boot."""
+    try:
+        await js.stream_info(DLQ_STREAM)
+    except Exception:
+        try:
+            await js.add_stream(name=DLQ_STREAM, subjects=[DLQ_SUBJECT_PREFIX + ">"])
+        except Exception as e:  # concurrent create by another service — fine
+            log.info("EVENTS_DLQ stream ensure note: %s", e)
+
+
 async def ensure_events_stream(js) -> None:
     """Create EVENTS, or converge an existing one onto :data:`EVENTS_SUBJECTS`.
 
@@ -138,6 +191,9 @@ class EventBus:
             self._nc = await nats.connect(url, name=f"neubit-{self.source}")
             self._js = self._nc.jetstream()
             await ensure_events_stream(self._js)
+            # The dead-letter stream a poisoned message is parked in, so `term()`
+            # below is "stop redelivering" and not "throw away".
+            await ensure_dlq_stream(self._js)
             log.info("NATS connected: %s", url)
         except Exception as e:  # broker down / lib missing → degrade gracefully
             log.warning("NATS connect failed (%s) — events are no-ops", e)
@@ -180,23 +236,189 @@ class EventBus:
 
         Pass ``durable`` for an at-least-once JetStream durable consumer (survives
         restarts); omit it for an ephemeral core subscription.
+
+        On the durable path the HANDLER'S OUTCOME IS THE ACK DECISION: returning
+        normally acks, raising retries with backoff up to :data:`MAX_DELIVER` and
+        then dead-letters to ``EVENTS_DLQ``. See the delivery/ack policy note above
+        — a handler must not return until its work is durably persisted, must let
+        its failures propagate rather than swallowing them, and must be idempotent.
         """
         if self._nc is None:
             return
 
-        async def _cb(msg):
-            try:
-                await handler(json.loads(msg.data.decode()))
-            except Exception as e:
-                log.warning("event handler error on %s: %s", pattern, e)
+        if durable is None or self._js is None:
+            # Core NATS has no acks at all — at-most-once, nothing to acknowledge,
+            # so a handler failure genuinely can only be logged.
+            async def _ephemeral_cb(msg):
+                try:
+                    await handler(json.loads(msg.data.decode()))
+                except Exception as e:
+                    log.exception("event handler error on %s (ephemeral, dropped): %s", pattern, e)
 
-        if durable is not None and self._js is not None:
-            await self._js.subscribe(pattern, cb=_cb, durable=durable)
-        else:
-            await self._nc.subscribe(pattern, cb=_cb)
+            await self._nc.subscribe(pattern, cb=_ephemeral_cb)
+            return
+
+        from nats.js.api import AckPolicy, ConsumerConfig
+
+        async def _cb(msg):
+            await self._deliver(pattern, durable, handler, msg)
+
+        config = ConsumerConfig(
+            ack_policy=AckPolicy.EXPLICIT,
+            ack_wait=ACK_WAIT,
+            max_deliver=MAX_DELIVER,
+        )
+        # Reconcile BEFORE binding, not as a fallback on error. nats-py's
+        # `js.subscribe` looks the durable up first and, when it already exists,
+        # binds to it and IGNORES the `config` argument entirely — no exception,
+        # no complaint, and the pre-existing `max_deliver=-1` stays. That is the
+        # dangerous half of the bug: `manual_ack` alone (which is client-side and
+        # does take effect) turns silent discard into an INFINITE redelivery loop,
+        # because without a delivery budget nothing ever reaches `term()`. The
+        # budget lives on the server-side consumer, so it has to be put there
+        # explicitly on an existing durable.
+        await self._reconcile_consumer(durable, pattern, config)
+        await self._js.subscribe(
+            pattern, cb=_cb, durable=durable, manual_ack=True, config=config
+        )
+
+    async def _reconcile_consumer(self, durable: str, pattern: str, config) -> bool:
+        """Bring an existing durable onto the current ack policy. True if it changed.
+
+        `ack_wait` and `max_deliver` are updatable in place on a live consumer, so
+        this is an `add_consumer` on the same durable name rather than a delete —
+        deleting would reset the ack floor and replay the whole retained backlog.
+
+        The one case that DOES need a recreate is a durable left by a never-acking
+        bug: unlimited max_deliver and an ack floor of 0 despite deliveries. Every
+        backlogged message there is already past the new budget, so stamping the
+        budget on would make JetStream stop redelivering them without ever handling
+        or dead-lettering them — turning a redelivery loop into silent loss. Nothing
+        on such a consumer was ever acked, so nothing is lost by starting it over.
+        """
+        try:
+            info = await self._js.consumer_info(EVENTS_STREAM, durable)
+        except Exception:
+            return False  # does not exist yet — subscribe() will create it correctly
+        if (
+            info.config.max_deliver == config.max_deliver
+            and info.config.ack_policy == config.ack_policy
+        ):
+            return False  # already converged; a no-op on a healthy stack
+        try:
+            never_acked = (
+                getattr(info.ack_floor, "consumer_seq", 0) == 0
+                and getattr(info.delivered, "consumer_seq", 0) > 0
+            )
+            if (info.config.max_deliver or -1) <= 0 and never_acked:
+                log.warning(
+                    "consumer %s (%s): legacy never-acking durable (delivered=%s ack_floor=0) — "
+                    "recreating so its backlog replays once under the new ack policy",
+                    durable, pattern, info.delivered.consumer_seq,
+                )
+                await self._js.delete_consumer(EVENTS_STREAM, durable)
+                return True
+            new_config = info.config
+            new_config.ack_policy = config.ack_policy
+            new_config.ack_wait = config.ack_wait
+            new_config.max_deliver = config.max_deliver
+            await self._js.add_consumer(EVENTS_STREAM, config=new_config)
+            log.info(
+                "consumer %s (%s): ack policy reconciled (ack_wait=%ss max_deliver=%s)",
+                durable, pattern, ACK_WAIT, MAX_DELIVER,
+            )
+            return True
+        except Exception as e:
+            log.error("consumer %s (%s): could not apply ack policy: %s", durable, pattern, e)
+            return False
+
+    async def _deliver(self, pattern: str, durable: str, handler, msg) -> None:
+        """Run one JetStream message through the handler into exactly one ack state."""
+        try:
+            delivery = int(msg.metadata.num_delivered)
+        except Exception:
+            delivery = 1
+
+        try:
+            env = json.loads(msg.data.decode())
+        except Exception as e:
+            # Undecodable now is undecodable on every redelivery. Retrying is a
+            # guaranteed-losing loop, so park it and terminate immediately.
+            log.error(
+                "event decode error on %s (%s): %s — dead-lettering", pattern, durable, e
+            )
+            await self._dead_letter(msg, durable, f"decode: {e}", delivery)
+            await _quiet(msg.term())
+            return
+
+        try:
+            await handler(env)
+        except Exception as e:
+            event_id = env.get("event_id") if isinstance(env, dict) else None
+            if delivery >= MAX_DELIVER:
+                log.error(
+                    "event handler error on %s (%s) event=%s after %d/%d deliveries: %r "
+                    "— dead-lettering",
+                    pattern, durable, event_id, delivery, MAX_DELIVER, e,
+                )
+                await self._dead_letter(msg, durable, repr(e), delivery)
+                await _quiet(msg.term())
+                return
+            log.warning(
+                "event handler error on %s (%s) event=%s delivery %d/%d: %r — retrying",
+                pattern, durable, event_id, delivery, MAX_DELIVER, e,
+            )
+            await _quiet(msg.nak(delay=_nak_delay(delivery)))
+            return
+
+        await _quiet(msg.ack())
+
+    async def _dead_letter(self, msg, durable: str, reason: str, delivery: int) -> None:
+        """Copy an unprocessable message to EVENTS_DLQ under `dlq.<original subject>`.
+
+        A DLQ write failure is logged loudly but never blocks the terminate — a
+        message we cannot park is still a message we must stop redelivering. The
+        subject and headers match the Go bus byte for byte so one dead-letter view
+        covers both.
+        """
+        if self._js is None:
+            return
+        headers = {
+            "Nbt-Dlq-Origin-Subject": msg.subject,
+            "Nbt-Dlq-Consumer": durable,
+            "Nbt-Dlq-Deliveries": str(delivery),
+            "Nbt-Dlq-Reason": reason,
+            "Nbt-Dlq-At": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }
+        try:
+            await self._js.publish(
+                DLQ_SUBJECT_PREFIX + msg.subject, msg.data, headers=headers
+            )
+        except Exception as e:
+            log.error(
+                "DLQ publish failed for %s (%s) — message dropped: %s",
+                msg.subject, durable, e,
+            )
+            return
+        log.error(
+            "dead-lettered %s (%s) after %d deliveries: %s",
+            msg.subject, durable, delivery, reason,
+        )
 
     def is_connected(self) -> bool:
         return self._nc is not None
+
+
+async def _quiet(awaitable) -> None:
+    """Await an ack/nak/term, logging rather than raising if the server rejects it.
+
+    A failed ack is worth knowing about (the message will be redelivered) but must
+    not escape into the nats-py callback runner, which would only log it anyway.
+    """
+    try:
+        await awaitable
+    except Exception as e:
+        log.warning("ack/nak/term failed: %s", e)
 
 
 def _parse_subject(subj: str) -> tuple[str | None, str]:
