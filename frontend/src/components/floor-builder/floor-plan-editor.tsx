@@ -9,7 +9,16 @@
 // move it (its zone is recomputed via point-in-polygon), rotate cameras (FoV arc),
 // select/delete, and persist via the save loop (draft→register, changed→update,
 // deleted→remove, then refetch by-floor). Device inventory for the palette comes from
-// the access-control service (controllers + doors) — see DeviceManagementSidebar.
+// access-control (controllers + doors), VMS (cameras + NVRs) and IoT (the reading
+// store's reporting devices) — see DeviceManagementSidebar.
+//
+// WHERE A PIN GOES AFTERWARDS. `device_placements` is the platform's ONE statement
+// of where a device is. For an IoT device that statement also has to reach Building
+// Intelligence, which lives in another database: core emits
+// `tenant.<t>.sites.device_placement.*` on save and the reading-writer
+// (`app/placement_sync.py`) mirrors the site/floor/zone into
+// `neubit_reporting.device_locations`, from which every point of that device
+// inherits its placement. Nothing is written twice and nothing is inferred here.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -124,10 +133,17 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: any) 
   const { inventoryById } = useDeviceInventory();
   const displayPlacements = useMemo(
     () =>
-      placements.map((p) => ({
-        ...p,
-        name: inventoryById.get(p.device_id)?.name || p.name || p.label || p.device_id,
-      })),
+      placements.map((p) => {
+        const inv = inventoryById.get(p.device_id);
+        return {
+          ...p,
+          name: inv?.name || p.name || p.label || p.device_id,
+          // What the device IS (IoT category + equipment kind), so the canvas can
+          // pick a glyph. The saved placement carries it in `metadata`; the live
+          // inventory is the fallback for a row saved before it did.
+          metadata: p.metadata ?? inv?.metadata ?? null,
+        };
+      }),
     [placements, inventoryById],
   );
 

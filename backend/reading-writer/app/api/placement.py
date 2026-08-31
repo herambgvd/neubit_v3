@@ -1,72 +1,71 @@
-"""Placing a device in a building — the write half of the spatial axis.
+"""Writing `device_locations` — the device→building join this store reads from.
 
-Migration 0008 added `points.site_id` / `floor_id` / `zone_id` and placed
-nothing, on purpose: nothing on the gateway wire carries a placement and a
-guessed one is worse than none. This module is what finally writes them, and
-migration 0010 is where the shape is argued. The short version:
+This module used to BE the placement feature: an API, a screen, and an HTTP
+resolver that asked core to confirm every id. The feature was a duplicate.
+Placement already had a home — Configurations → Sites → floor plan, backed by
+`neubit_control.device_placements`, which has always carried `site_id` /
+`floor_id` / `zone_id` beside the pin's `{x, y, rotation}` and has always emitted
+an event on every write.
+
+So the routes are gone and the CALLER is now `app/placement_sync.py`, a durable
+consumer of `tenant.*.sites.device_placement.>`. What is left here is the write
+itself, unchanged in every property that mattered:
 
 * **The truth is one row per DEVICE** (`device_locations`), not one per point. A
   placement is a fact about a box; this estate is 29 devices and 314 points.
 * **`points`' six columns are a DERIVATION** of that row, recomputed by
-  `reporting.placement.reconcile_placement`, which also runs on the write path
-  so a point reporting for the first time inherits its device's placement.
-* **A point-level override exists** (`points.placement_source = 'point'`) for
-  the sub-meter that genuinely is not where its panel is. It is the exception.
+  `reporting.placement.reconcile_placement`, which also runs on the write path so
+  a point that reports for the FIRST TIME inherits its device's placement.
+* **A point-level override exists** (`points.placement_source = 'point'`) for the
+  sub-meter that genuinely is not where its panel is.
 
-WHY THE NAMES COME FROM CORE AND NOT FROM THE BROWSER
-------------------------------------------------------
+WHERE THE NAMES COME FROM NOW
+------------------------------
 `sites` / `floors` / `zones` live in `neubit_control` and this store may not read
-it (contract §1) — which is also why `points` carries `site_name` beside
-`site_id` at all: the label has to be COPIED at write time or every floor legend
-on the platform reads `a7f3…`.
+it (contract §1) — which is why `points` carries `site_name` beside `site_id` at
+all: the label has to be COPIED at write time or every floor legend on the
+platform reads `a7f3…`.
 
-The obvious implementation is to let the client send the name it already has on
-screen. This does not do that, and the reason is contract §4. A client-supplied
-name is a label nothing checked: a request could place 22 points on "Level 4"
-naming a floor id that does not exist, or name a floor `Roof` that core calls
-`Level 9`, and `/bi/summary` would report both as fact. So the placement API
-**resolves every id against core over HTTP** and copies the name from core's
-answer, ignoring anything the client said about it.
+The old answer was an HTTP round-trip to core with the caller's own token, made
+because a name from a BROWSER is a label nothing checked (contract §4). The new
+answer is stronger and cheaper: core publishes the name ON THE EVENT, read from
+its own `sites` / `floors` / `zones` rows at the moment it writes the placement.
+The authority states the label instead of being asked to confirm one, and there
+is no third party in between to state a different one.
 
-That is a service-to-service call, not a cross-service database read — the same
-thing `permsync` already does in the other direction — and it is made with the
-CALLER's own bearer token rather than a system token. Two consequences, both
-wanted: a caller who cannot read a site cannot place anything into it, and the
-tenant scoping core already applies to `/sites` applies here for free. A caller
-therefore needs `bi.manage` AND `sites.read` / `floors.read` / `zones.read`,
-which is exactly what the screen needs anyway to offer the picker.
-
-If core is unreachable the placement is REFUSED. Writing an unverified placement
-because the validator was down is how a fixture gets into a dimension table.
+`Location` below is therefore a plain value object — every field in it came from
+core, and nothing in this module invents one.
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import os
 import uuid
 from dataclasses import dataclass
 
-import httpx
-from kernel.errors import ForbiddenError, NotFoundError, ValidationError
+from kernel.errors import ValidationError
 from reporting.placement import reconcile_placement
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-_TIMEOUT = 6.0
-
-# How many devices (or points) one call may place. A bulk placement is the whole
-# reason this API exists — 29 devices one at a time is how the feature does not
-# get used — but an unbounded list is an unbounded transaction.
+# How many devices (or points) one call may place. An unbounded list is an
+# unbounded transaction. The floor-plan consumer places one device per event, so
+# this is now a ceiling nothing reaches rather than a working limit.
 MAX_BULK = 500
 
 
-# ── resolving the building half against core ─────────────────────────────────
+# ── where a device is ────────────────────────────────────────────────────────
 
 
 @dataclass(frozen=True)
 class Location:
-    """A verified place. Every field here came from core, not from the request."""
+    """A verified place. Every field here came from core, not from a request.
+
+    Core validated the site/floor/zone against each other before it wrote the
+    placement (`app/sites/device/service.py` refuses a floor of another site and a
+    zone of another floor), and it published the names with the ids. There is
+    nothing left for this module to check and nothing for it to guess.
+    """
 
     site_id: uuid.UUID
     site_name: str
@@ -74,87 +73,6 @@ class Location:
     floor_name: str | None = None
     zone_id: uuid.UUID | None = None
     zone_name: str | None = None
-
-
-def _core_base() -> str:
-    base = (os.getenv("VE_CORE_URL") or "").rstrip("/")
-    if not base:
-        # Not a warning-and-continue: without core there is nothing to verify a
-        # placement against, and an unverified placement is the fixture problem.
-        raise ValidationError(
-            "placement is unavailable: VE_CORE_URL is not configured, so a site "
-            "or floor id cannot be verified"
-        )
-    return f"{base}{os.getenv('VE_API_PREFIX', '/api/v1')}"
-
-
-async def _fetch(client: httpx.AsyncClient, path: str, bearer: str, what: str) -> dict:
-    try:
-        r = await client.get(
-            f"{_core_base()}{path}", headers={"Authorization": bearer}
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise ValidationError(
-            f"could not verify {what} with core ({exc}); the placement was not written"
-        ) from exc
-    if r.status_code == 404:
-        raise NotFoundError(f"no such {what}")
-    if r.status_code in (401, 403):
-        # The caller holds bi.manage but not the key that reads the building
-        # tree. Say which one, rather than returning a bare 403 from a service
-        # the caller never addressed.
-        raise ForbiddenError(
-            f"placing a device requires permission to read the {what} in core "
-            f"(sites.read / floors.read / zones.read)"
-        )
-    if r.status_code >= 300:
-        raise ValidationError(f"core refused the {what} lookup: {r.status_code}")
-    return r.json()
-
-
-async def resolve_location(
-    *,
-    bearer: str,
-    site_id: uuid.UUID,
-    floor_id: uuid.UUID | None,
-    zone_id: uuid.UUID | None,
-) -> Location:
-    """Verify a site / floor / zone against core and take their NAMES from it.
-
-    Also checks that the three agree with each other — a floor of another site or
-    a zone of another floor is refused rather than stored as a placement that
-    reads correctly on its own row and wrongly in a hierarchy.
-    """
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        site = await _fetch(client, f"/sites/{site_id}", bearer, "site")
-        floor = zone = None
-        if floor_id is not None:
-            floor = await _fetch(client, f"/floors/{floor_id}", bearer, "floor")
-            if str(floor.get("site_id")) != str(site_id):
-                raise ValidationError(
-                    f"floor {floor_id} belongs to site {floor.get('site_id')}, "
-                    f"not to {site_id}"
-                )
-        if zone_id is not None:
-            if floor_id is None:
-                # A zone is a subdivision OF a floor. Storing one without its
-                # floor would make `floors` and `zones` disagree about the same
-                # device.
-                raise ValidationError("a zone cannot be set without its floor")
-            zone = await _fetch(client, f"/zones/{zone_id}", bearer, "zone")
-            if str(zone.get("floor_id")) != str(floor_id):
-                raise ValidationError(
-                    f"zone {zone_id} belongs to floor {zone.get('floor_id')}, "
-                    f"not to {floor_id}"
-                )
-    return Location(
-        site_id=site_id,
-        site_name=site["name"],
-        floor_id=floor_id,
-        floor_name=floor["name"] if floor else None,
-        zone_id=zone_id,
-        zone_name=zone["name"] if zone else None,
-    )
 
 
 # ── the device→building join ─────────────────────────────────────────────────
@@ -303,7 +221,18 @@ async def unplace_devices(
     return {"devices_unplaced": len(removed), "points_updated": points_changed}
 
 
-# ── the point-level override ─────────────────────────────────────────────────
+# ── the point-level override ─ NO CALLER TODAY ───────────────────────────────
+#
+# KNOWN GAP, recorded rather than quietly dropped. `/bi/placement/points` was the
+# only way to say "this sub-meter is NOT where its panel is", and it went with the
+# rest of that API. Nothing reaches the SQL or the two functions below now.
+#
+# What still holds: `reconcile_placement` refuses to touch any point row marked
+# `placement_source = 'point'`, so an override that EXISTS is still honoured
+# forever, including when its device is re-placed or unplaced from the floor plan.
+# What is missing is a way to CREATE or CLEAR one — the floor plan is device-level
+# by construction. The mechanism is kept whole here so restoring it is a route,
+# not a rewrite.
 
 _PLACE_POINTS_SQL = text(
     """

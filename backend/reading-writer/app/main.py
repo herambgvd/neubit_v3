@@ -41,6 +41,7 @@ from .api import bi_router
 from .config import WriterConfig
 from .metrics import Metrics
 from .pipeline import Pipeline
+from .placement_sync import PlacementStats, PlacementSync
 
 logging.basicConfig(level=os.getenv("VE_LOG_LEVEL", "INFO").upper(),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -49,6 +50,12 @@ log = logging.getLogger("reading-writer")
 metrics = Metrics()
 config = WriterConfig()
 pipeline = Pipeline(config, metrics)
+# The floor-plan → BI mirror. A SEPARATE consumer on a SEPARATE stream: it reads
+# core's sites events off EVENTS, while the pipeline reads readings off
+# IOT_READINGS. Coupling them would make a placement event able to stall the
+# reading path, which is the one thing that must never wait.
+placement_stats = PlacementStats()
+placement_sync = PlacementSync(placement_stats)
 
 
 @asynccontextmanager
@@ -66,7 +73,15 @@ async def lifespan(app: FastAPI):
         # /readyz with it, and then the outage is invisible. Stay up, stay red.
         metrics.note_error(exc)
         log.exception("pipeline failed to start — service is up but NOT consuming")
+    try:
+        await placement_sync.start(getattr(settings, "nats_url", "") or "")
+    except Exception as exc:  # noqa: BLE001
+        # Same rule as the pipeline: a placement mirror that cannot start must
+        # not take the readings path down with it.
+        metrics.note_error(exc)
+        log.exception("placement sync failed to start — floor-plan pins will not reach BI")
     yield
+    await placement_sync.stop()
     await pipeline.stop()
 
 
@@ -131,7 +146,7 @@ async def readyz() -> JSONResponse:
 
 @app.get("/stats")
 async def stats() -> dict:
-    return metrics.snapshot()
+    return {**metrics.snapshot(), **placement_stats.snapshot()}
 
 
 @app.get("/metrics")

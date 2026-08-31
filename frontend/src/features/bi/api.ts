@@ -14,6 +14,10 @@
 //   GET /bi/points    ?device_id|device_tag&category&type&search&with_latest
 //   GET /bi/series    ?point_id(xN)&start&end&hours&resolution=auto|1m|1h|raw
 //
+// `/bi/devices` is also the floor-plan editor's IoT palette (see
+// lib/api/deviceInventory.ts): a device is placeable because it has reported,
+// which is the same reason it appears here.
+//
 // Which store answers which call — this is the part that matters and the reason
 // the API exposes `resolution` at all:
 //   • CHARTS read the ROLLUPS (`readings_1m` / `readings_1h`), never raw. That is
@@ -106,44 +110,21 @@ export const bi = {
   series: ({ point_id, hours, start, end, resolution }: any) =>
     unwrap(api.get(`${BI}/series${qs({ point_id, hours, start, end, resolution })}`)),
 
-  // ── PLACEMENT ─ where a device is, and the write that says so ──────────────
+  // ── PLACEMENT ─ NOT HERE ────────────────────────────────────────────────
   //
-  // The truth is one row per DEVICE (`device_locations`), not per point: a
-  // placement is a fact about a box, and this estate is 29 devices to 314
-  // points. `points.site_id / floor_id / zone_id` are a derivation of it, so a
-  // point that reports for the first time inherits its device's placement.
+  // This client used to carry a `placement` block: a worklist read and four
+  // writes into `device_locations`. It is gone with the screen that used it.
   //
-  // THREE THINGS THIS CLIENT MUST NOT DO, all of them contract §4:
-  //   • It never sends a site/floor/zone NAME. The server resolves every id
-  //     against core and copies the label from core's answer; a name from a
-  //     browser is a label nothing checked.
-  //   • It never derives a floor from `tag_prefix`. That field groups the LIST
-  //     so an operator can select twelve devices at once; the floor is still
-  //     theirs to pick. `4F-3F AC DB` names two floors, so a convention is not
-  //     data.
-  //   • It never hides an unplaced device. Unplaced is the state this screen
-  //     exists to change, not one to filter away.
-  placement: {
-    devices: ({ placed, search, limit, offset }: any = {}) =>
-      unwrap(api.get(`${BI}/placement/devices${qs({ placed, search, limit, offset })}`)),
-
-    // Bulk by construction: every device in one call goes to the SAME place.
-    place: ({ device_ids, site_id, floor_id, zone_id }: any) =>
-      unwrap(api.post(`${BI}/placement/devices`, { device_ids, site_id, floor_id, zone_id })),
-
-    // A separate call rather than a nullable site_id, so an omitted field can
-    // never be destructive. The points go back to UNPLACED, not to a default.
-    unplace: ({ device_ids }: any) =>
-      unwrap(api.post(`${BI}/placement/devices/unplace`, { device_ids })),
-
-    // The point-level OVERRIDE — the sub-meter that is genuinely not where its
-    // panel is. The exception, not the unit of work.
-    placePoints: ({ point_ids, site_id, floor_id, zone_id }: any) =>
-      unwrap(api.post(`${BI}/placement/points`, { point_ids, site_id, floor_id, zone_id })),
-
-    resetPoints: ({ point_ids }: any) =>
-      unwrap(api.post(`${BI}/placement/points/reset`, { point_ids })),
-  },
+  // A device is placed in ONE place — Configurations → Sites → floor plan, which
+  // has pinned cameras and doors at `{x, y, rotation}` since it was ported and
+  // now offers IoT devices in the same palette. Core writes
+  // `neubit_control.device_placements` and emits a domain event; the
+  // reading-writer mirrors the site / floor / zone into
+  // `neubit_reporting.device_locations`, and every point of that device inherits
+  // it. Two screens for one fact is two answers waiting to disagree.
+  //
+  // `summary()` above still reports placed / unplaced counts. Those read `points`
+  // and stay true no matter which surface made the placement.
 };
 
 export default bi;

@@ -24,7 +24,7 @@ import datetime as dt
 import uuid
 from typing import Annotated, get_args
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query
 from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
 from kernel.errors import ForbiddenError, ValidationError
 from reporting.db import get_db
@@ -34,7 +34,6 @@ from . import builder
 from . import context
 from . import execute as ex
 from . import permsync
-from . import placement as pl
 from . import queries as q
 from . import registry
 from . import spec as widget_spec
@@ -42,14 +41,9 @@ from .schemas import (
     ActivityBucket,
     AlertListResponse,
     DeviceListResponse,
-    PlaceDevicesRequest,
-    PlacementDeviceListResponse,
-    PlacePointsRequest,
     PointListResponse,
-    ResetPointsRequest,
     SeriesResponse,
     SummaryResponse,
-    UnplaceDevicesRequest,
 )
 from .spec import TableResult as QueryResult
 
@@ -58,12 +52,11 @@ from .spec import TableResult as QueryResult
 # actually grant it in the role editor — a key no catalog knows about can only
 # ever be held by a wildcard admin.
 PERM_READ = "bi.read"
-# The WRITE key. Two things use it, and they are the same kind of decision:
-# retiring a point (what is part of the estate) and PLACING a device (where that
-# part of the estate is). Both are an operator's statement about the building
-# rather than a reading of it, and neither ever touches a measurement — a
-# placement writes a dimension row and nothing else. Registered in core's catalog
-# beside bi.read, so a role can actually grant it.
+# The WRITE key. It gates retiring/unretiring a point — an operator's statement
+# about what is part of the estate, rather than a reading of it, and one that
+# never touches a measurement. It used to gate PLACING a device too; placement
+# now happens on the Sites floor plan and is gated by core's own sites
+# permissions there. Registered in core's catalog beside bi.read.
 PERM_MANAGE = "bi.manage"
 
 bi_router = APIRouter(prefix="/bi", tags=["Building Intelligence"])
@@ -319,155 +312,41 @@ async def unretire_point(db: Db, scope: Caller, point_id: uuid.UUID) -> dict:
 
 # ── Placement ────────────────────────────────────────────────────────────────
 #
-# The write half of the spatial axis, and the thing that made `points`' six
-# spatial columns (migration 0008) more than an empty frame.
+# THERE IS NO PLACEMENT API HERE ANY MORE, AND THAT IS THE POINT.
 #
-# The truth is ONE ROW PER DEVICE (`device_locations`, migration 0010), because a
-# placement is a fact about a box rather than about each of the box's
-# measurements: this estate is 29 devices and 314 points, and every point of
-# `4F_Solar_Panel01` is in the same room. `points.site_id` / `floor_id` /
-# `zone_id` are a derivation of that row, which is also how a point that reports
-# for the FIRST TIME inherits its device's placement.
+# Placing a device already had a home before this store existed: Configurations →
+# Sites → floor plan, backed by `neubit_control.device_placements`, which carries
+# `site_id` / `floor_id` / `zone_id` beside the pin's `{x, y, rotation}`. A second
+# BI-only placement screen writing `device_locations` directly was the same fact
+# stated twice, with nothing to stop the two disagreeing.
 #
-# Three rules run through every route below:
+# So `device_placements` is the source of truth and `device_locations` is this
+# store's local READ-MODEL of it, fed by `app/placement_sync.py` — a durable
+# consumer of core's `tenant.*.sites.device_placement.>` events. The rules that
+# used to live on these routes did not go away; they moved:
 #
-# 1. **Names come from core, never from the client.** Every id is resolved
-#    against core's own `/sites` / `/floors` / `/zones` with the CALLER's token
-#    and the label is copied from the answer. See `placement.py`.
-# 2. **Unplaced is a state, not a gap.** Nothing here defaults a device to a
-#    floor, infers one from its tag, or hides a device that has none.
-# 3. **A placement is never overwritten by a reading.** The writer's points
-#    upsert does not name these columns at all, and the reconcile it runs reads
-#    only `device_locations`. Contract §11's no-clobber rule, kept.
+# 1. **Names come from core, never from the client.** Core now publishes the
+#    site / floor / zone NAME beside the id on the event, read from its own rows.
+#    That is stronger than the HTTP round-trip this module used to make: the
+#    authority states the label rather than being asked to confirm one.
+# 2. **Unplaced is a state, not a gap.** Nothing infers a floor from a tag, and a
+#    device with no pin has no `device_locations` row and no placed points.
+# 3. **A placement is never overwritten by a reading.** Unchanged — the points
+#    upsert never names these columns and `reconcile_placement` reads only
+#    `device_locations`.
+#
+# WHAT IS GONE WITH THEM, STATED RATHER THAN HIDDEN:
+#
+# * **Site-without-floor placement.** `device_placements.floor_id` is NOT NULL, so
+#   a rooftop meter that belongs to the building and to no storey can no longer be
+#   expressed. `device_locations` still MODELS it (floor is nullable) and the
+#   reconcile still handles it; nothing can write it.
+# * **The point-level override.** `/placement/points` was the only way to say
+#   "this sub-meter is not where its panel is". `reconcile_placement` still
+#   refuses to touch a row marked `placement_source = 'point'`, and
+#   `placement.place_points` / `reset_points` still exist — but no route reaches
+#   them, so today the capability is unreachable outside SQL.
 
-
-def _bearer(request: Request) -> str:
-    """The caller's own Authorization header, forwarded to core for verification.
-
-    Deliberately the caller's token and not a system one: placing a device into a
-    site the caller cannot read should fail, and reusing core's own scoping is
-    how that is guaranteed rather than reimplemented here.
-    """
-    header = request.headers.get("authorization")
-    if not header:
-        raise ValidationError("missing Authorization header")
-    return header
-
-
-@bi_router.get(
-    "/placement/devices",
-    response_model=PlacementDeviceListResponse,
-    dependencies=[Depends(require_permission(PERM_READ))],
-)
-async def placement_devices(
-    db: Db,
-    scope: Caller,
-    placed: str | None = None,
-    search: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=500)] = 200,
-    offset: Annotated[int, Query(ge=0)] = 0,
-) -> PlacementDeviceListResponse:
-    """The placement worklist: every reporting device, and where it is or is not.
-
-    `placed=unplaced` is the screen's default view and the honest one — it is the
-    work. `placed` filters on whether a `device_locations` row EXISTS rather than
-    on `floor_id IS NULL`, because "placed on a site with no floor" is a real
-    answer (a rooftop meter) and must not read as unplaced.
-
-    Each row carries `tag_prefix`, the leading token of the gateway's device tag.
-    It groups the list; it never fills in a floor. Nothing on this platform maps
-    `4F` to a floor id, and `4F-3F AC DB` names two floors anyway.
-    """
-    tenant = _tenant(scope)
-    total, rows = await q.placement_devices(
-        db, tenant, placed=placed, search=search, limit=limit, offset=offset
-    )
-    overview = await q.placement_overview(db, tenant)
-    return PlacementDeviceListResponse(total=total, items=rows, overview=overview)
-
-
-@bi_router.post(
-    "/placement/devices",
-    dependencies=[Depends(require_permission(PERM_MANAGE))],
-)
-async def place_devices(
-    request: Request, db: Db, scope: Caller, who: Who, body: PlaceDevicesRequest
-) -> dict:
-    """Place one or more devices in one site / floor / zone.
-
-    BULK IS THE SHAPE, not an add-on: the list is what makes this usable, because
-    an operator asked to place 29 devices one at a time does not place any of
-    them. The devices in one call all go to the SAME place — heterogeneous bulk
-    would be a batch of unrelated decisions wearing one request's clothes.
-
-    The response names any `device_ids` the store has never seen rather than
-    reporting success for them: this API places devices that have REPORTED, and a
-    typo must not look like a placement.
-    """
-    where = await pl.resolve_location(
-        bearer=_bearer(request),
-        site_id=body.site_id,
-        floor_id=body.floor_id,
-        zone_id=body.zone_id,
-    )
-    return await pl.place_devices(
-        db,
-        _tenant(scope),
-        device_ids=body.device_ids,
-        where=where,
-        placed_by=who.user_id,
-        source="operator",
-    )
-
-
-@bi_router.post(
-    "/placement/devices/unplace",
-    dependencies=[Depends(require_permission(PERM_MANAGE))],
-)
-async def unplace_devices(db: Db, scope: Caller, body: UnplaceDevicesRequest) -> dict:
-    """Remove a placement. The device's points go back to UNPLACED.
-
-    A separate route rather than a nullable field on the place call, so that an
-    omitted `site_id` can never be destructive. Points carrying an explicit
-    point-level override keep it — that override never came from this row.
-    """
-    return await pl.unplace_devices(db, _tenant(scope), device_ids=body.device_ids)
-
-
-@bi_router.post(
-    "/placement/points",
-    dependencies=[Depends(require_permission(PERM_MANAGE))],
-)
-async def place_points(
-    request: Request, db: Db, scope: Caller, body: PlacePointsRequest
-) -> dict:
-    """Override the device's placement for named points.
-
-    The escape hatch for the sub-meter that genuinely is not where its panel is.
-    A point placed this way is marked and the device-level reconcile never
-    touches it again — including when its device is re-placed or unplaced.
-    """
-    where = await pl.resolve_location(
-        bearer=_bearer(request),
-        site_id=body.site_id,
-        floor_id=body.floor_id,
-        zone_id=body.zone_id,
-    )
-    return await pl.place_points(db, _tenant(scope), point_ids=body.point_ids, where=where)
-
-
-@bi_router.post(
-    "/placement/points/reset",
-    dependencies=[Depends(require_permission(PERM_MANAGE))],
-)
-async def reset_points(db: Db, scope: Caller, body: ResetPointsRequest) -> dict:
-    """Drop a point-level override so the point follows its device again.
-
-    If the device is placed the point lands where the device is; if it is not,
-    the point lands UNPLACED. One statement decides both, so the two states can
-    never disagree.
-    """
-    return await pl.reset_points(db, _tenant(scope), point_ids=body.point_ids)
 
 
 # ── Series ───────────────────────────────────────────────────────────────────

@@ -1159,3 +1159,99 @@ the DLQ's limits matter to this pipeline rather than only to the kernel bus.
 * `kernel/kernel/lifecycle.py`'s `subscribe_tenant_offboard` acks a RETRYABLE failure: a tenant-offboard (GDPR
   erasure) that fails because the database is down is acked and never retried.
   That one is a correctness bug, not an observability one.
+
+---
+
+## 18. Correcting §17 — the pin already had a home (2026-08-31)
+
+§17 built a placement feature: `POST /api/v1/bi/placement/devices`, a worklist at
+`/bi/placement/devices`, a point-level override, and a screen. It worked, and it
+was the wrong shape, because the platform already had this feature.
+
+**Configurations → Sites → floor plan** (`frontend/src/components/floor-builder/`)
+is a full editor: upload a plan, draw zones, pin devices onto the drawing at
+`{x, y, rotation}`. `neubit_control.device_placements` carries `site_id` /
+`floor_id` / `zone_id` beside that position, and `app/sites/device/service.py` has
+emitted `placed` / `placement_updated` / `placement_removed` on the NATS spine
+since it was ported. So placement had a table, a UI and an event stream. §17 gave
+the same fact a second table, a second UI and a second write path — and nothing
+that would notice when the two disagreed.
+
+`0010_device_locations`'s docstring argued the two were different facts:
+`device_locations` says WHICH ROOM, `device_placements` says WHERE ON THE
+DRAWING. That is still true of the columns. It is not a reason for two SCREENS.
+
+### What is true now
+
+* **One statement.** An IoT device is one more placeable device in the floor-plan
+  palette, beside cameras, NVRs, controllers and doors — sourced from
+  `GET /bi/devices` (a device is placeable because it has REPORTED), placed as
+  `device_type: "sensor"`, `service: "iot"`, with its BI category and equipment
+  kind carried in the placement's `metadata` so the canvas can draw a chiller
+  differently from a meter.
+* **One mirror.** `reading-writer`'s `app/placement_sync.py` binds a durable
+  JetStream consumer on `tenant.*.sites.device_placement.>` (EVENTS) and writes
+  `device_locations` through the same `place_devices` / `unplace_devices` §17
+  built, ending in the same `reconcile_placement()`. `device_placements` is the
+  source of truth; `device_locations` is reporting's read-model of it, which is
+  what lets `/bi/*` join without crossing databases.
+* **Names still come from core.** Not by an HTTP round-trip any more: core reads
+  `sites` / `floors` / `zones` and publishes `site_name` / `floor_name` /
+  `zone_name` ON the event. The authority states the label instead of being asked
+  to confirm one, and no browser is in the path.
+* **The tenant comes from the BODY.** `sites/events.py` publishes a super-admin
+  action (tenant NULL) under the reserved literal subject segment `platform`.
+  `device_locations.tenant_id` is a real uuid. Such a message is ACKED, counted as
+  `placement_sync_skipped_no_tenant` on `/stats`, and logged once at INFO — not
+  retried forever, not stored under a fabricated tenant, not an exception.
+* **Inheritance is unchanged.** A point reporting for the first time still
+  inherits its device's placement on the write path. Re-verified below.
+
+### Removed
+
+`/bi/placement/*` (all four routes), their request/response schemas, the
+`placement_devices` / `placement_overview` queries, `features/bi/Placement.tsx`,
+the route `app/(app)/bi/placement/page.tsx`, the launcher's "Placement" tile and
+`bi.placement` in `features/bi/api.ts`. Portfolio keeps its placed/unplaced counts
+— they read `points` and stay true — and now links to Sites.
+
+### Two capabilities genuinely lost, stated rather than hidden
+
+1. **Site-without-floor placement.** `device_placements.floor_id` is NOT NULL, so
+   the rooftop meter that belongs to the building and to no storey can no longer
+   be expressed. `device_locations` still models it and the reconcile still
+   handles it; nothing can write it.
+2. **The point-level override.** `/bi/placement/points` was the only way to say
+   "this sub-meter is not where its panel is". `reconcile_placement` still refuses
+   to touch a row marked `placement_source = 'point'`, and
+   `app/api/placement.py`'s `place_points` / `reset_points` are kept whole, but no
+   route reaches them: today the capability is unreachable outside SQL. The floor
+   plan is device-level by construction, so restoring it needs a decision about
+   where a point-level pin would live, not just a route.
+
+### Verified on live data (2026-08-31)
+
+Through the REAL floor-plan editor, signed in as a real user, on the live `aeon`
+estate (29 devices / 314 points; baseline 11 devices placed, 181 points placed):
+
+* a zone was drawn on `Aeon Tower / Level 4` and two IoT devices were dragged out
+  of the palette onto it — `4F-3F Light DB` (energy / distribution-board, 6
+  points) and `1F York Chiller01` (hvac / chiller, 6 points). The palette listed
+  all 29 IoT devices with their point counts and a per-category icon.
+* `device_placements` gained two rows with `service: "iot"`,
+  `metadata: {iot_category, iot_type, device_tag}`.
+* `device_locations` went 11 → 13, both new rows `source = 'floor_plan'`,
+  `zone_name = 'Zone 1'`, `placed_by` = the acting user; `points` went
+  181 → 193 placed / 133 → 121 unplaced, and Portfolio's panel reported
+  `193 of 314` with `Level 4 · Aeon Tower → 193`.
+* **inheritance:** a reading was published on `tenant.default.iot.reading.*` for a
+  BRAND-NEW `point_id` of the already-pinned `4F-3F Light DB`. The `points` row the
+  writer created came out `Aeon Tower / Level 4 / Zone 1`,
+  `placement_source = 'device'` — placed, with no new pin. (The synthetic point and
+  its reading were then deleted; the estate is back to 314 points.)
+* **removal:** deleting the chiller's placement drove `device_locations` 13 → 12
+  and `points` 193 → 187 placed; re-registering it restored 13 / 193.
+* **the `platform` tenant:** a `device_placement.placed` event published on
+  `tenant.platform.…` with a NULL body tenant was acked with
+  `placement_sync_skipped_no_tenant: 1`, `placement_sync_errors: 0`.
+* `/readyz` green throughout, `placement_sync_errors: 0`.

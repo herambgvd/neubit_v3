@@ -11,11 +11,11 @@
 // "Building Intelligence" so a role can actually grant it.
 export const PERM_READ = "bi.read";
 
-// The WRITE key. Two things use it and they are the same kind of decision:
-// PLACING a device in a site / floor / zone (where a part of the estate is) and
-// RETIRING a point (what is part of it at all). Neither ever touches a
-// measurement. Registered in core's catalog beside bi.read, so it is grantable
-// in the role editor rather than reachable only by a wildcard admin.
+// The WRITE key. It gates RETIRING a point — what is part of the estate at all —
+// and never touches a measurement. It used to gate PLACING a device too; a device
+// is now placed once, on the Sites floor plan, under core's own sites
+// permissions. Registered in core's catalog beside bi.read, so it is grantable in
+// the role editor rather than reachable only by a wildcard admin.
 export const PERM_MANAGE = "bi.manage";
 
 // Module the routes are gated by — "Dashboards & Reports" in the core module

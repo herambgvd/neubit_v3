@@ -6,9 +6,10 @@
 //   • Available — the placeable-device inventory (drag onto the canvas to place).
 //   • On floor  — devices already placed (click to select, trash to remove).
 //
-// INVENTORY SOURCE: see useDeviceInventory — vms (cameras/NVRs) + access-control
-// (controllers/doors). The editor shares that hook so canvas labels resolve the same
-// names this list shows. The type filter keeps `panel` (fire) for when it lands.
+// INVENTORY SOURCE: see useDeviceInventory — vms (cameras/NVRs), access-control
+// (controllers/doors) and iot (the reading store's reporting devices). The editor
+// shares that hook so canvas labels resolve the same names this list shows. The
+// type filter keeps `panel` (fire) for when it lands.
 import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 
@@ -16,7 +17,25 @@ import { ConfirmDialog, Input } from "@/components/ui/kit";
 import { useDeviceInventory } from "@/components/floor-builder/useDeviceInventory";
 
 // Device-type → icon (heroicons via iconify).
-function iconForType(type) {
+//
+// An IoT device is `sensor` in the placement enum, which says nothing about what
+// it IS. So a sensor's icon comes from its BI CATEGORY instead — the same icons
+// features/bi/constants.ts uses — and an unclassified one gets a question mark
+// rather than borrowing an icon from a category nobody put it in.
+const IOT_CATEGORY_ICON: Record<string, string> = {
+  energy: "heroicons-outline:bolt",
+  hvac: "heroicons-outline:cog-8-tooth",
+  water: "heroicons-outline:beaker",
+  fire: "heroicons-outline:fire",
+};
+
+function iconForType(type, device?: any) {
+  if (type === "sensor") {
+    const cat = String(
+      device?.iot_category ?? device?.metadata?.iot_category ?? "",
+    ).toLowerCase();
+    return IOT_CATEGORY_ICON[cat] || "heroicons-outline:question-mark-circle";
+  }
   if (type === "nvr") return "heroicons-outline:server-stack";
   if (type === "access_control") return "heroicons-outline:shield-check";
   if (type === "door") return "heroicons-outline:rectangle-stack";
@@ -24,14 +43,15 @@ function iconForType(type) {
   return "heroicons-outline:video-camera";
 }
 
-// Type filter options. Access + VMS (camera/NVR) resolve today; `panel` (fire) is
-// kept so the filter matches v2 and is ready when fire lands.
+// Type filter options. Access, VMS (camera/NVR) and IoT (`sensor`) resolve today;
+// `panel` (fire) is kept so the filter matches v2 and is ready when fire lands.
 const TYPE_OPTIONS = [
   { value: "all", label: "All" },
   { value: "camera", label: "Camera" },
   { value: "nvr", label: "NVR" },
   { value: "access_control", label: "Access controller" },
   { value: "door", label: "Door" },
+  { value: "sensor", label: "IoT device" },
 ];
 
 // Transparent 1×1 drag image. The browser's default is a snapshot of this full-width
@@ -57,6 +77,11 @@ function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: any) {
             device_type: device.device_type,
             service: device.service,
             name: device.name,
+            // Carried onto the placement row so the plan can draw the right
+            // glyph for a device that later stops reporting and drops out of
+            // this inventory. Never a floor and never a name — just what the
+            // device is.
+            metadata: device.metadata ?? null,
           }),
         );
         e.dataTransfer.effectAllowed = "copy";
@@ -68,8 +93,19 @@ function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: any) {
         isDragging ? "opacity-40 ring-1 ring-blue-500/50" : ""
       }`}
     >
-      <Icon icon={iconForType(device.device_type)} className="shrink-0 text-sm text-muted" />
+      <Icon
+        icon={iconForType(device.device_type, device)}
+        className="shrink-0 text-sm text-muted"
+      />
       <span className="flex-1 truncate text-foreground">{device.name}</span>
+      {device.device_type === "sensor" && device.points ? (
+        // How much of the estate this one pin speaks for. A placement is a fact
+        // about a box and its points follow it, so the count is the consequence
+        // of the drag and is worth seeing before making it.
+        <span className="shrink-0 text-[10px] tabular-nums text-muted">
+          {device.points} pts
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -89,7 +125,7 @@ function PlacedRow({ placement, inventory, isSelected, onSelect, onDelete }: any
         }`}
       >
         <Icon
-          icon={iconForType(placement.device_type)}
+          icon={iconForType(placement.device_type, inventory ?? placement)}
           className="shrink-0 text-sm text-muted"
         />
         <span className="flex-1 truncate text-left text-foreground">{name}</span>
@@ -120,7 +156,7 @@ export function DeviceManagementSidebar({
   const [deviceTypeFilter, setDeviceTypeFilter] = useState("all");
   const [confirm, setConfirm] = useState<any>(null);
 
-  // ── Inventory sources (vms + access-control) ─────────────────────────
+  // ── Inventory sources (vms + access-control + iot) ───────────────────
   const { inventory, inventoryById, loading } = useDeviceInventory();
 
   const placedIds = useMemo(() => {

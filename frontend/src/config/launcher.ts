@@ -140,12 +140,12 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // Same gating as its siblings — `bi.read` + the `analytics` module —
           // so a caller without either sees SOON here rather than a 403 there.
           { icon: "heroicons:beaker", label: "Water", href: "/bi/water", tone: "teal", perm: "bi.read", module: "analytics" },
-          // Where the estate IS. `points.site_id / floor_id / zone_id` existed for
-          // a while with nothing able to write them; this is the screen that does.
-          // Gated on `bi.read` to LOOK (the worklist is a read of the estate) and
-          // `bi.manage` to write — the button, not the tile, carries the second
-          // key, so a viewer sees what is unplaced rather than a 403.
-          { icon: "heroicons:map-pin", label: "Placement", href: "/bi/placement", tone: "att", perm: "bi.read", module: "analytics" },
+          // NO "Placement" TILE. There was one, and it was a second way to say
+          // where a device is. The first is Configurations → Sites → floor plan,
+          // which pins a device at {x, y, rotation} on the drawing and now offers
+          // IoT devices in the same palette as cameras and doors; the pin reaches
+          // Building Intelligence over the sites event spine. Portfolio still
+          // reports placed / unplaced and links to Sites.
           // No environment points exist. Stays SOON until some do.
           { icon: "heroicons:sparkles", label: "IAQ & Environment", soon: true },
         ],

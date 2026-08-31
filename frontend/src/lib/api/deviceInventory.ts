@@ -5,10 +5,10 @@
 // which sourced its palette from several services (cameras/NVR = VMS, access =
 // gates, fire = panels).
 //
-// In neubit_v3 today there are two device backends: ACCESS-CONTROL (gates) and
-// VMS (cameras + NVRs, shipped in VMS P1). Fire (panels) is not built yet. This
-// module wires the access + vms sources and is structured so fire drops in later
-// without churn.
+// In neubit_v3 today there are three device backends: ACCESS-CONTROL (gates), VMS
+// (cameras + NVRs, shipped in VMS P1) and IOT (the reading store's reporting
+// devices). Fire (panels) is not built yet. This module wires those three and is
+// structured so fire drops in later without churn.
 //
 // Wraps the shared `api` axios instance (baseURL already "/api/v1") and unwraps
 // `.data` — same convention as sites.js / tags.js. The gateway routes
@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 
 const ACCESS = "/access";
 const VMS = "/vms";
+const BI = "/bi";
 
 const unwrap = (p: Promise<any>): Promise<any> => p.then((r) => r.data);
 
@@ -65,6 +66,25 @@ export const vmsInventory = {
   },
   // NVRs — GET /vms/nvrs → { items, total, skip, limit }.
   nvrs: (params = {}) => unwrap(api.get(`${VMS}/nvrs${qs({ limit: 500, ...params })}`)),
+};
+
+// ── IoT source ─────────────────────────────────────────────────────────────
+// The reading store's own device inventory: GET /bi/devices → { total, items }
+// where an item is one device that has REPORTED, grouped out of `points`
+// (device_id, device_tag, category, device_type, points, last_seen_at, …).
+//
+// It is deliberately the SAME list Building Intelligence counts. There is no
+// separate IoT device registry to invent one from: a device exists here because
+// it sent a reading, which is also the only reason it can be placed — a pin on a
+// device this store has never heard of would place nothing.
+//
+// NOTE the name collision: BI's `device_type` is the EQUIPMENT kind (`chiller`,
+// `meter`, …, contract §11), while the floor plan's `device_type` is its own
+// placement enum (`camera` / `nvr` / `sensor` / …). Every IoT device is placed as
+// `sensor`, and the equipment kind + category ride along in `metadata` so the
+// canvas can tell a chiller from a meter instead of drawing 29 identical dots.
+export const iotInventory = {
+  devices: (params = {}) => unwrap(api.get(`${BI}/devices${qs({ limit: 500, ...params })}`)),
 };
 
 export default accessInventory;

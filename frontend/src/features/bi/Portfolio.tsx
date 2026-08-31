@@ -252,7 +252,7 @@ export default function Portfolio() {
                 <SectionHead
                   icon="heroicons:map"
                   title="Floor-wise"
-                  desc="Where the estate is anchored. A point with no floor counts as UNPLACED and is shown as one — never folded into a floor it was not placed on. Placement is a device-level statement made on the Placement screen; nothing is ever inferred from a device tag."
+                  desc="Where the estate is anchored. A point with no floor counts as UNPLACED and is shown as one — never folded into a floor it was not placed on. Placement is a device-level statement made by pinning the device on its floor plan under Configurations → Sites; nothing is ever inferred from a device tag."
                 />
                 {s.placement ? (
                   <>
@@ -294,14 +294,15 @@ export default function Portfolio() {
                     No placement is inferred. The gateway wire carries none, and a
                     floor parsed out of a device tag would be right for most of an
                     estate and silently wrong for the rest — which is worse than
-                    “unplaced”. An operator places a DEVICE and its points follow.
+                    “unplaced”. A device is pinned ONCE, on its floor plan under
+                    Sites, and every point of that device follows the pin.
                   </p>
                   <Link
-                    href="/bi/placement"
+                    href="/sites"
                     className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-nb-blueb hover:underline"
                   >
                     <Icon icon="heroicons:map-pin" className="text-sm" />
-                    Place devices
+                    Open Sites → floor plan
                   </Link>
                 </div>
               </SectionCard>
