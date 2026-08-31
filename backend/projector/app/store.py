@@ -43,15 +43,20 @@ log = logging.getLogger("projector.store")
 
 
 class WriteResult:
-    __slots__ = ("rows_attempted", "rows_inserted")
+    __slots__ = ("rows_attempted", "rows_inserted", "rows_enriched")
 
-    def __init__(self, attempted: int, inserted: int) -> None:
+    def __init__(self, attempted: int, inserted: int, enriched: int = 0) -> None:
         self.rows_attempted = attempted
         self.rows_inserted = inserted
+        # Rows that already existed and gained a value they did not have. Only a
+        # projection with `on_conflict: enrich` can produce these; counted apart
+        # from inserts so "20 alerts arrived" and "20 alerts were re-stated with
+        # a category" never read as the same number.
+        self.rows_enriched = enriched
 
     @property
     def duplicates(self) -> int:
-        return max(self.rows_attempted - self.rows_inserted, 0)
+        return max(self.rows_attempted - self.rows_inserted - self.rows_enriched, 0)
 
 
 def _statement(proj: Projection, n_rows: int) -> str:
@@ -65,10 +70,43 @@ def _statement(proj: Projection, n_rows: int) -> str:
             "(" + ", ".join(f"CAST(:r{i}_{j} AS {casts[c]})" for j, c in enumerate(cols)) + ")"
         )
     conflict = ", ".join(f'"{c}"' for c in t.natural_key)
+    if t.on_conflict == "enrich":
+        # Pipeline contract §12, "missing never clobbers", as SQL. Every non-key
+        # column is COALESCEd against what is already stored, so a message that
+        # says nothing about a field leaves it exactly as it was, and a message
+        # that DOES carry one fills a column that was NULL because nobody had
+        # published it yet.
+        #
+        # `WHERE` guard: without it every redelivery would rewrite an identical
+        # row, tick the continuous-aggregate invalidation trigger, and make
+        # `rows_inserted` a lie. `IS DISTINCT FROM` over the whole row is NULL-safe
+        # and makes a true no-op cost nothing.
+        sets = [
+            f'"{c}" = COALESCE(excluded."{c}", "{t.relation}"."{c}")'
+            for c in cols
+            if c not in t.natural_key
+        ]
+        if not sets:
+            action = "DO NOTHING"
+        else:
+            changed = " OR ".join(
+                f'"{t.relation}"."{c}" IS DISTINCT FROM '
+                f'COALESCE(excluded."{c}", "{t.relation}"."{c}")'
+                for c in cols
+                if c not in t.natural_key
+            )
+            action = f"DO UPDATE SET {', '.join(sets)} WHERE {changed}"
+    else:
+        action = "DO NOTHING"
     return (
         f'INSERT INTO "{t.relation}" ({col_sql}) VALUES '
         + ", ".join(tuples)
-        + f" ON CONFLICT ({conflict}) DO NOTHING"
+        + f" ON CONFLICT ({conflict}) {action}"
+        # `xmax = 0` is true only for a tuple this statement INSERTed; an UPDATEd
+        # one carries the locking transaction's id. Without it `rowcount` would
+        # count enriched rows as new ones and the duplicate counter would read
+        # zero on a replay that inserted nothing.
+        + " RETURNING (xmax = 0) AS inserted"
     )
 
 
@@ -93,6 +131,8 @@ async def write_batch(session: AsyncSession, proj: Projection, rows: list[dict])
             params[f"r{i}_{j}"] = row.get(c)
 
     result = await session.execute(text(_statement(proj, len(deduped))).bindparams(**params))
-    inserted = result.rowcount if result.rowcount is not None and result.rowcount >= 0 else 0
+    flags = [bool(r[0]) for r in result.fetchall()]
+    inserted = sum(1 for f in flags if f)
+    enriched = len(flags) - inserted
     await session.commit()
-    return WriteResult(len(deduped), inserted)
+    return WriteResult(len(deduped), inserted, enriched)

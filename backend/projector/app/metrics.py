@@ -34,7 +34,8 @@ class ProjectionMetrics:
 
     messages_received: int = 0
     rows_inserted: int = 0        # rows the database actually stored
-    rows_duplicate: int = 0       # ON CONFLICT DO NOTHING skipped them — replay, normal
+    rows_duplicate: int = 0       # the conflict action changed nothing — replay, normal
+    rows_enriched: int = 0        # an existing row gained a value it did not have
     batches_written: int = 0
 
     messages_malformed: int = 0   # acked, can never become a row
@@ -157,8 +158,12 @@ class Metrics:
         per("rows_inserted_total", "counter", "Event rows durably stored.",
             lambda m: m.rows_inserted)
         per("rows_duplicate_total", "counter",
-            "Rows skipped by ON CONFLICT DO NOTHING (replay — expected, not an error).",
+            "Rows a conflict left untouched (replay — expected, not an error).",
             lambda m: m.rows_duplicate)
+        per("rows_enriched_total", "counter",
+            "Existing rows that gained a value they did not have "
+            "(on_conflict: enrich — a widened wire reaching older rows).",
+            lambda m: m.rows_enriched)
         per("batches_written_total", "counter", "Batches committed.", lambda m: m.batches_written)
         per("messages_malformed_total", "counter",
             "Messages acked because they can never become a row. NON-ZERO MEANS DATA LOSS.",

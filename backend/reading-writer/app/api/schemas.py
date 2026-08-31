@@ -229,10 +229,18 @@ class SeriesResponse(BaseModel):
 #
 #   • `acked` — always false at publish time (acknowledging is a store-only
 #     mutation in the gateway that publishes nothing), so MTTA is not computable
-#     from this feed and no field pretends otherwise;
-#   • the device's CATEGORY — the alert payload carries `src.{proto,conn,dev,addr}`
-#     and nothing about what the device IS, so an alert cannot be attributed to
-#     `energy` or `hvac` without inventing it.
+#     from this feed and no field pretends otherwise.
+#
+# The device's CATEGORY used to be the second entry in that list. It is on the
+# wire now (pipeline contract §3, "The alert body") and in the store (migration
+# `0011_iot_alerts_identity`), so a fault IS attributable to energy vs hvac vs
+# water. Two things about it stay honest:
+#
+#   • it is OPTIONAL, so an alert from an unclassified device — or one replayed
+#     from an outbox row written before the wire carried it — has none. That
+#     renders as absent, never as "other";
+#   • it is what the DEVICE is, not what the alert is about. Nothing here infers
+#     a category from a point address or a message.
 
 
 class AlertRow(BaseModel):
@@ -245,8 +253,16 @@ class AlertRow(BaseModel):
     # conflux's alert type: rule | comm_fail | range | stale | recovered.
     alert_type: str | None
     device_tag: str | None
+    # What the device IS. Optional on the wire and therefore nullable here: an
+    # unclassified device, or an alert older than the wire change, has neither.
+    device_category: str | None = None
+    device_type: str | None = None
+    # The stable identities behind the tags. `point_id` is the join onto
+    # `readings`/`points` that §15 recorded as impossible — `src.addr` was the only
+    # link and it is a topic path, not a key. Both optional, both nullable.
+    device_id: uuid.UUID | None = None
+    point_id: uuid.UUID | None = None
     # The source address of the point that faulted (`aeonhwj/B2_Main Incomer/CAvg_A`).
-    # There is no point_id on the alert wire, so this is the only link to a series.
     point_addr: str | None
     # Free text from the gateway, including the measured value. Rendered verbatim:
     # it is the one place the number that tripped the rule is stated, and the
@@ -258,6 +274,20 @@ class AlertRow(BaseModel):
 
 class AlertSeverityCount(BaseModel):
     severity: str | None
+    alerts: int
+    devices: int
+    last_at: dt.datetime | None
+
+
+class AlertCategoryCount(BaseModel):
+    """Faults grouped by what the faulting device IS.
+
+    `category` is None for an alert whose device carries no classification. That
+    bucket is REAL and is rendered as "unclassified", not folded into another
+    category and not dropped — a fault that cannot be attributed is still a fault.
+    """
+
+    category: str | None
     alerts: int
     devices: int
     last_at: dt.datetime | None
@@ -275,6 +305,7 @@ class AlertListResponse(BaseModel):
     # Alerts in the whole window, so a truncated list can say "showing 50 of 214".
     total: int
     by_severity: list[AlertSeverityCount] = Field(default_factory=list)
+    by_category: list[AlertCategoryCount] = Field(default_factory=list)
     items: list[AlertRow] = Field(default_factory=list)
 
 

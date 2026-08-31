@@ -979,11 +979,14 @@ ALERTS_MAX_HOURS = 48
 _ALERTS_SQL = text(
     """
     SELECT a.ts, a.alert_id, a.severity, a.alert_type, a.device_tag,
+           a.device_category, a.device_type, a.device_id, a.point_id,
            a.point_addr, a.message, a.conn_slug, a.proto
       FROM iot_alerts a
      WHERE (CAST(:tenant AS uuid) IS NULL OR a.tenant_id = CAST(:tenant AS uuid))
        AND a.ts >= :start AND a.ts < :end
        AND (CAST(:severity AS text) IS NULL OR a.severity = CAST(:severity AS text))
+       AND (CAST(:category AS text) IS NULL
+            OR a.device_category = CAST(:category AS text))
      ORDER BY a.ts DESC
      LIMIT :limit
     """
@@ -1001,6 +1004,24 @@ _ALERTS_ROLLUP_SQL = text(
     """
 )
 
+# The breakdown the widened wire made possible. Both counts are over the WHOLE
+# window and neither is filtered by `severity` — the same choice `by_severity`
+# makes, so a screen can show one breakdown while a filter narrows the list.
+#
+# NULLS LAST: a device with no classification sorts to the end rather than being
+# hidden or relabelled. Absence renders as absence (builder contract §4).
+_ALERTS_CATEGORY_SQL = text(
+    """
+    SELECT a.device_category AS category, count(*) AS alerts,
+           count(DISTINCT a.device_tag) AS devices, max(a.ts) AS last_at
+      FROM iot_alerts a
+     WHERE (CAST(:tenant AS uuid) IS NULL OR a.tenant_id = CAST(:tenant AS uuid))
+       AND a.ts >= :start AND a.ts < :end
+     GROUP BY a.device_category
+     ORDER BY alerts DESC, category NULLS LAST
+    """
+)
+
 
 async def alerts(
     db: AsyncSession,
@@ -1009,6 +1030,7 @@ async def alerts(
     hours: int,
     severity: str | None,
     limit: int,
+    category: str | None = None,
 ) -> dict:
     """The fault queue: every alert in a bounded window, newest first.
 
@@ -1025,20 +1047,32 @@ async def alerts(
         "start": start,
         "end": end,
         "severity": severity,
+        "category": category,
         "limit": limit,
     }
     try:
         items = _rows(await db.execute(_ALERTS_SQL, params))
         by_sev = _rows(await db.execute(_ALERTS_ROLLUP_SQL, params))
+        by_cat = _rows(await db.execute(_ALERTS_CATEGORY_SQL, params))
     except Exception as exc:  # noqa: BLE001 — narrowed below; anything else re-raises
-        if "iot_alerts" not in str(exc) or "does not exist" not in str(exc):
+        # Two shapes of "not collected yet", and neither must be told apart from
+        # a real fault: the relation missing (no projection at all) and a COLUMN
+        # missing (a projection older than migration 0011, which is legitimate —
+        # a spec is data and reaches a deployment on the projector's own clock,
+        # not on this service's). Either way the honest answer is "nothing is
+        # collecting them here", not a 500 that reads as a broken screen.
+        text_of = str(exc)
+        if "does not exist" not in text_of or not (
+            "iot_alerts" in text_of or "device_category" in text_of
+        ):
             raise
         await db.rollback()
         return {
             "available": False,
             "unavailable_reason": (
-                "no alert projection is collecting into this store — the "
-                "'iot_alerts' row of reporting_projections is missing or disabled"
+                "no alert projection is collecting into this store, or its spec "
+                "predates the identity columns — the 'iot_alerts' row of "
+                "reporting_projections is missing, disabled, or not yet reloaded"
             ),
             "window_hours": hours,
             "start": start,
@@ -1046,6 +1080,7 @@ async def alerts(
             "generated_at": end,
             "total": 0,
             "by_severity": [],
+            "by_category": [],
             "items": [],
         }
 
@@ -1067,6 +1102,18 @@ async def alerts(
                 "last_at": r["last_at"],
             }
             for r in by_sev
+        ],
+        # `category` is None for a device the gateway never classified. That row
+        # is kept: "3 energy, 1 hvac, 21 unattributed" is the truth, and dropping
+        # the last number would make the first two look like the whole story.
+        "by_category": [
+            {
+                "category": r["category"],
+                "alerts": int(r["alerts"]),
+                "devices": int(r["devices"]),
+                "last_at": r["last_at"],
+            }
+            for r in by_cat
         ],
         "items": items,
     }

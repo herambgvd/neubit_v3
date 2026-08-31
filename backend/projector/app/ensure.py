@@ -170,7 +170,33 @@ async def ensure_rollups(conn: AsyncConnection, proj: Projection) -> None:
                 "replace it (a plain view standing in for a rollup is exactly the "
                 "kind of thing that quietly serves stale numbers)"
             )
-        if not await _is_cagg(conn, r.relation):
+        if await _is_cagg(conn, r.relation):
+            # A continuous aggregate's SELECT list is fixed at creation and
+            # Timescale has no `ALTER MATERIALIZED VIEW ... ADD COLUMN`. So a
+            # group_by column added to the spec after the aggregate exists lands
+            # NOWHERE, and the failure is invisible from here: the projection keeps
+            # consuming, the registry publishes a dimension, and the chart that
+            # uses it 500s on a column the rollup does not have — but only at the
+            # resolution that reads the rollup, so it works over six hours and
+            # breaks over six days.
+            #
+            # Refusing is the loud version of that (`/readyz` goes red, and the
+            # reason names the columns). Recreating it would be a DROP, and this
+            # service never drops a relation — a rollup that has to widen is
+            # dropped DELIBERATELY by a migration, which is a reviewed change an
+            # operator runs, and this service then rebuilds it from the fact table
+            # on the next reload.
+            have = set(await _columns(conn, r.relation))
+            want = set(r.group_by) | {r.time_column} | {a.name for a in r.aggregates}
+            missing = sorted(want - have)
+            if missing:
+                raise SchemaRefused(
+                    f"{r.relation} exists but does not carry {', '.join(missing)}; a "
+                    "continuous aggregate's columns are fixed at creation and this "
+                    "service never drops one. Drop it deliberately in a migration and "
+                    "it will be rebuilt from the fact table on the next reload."
+                )
+        else:
             group = ", ".join(f'"{c}"' for c in r.group_by)
             aggs = ", ".join(a.sql() for a in r.aggregates)
             sql = (

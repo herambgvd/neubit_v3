@@ -154,6 +154,7 @@ async def alerts(
     scope: Caller,
     hours: Annotated[int, Query(ge=1, le=q.ALERTS_MAX_HOURS)] = 24,
     severity: str | None = None,
+    category: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> AlertListResponse:
     """The fault queue — every alert the gateway raised in a bounded window.
@@ -171,11 +172,19 @@ async def alerts(
 
     `severity` is a plain equality filter over the gateway's own vocabulary
     (`critical` / `warning` / `info`); an unknown value returns nothing rather
-    than everything.
+    than everything. `category` filters the ITEM list the same way over the
+    device's classification (`energy` / `hvac` / `water` / …); the two breakdowns
+    are always over the whole window, so a narrowed list still shows what it is a
+    slice of.
+
+    Both breakdowns keep their unattributed bucket. An alert whose device carries
+    no category is a real fault and is counted as `category: null`, never folded
+    into a neighbouring one.
     """
     return AlertListResponse(
         **await q.alerts(
-            db, _tenant(scope), hours=hours, severity=severity, limit=limit
+            db, _tenant(scope), hours=hours, severity=severity,
+            category=category, limit=limit,
         )
     )
 

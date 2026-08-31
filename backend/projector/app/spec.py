@@ -191,6 +191,25 @@ class Target(BaseModel):
     chunk_interval: str = "7 days"
     # Applied as a TimescaleDB retention policy. Omit for "keep forever".
     retention: str | None = None
+    # What a redelivery of an already-stored natural key does.
+    #
+    #   "nothing" — `ON CONFLICT DO NOTHING`. The default and the right answer for
+    #       a wire whose fields never change: the first write wins, a replay is a
+    #       no-op, and nothing stored can be disturbed.
+    #
+    #   "enrich"  — `ON CONFLICT DO UPDATE SET c = COALESCE(excluded.c, stored.c)`
+    #       for every non-key column. This is the pipeline contract §12 rule
+    #       ("missing never clobbers") applied to a projection: a message that
+    #       omits a field leaves the stored value alone, and a message that
+    #       CARRIES one fills a column that was NULL because the publisher had
+    #       nothing to say when the row was first written. It is what makes a
+    #       widened wire reach rows that predate the widening, without ever
+    #       letting an old replay erase what a newer message taught us.
+    #
+    # It is opt-in per projection because the two behaviours are not
+    # interchangeable: `enrich` means a later message can change a stored row, and
+    # a domain that wants "first write wins, immutably" must be able to say so.
+    on_conflict: Literal["nothing", "enrich"] = "nothing"
 
     @model_validator(mode="after")
     def _check(self) -> "Target":

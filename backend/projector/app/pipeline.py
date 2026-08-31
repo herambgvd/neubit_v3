@@ -292,6 +292,7 @@ class Worker:
                 self.pm.batches_written += 1
                 self.pm.rows_inserted += res.rows_inserted
                 self.pm.rows_duplicate += res.duplicates
+                self.pm.rows_enriched += res.rows_enriched
                 self.pm.last_write_at = time.time()
                 for msg in msgs:
                     try:
@@ -521,9 +522,10 @@ class Projector:
                     )
                 else:
                     log.info(
-                        "%s: rows=%s dup=%s batches=%s malformed=%s pending=%s "
-                        "queue=%s/%s db=%s",
-                        key, pm.rows_inserted, pm.rows_duplicate, pm.batches_written,
+                        "%s: rows=%s enriched=%s dup=%s batches=%s malformed=%s "
+                        "pending=%s queue=%s/%s db=%s",
+                        key, pm.rows_inserted, pm.rows_enriched, pm.rows_duplicate,
+                        pm.batches_written,
                         pm.messages_malformed, pm.consumer_pending, pm.queue_depth,
                         pm.queue_capacity, "up" if self.m.db_healthy else "DOWN",
                     )
