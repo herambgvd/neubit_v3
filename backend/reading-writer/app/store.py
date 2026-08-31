@@ -10,13 +10,20 @@ is expected and normal, not an error. ``PRIMARY KEY (point_id, ts)`` is what mak
 a redelivery a no-op instead of a hard duplicate-key failure that would poison the
 whole batch.
 
-**A missing device classification never clears a stored one.** ``category`` and
-``device_type`` are optional on the wire (contract §11): the gateway omits them
-for a device it has not classified. An absent field means "unknown", so those two
-columns are upserted through ``COALESCE(excluded, stored)`` — a message with no
-category leaves the stored one alone, and an operator's correction survives the
-next reading. A message that DOES carry a value still overwrites, because a
-reclassified device must show up here.
+**A missing device classification never clears a stored one.** ``category``,
+``device_type`` and ``unit`` are optional on the wire (contract §11): the gateway
+omits a classification for a device it has not classified, and ``env.u`` is empty
+for every source whose payload carries no unit. An absent field means "unknown",
+so those three columns are upserted through ``COALESCE(excluded, stored)`` — a
+message with no category leaves the stored one alone, and an operator's
+correction survives the next reading. A message that DOES carry a value still
+overwrites, because a reclassified device must show up here.
+
+``unit`` joined that list later than the other two, and contract §12 recorded the
+gap while it was open: it was assigned unconditionally, so a message with no
+``env.u`` wrote NULL over a stored unit. It cost nothing while the gateway was
+the only thing that could set a unit, and it is the same defect §11 named for
+``category``.
 
 **The dimension row is upserted from the message.** An unknown ``point_id`` does
 not cost the reading (contract §6) — the ``points`` row is written from what the
@@ -163,7 +170,16 @@ async def write_batch(
                 "device_id": stmt.excluded.device_id,
                 "device_tag": stmt.excluded.device_tag,
                 "point_tag": stmt.excluded.point_tag,
-                "unit": stmt.excluded.unit,
+                # `unit` is COALESCEd for exactly the reason `category` is, and
+                # this was the "known, left alone" note at the end of contract
+                # §12: it used to be assigned unconditionally, so a message with
+                # no `env.u` wrote NULL over a stored unit. Harmless while the
+                # gateway is the only source of units and all 313 aeon points
+                # report none — and the same clobber the COALESCE rule exists to
+                # prevent the moment anything else can set one. Nothing is
+                # inferred here either way: an absent unit stays absent (contract
+                # §11, and a fabricated `kW` on an axis is worse than a blank).
+                "unit": func.coalesce(stmt.excluded.unit, Point.__table__.c.unit),
                 # The two OPTIONAL fields (contract §11). COALESCE, not a plain
                 # assignment: a message that says nothing about the device's
                 # category must not blank one an operator corrected. A message

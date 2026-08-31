@@ -145,6 +145,25 @@ def extract(body: bytes | dict, proj: Projection, resolve_tenant) -> dict:
     row: dict[str, Any] = {}
     for col in proj.target.columns:
         raw = _walk(decoded, col.source)
+        if col.type == "uuid" and isinstance(raw, str) and not raw.strip():
+            # An EMPTY STRING is not a uuid, and it is not a value either — it is
+            # a publisher that had nothing to say and did not use `omitempty`.
+            # Treating it as absence rather than as a parse failure is the whole
+            # difference between an optional column going NULL and the entire
+            # message being discarded.
+            #
+            # This is the receiving half of the loss pipeline contract §3 names:
+            # a pre-Phase-C outbox row carries only a connection SLUG, marshals
+            # `conn_id` as `""`, and every alert in that replay died here as
+            # `bad_uuid:conn_id` — while the SAME shape in a READING survived,
+            # because the reading-writer's `_as_uuid` already read `""` as None.
+            # Two consumers of one wire disagreeing about what an empty string
+            # means is the bug; this makes them agree.
+            #
+            # A REQUIRED uuid still fails, but now as `missing:<col>`, which is
+            # what actually happened, instead of `bad_uuid:<col>`, which suggests
+            # a malformed value that was never there.
+            raw = None
         if raw is None:
             raw = col.default
         if col.tenant:
