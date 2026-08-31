@@ -23,7 +23,8 @@
 // No unit is rendered anywhere. `points.unit` is NULL for every point because the
 // gateway's payloads carry none (contract §11/§12), and a fabricated one on an
 // energy screen is worse than a blank.
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
@@ -39,6 +40,7 @@ import {
   InfoCell,
   Segmented,
   LoadingBlock,
+  EstateHeader,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
@@ -55,8 +57,22 @@ const RANGES = [
   { value: 168, label: "7D" },
 ];
 
-export default function CategoryConsole({ category }: { category: string }) {
+// Wrapper so `useSearchParams` (the ?site= scope) sits under a Suspense
+// boundary, which the app router requires of any prerendered client page.
+export default function CategoryConsole(props: { category: string }) {
+  return (
+    <Suspense fallback={null}>
+      <CategoryConsoleInner {...props} />
+    </Suspense>
+  );
+}
+
+function CategoryConsoleInner({ category }: { category: string }) {
   const meta = categoryMeta(category);
+  // Portfolio drill-down: `?site=<uuid>` scopes the console to the devices
+  // placed at that site. WITHOUT the param nothing below changes — the unscoped
+  // routes are untouched, this is the same console with one more filter.
+  const siteId = useSearchParams().get("site");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -64,10 +80,22 @@ export default function CategoryConsole({ category }: { category: string }) {
   const [hours, setHours] = useState(6);
 
   const devicesQ = useQuery<any>({
-    queryKey: ["bi-devices", category],
-    queryFn: () => bi.devices({ category, limit: 500 }),
+    queryKey: ["bi-devices", category, siteId],
+    queryFn: () => bi.devices({ category, site_id: siteId || undefined, limit: 500 }),
     refetchInterval: 60_000,
   });
+
+  // Resolve the site's NAME for the breadcrumb from the site_facts mirror —
+  // the same read Ratings uses. Only fetched when scoped.
+  const sitesQ = useQuery<any>({
+    queryKey: ["bi-rating-sites"],
+    queryFn: () => bi.ratingSites(),
+    enabled: !!siteId,
+    staleTime: 60_000,
+  });
+  const siteName = siteId
+    ? sitesQ.data?.items?.find((x: any) => x.site_id === siteId)?.site_name || siteId
+    : null;
 
   const devices = devicesQ.data?.items || [];
 
@@ -130,6 +158,12 @@ export default function CategoryConsole({ category }: { category: string }) {
 
   return (
     <ConsolePage>
+      {siteId && (
+        <EstateHeader
+          crumbs={[{ label: "Portfolio", href: "/bi/portfolio" }, { label: siteName ?? "…" }]}
+          desc={`${meta.label} — only the devices placed at this site. Placement is the device's pin on the Sites floor plan; nothing is inferred.`}
+        />
+      )}
       <ConsoleGrid cols="xl:grid-cols-[320px_1fr]">
         {/* ── devices ─────────────────────────────────────────────── */}
         <ConsolePanel>
@@ -168,7 +202,11 @@ export default function CategoryConsole({ category }: { category: string }) {
             loading={devicesQ.isLoading}
             error={devErr}
             empty={!filtered.length}
-            emptyText="No device in this category has reported"
+            emptyText={
+              siteId
+                ? "No device in this category is placed at this site"
+                : "No device in this category has reported"
+            }
           >
             {filtered.map((d: any) => {
               const on = d.device_id === deviceId;

@@ -85,9 +85,9 @@ export const bi = {
   alerts: ({ hours = 24, severity, limit }: any = {}) =>
     unwrap(api.get(`${BI}/alerts${qs({ hours, severity, limit })}`)),
 
-  devices: ({ category, device_type, search, limit, offset }: any = {}) => {
+  devices: ({ category, device_type, search, site_id, limit, offset }: any = {}) => {
     const cat = categoryParam(category);
-    const suffix = qs({ device_type, search, limit, offset });
+    const suffix = qs({ device_type, search, site_id, limit, offset });
     // `category=` (empty) has to survive, so it is appended by hand.
     const sep = suffix ? "&" : "?";
     return unwrap(
@@ -97,9 +97,9 @@ export const bi = {
     );
   },
 
-  points: ({ device_id, device_tag, category, type, search, with_latest, limit, offset }: any = {}) => {
+  points: ({ device_id, device_tag, category, type, search, site_id, with_latest, limit, offset }: any = {}) => {
     const cat = categoryParam(category);
-    const suffix = qs({ device_id, device_tag, type, search, with_latest, limit, offset });
+    const suffix = qs({ device_id, device_tag, type, search, site_id, with_latest, limit, offset });
     const sep = suffix ? "&" : "?";
     return unwrap(
       api.get(
