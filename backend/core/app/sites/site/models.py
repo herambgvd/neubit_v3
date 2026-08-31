@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, String, Uuid, text
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...db.base import Base
@@ -56,6 +56,24 @@ class Site(Base):
     contact_phone: Mapped[str | None] = mapped_column(String(64))
     email_address: Mapped[str | None] = mapped_column(String(320))
     image_url: Mapped[str | None] = mapped_column(String(1024))
+
+    # --- BUILDING FACTS (migration 0018) ---------------------------------------
+    # What the building IS, as a physical and commercial thing. These are an
+    # OPERATOR'S ASSERTIONS, not measurements, and every one of them is nullable
+    # because NULL means NOT RECORDED — a fact this platform must be able to
+    # state. Building Intelligence → Ratings divides by `gross_floor_area_sqm`
+    # and refuses to produce a rating without it rather than defaulting,
+    # estimating or substituting a national average.
+    gross_floor_area_sqm: Mapped[float | None] = mapped_column(Float)
+    energy_tariff_per_kwh: Mapped[float | None] = mapped_column(Float)
+    # Stored beside the tariff rather than assumed: a bare 8.5 is not a price.
+    tariff_currency: Mapped[str | None] = mapped_column(String(8))
+    occupancy: Mapped[int | None] = mapped_column(Integer)
+    # Who last stood behind these numbers, and when. `updated_at` cannot say —
+    # it moves when anyone edits a phone number, and a figure a rating divides
+    # by deserves its own provenance.
+    building_facts_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    building_facts_updated_by: Mapped[str | None] = mapped_column(String(36))
 
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true"), index=True

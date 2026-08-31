@@ -134,6 +134,33 @@ class UpdateSiteRequest(BaseModel):
         return validate_phone(validate_short(v))
 
 
+class BuildingFactsUpdate(BaseModel):
+    """The building facts, written as a SET rather than as a patch.
+
+    Its own request (and its own route) for one reason: ``UpdateSiteRequest``
+    is applied with ``exclude_none=True``, so on that path a null can never be
+    SENT — you can change an area but not take one back. For a figure a rating
+    divides by, "I recorded 12000 by mistake and there is no reliable number"
+    has to be sayable. Here an explicit ``null`` CLEARS the value and the site
+    returns to "no area recorded", which is a first-class state.
+
+    Nothing here is inferred and nothing has a default. A tariff without a
+    currency is refused rather than assumed to be rupees.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    gross_floor_area_sqm: Optional[float] = Field(default=None, gt=0, le=10_000_000)
+    energy_tariff_per_kwh: Optional[float] = Field(default=None, gt=0, le=1_000_000)
+    tariff_currency: Optional[str] = Field(default=None, min_length=1, max_length=8)
+    occupancy: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+
+    @field_validator("tariff_currency")
+    @classmethod
+    def _cur(cls, v: Optional[str]) -> Optional[str]:
+        return v.strip().upper() if v and v.strip() else None
+
+
 class ThreatLevelUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     threat_level: ThreatLevel
@@ -155,6 +182,17 @@ class SitePublic(BaseModel):
     contact_phone: Optional[str] = None
     email_address: Optional[str] = None
     image_url: Optional[str] = None
+    # --- BUILDING FACTS (migration 0018) ------------------------------------
+    # Null means NOT RECORDED, everywhere, and every consumer must render it as
+    # such. Building Intelligence → Ratings divides by `gross_floor_area_sqm`
+    # and produces NO rating when it is null — never a default, never an
+    # estimate, never a national average.
+    gross_floor_area_sqm: Optional[float] = None
+    energy_tariff_per_kwh: Optional[float] = None
+    tariff_currency: Optional[str] = None
+    occupancy: Optional[int] = None
+    building_facts_updated_at: Optional[datetime] = None
+    building_facts_updated_by: Optional[str] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -177,6 +215,12 @@ class SitePublic(BaseModel):
                 "contact_phone": row.contact_phone,
                 "email_address": row.email_address,
                 "image_url": row.image_url,
+                "gross_floor_area_sqm": row.gross_floor_area_sqm,
+                "energy_tariff_per_kwh": row.energy_tariff_per_kwh,
+                "tariff_currency": row.tariff_currency,
+                "occupancy": row.occupancy,
+                "building_facts_updated_at": row.building_facts_updated_at,
+                "building_facts_updated_by": row.building_facts_updated_by,
                 "is_active": row.is_active,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,

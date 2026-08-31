@@ -43,6 +43,19 @@ export const sites = {
   update: (id, body) => unwrap(api.patch(`${SITES}/${id}`, body)),
   remove: (id) => unwrap(api.delete(`${SITES}/${id}`)),
   restore: (id) => unwrap(api.post(`${SITES}/${id}/restore`, {})),
+  // The BUILDING FACTS — gross floor area, energy tariff, occupancy.
+  //
+  // A PUT with all four fields, not a PATCH: `update()` above is applied with
+  // `exclude_none=True` on the server, so on that path a null is
+  // indistinguishable from "not mentioned" and a recorded area could never be
+  // taken back. Here an explicit null CLEARS, and the site returns to "no area
+  // recorded" — the state Building Intelligence → Ratings renders instead of a
+  // score. Send all four every time.
+  //
+  // Nothing infers these. They are what an operator typed, and they are what a
+  // rating divides by, which is exactly why they live here beside the address
+  // rather than on a BI screen of their own.
+  setBuildingFacts: (id, body) => unwrap(api.put(`${SITES}/${id}/building-facts`, body)),
   setThreatLevel: (id, level) =>
     unwrap(api.put(`${SITES}/${id}/threat-level`, { threat_level: level })),
   uploadImage: (id, file) => {

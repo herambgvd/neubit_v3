@@ -14,6 +14,10 @@
 //   GET /bi/points    ?device_id|device_tag&category&type&search&with_latest
 //   GET /bi/series    ?point_id(xN)&start&end&hours&resolution=auto|1m|1h|raw
 //   GET /bi/correlation ?point_id(x2..12)&hours&resolution=auto|1m|1h
+//   GET /bi/units     ?category&search&confirmed=all|confirmed|unconfirmed
+//   POST /bi/units/confirm  {point_ids, unit}      (bi.manage)
+//   GET /bi/rating/sites                            site facts + rating inputs
+//   GET /bi/rating    ?site_id&point_id(xN)&days
 //
 // `/bi/devices` is also the floor-plan editor's IoT palette (see
 // lib/api/deviceInventory.ts): a device is placeable because it has reported,
@@ -130,6 +134,49 @@ export const bi = {
   // coefficient was computed from, so the scatter and the number cannot disagree.
   correlation: ({ point_id, hours, start, end, resolution }: any) =>
     unwrap(api.get(`${BI}/correlation${qs({ point_id, hours, start, end, resolution })}`)),
+
+  // ── UNITS ─ the one thing that turns a number into a quantity ──────────
+  //
+  // `points.unit` is null for every point because the wire carries none
+  // (contract §11/§12). That costs a trend chart nothing and it is fatal for a
+  // RATING: kWh/m²/yr is a statement about units.
+  //
+  // `units()` returns each point with its unit, WHO said so (`unit_source`:
+  // null = nobody, "reading" = the wire, "operator" = a human), and a
+  // `suggestion` derived from the point TAG — computed at read time and NEVER
+  // stored. That distinction is the whole feature: `KWH_kwh` looks like it
+  // carries its unit, offering that reading for confirmation is honest, and
+  // writing it silently is the naming-convention fabrication the contract
+  // forbids (`4F-3F AC DB` names two floors).
+  //
+  // `confirmUnits()` writes an OPERATOR's assertion over an explicit list of
+  // point ids — the ones the screen showed before the button was pressed. There
+  // is no server-side pattern expansion, deliberately. `unit: null` clears back
+  // to unconfirmed, which must stay reachable: a mis-typed unit nobody can take
+  // back would corrupt every rating computed from it. Needs `bi.manage`.
+  units: ({ category, search, confirmed, limit, offset }: any = {}) =>
+    unwrap(api.get(`${BI}/units${qs({ category, search, confirmed, limit, offset })}`)),
+
+  confirmUnits: ({ point_ids, unit }: any) =>
+    unwrap(api.post(`${BI}/units/confirm`, { point_ids, unit })),
+
+  // ── RATINGS ────────────────────────────────────────────────────────────
+  //
+  // `ratingSites()` reads `site_facts` — this store's read-model of core's
+  // `sites`, fed by the site-facts event mirror. A null area is NOT RECORDED and
+  // the screen renders it as "cannot rate", with a link to Configurations →
+  // Sites, never as a default.
+  //
+  // `rating()` takes the METERS as an argument. There is no stored fact saying
+  // which register measures a site's whole supply; picking one by tag would be
+  // an invention and summing every confirmed kWh point would double-count an
+  // incomer against its own sub-meters. So the operator names them, and the
+  // response carries each meter's own subtraction so the total can be checked
+  // by hand.
+  ratingSites: () => unwrap(api.get(`${BI}/rating/sites`)),
+
+  rating: ({ site_id, point_id, days }: any) =>
+    unwrap(api.get(`${BI}/rating${qs({ site_id, point_id, days })}`)),
 
   // ── PLACEMENT ─ NOT HERE ────────────────────────────────────────────────
   //

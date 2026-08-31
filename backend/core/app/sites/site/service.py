@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.audit import record as audit_record
-from ...core.errors import ConflictError, NotFoundError
+from ...core.errors import ConflictError, NotFoundError, ValidationError
 from ...tenancy.scope import Scope, assert_owned, scoped
 from ..events import emit
 from ..floor.models import Floor
@@ -176,6 +176,45 @@ class SiteService:
         await self._emit(actor, "updated", row, body.model_dump(exclude_none=True))
         return SitePublic.from_row(row, floor_count=await self._floor_count(site_id))
 
+    async def set_building_facts(self, site_id: str, body, *, actor) -> SitePublic:
+        """Record the operator's assertions about the building itself.
+
+        A SET, not a patch: every one of the four fields is written from the
+        request, so an explicit null CLEARS it and the site goes back to "not
+        recorded". That state has to be reachable — a rating that divides by a
+        wrong area an operator cannot take back is worse than one that says it
+        has no area.
+
+        Nothing is inferred here. There is no default area, no assumed currency
+        and no fallback tariff; what the operator did not state stays absent.
+        """
+        row = await self._get_row(site_id)
+
+        if body.energy_tariff_per_kwh is not None and not body.tariff_currency:
+            # A bare 8.5 is not a price. Refusing is the honest response;
+            # assuming rupees would put a currency on a screen nobody stated.
+            raise ValidationError("A tariff needs a currency")
+
+        row.gross_floor_area_sqm = body.gross_floor_area_sqm
+        row.energy_tariff_per_kwh = body.energy_tariff_per_kwh
+        row.tariff_currency = body.tariff_currency if body.energy_tariff_per_kwh is not None else None
+        row.occupancy = body.occupancy
+
+        actor_user_id = str(getattr(actor, "id", "")) or None
+        now = _utcnow()
+        # Provenance of the ASSERTION, separate from the row's own updated_at —
+        # which moves when anyone edits a phone number and so cannot say who
+        # stands behind a number a rating divides by.
+        row.building_facts_updated_at = now
+        row.building_facts_updated_by = actor_user_id
+        row.updated_by = actor_user_id
+        row.updated_at = now
+
+        await self.db.commit()
+        await self.db.refresh(row)
+        await self._emit(actor, "building_facts_updated", row, {})
+        return SitePublic.from_row(row, floor_count=await self._floor_count(site_id))
+
     async def delete(self, site_id: str, *, actor) -> None:
         row = await self._get_row(site_id)
         now = _utcnow()
@@ -284,11 +323,32 @@ class SiteService:
             current = await self.db.get(Site, current.parent_id)
 
     async def _emit(self, actor, event: str, row: Site, after: dict) -> None:
+        # The BUILDING FACTS ride on every site event, read from the row core
+        # just committed rather than from the request body. Same rule the device
+        # placement events follow (pipeline contract §18): the authority STATES
+        # the fact beside the id it owns, instead of a subscriber being told to
+        # go and ask. `reading-writer`'s site-facts consumer mirrors these into
+        # `neubit_reporting.site_facts` so Building Intelligence can divide by an
+        # area without reading a database it is banned from reading.
         await emit(
             row.tenant_id,
             "site",
             event,
-            {"site_id": row.site_id, **after},
+            {
+                "site_id": row.site_id,
+                "name": row.name,
+                "is_active": row.is_active,
+                "gross_floor_area_sqm": row.gross_floor_area_sqm,
+                "energy_tariff_per_kwh": row.energy_tariff_per_kwh,
+                "tariff_currency": row.tariff_currency,
+                "occupancy": row.occupancy,
+                "building_facts_updated_at": (
+                    row.building_facts_updated_at.isoformat()
+                    if row.building_facts_updated_at
+                    else None
+                ),
+                **after,
+            },
         )
         await audit_record(
             self.db,

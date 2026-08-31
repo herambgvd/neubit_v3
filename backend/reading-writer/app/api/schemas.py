@@ -399,3 +399,173 @@ class CorrelationResponse(BaseModel):
     # one definition of "overlapping".
     samples: list[ScatterSample] = Field(default_factory=list)
     samples_truncated: bool = False
+
+
+# ── Units, and the rating built on them ──────────────────────────────────────
+#
+# `points.unit` is NULL for every point on this deployment (contract §11/§12) and
+# a rating is the one surface where that stops being harmless: `kWh / m² / year`
+# is a statement about units. These shapes carry the unit AND ITS PROVENANCE,
+# because "the operator says this is kWh" and "the wire once sent the string kWh"
+# are different claims and only the first one is worth dividing by.
+#
+# `suggestion` is computed from the TAG at read time and is never stored. See
+# `app/api/units.py` for why that line is the whole point of this feature.
+
+
+class UnitSuggestion(BaseModel):
+    """What the tag APPEARS to say. An offer, not a fact."""
+
+    unit: str
+    # Shown to the operator verbatim, so they confirm a stated reason rather than
+    # a value that appeared from nowhere.
+    basis: str
+
+
+class UnitRow(BaseModel):
+    point_id: uuid.UUID
+    point_tag: str | None
+    device_id: uuid.UUID | None
+    device_tag: str | None
+    category: str | None
+    device_type: str | None
+    type: str | None
+    # As STORED. Null = nobody has said. An empty string is a real assertion:
+    # "this is a ratio and has no unit" (power factor).
+    unit: str | None
+    # NULL = unconfirmed · "reading" = it arrived in env.u · "operator" = a human
+    # asserted it. Only "operator" is accepted as a rating input.
+    unit_source: str | None
+    unit_confirmed_at: dt.datetime | None = None
+    unit_confirmed_by: str | None = None
+    site_id: uuid.UUID | None = None
+    site_name: str | None = None
+    last_seen_at: dt.datetime | None = None
+    suggestion: UnitSuggestion | None = None
+
+
+class UnitCounts(BaseModel):
+    points: int
+    confirmed: int
+    unconfirmed: int
+
+
+class UnitListResponse(BaseModel):
+    counts: UnitCounts
+    items: list[UnitRow]
+
+
+class ConfirmUnitsRequest(BaseModel):
+    """Record that a HUMAN says these points are in this unit.
+
+    `point_ids` is EXPLICIT and always a list the operator saw. There is no
+    `pattern` field and there must not be one: "apply to everything matching
+    `_kw`" expanded on the server is a guess wearing a human's authority. The
+    screen expands the pattern, shows the matched rows, and posts their ids.
+
+    `unit = null` CLEARS — unit, source and provenance all go back to NULL and
+    the point is unconfirmed again. A mis-typed unit an operator cannot take back
+    would silently corrupt every rating computed from it.
+    """
+
+    point_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+    unit: str | None = Field(default=None, max_length=64)
+
+
+class SiteFactsRow(BaseModel):
+    """A site as the reporting store mirrors it, with its rating inputs.
+
+    Every value is nullable and NULL is NOT RECORDED — the state the Ratings
+    screen renders as "cannot rate", with a link to Configurations → Sites.
+    """
+
+    site_id: uuid.UUID
+    site_name: str | None
+    is_active: bool
+    gross_floor_area_sqm: float | None = None
+    energy_tariff_per_kwh: float | None = None
+    tariff_currency: str | None = None
+    occupancy: int | None = None
+    facts_updated_at: dt.datetime | None = None
+    mirrored_at: dt.datetime | None = None
+    # Points placed at this site, and how many of them an operator has confirmed
+    # are kWh registers. The gap between them is the work.
+    points: int = 0
+    kwh_points: int = 0
+
+
+class SiteFactsListResponse(BaseModel):
+    items: list[SiteFactsRow]
+
+
+class MeterRow(BaseModel):
+    """One meter's contribution to the total, with the subtraction shown."""
+
+    point_id: uuid.UUID
+    point_tag: str | None
+    device_tag: str | None
+    unit: str | None
+    unit_source: str | None
+    unit_confirmed_at: dt.datetime | None = None
+    unit_confirmed_by: str | None = None
+    buckets: int
+    first_bucket: dt.datetime | None = None
+    last_bucket: dt.datetime | None = None
+    first_value: float | None = None
+    last_value: float | None = None
+    consumption_kwh: float | None = None
+    # "ok" | "no_data" | "register_decreased"
+    status: str
+    reason: str
+
+
+class EpiResult(BaseModel):
+    """The number, and every input that produced it.
+
+    `formula` is the arithmetic as a string, so an operator can check the score
+    by hand. A number nobody can audit is not a rating.
+    """
+
+    epi_kwh_per_sqm_year: float
+    measured_kwh: float
+    days_covered: float
+    annualised_kwh: float
+    area_sqm: float
+    formula: str
+    # >1 means the window was shorter than a year and the figure is an
+    # extrapolation. Stated, never hidden — 20 hours annualised is a projection,
+    # not a measurement, and the reader decides what to do with it.
+    annualisation_factor: float
+
+
+class EstimatedCost(BaseModel):
+    amount: float
+    currency: str
+    tariff_per_kwh: float
+    formula: str
+
+
+class BenchmarkState(BaseModel):
+    """The band — or, here, the stated absence of one."""
+
+    available: bool
+    standard: str | None = None
+    version: str | None = None
+    reason: str
+    what_it_needs: str | None = None
+
+
+class RatingResponse(BaseModel):
+    site: SiteFactsRow
+    start: dt.datetime
+    end: dt.datetime
+    resolution: str
+    resolution_reason: str
+    meters: list[MeterRow]
+    # Present ONLY when every input exists. Null with `blocked` filled otherwise;
+    # never a partial score and never a default area.
+    epi: EpiResult | None = None
+    cost: EstimatedCost | None = None
+    benchmark: BenchmarkState
+    # Why there is no EPI, in words the screen prints instead of a number.
+    blocked: list[str] = Field(default_factory=list)

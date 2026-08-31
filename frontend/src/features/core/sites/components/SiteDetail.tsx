@@ -2,18 +2,24 @@
 
 // Right-pane detail for a selected site: header (name, code, type/status/threat
 // pills, threat-level select + close/edit/delete actions), a shared TabBar, and
-// the active tab body (info / floors / zones).
+// the active tab body (info / building / floors / zones).
 import { Icon } from "@iconify/react";
 import { IconButton, PaneAction, PaneDeleteAction } from "@/components/console";
 import { TabBar } from "@/components/common";
 import { THREAT_PILL, THREAT_LEVELS, capitalize } from "../constants";
 import SiteInfoPanel from "./SiteInfoPanel";
+import BuildingFactsPanel from "./BuildingFactsPanel";
 import FloorsPanel from "./FloorsPanel";
 import ZonesPanel from "./ZonesPanel";
 import SelectMenu from "@/components/common/SelectMenu";
 
 const TABS = [
   { key: "info", label: "Site info", icon: "heroicons-outline:building-office-2" },
+  // The physical/commercial facts about the building — area, tariff, occupancy.
+  // They live beside the address rather than on a Building Intelligence screen
+  // for the same reason device placement lives on the floor plan (pipeline
+  // contract §18): one place per fact.
+  { key: "building", label: "Building", icon: "heroicons-outline:scale" },
   { key: "floors", label: "Floors", icon: "heroicons-outline:square-3-stack-3d" },
   { key: "zones", label: "Zones", icon: "heroicons-outline:square-2-stack" },
 ];
@@ -73,6 +79,8 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === "info" ? (
           <SiteInfoPanel site={site} />
+        ) : tab === "building" ? (
+          <BuildingFactsPanel site={site} />
         ) : tab === "floors" ? (
           <FloorsPanel site={site} />
         ) : (

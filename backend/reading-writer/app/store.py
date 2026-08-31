@@ -48,7 +48,7 @@ import uuid
 
 from reporting.models import Point, Reading
 from reporting.placement import reconcile_placement
-from sqlalchemy import func
+from sqlalchemy import case, func, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -179,7 +179,36 @@ async def write_batch(
                 # prevent the moment anything else can set one. Nothing is
                 # inferred here either way: an absent unit stays absent (contract
                 # §11, and a fabricated `kW` on an axis is worse than a blank).
-                "unit": func.coalesce(stmt.excluded.unit, Point.__table__.c.unit),
+                # …and STRONGER than a COALESCE once an operator can set one.
+                # COALESCE only stops a message that says NOTHING from blanking
+                # a stored unit. It does not stop a message that says something
+                # DIFFERENT from overwriting an operator's assertion — and an
+                # operator's assertion being erased by the next reading is the
+                # worst outcome the Ratings feature can have, because a wrong
+                # unit renders as a real EPI. So a unit marked `unit_source =
+                # 'operator'` is not touched at all; everything else keeps the
+                # COALESCE it had.
+                "unit": case(
+                    (
+                        Point.__table__.c.unit_source == literal("operator"),
+                        Point.__table__.c.unit,
+                    ),
+                    else_=func.coalesce(stmt.excluded.unit, Point.__table__.c.unit),
+                ),
+                # Provenance follows the same order of precedence: an operator's
+                # word stands, a wire value that actually arrived claims
+                # "reading", and silence changes nothing. NOTHING here reads the
+                # point TAG — `KWH_kwh` is a naming convention, and turning a
+                # convention into a stored fact is the fabrication the contract
+                # forbids (§17, the floor-prefix case).
+                "unit_source": case(
+                    (
+                        Point.__table__.c.unit_source == literal("operator"),
+                        Point.__table__.c.unit_source,
+                    ),
+                    (stmt.excluded.unit.isnot(None), literal("reading")),
+                    else_=Point.__table__.c.unit_source,
+                ),
                 # The two OPTIONAL fields (contract §11). COALESCE, not a plain
                 # assignment: a message that says nothing about the device's
                 # category must not blank one an operator corrected. A message

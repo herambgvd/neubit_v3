@@ -42,6 +42,7 @@ from .config import WriterConfig
 from .metrics import Metrics
 from .pipeline import Pipeline
 from .placement_sync import PlacementStats, PlacementSync
+from .site_facts_sync import SiteFactsStats, SiteFactsSync
 
 logging.basicConfig(level=os.getenv("VE_LOG_LEVEL", "INFO").upper(),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -56,6 +57,11 @@ pipeline = Pipeline(config, metrics)
 # reading path, which is the one thing that must never wait.
 placement_stats = PlacementStats()
 placement_sync = PlacementSync(placement_stats)
+# A SECOND durable consumer on the same EVENTS stream, on its own subject and its
+# own durable: site facts (area / tariff / occupancy) answer a different question
+# from device placements, and one wedging must not stop the other.
+site_facts_stats = SiteFactsStats()
+site_facts_sync = SiteFactsSync(site_facts_stats)
 
 
 @asynccontextmanager
@@ -75,6 +81,7 @@ async def lifespan(app: FastAPI):
         log.exception("pipeline failed to start — service is up but NOT consuming")
     try:
         await placement_sync.start(getattr(settings, "nats_url", "") or "")
+        await site_facts_sync.start(getattr(settings, "nats_url", "") or "")
     except Exception as exc:  # noqa: BLE001
         # Same rule as the pipeline: a placement mirror that cannot start must
         # not take the readings path down with it.
@@ -82,6 +89,7 @@ async def lifespan(app: FastAPI):
         log.exception("placement sync failed to start — floor-plan pins will not reach BI")
     yield
     await placement_sync.stop()
+    await site_facts_sync.stop()
     await pipeline.stop()
 
 
@@ -146,7 +154,7 @@ async def readyz() -> JSONResponse:
 
 @app.get("/stats")
 async def stats() -> dict:
-    return {**metrics.snapshot(), **placement_stats.snapshot()}
+    return {**metrics.snapshot(), **placement_stats.snapshot(), **site_facts_stats.snapshot()}
 
 
 @app.get("/metrics")

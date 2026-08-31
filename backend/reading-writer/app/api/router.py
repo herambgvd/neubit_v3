@@ -35,16 +35,22 @@ from . import context
 from . import execute as ex
 from . import permsync
 from . import queries as q
+from . import rating as rt
+from . import units as un
 from . import registry
 from . import spec as widget_spec
 from .schemas import (
     ActivityBucket,
     AlertListResponse,
+    ConfirmUnitsRequest,
     CorrelationResponse,
     DeviceListResponse,
     PointListResponse,
+    RatingResponse,
     SeriesResponse,
+    SiteFactsListResponse,
     SummaryResponse,
+    UnitListResponse,
 )
 from .spec import TableResult as QueryResult
 
@@ -684,6 +690,266 @@ async def correlation(
         pairs=pairs_out,
         samples=samples,
         samples_truncated=truncated,
+    )
+
+
+# ── Units ────────────────────────────────────────────────────────────────────
+#
+# The unit is the input that separates a number from a quantity, and it is the
+# one input a rating cannot do without. `points.unit` is NULL for all 314 points
+# because the wire carries no `env.u` (contract §11/§12); these two routes are
+# how it stops being NULL, and the rule they exist to enforce is that only a
+# HUMAN can make that happen.
+
+
+@bi_router.get(
+    "/units",
+    response_model=UnitListResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def units(
+    db: Db,
+    scope: Caller,
+    category: str | None = None,
+    search: str | None = None,
+    confirmed: str = "all",
+    limit: Annotated[int, Query(ge=1, le=1000)] = 300,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> UnitListResponse:
+    """Every point, its unit, WHO said so, and what its tag appears to say.
+
+    `suggestion` is derived from the point TAG at read time and is never stored.
+    That is the whole shape of this feature: `KWH_kwh` and `Freq_Hz` look like
+    they carry their unit, and offering that reading for a human to confirm is
+    honest, while writing it silently is the naming-convention fabrication the
+    contract forbids (§17 — `4F-3F AC DB` names two floors).
+
+    `confirmed=unconfirmed` is the useful view: it is the work.
+    """
+    if confirmed not in ("all", "confirmed", "unconfirmed"):
+        raise ValidationError("confirmed must be one of: all, confirmed, unconfirmed")
+    counts, rows = await un.list_units(
+        db,
+        _tenant(scope),
+        category=category,
+        search=search,
+        confirmed=confirmed,
+        limit=limit,
+        offset=offset,
+    )
+    return UnitListResponse(counts=counts, items=rows)
+
+
+@bi_router.post(
+    "/units/confirm",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def confirm_units(db: Db, scope: Caller, who: Who, body: ConfirmUnitsRequest) -> dict:
+    """An operator asserts the unit for a named set of points.
+
+    Gated by `bi.manage`, not `bi.read`: this WRITES a fact that a rating divides
+    by. It is the same key that gates retiring a point — statements about the
+    estate rather than readings of it.
+
+    The ids are explicit. There is deliberately no server-side pattern expansion:
+    a bulk confirmation is a list the operator saw before pressing the button.
+
+    `unit: null` clears back to unconfirmed, which has to be reachable — see
+    `ConfirmUnitsRequest`.
+    """
+    # The caller's USER ID, from the token. Not an email: the JWT does not carry
+    # one and asking core for it would be an HTTP round-trip to decorate a
+    # provenance field. An id that resolves in the audit log is a better record
+    # than a name that could go stale.
+    actor = str(getattr(who, "user_id", "") or "") or None
+    updated = await un.confirm_units(
+        db,
+        _tenant(scope),
+        point_ids=body.point_ids,
+        unit=body.unit,
+        actor=actor,
+    )
+    return {
+        "updated": len(updated),
+        "requested": len(body.point_ids),
+        # A requested id that is not the caller's tenant's simply does not come
+        # back. Said out loud rather than reported as a success.
+        "not_visible": len(body.point_ids) - len(updated),
+        "unit": body.unit,
+        "unit_source": None if body.unit is None else "operator",
+        "confirmed_by": None if body.unit is None else actor,
+    }
+
+
+# ── Ratings ──────────────────────────────────────────────────────────────────
+
+
+@bi_router.get(
+    "/rating/sites",
+    response_model=SiteFactsListResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def rating_sites(db: Db, scope: Caller) -> SiteFactsListResponse:
+    """Sites this store has been told about, with their rating inputs.
+
+    Read from `site_facts` — the local read-model of `neubit_control.sites`, fed
+    by the site-facts event mirror (pipeline contract §18). Nothing here opens
+    core's database, and nothing here invents a fact: a site with no area shows a
+    null area, which is what the screen turns into "cannot rate".
+    """
+    return SiteFactsListResponse(items=await rt.sites(db, _tenant(scope)))
+
+
+@bi_router.get(
+    "/rating",
+    response_model=RatingResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def rating(
+    db: Db,
+    scope: Caller,
+    site_id: uuid.UUID,
+    point_id: Annotated[list[uuid.UUID] | None, Query()] = None,
+    days: Annotated[int, Query(ge=1, le=1096)] = 30,
+) -> RatingResponse:
+    """EPI for one site over a window — or the reasons it cannot be computed.
+
+    THE INPUTS, AND WHO OWNS EACH:
+
+    * **kWh** — measured, but only counted from points an operator has CONFIRMED
+      are kilowatt-hour registers (`unit_source = 'operator'`). A unit the wire
+      happened to send is not somebody standing behind it.
+    * **Area** — `site_facts.gross_floor_area_sqm`, mirrored from core, typed by
+      an operator in Configurations → Sites. NULL blocks the rating outright.
+    * **Which meters** — the CALLER's, passed as `point_id`. There is no stored
+      fact saying which register measures the whole supply, and picking one by
+      tag would be a fabrication; summing everything would double-count an
+      incomer against its own sub-meters. So the operator names them and the
+      response shows each one's arithmetic.
+
+    WHAT IT REFUSES TO DO: no default area, no estimated area, no national
+    average, no partial score. Every missing input becomes a line in `blocked`
+    and the `epi` field stays null.
+    """
+    tenant = _tenant(scope)
+    end = dt.datetime.now(dt.timezone.utc)
+    start = end - dt.timedelta(days=days)
+
+    all_sites = await rt.sites(db, tenant)
+    site = next((s for s in all_sites if s["site_id"] == site_id), None)
+    if site is None:
+        raise ForbiddenError("no such site in this tenant's reporting store")
+
+    candidates = await rt.candidate_meters(db, tenant, site_id)
+    by_id = {c["point_id"]: c for c in candidates}
+
+    chosen: list[uuid.UUID] = []
+    unusable: list[str] = []
+    for pid in point_id or []:
+        if pid in by_id and pid not in chosen:
+            chosen.append(pid)
+        elif pid not in by_id:
+            # Named but not usable: not at this site, retired, or — the common
+            # case — nobody has confirmed it is in kWh.
+            unusable.append(str(pid))
+
+    blocked: list[str] = []
+    if not chosen:
+        blocked.append(
+            "No meter selected. Choose the kWh registers that make up this site's "
+            "incoming supply — the platform holds no fact saying which meter that "
+            "is, and guessing from a tag would be an invention."
+            if candidates
+            else (
+                "No point at this site has a CONFIRMED kWh unit. A rating counts "
+                "only registers an operator has confirmed are kilowatt-hours; the "
+                "wire carries no unit, so until somebody confirms one there is "
+                "nothing to add up."
+            )
+        )
+    if unusable:
+        blocked.append(
+            f"{len(unusable)} selected point(s) are not confirmed kWh registers at "
+            f"this site and were not counted."
+        )
+
+    meters: list[dict] = []
+    if chosen:
+        regs = await rt.registers(db, tenant, point_ids=chosen, start=start, end=end)
+        meters = [rt.meter_row(by_id[p], regs.get(p)) for p in chosen]
+
+    ok = [m for m in meters if m["status"] == "ok"]
+    if meters and not ok:
+        blocked.append(
+            "None of the selected meters produced a usable delta over this window "
+            "— see each meter's own reason below."
+        )
+
+    area = site["gross_floor_area_sqm"]
+    if area is None:
+        blocked.append(
+            "Cannot rate — no built-up area recorded for this site. An EPI is "
+            "kWh per square metre per year; record the gross floor area in "
+            "Configurations → Sites and this becomes computable. Nothing is "
+            "defaulted or estimated in the meantime."
+        )
+
+    epi = None
+    cost = None
+    if ok and area:
+        measured = sum(float(m["consumption_kwh"] or 0.0) for m in ok)
+        first = min(m["first_bucket"] for m in ok)
+        last = max(m["last_bucket"] for m in ok)
+        # Days of readings actually covered — NOT the window asked for. A 30-day
+        # request over 20 hours of data must annualise from the 20 hours and say
+        # so, not pretend it saw a month.
+        days_covered = max((last - first).total_seconds() / 86400.0, 0.0)
+        if days_covered <= 0:
+            blocked.append(
+                "The selected meters span less than one hourly bucket, so there is "
+                "no interval to annualise over."
+            )
+        else:
+            factor = 365.0 / days_covered
+            annualised = measured * factor
+            value = annualised / float(area)
+            epi = {
+                "epi_kwh_per_sqm_year": value,
+                "measured_kwh": measured,
+                "days_covered": days_covered,
+                "annualised_kwh": annualised,
+                "area_sqm": float(area),
+                "annualisation_factor": factor,
+                "formula": (
+                    f"{measured:,.1f} kWh measured over {days_covered:.2f} days "
+                    f"× (365 / {days_covered:.2f}) = {annualised:,.1f} kWh/yr, "
+                    f"÷ {float(area):,.0f} m² = {value:,.1f} kWh/m²/yr"
+                ),
+            }
+            tariff = site["energy_tariff_per_kwh"]
+            currency = site["tariff_currency"]
+            if tariff and currency:
+                cost = {
+                    "amount": measured * float(tariff),
+                    "currency": currency,
+                    "tariff_per_kwh": float(tariff),
+                    "formula": (
+                        f"{measured:,.1f} kWh × {float(tariff):g} {currency}/kWh = "
+                        f"{measured * float(tariff):,.2f} {currency} for the measured window"
+                    ),
+                }
+
+    return RatingResponse(
+        site=site,
+        start=start,
+        end=end,
+        resolution=rt.RESOLUTION,
+        resolution_reason=rt.RESOLUTION_REASON,
+        meters=meters,
+        epi=epi,
+        cost=cost,
+        benchmark=rt.benchmark_state(),
+        blocked=blocked,
     )
 
 

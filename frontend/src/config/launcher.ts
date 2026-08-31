@@ -94,13 +94,40 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     //   HVAC & Assets      — category=hvac   ·  7 devices /  36 points
     //   Water              — category=water  ·  2 devices /  10 points
     //   Insights & Corr.   — Pearson r between any two reporting series
+    //   Ratings            — EPI where an operator has supplied unit + area
     //
     // Left SOON, and why — each is a data gap, not a schedule:
     //   IAQ & Environment      ZERO environment points exist in the store. There is
     //                          nothing to render, and a stand-in would be a lie.
-    //   Ratings                See the Ratings note below — it is blocked on INPUTS
-    //                          that have no home on this platform yet, not on the
-    //                          readings.
+    //
+    // RATINGS, REWRITTEN 2026-08-31. The old entry said "a rating needs a
+    // benchmark and a unit; the wire carries neither, so any score would be
+    // invented". True about the score, wrong about the conclusion: the answer
+    // was not to give up but to build the PATH by which an operator supplies
+    // what the wire cannot. That path now exists end to end —
+    //
+    //   • UNIT      /bi/ratings → UNITS lets an operator confirm what a point
+    //               measures, suggested from the tag (`_kwh`, `_Hz`, `_V`) with
+    //               the pattern shown, and bulk-applied over rows they can see.
+    //               `points.unit_source = 'operator'` records who said it, and
+    //               the writer now refuses to overwrite such a unit at all —
+    //               COALESCE alone only stopped a message that says NOTHING.
+    //               Deriving a unit from a tag silently is still forbidden.
+    //   • AREA      `sites.gross_floor_area_sqm` (+ tariff, occupancy), typed in
+    //               Configurations → Sites → Building, beside the address —
+    //               where this platform already keeps site facts, per the same
+    //               reasoning that moved device placement onto the floor plan.
+    //               Mirrored into `neubit_reporting.site_facts` over the sites
+    //               event spine so BI never reads core's database.
+    //   • BENCHMARK STILL ABSENT, and stated as such on the screen. BEE and
+    //               IGBC bands are published documents this deployment does not
+    //               hold; an invented threshold would be a fabricated grade
+    //               wearing a real EPI's credibility. So the EPI ships as a
+    //               MEASURED figure with its whole arithmetic beside it, and the
+    //               band says what it would take to exist.
+    //
+    // A site with no area recorded renders "cannot rate", with a link to where
+    // to record it — never a partial score, never a default area.
     //
     // CORRECTED 2026-08-31 — the reason given here for Insights & Correlation was
     // WRONG, and it is worth saying so rather than quietly deleting it. It read:
@@ -175,7 +202,12 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // filing it under Building Intelligence labelled it as a BI feature and
           // told an operator looking for a door-access chart to look in the wrong
           // place. Its gating went with it, unchanged.
-          { icon: "heroicons:star", label: "Ratings", soon: true },
+          // BUILT 2026-08-31 — see the RATINGS note above for what it needed
+          // and which of those inputs is still missing (the benchmark band, and
+          // the screen says so rather than inventing one). `bi.read` +
+          // `analytics` to read; recording a unit needs `bi.manage`, recording
+          // an area needs `sites.update` on the Sites console.
+          { icon: "heroicons:star", label: "Ratings", href: "/bi/ratings", tone: "att", perm: "bi.read", module: "analytics" },
           // BUILT 2026-08-31. Same gating as every Sense tile — `bi.read` +
           // `analytics` — so a caller without either sees SOON, not a 403.
           { icon: "heroicons:chart-pie", label: "Insights & Correlation", href: "/bi/insights", tone: "att", perm: "bi.read", module: "analytics" },

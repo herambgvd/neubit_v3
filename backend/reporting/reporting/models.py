@@ -35,9 +35,11 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     Index,
+    Integer,
     PrimaryKeyConstraint,
     SmallInteger,
     String,
@@ -76,8 +78,30 @@ class Point(Base):
     # The point's own tag, e.g. "PF_pf". Unique only within a device.
     point_tag: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # Engineering unit ("kW", "degC", ""). Free text: it comes from the device.
+    # Engineering unit ("kW", "degC", ""). Free text.
+    #
+    # NULL means NOBODY HAS SAID — which is the state of all 314 points on this
+    # deployment, because the source payloads carry no `env.u` (contract
+    # §11/§12). It is never filled by inference: `KWH_kwh` and `Freq_Hz` look
+    # like they carry their unit, and Building Intelligence offers exactly that
+    # reading as a SUGGESTION for an operator to confirm — but a naming
+    # convention is a convention, not evidence (`4F-3F AC DB` names two floors),
+    # so nothing writes it without a human saying so.
     unit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # WHO said it (migration 0012). NULL = unconfirmed; "reading" = it arrived in
+    # `env.u`; "operator" = a human asserted it through /bi/units/confirm.
+    #
+    # This is load-bearing, not metadata. The writer's upsert refuses to change a
+    # unit marked "operator" AT ALL — plain COALESCE would only stop a message
+    # that says NOTHING from blanking it, and an operator's assertion being
+    # erased by a message that says something DIFFERENT is the worst outcome this
+    # feature can have.
+    unit_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    unit_confirmed_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
 
     # What the DEVICE is (contract §11), as the gateway classifies it. These are
     # what Building Intelligence filters its category views on — HVAC & Assets,
@@ -308,4 +332,46 @@ class DeviceLocation(Base):
     __table_args__ = (
         Index("ix_device_locations_floor", "tenant_id", "floor_id"),
         Index("ix_device_locations_site", "tenant_id", "site_id"),
+    )
+
+
+class SiteFact(Base):
+    """The reporting store's read-model of a SITE — the facts a rating divides by.
+
+    `neubit_control.sites` is the source of truth and core is its only writer.
+    This table is fed by `reading-writer`'s `app/site_facts_sync.py`, a durable
+    consumer of `tenant.*.sites.site.>` on the EVENTS stream, exactly as
+    `DeviceLocation` is fed from `tenant.*.sites.device_placement.>` (pipeline
+    contract §18). It exists so Building Intelligence can join a reading to an
+    area without reading a database it is banned from reading (contract §1).
+
+    NOTHING HERE IS EVER INFERRED. Every value arrived on an event, having been
+    typed by an operator into Configurations → Sites. A NULL is NOT RECORDED and
+    every consumer must render it as absence: `/bi/rating` produces no rating for
+    a site with no `gross_floor_area_sqm`, rather than a default, an estimate or
+    a national average.
+    """
+
+    __tablename__ = "site_facts"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    # Core publishes the NAME beside the id it minted — the authority states the
+    # label rather than being asked to confirm one, and no browser is in the path.
+    site_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+
+    gross_floor_area_sqm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    energy_tariff_per_kwh: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tariff_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    occupancy: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # When the OPERATOR asserted the facts (core's timestamp, carried on the
+    # event) vs when this mirror last wrote. Provenance and lag are different
+    # questions and a screen that shows a stale area should be able to tell.
+    facts_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    mirrored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

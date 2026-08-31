@@ -18,6 +18,7 @@ from ...core.storage import get_storage
 from ...db.base import get_db
 from ...tenancy.scope import Scope, get_scope
 from .schemas import (
+    BuildingFactsUpdate,
     CreateSiteRequest,
     SiteListResponse,
     SitePublic,
@@ -103,6 +104,31 @@ async def update_site(
     actor: User = Depends(require_permission("sites.update")),
 ) -> SitePublic:
     return await svc.update(site_id, body, actor=actor)
+
+
+@router.put(
+    "/{site_id}/building-facts",
+    response_model=SitePublic,
+)
+async def set_building_facts(
+    site_id: str,
+    body: BuildingFactsUpdate,
+    svc: Annotated[SiteService, Depends(_service)],
+    actor: User = Depends(require_permission("sites.update")),
+) -> SitePublic:
+    """Record area / tariff / occupancy for this site.
+
+    Its own route rather than a field on PATCH /sites/{id}: that path applies
+    `exclude_none=True`, so a null there is indistinguishable from "not
+    mentioned" and a recorded area could never be taken back. Here the four
+    fields are written as a SET, so an explicit null means NOT RECORDED — which
+    is exactly the state Building Intelligence → Ratings renders as "cannot
+    rate — no area recorded for this site".
+
+    Gated by `sites.update`, the same permission that governs every other fact
+    about a site. Nothing on this route infers a value.
+    """
+    return await svc.set_building_facts(site_id, body, actor=actor)
 
 
 @router.delete(
