@@ -310,6 +310,19 @@ def _align(
     return out_rows, out_delta, len(index) - len(used)
 
 
+def _nothing_measured(rows: list[list] | None) -> bool:
+    """True when a result carries no measurement at all.
+
+    An empty result set qualifies, and so does a result whose every value cell
+    is NULL — which is what an ungrouped aggregate returns over a window with no
+    readings in it. Both mean "there is nothing here to compare against", and a
+    renderer must be able to tell that from a real zero.
+    """
+    if not rows:
+        return True
+    return all(v is None for row in rows for v in row)
+
+
 async def run(db: AsyncSession, tenant: Any, ds: Dataset, spec: BuilderSpec) -> TableResult:
     q: BuilderQuery = spec.query
     d = ds.definition
@@ -344,10 +357,13 @@ async def run(db: AsyncSession, tenant: Any, ds: Dataset, spec: BuilderSpec) -> 
             end=prior_end,
             rows=rows,
             delta_pct=deltas,
-            # Nothing at all in the earlier window. A renderer says so instead of
-            # drawing a flat line at zero and letting a reader take it for a
-            # measurement.
-            no_data=not prior.rows,
+            # Nothing MEASURED in the earlier window. Note this is not
+            # `not prior.rows`: an ungrouped aggregate over an empty window
+            # still returns one row, holding NULL. That row is a shape, not a
+            # measurement, so testing the list emptiness reported no_data=False
+            # for a comparison that had nothing behind it — and a renderer
+            # trusting that flag would draw a delta against nothing.
+            no_data=_nothing_measured(prior.rows),
             only_previous=only_prior,
         )
 
