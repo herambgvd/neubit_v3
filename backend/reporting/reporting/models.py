@@ -32,10 +32,11 @@ lets the database make a redelivery a no-op.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Float,
     Index,
@@ -359,6 +360,10 @@ class SiteFact(Base):
     # Core publishes the NAME beside the id it minted — the authority states the
     # label rather than being asked to confirm one, and no browser is in the path.
     site_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The human location, resolved by CORE from its own `sites.address` json
+    # and stated on the event (migration 0013). NULL = the address (or its
+    # city) was never recorded; the portfolio renders an em dash, not a guess.
+    city: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
     gross_floor_area_sqm: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -372,6 +377,60 @@ class SiteFact(Base):
     facts_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    mirrored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SiteTariffSlab(Base):
+    """Read-model of core's `site_tariff_slabs` — a site's Time-of-Use windows.
+
+    Core owns the list (written on Configurations → Sites → Building, core
+    migration 0019) and publishes the WHOLE of it on every site event; the
+    reading-writer's `site_facts_sync` replaces this projection wholesale per
+    site, so a missed message is corrected by the next site edit of any kind.
+
+    PRECEDENCE (core's rule, restated for readers of this store): when any
+    slab with `effective_from` on or before the date being priced exists, the
+    slabs override `site_facts.energy_tariff_per_kwh` ENTIRELY for that date;
+    an hour no slab covers has NO price. The scalar applies only when no slab
+    set is in effect. An empty table for a site means "no slabs recorded".
+
+    Windows are minutes since midnight; `end_minute < start_minute` WRAPS
+    midnight (22:00 → 06:00). Nothing here is ever inferred or seeded.
+    """
+
+    __tablename__ = "site_tariff_slabs"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    start_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    rate_per_kwh: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    mirrored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SiteEmissionFactor(Base):
+    """Read-model of core's `site_emission_factors` — kg CO2 per kWh, WITH its
+    citation. The `source` is NOT NULL on both sides: a factor that lost its
+    source in transit would be an uncited number, and an uncited number is the
+    fabrication this platform forbids. Replaced wholesale per site by
+    `site_facts_sync`, exactly like the slabs. Ships empty."""
+
+    __tablename__ = "site_emission_factors"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kg_co2_per_kwh: Mapped[float] = mapped_column(Float, nullable=False)
+    source: Mapped[str] = mapped_column(String(512), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
     mirrored_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

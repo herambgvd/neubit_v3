@@ -59,7 +59,9 @@ from nats.js.api import AckPolicy, ConsumerConfig
 from reporting.db import database
 from sqlalchemy.dialects.postgresql import insert
 
-from reporting.models import SiteFact
+from sqlalchemy import delete as sa_delete
+
+from reporting.models import SiteEmissionFactor, SiteFact, SiteTariffSlab
 
 log = logging.getLogger("reading-writer.site-facts-sync")
 
@@ -69,7 +71,15 @@ DURABLE = "reading-writer-site-facts"
 
 # Every site event carries the facts, so all of them are worth applying. A
 # `deleted` flips `is_active` rather than removing the row.
-_EVENTS = {"created", "updated", "building_facts_updated", "deleted", "restored"}
+_EVENTS = {
+    "created",
+    "updated",
+    "building_facts_updated",
+    "tariff_slabs_updated",
+    "emission_factors_updated",
+    "deleted",
+    "restored",
+}
 
 
 class SiteFactsStats:
@@ -80,6 +90,8 @@ class SiteFactsStats:
         self.skipped_no_tenant = 0
         self.skipped_malformed = 0
         self.skipped_other_event = 0
+        self.slab_lists_replaced = 0
+        self.factor_lists_replaced = 0
         self.errors = 0
         self.last_error: str | None = None
 
@@ -91,6 +103,8 @@ class SiteFactsStats:
             "site_facts_sync_skipped_no_tenant": self.skipped_no_tenant,
             "site_facts_sync_skipped_malformed": self.skipped_malformed,
             "site_facts_sync_skipped_other_event": self.skipped_other_event,
+            "site_facts_sync_slab_lists_replaced": self.slab_lists_replaced,
+            "site_facts_sync_factor_lists_replaced": self.factor_lists_replaced,
             "site_facts_sync_errors": self.errors,
             "site_facts_sync_last_error": self.last_error,
         }
@@ -123,6 +137,79 @@ def _when(value) -> dt.datetime | None:
         return dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _date(value) -> dt.date | None:
+    if not value:
+        return None
+    try:
+        return dt.date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _slab_rows(raw) -> list[dict] | None:
+    """Parse the event's `tariff_slabs` list. Returns None when ANY row is
+    malformed: a partially mirrored tariff would price some hours with another
+    hour's rate, so the whole list is refused (and the previous mirror kept —
+    the next site edit restates it in full) rather than half-applied."""
+    if not isinstance(raw, list):
+        return None
+    out: list[dict] = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            return None
+        name = str(item.get("name") or "").strip()
+        rate = _num(item.get("rate_per_kwh"))
+        currency = str(item.get("currency") or "").strip()
+        eff = _date(item.get("effective_from"))
+        try:
+            start = int(item["start_minute"])
+            end = int(item["end_minute"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not name or rate is None or not currency or eff is None:
+            return None
+        if not (0 <= start < 1440 and 0 < end <= 1440):
+            return None
+        out.append(
+            {
+                "position": i,
+                "name": name[:64],
+                "start_minute": start,
+                "end_minute": end,
+                "rate_per_kwh": rate,
+                "currency": currency[:8],
+                "effective_from": eff,
+            }
+        )
+    return out
+
+
+def _factor_rows(raw) -> list[dict] | None:
+    """Parse `emission_factors`. Same all-or-nothing rule as the slabs — and a
+    factor whose `source` is missing is malformed BY DEFINITION: an uncited
+    number must never enter this store, not even by transit damage."""
+    if not isinstance(raw, list):
+        return None
+    out: list[dict] = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            return None
+        value = _num(item.get("kg_co2_per_kwh"))
+        source = str(item.get("source") or "").strip()
+        eff = _date(item.get("effective_from"))
+        if value is None or not source or eff is None:
+            return None
+        out.append(
+            {
+                "position": i,
+                "kg_co2_per_kwh": value,
+                "source": source[:512],
+                "effective_from": eff,
+            }
+        )
+    return out
 
 
 class SiteFactsSync:
@@ -270,8 +357,34 @@ class SiteFactsSync:
             "facts_updated_at": _when(payload.get("building_facts_updated_at")),
             "mirrored_at": dt.datetime.now(dt.timezone.utc),
         }
+        # `city` (migration 0013) is applied only when the publisher STATED the
+        # key. Core has published it on every site event since 0019, so this
+        # guard exists for one reason: a pre-0019 message still in flight says
+        # nothing about the city, and "missing" must never clobber a value a
+        # later message already mirrored. Stated-but-null DOES clear — that is
+        # core saying the address has no city, and the portfolio renders "—".
+        if "city" in payload:
+            city = payload.get("city")
+            values["city"] = str(city)[:255] if city else None
         if event == "deleted":
             values["is_active"] = False
+
+        # The INPUT LISTS (tariff slabs, emission factors) follow the same
+        # key-presence rule, then are replaced WHOLESALE per site: core states
+        # the entire list on every event (an empty list is the statement "no
+        # slabs"), so delete+insert needs no COALESCE discipline at all. A list
+        # with any malformed row is refused in full and the previous mirror
+        # kept — half a tariff prices some hours with another hour's rate.
+        slabs = _slab_rows(payload["tariff_slabs"]) if "tariff_slabs" in payload else None
+        if "tariff_slabs" in payload and slabs is None:
+            self.stats.skipped_malformed += 1
+            log.warning("tariff_slabs on %s malformed; keeping previous mirror", subject)
+        factors = (
+            _factor_rows(payload["emission_factors"]) if "emission_factors" in payload else None
+        )
+        if "emission_factors" in payload and factors is None:
+            self.stats.skipped_malformed += 1
+            log.warning("emission_factors on %s malformed; keeping previous mirror", subject)
 
         stmt = insert(SiteFact).values(values)
         stmt = stmt.on_conflict_do_update(
@@ -282,13 +395,40 @@ class SiteFactsSync:
         sessionmaker = database.get_sessionmaker()
         async with sessionmaker() as session:
             await session.execute(stmt)
+            if slabs is not None:
+                await session.execute(
+                    sa_delete(SiteTariffSlab).where(
+                        SiteTariffSlab.tenant_id == tenant, SiteTariffSlab.site_id == site_id
+                    )
+                )
+                for row in slabs:
+                    session.add(
+                        SiteTariffSlab(tenant_id=tenant, site_id=site_id, **row)
+                    )
+                self.stats.slab_lists_replaced += 1
+            if factors is not None:
+                await session.execute(
+                    sa_delete(SiteEmissionFactor).where(
+                        SiteEmissionFactor.tenant_id == tenant,
+                        SiteEmissionFactor.site_id == site_id,
+                    )
+                )
+                for row in factors:
+                    session.add(
+                        SiteEmissionFactor(tenant_id=tenant, site_id=site_id, **row)
+                    )
+                self.stats.factor_lists_replaced += 1
             await session.commit()
         self.stats.applied += 1
         log.info(
-            "mirrored site facts for %s (%s): area=%s tariff=%s occupancy=%s",
+            "mirrored site facts for %s (%s): area=%s tariff=%s occupancy=%s city=%s "
+            "slabs=%s factors=%s",
             site_id,
             values["site_name"],
             values["gross_floor_area_sqm"],
             values["energy_tariff_per_kwh"],
             values["occupancy"],
+            values.get("city", "<not stated>"),
+            "<not stated>" if slabs is None else len(slabs),
+            "<not stated>" if factors is None else len(factors),
         )
