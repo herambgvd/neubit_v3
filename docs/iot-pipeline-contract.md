@@ -851,7 +851,8 @@ a NULL id rather than dropping it. The Portfolio console has a "Floor-wise" pane
 that reads "0 of 314 placed" instead of showing an empty list, because a
 floor-wise surface with no rows looks broken while a zero is a fact.
 
-### What is still missing, and it is not the schema
+### What was still missing, and it was not the schema — SETTLED, see §17
+
 
 **There is no way to place a point.** No API, no screen, no wire field. The
 columns can only be written by hand against the database today, and the honest
@@ -870,3 +871,188 @@ three points of `4F Khem Chiller01` were placed on that floor with an UPDATE, an
 could have written it and a hand-made row in a dimension table is a fixture — the
 exact thing builder contract §9 dropped `access_events` for. The site and floor
 were kept: they were created through the real API and are ordinary configuration.
+
+---
+
+## 17. Placing a device in a building (2026-08-31)
+
+§16 ended with the sentence that made everything under Building Intelligence
+wait: *"There is no way to place a point. No API, no screen, no wire field."*
+**314 points, 0 placed.** The Portfolio's Floor-wise panel was a panel about an
+empty column, and the VMS floor plan — which has placed cameras for a long time —
+could not show a sensor.
+
+It is placeable now. `POST /api/v1/bi/placement/devices`, gated on `bi.manage`,
+and a screen at `/bi/placement`.
+
+### The truth is one row per DEVICE
+
+`neubit_reporting.device_locations` (migration `0010_device_locations`), keyed
+`(tenant_id, device_id)`, carrying the site / floor / zone ids, a copy of each
+name, the device's tag at the time, and `placed_by` / `placed_at` / `source`.
+
+Device-level, not point-level, for three reasons and only the first is about
+effort:
+
+1. **A placement is a fact about a box.** Every one of `4F_Solar_Panel01`'s 21
+   points is in the same room. This estate is 29 devices to 314 points, so the
+   same fact is stated ten times less often — and it is also how the GATEWAY
+   models the world, where a point exists only as a child of a device.
+2. **It has to travel to a point that does not exist yet.** The writer creates a
+   `points` row the first time a point reports (§6). If the six columns were the
+   truth, a device placed today whose 22nd point first reports tomorrow would
+   have one unplaced point and nothing would say so — a placed estate that
+   silently un-places itself as it grows.
+3. **"What did the operator say" has to be answerable.** Reconstructing it from
+   314 denormalised copies that can disagree is not the same question.
+
+`points.site_id / floor_id / zone_id` are now a DERIVATION of that row, computed
+by `reporting.placement.reconcile_placement()` — one statement, in the shared
+`reporting` package because it has two callers who must never disagree.
+
+`points.placement_source` says which: `NULL` (unplaced, or derived from a device
+with no row), `'device'`, or `'point'`. **`'point'` is the override** — an
+operator saying THIS point is not where its device is, for the sub-meter that
+genuinely is not. The reconcile never touches such a row, and that exclusion is
+the whole of the mechanism. It is the exception, and the screen does not lead
+with it.
+
+### It is a JOIN between two systems, and it is stored like one
+
+The gateway owns `device_id`; `neubit_control` owns `site_id` / `floor_id` /
+`zone_id`. That is the same shape as the tenant mapping in §10 — and it is stored
+in a TABLE precisely because of how that one went wrong. `VE_READINGS_TENANT_MAP`
+lives in a gitignored env file, so it does not travel, and a fresh deployment
+starts silently wrong. A row travels with a `pg_dump`, is visible to an operator,
+and records who asserted it.
+
+**Why in `neubit_reporting` and not in core.** Core has never heard of a conflux
+`device_id`, and BI may not read `neubit_control` (§1). Putting the join beside
+the thing it decorates means a floor-wise question is answered without a second
+service in the request path.
+
+**Why not core's existing `device_placements`.** That table already joins a
+device to a floor — it is what pins a camera to a floor plan. Its `floor_id` and
+its `floor_position` `{x, y, rotation}` are both NOT NULL, so reusing it would
+mean inventing an x/y for 29 devices nobody has drawn, and would make "on the
+site, on no particular storey" — a true statement about a rooftop meter —
+unexpressible. `device_locations` says WHICH ROOM; `device_placements` says WHERE
+ON THE DRAWING, and the first comes first. The names differ so a grep never
+confuses them.
+
+### The NAME comes from core, never from the browser
+
+§16 required the label to be copied at write time. The obvious implementation is
+to let the client send the name it already has on screen, and this deliberately
+does not: a client-supplied name is a label nothing checked, so a request could
+place 22 points on a `floor_id` that does not exist, or call a floor `Roof` that
+core calls `Level 9`, and `/bi/summary` would print either as fact.
+
+So the placement API resolves every id against core's own `/sites` / `/floors` /
+`/zones` **with the CALLER's bearer token** and copies the name from core's
+answer, ignoring anything the client said about it. It also checks the three
+agree — a floor of another site, or a zone of another floor, is refused.
+
+That is a service-to-service call, not a cross-service read; `permsync` already
+does the same thing in the other direction. Using the caller's token rather than
+a system one means a caller who cannot read a site cannot place anything into it,
+and core's tenant scoping applies for free. A placer therefore needs `bi.manage`
+plus `sites.read` / `floors.read`, which is what the screen needs anyway.
+
+**If core is unreachable the placement is REFUSED.** Writing an unverified
+placement because the validator was down is how a fixture gets into a dimension
+table.
+
+### The no-clobber rule, and the one thing the writer is now allowed to do
+
+§16 said the writer "cannot touch these columns", made true by construction: its
+points upsert names its columns and these six are not among them. **That is
+unchanged** — a message carries no placement and can neither blank nor move one.
+
+What the writer now does is call `reconcile_placement()` for the points it
+upserted, in the same transaction. It is not authorship: the statement's only
+source is `device_locations`, which only the placement API writes. It is the only
+way point 22 of a placed device is placed when it first reports. The reconcile is
+guarded by `IS DISTINCT FROM`, so in the steady state it writes nothing.
+
+*Verified live:* a placed point's derived placement was blanked by hand, the next
+real aeon reading arrived, and the point came back `Aeon Tower / Level 4 /
+device` — refilled from `device_locations`, never from the message. In the same
+cycle the other points of that device kept their placement while their
+`last_seen_at` advanced.
+
+### Bulk, and the naming convention that must stay a suggestion
+
+Placing 29 devices one at a time is how the feature does not get used, so the
+list is the shape of the API rather than an add-on: `device_ids` plus ONE target
+(heterogeneous bulk would be unrelated decisions in one request's clothes).
+
+The screen groups the worklist by the leading token of the gateway's own device
+tag — `B1`, `4F`, `1F`, `B2`, `gateway` — because an operator obviously reads
+that as a floor, and it turns 29 decisions into six.
+
+**The prefix groups the LIST and pre-selects a SELECTION. It never fills in a
+floor.** Nothing on this platform maps `4F` to a floor id, and it must not:
+`4F-3F AC DB` names two floors and `4F-5F Light DB` names two more. §4 in a new
+place — turning a convention into a stored fact is the fabrication that looks
+right for four floors in five.
+
+### Unplaced stays first-class
+
+* `/bi/placement/devices?placed=unplaced` is the screen's DEFAULT view, because
+  it is the work.
+* The filter is on whether a `device_locations` row EXISTS, not on
+  `floor_id IS NULL` — "placed on a site with no floor" is a rooftop meter, not
+  an unplaced device.
+* `/bi/summary`'s `floors` still returns the unplaced group as a row with a NULL
+  id, and the screen renders it in italic as *Unplaced* rather than as a bucket.
+* Nothing defaults a device to the first floor, and no device is hidden for
+  having no placement.
+
+### What is on the wire, and what still is not
+
+Still nothing. The gateway has no placement field and this change does not add
+one, because a placement is not something the gateway can know: conflux sees a
+connection, a tag, a category and an equipment kind, and no MQTT payload says
+which storey the panel is bolted to. Placement is an operator's statement, it is
+made on the platform, and it stays there.
+
+### Verified on live data (2026-08-31)
+
+Through the REAL screen, signed in as a real user:
+
+* the `4F` tag-prefix group was clicked (18 devices), the seven devices whose own
+  tag names TWO floors (`4F-3F …`, `4F-5F …`, `4F-6F …`) were deselected by hand,
+  and the remaining 11 were placed on `Aeon Tower / Level 4` — the site and floor
+  created earlier through core's own `/sites` and `/floors` APIs (§16).
+* `/bi/summary` placement moved from `0 of 314` to
+  `{points: 314, with_site: 181, with_floor: 181, with_zone: 0, unplaced: 133}`,
+  and `floors` returned `Level 4 · Aeon Tower → 181 points / 11 devices` beside
+  `null → 133 points / 18 devices`.
+* `/bi/query` grouped by `floor_name` over six hours returned
+  `Level 4 → 8,513 samples` and `null → 6,251` from `readings_1h`.
+* a caller holding `bi.read` but not `bi.manage` got
+  `403 missing permission(s): bi.manage` on the write and `200` on the read; a
+  role carrying `bi.manage` was created and deleted through core's own
+  `/auth/roles`, so the key is genuinely grantable.
+* the writer kept running throughout: 0 malformed, 0 batch failures, 0 NAKs.
+
+**Left deliberately undone.** The point-level override has an API
+(`POST /bi/placement/points`, `…/points/reset`) and no screen — the device list
+reports how many of a device's points carry one, so the state is never invisible,
+but placing an individual point is not yet a click. It is the exception, and
+building the exception's UI before anyone has hit the case would be guessing at
+its shape.
+
+**Two bugs found and not fixed, neither in this work's path.**
+
+* Core's dev container hangs on reload. Editing any file under `backend/core/app`
+  triggers uvicorn `--reload`, which logs *"Waiting for connections to close"* and
+  never finishes, because the SSE relays (`/api/v1/realtime/…`) hold open
+  connections that nothing closes. Core stops answering — including
+  `/auth/login` — until `docker compose restart core`. Hit once here by a
+  one-line edit to `permissions.py`. The fix is a shutdown timeout or closing the
+  relays on the lifespan's teardown; neither is this change's business.
+* `GET /files/branding/logo_<hash>.svg` 404s on every page of the app, Portfolio
+  and Placement alike. Pre-existing, unrelated, and the only failing request on
+  either screen.
