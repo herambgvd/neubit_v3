@@ -152,9 +152,19 @@ services:
     # an EXISTING one a blanket `stamp head` marks every unapplied migration as
     # done and it silently never runs. The script picks the right branch per
     # database — see the long comment at the top of backend/core/migrate.sh.
+    #
+    # `--timeout-graceful-shutdown`: uvicorn's default is None, which
+    # `asyncio.wait_for` reads as "wait forever" — so ONE open SSE relay on
+    # `/api/v1/realtime/…` (a browser with a dashboard open is enough) makes
+    # `docker compose restart core` sit on "Waiting for connections to close"
+    # indefinitely. The relays now end their own responses on SIGTERM
+    # (backend/core/app/core/shutdown.py) and this is the BACKSTOP for everything
+    # that cannot: a WebSocket parked on receive_text(), a request wedged on a
+    # slow query, a relay added later that forgets to check.
     command: >
       bash -c "./migrate.sh &&
-               uvicorn app.main:app --host 0.0.0.0 --port 8000"
+               uvicorn app.main:app --host 0.0.0.0 --port 8000
+               --timeout-graceful-shutdown 10"
     volumes:
       # Persist uploaded blobs across rebuilds — see the `corefiles` volume note.
       - corefiles:/app/data

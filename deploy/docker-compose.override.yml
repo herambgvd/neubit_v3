@@ -36,7 +36,16 @@ services:
       # The migrate script is part of the schema bring-up and changes with the
       # migrations, so mount it alongside them rather than baking dev to an old copy.
       - ../backend/core/migrate.sh:/app/migrate.sh
-    command: bash -c "./migrate.sh && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"
+    # `--timeout-graceful-shutdown 5`: THE reason an edit under `backend/core/app`
+    # used to hang the container forever. On reload uvicorn asks connections to
+    # close and then waits with no timeout at all, so an open SSE relay on
+    # `/api/v1/realtime/…` held the worker up and core stopped answering
+    # everything — including /auth/login — until somebody restarted it by hand.
+    # The relays cooperate now (backend/core/app/core/shutdown.py) so the common
+    # case finishes in milliseconds; this bounds the ones that cannot. Shorter
+    # than the base compose's 10s because a dev reload is meant to feel instant
+    # and there is nothing here worth waiting on.
+    command: bash -c "./migrate.sh && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --timeout-graceful-shutdown 5"
 
   vision:
     environment:

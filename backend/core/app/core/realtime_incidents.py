@@ -36,6 +36,7 @@ from fastapi.responses import StreamingResponse
 
 from ..auth.security import decode_token
 from .logging import get_logger
+from .shutdown import SSE_SHUTDOWN_FRAME, next_sse_frame
 
 log = get_logger("edge.realtime.incidents")
 
@@ -168,11 +169,18 @@ async def incidents_stream(
             while True:
                 if await request.is_disconnected():
                     break
-                try:
-                    name, data = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_SECONDS)
-                    yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
-                except asyncio.TimeoutError:
+                kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
+                if kind == "shutdown":
+                    # The process is going down. END the response instead of
+                    # looping: an open stream here is what used to make every
+                    # reload hang forever. EventSource reconnects on its own.
+                    yield SSE_SHUTDOWN_FRAME
+                    break
+                if kind == "keepalive":
                     yield ": keepalive\n\n"
+                    continue
+                name, data = item
+                yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
         finally:
             if sub is not None:
                 try:
