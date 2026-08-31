@@ -134,10 +134,12 @@ class CorePerm:
     # permissions claim. A key that is not in this catalog can only ever be held
     # by a wildcard admin, which is not a usable permission model.
     BI_READ = "bi.read"
-    # RETIRE / un-retire a measurement point. The only write in the Building
-    # Intelligence API, and separate from bi.read on purpose: reading the estate
-    # and deciding what is no longer part of it are different jobs. It changes a
-    # COUNT, never a measurement — retiring a point deletes nothing.
+    # The WRITE key of the Building Intelligence API, and separate from bi.read
+    # on purpose: reading the estate and making a statement ABOUT it are
+    # different jobs. Two things use it and they are the same kind of decision —
+    # RETIRING a point (what is part of the estate) and PLACING a device in a
+    # site / floor / zone (where that part of it is). Neither ever touches a
+    # measurement: both write a dimension row and nothing else.
     BI_MANAGE = "bi.manage"
     # Dashboard builder — the no-code dashboards over the reading store. READ =
     # list and open a dashboard; MANAGE = create / edit / delete / arrange it.
@@ -231,10 +233,12 @@ PERMISSIONS.register(
     ),
     Permission(
         CorePerm.BI_MANAGE,
-        "Retire measurement points",
+        "Manage the measurement estate (place and retire)",
         "Building Intelligence",
-        "Mark a point as no longer part of the estate so it stops counting toward "
-        "the portfolio figures, and restore one. Never deletes a reading.",
+        "Place a device in a site, floor or zone so its readings can answer a "
+        "floor-wise question, and retire a point that is no longer part of the "
+        "estate. Both write a dimension row; neither deletes a reading. Placing "
+        "also needs sites.read / floors.read to choose the place.",
     ),
     Permission(
         CorePerm.DASHBOARDS_READ,

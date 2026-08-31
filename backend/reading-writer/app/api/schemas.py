@@ -276,3 +276,113 @@ class AlertListResponse(BaseModel):
     total: int
     by_severity: list[AlertSeverityCount] = Field(default_factory=list)
     items: list[AlertRow] = Field(default_factory=list)
+
+
+# ── Placement ────────────────────────────────────────────────────────────────
+#
+# The write half of the spatial axis. The truth is one row per DEVICE
+# (`device_locations`, migration 0010) and `points`' six spatial columns are a
+# derivation of it; these shapes are what the placement screen reads and posts.
+
+
+class PlacementTarget(BaseModel):
+    """WHERE something is being placed. Ids only — the NAMES are not accepted.
+
+    A client cannot supply `site_name` / `floor_name` / `zone_name` here, and
+    that omission is the point: the server resolves every id against core and
+    copies the label from core's answer. A name a client sent is a label nothing
+    checked, and `/bi/summary` would report it as fact.
+
+    `floor_id` and `zone_id` are optional and `site_id` is not. A placement that
+    names no site is not a placement; a placement that names a site and no floor
+    is a rooftop meter, which is a true answer.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    site_id: uuid.UUID
+    floor_id: uuid.UUID | None = None
+    zone_id: uuid.UUID | None = None
+
+
+class PlaceDevicesRequest(PlacementTarget):
+    """Place N devices in one place. Bulk is the default shape, not an extra."""
+
+    device_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class UnplaceDevicesRequest(BaseModel):
+    """Remove a placement. Separate from placing on purpose: a `site_id: null`
+    that meant "clear" would make an omitted field destructive."""
+
+    model_config = {"extra": "forbid"}
+
+    device_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class PlacePointsRequest(PlacementTarget):
+    """The point-level OVERRIDE — the exception, not the unit of work."""
+
+    point_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class ResetPointsRequest(BaseModel):
+    """Drop a point-level override; the point follows its device again."""
+
+    model_config = {"extra": "forbid"}
+
+    point_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class PlacementDeviceRow(BaseModel):
+    """One device on the placement worklist — placed or, honestly, not."""
+
+    device_id: uuid.UUID
+    device_tag: str | None
+    category: str | None
+    device_type: str | None
+    points: int
+    points_reporting: int
+    last_seen_at: dt.datetime | None
+    # Points of this device that carry an explicit point-level placement, and so
+    # do NOT follow the device. Surfaced because a device that reads as placed
+    # while three of its points are elsewhere should say so.
+    points_overridden: int
+    # False means UNPLACED, which is a state this API reports rather than hides.
+    placed: bool
+    site_id: uuid.UUID | None = None
+    site_name: str | None = None
+    floor_id: uuid.UUID | None = None
+    floor_name: str | None = None
+    zone_id: uuid.UUID | None = None
+    zone_name: str | None = None
+    placed_at: dt.datetime | None = None
+    placed_source: str | None = None
+    # The leading token of the gateway's device tag (`B1_Main Incomer` → `B1`).
+    # A GROUPING aid for the operator's selection and nothing else: no floor is
+    # ever derived from it. See `queries.tag_prefix` for why.
+    tag_prefix: str | None = None
+
+
+class PlacementOverview(BaseModel):
+    """The estate's placement state, counted over devices AND over points.
+
+    Both, because they answer different questions: devices are the unit of work
+    (how much is left to do) and points are the unit of measurement (how much of
+    the data can answer a floor-wise question).
+    """
+
+    devices: int
+    devices_placed: int
+    devices_with_floor: int
+    devices_unplaced: int
+    points: int
+    points_with_floor: int
+    points_unplaced: int
+    points_overridden: int
+
+
+class PlacementDeviceListResponse(BaseModel):
+    total: int
+    items: list[PlacementDeviceRow]
+    overview: PlacementOverview

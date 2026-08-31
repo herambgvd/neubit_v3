@@ -770,6 +770,187 @@ async def set_retired(
     }
 
 
+# ── Placement ─ the operator's worklist ───────────────────────────
+#
+# One row per DEVICE, because a placement is a fact about a box (migration 0010).
+# Each row carries what the operator needs to decide: what the device is, how
+# much of the estate it accounts for, whether it is still reporting, and where —
+# if anywhere — somebody has already said it is.
+#
+# `device_locations` is LEFT JOINed, so an unplaced device is a row with nulls
+# rather than a missing row. Unplaced is the state this screen exists to change;
+# it cannot be the state the screen hides.
+
+_PLACEMENT_DEVICES_SQL = """
+    SELECT p.device_id                                     AS device_id,
+           max(p.device_tag)                               AS device_tag,
+           max(p.category)                                 AS category,
+           max(p.device_type)                              AS device_type,
+           count(*)                                        AS points,
+           count(*) FILTER (
+               WHERE p.last_seen_at >= now() - make_interval(mins => :fresh)
+           )                                               AS points_reporting,
+           max(p.last_seen_at)                             AS last_seen_at,
+           -- Points this device does NOT speak for: an operator placed them
+           -- individually and the device's placement is not allowed to move
+           -- them. Surfaced so a device that looks placed but has three points
+           -- somewhere else says so.
+           count(*) FILTER (WHERE p.placement_source = 'point') AS points_overridden,
+           max(dl.site_id::text)                           AS site_id,
+           max(dl.site_name)                               AS site_name,
+           max(dl.floor_id::text)                          AS floor_id,
+           max(dl.floor_name)                              AS floor_name,
+           max(dl.zone_id::text)                           AS zone_id,
+           max(dl.zone_name)                               AS zone_name,
+           max(dl.placed_at)                               AS placed_at,
+           max(dl.source)                                  AS placed_source
+      FROM points p
+      LEFT JOIN device_locations dl
+             ON dl.tenant_id = p.tenant_id AND dl.device_id = p.device_id
+     WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND {live}
+       AND p.device_id IS NOT NULL
+       {search}
+     GROUP BY p.device_id
+    {having}
+"""
+
+
+def tag_prefix(device_tag: str | None) -> str | None:
+    """The leading token of a gateway device tag — `B1_Main` → `B1`.
+
+    This is a SUGGESTION mechanism and nothing more. The gateway's tags follow a
+    convention (`B1_`, `4F-3F`, `1F York Chiller01`) that an operator obviously
+    reads as a floor, and grouping by it turns "place 29 devices" into "place six
+    groups". But a convention is not data: `4F-3F AC DB` names two floors, and
+    `4F-5F Light DB` names two more.
+
+    So what this returns is used to GROUP THE LIST, never to fill in a floor.
+    Nothing anywhere maps `4F` to a floor id — the operator picks the floor, for
+    a selection the convention helped them make. Contract §4: turning a naming
+    convention into a stored fact is fabrication, and it is the kind that looks
+    right for four floors in five.
+    """
+    if not device_tag:
+        return None
+    head = device_tag.strip()
+    for sep in (" ", "_", "-"):
+        idx = head.find(sep)
+        if idx > 0:
+            head = head[:idx]
+    return head or None
+
+
+async def placement_devices(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    placed: str | None = None,
+    search: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> tuple[int, list[dict]]:
+    """Every reporting device and where it is, or that it is nowhere.
+
+    `placed` filters on the state rather than on a value: "placed" is a
+    `device_locations` row existing, "unplaced" is it not. Filtering on
+    `floor_id IS NULL` would conflate "no floor" with "no placement", and a
+    site-only placement is a real answer.
+    """
+    having: list[str] = []
+    if placed == "placed":
+        having.append("count(dl.device_id) > 0")
+    elif placed == "unplaced":
+        having.append("count(dl.device_id) = 0")
+    elif placed not in (None, "", "all"):
+        from kernel.errors import ValidationError
+
+        raise ValidationError("placed must be one of: all, placed, unplaced")
+
+    params: dict = {
+        "tenant": str(tenant) if tenant else None,
+        "fresh": FRESH_MINUTES,
+        "retire_days": RETIRE_AFTER_DAYS,
+    }
+    search_sql = ""
+    if search:
+        search_sql = "AND p.device_tag ILIKE :search"
+        params["search"] = f"%{search}%"
+
+    base = _PLACEMENT_DEVICES_SQL.format(
+        live=_live(False),
+        search=search_sql,
+        having=("HAVING " + " AND ".join(having)) if having else "",
+    )
+    total = (await db.execute(text(f"SELECT count(*) FROM ({base}) d"), params)).scalar_one()
+    rows = _rows(
+        await db.execute(
+            text(f"{base} ORDER BY max(p.device_tag) LIMIT :limit OFFSET :offset"),
+            {**params, "limit": limit, "offset": offset},
+        )
+    )
+    for r in rows:
+        r["tag_prefix"] = tag_prefix(r.get("device_tag"))
+        # `placed` is the STATE, stated once, so a client never has to infer it
+        # from "site_id is not null" and get it subtly wrong.
+        r["placed"] = r.get("site_id") is not None
+    return int(total), rows
+
+
+# The estate's placement state in one row, for the screen's header. Counted over
+# DEVICES rather than points, because devices are what this screen places — the
+# point counts are already on /bi/summary and mean something different.
+_PLACEMENT_DEVICE_TOTALS_SQL = text(
+    """
+    SELECT count(*)                                         AS devices,
+           count(*) FILTER (WHERE d.site_id IS NOT NULL)     AS devices_placed,
+           count(*) FILTER (WHERE d.floor_id IS NOT NULL)    AS devices_with_floor,
+           sum(d.points)                                     AS points,
+           sum(d.points) FILTER (WHERE d.floor_id IS NOT NULL) AS points_with_floor,
+           sum(d.points_overridden)                           AS points_overridden
+      FROM (
+            SELECT p.device_id,
+                   count(*)                                        AS points,
+                   count(*) FILTER (WHERE p.placement_source = 'point')
+                                                                   AS points_overridden,
+                   max(dl.site_id::text)                           AS site_id,
+                   max(dl.floor_id::text)                          AS floor_id
+              FROM points p
+              LEFT JOIN device_locations dl
+                     ON dl.tenant_id = p.tenant_id AND dl.device_id = p.device_id
+             WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+               AND """ + LIVE_POINT + """
+               AND p.device_id IS NOT NULL
+             GROUP BY p.device_id
+           ) d
+    """
+)
+
+
+async def placement_overview(db: AsyncSession, tenant: uuid.UUID | None) -> dict:
+    row = (
+        await db.execute(
+            _PLACEMENT_DEVICE_TOTALS_SQL,
+            {"tenant": str(tenant) if tenant else None, "retire_days": RETIRE_AFTER_DAYS},
+        )
+    ).mappings().first() or {}
+    devices = int(row.get("devices") or 0)
+    points = int(row.get("points") or 0)
+    with_floor = int(row.get("points_with_floor") or 0)
+    return {
+        "devices": devices,
+        "devices_placed": int(row.get("devices_placed") or 0),
+        "devices_with_floor": int(row.get("devices_with_floor") or 0),
+        # Stated, not implied. "17 of 29 devices unplaced" is a fact; an empty
+        # list is a broken screen.
+        "devices_unplaced": devices - int(row.get("devices_placed") or 0),
+        "points": points,
+        "points_with_floor": with_floor,
+        "points_unplaced": points - with_floor,
+        "points_overridden": int(row.get("points_overridden") or 0),
+    }
+
+
 # ── Faults & alerts ──────────────────────────────────────────────────────────
 #
 # `iot_alerts` is NOT part of this service's schema. It is created and written by
