@@ -268,6 +268,31 @@ export default function Streaming() {
     });
   }, []);
 
+  // Put a whole branch (a recorder) on the wall, starting at `startIndex` and
+  // walking forward. Tiles already showing one of these cameras are left alone —
+  // dropping a recorder twice must not duplicate it across the grid — and the
+  // walk stops at the last tile rather than wrapping, so a 12-camera recorder on
+  // a 2x2 fills what it can and says what it could not.
+  const assignMany = useCallback((cameraIds, startIndex = 0) => {
+    setCells((prev) => {
+      const next = [...prev];
+      const already = new Set(next.map((c) => c.cameraId).filter(Boolean));
+      const pending = cameraIds.filter((id) => !already.has(id));
+      let placed = 0;
+      for (let i = startIndex; i < next.length && placed < pending.length; i += 1) {
+        next[i] = { cameraId: pending[placed] };
+        placed += 1;
+      }
+      const missed = pending.length - placed;
+      if (missed > 0) {
+        toast.message(
+          `Placed ${placed} camera${placed === 1 ? "" : "s"} — ${missed} did not fit. Pick a larger layout.`,
+        );
+      }
+      return next;
+    });
+  }, []);
+
   // Swap two tiles (tile→tile drag).
   const swapCells = useCallback((from, to) => {
     setCells((prev) => {
@@ -301,6 +326,22 @@ export default function Streaming() {
     [assignToCell],
   );
 
+  // Double-clicking a recorder header puts its cameras up from the first FREE
+  // tile, so it extends the wall instead of overwriting what is already on it.
+  // A drop, by contrast, starts exactly where the operator aimed.
+  const pickBranch = useCallback(
+    (cams) => {
+      const ids = cams.map((c) => c.id);
+      const firstFree = cellsRef.current.findIndex((c) => !c.cameraId);
+      if (firstFree === -1) {
+        toast.message("Grid full — remove a tile or pick a larger layout.");
+        return;
+      }
+      assignMany(ids, firstFree);
+    },
+    [assignMany],
+  );
+
   // ── Stable, INDEX-BASED tile handlers (video-wall render-perf) ────────────
   // One handler instance shared by every tile — each tile passes its OWN stable
   // `index` when invoking. This replaces the per-render `(x) => fn(i, x)` closures
@@ -309,6 +350,10 @@ export default function Streaming() {
   const handleAssign = useCallback(
     (cameraId, index) => assignToCell(index, cameraId),
     [assignToCell],
+  );
+  const handleAssignMany = useCallback(
+    (cameraIds, index) => assignMany(cameraIds, index),
+    [assignMany],
   );
   const handleSwap = useCallback((from, index) => swapCells(from, index), [swapCells]);
   const handleClose = useCallback((index) => closeCell(index), [closeCell]);
@@ -564,6 +609,7 @@ export default function Streaming() {
       railDragging={railDragging}
       style={spotlightMode ? undefined : tileStyleFor(i)}
       onAssign={handleAssign}
+      onAssignMany={handleAssignMany}
       onSwap={handleSwap}
       onClose={handleClose}
       onSpotlight={handleSpotlight}
@@ -624,6 +670,7 @@ export default function Streaming() {
             cameras={cameras}
             mountedIds={mountedIds}
             onPick={pickCamera}
+            onPickMany={pickBranch}
             onDragStateChange={setRailDragging}
             isLoading={camerasQ.isLoading || fedQ.isLoading}
             onlineCount={onlineCount}
