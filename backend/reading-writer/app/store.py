@@ -40,6 +40,7 @@ import logging
 import uuid
 
 from reporting.models import Point, Reading
+from reporting.placement import reconcile_placement
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -187,6 +188,24 @@ async def write_batch(
         )
         await session.execute(stmt)
         points_upserted = len(due)
+
+        # ── 1b. inherit the device's placement ────────────────────────────────
+        # The six spatial columns are NOT in the set_ above and never will be: a
+        # message carries no placement, so a reading must not be able to write
+        # one (contract §16, and the same no-clobber rule §11 gave `category`).
+        #
+        # What a reading CAN legitimately do is bring a point that has just come
+        # into existence into line with the placement its DEVICE already has.
+        # Nothing else can: the writer creates the `points` row (contract §6), so
+        # without this a placed estate would silently un-place itself one new
+        # point at a time.
+        #
+        # The value's only source is `device_locations`, which only the placement
+        # API writes — so this is a derivation, not authorship. It is in the same
+        # transaction as the readings, so it is covered by the ack rule; it skips
+        # any point with an explicit point-level placement; and its
+        # IS DISTINCT FROM guard means it writes nothing in the steady state.
+        await reconcile_placement(session, point_ids=list(due.keys()))
 
     # ── 2. readings ───────────────────────────────────────────────────────────
     # Deduplicate within the batch too. ON CONFLICT DO NOTHING tolerates a
