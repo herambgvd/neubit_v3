@@ -4,6 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { Toaster } from "sonner";
 
+// SIDE EFFECT, and it must run before the first <Icon> mounts: it registers the
+// offline icon collections. Without it @iconify/react fetches every glyph from
+// api.iconify.design at runtime, so on a restricted or air-gapped network the
+// whole console renders with no icons at all and says nothing. See lib/icons.ts.
+import "@/lib/icons";
+
 import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/components/theme";
 import TitleSync from "@/components/TitleSync";
