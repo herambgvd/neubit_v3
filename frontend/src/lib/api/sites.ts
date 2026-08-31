@@ -56,6 +56,21 @@ export const sites = {
   // rating divides by, which is exactly why they live here beside the address
   // rather than on a BI screen of their own.
   setBuildingFacts: (id, body) => unwrap(api.put(`${SITES}/${id}/building-facts`, body)),
+  // TIME-OF-USE TARIFF SLABS and EMISSION FACTORS (core migration 0019) — the
+  // other two Building Intelligence inputs, edited on the same Building tab.
+  //
+  // Both PUTs are FULL REPLACES of the whole list, for the same reason
+  // building-facts is a PUT: a PATCH built on exclude_none cannot say "take
+  // this back". An explicit empty list CLEARS the set — for slabs that means
+  // the scalar tariff above is in effect again; for factors it means no CO2
+  // figure at all. PRECEDENCE: when any slab is in effect for a date, the
+  // slabs override the scalar ENTIRELY; an hour no slab covers has no price.
+  // Nothing here defaults or seeds a value — the tables ship empty.
+  getTariffSlabs: (id) => unwrap(api.get(`${SITES}/${id}/tariff-slabs`)),
+  setTariffSlabs: (id, slabs) => unwrap(api.put(`${SITES}/${id}/tariff-slabs`, { slabs })),
+  getEmissionFactors: (id) => unwrap(api.get(`${SITES}/${id}/emission-factors`)),
+  setEmissionFactors: (id, factors) =>
+    unwrap(api.put(`${SITES}/${id}/emission-factors`, { factors })),
   setThreatLevel: (id, level) =>
     unwrap(api.put(`${SITES}/${id}/threat-level`, { threat_level: level })),
   uploadImage: (id, file) => {

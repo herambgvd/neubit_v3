@@ -36,6 +36,9 @@ import { apiError } from "@/lib/api";
 import sitesApi from "@/lib/api/sites";
 import { useAuth } from "@/lib/auth";
 
+import EmissionFactorsEditor from "./EmissionFactorsEditor";
+import TariffSlabsEditor from "./TariffSlabsEditor";
+
 /** "" → null. The empty box is the operator saying "I have no reliable number",
  *  which is a fact the store must be able to hold. */
 function numOrNull(v: any): number | null {
@@ -102,7 +105,8 @@ export default function BuildingFactsPanel({ site }: any) {
   const missingCurrency = tariffN !== null && !String(currency || "").trim();
 
   return (
-    <div className="grid grid-cols-1 gap-6 px-6 py-5 lg:grid-cols-5">
+    <div className="space-y-8 px-6 py-5">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
       <div className="space-y-4 lg:col-span-3">
         <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
           <FInput
@@ -133,7 +137,7 @@ export default function BuildingFactsPanel({ site }: any) {
             value={tariff}
             onChange={setTariff}
             placeholder="e.g. 8.5"
-            hint="Used only to price measured consumption. No tariff is assumed if this is blank."
+            hint="The FLAT rate — the simple case. If Time-of-Use slabs exist below, they override this entirely. No tariff is assumed if this is blank."
           />
           <FInput
             label="Tariff currency"
@@ -212,6 +216,19 @@ export default function BuildingFactsPanel({ site }: any) {
             </p>
           </div>
         </div>
+      </div>
+      </div>
+
+      {/* The other two BI inputs live on the SAME tab, beside the facts they
+          extend. The flat tariff above stays the simple case; when slabs exist
+          they override it entirely (uncovered hours have no price). Both
+          editors save the WHOLE list (PUT) so an empty list is a real
+          retraction — and both ship empty. */}
+      <div className="border-t border-nb-line pt-6">
+        <TariffSlabsEditor site={site} />
+      </div>
+      <div className="border-t border-nb-line pt-6">
+        <EmissionFactorsEditor site={site} />
       </div>
     </div>
   );
