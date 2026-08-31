@@ -121,6 +121,24 @@ $VmCreatorId = '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}'   # WSL's Hyper-V firewa
 # once so the import, the trigger and the messages cannot disagree.
 $OwnerAccount = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
+# ══ WHAT MAKES AN INSTALL "REAL" ═════════════════════════════════════════════
+#
+# Not the presence of the distro. An import that completed and then hit any error
+# on the way to a running stack leaves a registered distro that has never held a
+# byte of anybody's data — and the guard protecting the database cannot tell it
+# apart from a production appliance, so it refuses and sends the operator to the
+# uninstaller with no way to know what they are about to destroy.
+#
+# The distro can only hold data once /opt/neubit/.env exists: nothing in the stack
+# starts without it, and Postgres creates its database on first boot. So the
+# installer records that moment here, and THIS FILE, not the distro, is what means
+# "there may be data inside". Distro present and no state file = a wreck from an
+# unfinished run, and replacing it costs nothing.
+#
+# Deliberately conservative in the one direction that matters: .env written but the
+# stack never started is still treated as data-bearing.
+$StatePath = Join-Path $env:ProgramData 'Neubit\VMS\install-state.json'
+
 function Write-Step { param([string]$Message) Write-Host "==> $Message" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$Message) Write-Host "  . $Message" -ForegroundColor DarkGray }
 function Write-Warn { param([string]$Message) Write-Host "  ! $Message" -ForegroundColor Yellow }
@@ -527,8 +545,22 @@ Set-MirroredNetworking
 Set-FirewallRules
 
 # ── 5. the distro ────────────────────────────────────────────────────────────
-$present = Test-DistroPresent
-Write-Step $(if ($present) { 'Replacing the existing appliance distro (upgrade)' } else { 'Importing the appliance distro' })
+$present    = Test-DistroPresent
+$configured = Test-Path -LiteralPath $StatePath
+
+# A state file with no distro is the opposite wreck — someone unregistered the
+# distro by hand. Say so and carry on; there is nothing left to protect.
+if ($configured -and -not $present) {
+    Write-Warn "$StatePath describes an install whose distro is gone. Treating this as a fresh install."
+    Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
+    $configured = $false
+}
+
+Write-Step $(
+    if     ($present -and $configured) { 'Replacing the existing appliance distro (upgrade)' }
+    elseif ($present)                  { 'Replacing a distro left behind by an unfinished install' }
+    else                               { 'Importing the appliance distro' }
+)
 
 # Named volumes live INSIDE the distro, so replacing it on upgrade would discard
 # the database. The upgrade path therefore keeps the data volumes and replaces only
@@ -539,11 +571,18 @@ Write-Step $(if ($present) { 'Replacing the existing appliance distro (upgrade)'
 # across a stack restart, but a distro REPLACEMENT discards them with the VHD, and
 # the export/import dance that would preserve them has not been written or tested.
 # The NVR's two upgrade post-mortems are the argument for not guessing here.
-if ($present -and -not $Force) {
-    throw ("An appliance is already installed. In-place upgrade is not implemented in this " +
-           "release — replacing the distro would discard the database with it. Uninstall first " +
-           "(uninstall-appliance.ps1 -KeepData), then install, or pass -Force to replace the " +
-           "distro AND LOSE ITS DATA.")
+if ($present -and $configured -and -not $Force) {
+    $state = try { Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json } catch { $null }
+    $when  = if ($state -and $state.PSObject.Properties.Name -contains 'installed') { $state.installed } else { 'an earlier run' }
+    throw ("An appliance was installed by $when and may hold its database. In-place upgrade " +
+           "is not implemented in this release — replacing the distro would discard the " +
+           "database with it. Uninstall first (uninstall-appliance.ps1 -KeepData), then " +
+           "install, or pass -Force to replace the distro AND LOSE ITS DATA.")
+}
+
+if ($present -and -not $configured) {
+    Write-Warn 'A distro from an unfinished install is registered. It was never configured —'
+    Write-Warn 'no .env, so nothing ever started and there is no database to lose. Replacing it.'
 }
 
 $payloadWsl = $Payload
@@ -677,6 +716,21 @@ $envScript = @"
 Invoke-InSession -Script $envScript -What 'write .env' | Out-Null
 Write-Ok "bulk storage mapped to $bulkWsl"
 Write-Ok "VE_ENV=$RuntimeEnv"
+
+# The line past which this distro may hold data. Written here, immediately after
+# .env, and not at the end of a successful run: a console that fails its six-minute
+# health check has still created a database, and marking that install "incomplete"
+# would hand the next attempt permission to delete it.
+New-Item -ItemType Directory -Force -Path (Split-Path $StatePath) | Out-Null
+[pscustomobject]@{
+    distro    = $DistroName
+    version   = $Version
+    account   = $OwnerAccount
+    distroDir = $DistroDir
+    bulkDir   = $BulkDir
+    installed = (Get-Date).ToString('s')
+} | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
+Write-Ok "recorded this install in $StatePath"
 
 # The generated password has to survive the installer's own window closing — under
 # NSIS this whole run scrolls past in a details pane nobody can copy from.

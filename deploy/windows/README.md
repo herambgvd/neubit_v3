@@ -250,6 +250,14 @@ that would preserve it has not been written or tested, and the NVR's two upgrade
 post-mortems are the argument for not guessing. For now: `uninstall-appliance.ps1
 -KeepData`, then install.
 
+A distro left behind by an install that *crashed* is not an upgrade, and is no
+longer treated as one. The installer records a real install in
+`%ProgramData%\Neubit\VMS\install-state.json` at the moment `/opt/neubit/.env` is
+written — the point past which a database can exist — so a registered distro with
+no such record is replaced without asking, because there is nothing inside it to
+lose. Deleting that file by hand tells the next install it may destroy the
+database.
+
 ## If something goes wrong
 
 ```powershell

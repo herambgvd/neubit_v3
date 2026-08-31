@@ -97,6 +97,16 @@ try {
     Write-Ok 'logon task removed'
 } catch { Write-Ok 'no logon task registered' }
 
+# Drop the marker that tells the installer this machine may hold data. Removed
+# whether or not -KeepData was passed: with -KeepData the distro survives but the
+# installer is meant to treat the next run as a fresh install, which is the whole
+# point of the documented uninstall-then-install upgrade path.
+$StatePath = Join-Path $env:ProgramData 'Neubit\VMS\install-state.json'
+if (Test-Path -LiteralPath $StatePath) {
+    Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
+    Write-Ok 'install record removed'
+}
+
 try {
     Invoke-InSession -What 'stop the stack' -Script @'
     $names = (wsl.exe --list --quiet) -replace "`0", '' -split "`r?`n" | ForEach-Object { $_.Trim() }
