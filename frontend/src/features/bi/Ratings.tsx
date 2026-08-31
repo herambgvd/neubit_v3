@@ -462,9 +462,9 @@ export default function Ratings() {
                         </div>
                       )}
 
-                      {/* ── the band, and why there is none ─────────── */}
+                      {/* ── the band — or the exact input still missing ── */}
                       <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
-                        <div className="mb-1.5 flex items-center gap-2">
+                        <div className="mb-1.5 flex flex-wrap items-center gap-2">
                           <Icon
                             icon="heroicons:academic-cap"
                             className="text-[15px] text-nb-faint"
@@ -472,12 +472,34 @@ export default function Ratings() {
                           <div className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
                             Benchmark band
                           </div>
-                          {!r.benchmark.available && (
+                          {r.benchmark.available ? (
+                            <span
+                              className="rounded-[5px] border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[9.5px] uppercase tracking-[.6px] text-nb-blueb"
+                              title={r.benchmark.citation || undefined}
+                            >
+                              {r.benchmark.standard} · {r.benchmark.version}
+                            </span>
+                          ) : (
                             <span className="rounded-[5px] border border-nb-line px-1.5 py-0.5 text-[9.5px] uppercase tracking-[.6px] text-nb-faint">
                               none loaded
                             </span>
                           )}
                         </div>
+                        {r.benchmark.band ? (
+                          <div className="mb-2 flex items-center gap-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
+                            <span className="font-mono text-[22px] leading-none text-nb-ink">
+                              {r.benchmark.band.stars}★
+                            </span>
+                            <span className="text-[11px] leading-relaxed text-nb-soft">
+                              band{" "}
+                              {r.benchmark.band.min != null
+                                ? `${r.benchmark.band.min}–${r.benchmark.band.max}`
+                                : `below ${r.benchmark.band.max}`}{" "}
+                              {r.benchmark.band_unit} · zone {r.benchmark.zone} ·{" "}
+                              {r.benchmark.ac_category}
+                            </span>
+                          </div>
+                        ) : null}
                         <p className="text-[11.5px] leading-relaxed text-nb-soft">
                           {r.benchmark.reason}
                         </p>
@@ -486,7 +508,36 @@ export default function Ratings() {
                             What it would take: {r.benchmark.what_it_needs}
                           </p>
                         )}
+                        {r.benchmark.citation && (
+                          <p className="mt-1.5 break-words text-[10px] leading-relaxed text-nb-faint">
+                            Citation: {r.benchmark.citation}
+                          </p>
+                        )}
                       </div>
+
+                      {/* ── baseline: the rule, and the honest day count ── */}
+                      {r.baseline && (
+                        <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
+                          <div className="mb-1.5 flex items-center gap-2">
+                            <Icon
+                              icon="heroicons:calendar-days"
+                              className="text-[15px] text-nb-faint"
+                            />
+                            <div className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
+                              Vs baseline
+                            </div>
+                            <span className="rounded-[5px] border border-nb-line px-1.5 py-0.5 text-[9.5px] uppercase tracking-[.6px] text-nb-faint">
+                              {r.baseline.rule}
+                            </span>
+                          </div>
+                          <p className="text-[11.5px] leading-relaxed text-nb-soft">
+                            {r.baseline.reason}
+                          </p>
+                          <p className="mt-1.5 text-[10.5px] leading-relaxed text-nb-faint">
+                            {r.baseline.statement}
+                          </p>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

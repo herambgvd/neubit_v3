@@ -143,10 +143,13 @@ class SiteRow(BaseModel):
     """One leaderboard row: a site from the `site_facts` mirror — or the
     unplaced pseudo-row (`site_id: null`), which is a real state, not filler.
 
-    `score` is NULL until the metric registry defines one; the field exists so
-    the screen reads a SLOT rather than hardcoding a dash, and a future score
-    lights it up without a frontend change. `city` / `gross_floor_area_sqm`
-    are the mirror's facts and NULL means NOT RECORDED.
+    `score` is the metric registry's `ccei` evaluation for the site — a value
+    only when every component evaluated. A refusal arrives as `score: null`
+    with `score_reason` (the registry's own words) and `score_detail` carrying
+    the metric version and every component's `{status, reason}` (per-device on
+    a fan-out), so the dash the screen renders can explain itself input by
+    input. `city` / `gross_floor_area_sqm` are the mirror's facts and NULL
+    means NOT RECORDED.
     """
 
     site_id: uuid.UUID | None
@@ -164,6 +167,8 @@ class SiteRow(BaseModel):
     alerts: SiteAlerts
     score: float | None = None
     score_reason: str | None = None
+    # {metric, version, window_hours, status, components: [...], arithmetic}
+    score_detail: dict | None = None
     kwh: SiteKwh
 
 
@@ -618,13 +623,45 @@ class EstimatedCost(BaseModel):
 
 
 class BenchmarkState(BaseModel):
-    """The band — or, here, the stated absence of one."""
+    """The band — or the exact input still missing.
+
+    `available` means a CITED standard is loaded (migration 0016 seeds BEE
+    Feb-2009). The `band` itself appears only when the site's climate zone and
+    AC-share category are recorded AND the EPI is computable; every other
+    state is a `reason` naming what exists and what is missing.
+    """
 
     available: bool
     standard: str | None = None
     version: str | None = None
+    title: str | None = None
+    citation: str | None = None
+    zone: str | None = None
+    ac_category: str | None = None
+    # The star band the EPI falls in — {stars, min, max} — or null.
+    band: dict | None = None
+    # The applicable table (zone + category resolved), for display beside it.
+    band_table: list | None = None
+    band_unit: str | None = None
     reason: str
     what_it_needs: str | None = None
+
+
+class BaselineState(BaseModel):
+    """The baseline rule as data, and whether history can honour it yet.
+
+    Rule (contract §21): same-calendar-month, previous year — needs ≥13 months
+    of stored history. Until then `available` is False and `reason` carries
+    the day count; nothing substitutes a shorter or shifted window.
+    """
+
+    rule: str
+    needs_months: int
+    statement: str
+    first_bucket: dt.datetime | None = None
+    history_days: float = 0.0
+    available: bool = False
+    reason: str
 
 
 class RatingResponse(BaseModel):
@@ -639,5 +676,6 @@ class RatingResponse(BaseModel):
     epi: EpiResult | None = None
     cost: EstimatedCost | None = None
     benchmark: BenchmarkState
+    baseline: BaselineState
     # Why there is no EPI, in words the screen prints instead of a number.
     blocked: list[str] = Field(default_factory=list)

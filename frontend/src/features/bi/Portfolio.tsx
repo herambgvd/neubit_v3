@@ -152,6 +152,21 @@ function SiteRow({ site, alertHours }: any) {
   const unplaced = site.site_id === null;
   const crit = site.alerts?.by_severity?.critical ?? 0;
   const area = site.gross_floor_area_sqm;
+  // CCEI from the metric registry rides in score/score_reason/score_detail. A
+  // refusal renders as the dash PLUS a compact per-component line — the full
+  // registry reason stays on hover. Nothing rounds a refusal into a number.
+  const detail = site.score_detail;
+  const scoreSub =
+    detail?.components?.length
+      ? `CCEI v${detail.version} · ` +
+        detail.components
+          .map((c: any) =>
+            c.status === "ok"
+              ? `${c.metric}: ${Math.round(c.value)}`
+              : `${c.metric}: ${String(c.status).replace(/_/g, " ")}`,
+          )
+          .join(" · ")
+      : site.score_reason;
   const meta = unplaced
     ? "no site owns these points — pin devices on the floor plan under Sites"
     : `${area != null ? `${Number(area).toLocaleString()} m²` : "area —"} · ${site.city ?? "city —"}`;
@@ -168,8 +183,8 @@ function SiteRow({ site, alertHours }: any) {
     <LeaderRow
       icon={unplaced ? "heroicons:map-pin" : "heroicons:building-office-2"}
       muted={unplaced}
-      score={site.score}
-      scoreSub={site.score == null ? site.score_reason : undefined}
+      score={site.score == null ? null : Math.round(site.score)}
+      scoreSub={scoreSub}
       title={unplaced ? "Unplaced" : site.site_name || "Unnamed site"}
       meta={meta}
       metaTitle={metaTitle}
@@ -208,7 +223,7 @@ function SiteRow({ site, alertHours }: any) {
         </>
       }
       trend={null}
-      trendTitle="no score history exists — no score is defined yet"
+      trendTitle="no score history exists yet — CCEI began evaluating today, and a trend needs a history of scores"
       href={unplaced ? undefined : `/bi/energy?site=${site.site_id}`}
     />
   );
@@ -237,6 +252,11 @@ export default function Portfolio() {
   const err = summaryQ.error ? apiError(summaryQ.error, "Could not load the reading store") : null;
 
   const sites = s?.sites || [];
+  // Sites CCEI could honestly score; the mean is over THOSE, never padded.
+  const scoredSites = sites.filter((x: any) => typeof x.score === "number");
+  const scoredMean = scoredSites.length
+    ? scoredSites.reduce((a: number, x: any) => a + x.score, 0) / scoredSites.length
+    : null;
   const alertHours = s?.site_alert_hours ?? ALERT_HOURS;
   // Critical alerts across the estate — summed from the per-site breakdown so
   // the KPI and the leaderboard chips cannot disagree.
@@ -279,9 +299,13 @@ export default function Portfolio() {
               <Kpi
                 icon="heroicons:star"
                 label="Portfolio score"
-                value={null}
-                sub="no score defined — metric registry pending"
-                title="Reads the API's score slot, which is null until the metric registry defines one. Nothing is invented to fill it."
+                value={scoredSites.length ? Math.round(scoredMean!) : null}
+                sub={
+                  scoredSites.length
+                    ? `mean CCEI over ${scoredSites.length} scored site(s)`
+                    : "CCEI blocked on every site — the rows say why, input by input"
+                }
+                title="CCEI v1 = 0.6 × intensity_score + 0.4 × hvac_health, evaluated by the metric registry per site. A composite of a refusal is a refusal: a site missing its area, its benchmark inputs, or holding frozen chillers scores a dash with the reasons attached — never an invented number."
               />
               <Kpi
                 icon="heroicons:cpu-chip"
@@ -328,7 +352,7 @@ export default function Portfolio() {
                     <SectionHead
                       icon="heroicons:trophy"
                       title="Site leaderboard"
-                      desc="Every site the reporting store has been told about, plus the points no site owns. The score slot reads the API and the API has no score to give — the metric registry will define one; until then the dash IS the honest value. OPEN drills into the site's consoles."
+                      desc="Every site the reporting store has been told about, plus the points no site owns. The score slot reads the metric registry's CCEI per site — a value only when every component evaluates; otherwise the dash, with the per-input reasons beside it. OPEN drills into the site's consoles."
                     />
                     <Leaderboard>
                       {sites.map((site: any) => (
@@ -464,9 +488,13 @@ export default function Portfolio() {
                         units in Ratings — never all at once by a pattern.
                       </li>
                       <li>
-                        <span className="text-nb-soft">No score, no trend.</span> The leaderboard&apos;s
-                        score slot reads a field that is null until the metric registry defines a
-                        score, and a trend needs a history of scores that therefore does not exist.
+                        <span className="text-nb-soft">The score is CCEI, or its reasons.</span>{" "}
+                        The leaderboard&apos;s score slot reads the metric registry&apos;s CCEI
+                        (0.6 × energy-intensity vs the cited BEE bands + 0.4 × chiller-ΔT health).
+                        A composite of a refusal is a refusal, so a site missing its area or
+                        benchmark inputs — or holding frozen chillers — shows the dash with every
+                        component&apos;s own reason. A trend still needs a history of scores that
+                        does not exist yet.
                       </li>
                     </ul>
                   </SectionCard>

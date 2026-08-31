@@ -12,9 +12,11 @@ owners, and until this change the platform could state none of them:
 2. **Area** — a fact about the BUILDING. It lives in `neubit_control.sites`
    (core, migration 0018), typed beside the address, and reaches this store as
    `site_facts` through the site-facts event mirror. NULL means NOT RECORDED.
-3. **A benchmark standard** — the bands that turn a number into a grade. This
-   repository holds NONE, and see `benchmark_state()` at the bottom of this file
-   for why nothing is invented to fill the gap.
+3. **A benchmark standard** — the bands that turn a number into a grade.
+   Since migration 0016 one IS loaded (BEE Star Rating for Office Buildings,
+   February 2009, cited verbatim), but a band still renders only when the
+   site's climate zone and AC-share category are RECORDED and the EPI is
+   computable — see `benchmark_state()` for how each missing input is named.
 
 EVERY ONE OF THOSE CAN BE MISSING, AND MISSING IS AN ANSWER
 ------------------------------------------------------------
@@ -248,35 +250,161 @@ def meter_row(meta: dict, reg: dict | None) -> dict:
     return out
 
 
-def benchmark_state() -> dict:
-    """What band this EPI falls into — and why this platform does not say.
+async def benchmark_state(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    site_id: uuid.UUID,
+    epi_value: float | None,
+) -> dict:
+    """What band this EPI falls into — or exactly which input is missing.
 
-    A rating scheme is a PUBLISHED document. BEE's star bands for office
-    buildings and IGBC's credit thresholds are real numbers, set per building
-    type and per climate zone, and revised between versions of the standard. This
-    repository holds none of them, and a threshold typed from memory would be a
-    fabricated grade wearing a real EPI's credibility — the exact failure the
-    honesty rules exist to prevent (dashboard-builder contract §4).
+    A rating scheme is a PUBLISHED document, and since migration 0016 one IS
+    loaded: BEE Star Rating for Office Buildings (February 2009), Annexure 4,
+    seeded verbatim with its citation (`benchmark_standards`). A band still
+    renders ONLY when everything it needs exists:
 
-    So the EPI ships as what it is: a measured figure with its inputs shown. The
-    band is absent, and it is absent for a stated reason rather than quietly
-    missing. When a standard is loaded — a document, a version, a table of bands
-    per building type and climate zone — this returns it and cites it on screen.
+      1. the standard        — loaded, cited (available=True names it);
+      2. the site's climate zone and AC-share category — OPERATOR inputs on
+         `benchmark_site_config` (BEE's bands differ by both). NULL means NOT
+         RECORDED and the band is blocked naming which one;
+      3. a computable EPI    — blocked upstream (no area → no EPI, and the
+         `blocked` list already says so).
+
+    The blocked state names BOTH what exists and what is missing: a standard
+    sitting loaded while the zone is unset is a different situation from no
+    standard at all, and the screen should say which one it is in.
     """
-    return {
-        "available": False,
-        "standard": None,
-        "version": None,
-        "reason": (
-            "No benchmark standard is loaded on this platform. BEE star bands and "
-            "IGBC thresholds are published per building type, per climate zone and "
-            "per version of the standard, and this deployment holds no such "
-            "document. The EPI above is a measured figure; a band drawn against a "
-            "threshold nobody can cite would be an invented grade, so none is shown."
-        ),
-        "what_it_needs": (
-            "A benchmark table — standard name, version, building type, climate "
-            "zone, and the EPI boundaries — recorded on the platform and citable "
-            "on screen beside every grade it produces."
-        ),
+    from ..metric_registry.evaluator import _band_for, resolve_benchmark
+
+    resolved = await resolve_benchmark(db, tenant, site_id)
+    if not resolved.get("ok"):
+        has_standard = resolved.get("standard") is not None
+        return {
+            "available": has_standard,
+            "standard": resolved.get("standard"),
+            "version": resolved.get("version"),
+            "reason": resolved["reason"],
+            "what_it_needs": (
+                "Record the site's climate zone and air-conditioned-share "
+                "category on the benchmark config (PUT /bi/rating/benchmark-config); "
+                "nothing derives a zone from a city name."
+                if has_standard
+                else "A benchmark table — standard name, version, climate zone and "
+                     "the EPI boundaries — seeded WITH its citation."
+            ),
+        }
+    out = {
+        "available": True,
+        "standard": resolved["standard"],
+        "version": resolved["version"],
+        "title": resolved.get("title"),
+        "citation": resolved.get("citation"),
+        "zone": resolved["zone"],
+        "ac_category": resolved["ac_category"],
+        "band_table": resolved.get("band_table"),
+        "band_unit": resolved.get("unit"),
+        "what_it_needs": None,
     }
+    if epi_value is None:
+        out["reason"] = (
+            f"{resolved['title']} ({resolved['version']}) is loaded and the "
+            f"site's zone ({resolved['zone']}) and AC category "
+            f"({resolved['ac_category']}) are set — the band renders as soon as "
+            f"the EPI is computable; see `blocked` for what still stops it."
+        )
+        return out
+    band = _band_for(resolved["band_table"], float(epi_value))
+    if band is None:
+        out["reason"] = (
+            f"EPI {epi_value:.1f} {resolved.get('unit') or ''} is above the "
+            f"1-star upper bound — the scheme awards no star at this intensity. "
+            f"Graded against {resolved['title']} ({resolved['version']}), zone "
+            f"{resolved['zone']}, {resolved['ac_category']}."
+        )
+        return out
+    out["band"] = band
+    out["reason"] = (
+        f"{band['stars']}-star band per {resolved['title']} "
+        f"({resolved['version']}), zone {resolved['zone']}, "
+        f"{resolved['ac_category']}. NOTE the scheme's EPI excludes on-site "
+        f"renewable generation and basement area — confirm the measured supply "
+        f"matches that definition before quoting the star."
+    )
+    return out
+
+
+# ── Baseline (contract §21) ──────────────────────────────────────────────────
+#
+# THE RULE, decided 2026-09-01 and recorded in §21: a "vs baseline" comparison
+# means SAME CALENDAR MONTH, PREVIOUS YEAR. Weather drives HVAC load, and
+# August answers August; a rolling-30-days baseline would compare a monsoon to
+# a summer and call the difference savings. Until thirteen months of history
+# exist (twelve to reach the same month last year, one to have the current
+# month to compare), every baseline surface states the absence and the arith-
+# metic of the gap — never a partial baseline, never a different month standing
+# in.
+BASELINE_RULE = {
+    "rule": "same-calendar-month, previous year",
+    "needs_months": 13,
+    "statement": (
+        "A baseline comparison is the same calendar month one year earlier. "
+        "It needs ≥13 months of stored history; until then the comparison is "
+        "stated as unavailable — with the day count — rather than substituted."
+    ),
+}
+
+_HISTORY_SQL = """
+    SELECT min(r.bucket) AS first_bucket
+      FROM readings_1h r
+      JOIN points p ON p.point_id = r.point_id
+     WHERE p.site_id = CAST(:site AS uuid)
+       AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+"""
+
+
+async def baseline_state(
+    db: AsyncSession, tenant: uuid.UUID | None, site_id: uuid.UUID
+) -> dict:
+    """The baseline rule, and whether this site's history can honour it yet."""
+    rows = _rows(
+        await db.execute(
+            text(_HISTORY_SQL),
+            {"site": str(site_id), "tenant": str(tenant) if tenant else None},
+        )
+    )
+    first = rows[0]["first_bucket"] if rows else None
+    now = dt.datetime.now(dt.timezone.utc)
+    out = {**BASELINE_RULE, "first_bucket": first}
+    if first is None:
+        out.update(
+            available=False,
+            history_days=0.0,
+            reason=(
+                "baseline unavailable — needs ≥13 months of history, have "
+                "0 days (no hourly bucket stored for this site yet)"
+            ),
+        )
+        return out
+    days = (now - first).total_seconds() / 86400.0
+    months = days / 30.44
+    if months < BASELINE_RULE["needs_months"]:
+        out.update(
+            available=False,
+            history_days=days,
+            reason=(
+                f"baseline unavailable — needs ≥{BASELINE_RULE['needs_months']} "
+                f"months of history, have {days:.1f} days. The rule is "
+                f"same-calendar-month previous year; a shorter window would "
+                f"compare different seasons and call the difference savings."
+            ),
+        )
+        return out
+    out.update(
+        available=True,
+        history_days=days,
+        reason=(
+            f"{days:.0f} days of history — the same calendar month last year "
+            f"exists in the store and a baseline comparison is answerable."
+        ),
+    )
+    return out

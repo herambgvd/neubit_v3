@@ -548,11 +548,12 @@ async def sites_breakdown(
                 "total": alerts_by_site.get(site_id, {}).get("total", 0),
                 "by_severity": alerts_by_site.get(site_id, {}).get("by_severity", {}),
             },
-            # NULL until the metric registry defines one. The screen reads this
-            # SLOT — it does not hardcode the dash — so a registry-supplied
-            # score lights up without a frontend release.
+            # Filled by the CCEI loop below from the metric registry; the
+            # screen reads this SLOT, so a refusal arrives as reason + detail,
+            # never as a fabricated number.
             "score": None,
-            "score_reason": "no score defined — metric registry pending",
+            "score_reason": None,
+            "score_detail": None,
             "kwh": _site_kwh(kwh_points, None),
         }
 
@@ -579,6 +580,53 @@ async def sites_breakdown(
         if kwh_points > 0:
             consumption = await _site_consumption(db, tenant, r["site_id"])
             r["kwh"] = _site_kwh(kwh_points, consumption)
+
+    # The SCORE slot reads the metric registry's `ccei` (a composite ROW —
+    # weights are data, contract §21), evaluated per site over the same window
+    # as the other leaderboard figures. The registry's refusal semantics ride
+    # along WHOLE: a site that cannot honestly score gets the reason and every
+    # component's own {status, reason} in `score_detail`, so the dash the
+    # screen renders can explain itself input by input. Nothing here rounds a
+    # refusal into a number.
+    from ..metric_registry import evaluator as metric_eval  # lazy: circular import
+
+    end = dt.datetime.now(dt.timezone.utc)
+    start = end - dt.timedelta(hours=SITE_ALERT_HOURS)
+    for r in out:
+        if r["site_id"] is None:
+            r["score_reason"] = (
+                "unplaced points belong to no site, and a score is a site's — "
+                "place the devices and they count"
+            )
+            continue
+        try:
+            ev = await metric_eval.evaluate(
+                db, tenant, "ccei", site_id=r["site_id"], start=start, end=end,
+            )
+        except metric_eval.EvaluationError as exc:
+            # No ccei definition effective (or the site vanished between two
+            # queries). Stated, not invented.
+            r["score_reason"] = f"no score: {exc}"
+            continue
+        item = ev["items"][0] if ev["items"] else None
+        if item is None:
+            r["score_reason"] = "no score: site not present in the reporting mirror"
+            continue
+        r["score_detail"] = {
+            "metric": ev["metric"],
+            "version": ev["version"],
+            "window_hours": SITE_ALERT_HOURS,
+            "status": item["status"],
+            "components": item.get("components"),
+            "arithmetic": item.get("arithmetic"),
+        }
+        if item["status"] == "ok":
+            r["score"] = float(item["value"])
+            r["score_reason"] = f"CCEI v{ev['version']}: {item.get('arithmetic')}"
+        else:
+            r["score_reason"] = (
+                f"CCEI v{ev['version']} {item['status']}: {item['reason']}"
+            )
     return out
 
 

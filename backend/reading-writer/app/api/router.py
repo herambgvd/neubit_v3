@@ -27,7 +27,9 @@ from typing import Annotated, get_args
 from fastapi import APIRouter, Depends, Query
 from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
 from kernel.errors import ForbiddenError, ValidationError
+from pydantic import BaseModel
 from reporting.db import get_db
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import builder
@@ -955,9 +957,110 @@ async def rating(
         meters=meters,
         epi=epi,
         cost=cost,
-        benchmark=rt.benchmark_state(),
+        benchmark=await rt.benchmark_state(
+            db, tenant, site_id,
+            epi["epi_kwh_per_sqm_year"] if epi else None,
+        ),
+        baseline=await rt.baseline_state(db, tenant, site_id),
         blocked=blocked,
     )
+
+
+class BenchmarkConfigRequest(BaseModel):
+    """The site inputs a zone-specific benchmark needs, said by an OPERATOR.
+
+    BEE's bands differ by climate zone and by whether the conditioned area
+    exceeds 50% of built-up area. Neither is derivable — a city name is not a
+    zone, and a floor plan is not an AC share — so both are explicit
+    statements here, and `null` CLEARS (a mis-set zone an operator cannot take
+    back would silently grade every EPI against the wrong table).
+    """
+
+    site_id: uuid.UUID
+    standard_key: str = "bee_star_office"
+    climate_zone: str | None = None
+    ac_category: str | None = None
+
+
+@bi_router.put(
+    "/rating/benchmark-config",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def set_benchmark_config(
+    db: Db, scope: Caller, who: Who, body: BenchmarkConfigRequest
+) -> dict:
+    """Record the site's climate zone / AC-share category for the benchmark.
+
+    Values are validated against the SEEDED standard's own tables — a zone the
+    standard does not publish is refused by name, because storing it would
+    manufacture a blocked state that looks like a config error later.
+    """
+    tenant = _tenant(scope)
+    all_sites = await rt.sites(db, tenant)
+    if not any(s["site_id"] == body.site_id for s in all_sites):
+        raise ForbiddenError("no such site in this tenant's reporting store")
+    std = q._rows(
+        await db.execute(
+            sa_text(
+                "SELECT bands FROM benchmark_standards WHERE key = :k "
+                "ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"k": body.standard_key},
+        )
+    )
+    if not std:
+        raise ValidationError(
+            f"no benchmark standard `{body.standard_key}` is seeded — a config "
+            f"cannot point at a standard that is not there"
+        )
+    zones = (std[0]["bands"] or {}).get("zones") or {}
+    if body.climate_zone is not None and body.climate_zone not in zones:
+        raise ValidationError(
+            f"climate zone `{body.climate_zone}` is not in the standard's tables "
+            f"({', '.join(sorted(zones))})"
+        )
+    if body.ac_category is not None:
+        cats = set()
+        for z in zones.values():
+            cats |= {k for k in z if k != "label"}
+        if body.ac_category not in cats:
+            raise ValidationError(
+                f"AC category `{body.ac_category}` is not in the standard's tables "
+                f"({', '.join(sorted(cats))})"
+            )
+    actor = str(getattr(who, "user_id", "") or "") or None
+    await db.execute(
+        sa_text(
+            """
+            INSERT INTO benchmark_site_config
+                (site_id, tenant_id, standard_key, climate_zone, ac_category,
+                 set_by, set_at)
+            VALUES (CAST(:site AS uuid), CAST(:tenant AS uuid), :std, :zone,
+                    :ac, :actor, now())
+            ON CONFLICT (site_id) DO UPDATE
+               SET standard_key = excluded.standard_key,
+                   climate_zone = excluded.climate_zone,
+                   ac_category = excluded.ac_category,
+                   set_by = excluded.set_by, set_at = excluded.set_at
+            """
+        ),
+        {
+            "site": str(body.site_id),
+            "tenant": str(tenant) if tenant else None,
+            "std": body.standard_key,
+            "zone": body.climate_zone,
+            "ac": body.ac_category,
+            "actor": actor,
+        },
+    )
+    await db.commit()
+    return {
+        "site_id": str(body.site_id),
+        "standard_key": body.standard_key,
+        "climate_zone": body.climate_zone,
+        "ac_category": body.ac_category,
+        "set_by": actor,
+    }
 
 
 # ── The dashboard builder ────────────────────────────────────────────────────
