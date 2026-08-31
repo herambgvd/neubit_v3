@@ -775,8 +775,24 @@ async def _evaluate_site_formula(
                                       f"{last:g}; no consumption can be derived")
                     registers.append(row)
                     continue
+                buckets = int(a["buckets"] or 0)
+                if delta == 0 and buckets > 1:
+                    # first == last across the whole window: the register has
+                    # stopped moving. The zero is a real measurement, but a
+                    # score built on it grades a dead meter — an EPI of 0.0
+                    # falls in the BEST benchmark band. Same discipline as a
+                    # frozen formula input: undefined here, never a flattering
+                    # number. rating.py makes the same call (register_frozen,
+                    # band withheld); the registry refuses one input earlier.
+                    row.update(status="register_frozen", first=first, last=last,
+                               buckets=buckets,
+                               reason=f"register held {first:g} across all "
+                                      f"{buckets} buckets — the meter has "
+                                      f"stopped moving")
+                    registers.append(row)
+                    continue
                 row.update(status="ok", first=first, last=last, delta=delta,
-                           buckets=int(a["buckets"] or 0))
+                           buckets=buckets)
                 registers.append(row)
                 total += delta
                 usable += 1
@@ -784,11 +800,21 @@ async def _evaluate_site_formula(
                 first_b = fb if first_b is None or fb < first_b else first_b
                 last_b = lb if last_b is None or lb > last_b else last_b
             if usable == 0:
-                out = _refusal(
-                    "no_data",
-                    f"input `{name}`: none of the {len(candidates)} register(s) "
-                    f"in role `{role}` produced a usable delta in this window",
-                )
+                frozen = [r for r in registers if r["status"] == "register_frozen"]
+                if frozen and len(frozen) == len(registers):
+                    out = _refusal(
+                        "undefined_frozen",
+                        f"input `{name}`: every register in role `{role}` "
+                        f"({len(frozen)}) held one value across the window — "
+                        f"the meters have stopped moving, so the metric is "
+                        f"undefined here, not zero",
+                    )
+                else:
+                    out = _refusal(
+                        "no_data",
+                        f"input `{name}`: none of the {len(candidates)} register(s) "
+                        f"in role `{role}` produced a usable delta in this window",
+                    )
                 out["registers"] = registers
                 return out
             # Covered span across the usable registers — what annualize() (if

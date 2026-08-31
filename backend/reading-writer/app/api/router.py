@@ -921,7 +921,14 @@ async def rating(
         regs = await rt.registers(db, tenant, point_ids=chosen, start=start, end=end)
         meters = [rt.meter_row(by_id[p], regs.get(p)) for p in chosen]
 
-    ok = [m for m in meters if m["status"] == "ok"]
+    # `register_frozen` still carries a real measurement (0.0 with the register
+    # value beside it) — it is COUNTED, so the EPI stays a statement about what
+    # the meters actually recorded. The dishonesty it could cause (a frozen
+    # estate grading five stars) is cut off at the band instead, in
+    # _withhold_band_if_frozen. Only `register_decreased` and `no_data`
+    # contribute nothing: the first has no derivable delta, the second nothing
+    # measured at all.
+    ok = [m for m in meters if m["status"] in ("ok", "register_frozen")]
     if meters and not ok:
         blocked.append(
             "None of the selected meters produced a usable delta over this window "
@@ -991,9 +998,12 @@ async def rating(
         meters=meters,
         epi=epi,
         cost=cost,
-        benchmark=await rt.benchmark_state(
-            db, tenant, site_id,
-            epi["epi_kwh_per_sqm_year"] if epi else None,
+        benchmark=_withhold_band_if_frozen(
+            meters,
+            await rt.benchmark_state(
+                db, tenant, site_id,
+                epi["epi_kwh_per_sqm_year"] if epi else None,
+            ),
         ),
         baseline=await rt.baseline_state(db, tenant, site_id),
         blocked=blocked,
@@ -1020,6 +1030,29 @@ class BenchmarkConfigRequest(BaseModel):
     "/rating/benchmark-config",
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
+def _withhold_band_if_frozen(meters: list[dict], bench: dict) -> dict:
+    """No grade for a rating whose EVERY register is frozen.
+
+    EPI 0.0 built on registers that stopped moving falls into the BEST band —
+    five stars for a dead meter is the confident-garbage shape this platform
+    refuses. The EPI itself stays in the response (it IS the measurement, and
+    each meter carries its own `register_frozen` status beside it); only the
+    band is withheld, and the reason says why rather than pointing at a
+    `blocked` list that is empty in this case.
+    """
+    if (
+        bench.get("band") is not None
+        and meters
+        and all(m["status"] in ("register_frozen", "no_data") for m in meters)
+    ):
+        bench = {**bench, "band": None, "reason": (
+            "every contributing register is frozen across the window — the EPI "
+            "measures dead meters, not efficiency, so no band is graded until a "
+            "register moves"
+        )}
+    return bench
+
+
 async def set_benchmark_config(
     db: Db, scope: Caller, who: Who, body: BenchmarkConfigRequest
 ) -> dict:

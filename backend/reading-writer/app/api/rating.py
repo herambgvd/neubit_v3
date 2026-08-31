@@ -244,6 +244,23 @@ def meter_row(meta: dict, reg: dict | None) -> dict:
         )
         return out
 
+    if delta == 0 and int(reg["buckets"] or 0) > 1:
+        # first == last across the whole window. Arithmetically that is zero
+        # consumption; physically, over any real window, it is a register that
+        # has stopped reporting. The distinction matters downstream: an EPI of
+        # 0.0 built on frozen registers would fall into the BEST benchmark band
+        # and print five stars for a dead meter. So the zero is kept — it IS the
+        # measurement — but carries its own status, and the band logic refuses
+        # to grade a rating whose every register is frozen.
+        out["consumption_kwh"] = 0.0
+        out["status"] = "register_frozen"
+        out["reason"] = (
+            f"the register held {first:g} across all {out['buckets']} hourly "
+            f"buckets — a building that consumed literally nothing is not what a "
+            f"flat register means; the meter has stopped moving"
+        )
+        return out
+
     out["consumption_kwh"] = delta
     out["status"] = "ok"
     out["reason"] = f"{last:g} − {first:g} = {delta:g} kWh over {out['buckets']} hourly buckets"
