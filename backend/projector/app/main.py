@@ -25,8 +25,9 @@ warns about.
     GET /readyz   readiness — 503 when the database is down, NATS is
                   disconnected, a projection was REFUSED, or lag is over
                   VE_PROJECTOR_LAG_WARN
-    GET /metrics  Prometheus text
-    GET /stats    the same numbers as JSON, for a human with curl
+    GET /metrics  Prometheus text (projections + the EVENTS_DLQ watch)
+    GET /stats    the same numbers as JSON, for a human with curl — including
+                  the dead-letter counters (dlq_* keys, see app/dlq_watch.py)
 
 `/readyz` is what an operator should page on. Note that a refused projection goes
 red: a domain that believes it is being collected and is not is a silent failure,
@@ -44,6 +45,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from kernel.config import get_settings
 
 from .config import ProjectorConfig
+from .dlq_watch import DlqWatch, DlqWatchStats
 from .metrics import Metrics
 from .pipeline import Projector
 
@@ -56,6 +58,11 @@ log = logging.getLogger("projector")
 metrics = Metrics()
 config = ProjectorConfig()
 projector = Projector(config, metrics)
+# The EVENTS_DLQ reader (see app/dlq_watch.py) — a SEPARATE consumer on its own
+# connection, so a wedged watch can never stall a projection or vice versa. It
+# observes and counts; it never removes anything from the DLQ.
+dlq_stats = DlqWatchStats()
+dlq_watch = DlqWatch(dlq_stats)
 
 
 @asynccontextmanager
@@ -73,7 +80,13 @@ async def lifespan(app: FastAPI):
         # and /readyz with it, and then the outage is invisible. Stay up, stay red.
         metrics.note_error(exc)
         log.exception("projector failed to start — service is up but NOT consuming")
+    try:
+        await dlq_watch.start(getattr(settings, "nats_url", "") or "")
+    except Exception as exc:  # noqa: BLE001 — a broken watch must not stop projections
+        metrics.note_error(exc)
+        log.exception("DLQ watch failed to start — dead letters will not be visible here")
     yield
+    await dlq_watch.stop()
     await projector.stop()
 
 
@@ -121,9 +134,12 @@ async def readyz() -> JSONResponse:
 
 @app.get("/stats")
 async def stats() -> dict:
-    return metrics.snapshot()
+    return {**metrics.snapshot(), **dlq_stats.snapshot()}
 
 
 @app.get("/metrics")
 async def prometheus() -> PlainTextResponse:
-    return PlainTextResponse(metrics.prometheus(), media_type="text/plain; version=0.0.4")
+    return PlainTextResponse(
+        metrics.prometheus() + dlq_stats.prometheus(),
+        media_type="text/plain; version=0.0.4",
+    )

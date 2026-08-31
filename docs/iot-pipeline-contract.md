@@ -251,9 +251,13 @@ steady state at ~530 B an envelope, so 1 GiB is on the order of two million dead
 letters: unreachable for a working system and a hard stop for a poison storm.
 AGE is the limit that will bind.
 
-**Nothing consumes `EVENTS_DLQ`.** Zero consumers, in either language. These
-limits bound the disk; they do not make a dead letter visible to anybody. A
-dead-letter view is still owed.
+**The DLQ is watched now (2026-09-01).** The projector runs a durable consumer
+on it (`backend/projector/app/dlq_watch.py`, durable `projector-dlq-watch`):
+counts by origin subject and refusal reason on the projector's `/stats`/`/metrics`
+(`dlq_*` keys), the stream's live message count, and a `DEAD LETTER:` warning
+line per new arrival. Observation only — `EVENTS_DLQ` is limits-retention, so
+the watch's acks remove nothing; replay/purge stays a deliberate `nats` CLI
+action. It is a view, not a triage UI.
 
 `EVENTS` used to be `tenant.>`, which subsumed the sensor feed. It is now an
 explicit domain list, held in ONE place per language and kept identical across
