@@ -648,27 +648,49 @@ well as inside the tarball, so this overwrites like with like. Best effort: no
 boot.sh beside the installer means an older payload layout, and the baked one is
 correct for it.
 #>
-$bootShHost = Join-Path $PayloadDir 'boot.sh'
-if (Test-Path -LiteralPath $bootShHost) {
-    # Normalised HERE, in PowerShell, rather than with a sed inside the distro.
-    # The sed needed a carriage return in its pattern, and every layer between this
-    # file and bash wants its own escaping for that — the first attempt ended up
-    # embedding a real CR byte in this script, in a repo whose .gitattributes
-    # normalises line endings. `r`n is PowerShell's own escape and cannot be
-    # misread by anything downstream, because nothing downstream sees it.
-    $bootShLf = Join-Path $env:ProgramData 'Neubit\VMS\install\boot.sh'
-    New-Item -ItemType Directory -Force -Path (Split-Path $bootShLf) | Out-Null
-    [IO.File]::WriteAllText($bootShLf, ((Get-Content -LiteralPath $bootShHost -Raw) -replace "`r`n", "`n"))
-    $bootShWsl = '/mnt/' + $bootShLf.Substring(0,1).ToLower() + $bootShLf.Substring(2).Replace('\','/')
+<#
+Refresh the distro's own configuration files from the payload directory.
+
+boot.sh and docker-compose.appliance.yml are baked INSIDE the distro, which means
+a one-line fix to either used to cost a 2.9 GB rebake and a redelivery to site.
+That is the wrong price for the two files most likely to need a field fix, and it
+was nearly paid twice in one afternoon: once for boot.sh swallowing its own
+`status` output, and once for a gateway that was published on 0.0.0.0 only and so
+could not be reached from the machine it ran on.
+
+build-appliance.ps1 stages both beside the installer as well as inside the
+tarball, so this overwrites like with like — same file, same commit.
+
+Normalised HERE, in PowerShell. Doing it with a sed inside the distro needs a
+carriage return in the pattern, and every layer between this file and bash wants
+its own escaping for that; the first attempt embedded a real CR byte in this
+script. `r`n is PowerShell's own escape and nothing downstream ever sees it.
+
+Best effort: a payload without these files is an older layout, and the baked
+copies are correct for it.
+#>
+foreach ($cfg in @('boot.sh', 'docker-compose.appliance.yml')) {
+    $srcPath = Join-Path $PayloadDir $cfg
+    if (-not (Test-Path -LiteralPath $srcPath)) { continue }
+
+    $lfPath = Join-Path $env:ProgramData "Neubit\VMS\install\$cfg"
+    New-Item -ItemType Directory -Force -Path (Split-Path $lfPath) | Out-Null
+    [IO.File]::WriteAllText($lfPath, ((Get-Content -LiteralPath $srcPath -Raw) -replace "`r`n", "`n"))
+    $lfWsl = '/mnt/' + $lfPath.Substring(0,1).ToLower() + $lfPath.Substring(2).Replace('\','/')
+
     try {
-        Invoke-InSession -Quiet -What 'refresh boot.sh' -Script @"
-    wsl.exe -d $DistroName -u root -- cp '$bootShWsl' /opt/neubit/boot.sh
-    wsl.exe -d $DistroName -u root -- chmod +x /opt/neubit/boot.sh
-    if (`$LASTEXITCODE -ne 0) { throw "refreshing boot.sh failed with `$LASTEXITCODE" }
+        Invoke-InSession -Quiet -What "refresh $cfg" -Script @"
+    wsl.exe -d $DistroName -u root -- cp '$lfWsl' '/opt/neubit/$cfg'
+    if (`$LASTEXITCODE -ne 0) { throw "copying $cfg failed with `$LASTEXITCODE" }
 "@ | Out-Null
-        Write-Ok 'boot.sh refreshed from the payload'
+        if ($cfg -eq 'boot.sh') {
+            Invoke-InSession -Quiet -What 'chmod boot.sh' -Script @"
+    wsl.exe -d $DistroName -u root -- chmod +x /opt/neubit/boot.sh
+"@ | Out-Null
+        }
+        Write-Ok "$cfg refreshed from the payload"
     } catch {
-        Write-Warn "could not refresh boot.sh: $($_.Exception.Message)"
+        Write-Warn "could not refresh ${cfg}: $($_.Exception.Message)"
         Write-Warn 'the copy baked into the distro will be used'
     }
 }

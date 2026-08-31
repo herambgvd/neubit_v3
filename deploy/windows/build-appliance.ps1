@@ -394,13 +394,16 @@ foreach ($f in @('install-appliance.ps1', 'uninstall-appliance.ps1', 'probe-syst
     Write-Ok $f
 }
 
-# boot.sh goes BESIDE the installer as well as inside the tarball. It is the
-# appliance's own init, so it is the script most likely to need a field fix, and
-# baked in it costs a 2.9 GB rebake and a redelivery to change one line. The
-# installer copies this one over the baked copy, so a fix ships in a 30 KB bundle.
-# Same file, same commit, so the two cannot disagree.
-Copy-Item -LiteralPath (Join-Path $InDistro 'boot.sh') -Destination $OutDir -Force
-Write-Ok 'boot.sh'
+# boot.sh and the compose overlay go BESIDE the installer as well as inside the
+# tarball. They are the appliance's own init and its own service definitions — the
+# two files most likely to need a field fix — and baked in, changing one line costs
+# a 2.9 GB rebake and a redelivery. The installer copies these over the baked
+# copies, so a fix ships in a 30 KB bundle. Same files, same commit, so the two
+# can never disagree.
+foreach ($cfg in @('boot.sh', 'docker-compose.appliance.yml')) {
+    Copy-Item -LiteralPath (Join-Path $InDistro $cfg) -Destination $OutDir -Force
+    Write-Ok $cfg
+}
 
 $probeRootfs = Join-Path $OutDir 'rootfs.tar'
 if (Test-Path -LiteralPath $probeRootfs) {
