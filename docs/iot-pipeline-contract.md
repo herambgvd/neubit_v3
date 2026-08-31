@@ -1460,3 +1460,268 @@ IWT/OWT (and `1F York Chiller01`'s, to exercise the frozen path), then:
 The hardcoded ΔT display path (`DeltaT.tsx` → dataset measure `delta_t`) is
 UNTOUCHED; swapping it onto the registry is deliberately deferred until the
 portfolio work lands.
+
+## 21. Building Intelligence goes live on decided inputs (2026-09-01)
+
+§19 built the surfaces and §20 built the registry, and both left the estate at
+0 confirmed units, 0 confirmed roles, no benchmark, no emission factor, no
+score. This section records the day the inputs were DECIDED — what was
+confirmed, what was refused, and the evidence for each.
+
+**The delegation, and its scope.** The platform owner explicitly delegated
+these decisions to the operating agent ("joh mere inputs hai uskoh tum apne
+seh proper decide karrloh"). Every confirmation below therefore went through
+the REAL APIs under the owner's account (user `3cd1c8ca-c927-41af-9101-
+c345241c7492`), which is whose decisions they are, and the store's provenance
+records them as operator assertions. The delegation covers decisions EVIDENCE
+can support; it does not license invention — which is why the honest outcome
+below is 186 of 314 units, 17 roles, one cited benchmark, one cited emission
+factor, and a portfolio score that refuses.
+
+### Units: confirmation by corroboration, never by tag alone
+
+The rule: a unit is confirmed ONLY where the tag pattern AND the measured
+values agree. Every live point's rollup history was sampled first
+(`readings_1h`, 2026-08-30T05:00Z → the confirmation instant, n≈238–269
+hourly samples per point), then confirmations went through
+`POST /bi/units/confirm` in pattern-sized batches with EXPLICIT id lists (the
+API refuses patterns by design; each batch's exact ids are logged in the
+session record, mirroring the UI's show-the-list-first honesty).
+
+**186 confirmed, 10 batches:**
+
+| batch | unit | n | corroboration evidence (sampled) |
+|---|---|---|---|
+| Hz | `Hz` | 14 | every value 49.86–50.03, inside the 45–65 grid band |
+| degC | `degC` | 13 | IWT/OWT 6.8–34 °C chilled-water band (Khem01 live 0–34 avg 22.8, **0.00 placeholder readings present** — noted, they do not disprove °C); Amb Temp 30.4/30.8; Inv_Temp 32.8–49.9 (inverter internals) |
+| PF | `""` (dimensionless) | 16 | every value within \|v\| ≤ 1 (0.51–1.00 and −0.67…−1.00; the negatives read as the signed/IEEE convention — CT polarity or export — and are physically PF-shaped; documented, not hidden) |
+| kWh-register | `kWh` | 16 | lifetime registers 2.75–208,972 kWh, non-decreasing (0 decreases over 26 bucket steps each) |
+| kWh-period | `kWh` | 6 | TodayKWH/YestKWH 10.5–60.1 kWh — plausible daily solar production; **the unit is true even though these are not lifetime registers; register-vs-period is a ROLE distinction** (see below) |
+| kW | `kW` | 37 | cross-checked against each device's own V·I·PF: e.g. 4F_Incomer1_EM 33.55 kW vs 3×0.239 kV×51.4 A×0.94 = 34.6; Sub Incomer1 per-phase 11.1+11.8+12.3 = 35.26 vs its own TOTKW 35.198; UPS 4.585 kW vs 5.75 kVA×0.79 PF = 4.55 |
+| kVA | `kVA` | 6 | = 3×V×I on the same device (B2: 3×0.238×113.5 = 81.0 vs 80.19 stored) |
+| kVAh | `kVAh` | 6 | non-decreasing apparent-energy registers |
+| V | `V` | 52 | 218–243 V — phase band 180–260 (batteries 218/219 V, plausible ~216 V nominal strings) |
+| A | `A` | 20 | plausible load currents 8–119 A; B2 cross-check 113 A×3×237 V×0.9757 = 78.7 kW ≈ its own Total_kw 77.6 |
+
+**Contradictory tags were decided by VALUES, and only there.** `KWL1_A`
+(prefix says kW, suffix says A) confirmed **kW**: the three phase values sum
+to the device's own TOTKW to 0.2% and match V·I·PF; the device's actual
+currents are 50–54 A, not 11–12. `BpVoltL1_A`, `VoltAvg_A`, `VoltL2_A`,
+`VoltL3_A` confirmed **V**: 237–239, in the phase band, beside sibling `_V`
+points reading the same. Where values could NOT decide, nothing was confirmed.
+
+**128 left unconfirmed, each with its reason** (full per-point list in the
+session record; the classes):
+
+* **Frozen at exactly 0.0 for their whole history (76 points)** — `B1-1F1-
+  Incomer` entirely (V/A/kW/kWh/Hz/PF all zero), `4F_Sub Incomer2`'s kW/kVA
+  side, `4F_Incomer_EM`'s instantaneous side, solar TOTKW/TOTDCKW/TOTKWH and
+  This/Last-period registers, UPS battery currents, four PF points, two dead
+  kWh registers. A constant 0 corroborates every unit equally, i.e. none.
+* **Solar inverter deci-scaling (17 points)** — `DCVolt*` store 3792–5097,
+  IMPOSSIBLE as PV-string volts (≤1500 V); under a ×10 reading (379–510 V)
+  everything reconciles: DC power ≈ AC power ≈ the measured daily kWh
+  (TodayKWH/YestKWH 10.5–60.1 for 3–10 kW inverters). The same test convicts
+  `CurrL*_A`@Panel02 (130 stored → 13 A real: 130 A would be 93 kW AC from a
+  9.6 kW DC array) and `CurrL*_V`@Panel01/03 (38–52 stored → 3.8–5.2 A). The
+  stored NUMBER is not in the tag's unit, so the unit was NOT confirmed —
+  confirming V or A onto deci-values would poison every downstream quantity.
+  The fix is a gateway scaling correction, not a unit assertion.
+* **No unit vocabulary for the tag (23 points)** — `On Off STS` (a state),
+  `Work_Mode`, `Load`/`SYS Load` (%, of an unrecorded capacity), `Batt_Cap_*`
+  (%), `Batt_Time_Rem` (probably minutes), `Run Hours`, counters (`Point1`,
+  `Last_Year`), and the water meter's four flow points (`Cum_Flow` 0.149
+  lifetime — m³? L? counts? — nothing corroborates a magnitude that small for
+  a building supply).
+* **A kW spike that isn't one (1 point + its board)** — `KW_L2`@`B1-2F6-LDB-1
+  Count Timer`: zero except a single 42.5 excursion; 42.5 kW on one phase of a
+  lighting DB is ~190 A, implausible, and the device is a *Count Timer* — the
+  number may be a count. Unconfirmed.
+* Plus `Freq_Hz`@B1-1F1 (0.0 ≠ grid frequency) and the remaining frozen-zero
+  singletons counted above.
+
+The target was honesty, not 314/314. **Live counts after the batches:
+`points: 314, confirmed: 186, unconfirmed: 128`** — and the writer's §19
+guard keeps every one of them safe from the wire.
+
+### Roles: chillers bound; energy registers bound WITHOUT double-counting
+
+* **`inlet_water_temp` / `outlet_water_temp`** confirmed on all four chillers'
+  IWT/OWT (8 points). Each registry suggestion was verified against sampled
+  values before confirming (York 1F 7.0/9.3, York 2F 6.8/10.8, Khem01 live,
+  Khem02 25.6/13.5 — all chilled-water-plausible °C).
+* **`energy_register`** confirmed on exactly THREE registers, because the
+  registers themselves exposed duplicate metering: `KWH_kwh`@4F_Incomer_EM =
+  7350.731 kWh, IDENTICAL to `KWH`@4F_Sub Incomer2, and its kVAh twin is
+  identical too (8840.7607) — one physical meter listed as two devices.
+  `KWH_kwh`@4F_Incomer1_EM = 208,951 vs `KWH_kwh`@4F_Sub Incomer1 = 208,972 —
+  the same meter (or same feeder) captured ~21 kWh apart. Binding both of a
+  twin double-counts the same energy, so the `*_EM` device of each pair was
+  bound and the `Sub Incomer` twin left unbound with that reason. Bound:
+  **B2_Main Incomer, 4F_Incomer1_EM, 4F_Incomer_EM** (their `KWH_kwh`
+  registers). The register magnitudes argue these are parallel supplies, not
+  a series chain (a 9.4k-kWh register upstream of a 209k-kWh one would need a
+  very recent meter install); if the feeder tree is ever recorded and says
+  otherwise, rebind — the topology is NOT a stored fact today and that gap is
+  stated here rather than papered over.
+* **Left unbound, with reasons:** every downstream DB board (4F-3F/5F/6F,
+  B1-2F*, Guard Room — sub-meters of the bound supplies; binding them would
+  double-count), the dead `KWH`@B1-1F1-Incomer (frozen 0, unit unconfirmed),
+  and `2FChiller1EM_kVAh` (apparent energy, wrong dimension for the role).
+* **`energy_period_total` — the vocabulary grew** (roles.py, code this section
+  owns): TodayKWH/YestKWH are genuinely kWh but RESET each period, so a role
+  now exists that says so, and the 6 live solar period totals are bound to it.
+  The suggestion rules were fixed in the same change: period-scoped tags
+  (`This_Year_KWH` was the trap — it matched the register rule) now suggest
+  the period role, never `energy_register`.
+* **Placement gap, found not fixed:** `B2_Main Incomer` and `2F York
+  Chiller01` are UNPLACED (no `site_id`), so their role bindings exist but no
+  SITE metric counts them until somebody places the devices on the floor
+  plan. Placement is a floor-plan statement; inventing one here would be §17's
+  sin, so the gap is recorded instead.
+
+### The ΔT swap: one definition of a number, then the dead one deleted
+
+With roles and units now REAL (not fixtures), §20's parity was re-verified
+live over one shared 24h window: registry `chiller_delta_t` on Khem01
+**−1.8558794708476256**, dataset measure `delta_t` **−1.855879470847622** —
+diff 3.6e-15, within the 1e-12 bound. `DeltaT.tsx` then swapped onto
+`GET /bi/metrics/evaluate` (value + working when ok; the refusal's own
+`{status, reason}` when not — the frozen York fleet renders
+`undefined_frozen` naming the flat input, never 0.0), and migration
+**0015_retire_dataset_delta_t** deleted the dataset measure — the same
+UPDATE 0009's downgrade specified, after checking that no saved widget or
+dashboard version referenced it. `/bi/query` now refuses `delta_t` by name.
+The `difference`/`where` MECHANISM stays; only the domain row went. The UI
+copy stands: negative ΔT is the correct sign (leaving − entering).
+
+### The benchmark: pinned, seeded WITH its citation — and versioned honestly
+
+Searched: BEE's star-rating scheme for office buildings. PINNED to the
+primary document and read in full:
+
+> Bureau of Energy Efficiency (Ministry of Power, Govt. of India), "Scheme
+> for BEE Star Rating for Office Buildings — Details of the scheme for rating
+> of office buildings", **February 2009**, Annexure 4.
+> https://beeindia.gov.in/sites/default/files/BEE%20Star%20Rating%20for%20existing%20Office%20Buildings.pdf
+
+Annexure 4's tables are seeded VERBATIM by migration
+**0016_benchmark_standards** (`benchmark_standards`, key `bee_star_office`,
+version `feb-2009`): EPI bands in kWh/m²/yr for three climate zones
+(Composite 190→90, Warm & Humid 200→100, Hot & Dry 180→80 at >50% AC; 80→40,
+85→45, 75→35 at <50% AC; 1★–5★). Two scheme facts ride in the row's notes
+because a graded EPI must be computed the scheme's way: the EPI **excludes
+on-site renewable generation** (the solar registers are correctly NOT in the
+supply roles) and excludes basement area; eligibility is ≥100 kW connected
+load. **KNOWN AND STATED:** BEE reports a band revision effective January
+2022; its table could not be pinned to a primary document during this work,
+so it was NOT seeded — a cited 2009 table beats an uncited 2022 rumour, the
+seeded version is printed wherever a band renders, and the revision enters as
+a NEW version row when pinned.
+
+**The band still does not render for Aeon Tower, correctly:** the site's
+climate zone and AC-share category are UNKNOWN. Both are operator inputs on
+`benchmark_site_config` (`PUT /bi/rating/benchmark-config`, values validated
+against the standard's own tables, null clears; nothing derives a zone from a
+city name — the zone→city mapping is its own unpinned document). Ratings'
+benchmark panel now states BOTH halves: what exists (the cited standard, by
+name and version) and what is missing (zone, category, and the EPI's own
+blocked inputs).
+
+### The emission factor: pinned, entered through the real route
+
+Searched: CEA's CO2 Baseline Database. PINNED to the primary document and
+read:
+
+> Central Electricity Authority (Ministry of Power, Govt. of India), "CO2
+> Baseline Database for the Indian Power Sector — User Guide, **Version
+> 21.0, November 2025**", Table S: weighted average emission factor of the
+> Indian Grid for FY 2024-25 (adjusted for cross-border electricity
+> transfers, including RES & captive power injection) = **0.710 tCO2/MWh**.
+> https://cea.nic.in/wp-content/uploads/baseline/2025/12/User_Guide_V_21.0.pdf
+
+Entered for Aeon Tower as **0.710 kgCO2/kWh** via
+`PUT /sites/{id}/emission-factors` (core; `source` REQUIRED there — factor id
+`548694fb-c6f4-4f67-8298-639380aa642f`), with the source text carrying the
+full citation PLUS the assumption said out loud: *national grid average; the
+site's country/DISCOM is not recorded — replace with a state/DISCOM factor if
+desired; India inferred from the estate's own context (INR tariff, BEE/IGBC
+benchmarks, Indian tenants).*
+
+### CCEI v1 — the definitions are DESIGN, recorded here as such
+
+Three definitions registered live through `POST /bi/metrics` (type-checked at
+registration, versioned, operator-attributed):
+
+* **`ccei` v1 (composite, site scope): 0.6 × intensity_score + 0.4 ×
+  hvac_health.** The weights are DATA in the row. A composite of a refusal is
+  a refusal — and the item now carries EVERY component's own `{status,
+  reason}` (per-device on a fan-out), so the leaderboard's "—" explains
+  itself input by input.
+* **`intensity_score` v1 (formula, site scope):**
+  `benchmark_score(annualize(energy / area))` — energy = Σ(last − first) over
+  the site's `energy_register` bindings (the new `consumption` aggregation:
+  monotonic-guarded, a decreased register is excluded and reported, exactly
+  `/bi/rating`'s arithmetic), area = the `gross_floor_area_sqm` site fact,
+  `annualize()` over the COVERED span (same definition as `/bi/rating`, so
+  the paths cannot disagree), `benchmark_score()` = position against the
+  effective standard's edges — best band edge → 100, worst → 0, linear
+  between, clamped. Blocked today: `missing_fact` (no area); once area
+  arrives it blocks `no_benchmark` (zone not set) until the config is
+  recorded. Each gap is named in order of actionability.
+* **`hvac_health` v1 (formula, device scope, chillers):**
+  `band_score(abs(owt - iwt), 3, 7)` — a 0–100 score of |ΔT| against a design
+  band of **[3 K, 7 K]**, the lo/hi as LITERALS in the formula row (spec
+  parameters, visible and versioned, not buried constants). **Band
+  rationale:** standard chilled-water practice designs ΔT ≈ 5.5 K (10 °F)
+  with a healthy at-load range of roughly 4–7 K and "low-ΔT syndrome" below
+  ~3 K; the estate's own live evidence (Khem01 holds |ΔT| ≈ 2–4.4 K, mean
+  ≈ 1.9) sits around and below that floor — and the score REFLECTS that
+  (Khem01 ≈ 61/100) rather than moving the goalposts to flatter it. Shape:
+  100 inside the band, linear to 0 at 0 K below, linear to 0 at 14 K above
+  (very high ΔT = starved flow). Frozen chillers refuse (`undefined_frozen`),
+  never score.
+
+**The evaluator grew, per the registry's own contract** (§20's rules held:
+type-check at registration, structured refusals, rollups only):
+`applies_to.scope: "site"` (items = sites from the `site_facts` mirror);
+`source: "site_fact"` inputs against a CLOSED fact vocabulary (`FACT_DEFS`);
+the `consumption` aggregation (energy dimension only); `band_score` /
+`benchmark_score` in the expression whitelist; and two NEW refusal statuses,
+both structured: **`missing_fact`** (a site fact is NOT RECORDED — names the
+fact and where it is recorded) and **`no_benchmark`** (the standard, the
+zone, or the AC category is missing — names which). Composites at both
+scopes now report all components; a device-scope component under a site
+composite fans out over the site's devices and refuses if ANY device refuses,
+each device's status attached.
+
+**The truthful result for this estate, today** (leaderboard `score` slot,
+wired to `ccei`): Aeon Tower = **blocked** — `intensity_score: missing_fact`
+(no area recorded), `hvac_health: blocked` (2 of the 3 PLACED chillers frozen;
+Khem01 alone scores ≈61). The score is a dash WITH its reasons, which is the
+designed outcome, not a failure. The unplaced pseudo-row states that a score
+is a site's.
+
+### The baseline rule — decided, seeded as config, absence wired live
+
+**Rule: same calendar month, previous year.** Weather drives HVAC load;
+August answers August, and a rolling-30-day baseline would compare a monsoon
+to a summer and call the difference savings. Until **≥13 months** of history
+exist (12 to reach the same month last year + the current month), every "vs
+baseline" surface states the absence WITH the day count. Carried as
+`BASELINE_RULE` beside `benchmark_state()` in `rating.py` (the same
+config-as-code pattern), surfaced on `GET /bi/rating` as `baseline` and
+rendered on the Ratings screen. Live today: *"baseline unavailable — needs
+≥13 months of history, have 1.6 days."* The absence path is the one thing
+~2 days of history can verify, and it is verified.
+
+### Permanence, and what was cleaned up
+
+The unit confirmations, role bindings, metric definitions (`hvac_health` v1,
+`intensity_score` v1, `ccei` v1), the seeded benchmark standard, and the
+emission factor are DELIBERATE AND PERMANENT — they are the estate's decided
+inputs, not fixtures, and nothing retracted them. Nothing throwaway was left
+behind: no test specs were registered beyond the three real definitions, no
+benchmark config was set for Aeon Tower (its zone is genuinely unknown — an
+invented zone would grade a real EPI against the wrong table), and the only
+thing entered under core's site facts is the cited emission factor.
