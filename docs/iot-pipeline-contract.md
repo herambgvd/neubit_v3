@@ -1255,3 +1255,112 @@ estate (29 devices / 314 points; baseline 11 devices placed, 181 points placed):
   `tenant.platform.…` with a NULL body tenant was acked with
   `placement_sync_skipped_no_tenant: 1`, `placement_sync_errors: 0`.
 * `/readyz` green throughout, `placement_sync_errors: 0`.
+
+---
+
+## 19. Insights and Ratings (2026-08-31)
+
+The last two Building Intelligence tiles. §13 left both SOON for the same stated
+reason — "a rating needs a benchmark and a unit; a correlation needs to know what
+each point MEASURES". **One half of that was wrong and the other was right about
+the obstacle and wrong about the conclusion.**
+
+### Insights & Correlation was never blocked
+
+Correcting §13: a correlation does NOT need to know what a point measures.
+
+* **Pearson's r is dimensionless.** It is a covariance divided by two standard
+  deviations, so the units cancel. An empty `points.unit` blocks a RATING
+  (kWh/m²/yr is a unit statement); it does not block a coefficient.
+* **The series are not unnamed.** Each carries `device_tag` / `point_tag` — the
+  source's own labels, stored as sent.
+
+What is forbidden is INTERPRETING the number, and `/bi/correlation` + the screen
+supply no interpretation: no driver, no ranking of causes, no "because". The
+warning is rendered on the screen, not left in a comment.
+
+Four rules the endpoint enforces, because a coefficient without them misleads:
+
+1. **Rollups only.** `auto` picks 1m/1h as the charts do, and the reason is
+   returned to be printed. There is no raw path at all: r over raw samples would
+   be r over whatever happened to share a timestamp.
+2. **Aligned buckets only.** The pair query joins on the bucket column, and `n`
+   travels with every coefficient. +0.98 over 4 buckets and over 400 are
+   different claims.
+3. **A frozen series has NO correlation.** One distinct value → zero variance →
+   `corr()` is NULL → `status: "undefined_frozen"`, naming the flat side. Not
+   0.00. On this estate every energy register is frozen, so this is the normal
+   case.
+4. **No overlap is absence**, never a zero.
+
+Passing exactly two point ids also returns the aligned `(t, a, b)` samples, so
+the scatter and the coefficient come from one definition of "overlapping".
+*Verified live:* `4F Khem Chiller01 / IWT` vs `B1-2F4-Sump Pump1 / KW_L1` = +0.58
+over 20 aligned 1h buckets, across two categories; `B2_Main Incomer / KWH_kwh`
+renders FROZEN with r undefined over the same 20 overlapping buckets.
+
+### Ratings was blocked on inputs with no home, so the inputs got one
+
+An EPI is `kWh / m² / year`. Three inputs; the platform could state none.
+
+**UNIT — the hard part and the trap.** The unit is often visible in the tag
+(`_kwh`, `_Hz`, `_V`, `_A`, `_pf`). `GET /bi/units` offers that as a SUGGESTION
+carrying the pattern it matched in words, bulk-selectable over rows the operator
+sees first. `POST /bi/units/confirm` takes an EXPLICIT list of point ids and
+there is deliberately **no server-side pattern expansion** — "apply to everything
+matching `_kw`" evaluated on the server is a guess wearing a human's authority.
+Silently deriving a stored unit from a tag stays forbidden; this is §17's
+floor-prefix rule in a new place (`4F-3F AC DB` names two floors). A point nobody
+confirms keeps a NULL unit and is counted as unconfirmed.
+
+`points.unit_source` / `unit_confirmed_at` / `unit_confirmed_by` (reporting
+migration `0012`) record who said it, which makes the writer's guard strictly
+stronger than the COALESCE added in `a427e0b`. COALESCE only stops a message that
+says NOTHING from blanking a unit; a unit marked `'operator'` is now **not touched
+at all**, so a message that says something DIFFERENT cannot erase an operator's
+assertion either. That closes the last note in §12's "Known, left alone".
+*Verified live:* 14 points confirmed as kWh through the screen, then real aeon
+readings arrived — `last_seen_at` advanced and `unit` / `unit_source` did not
+move.
+
+**AREA / TARIFF / OCCUPANCY — beside the address, not on a BI screen.** `sites`
+gains `gross_floor_area_sqm`, `energy_tariff_per_kwh`, `tariff_currency`,
+`occupancy` plus their own `building_facts_updated_at` / `_by` (core migration
+`0018`), edited on a new "Building" tab in Configurations → Sites. §18's rule
+again: one place per fact. `PUT /sites/{id}/building-facts` is its own route
+because `PATCH /sites` applies `exclude_none=True`, so a null cannot be sent
+there and a recorded area could never be taken back — and a wrong figure an
+operator cannot retract is worse than none.
+
+They reach BI as `neubit_reporting.site_facts` through `site_facts_sync.py`, a
+second durable consumer on `tenant.*.sites.site.>`, built exactly like the
+placement mirror: the tenant comes from the BODY (a `platform` subject segment is
+not a uuid), a tenant-less message is acked and counted, and every site event
+carries the facts read from the row core just committed — so a missed message is
+corrected by the next site edit of any kind. *Verified live:* saved on the Sites
+screen and present in `site_facts` within the same second.
+
+**BENCHMARK — still absent, and stated.** BEE star bands and IGBC thresholds are
+published per building type, per climate zone and per version of a standard. This
+repository holds no such document, and a threshold typed from memory would be an
+invented grade wearing a real EPI's credibility. So the EPI ships as a MEASURED
+figure and the band panel says what it would take to exist. **This is the one
+part of Ratings still incomplete, and it is incomplete on purpose.**
+
+**The rating** (`GET /bi/rating`) reads `readings_1h`, never the hypertable.
+Consumption is `last − first` per register; a register that went DOWN is a reset
+or rollover and contributes nothing (never an absolute value), and one that did
+not move contributes zero, which is a measurement. **Which meters count is an
+argument, not a stored fact**: nothing says which register measures a whole
+supply, guessing from a tag would be an invention, and summing every confirmed
+register would double-count an incomer against its own sub-meters. The response
+carries each meter's own subtraction, the days actually covered, the annualisation
+factor and the division, so the score can be checked by hand.
+
+Any missing input → `epi: null` and a `blocked` list in words, with a link to
+Configurations → Sites. Never a partial score, never a default area, never a
+national average.
+
+### What is left SOON in Building Intelligence
+
+**IAQ & Environment only.** There are still ZERO `environment` points.
