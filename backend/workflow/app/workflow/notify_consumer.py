@@ -80,14 +80,21 @@ class NotifyConsumer:
 
         A ``vms.popup`` carries ``camera_id`` + ``reason``; a ``notify.request``
         carries a ``channel``. We branch on the presence of ``channel``.
+
+        Failures PROPAGATE — raising is the retry contract (kernel.events): a
+        notify.request that failed to enqueue because the database was down must
+        NAK and be redelivered, not be swallowed into an ack that loses the
+        notification. The old catch here was an auto-ack-era hangover; under
+        manual ack it turned every transient failure into a silent drop. The
+        consumer loop is not at risk — the bus catches handler exceptions to
+        make its ack decision. Both handlers read fields with .get() defaults,
+        so a malformed envelope enqueues a thin notification rather than
+        raising; anything that does raise is worth retrying.
         """
-        try:
-            if "channel" in envelope:
-                await self.handle_notify_request(envelope)
-            else:
-                await self.handle_popup(envelope)
-        except Exception as exc:  # never crash the consumer loop
-            log.warning("notify consumer error: %s", exc)
+        if "channel" in envelope:
+            await self.handle_notify_request(envelope)
+        else:
+            await self.handle_popup(envelope)
 
     # -- notify.request ---------------------------------------------------
 
