@@ -400,3 +400,8 @@ export function InfoCell({ label, value, mono = false, title }: any) {
     </div>
   );
 }
+
+// Estate skeleton — the BI common layer (KPI strip, leaderboard, action list,
+// two-column main). Lives in its own file; re-exported so every console keeps
+// one import surface.
+export * from "./estate";
