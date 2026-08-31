@@ -3,9 +3,38 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Icon } from "@iconify/react";
-import { toast } from "sonner";
 
 import { NbLabel, NbInput, NbSubmit, NbError, NbFieldError } from "./NeubitAuthShell";
+
+/* ───────────────────────────────────────────────────────────────────────────
+   SOCIAL / FEDERATED SIGN-IN — TURNED OFF, NOT DELETED (2026-08-31)
+   ───────────────────────────────────────────────────────────────────────────
+   Advertising a sign-in method that cannot sign anyone in is the same failure
+   as any other confident wrong answer, so the whole block is commented out
+   rather than left to toast an apology. What was actually behind each button,
+   checked against this stack rather than assumed:
+
+     Google / Apple / Microsoft — NOTHING. There is no per-provider OAuth
+       anywhere in core. Purely decorative.
+     Passkey · this device      — NOTHING. No WebAuthn code exists in the
+       backend at all; nothing calls navigator.credentials in the frontend.
+     Enterprise SSO             — the CAPABILITY is real: core serves
+       GET /auth/sso/login and POST /auth/sso/callback (OIDC authorization
+       code), and Settings → Security has an SsoCard to configure it. But this
+       page never called those routes — the button only raised a toast — and on
+       this deployment `sso_configs` is empty, so the endpoint answers 404 "no
+       SSO configured for this tenant". SAML is a `provider` enum value marked
+       `# oidc | saml (future)` and has no implementation.
+
+   TO TURN ENTERPRISE SSO BACK ON: configure a provider in Settings → Security,
+   then uncomment the block below and give the Enterprise button a real handler
+   that GETs `/auth/sso/login`, redirects to the returned `authorization_url`,
+   and POSTs the code back to `/auth/sso/callback` — a toast is not a login.
+   The other four need a backend before they need a button.
+
+   The glyphs live on in ./SsoGlyphs.tsx, unimported, waiting.
+
+import { toast } from "sonner";
 import {
   GoogleGlyph,
   AppleGlyph,
@@ -14,9 +43,6 @@ import {
   PasskeyGlyph,
 } from "./SsoGlyphs";
 
-/* Honest SSO: the backend exposes only email+password (+TOTP). These
-   providers exist for design parity but MUST NOT fabricate a session.
-   Clicking surfaces a toast pointing the operator at their admin. */
 const SSO_MESSAGE =
   "Single sign-on isn't configured for this directory yet — contact your administrator.";
 
@@ -44,6 +70,7 @@ function SsoButton({ label, Glyph, wide, onClick }: any) {
     </button>
   );
 }
+   ─────────────────────────────────────────────────────────────────────── */
 
 /* The backend answers an empty payload with a generic "Request validation
    failed" — useless to an operator. Catch the obvious cases here instead and
@@ -64,7 +91,7 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [fieldErrors, setFieldErrors] = useState<any>({});
 
-  const notifySso = (label) => toast(`${label}: single sign-on unavailable`, { description: SSO_MESSAGE });
+  // const notifySso = (label) => toast(`${label}: single sign-on unavailable`, { description: SSO_MESSAGE });
 
   function handleSubmit(e) {
     const next = validate(email, password);
@@ -149,6 +176,10 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
         <NbSubmit loading={busy}>SIGN IN →</NbSubmit>
       </form>
 
+      {/* The "OR CONTINUE WITH" divider and the five provider buttons lived here.
+          Commented out with the block at the top of this file — see it for what
+          each one was actually connected to and what turning them back on takes.
+
       <div className="my-4 flex items-center gap-3 font-mono text-[10px] tracking-[1px] text-[#9a92c8]">
         <span className="h-px flex-1 bg-[rgba(160,150,245,.2)]" />
         OR CONTINUE WITH
@@ -161,11 +192,28 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
         ))}
         <SsoButton label="Passkey · this device" Glyph={PasskeyGlyph} wide onClick={() => notifySso("Passkey")} />
       </div>
+      */}
 
+      {/* The footer used to read "MFA enforced · dual-authorization on privileged
+          roles · every sign-in audit-logged. Account logins federate through your
+          identity provider (SAML / OIDC) — NeuBit stores no passwords."
+
+          On a page that now offers one password field, most of that was false,
+          and it was already false before the buttons came off:
+            · MFA is AVAILABLE (TOTP, with a second step on this same screen) but
+              not enforced — there is no security policy row on this deployment
+              and no account has TOTP switched on.
+            · Dual-authorization is about privileged ACTIONS, not signing in. It
+              never had anything to do with this page.
+            · Federation through SAML/OIDC is not what happens here. SAML is
+              unimplemented; OIDC is unconfigured and this form does not use it.
+            · "NeuBit stores no passwords" is contradicted by the field directly
+              above it, which posts one against a stored hash.
+          What survives is the part that is true and checkable: every sign-in
+          writes an `auth.login` row to the audit trail. */}
       <div className="mt-[18px] border-t border-[rgba(160,150,245,.2)] pt-[13px] font-mono text-[10px] leading-[1.7] text-[#9a92c8]">
-        <b className="text-[#cfd0f2]">MFA enforced</b> · dual-authorization on privileged roles · every sign-in
-        audit-logged. Account logins federate through your identity provider (SAML / OIDC) — NeuBit stores no
-        passwords. No social-media logins.
+        <b className="text-[#cfd0f2]">Every sign-in is audit-logged.</b> Two-step
+        verification is requested at sign-in when it is enabled on your account.
         <div className="mt-[9px] flex flex-wrap gap-[7px]">
           <span className="rounded-[12px] border border-[rgba(52,211,153,.4)] px-[10px] py-[3px] text-[9px] tracking-[0.6px] text-[#34d399]">
             IS 19319 · STQC
