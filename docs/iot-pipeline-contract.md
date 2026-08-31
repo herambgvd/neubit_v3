@@ -1364,3 +1364,87 @@ national average.
 ### What is left SOON in Building Intelligence
 
 **IAQ & Environment only.** There are still ZERO `environment` points.
+
+## 20. The metric registry — derived metrics as DATA (2026-08-31)
+
+§11 of the dashboard contract put the first derived value (chiller ΔT) in the
+DATASET registry as a row, with the argument that "the mechanism generalises;
+the row is specific". This section is the same argument one level up: a
+**metric** — a formula over named point roles, with unit requirements, guards
+and display — is now a row in `neubit_reporting.metric_definitions`, so a new
+sensor domain becomes configuration instead of code. There is no end-user
+formula editor in this iteration; specs enter as data (seeded by migration
+`0014_metric_registry`, or `POST /bi/metrics` under `bi.manage`). The registry
+is the foundation a later editor UI sits on.
+
+**The shape.** `metric_definitions(tenant_id NULL=platform, key, version,
+effective_from, kind formula|composite, applies_to, inputs, formula,
+components, output, guards, display, created_by/at)`. An input is
+`name → {role, dimension|unit, aggregation}` — the binding to actual points
+goes through `point_roles`, never through a tag. `kind='composite'` is a
+weighted sum of other metrics' outputs (the future CCEI shape) — schema and
+evaluator support only, no UI.
+
+**Type-check AT REGISTRATION.** The formula is a tiny whitelisted language —
+literals, input names, `+ − × ÷`, parentheses, `abs()`, `annualize()` — parsed
+with Python `ast` against a strict node whitelist (`app/metric_registry/expr.py`;
+never `eval`). At insert, the dimension algebra (`units.py`) must produce the
+declared output: temperature − temperature = temperature_delta (a DISTINCT
+dimension, so a ΔT can never average with an absolute reading); temperature +
+temperature is refused; kWh − °C is refused; °C vs °F is refused because
+conversion is not modelled — nothing converts silently. A spec that cannot
+type-check is a 422 naming the dimension error and NOTHING is stored.
+*Verified live:* an `e − t` spec over kWh and °C came back
+`definition rejected: formula does not type-check: cannot subtract 'energy'
+and 'temperature'` and the definitions list did not grow.
+
+**Versioning.** A formula change is a NEW version with its own
+`effective_from` — recomputing yesterday's window with today's formula is
+silent history rewriting. `GET /bi/metrics/evaluate` picks the version
+effective at the END of the evaluated window and returns which one it used.
+There is no PUT and no DELETE.
+
+**Roles are §19's unit rule in a new place.** `GET /bi/metrics/roles` offers
+tag-derived SUGGESTIONS with the matched pattern in words (`IWT` →
+`inlet_water_temp`, "the tag is `IWT` — entering water temperature by this
+estate's convention"); `POST /bi/metrics/roles/confirm` takes an EXPLICIT
+point-id list under `bi.manage`, no server-side pattern expansion, and
+`role: null` clears (the `point_roles` row is deleted). The vocabulary is
+closed (`roles.py::ROLE_DEFS`), each role carrying the dimension the
+type-checker holds definitions to. Screen: `/bi/metrics`
+(`features/bi/MetricRoles.tsx`), the Units tab's anatomy exactly.
+
+**Refusals are structured, mechanized from dashboard-contract §4.** Every
+evaluation item is `{status, reason}`: `missing_role`, `ambiguous_role`,
+`unit_unconfirmed` (an input whose point has no OPERATOR-confirmed unit never
+computes on an assumed one), `unit_mismatch`, `no_data`, `undefined_frozen`
+(zero variance over the window, naming the flat input — Insights' discipline
+inherited), `blocked` (division by zero; a composite of a refusal is a
+refusal). Never 0, never null-that-renders-as-0. The evaluator reads
+`readings_1m`/`readings_1h` ONLY, states its resolution and reason, and
+refuses `raw` by name. `avg` is the sample-weighted mean
+`sum(num_sum)/sum(num_count)` — the SAME definition the dataset registry's
+`ratio` uses, so the two paths cannot disagree on a mean.
+
+**First row: `chiller_delta_t` v1** (`owt − iwt`, roles outlet/inlet_water_temp,
+output temperature_delta, guards roles_present + units_confirmed + same_unit +
+non_frozen), seeded by migration 0014. With 0 units and 0 roles confirmed its
+honest state on this deployment is BLOCKED on every chiller, and that is
+correct. **Fixture parity, run and retracted the same hour:** roles + `degC`
+temporarily confirmed via the registry's own APIs on `4F Khem Chiller01`'s
+IWT/OWT (and `1F York Chiller01`'s, to exercise the frozen path), then:
+
+* registry `chiller_delta_t` on Khem01 over 24h @1h: **−1.9173421633554106**,
+  with the working shown (`owt - iwt = 16.7013 − 18.6187 = -1.91734`);
+* the hardcoded dataset path (`/bi/query`, measure `delta_t`, avg, same
+  window): **−1.917342163355407** — parity to 1e-12;
+* York01: `undefined_frozen — input iwt (IWT) held one distinct value (7)
+  across 144 samples`; a demo composite over it: `blocked — a composite of a
+  refusal is a refusal`;
+* everything retracted through the same APIs (`role: null`, `unit: null`):
+  store back at **0 confirmed units, 0 point_roles**, and the metric BLOCKED
+  again. Nothing invented remains.
+
+The hardcoded ΔT display path (`DeltaT.tsx` → dataset measure `delta_t`) is
+UNTOUCHED; swapping it onto the registry is deliberately deferred until the
+portfolio work lands.
