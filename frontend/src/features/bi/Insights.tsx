@@ -52,6 +52,7 @@ import {
   InfoCell,
   Segmented,
   LoadingBlock,
+  EstateHeader,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
@@ -167,6 +168,10 @@ export default function Insights() {
 
   return (
     <ConsolePage>
+      <EstateHeader
+        crumbs={[{ label: "Insights & Correlation" }]}
+        desc="Pearson's r between any series that have reported — dimensionless, so the missing units cost it nothing. The coefficient is computed; an interpretation never is: nothing here says one thing drives another."
+      />
       <ConsoleGrid cols="xl:grid-cols-[320px_1fr]">
         {/* ── series picker ───────────────────────────────────────── */}
         <ConsolePanel>

@@ -44,6 +44,7 @@ import {
   InfoCell,
   Segmented,
   LoadingBlock,
+  EstateHeader,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
@@ -118,6 +119,10 @@ export default function Ratings() {
 
   return (
     <ConsolePage>
+      <EstateHeader
+        crumbs={[{ label: "Ratings" }]}
+        desc="EPI = annualised kWh / gross floor area — computed only where every input exists. The inputs are supplied here (units, by an operator) and under Configurations → Sites (area, tariff); nothing is defaulted, and a missing input renders its reason instead of a number."
+      />
       <ConsoleGrid cols="xl:grid-cols-[300px_1fr]">
         {/* ── sites ───────────────────────────────────────────────── */}
         <ConsolePanel>

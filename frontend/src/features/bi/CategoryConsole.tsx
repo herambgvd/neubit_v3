@@ -158,10 +158,18 @@ function CategoryConsoleInner({ category }: { category: string }) {
 
   return (
     <ConsolePage>
-      {siteId && (
+      {/* One header anatomy across every BI page. Scoped, it is the drill-down
+          breadcrumb (Portfolio / <site>); unscoped, it is the category's own
+          title — same primitive either way, so the pages read as one product. */}
+      {siteId ? (
         <EstateHeader
           crumbs={[{ label: "Portfolio", href: "/bi/portfolio" }, { label: siteName ?? "…" }]}
           desc={`${meta.label} — only the devices placed at this site. Placement is the device's pin on the Sites floor plan; nothing is inferred.`}
+        />
+      ) : (
+        <EstateHeader
+          crumbs={[{ label: meta.label }]}
+          desc={`Every ${meta.label} device that has reported into the reading store. Values carry no unit — the wire sends none, and none is invented.`}
         />
       )}
       <ConsoleGrid cols="xl:grid-cols-[320px_1fr]">
