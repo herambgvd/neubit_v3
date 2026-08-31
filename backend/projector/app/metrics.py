@@ -69,6 +69,11 @@ class Metrics:
     unmapped_tenant_keys: int = 0
     nats_connected: bool = False
     db_healthy: bool = True
+    # Monotonic start of the batch write currently in flight, per projection key
+    # (absent = nothing in flight). The only thing that can tell a HUNG write from
+    # an idle feed — `db_healthy` cannot, because a hang never fails.
+    writes_in_flight: dict = field(default_factory=dict)
+    writes_timed_out: int = 0
     last_error: str | None = None
     last_error_at: float | None = None
     last_reload_at: float | None = None
@@ -84,6 +89,18 @@ class Metrics:
         self.last_error = f"{type(exc).__name__}: {exc}"[:500]
         self.last_error_at = time.time()
 
+    def begin_write(self, key: str) -> None:
+        self.writes_in_flight[key] = time.monotonic()
+
+    def end_write(self, key: str) -> None:
+        self.writes_in_flight.pop(key, None)
+
+    def write_stalled_sec(self) -> float:
+        """Age of the OLDEST in-flight batch write across every projection. 0 = idle."""
+        if not self.writes_in_flight:
+            return 0.0
+        return round(time.monotonic() - min(self.writes_in_flight.values()), 1)
+
     @property
     def max_pending(self) -> int:
         return max((p.consumer_pending for p in self.projections.values()), default=0)
@@ -93,6 +110,8 @@ class Metrics:
             "uptime_sec": round(time.time() - self.started_at, 1),
             "nats_connected": self.nats_connected,
             "db_healthy": self.db_healthy,
+            "write_stalled_sec": self.write_stalled_sec(),
+            "writes_timed_out": self.writes_timed_out,
             "unmapped_tenant_keys": self.unmapped_tenant_keys,
             "last_error": self.last_error,
             "last_error_at": self.last_error_at,
@@ -112,7 +131,12 @@ class Metrics:
 
         g("nats_connected", int(self.nats_connected), "gauge", "1 when connected to NATS.")
         g("db_healthy", int(self.db_healthy), "gauge",
-          "1 when the last batch write succeeded.")
+          "1 when the last batch write succeeded AND no in-flight write is stalled.")
+        g("write_stalled_sec", self.write_stalled_sec(), "gauge",
+          "Age of the oldest in-flight batch write. 0 = idle. A rising value with "
+          "db_healthy=1 is the hung-database signature.")
+        g("writes_timed_out_total", self.writes_timed_out, "counter",
+          "Batch writes abandoned by statement_timeout or the stall watchdog.")
         g("projections_running", sum(1 for x in self.projections.values() if x.running),
           "gauge", "Projections with a live consumer.")
         g("projections_refused", len(self.refused), "gauge",

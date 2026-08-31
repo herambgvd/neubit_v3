@@ -82,6 +82,21 @@ from .spec import ProjectionRow
 from .store import write_batch
 from .tenants import TenantResolver
 
+
+def _is_timeout(exc: BaseException) -> bool:
+    """True when the exception is a server-side statement cancellation.
+
+    Matched on the class NAME rather than by importing asyncpg: this package only
+    ever sees the driver through SQLAlchemy, and the wrapper class differs by
+    version. `QueryCanceledError` is what `statement_timeout` raises.
+    """
+    names = {type(exc).__name__} | {
+        type(c).__name__ for c in (exc.__cause__, exc.__context__) if c
+    }
+    return bool(names & {"QueryCanceledError", "QueryCanceledError_"}) or (
+        "canceling statement due to statement timeout" in str(exc)
+    )
+
 log = logging.getLogger("projector.pipeline")
 
 
@@ -245,13 +260,24 @@ class Worker:
             res = None
             for attempt in range(self.cfg.db_retry_attempts + 1):
                 try:
-                    async with sessionmaker() as session:
-                        res = await write_batch(session, proj, rows)
+                    # Mark the write in flight so the stall watchdog can see a
+                    # write that never returns. `end_write` must run on EVERY exit
+                    # path or a completed write would look stuck forever.
+                    self.m.begin_write(self.row.key)
+                    try:
+                        async with sessionmaker() as session:
+                            res = await write_batch(session, proj, rows)
+                    finally:
+                        self.m.end_write(self.row.key)
                     break
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001
                     self.pm.batch_write_failures += 1
+                    if _is_timeout(exc):
+                        # statement_timeout fired: a query that would have hung
+                        # forever became an error the retry/NAK path can handle.
+                        self.m.writes_timed_out += 1
                     self.m.note_error(exc)
                     log.warning(
                         "projection %s: batch write failed (attempt %s/%s, %s rows): %s",
@@ -347,6 +373,7 @@ class Projector:
         await self.reload()
         self._tasks = [
             asyncio.create_task(self._reload_loop(), name="pj-reload"),
+            asyncio.create_task(self._stall_loop(), name="pj-stall"),
             asyncio.create_task(self._probe_loop(), name="pj-probe"),
             asyncio.create_task(self._stats_loop(), name="pj-stats"),
         ]
@@ -366,6 +393,36 @@ class Projector:
             with contextlib.suppress(Exception):
                 await self._nc.drain()
             self._nc = None
+
+    # ── stuck-write watchdog ──────────────────────────────────────────────────
+    async def _stall_loop(self) -> None:
+        """Turn a projection write that HANGS into a red health check.
+
+        Same failure as the reading-writer's: a frozen Postgres does not drop the
+        connection, so the write neither returns nor raises, `db_healthy` stays
+        true and /readyz stays green while nothing is being projected. Nothing is
+        lost (no ack happens) but nothing says so. Observation only — cancelling
+        an asyncpg query needs a SECOND connection to send the cancel request,
+        which against a frozen server hangs exactly like the first.
+        """
+        warned = False
+        while self._running:
+            await asyncio.sleep(1.0)
+            stalled = self.m.write_stalled_sec()
+            if stalled >= self.cfg.write_stall_sec:
+                if not warned:
+                    self.m.writes_timed_out += 1
+                    log.error(
+                        "DATABASE STUCK: a projection batch write has been in flight for "
+                        "%ss (threshold %ss) — not failing, not returning. Nothing is "
+                        "acked, so nothing is lost, but nothing is being written either.",
+                        stalled, self.cfg.write_stall_sec,
+                    )
+                    warned = True
+                self.m.db_healthy = False
+            elif warned and stalled == 0.0:
+                log.info("projection write completed after a stall — resuming")
+                warned = False
 
     # ── registry reconciliation ───────────────────────────────────────────────
     async def reload(self) -> None:

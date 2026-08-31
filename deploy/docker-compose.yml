@@ -389,6 +389,22 @@ services:
       # keys get a stable synthetic UUID and a loud warning. See app/tenants.py.
       VE_READINGS_TENANT_MAP: ${VE_READINGS_TENANT_MAP:-}
       VE_READINGS_DEFAULT_TENANT_ID: ${VE_READINGS_DEFAULT_TENANT_ID:-}
+      # ── a hung database must not look healthy ──────────────────────────────
+      # Two halves of the same failure, because neither covers the other:
+      #
+      #   VE_DB_STATEMENT_TIMEOUT_MS — a server-side ceiling on every query this
+      #     service runs. A write blocked on a lock used to hang indefinitely;
+      #     now it RAISES, which the existing retry/NAK path already handles and
+      #     the health flag already reflects. Generous (60s) because the same
+      #     engine serves the BI query API.
+      #   VE_READINGS_WRITE_STALL_SEC — a client-side watchdog. `docker
+      #     compose pause postgres` SIGSTOPs the server, so its own statement
+      #     timeout is frozen and never fires; only the client can notice that a
+      #     write has been in flight far too long. It does not cancel anything
+      #     (nothing is acked, so nothing is lost) — it turns /readyz red so the
+      #     silence is visible. Deliberately well under the statement timeout.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS:-60000}
+      VE_READINGS_WRITE_STALL_SEC: ${VE_READINGS_WRITE_STALL_SEC:-20}
       # ── observability ──────────────────────────────────────────────────────
       VE_READINGS_LAG_WARN: ${VE_READINGS_LAG_WARN:-10000}
       # ── dashboard datasets → core's permission catalog ─────────────────────
@@ -456,6 +472,22 @@ services:
       VE_PROJECTOR_TENANT_MAP: ${VE_PROJECTOR_TENANT_MAP:-}
       VE_PROJECTOR_DEFAULT_TENANT_ID: ${VE_PROJECTOR_DEFAULT_TENANT_ID:-}
       # ── observability ──────────────────────────────────────────────────────
+      # ── a hung database must not look healthy ──────────────────────────────
+      # Two halves of the same failure, because neither covers the other:
+      #
+      #   VE_DB_STATEMENT_TIMEOUT_MS — a server-side ceiling on every query this
+      #     service runs. A write blocked on a lock used to hang indefinitely;
+      #     now it RAISES, which the existing retry/NAK path already handles and
+      #     the health flag already reflects. Generous (60s) because the same
+      #     engine serves the BI query API.
+      #   VE_PROJECTOR_WRITE_STALL_SEC — a client-side watchdog. `docker
+      #     compose pause postgres` SIGSTOPs the server, so its own statement
+      #     timeout is frozen and never fires; only the client can notice that a
+      #     write has been in flight far too long. It does not cancel anything
+      #     (nothing is acked, so nothing is lost) — it turns /readyz red so the
+      #     silence is visible. Deliberately well under the statement timeout.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS:-60000}
+      VE_PROJECTOR_WRITE_STALL_SEC: ${VE_PROJECTOR_WRITE_STALL_SEC:-20}
       VE_PROJECTOR_LAG_WARN: ${VE_PROJECTOR_LAG_WARN:-5000}
     depends_on:
       postgres: { condition: service_healthy }

@@ -34,6 +34,22 @@ class Settings(BaseSettings):
     # creates the DB, offboard drops it. Flipping this is a DELIBERATE cutover (needs a
     # data migration of existing tenants) — never a hot toggle on a populated stack.
     db_per_tenant: bool = False
+    # Server-side `statement_timeout` (milliseconds) applied to every connection
+    # this service opens. 0 = unlimited, Postgres's own default.
+    #
+    # WHY IT IS NOT 0 FOR THE WRITE PATHS: a query with no timeout can hang
+    # forever, and a hang is worse than an error because nothing reports it. A
+    # writer blocked on a lock keeps its health flag TRUE (the last write
+    # succeeded, and the current one has not failed — it just has not returned),
+    # so /readyz stays green while nothing at all is being written. A statement
+    # timeout converts that silence into an exception the retry/NAK path already
+    # knows how to handle and the health flag already reflects.
+    #
+    # It is NOT a complete answer on its own: `docker compose pause postgres`
+    # SIGSTOPs the server, so the server-side timer is frozen too and never
+    # fires. That case needs the client-side stall detector in the pipelines.
+    # The two cover different halves of "the database stopped answering".
+    db_statement_timeout_ms: int = 0
     # Redis — Celery broker/result backend + realtime pub/sub.
     redis_url: str = "redis://localhost:6379/0"
     # NATS + JetStream event spine. Empty = events are no-ops (standalone).

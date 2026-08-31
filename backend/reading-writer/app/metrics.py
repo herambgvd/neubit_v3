@@ -57,6 +57,27 @@ class Metrics:
     nats_connected: bool = False
     db_healthy: bool = True
 
+    # ── stuck writes ──────────────────────────────────────────────────────────
+    # `db_healthy` only ever answers "did the last write FAIL". A write that
+    # neither succeeds nor fails — a lock wait, or a Postgres that has been
+    # SIGSTOPped, where even the server-side statement_timeout is frozen — leaves
+    # it TRUE forever while nothing is being written. This is the monotonic clock
+    # start of the batch currently in flight (None = nothing in flight), and it is
+    # the only thing that can tell a hang from an idle feed.
+    write_started_mono: float | None = None
+    writes_timed_out: int = 0     # statement_timeout / stall abandonments
+
+    def begin_write(self) -> None:
+        self.write_started_mono = time.monotonic()
+
+    def end_write(self) -> None:
+        self.write_started_mono = None
+
+    def write_stalled_sec(self) -> float:
+        """How long the in-flight batch write has been running. 0.0 when idle."""
+        started = self.write_started_mono
+        return 0.0 if started is None else round(time.monotonic() - started, 1)
+
     def note_malformed(self, reason: str) -> None:
         self.messages_malformed += 1
         self.malformed_reasons[reason] = self.malformed_reasons.get(reason, 0) + 1
@@ -68,6 +89,8 @@ class Metrics:
     def snapshot(self) -> dict:
         d = asdict(self)
         d["uptime_sec"] = round(time.time() - self.started_at, 1)
+        d.pop("write_started_mono", None)  # a monotonic clock means nothing outside
+        d["write_stalled_sec"] = self.write_stalled_sec()
         return d
 
     # ── Prometheus text exposition ────────────────────────────────────────────
@@ -106,7 +129,13 @@ class Metrics:
           "Delivered but unacked.")
         m("consumer_redelivered", self.consumer_redelivered, "gauge", "Redelivered messages.")
         m("nats_connected", int(self.nats_connected), "gauge", "1 when connected to NATS.")
-        m("db_healthy", int(self.db_healthy), "gauge", "1 when the last batch write succeeded.")
+        m("db_healthy", int(self.db_healthy), "gauge",
+          "1 when the last batch write succeeded AND no in-flight write is stalled.")
+        m("write_stalled_sec", self.write_stalled_sec(), "gauge",
+          "Seconds the in-flight batch write has been running. 0 = idle. "
+          "A rising value with db_healthy=1 is the hung-database signature.")
+        m("writes_timed_out_total", self.writes_timed_out, "counter",
+          "Batch writes abandoned by statement_timeout or the stall watchdog.")
         m("last_write_age_sec",
           round(time.time() - self.last_write_at, 1) if self.last_write_at else -1,
           "gauge", "Seconds since the last committed batch. -1 = never.")

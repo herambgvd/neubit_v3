@@ -79,6 +79,19 @@ from .metrics import Metrics
 from .store import PointCache, write_batch
 from .tenants import TenantResolver
 
+
+def _is_timeout(exc: BaseException) -> bool:
+    """True when the exception is a server-side statement/query cancellation.
+
+    Matched on the class NAME rather than by importing asyncpg: this package only
+    ever sees the driver through SQLAlchemy, and the wrapper class differs by
+    version. `QueryCanceledError` is what `statement_timeout` raises.
+    """
+    names = {type(exc).__name__} | {type(c).__name__ for c in (exc.__cause__, exc.__context__) if c}
+    return bool(names & {"QueryCanceledError", "CancelledError_", "QueryCanceledError_"}) or (
+        "canceling statement due to statement timeout" in str(exc)
+    )
+
 log = logging.getLogger("reading-writer.pipeline")
 
 
@@ -127,6 +140,7 @@ class Pipeline:
         self._tasks = [
             asyncio.create_task(self._fetch_loop(), name="rw-fetch"),
             asyncio.create_task(self._write_loop(), name="rw-write"),
+            asyncio.create_task(self._stall_loop(), name="rw-stall"),
             asyncio.create_task(self._probe_loop(), name="rw-probe"),
             asyncio.create_task(self._stats_loop(), name="rw-stats"),
         ]
@@ -279,14 +293,25 @@ class Pipeline:
             written = False
             for attempt in range(self.cfg.db_retry_attempts + 1):
                 try:
-                    async with sessionmaker() as session:
-                        res = await write_batch(session, rows, self.cache, now_mono)
+                    # Mark the write in flight so the stall watchdog can see a
+                    # write that never returns. `end_write` must run on EVERY exit
+                    # path or a completed write would look stuck forever.
+                    self.m.begin_write()
+                    try:
+                        async with sessionmaker() as session:
+                            res = await write_batch(session, rows, self.cache, now_mono)
+                    finally:
+                        self.m.end_write()
                     written = True
                     break
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001
                     self.m.batch_write_failures += 1
+                    if _is_timeout(exc):
+                        # statement_timeout fired: a query that would have hung
+                        # forever became an error the retry/NAK path can handle.
+                        self.m.writes_timed_out += 1
                     self.m.note_error(exc)
                     # The transaction rolled back, so any dimension row we thought
                     # we had written is gone. Re-upsert it next time.
@@ -327,12 +352,50 @@ class Pipeline:
 
             self._queue.task_done()
 
+    # ── stuck-write watchdog ──────────────────────────────────────────────────
+    async def _stall_loop(self) -> None:
+        """Turn a write that HANGS into a red health check.
+
+        The failure this exists for: `docker compose pause postgres` freezes the
+        server mid-query instead of dropping the connection. The write never
+        returns and never raises, `db_healthy` stays true because nothing failed,
+        and /readyz stays green while not one row is being written. Nothing is
+        lost — no ack happens, the batch is still in the stream — but nothing says
+        so, which is the whole problem.
+
+        Observation only, no cancellation: see the note on `write_stall_sec`.
+        """
+        warned = False
+        while self._running:
+            await asyncio.sleep(1.0)
+            stalled = self.m.write_stalled_sec()
+            if stalled >= self.cfg.write_stall_sec:
+                if not warned:
+                    self.m.writes_timed_out += 1
+                    log.error(
+                        "DATABASE STUCK: batch write in flight for %ss (threshold %ss) — "
+                        "not failing, not returning. Nothing is acked, so nothing is lost, "
+                        "but nothing is being written either.",
+                        stalled, self.cfg.write_stall_sec,
+                    )
+                    warned = True
+                self.m.db_healthy = False
+            elif warned and stalled == 0.0:
+                log.info("database write completed after a stall — resuming")
+                warned = False
+
     # ── database health prober ────────────────────────────────────────────────
     async def _probe_loop(self) -> None:
         engine = database.get_engine()
         while self._running:
             await asyncio.sleep(self.cfg.db_retry_sec)
             if self.m.db_healthy:
+                continue
+            if self.m.write_stalled_sec() > 0:
+                # A write is still hanging. A `SELECT 1` on a fresh connection may
+                # well succeed against a database that is merely lock-blocked, and
+                # calling it healthy while the real write is wedged is precisely
+                # the false green this fix removes.
                 continue
             try:
                 async with engine.connect() as conn:

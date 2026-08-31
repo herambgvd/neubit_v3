@@ -117,6 +117,25 @@ class WriterConfig:
     # acked, so nothing is lost.
     db_retry_attempts: int = field(default_factory=lambda: _int("VE_READINGS_DB_RETRIES", 2))
     db_retry_sec: float = field(default_factory=lambda: float(_int("VE_READINGS_DB_RETRY_SEC", 2)))
+    # How long an in-flight batch write may run before the pipeline declares the
+    # database stuck and turns /readyz red.
+    #
+    # `db_healthy` alone only answers "did the last write FAIL". A write that
+    # HANGS — a lock wait, or `docker compose pause postgres`, which SIGSTOPs the
+    # server so even its own statement_timeout is frozen and never fires — never
+    # fails, so the flag stays true and /readyz stays green while nothing at all
+    # is being written. Nothing is lost (no ack happens, the batch is still in
+    # JetStream) but nothing says so either, and that silence is the bug.
+    #
+    # The watchdog does NOT cancel the write. Cancelling an asyncpg query means
+    # opening a SECOND connection to send the cancel request, which against a
+    # frozen server hangs exactly like the first. It only OBSERVES: health goes
+    # red now, and when the database comes back the write finishes on its own and
+    # health returns to green. Deliberately shorter than the statement timeout so
+    # the alarm fires before the query dies of its own accord.
+    write_stall_sec: float = field(
+        default_factory=lambda: float(_int("VE_READINGS_WRITE_STALL_SEC", 20))
+    )
 
     # ── observability ─────────────────────────────────────────────────────────
     # Consumer lag above this is logged as a warning and turns /readyz degraded.

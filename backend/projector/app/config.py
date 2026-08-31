@@ -55,6 +55,16 @@ class ProjectorConfig:
     # lost.
     db_retry_attempts: int = field(default_factory=lambda: _int("VE_PROJECTOR_DB_RETRIES", 2))
     db_retry_sec: float = field(default_factory=lambda: float(_int("VE_PROJECTOR_DB_RETRY_SEC", 2)))
+    # How long an in-flight batch write may run before the database is declared
+    # stuck and /readyz turns red. See the identical knob on the reading-writer:
+    # `db_healthy` only ever answers "did the last write FAIL", and a write that
+    # HANGS (a lock wait, or `docker compose pause postgres`, which SIGSTOPs the
+    # server so even its own statement_timeout is frozen) never fails. Nothing is
+    # lost — no ack happens — but the health check reads green while not one row
+    # is being projected. Observation only; the write is never cancelled.
+    write_stall_sec: float = field(
+        default_factory=lambda: float(_int("VE_PROJECTOR_WRITE_STALL_SEC", 20))
+    )
 
     # ── the projection registry ───────────────────────────────────────────────
     # How often `reporting_projections` is re-read. Registration is DATA: an

@@ -105,8 +105,18 @@ async def health() -> dict:
 @app.get("/readyz")
 async def readyz() -> JSONResponse:
     lagging = metrics.consumer_pending > config.lag_warn
-    ready = metrics.db_healthy and metrics.nats_connected and not lagging
+    # A write that has been in flight past the stall threshold is a stuck
+    # database, and it must read as NOT ready even in the instant before the
+    # watchdog has flipped db_healthy.
+    stalled = metrics.write_stalled_sec()
+    stuck = stalled >= config.write_stall_sec
+    ready = metrics.db_healthy and not stuck and metrics.nats_connected and not lagging
     reasons = []
+    if stuck:
+        reasons.append(
+            f"database stuck: batch write in flight for {stalled}s "
+            f"(threshold {config.write_stall_sec}s)"
+        )
     if not metrics.db_healthy:
         reasons.append("database unavailable")
     if not metrics.nats_connected:
