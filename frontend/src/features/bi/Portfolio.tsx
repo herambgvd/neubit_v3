@@ -244,6 +244,55 @@ export default function Portfolio() {
 
               <SectionCard>
                 <SectionHead
+                  icon="heroicons:map"
+                  title="Floor-wise"
+                  desc="Where the estate is anchored. points.site_id / floor_id / zone_id exist; nothing populates them yet, so every point is UNPLACED and says so. It is not bucketed into a floor that does not exist."
+                />
+                {s.placement ? (
+                  <>
+                    <PanelStat
+                      label="Placed on a floor"
+                      value={`${s.placement.with_floor} of ${s.placement.points}`}
+                      tone={s.placement.with_floor ? "good" : "faint"}
+                    />
+                    <PanelStat
+                      label="Placed on a site"
+                      value={`${s.placement.with_site} of ${s.placement.points}`}
+                      tone={s.placement.with_site ? "good" : "faint"}
+                    />
+                    <PanelStat
+                      label="Unplaced"
+                      value={s.placement.unplaced}
+                      tone={s.placement.unplaced ? "warn" : "good"}
+                    />
+                  </>
+                ) : null}
+                <ul className="mt-2 space-y-1.5">
+                  {(s.floors || []).map((f: any) => (
+                    <li
+                      key={f.floor_id ?? "_unplaced"}
+                      className="flex items-center justify-between gap-2 text-[11.5px]"
+                    >
+                      <span className={f.floor_id ? "text-nb-soft" : "text-nb-faint italic"}>
+                        {f.floor_name || (f.floor_id ? f.floor_id : "Unplaced")}
+                        {f.site_name ? (
+                          <span className="ml-1 text-nb-faint">· {f.site_name}</span>
+                        ) : null}
+                      </span>
+                      <span className="font-mono text-nb-ink">{f.points}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 border-t border-nb-line/50 pt-2 text-[11px] leading-relaxed text-nb-faint">
+                  No placement is inferred. The gateway wire carries none, and a
+                  floor parsed out of a device tag would be right for most of an
+                  estate and silently wrong for the rest — which is worse than
+                  “unplaced”.
+                </p>
+              </SectionCard>
+
+              <SectionCard>
+                <SectionHead
                   icon="heroicons:information-circle"
                   title="What is not here"
                   desc="Stated rather than hidden, so a blank panel is never mistaken for a broken one."

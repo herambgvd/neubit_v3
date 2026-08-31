@@ -196,6 +196,8 @@ async def summary(db: AsyncSession, tenant: uuid.UUID | None) -> dict:
     extent = _rows(await db.execute(_EXTENT_SQL, {"tenant": params["tenant"]}))
     seen = _rows(await db.execute(_TOTALS_SQL, params))
     retired = _rows(await db.execute(_RETIRED_TOTALS_SQL, nofresh))
+    placed = _rows(await db.execute(_PLACEMENT_SQL, nofresh))
+    floors = _rows(await db.execute(_BY_FLOOR_SQL, params))
 
     by_cat: dict[object, list[dict]] = {}
     for t in types:
@@ -239,7 +241,94 @@ async def summary(db: AsyncSession, tenant: uuid.UUID | None) -> dict:
         "first_reading_at": row.get("first_seen_at") or ext.get("first_bucket"),
         "last_reading_at": row.get("last_seen_at"),
         "readings_last_hour": int(ext.get("samples_this_hour") or 0),
+        # Where the estate is anchored. Stated even when the answer is "nowhere",
+        # because a floor-wise surface with no rows looks broken while "0 of 314
+        # points are placed" is a fact.
+        "placement": _placement(placed[0] if placed else {}),
+        "floors": [
+            {
+                "floor_id": f["floor_id"],
+                "floor_name": f["floor_name"],
+                "site_name": f["site_name"],
+                "devices": int(f["devices"]),
+                "points": int(f["points"]),
+                "points_reporting": int(f["points_reporting"]),
+                "last_seen_at": f["last_seen_at"],
+            }
+            for f in floors
+        ],
     }
+
+
+def _placement(row: dict) -> dict:
+    """How much of the live estate is anchored in space.
+
+    Nothing here infers a placement, and nothing derives one level from another:
+    a point can legitimately have a site and no floor (a rooftop meter that
+    belongs to the building rather than to a storey), so the three counts are
+    independent rather than nested.
+    """
+    total = int(row.get("points") or 0)
+    with_site = int(row.get("points_with_site") or 0)
+    with_floor = int(row.get("points_with_floor") or 0)
+    with_zone = int(row.get("points_with_zone") or 0)
+    return {
+        "points": total,
+        "with_site": with_site,
+        "with_floor": with_floor,
+        "with_zone": with_zone,
+        # The headline for a console: how much of the estate cannot answer a
+        # floor-wise question at all.
+        "unplaced": total - with_floor,
+    }
+
+
+# ── Placement ────────────────────────────────────────────────────────────────
+#
+# Where the estate IS, and — for now — mostly where it is NOT. `points.site_id` /
+# `floor_id` / `zone_id` exist (migration 0008) and nothing populates them: the
+# gateway wire carries no placement and there is no placement API. So this query
+# answers, honestly, "how much of the estate is anchored in space", and the
+# answer today is none of it.
+#
+# It is here rather than left out because a floor-wise console that simply had no
+# data would look broken. "0 of 314 points are placed" is a different statement
+# from "there is no data", and it is the true one.
+_PLACEMENT_SQL = text(
+    """
+    SELECT count(*)                                        AS points,
+           count(*) FILTER (WHERE p.site_id IS NOT NULL)   AS points_with_site,
+           count(*) FILTER (WHERE p.floor_id IS NOT NULL)  AS points_with_floor,
+           count(*) FILTER (WHERE p.zone_id IS NOT NULL)   AS points_with_zone
+      FROM points p
+     WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND """ + LIVE_POINT + """
+    """
+)
+
+# The floor-wise breakdown. The UNPLACED group is returned as a row with a NULL
+# id rather than being dropped, for the same reason `/bi/devices` answers
+# `category=`: "the points nothing has placed" is a real question and hiding them
+# would make the floors look like the whole estate.
+_BY_FLOOR_SQL = text(
+    """
+    SELECT p.floor_id                                      AS floor_id,
+           max(p.floor_name)                               AS floor_name,
+           max(p.site_name)                                AS site_name,
+           count(*)                                        AS points,
+           count(DISTINCT coalesce(p.device_id::text, p.device_tag)) AS devices,
+           count(*) FILTER (
+               WHERE p.last_seen_at >= now() - make_interval(mins => :fresh)
+           )                                               AS points_reporting,
+           max(p.last_seen_at)                             AS last_seen_at
+      FROM points p
+     WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND """ + LIVE_POINT + """
+     GROUP BY p.floor_id
+     -- Placed floors first, then the unplaced bucket, each by size.
+     ORDER BY (p.floor_id IS NULL), count(*) DESC
+    """
+)
 
 
 _ACTIVITY_SQL = text(

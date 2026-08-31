@@ -100,6 +100,39 @@ class Point(Base):
     # this column is deliberately not overloaded with the other one.
     type: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # ── WHERE the point is ───────────────────────────────────────────────
+    #
+    # The spatial anchor: which site, floor and zone (in `neubit_control`) this
+    # point's device sits in. Every serious building surface — a site selector, a
+    # floor-wise breakdown — is built on this axis, and without it none of it is
+    # expressible.
+    #
+    # NULL means UNPLACED, and it is the honest default. Nothing on the gateway
+    # wire carries a placement: conflux knows a device's connection, tag,
+    # category and equipment kind and has no field in which to say which floor it
+    # is on. Inferring one from a tag (`4F Khem Chiller01`) would place most of an
+    # estate correctly and the rest silently wrongly, and a floor-wise chart that
+    # is wrong for one floor in five is worse than one that says "unplaced".
+    #
+    # THE WRITER NEVER TOUCHES THESE. `reading-writer`'s points upsert names its
+    # columns explicitly and these six are not among them, so a reading cannot
+    # blank a placement — the same failure the `category` COALESCE prevents,
+    # avoided here by construction. A placement is an operator's statement about
+    # the building, not something the gateway reports.
+    #
+    # The `_name` copies exist because this store may not look them up: sites and
+    # floors live in `neubit_control` and the platform bans cross-service reads.
+    # Same rule as the access projection's `door_name` — whoever writes a
+    # placement writes the label with it, or every floor legend reads `a7f3…`.
+    # The copy can go stale on a rename; grouping is on the id, the name is only
+    # ever displayed.
+    site_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    site_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    floor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    floor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    zone_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    zone_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Anything else the gateway knows that is not worth a column yet. Kept out of
     # the fact table on purpose.
     meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -134,6 +167,11 @@ class Point(Base):
         Index("ix_points_tenant_device_tag", "tenant_id", "device_tag", "point_tag"),
         # "every point in this tenant's Energy & Metering view" — the BI filter.
         Index("ix_points_tenant_category", "tenant_id", "category"),
+        # "every point on this site / on this floor" — the two scopes a building
+        # console filters on. Zone is deliberately unindexed: it is only ever
+        # reached through a floor, and an index nothing uses is a write cost.
+        Index("ix_points_tenant_site", "tenant_id", "site_id"),
+        Index("ix_points_tenant_floor", "tenant_id", "floor_id"),
         # The live set, which is what every BI count actually reads. Partial:
         # almost every point is live, so the retired tail costs nothing to carry.
         Index(

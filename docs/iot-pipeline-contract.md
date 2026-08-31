@@ -721,3 +721,78 @@ The endpoint answers `available: false` with a reason rather than raising when
 `iot_alerts` does not exist. A projection is data and can legitimately be disabled;
 "nothing is collecting faults" and "there are no faults" are opposite facts and
 must not render as the same empty list.
+
+---
+
+## 16. WHERE a point is — spatial columns on `points` (2026-08-31)
+
+`neubit_control` has had `sites`, `floors` and `zones` for a long time. `points`
+referenced none of them, so nothing this platform measures was anchored in space:
+"what is floor 4 drawing", "scope this page to one building", "the chiller is on
+the roof" — none of it was expressible. Not because the data was wrong, because
+the column did not exist.
+
+Migration `0008_points_spatial` adds `site_id` / `site_name`, `floor_id` /
+`floor_name`, `zone_id` / `zone_name` to `points`, two indexes
+(`(tenant_id, site_id)`, `(tenant_id, floor_id)`), and appends six dimensions to
+the registered `iot_readings` dataset — appended with a jsonb concat and an
+idempotence guard rather than the definition being reprinted, because the
+definition is DATA and a migration that rewrote it wholesale would silently
+revert anything else that had changed it.
+
+**It places nothing, and that is the point of doing it now.** All 314 points are
+unplaced when this runs and stay unplaced:
+
+* nothing on the wire carries a placement. The gateway knows a device's
+  connection, tag, category and equipment kind (§11/§12) and has no field in which
+  to say which floor it is on;
+* a guessed placement is worse than none. `4F Khem Chiller01` looks like it names
+  a floor, and parsing floors out of device tags would place most of this estate
+  correctly and the rest silently wrongly — a floor-wise chart that is wrong for
+  one floor in five is worse than one that says "unplaced". §4 in a new place.
+
+Getting the structure in first means widgets saved from here on can group and
+filter by site, floor and zone, and start answering the day placements arrive
+rather than needing to be rebuilt.
+
+**Why an id AND a name at each level.** The id is the identity; the name is the
+label, and this store may not look it up — `sites`/`floors`/`zones` live in
+`neubit_control` and the platform bans cross-service reads. It is the access
+projection's "put the LABELS on the wire" rule (builder contract §9.3) applied to
+a dimension table: whoever writes a placement writes the name with it, or every
+floor legend on the platform reads `a7f3…`. The name is a COPY and goes stale on
+a rename — the same cost `points.device_tag` already carries. Group on the id;
+display the name.
+
+**The writer cannot touch these columns.** `reading-writer`'s points upsert names
+its columns explicitly and these six are not among them, so a reading can never
+blank a placement. That is the same failure the `category` COALESCE prevents,
+avoided here by construction — a placement is an operator's statement about the
+building, not something the gateway reports.
+
+`/bi/summary` now carries `placement` (how much of the live estate is anchored,
+per level — the three counts are INDEPENDENT, since a rooftop meter can have a
+site and no floor) and `floors`, which includes the UNPLACED group as a row with
+a NULL id rather than dropping it. The Portfolio console has a "Floor-wise" panel
+that reads "0 of 314 placed" instead of showing an empty list, because a
+floor-wise surface with no rows looks broken while a zero is a fact.
+
+### What is still missing, and it is not the schema
+
+**There is no way to place a point.** No API, no screen, no wire field. The
+columns can only be written by hand against the database today, and the honest
+next steps are, in order: a placement API on the reading-writer under `bi.manage`
+(the key that already exists for retiring a point — deciding what is part of the
+estate and deciding where it is are the same kind of decision); a device-level
+placement rather than a point-level one, since a placement is a property of the
+box, not of each of its measurements; and a copy of the floor's name written at
+the same time by whatever does the writing.
+
+*Verified by hand, and then undone:* a real site (`Aeon Tower`) and floor
+(`Level 4`) were created through core's own `/api/v1/sites` and `/api/v1/floors`,
+three points of `4F Khem Chiller01` were placed on that floor with an UPDATE, and
+`/bi/query` grouped by `floor_name` returned `Level 4 → 96 samples` alongside
+`null → 9,641`. The placement was then reverted, because nothing in the product
+could have written it and a hand-made row in a dimension table is a fixture — the
+exact thing builder contract §9 dropped `access_events` for. The site and floor
+were kept: they were created through the real API and are ordinary configuration.

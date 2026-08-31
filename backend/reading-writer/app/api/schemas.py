@@ -61,6 +61,44 @@ class ActivityBucket(BaseModel):
     points: int
 
 
+class PlacementSummary(BaseModel):
+    """How much of the live estate is anchored in space.
+
+    Reported even when the answer is "none of it". A floor-wise surface with no
+    rows looks broken; "0 of 314 points are placed" is a fact, and it is the one
+    that tells an operator what to do next.
+
+    The three counts are INDEPENDENT, not nested: a point can legitimately carry a
+    site and no floor (a rooftop meter belongs to the building rather than to a
+    storey), so `with_site >= with_floor` is not assumed anywhere.
+    """
+
+    points: int
+    with_site: int
+    with_floor: int
+    with_zone: int
+    # Live points that cannot answer a floor-wise question at all.
+    unplaced: int
+
+
+class FloorRow(BaseModel):
+    """One floor of the estate — plus the UNPLACED bucket, as `floor_id: null`.
+
+    The unplaced group is a row rather than an omission, for the same reason
+    `/bi/devices` answers an empty `category`: "the points nothing has placed" is
+    a real question, and dropping them would make the floors look like the whole
+    estate.
+    """
+
+    floor_id: uuid.UUID | None
+    floor_name: str | None
+    site_name: str | None
+    devices: int
+    points: int
+    points_reporting: int
+    last_seen_at: dt.datetime | None
+
+
 class SummaryResponse(BaseModel):
     tenant_id: uuid.UUID | None
     generated_at: dt.datetime
@@ -80,6 +118,12 @@ class SummaryResponse(BaseModel):
     first_reading_at: dt.datetime | None
     last_reading_at: dt.datetime | None
     readings_last_hour: int
+    # Spatial anchoring. See `PlacementSummary` — this is stated rather than
+    # implied, because nothing populates `points.floor_id` yet and a screen must
+    # be able to say "unplaced" instead of quietly bucketing everything into one
+    # floor that does not exist.
+    placement: PlacementSummary | None = None
+    floors: list[FloorRow] = Field(default_factory=list)
 
 
 class DeviceRow(BaseModel):
