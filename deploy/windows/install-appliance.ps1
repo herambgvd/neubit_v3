@@ -113,6 +113,11 @@ $DistroName  = 'neubit-vms'
 $TaskName    = 'Neubit VMS appliance'
 $RulePrefix  = 'Neubit VMS'
 $ConsolePort = 80
+# Loopback gets its own port. 0.0.0.0:80 already covers 127.0.0.1:80, so Docker
+# cannot bind both and refuses to start the gateway at all — see the note in
+# docker-compose.appliance.yml. The LAN keeps 80; this is the way in from the
+# machine itself, which under mirrored networking has no other one.
+$LocalPort = 8080
 $VmCreatorId = '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}'   # WSL's Hyper-V firewall VM
 
 # The account that owns the distro and runs the logon task. Elevation does not
@@ -905,11 +910,16 @@ engineer chasing a console that is up.
 Write-Step 'Waiting for the console'
 Write-Host '    first boot builds the database schema; this can take several minutes' -ForegroundColor DarkGray
 
-$candidates = @(
+# Loopback first, and on its own port: it is the one address that answers from
+# this machine under mirrored networking. The LAN addresses are tried too, because
+# they are what the operators will use and a console that answers only on loopback
+# is not a delivered install.
+$candidates = @("127.0.0.1:$LocalPort") + @(
     Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and $_.PrefixOrigin -ne 'WellKnown' } |
-        Select-Object -ExpandProperty IPAddress -Unique
-) + '127.0.0.1'
+        Select-Object -ExpandProperty IPAddress -Unique |
+        ForEach-Object { "${_}:$ConsolePort" }
+)
 Write-Host ("    trying " + ($candidates -join ', ')) -ForegroundColor DarkGray
 
 $waitMinutes = 15
@@ -920,7 +930,7 @@ $nextTick = (Get-Date).AddSeconds(30)
 while ((Get-Date) -lt $deadline -and -not $ready) {
     foreach ($addr in $candidates) {
         try {
-            $r = Invoke-WebRequest -Uri "http://${addr}:$ConsolePort/health" -UseBasicParsing -TimeoutSec 5
+            $r = Invoke-WebRequest -Uri "http://$addr/health" -UseBasicParsing -TimeoutSec 5
             if ($r.StatusCode -eq 200) { $ready = $true; $readyHost = $addr; break }
         } catch { }
     }
@@ -937,15 +947,19 @@ Write-Host ''
 if ($ready) {
     Write-Host '  Neubit VMS is running.' -ForegroundColor Green
     Write-Host ''
-    Write-Host "    http://$readyHost" -ForegroundColor Green
+    Write-Host "    answered on   http://$readyHost" -ForegroundColor Green
     Write-Host ''
-    Write-Host '  That is the address that answered, and the one to give the customer.' -ForegroundColor DarkGray
-    if ($readyHost -ne '127.0.0.1') {
-        # Not a footnote. Somebody WILL try localhost on this machine, find it
-        # refused, and conclude the appliance is down.
-        Write-Host '  http://localhost does NOT work here: mirrored networking shares this' -ForegroundColor DarkGray
-        Write-Host '  machine loopback with the distro, and the published port is not on it.' -ForegroundColor DarkGray
+    $lanAddrs = @($candidates | Where-Object { $_ -notlike '127.0.0.1:*' })
+    if ($lanAddrs.Count -gt 0) {
+        Write-Host '  Give the customer the LAN address - that is what operators use:'
+        foreach ($a in $lanAddrs) { Write-Host "    http://$($a -replace ':80$', '')" }
+        Write-Host ''
     }
+    # Not a footnote. Somebody WILL try plain localhost on this machine, find it
+    # refused, and conclude the appliance is down.
+    Write-Host "  On this machine use http://localhost:$LocalPort - plain http://localhost is" -ForegroundColor DarkGray
+    Write-Host '  refused, because 0.0.0.0:80 cannot also bind loopback and mirrored' -ForegroundColor DarkGray
+    Write-Host '  networking gives the host no other way in. Not a fault.' -ForegroundColor DarkGray
     Write-Host ''
     Write-Host '  Sign in with the bootstrap administrator, then change its password:'
     Write-Host ''
@@ -974,7 +988,7 @@ if ($ready) {
         Write-Host '  EVERYTHING THIS INSTALLER DOES IS DONE. Do not re-run it. The console is'
         Write-Host '  most likely still finishing its first boot; try these in a browser:'
         Write-Host ''
-        foreach ($addr in $candidates) { Write-Host "    http://$addr" }
+        foreach ($addr in $candidates) { Write-Host "    http://$($addr -replace ':80$', '')" }
         Write-Host ''
         Write-Host '  If it is still refused in a few minutes:' -ForegroundColor DarkGray
     } else {

@@ -21,33 +21,40 @@ services:
   gateway:
     image: traefik:v3.1
     restart: unless-stopped
-    # ══ PUBLISHED TWICE, AND THE SECOND ONE IS NOT REDUNDANT ═════════════════
+    # ══ TWO PORTS, AND THE SECOND ONE IS NOT A CONVENIENCE ═══════════════════
     #
     # "80:80" alone is reachable from the LAN and NOT from the machine it runs
     # on. Docker publishes a 0.0.0.0 port with an iptables DNAT rule in
     # PREROUTING, which only sees traffic arriving on an interface; loopback
-    # never goes through it, and no socket is listening either — `docker-proxy`
-    # is not started for that mapping. Measured on the first customer box:
+    # never passes through it, and no socket is listening either. Measured on the
+    # first customer box:
     #
     #     the distro's eth0 (10.24.103.39): 200
     #     loopback          (127.0.0.1)   : 000
     #
-    # And the host cannot use its own address to get in instead: under
+    # The host cannot use its own address to get in instead: under
     # networkingMode=mirrored, Windows reaching its own IPv4 lands on its own
-    # stack rather than the distro (microsoft/WSL#41284, and hostAddressLoopback
-    # does not fix it). So the appliance served every operator on the LAN while
-    # the console was unreachable from the server itself.
+    # stack rather than the distro (microsoft/WSL#41284; hostAddressLoopback does
+    # not fix it). So the appliance served every operator on the LAN while being
+    # unreachable from the server itself — including by its own installer.
     #
-    # Publishing on 127.0.0.1 explicitly is what fixes it: Docker cannot DNAT
-    # loopback, so it starts a real docker-proxy listening there — and mirrored
-    # mode shares that loopback with Windows. Verified on the same box with a
-    # throwaway container: 127.0.0.1 answered from inside the distro AND from
-    # Windows, while the 0.0.0.0 mapping answered from neither.
+    # A loopback mapping fixes that, because Docker cannot DNAT loopback and
+    # arranges a real listener for it. But NOT on the same port:
     #
-    # The two do not collide: the first is a DNAT rule and binds no socket.
+    #     127.0.0.1:80 -> failed to bind host port: address already in use
+    #
+    # 0.0.0.0:80 already covers 127.0.0.1:80, so the pair is a plain socket
+    # conflict and the gateway will not start at all. This was tried on the
+    # customer's machine and took the console down; the throwaway container that
+    # "proved" loopback publishing worked had used a different port, which is the
+    # only reason it bound.
+    #
+    # So: the wildcard keeps port 80 for the LAN, and loopback gets 8080. The
+    # address operators use is unchanged. 8080 is for this machine only — the
+    # installer's health check and anyone standing at the server.
     ports: !override
       - "80:80"
-      - "127.0.0.1:80:80"
+      - "127.0.0.1:8080:80"
 
   postgres:
     restart: unless-stopped
