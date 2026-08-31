@@ -114,11 +114,19 @@ class Point(Base):
     # estate correctly and the rest silently wrongly, and a floor-wise chart that
     # is wrong for one floor in five is worse than one that says "unplaced".
     #
-    # THE WRITER NEVER TOUCHES THESE. `reading-writer`'s points upsert names its
+    # THE WRITER NEVER AUTHORS THESE. `reading-writer`'s points upsert names its
     # columns explicitly and these six are not among them, so a reading cannot
     # blank a placement — the same failure the `category` COALESCE prevents,
     # avoided here by construction. A placement is an operator's statement about
     # the building, not something the gateway reports.
+    #
+    # They are a DERIVATION of `device_locations` (migration 0010), which is
+    # where an operator's statement actually lands. The writer runs
+    # `reporting.placement.reconcile_placement()` over the points it upserted so
+    # that a NEW point inherits the placement its device already has — the only
+    # way a placement travels to a point that did not exist when it was made.
+    # That is not authorship: the statement's only source is `device_locations`,
+    # and a message can neither carry a placement nor move one.
     #
     # The `_name` copies exist because this store may not look them up: sites and
     # floors live in `neubit_control` and the platform bans cross-service reads.
@@ -132,6 +140,17 @@ class Point(Base):
     floor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     zone_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     zone_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # How the six columns above got their values, and therefore whether they may
+    # be recomputed:
+    #
+    #   NULL      derived from this point's device (or unplaced, which is the
+    #             same statement made about nothing)
+    #   'device'  derived from `device_locations`
+    #   'point'   an operator placed THIS POINT explicitly — an override for the
+    #             sub-meter that is genuinely not where its panel is. The
+    #             reconcile never touches a row marked this way.
+    placement_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     # Anything else the gateway knows that is not worth a column yet. Kept out of
     # the fact table on purpose.
@@ -223,4 +242,70 @@ class Reading(Base):
         PrimaryKeyConstraint("point_id", "ts", name="readings_pkey"),
         # Tenant-wide scans over a window, without touching `points`.
         Index("ix_readings_tenant_ts", "tenant_id", "ts"),
+    )
+
+
+class DeviceLocation(Base):
+    """WHERE a device is — the join between the gateway's id and the building.
+
+    This is the TRUTH about placement (migration 0010). ``points.site_id`` /
+    ``floor_id`` / ``zone_id`` are a derivation of it, recomputed by
+    ``reporting.placement.reconcile_placement``.
+
+    **Device-level, not point-level, and that is the design.** A placement is a
+    fact about a box, not about each of the box's measurements: this estate is 29
+    devices and 314 points, and ``4F_Solar_Panel01``'s 21 points are all in the
+    same room. Point-level precision is still reachable — a point row marked
+    ``placement_source='point'`` is an explicit override the reconcile never
+    touches — but it is the exception, not the unit of work.
+
+    **The two halves come from two systems.** ``device_id`` is conflux's; the
+    site / floor / zone ids are ``neubit_control``'s. Neither database can
+    validate the other's id, which is why the row carries ``placed_by`` and
+    ``placed_at``: this is an operator's assertion joining two namespaces, and an
+    assertion has an author. The names are COPIES taken from core at write time
+    (see ``reading-writer``'s ``app/api/placement.py``), because this store may
+    not read ``neubit_control`` — the same "put the LABELS on the wire" rule the
+    access projection follows. A copy goes stale on a rename; group on the id.
+
+    Not to be confused with ``neubit_control.device_placements``, which pins a
+    camera to an ``{x, y}`` on a floor-plan image. That answers "where on the
+    drawing"; this answers "which room", and it comes first.
+    """
+
+    __tablename__ = "device_locations"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+
+    # A placement that names no site is not a placement, so site is required.
+    # Floor and zone are optional and INDEPENDENT: "on the site, on no particular
+    # storey" is a true statement about a rooftop meter or a plant room, not a
+    # half-finished one, and forcing a floor would make somebody invent one.
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    site_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    floor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    floor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    zone_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    zone_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # The label the device carried when it was placed, so a placement list stays
+    # readable for a device that has since been renamed or stopped reporting.
+    device_tag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    placed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # How the placement was made. NOT a confidence score — nothing here is ever
+    # written by a guess. It exists so a bulk action is distinguishable from a
+    # device placed one at a time, and a future import from either.
+    source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="operator")
+    placed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_device_locations_floor", "tenant_id", "floor_id"),
+        Index("ix_device_locations_site", "tenant_id", "site_id"),
     )
