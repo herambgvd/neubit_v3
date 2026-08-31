@@ -86,5 +86,23 @@ class ProjectorConfig:
     # A subject's tenant segment is `platform` for a system-scoped event, which is
     # not a uuid, and the projected relations declare `tenant_id uuid NOT NULL`.
     # Same three rules as the reading-writer — see `app/tenants.py`.
-    tenant_map: str = field(default_factory=lambda: _str("VE_PROJECTOR_TENANT_MAP", ""))
-    default_tenant: str = field(default_factory=lambda: _str("VE_PROJECTOR_DEFAULT_TENANT_ID", ""))
+    #
+    # FALLING BACK TO THE READING-WRITER'S MAP IS DELIBERATE, not laziness. Both
+    # services resolve keys out of the SAME publisher namespace (the tenant
+    # resolver's UUIDv5 namespace constant is shared for exactly that reason), and
+    # the projection that made this matter — `iot_alerts` — consumes the very same
+    # gateway, on the very same `tenant.default.iot.>` subjects, as the readings
+    # the reading-writer already maps. A deployment that has set
+    # `VE_READINGS_TENANT_MAP=default=…` and not the projector's twin would
+    # otherwise file its alerts under a synthetic tenant the console cannot see,
+    # while its readings landed correctly — the two stores disagreeing about who
+    # owns the same gateway's data. `VE_PROJECTOR_TENANT_MAP` still wins when set,
+    # so a deployment whose domains genuinely need different mappings can say so.
+    tenant_map: str = field(
+        default_factory=lambda: _str("VE_PROJECTOR_TENANT_MAP", "")
+        or _str("VE_READINGS_TENANT_MAP", "")
+    )
+    default_tenant: str = field(
+        default_factory=lambda: _str("VE_PROJECTOR_DEFAULT_TENANT_ID", "")
+        or _str("VE_READINGS_DEFAULT_TENANT_ID", "")
+    )

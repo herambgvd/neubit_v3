@@ -633,3 +633,91 @@ second query path over the same tables is exactly the drift §8 rule 2 is about.
 
 See `docs/dashboard-builder-contract.md` §9 for the projection registry, the
 per-domain recipe, and the ownership table.
+
+---
+
+## 15. The alerts are consumed now (2026-08-31)
+
+§10.4 confirmed the alert body shape and ended with a sentence that stayed true
+for a day: *"nothing on the platform consumes them yet."* Measured before this
+change: **19 alert messages held in `IOT_READINGS`, zero rows anywhere.** The
+gateway had been raising faults and the platform had been dropping them, quietly,
+for the whole life of the bridge.
+
+They are projected now, and NOT by a new service. `backend/projector` already
+consumes a subject into a relation on the strength of one row of
+`reporting_projections` (builder contract §9), so this is an INSERT
+(`reporting/migrations/versions/0007_iot_alerts_projection.py`) and no code:
+
+```
+tenant.*.iot.alert.*  ──IOT_READINGS──►  reporting-projector
+                                              │
+                                    neubit_reporting.iot_alerts (hypertable)
+                                          + iot_alerts_1h (continuous aggregate)
+                                          + a dashboard_datasets row
+```
+
+Three things this proved, all worth writing down:
+
+1. **A projection can read `IOT_READINGS`.** `spec.Source.stream` was already a
+   field and nothing had ever set it to anything but `EVENTS`. It has to be the
+   IoT stream here: the alert subject is under `tenant.*.iot.>`, and §4's
+   no-overlap rule means `EVENTS` cannot capture it.
+
+2. **A projection does not require the platform envelope.** Every projection so
+   far consumed `kernel.events.envelope`; the gateway sends the IoT event body
+   with conflux's own alert nested at `payload.alert`. The projector never cared —
+   a column declares a dotted path into whatever was decoded. It is a bus→table
+   mapper, not an envelope parser.
+
+3. **The projector's tenant map had never been exercised.** Access events carry a
+   real uuid, so `VE_PROJECTOR_TENANT_MAP` being empty had never mattered. The
+   gateway publishes the literal key `default` (§10), so alerts would have landed
+   under a synthetic tenant the console cannot see — while the SAME gateway's
+   readings landed correctly, because the reading-writer's map IS set. Two stores
+   disagreeing about who owns one gateway's data. `ProjectorConfig` now falls back
+   to `VE_READINGS_TENANT_MAP` / `VE_READINGS_DEFAULT_TENANT_ID` when its own are
+   unset; both services already share the resolver's UUIDv5 namespace for exactly
+   this reason. `VE_PROJECTOR_TENANT_MAP` still wins when it is set.
+
+### What the alert wire does NOT carry, and what each absence costs
+
+* **No device category.** `payload.alert` has `src.{proto,conn,dev,addr}` and
+  nothing about what the device IS. The READING payload gained
+  `device_category`/`device_type` in Phase D (§12) and the alert payload did not,
+  even though `raiseAlert` in `edge/internal/engine/engine.go` already builds a
+  `model.Origin` that carries both. So an alert can be grouped by device,
+  connection, point address and protocol — never by `energy` vs `hvac`. **The fix
+  is the same four lines Phase D used**: add `device_id`, `device_tag`,
+  `device_category`, `device_type` as `omitempty` fields on `alertPayload` in
+  `edge/internal/publish/nats.go`, fed from the `Origin` already passed to
+  `PublishAlert`. Until then the console's queue is a fault queue, and is
+  deliberately not labelled "cross-domain".
+
+* **No acknowledgement.** `alert.acked` is on the wire and is ALWAYS `false`: an
+  alert is published the instant it is raised, and `AckAlertScoped` /
+  `AckAllAlertsScoped` mutate conflux's SQLite and publish nothing. **MTTA is
+  therefore not computable from this feed**, and neither is an open/closed split
+  or a "time to first response". The column is not stored, precisely so that
+  nobody derives one of those from a field that cannot change. An ack event on the
+  bus would make all of them real; nothing else will.
+
+* **No point id.** `src.addr` (`aeonhwj/B2_Main Incomer/CAvg_A`) is the only link
+  from an alert to a series, and it is a topic path, not a `point_id`. Joining
+  alerts to readings is therefore string matching, which is why nothing here does
+  it.
+
+### The read side
+
+`GET /api/v1/bi/alerts?hours=&severity=&limit=` on the reading-writer — the ONE
+read path over this store (§14) — serves the fault QUEUE from the raw table over a
+bounded window, because the queue needs each alert's own message and the hourly
+rollup deliberately does not carry it (the message quotes the measured value, so
+it is unique per alert; grouping by it would make the rollup a copy of the fact
+table). The wider question is a chart, and the registered `iot_alerts` DATASET
+answers it from the rollup through `/bi/query`.
+
+The endpoint answers `available: false` with a reason rather than raising when
+`iot_alerts` does not exist. A projection is data and can legitimately be disabled;
+"nothing is collecting faults" and "there are no faults" are opposite facts and
+must not render as the same empty list.

@@ -38,8 +38,13 @@ import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 
 import ActivityChart from "./components/ActivityChart";
+import FaultQueue from "./components/FaultQueue";
 import { bi } from "./api";
 import { categoryMeta, deviceTypeLabel } from "./constants";
+
+// The fault window. 24 hours matches the ingest chart beside it; the server caps
+// this endpoint at 48 because it reads the raw alert table.
+const ALERT_HOURS = 24;
 
 function Metric({ label, value, sub, tone = "text-nb-ink" }: any) {
   return (
@@ -139,6 +144,13 @@ export default function Portfolio() {
     queryFn: () => bi.activity(24),
     refetchInterval: 60_000,
   });
+  // The fault queue. Same 24-hour window as the ingest chart, so the two panels
+  // answer about the same stretch of time rather than quietly disagreeing.
+  const alertsQ = useQuery<any>({
+    queryKey: ["bi-alerts", ALERT_HOURS],
+    queryFn: () => bi.alerts({ hours: ALERT_HOURS, limit: 50 }),
+    refetchInterval: 30_000,
+  });
 
   const s = summaryQ.data;
   const err = summaryQ.error ? apiError(summaryQ.error, "Could not load the reading store") : null;
@@ -187,6 +199,15 @@ export default function Portfolio() {
                   sub="from readings_1h"
                 />
               </div>
+
+              <SectionCard>
+                <SectionHead
+                  icon="heroicons:bell-alert"
+                  title={`Live queue \u2014 faults raised in the last ${ALERT_HOURS} hours`}
+                  desc="Alerts the gateway itself raised, projected onto the reporting store. Severity, type, device and wording are the gateway's; nothing here is inferred. It is deliberately NOT labelled cross-domain: an alert carries no device category, so it cannot be attributed to energy or HVAC without inventing the attribution."
+                />
+                <FaultQueue query={alertsQ} hours={ALERT_HOURS} />
+              </SectionCard>
 
               <SectionCard>
                 <SectionHead

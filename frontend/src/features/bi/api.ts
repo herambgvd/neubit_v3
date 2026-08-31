@@ -64,6 +64,18 @@ export const bi = {
 
   activity: (hours = 24) => unwrap(api.get(`${BI}/activity${qs({ hours })}`)),
 
+  // The FAULT QUEUE — alerts the gateway raised, projected into the reporting
+  // store by the reporting-projector and read back here. Bounded to 48 hours by
+  // the server because it reads RAW: the queue needs each alert's own message,
+  // and the hourly rollup deliberately does not carry it (the message is unique
+  // per alert, so grouping by it would make the rollup a copy of the table).
+  // A wider question is a chart, and the `iot_alerts` DATASET answers it.
+  //
+  // `available: false` means nothing is COLLECTING alerts, which is not the same
+  // fact as "no alerts" and must not render the same way.
+  alerts: ({ hours = 24, severity, limit }: any = {}) =>
+    unwrap(api.get(`${BI}/alerts${qs({ hours, severity, limit })}`)),
+
   devices: ({ category, device_type, search, limit, offset }: any = {}) => {
     const cat = categoryParam(category);
     const suffix = qs({ device_type, search, limit, offset });

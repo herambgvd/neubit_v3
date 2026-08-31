@@ -679,3 +679,124 @@ async def set_retired(
             >= RETIRE_AFTER_DAYS
         ),
     }
+
+
+# ── Faults & alerts ──────────────────────────────────────────────────────────
+#
+# `iot_alerts` is NOT part of this service's schema. It is created and written by
+# the reporting-projector from the `iot_alerts` row of `reporting_projections`
+# (builder contract §9), which is why nothing here declares it in
+# `reporting.models` and why the statements below are textual.
+#
+# Reading it from HERE, on the other hand, is exactly right: the reading-writer is
+# the ONE read path over the whole reporting store (pipeline contract §14). A
+# second query path would be the drift that rule exists to prevent.
+#
+# WHY A DEDICATED ENDPOINT WHEN THE DATASET IS CHARTABLE. The registered dataset
+# answers "how many alerts, by severity, over time" — a chart. It deliberately
+# does NOT publish `message` as a dimension, because the message carries the
+# measured value ("CAvg_A at 113.46 A — above 100 A") and is therefore unique per
+# alert; making it a dimension would force it into the hourly rollup's GROUP BY
+# and turn that rollup into a copy of the fact table. A fault QUEUE needs the
+# message, so it reads raw over a bounded window — the same trade `/bi/points`
+# makes for latest values.
+
+# The raw ceiling the `iot_alerts` dataset declares for its raw relation
+# (`max_window_minutes: 2880`). Kept identical on purpose: two surfaces over one
+# relation must not disagree about how far back raw may be asked.
+ALERTS_MAX_HOURS = 48
+
+_ALERTS_SQL = text(
+    """
+    SELECT a.ts, a.alert_id, a.severity, a.alert_type, a.device_tag,
+           a.point_addr, a.message, a.conn_slug, a.proto
+      FROM iot_alerts a
+     WHERE (CAST(:tenant AS uuid) IS NULL OR a.tenant_id = CAST(:tenant AS uuid))
+       AND a.ts >= :start AND a.ts < :end
+       AND (CAST(:severity AS text) IS NULL OR a.severity = CAST(:severity AS text))
+     ORDER BY a.ts DESC
+     LIMIT :limit
+    """
+)
+
+_ALERTS_ROLLUP_SQL = text(
+    """
+    SELECT a.severity, count(*) AS alerts, count(DISTINCT a.device_tag) AS devices,
+           max(a.ts) AS last_at
+      FROM iot_alerts a
+     WHERE (CAST(:tenant AS uuid) IS NULL OR a.tenant_id = CAST(:tenant AS uuid))
+       AND a.ts >= :start AND a.ts < :end
+     GROUP BY a.severity
+     ORDER BY alerts DESC
+    """
+)
+
+
+async def alerts(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    hours: int,
+    severity: str | None,
+    limit: int,
+) -> dict:
+    """The fault queue: every alert in a bounded window, newest first.
+
+    Returns `available: false` rather than raising when the relation does not
+    exist. That is not defensive noise — a projection is DATA, so a deployment can
+    legitimately have it disabled or not yet reloaded, and the honest answer to
+    "show me the faults" in that state is "nothing is collecting them", not a 500
+    that reads as a broken screen. The reason travels with the answer.
+    """
+    end = dt.datetime.now(dt.timezone.utc)
+    start = end - dt.timedelta(hours=hours)
+    params = {
+        "tenant": str(tenant) if tenant else None,
+        "start": start,
+        "end": end,
+        "severity": severity,
+        "limit": limit,
+    }
+    try:
+        items = _rows(await db.execute(_ALERTS_SQL, params))
+        by_sev = _rows(await db.execute(_ALERTS_ROLLUP_SQL, params))
+    except Exception as exc:  # noqa: BLE001 — narrowed below; anything else re-raises
+        if "iot_alerts" not in str(exc) or "does not exist" not in str(exc):
+            raise
+        await db.rollback()
+        return {
+            "available": False,
+            "unavailable_reason": (
+                "no alert projection is collecting into this store — the "
+                "'iot_alerts' row of reporting_projections is missing or disabled"
+            ),
+            "window_hours": hours,
+            "start": start,
+            "end": end,
+            "generated_at": end,
+            "total": 0,
+            "by_severity": [],
+            "items": [],
+        }
+
+    return {
+        "available": True,
+        "unavailable_reason": None,
+        "window_hours": hours,
+        "start": start,
+        "end": end,
+        "generated_at": end,
+        # The count over the WHOLE window, so a truncated list can say "showing
+        # 50 of 214" rather than presenting a page as the total.
+        "total": sum(int(r["alerts"]) for r in by_sev),
+        "by_severity": [
+            {
+                "severity": r["severity"],
+                "alerts": int(r["alerts"]),
+                "devices": int(r["devices"]),
+                "last_at": r["last_at"],
+            }
+            for r in by_sev
+        ],
+        "items": items,
+    }

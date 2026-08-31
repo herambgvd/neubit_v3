@@ -39,6 +39,7 @@ from . import registry
 from . import spec as widget_spec
 from .schemas import (
     ActivityBucket,
+    AlertListResponse,
     DeviceListResponse,
     PointListResponse,
     SeriesResponse,
@@ -130,6 +131,45 @@ async def activity(
     physical quantity, because nothing on the wire says what a point measures.
     """
     return [ActivityBucket(**r) for r in await q.activity(db, _tenant(scope), hours)]
+
+
+# ── Faults & alerts ─────────────────────────────────────────────────────────
+
+
+@bi_router.get(
+    "/alerts",
+    response_model=AlertListResponse,
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def alerts(
+    db: Db,
+    scope: Caller,
+    hours: Annotated[int, Query(ge=1, le=q.ALERTS_MAX_HOURS)] = 24,
+    severity: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> AlertListResponse:
+    """The fault queue — every alert the gateway raised in a bounded window.
+
+    Reads `iot_alerts`, which this service does NOT write: the reporting-projector
+    fills it from `tenant.*.iot.alert.*` (builder contract §9). Reading it here is
+    the rule, not an exception — the reading-writer is the one read path over the
+    whole reporting store, and a second one is exactly the drift that rule exists
+    to prevent.
+
+    Bounded to `ALERTS_MAX_HOURS` because this reads RAW, for the same reason
+    `/bi/points` does: the queue needs each alert's own message, and the hourly
+    rollup deliberately does not carry it. A wider question is a chart, and the
+    `iot_alerts` DATASET answers it from the rollup through `/bi/query`.
+
+    `severity` is a plain equality filter over the gateway's own vocabulary
+    (`critical` / `warning` / `info`); an unknown value returns nothing rather
+    than everything.
+    """
+    return AlertListResponse(
+        **await q.alerts(
+            db, _tenant(scope), hours=hours, severity=severity, limit=limit
+        )
+    )
 
 
 # ── Devices ──────────────────────────────────────────────────────────────────

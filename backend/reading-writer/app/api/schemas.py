@@ -175,3 +175,60 @@ class SeriesResponse(BaseModel):
     start: dt.datetime
     end: dt.datetime
     series: list[SeriesRow]
+
+
+# ── Faults & alerts ──────────────────────────────────────────────────────────
+#
+# Projected from the gateway's own alert feed by the reporting-projector; see
+# `reporting/migrations/versions/0007_iot_alerts_projection.py` for the recipe and
+# for the two facts that are on the wire and deliberately NOT here:
+#
+#   • `acked` — always false at publish time (acknowledging is a store-only
+#     mutation in the gateway that publishes nothing), so MTTA is not computable
+#     from this feed and no field pretends otherwise;
+#   • the device's CATEGORY — the alert payload carries `src.{proto,conn,dev,addr}`
+#     and nothing about what the device IS, so an alert cannot be attributed to
+#     `energy` or `hvac` without inventing it.
+
+
+class AlertRow(BaseModel):
+    """One alert exactly as the gateway raised it."""
+
+    ts: dt.datetime
+    alert_id: uuid.UUID
+    # conflux's severity vocabulary: critical | warning | info.
+    severity: str | None
+    # conflux's alert type: rule | comm_fail | range | stale | recovered.
+    alert_type: str | None
+    device_tag: str | None
+    # The source address of the point that faulted (`aeonhwj/B2_Main Incomer/CAvg_A`).
+    # There is no point_id on the alert wire, so this is the only link to a series.
+    point_addr: str | None
+    # Free text from the gateway, including the measured value. Rendered verbatim:
+    # it is the one place the number that tripped the rule is stated, and the
+    # gateway's own words are the honest ones.
+    message: str | None
+    conn_slug: str | None
+    proto: str | None
+
+
+class AlertSeverityCount(BaseModel):
+    severity: str | None
+    alerts: int
+    devices: int
+    last_at: dt.datetime | None
+
+
+class AlertListResponse(BaseModel):
+    # False when no projection is collecting alerts into this store. A screen says
+    # so rather than drawing an empty queue that looks like "no faults".
+    available: bool
+    unavailable_reason: str | None = None
+    window_hours: int
+    start: dt.datetime
+    end: dt.datetime
+    generated_at: dt.datetime
+    # Alerts in the whole window, so a truncated list can say "showing 50 of 214".
+    total: int
+    by_severity: list[AlertSeverityCount] = Field(default_factory=list)
+    items: list[AlertRow] = Field(default_factory=list)
