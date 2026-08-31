@@ -54,4 +54,34 @@ else
   alembic upgrade head
 fi
 
+# ---------------------------------------------------------------------------
+# alembic_version itself (the promised "third branch"). Alembic hardcodes
+# version_num VARCHAR(32) when IT creates the table — which is what `stamp head`
+# does on the fresh branch above, where 0020_widen_alembic_version is stamped
+# but never RUN. Our descriptive revision ids already brush that limit (0017 is
+# 29 chars), and alembic_version is not in the ORM metadata, so neither
+# create_all nor the stamped migration can fix a fresh database. Idempotently
+# widen it here on EVERY path so both branches land on VARCHAR(255).
+python - <<'PY'
+import asyncio
+
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
+
+from app.core.config import get_settings
+
+
+async def widen() -> None:
+    engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql(
+            "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"
+        )
+    await engine.dispose()
+
+
+asyncio.run(widen())
+PY
+echo "[migrate] alembic_version.version_num ensured VARCHAR(255)"
+
 alembic current
