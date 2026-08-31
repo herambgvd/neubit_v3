@@ -275,6 +275,22 @@ durable consumer can be created on it.
 `update_stream` it when the subject list has drifted, so a change to the list
 reaches a running deployment instead of being swallowed as "already exists".
 
+**Narrowing a subject list does not EVICT what is already stored.** `EVENTS` kept
+626 `tenant.default.iot.reading.*` messages across 313 subjects long after it
+stopped accepting them — the exact disk leak the narrowing existed to prevent,
+in fossil form, and it would have sat there forever because the stream is
+unbounded on purpose. Purged 2026-08-31:
+
+    nats stream purge EVENTS --subject 'tenant.default.iot.reading.>'
+
+**By SUBJECT, never a bare `nats stream purge EVENTS`.** A bare purge empties the
+stream, and `EVENTS` is where every access event, site change and lifecycle ping
+on the platform is persisted. Verified after: 0 messages remain on any `iot`
+subject, the stream went 755 → 137 messages and 410 KB → 72 KB, every other
+subject kept its count, and all 22 durable consumers survived.
+
+Whoever narrows a subject list next inherits this: check for fossils.
+
 **Sizing of `IOT_READINGS`, from measurement.** One idle 313-point Modbus/MQTT
 broker produces ~37 msg/min ≈ 53k/day ≈ 21 MB/day (envelopes are ~450 B). The
 stream is a REPLAY BUFFER, not the archive — the archive is the `readings`
