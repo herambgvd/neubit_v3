@@ -39,7 +39,7 @@
 
 import { CHART_FONT, CHART_PALETTE, chartTheme } from "../chart-theme";
 import { formatterFor } from "../number-format";
-import { ECHARTS_PROPS, ReactEChartsCore, motionOptions } from "./echarts";
+import { ECHARTS_PROPS, SafeECharts, motionOptions } from "./echarts";
 import ChartNotice from "./notice";
 import type { ChartProps, EChartsClickParams } from "./types";
 import { numericColumns } from "./types";
@@ -156,5 +156,5 @@ export default function PieChart({ data, options, onEvents }: ChartProps) {
     ],
   };
 
-  return <ReactEChartsCore {...ECHARTS_PROPS} option={option} onEvents={onEvents} />;
+  return <SafeECharts {...ECHARTS_PROPS} option={option} onEvents={onEvents} />;
 }

@@ -58,6 +58,44 @@ echarts.use([
   CanvasRenderer,
 ]);
 
+// SafeECharts — ReactEChartsCore plus a guarded teardown.
+//
+// Best-effort mitigation for the same race ChartBoundary contains (see
+// chart-boundary.tsx): before this component's subtree unmounts, close the
+// tooltip and detach its axisPointer handlers, so a hover in flight has
+// nothing left to call into a model that dispose() is about to free. Every
+// call is try/caught — teardown of a possibly-already-disposed chart must
+// never itself throw. The boundary remains the real containment; this narrows
+// the window in which it has anything to catch.
+import { Component, createRef } from "react";
+import { createElement } from "react";
+
+export class SafeECharts extends Component<any> {
+  private ref = createRef<any>();
+
+  componentWillUnmount() {
+    try {
+      const inst = this.ref.current?.getEchartsInstance?.();
+      if (inst && !inst.isDisposed?.()) {
+        inst.dispatchAction({ type: "hideTip" });
+        // Detach interaction handlers before ReactEChartsCore's own dispose
+        // runs — a mousemove between the two would otherwise still route into
+        // the tooltip/axisPointer machinery mid-teardown.
+        inst.off?.();
+        inst.getZr?.()?.off?.();
+      }
+    } catch {
+      // Teardown must never throw; the instance may already be disposed.
+    }
+  }
+
+  render() {
+    // The lib's prop types don't declare `ref`, but the class component
+    // accepts one (that is how its own docs expose getEchartsInstance).
+    return createElement(ReactEChartsCore as any, { ...this.props, ref: this.ref });
+  }
+}
+
 export { echarts, ReactEChartsCore };
 
 /** Options every chart passes to `<ReactEChartsCore>`.

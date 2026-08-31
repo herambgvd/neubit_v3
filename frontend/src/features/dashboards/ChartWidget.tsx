@@ -59,6 +59,7 @@ import { seriesBand, toChartData } from "./charts/adapt";
 // browser-only, and a dashboard with no line chart on it should not pay for one.
 // The map itself lives next to the renderers and next to `widget-types.ts`, so a
 // palette entry without a renderer is caught where both lists are visible.
+import { ChartBoundary } from "./charts/chart-boundary";
 import { CHART_COMPONENTS } from "./charts/registry";
 import type { Dataset, QueryResult, WidgetSpec } from "./spec";
 import { migrateSpec, specIssue } from "./spec";
@@ -250,12 +251,18 @@ export function WidgetBody({
             loaded fine — update the console, or change the chart type.
           </div>
         ) : hasRows ? (
-          <Chart
-            data={chart.data}
-            options={spec.options}
-            band={chart.band}
-            onEvents={drillEvents}
-          />
+          // Boundary per widget: an ECharts-internal crash (a disposed model
+          // touched by a late tooltip/animation/resize callback) is contained
+          // to THIS widget with a reload affordance, instead of taking the
+          // whole console down with the framework overlay. See chart-boundary.
+          <ChartBoundary label={spec.viz}>
+            <Chart
+              data={chart.data}
+              options={spec.options}
+              band={chart.band}
+              onEvents={drillEvents}
+            />
+          </ChartBoundary>
         ) : (
           <div className="flex h-full items-center justify-center px-4 text-center text-[11.5px] text-nb-faint">
             No readings in this window.

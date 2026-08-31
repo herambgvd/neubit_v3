@@ -29,7 +29,7 @@
 
 import { CHART_FONT, CHART_PALETTE, chartTheme } from "../chart-theme";
 import { formatterFor } from "../number-format";
-import { ECHARTS_PROPS, ReactEChartsCore, motionOptions } from "./echarts";
+import { ECHARTS_PROPS, SafeECharts, motionOptions } from "./echarts";
 import type { ChartProps } from "./types";
 import { numericColumns } from "./types";
 
@@ -142,5 +142,5 @@ export default function LineChart({ data, options, onEvents, band }: LineChartPr
     series,
   };
 
-  return <ReactEChartsCore {...ECHARTS_PROPS} option={option} onEvents={onEvents} />;
+  return <SafeECharts {...ECHARTS_PROPS} option={option} onEvents={onEvents} />;
 }
