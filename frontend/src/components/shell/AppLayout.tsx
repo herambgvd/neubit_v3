@@ -132,11 +132,15 @@ export default function AppLayout({ children }: any) {
     // Audit console — bounded pane; the entries table scrolls internally.
     pathname === "/audit" ||
     // Building Intelligence consoles. Portfolio scrolls internally (ConsoleScroll);
-    // Energy / HVAC are master-detail like the config surfaces. All three use
-    // ConsolePage, whose height math (`-my-3` bleed) assumes this bounded pane.
+    // Energy / HVAC / Water are master-detail like the config surfaces. All of
+    // them use ConsolePage, whose height math (`-my-3` bleed) assumes this
+    // bounded pane — a category console added here and NOT added to this list
+    // renders with the wrong height rather than not at all, which is the kind of
+    // breakage that gets noticed late.
     pathname === "/bi/portfolio" ||
     pathname === "/bi/energy" ||
     pathname === "/bi/hvac" ||
+    pathname === "/bi/water" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 

@@ -111,10 +111,15 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     // Configurations → Reporting & Dashboards, with its `perm`/`module` gating
     // unchanged.
     //
-    // NOT LISTED, and it should be discussed: `water` is genuinely reporting — 2
-    // devices / 10 points (a sump pump and a flow meter) — and has no tile. The
-    // Portfolio screen shows the category honestly, with "no console yet" on its card,
-    // rather than a seventh tile being added here unilaterally.
+    // WATER IS LISTED as of 2026-08-31. It was held back pending agreement, not
+    // pending data: 2 devices / 10 points (a sump pump and a flow meter) have
+    // been reporting all along, and Portfolio showed the category with "no
+    // console yet" on its card rather than hide it. The tile is the destination
+    // that caption was waiting for.
+    //
+    // This opens WATER and nothing else. IAQ, Ratings and Insights stay SOON
+    // because they have no data behind them, and a category having earned a tile
+    // is not an argument that they have.
     //
     // Gating: `bi.read` (registered in core's permission catalog under "Building
     // Intelligence" and enforced by the reading-writer) + the `analytics` module
@@ -132,6 +137,9 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           { icon: "heroicons:building-office-2", label: "Portfolio", href: "/bi/portfolio", tone: "att", perm: "bi.read", module: "analytics" },
           { icon: "heroicons:cog-8-tooth", label: "HVAC & Assets", href: "/bi/hvac", tone: "teal", perm: "bi.read", module: "analytics" },
           { icon: "heroicons:bolt", label: "Energy & Metering", href: "/bi/energy", tone: "att", perm: "bi.read", module: "analytics" },
+          // Same gating as its siblings — `bi.read` + the `analytics` module —
+          // so a caller without either sees SOON here rather than a 403 there.
+          { icon: "heroicons:beaker", label: "Water", href: "/bi/water", tone: "teal", perm: "bi.read", module: "analytics" },
           // Where the estate IS. `points.site_id / floor_id / zone_id` existed for
           // a while with nothing able to write them; this is the screen that does.
           // Gated on `bi.read` to LOOK (the worklist is a read of the estate) and

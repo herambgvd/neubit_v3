@@ -18,10 +18,16 @@
 //   • No IAQ / environment panel. There are ZERO environment points, so that tile
 //     stays SOON in the launcher rather than being filled with something else.
 //
-// The WATER category is shown even though no launcher tile owns it — ten points
-// on two devices are genuinely reporting, and hiding them would misrepresent the
-// estate. Its card has no destination, which is the honest state until a tile is
-// agreed.
+// The WATER category has a console and a tile as of 2026-08-31. It was shown
+// here before either existed — ten points on two devices are genuinely
+// reporting, and hiding them would have misrepresented the estate — with no
+// destination on its card, which was the honest state while there was nowhere to
+// go. The card is a link now, from the one `href` in constants.ts.
+//
+// The "no console yet" caption is NOT dead code. `fire` still has none and must
+// keep none: its single point has never produced a reading, so the category does
+// not appear in `points` at all, and the caption is what a category earns by
+// reporting without having a screen yet.
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";

@@ -52,8 +52,11 @@ export const CATEGORY_META: Record<string, CategoryMeta> = {
     label: "Water",
     icon: "heroicons:beaker",
     accent: "#60a5fa",
-    // No console yet — ten points, no tile in the launcher. Portfolio shows the
-    // category honestly instead of hiding it; see the note in Portfolio.tsx.
+    // A console since 2026-08-31. This one line is what flips Portfolio's card
+    // from inert, captioned "no console yet", to a link — the card was never
+    // hiding the category, it just had nowhere to send anyone. `fire` still has
+    // no href and must keep none: its one point has never produced a reading.
+    href: "/bi/water",
   },
   fire: {
     key: "fire",

@@ -25,11 +25,11 @@ const STRIP_ROUTES = new Set<any>([
   "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config",
   "/ingest", "/config/security", "/platform", "/config/video-wall",
   "/config/linkage", "/config/onvif-server", "/federation", "/storage",
-  // Building Intelligence — one modtab plus a segment across the three BUILT
-  // consoles. The unbuilt Sense/Think surfaces are deliberately absent here: the
-  // launcher already shows them as SOON, and a dead segment cell would be exactly
-  // the "fabricated destination" this feature must not ship.
-  "/bi/portfolio", "/bi/energy", "/bi/hvac",
+  // Building Intelligence — one modtab plus a segment across the BUILT consoles.
+  // The unbuilt Sense/Think surfaces are deliberately absent here: the launcher
+  // already shows them as SOON, and a dead segment cell would be exactly the
+  // "fabricated destination" this feature must not ship.
+  "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water",
 ]);
 
 export function hasConsoleStrip(pathname) {
@@ -141,6 +141,7 @@ export default function ConsoleStrip() {
               { href: "/bi/portfolio", label: "PORTFOLIO", icon: "heroicons-outline:building-office-2" },
               { href: "/bi/energy", label: "ENERGY", icon: "heroicons-outline:bolt" },
               { href: "/bi/hvac", label: "HVAC", icon: "heroicons-outline:cog-8-tooth" },
+              { href: "/bi/water", label: "WATER", icon: "heroicons-outline:beaker" },
             ].map((s) => (
               <Link key={s.href} href={s.href} className={seg(pathname === s.href)}>
                 <Icon icon={s.icon} className="text-[14px]" /> {s.label}
