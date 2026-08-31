@@ -51,6 +51,31 @@ export interface ChartData {
    *  it `undefined`, and a chart that cannot prove a column is non-additive draws
    *  it rather than refusing on a hunch. */
   aggregates?: (string | null)[];
+  /** The same query over an earlier, equal-length window — present only when the
+   *  widget asked for one, and ALIGNED index-for-index with `rows` by the server.
+   *
+   *  It is carried on `ChartData` rather than derived in a renderer for the same
+   *  reason `aggregates` is: a chart cannot work out from `{columns, rows}` alone
+   *  which of its rows is "the same thing, a week ago", and every renderer that
+   *  guessed would guess differently. NULL means what it means everywhere else —
+   *  no value, not zero — so a missing previous value draws as absent and its
+   *  change is not shown at all. */
+  comparison?: ChartComparison;
+}
+
+export interface ChartComparison {
+  /** One line for a caption: "the same window a week earlier". */
+  label: string;
+  /** Aligned to `ChartData.rows`; a row of nulls means that group had no row in
+   *  the earlier period. */
+  rows: Cell[][];
+  /** Fractional change per cell — `0.12` is +12%. NULL where the change is
+   *  undefined: either side missing, or a previous value of exactly zero. */
+  deltaPct: (number | null)[][];
+  /** The earlier window returned nothing AT ALL. Different from "no change". */
+  noData: boolean;
+  /** Groups that existed then and do not now. */
+  onlyPrevious: number;
 }
 
 /** Presentation options a widget carries. Free-form on the wire (`spec.options`)

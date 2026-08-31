@@ -155,6 +155,48 @@ def parse_request(body: dict) -> tuple[BuilderSpec, "QueryContext | None"]:
 # it existed.
 
 
+class ComparisonResult(BaseModel):
+    """The same query over an earlier, equal-length window — ALIGNED to `rows`.
+
+    `rows[i]` and `comparison.rows[i]` describe the same thing: the same bucket
+    (shifted), or the same group. Alignment is done on the server because the
+    client cannot do it correctly — a group that exists in one period and not the
+    other, or a bucket a series has no sample in, is exactly where a naive
+    position-by-position zip starts comparing two different rows and calling the
+    difference a change.
+
+    CONTRACT §4, APPLIED TO A DELTA
+    -------------------------------
+    * A group with **no row in the previous period** gets a row of NULLs, not a
+      row of zeros, and its `delta_pct` is NULL. It did not fall by 100%; there is
+      nothing to compare it with, and the two statements are different.
+    * A previous value of **exactly zero** also yields a NULL `delta_pct`. The
+      change is undefined, and "+∞%" or "+100%" would both be inventions.
+    * `no_data` says the previous window returned nothing AT ALL, so a renderer can
+      say "no data a week ago" instead of drawing a flat comparison line.
+    * `only_previous` counts groups that existed then and do not now. They are not
+      added as rows — the widget asked about THIS period — but a count of them is
+      the difference between "nothing changed" and "four devices stopped
+      reporting".
+    """
+
+    # The offset that was asked for (`previous` / `day` / `week`) and one line of
+    # English for a chart legend.
+    period: str
+    label: str
+    start: dt.datetime
+    end: dt.datetime
+    # Same column layout as `TableResult.rows`, same length, index-aligned. A
+    # dimension cell is echoed so a renderer can assert the alignment; a measure
+    # cell is the earlier period's value, or NULL.
+    rows: list[list[Any]] = Field(default_factory=list)
+    # Fractional change per cell, aligned to `rows`. NULL for a dimension column,
+    # for a missing value on either side, and for a previous value of zero.
+    delta_pct: list[list[float | None]] = Field(default_factory=list)
+    no_data: bool = False
+    only_previous: int = 0
+
+
 class TableResult(BaseModel):
     shape: Literal["table"] = "table"
     dataset: str
@@ -185,6 +227,11 @@ class TableResult(BaseModel):
     # The min→max envelope for a single series, aligned to `rows`, when the widget
     # asked for it. Measured, not inferred from the averages.
     band: list[list[float | None]] | None = None
+
+    # The same query over an earlier, equal-length window, when the widget asked
+    # for one. Absent means no comparison was requested — never that one was
+    # requested and came back empty; that case is `comparison.no_data`.
+    comparison: ComparisonResult | None = None
 
     # The statement that ran, with its binds inlined — read-only, for the
     # builder's "show me the query" panel. It is an ECHO of what the server

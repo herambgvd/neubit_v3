@@ -185,10 +185,25 @@ export interface SpecWindow {
   end?: string | null;
 }
 
+/** Ask for the same query over an earlier, EQUAL-LENGTH window.
+ *
+ *  Deliberately an offset rather than a second window: two windows a client can
+ *  set independently could compare six hours with six days and present the ratio
+ *  as a change. `previous` shifts back by the widget's own window length, so it
+ *  follows whatever range the page is showing.
+ *
+ *  Calendar offsets (a month, a year) are NOT offered — February against January
+ *  compares 28 days with 31 and most of the delta is calendar. */
+export interface SpecCompare {
+  period: "previous" | "day" | "week";
+}
+
 export interface SpecQuery {
   dataset: string;
   resolution: string;
   window: SpecWindow;
+  /** Absent = no comparison. Never a silently-implied one. */
+  compare?: SpecCompare | null;
   select: SelectItem[];
   time_series?: boolean;
   series_by?: string | null;
@@ -235,6 +250,11 @@ export interface QueryResult {
   matched: number;
   truncated: boolean;
   band: [number | null, number | null][] | null;
+  /** The same query over an earlier, equal-length window, ALIGNED row-for-row —
+   *  present only when the widget asked for it. Alignment is the server's job:
+   *  a group that exists in one period and not the other is exactly where a
+   *  naive zip starts subtracting two different things. */
+  comparison?: QueryComparison | null;
   /** What the DASHBOARD contributed to this widget, and what it declined to —
    *  a filter skipped because the widget opted out, or because its dataset has
    *  no such dimension. Reported rather than left to be inferred from a chart
@@ -244,6 +264,29 @@ export interface QueryResult {
    *  builder so a person can see exactly what will run. Nothing anywhere accepts
    *  SQL back — see the backend spec module. */
   sql: string;
+}
+
+/** The earlier period, aligned to `QueryResult.rows`.
+ *
+ *  Every NULL here is a fact, not a gap to be filled in by the renderer:
+ *   * a row of NULLs = that group had NO row in the earlier period. It did not
+ *     fall by 100%; there is nothing to compare it with;
+ *   * a NULL `delta_pct` = the change is undefined — one side missing, or a
+ *     previous value of exactly zero;
+ *   * `no_data` = the earlier window returned nothing at all, so a tile says so
+ *     rather than drawing a flat line a reader could take for a measurement;
+ *   * `only_previous` = groups that existed then and do not now. Not drawn (the
+ *     widget asked about THIS period) but counted, because it is the difference
+ *     between "nothing changed" and "four devices stopped reporting". */
+export interface QueryComparison {
+  period: string;
+  label: string;
+  start: string;
+  end: string;
+  rows: (string | number | null)[][];
+  delta_pct: (number | null)[][];
+  no_data: boolean;
+  only_previous: number;
 }
 
 // ── steering ────────────────────────────────────────────────────────────────

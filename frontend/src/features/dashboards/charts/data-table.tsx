@@ -19,8 +19,19 @@
 //   none on the wire (pipeline contract §11/§12).
 // * `max-w-[1px] truncate` on the text cells so a long device tag cannot force
 //   the table wider than its widget.
+// * **A comparison adds a Δ column per measure**, and only when the widget asked
+//   for one. The earlier value is put in the cell's title attribute rather than
+//   in a column of its own — a tile in a four-column grid cannot afford to double
+//   its columns, and the change is the thing being asked for. Where the server
+//   could not compute a change (no earlier row for that group, or a previous
+//   value of exactly zero) the cell is BLANK, not "0%" and not "—": a dash reads
+//   as "we compared and got nothing", and what actually happened is that there
+//   was nothing to compare.
+
+import { Fragment } from "react";
 
 import { formatterFor } from "../number-format";
+import { fmtDelta } from "./delta";
 import type { Cell, ChartProps } from "./types";
 
 export default function DataTable({ data, options }: ChartProps) {
@@ -32,6 +43,14 @@ export default function DataTable({ data, options }: ChartProps) {
   // (`number-format.unitNote`), because a unit here is a person's claim, never
   // something read from the data (contract §4).
   const fmt = formatterFor(options);
+
+  // Which columns get a Δ beside them: the ones that hold numbers. A dimension
+  // column has no change to show, and the server already returns NULL for its
+  // delta, so this only decides whether the column exists at all.
+  const cmp = data.comparison;
+  const deltaCols = cmp
+    ? columns.map((_, i) => i !== data.labelIndex && rows.some((r) => typeof r[i] === "number"))
+    : columns.map(() => false);
 
   function renderCell(cell: Cell): string {
     // null is NOT zero — see the header.
@@ -60,14 +79,23 @@ export default function DataTable({ data, options }: ChartProps) {
         <thead className="sticky top-0 z-10 bg-[rgba(11,18,40,.96)]">
           <tr className="text-left text-[10px] uppercase tracking-[1.2px] text-nb-faint">
             {columns.map((col, i) => (
-              <th
-                key={`${col}-${i}`}
-                className={`truncate px-2.5 py-1.5 font-semibold ${
-                  i === data.labelIndex ? "text-left" : "text-right"
-                }`}
-              >
-                {col}
-              </th>
+              <Fragment key={`${col}-${i}`}>
+                <th
+                  className={`truncate px-2.5 py-1.5 font-semibold ${
+                    i === data.labelIndex ? "text-left" : "text-right"
+                  }`}
+                >
+                  {col}
+                </th>
+                {deltaCols[i] ? (
+                  <th
+                    className="w-[62px] truncate px-2.5 py-1.5 text-right font-semibold"
+                    title={cmp ? `change versus ${cmp.label}` : undefined}
+                  >
+                    Δ
+                  </th>
+                ) : null}
+              </Fragment>
             ))}
           </tr>
         </thead>
@@ -77,16 +105,31 @@ export default function DataTable({ data, options }: ChartProps) {
               {columns.map((_, ci) => {
                 const cell = row[ci];
                 const numeric = typeof cell === "number";
+                const d = cmp?.deltaPct?.[ri]?.[ci];
+                const prev = cmp?.rows?.[ri]?.[ci];
                 return (
-                  <td
-                    key={`c-${ci}`}
-                    className={`truncate px-2.5 py-1.5 ${
-                      numeric ? "text-right font-mono text-nb-ink" : "text-nb-soft"
-                    }`}
-                    title={cell === null || cell === undefined ? "" : String(cell)}
-                  >
-                    {renderCell(cell)}
-                  </td>
+                  <Fragment key={`c-${ci}`}>
+                    <td
+                      className={`truncate px-2.5 py-1.5 ${
+                        numeric ? "text-right font-mono text-nb-ink" : "text-nb-soft"
+                      }`}
+                      title={cell === null || cell === undefined ? "" : String(cell)}
+                    >
+                      {renderCell(cell)}
+                    </td>
+                    {deltaCols[ci] ? (
+                      <td
+                        className="truncate px-2.5 py-1.5 text-right font-mono text-nb-soft"
+                        title={
+                          prev === null || prev === undefined
+                            ? `nothing to compare with in ${cmp?.label}`
+                            : `${renderCell(prev)} in ${cmp?.label}`
+                        }
+                      >
+                        {typeof d === "number" && Number.isFinite(d) ? fmtDelta(d) : ""}
+                      </td>
+                    ) : null}
+                  </Fragment>
                 );
               })}
             </tr>

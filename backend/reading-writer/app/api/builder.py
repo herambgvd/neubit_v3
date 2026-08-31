@@ -88,6 +88,59 @@ class Window(BaseModel):
         return start, end
 
 
+# ── period-over-period comparison ────────────────────────────────────────────
+#
+# "Is this week worse than last week" is the most basic analytical question there
+# is, and until now this API had no way to ask it: a widget could name ONE window
+# and that was all. Every "vs baseline" figure on a building dashboard is this
+# question, so a screen that wanted one had either to fake it or to leave it out.
+#
+# The design rule is that the two periods must be EXACTLY the same length and the
+# offset must be EXACT, because a comparison is only meaningful if the buckets
+# line up. That is why calendar offsets (a month, a year) are NOT offered:
+# February against January compares 28 days with 31 and the delta is mostly
+# calendar. When those are wanted they need bucket-aware calendar arithmetic and
+# a rule for the ragged end, and that is a bigger, separate piece of work — not a
+# `relativedelta` quietly dropped in here.
+COMPARE_OFFSET_HOURS: dict[str, float | None] = {
+    # Shift back by the widget's OWN window length. "The six hours before these
+    # six hours." The only offset that adapts to whatever window the page picks,
+    # which is what makes it the default.
+    "previous": None,
+    "day": 24.0,
+    "week": 24.0 * 7,
+}
+
+COMPARE_LABELS = {
+    "previous": "the previous period",
+    "day": "the same window a day earlier",
+    "week": "the same window a week earlier",
+}
+
+
+class Compare(BaseModel):
+    """Ask for the same query over an earlier, equal-length window.
+
+    Deliberately NOT a second free-form window. A client that could name both ends
+    of the comparison period could compare six hours with six days and present the
+    ratio as a change, and there would be nothing in the result to say it had. An
+    offset keeps the two periods the same shape by construction.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    period: Literal["previous", "day", "week"] = "previous"
+
+    def shift(self, start: dt.datetime, end: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
+        hours = COMPARE_OFFSET_HOURS[self.period]
+        delta = (end - start) if hours is None else dt.timedelta(hours=hours)
+        return start - delta, end - delta
+
+    @property
+    def label(self) -> str:
+        return COMPARE_LABELS[self.period]
+
+
 class SelectItem(BaseModel):
     """One output column: a plain dimension, or a measure under an aggregate."""
 
@@ -203,6 +256,9 @@ class BuilderQuery(BaseModel):
     # A relation key from the dataset, or "auto" to let the registry's rules pick.
     resolution: str = "auto"
     window: Window = Field(default_factory=Window)
+    # Run the same query over an earlier, equal-length window and return both.
+    # Absent means no comparison at all — never a silently-implied one.
+    compare: Compare | None = None
 
     select: list[SelectItem] = Field(default_factory=list, max_length=12)
     # When true the first output column is the time bucket and the query is
@@ -306,6 +362,15 @@ class BuilderQuery(BaseModel):
                 f"'{rel.key}' is limited to {rel.max_window_minutes} minutes "
                 f"(asked for {int(hours * 60)}); use "
                 + (", ".join(wider) if wider else "a shorter window")
+            )
+
+        if self.compare and not any(s.measure for s in self.select):
+            # A period-over-period comparison of dimensions alone has nothing to
+            # be a change IN. Refusing says so; running it would return a second
+            # table of labels and let the frontend invent a delta from them.
+            raise ValidationError(
+                "a comparison needs something to compare — add a measure, or "
+                "remove the comparison"
             )
 
         self._check_comparability(d)

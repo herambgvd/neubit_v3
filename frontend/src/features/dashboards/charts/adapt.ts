@@ -80,6 +80,19 @@ export function toChartData(result: QueryResult, spec?: WidgetSpec): ChartData {
     labelIndex: timeCol,
     resolutionReason: result.resolution_reason,
     aggregates: columnAggregates(result, spec),
+    // Passed straight through, unaligned by anything here. The server did the
+    // alignment because only the server knows which row is which group; a
+    // browser-side zip of two tables is where "vs last week" quietly starts
+    // comparing two different devices.
+    comparison: result.comparison
+      ? {
+          label: result.comparison.label,
+          rows: (result.comparison.rows || []) as Cell[][],
+          deltaPct: result.comparison.delta_pct || [],
+          noData: !!result.comparison.no_data,
+          onlyPrevious: result.comparison.only_previous || 0,
+        }
+      : undefined,
   };
 }
 

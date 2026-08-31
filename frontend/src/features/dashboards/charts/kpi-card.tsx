@@ -15,18 +15,24 @@
 //   number. Our aggregate row starts with the point NAME, so it reads the first
 //   NUMERIC column instead and uses column 0 as the label. Same intent, correct
 //   for this data.
-// * **The delta is gone.** Theirs derives a percentage change from `rows[1][0]`,
-//   i.e. it treats the second row of the result as "the previous period". That is
-//   only true if the query was written to return the two periods in that order.
-//   Our second row is simply the second POINT, so a delta computed from it would
-//   be a comparison between two different sensors presented as a trend. Deleted
-//   rather than adapted: a "▲ 12%" that means nothing is worse than no delta.
+// * **The delta is EARNED, not inferred.** Theirs derives a percentage change
+//   from `rows[1][0]` — it treats the second row of the result as "the previous
+//   period", which is only true if the query was written to return the two
+//   periods in that order. Our second row is simply the second GROUP, so a delta
+//   computed from it would compare two different sensors and present the result
+//   as a trend. That version was deleted rather than adapted.
+//   A delta appears here now only when the widget ASKED for a comparison
+//   (`query.compare`) and the server ran the same query over an earlier,
+//   equal-length window and aligned the two. Where the server could not compute
+//   a change — no earlier row for this group, or a previous value of zero — the
+//   badge is absent rather than showing 0% or −100%.
 // * **The sample count is added.** An average over three samples and an average
 //   over three hundred look identical without it, and on a feed whose devices
 //   report at different rates that difference is the thing most worth knowing.
 // * A null value prints an em dash, never a zero.
 
 import { formatterFor } from "../number-format";
+import DeltaBadge from "./delta";
 import type { ChartProps } from "./types";
 import { numericColumns } from "./types";
 
@@ -50,6 +56,13 @@ export default function KpiCard({ data, options }: ChartProps) {
   const raw = valueIdx === undefined ? null : row[valueIdx];
   const value = typeof raw === "number" ? raw : null;
 
+  // The change, when one was asked for. `rows[0]` is this tile's row, so its
+  // comparison is row 0 of the aligned matrix and the cell is the same column
+  // the value came from.
+  const cmp = data.comparison;
+  const delta =
+    cmp && valueIdx !== undefined ? (cmp.deltaPct?.[0]?.[valueIdx] ?? null) : null;
+
   const label = String(row[data.labelIndex] ?? data.columns[data.labelIndex] ?? "Value");
   // Column 1 is the device a point hangs off (see `adapt.ts`).
   const sublabel = typeof row[1] === "string" ? (row[1] as string) : null;
@@ -64,6 +77,9 @@ export default function KpiCard({ data, options }: ChartProps) {
       >
         {fmt(value)}
       </div>
+      {cmp ? (
+        <DeltaBadge value={delta} label={cmp.label} noData={cmp.noData} />
+      ) : null}
       <div className="min-w-0 max-w-full truncate text-[11.5px] text-nb-soft" title={label}>
         {label}
       </div>

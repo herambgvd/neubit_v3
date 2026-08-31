@@ -224,6 +224,11 @@ export default function QueryBuilderForm({
   const select = query.select || [];
   const filters = query.filters || [];
 
+  // A comparison needs something to BE a change in; the backend refuses a
+  // dimensions-only comparison, so the control is disabled rather than offering
+  // a request that will 400.
+  const hasMeasure = select.some((s) => !!s.measure);
+
   const patchSelect = (i: number, patch: Partial<SelectItem>) =>
     onChange({ select: select.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
 
@@ -522,6 +527,36 @@ export default function QueryBuilderForm({
             </p>
           </div>
         </div>
+      ) : null}
+
+      {/* ── period-over-period ─────────────────────────────────────────── */}
+      <Select
+        label="Compare with"
+        hint={
+          hasMeasure
+            ? "the same query over an earlier, equal-length window"
+            : "needs a measure — there is nothing for a dimension to be a change in"
+        }
+        value={query.compare?.period || ""}
+        disabled={!hasMeasure}
+        onChange={(e: any) => {
+          const period = e.target.value;
+          onChange({ compare: period ? { period: period as any } : null });
+        }}
+        options={[
+          { value: "", label: "Nothing — show this period only" },
+          { value: "previous", label: "The previous period (same length)" },
+          { value: "day", label: "The same window a day earlier" },
+          { value: "week", label: "The same window a week earlier" },
+        ]}
+      />
+      {query.compare ? (
+        <p className="-mt-1 text-[10.5px] leading-snug text-nb-faint">
+          Both periods are the same length and the offset is exact, so the buckets
+          line up. A group with no row in the earlier period shows no change at all
+          rather than a fall of 100% — and if the earlier window has nothing in it,
+          the widget says so instead of drawing a flat line.
+        </p>
       ) : null}
 
       {/* ── ordering + limit ───────────────────────────────────────────── */}

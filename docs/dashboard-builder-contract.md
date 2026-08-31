@@ -281,3 +281,64 @@ ceiling. The IoT dataset simply has no `auto` rule naming `raw`; the access
 dataset does (`{max_hours: 6, relation: "raw"}`) and correctly answers a
 six-hour question from the raw table. The behaviour is right and useful — the
 docstring is what is wrong.
+
+## 10. Period-over-period comparison (2026-08-31)
+
+The API could name ONE window and that was all, so the most basic analytical
+question there is — "is this week worse than last week" — was not expressible.
+Every "vs baseline" figure on a building dashboard is that question, so a screen
+that wanted one had to fake it or leave it out.
+
+`query.compare` is an OFFSET, not a second window:
+
+```json
+"compare": { "period": "previous" | "day" | "week" }
+```
+
+* `previous` shifts back by the widget's OWN window length, so it follows
+  whatever range the page is showing.
+* The two periods are the same length **by construction**. A client that could
+  name both ends of a comparison period could compare six hours with six days and
+  present the ratio as a change, with nothing in the result to say it had.
+* **Calendar offsets are deliberately absent.** February against January compares
+  28 days with 31 and most of the delta is calendar. Doing them properly needs
+  bucket-aware calendar arithmetic and a rule for the ragged end; that is a
+  separate piece of work, not a `relativedelta` dropped into the shift.
+
+### Alignment is the SERVER's job
+
+Both periods run through the same `_run_once` — same generator, same widening,
+same NULL semantics — and a split chart's comparison pass is pinned to the
+**primary window's series keys**. Discovering the earlier window's own top-N
+would silently answer a different question: the columns would not line up, and
+the ones that did would be the wrong pairs.
+
+Rows are then paired on the server (`execute._row_key`):
+
+* a **time bucket** keys on its ordinal position in its own window,
+  `round((t − window_start) / grain)`, so "the third hour of the period" lines up
+  across the two windows even when the offset is not a whole number of buckets.
+  Over a raw relation there is no grain, so the key is the timestamp itself;
+* a **group** keys on its dimension cells, so a group only one period has simply
+  does not match — which is the point;
+* an **ungrouped single row** keys on the empty tuple.
+
+The client is never handed two loose tables to zip together. A group present in
+one period and not the other is precisely where a position-by-position pairing
+starts subtracting two different things and calling the difference a change.
+
+### §4, applied to a delta
+
+| situation | what is returned | why not the obvious thing |
+|---|---|---|
+| group has no row in the earlier period | row of NULLs, `delta_pct` NULL | it did not fall by 100%; there is nothing to compare with |
+| earlier value is exactly 0 | `delta_pct` NULL | the change is undefined; "+100%" and "+∞%" are both inventions |
+| earlier window returned nothing at all | `comparison.no_data = true` | a flat comparison line at zero reads as a measurement |
+| group existed then, not now | counted in `only_previous`, not drawn | the widget asked about THIS period, but "four devices stopped reporting" is not "nothing changed" |
+| comparison asked for with no measure selected | 400 naming the fix | a comparison of labels has nothing to be a change in |
+
+`DeltaBadge` renders **nothing at all** for a NULL delta rather than an em dash:
+a dash still occupies the slot a number would and reads as "we measured, and it
+was nothing". The badge's colour is deliberately not semantic — up is not good
+and down is not bad (a rise in samples is neither, a rise in faults is bad), and
+nothing on this wire says which way round any measure runs.
