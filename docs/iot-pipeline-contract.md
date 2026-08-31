@@ -200,13 +200,60 @@ missing never clobbers.
 
 ## 4. JetStream configuration
 
-Two streams. They must not overlap: NATS refuses overlapping subjects between
-streams on one account, and that constraint is what forces the split below.
+Three streams. The first two must not overlap: NATS refuses overlapping subjects
+between streams on one account, and that constraint is what forces the split
+below. The third is off the tenant subject space entirely.
 
 | stream | subjects | limits |
 |---|---|---|
 | `EVENTS` | an explicit list of domains — `tenant.*.access.>`, `.core.`, `.device.`, `.erasure.`, `.fire.`, `.ingest.`, `.notify.`, `.sites.`, `.tags.`, `.tenant.`, `.vms.`, `.workflow.` | unbounded (unchanged) |
 | `IOT_READINGS` | `tenant.*.iot.>` | `max_bytes` 8 GiB, `max_age` 7 days, `max_msg_size` 1 MiB, `discard: old` |
+| `EVENTS_DLQ` | `dlq.>` | `max_age` 30 days, `max_bytes` 1 GiB, `max_msgs` -1, `discard: old` (`VE_DLQ_STREAM_*`) |
+
+### `EVENTS_DLQ` — bounded 2026-08-31, and who owns which half
+
+It was created with exactly the shape that forced the `EVENTS` narrowing —
+`max_msgs=-1, max_bytes=-1, max_age=0`, file storage. Unbounded, on disk,
+forever. Nothing had gone wrong yet only because little had been dead-lettered,
+which is luck rather than a limit.
+
+TWO SIDES create it, so bounding it was a coordination problem before it was a
+config change. The split, and it is the only one that cannot flap:
+
+* **Python owns convergence.** `kernel.events.ensure_dlq_stream` now
+  `update_stream`s an existing DLQ onto the limits above, the same way
+  `ensure_events_stream` converges the subject list. This is the side that has
+  the convergence machinery, and the platform always runs Python.
+* **Go stays create-only and tolerant.** `gokernel/events`' `ensureStream`
+  calls `AddStream` and nothing else, and its `streamExists()` swallows the
+  "stream name already in use" error that `AddStream` returns when an existing
+  stream's config differs. It therefore CANNOT overwrite the limits, and nothing
+  on the Go side had to change for them to hold here.
+
+**⚠ The Go side must never gain an `UpdateStream` for this stream.** Two
+converging sides would rewrite each other's config on every restart, which is
+the flapping the split exists to avoid.
+
+**Known gap, and it is a Go-repo change.** `ensureStream` passes NO limits, so an
+NVR booting STANDALONE — with no Python service behind it to converge — creates
+`EVENTS_DLQ` unbounded and it stays that way. The fix is a bounded
+`nats.StreamConfig` at CREATE time matching the values above; not an update call.
+
+`discard: old` is not negotiable. With `discard: new` a full DLQ makes the
+dead-letter publish FAIL, and both buses then log "message dropped" and terminate
+the message anyway — parked messages would become lost ones. A dead-letter queue
+must never become backpressure on the thing that feeds it.
+
+Sizing: the DLQ receives only from the kernel bus's terminal failures. The IoT
+feed never reaches it — the reading-writer and the projector run `max_deliver=-1`
+and have no DLQ path at all (see §18). `EVENTS` holds ~137 messages / 72 KB in
+steady state at ~530 B an envelope, so 1 GiB is on the order of two million dead
+letters: unreachable for a working system and a hard stop for a poison storm.
+AGE is the limit that will bind.
+
+**Nothing consumes `EVENTS_DLQ`.** Zero consumers, in either language. These
+limits bound the disk; they do not make a dead letter visible to anybody. A
+dead-letter view is still owed.
 
 `EVENTS` used to be `tenant.>`, which subsumed the sensor feed. It is now an
 explicit domain list, held in ONE place per language and kept identical across
@@ -1056,3 +1103,43 @@ its shape.
 * `GET /files/branding/logo_<hash>.svg` 404s on every page of the app, Portfolio
   and Placement alike. Pre-existing, unrelated, and the only failing request on
   either screen.
+
+---
+
+## 18. Poison messages on this pipeline are ACKED, not dead-lettered (2026-08-31)
+
+Found while bounding `EVENTS_DLQ` (§4) and deliberately NOT fixed here, because
+each is a behaviour change to a live consumer and none of them is a disk leak.
+Written down so the next person does not rediscover them from a data gap.
+
+**The reading-writer and the projector have no dead-letter path at all, by
+construction.** Both resolve a message that can never become a row by `ack()`ing
+it — `reading-writer/app/pipeline.py` and `projector/app/pipeline.py` — and both
+run their consumers with `max_deliver=-1`, so JetStream's own dead-letter
+trigger can never fire either. The message is counted
+(`*_malformed_by_reason{reason=…}`) and logged, and then it is gone. That is not
+silent in the sense of unlogged, but it IS unrecoverable: nothing holds the body.
+
+This is the receiving half of the loss §3 names as `bad_uuid:conn_id`, and it is
+wider than that one field. `projector/app/extract.py` can refuse a message as
+`missing:<col>`, `bad_time:<col>`, `bad_uuid:<col>`, `bad_int:`, `bad_number:`,
+`bad_bool:`, `undecodable_body` or `body_not_an_object`, and every one of those
+ends in an ack. A conflux-side fix for the `conn_id` half does not make the next
+poison message visible. Measured today: 2 alerts dropped as `bad_uuid:conn_id`
+on `tenant.default.iot.alert.aeon`, and their bodies are not anywhere.
+
+The honest fix is `term()` after a copy to `EVENTS_DLQ`, exactly what
+`kernel.events` already does for the domain bus — which is also what would make
+the DLQ's limits matter to this pipeline rather than only to the kernel bus.
+
+**Two more, on the kernel bus rather than this pipeline:**
+
+* `kernel/kernel/events.py` has no retryable / non-retryable taxonomy. Only a
+  `json.loads` failure terms early; a cross-tenant mismatch, an unknown tenant
+  and a bad UUID each burn the full five-delivery backoff budget before reaching
+  the DLQ they were always going to reach. The Go bus grew
+  `events.Unprocessable` / `Retryable` for this, so the two buses are asymmetric
+  until Python gains an equivalent.
+* `kernel/kernel/lifecycle.py`'s `subscribe_tenant_offboard` acks a RETRYABLE failure: a tenant-offboard (GDPR
+  erasure) that fails because the database is down is acked and never retried.
+  That one is a correctness bug, not an observability one.

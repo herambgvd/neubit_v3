@@ -26,6 +26,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import os
 import uuid
 from typing import Any, Awaitable, Callable
 
@@ -105,20 +106,134 @@ DLQ_STREAM = "EVENTS_DLQ"
 DLQ_SUBJECT_PREFIX = "dlq."
 
 
+def _env_int(name: str, default: int) -> int:
+    """An int from the environment, falling back rather than failing on rubbish.
+
+    The same shape as the reading-writer's `_int` (`VE_IOT_STREAM_*`), so the two
+    stream-limit knobs on this platform are configured the same way.
+    """
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        log.warning("%s=%r is not an integer — using %s", name, raw, default)
+        return default
+
+
+# ── EVENTS_DLQ's limits, and who owns them ───────────────────────────────────
+#
+# The DLQ was created with the SAME shape that forced EVENTS to be narrowed:
+# `max_msgs=-1, max_bytes=-1, max_age=0`, file storage. Unbounded, on disk,
+# forever. Nothing had gone wrong with it yet only because little had been
+# dead-lettered — which is not a limit, it is luck.
+#
+# TWO SIDES CREATE THIS STREAM, so bounding it is a coordination problem before
+# it is a config change. The Go bus in the nvr repo calls `AddStream` and nothing
+# else (`gokernel/events/events.go`, ensureStream): create-only, and its
+# `streamExists()` treats "stream name already in use" — which is exactly what
+# `AddStream` returns when an existing stream's config differs — as benign and
+# returns. So Go can create this stream but can never CHANGE it.
+#
+# The split that follows from that, and the only one that cannot flap:
+#
+#   * **Python owns convergence.** This is already where EVENTS' and
+#     IOT_READINGS' convergence lives, and the platform always runs Python.
+#     `ensure_dlq_stream` below updates an existing stream onto these limits.
+#   * **Go stays create-only and tolerant.** It never calls UpdateStream, so it
+#     cannot fight this. Nothing on the Go side needs to change for the limits
+#     to hold on this platform.
+#
+# KNOWN GAP, and it is a Go-side change this repo cannot make: `ensureStream`
+# passes NO limits, so an NVR booting STANDALONE — with no Python service to
+# converge behind it — creates EVENTS_DLQ unbounded and it stays that way. The
+# fix there is to give the DLQ its own bounded `nats.StreamConfig` at CREATE
+# time, matching the defaults below; it must NOT gain an UpdateStream call, or
+# the two sides would rewrite each other's config on every restart.
+#
+# SIZING. The DLQ receives only from this bus's terminal failures — the
+# reading-writer and the projector have `max_deliver=-1` and no DLQ path at all,
+# so the IoT feed's volume never reaches here. EVENTS itself holds ~137 messages
+# / 72 KB in steady state at ~530 B an envelope, so 1 GiB is on the order of two
+# million dead letters: a number a working system cannot reach, and a hard stop
+# for a poison-message storm that is redelivered five times and then parked.
+# AGE is the limit that will actually bind: 30 days is long enough that nobody
+# loses evidence of a failure they have not looked at yet, and short enough that
+# a forgotten DLQ is not a permanent disk leak. `max_msgs` stays -1 because two
+# limits that both bind are one more thing to reason about for no gain.
+#
+# `discard: old` is NOT negotiable. With `discard: new` a full DLQ makes the
+# dead-letter publish FAIL, and both buses then log "message dropped" and
+# terminate the message anyway — parked messages would become lost ones. A dead
+# letter queue must never become backpressure on the thing that feeds it.
+DLQ_MAX_AGE_SEC = _env_int("VE_DLQ_STREAM_MAX_AGE_SEC", 30 * 24 * 3600)
+DLQ_MAX_BYTES = _env_int("VE_DLQ_STREAM_MAX_BYTES", 1024**3)
+DLQ_MAX_MSGS = _env_int("VE_DLQ_STREAM_MAX_MSGS", -1)
+
+
 def _nak_delay(delivery: int) -> float:
     """Exponential backoff on the delivery count, capped at NAK_MAX_DELAY."""
     return min(NAK_BASE_DELAY * (2 ** max(0, delivery - 1)), NAK_MAX_DELAY)
 
 
 async def ensure_dlq_stream(js) -> None:
-    """Create EVENTS_DLQ if absent. Never raises — a service must still boot."""
+    """Create EVENTS_DLQ bounded, or converge an existing one onto the limits.
+
+    Structurally identical to :func:`ensure_events_stream`, and for the same
+    reason: `add_stream` only ever CREATES, so a stream that already exists — as
+    this one does on every deployment that has run before today — would never
+    hear about a limit change. Without the update below, bounding the DLQ would
+    be a change that reaches only brand-new installations.
+
+    Only Python converges (see the note above the limits): the Go bus creates and
+    never updates, so this cannot become two services rewriting one config on
+    every restart.
+
+    Never raises: a service must still boot when JetStream is unhappy.
+    """
+    want = dict(
+        max_age=float(DLQ_MAX_AGE_SEC),
+        max_bytes=DLQ_MAX_BYTES,
+        max_msgs=DLQ_MAX_MSGS,
+    )
     try:
-        await js.stream_info(DLQ_STREAM)
+        info = await js.stream_info(DLQ_STREAM)
     except Exception:
         try:
-            await js.add_stream(name=DLQ_STREAM, subjects=[DLQ_SUBJECT_PREFIX + ">"])
+            await js.add_stream(
+                name=DLQ_STREAM,
+                subjects=[DLQ_SUBJECT_PREFIX + ">"],
+                # `discard` is left at its default, `old`. See the note above:
+                # `new` would turn a full DLQ into a failed dead-letter publish,
+                # and both buses drop the message when that publish fails.
+                **want,
+            )
+            log.info(
+                "EVENTS_DLQ created bounded (max_age=%ss max_bytes=%s max_msgs=%s)",
+                DLQ_MAX_AGE_SEC, DLQ_MAX_BYTES, DLQ_MAX_MSGS,
+            )
         except Exception as e:  # concurrent create by another service — fine
             log.info("EVENTS_DLQ stream ensure note: %s", e)
+        return
+
+    cfg = info.config
+    drift = {
+        k: v
+        for k, v in want.items()
+        # `max_age` comes back as a float of seconds and the others as ints, so
+        # compare as floats throughout rather than trusting the types to match.
+        if float(getattr(cfg, k, 0) or 0) != float(v)
+    }
+    if not drift:
+        return
+    try:
+        for k, v in want.items():
+            setattr(cfg, k, v)
+        await js.update_stream(config=cfg)
+        log.info("EVENTS_DLQ limits converged: %s", drift)
+    except Exception as e:  # noqa: BLE001 — a bounded DLQ is not worth a failed boot
+        log.warning("EVENTS_DLQ limit update failed: %s", e)
 
 
 async def ensure_events_stream(js) -> None:
