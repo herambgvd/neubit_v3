@@ -7,18 +7,37 @@
     arranges for it to start at boot with nobody logged in, and opens the one port
     the console needs.
 
-    ══ EVERYTHING RUNS AS SYSTEM, AND THAT IS THE WHOLE DESIGN ══════════════════
+    ══ NOTHING RUNS AS SYSTEM, AND THAT IS NOT A PREFERENCE ═════════════════════
 
-    WSL distros are registered PER USER, under HKCU\...\Lxss. A distro imported by
-    the administrator who ran the installer is invisible to any other account —
-    including SYSTEM, which is the account a boot-time task runs under. Import it
-    as the installing user and the appliance works beautifully until the first
-    reboot, then never starts again with nobody logged in, which is precisely the
-    property the product is sold on.
+    This script used to import the distro, write .wslconfig and register the boot
+    task all in SYSTEM's context. WSL distros are registered PER USER under
+    HKCU\...\Lxss, a boot-time task runs as SYSTEM, and so SYSTEM had to be the
+    owner or the appliance would work beautifully until the first reboot and never
+    start again with nobody signed in.
 
-    So the import, the boot task and the .wslconfig all live in SYSTEM's context.
-    Invoke-AsSystem below does that with a throwaway scheduled task — built in, no
-    third-party tool to redistribute.
+    That design is dead. WSL refuses LocalSystem outright:
+
+        Running WSL as local system is not supported.
+        Error code: Wsl/WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED
+
+    and the fallback everyone reaches for next — a task under a normal account with
+    "run whether user is logged on or not" — fails for a second, independent reason:
+    the Store build of WSL is not reachable from session 0 at all
+    (microsoft/WSL#9271, #11280). No scheduled task of any shape can start a distro
+    with nobody signed in. Pinning an older WSL is not an answer either; the Store
+    updates it in the background and the appliance would then die silently at the
+    next reboot rather than at install time (microsoft/WSL#41394).
+
+    So the appliance runs in the INSTALLING USER'S session: the distro is imported
+    as that account, .wslconfig is that account's, and the trigger is AT LOGON
+    rather than at startup. Unattended restart becomes a Windows problem instead of
+    a WSL one, and is solved the way Docker Desktop solves it — auto-logon a
+    dedicated account.
+
+    This script deliberately does NOT configure auto-logon. It enables the built-in
+    netplwiz option and prints the two steps, because netplwiz stores the credential
+    as an LSA secret while this script would have to write cleartext into HKLM, and
+    because storing a password on a customer's machine is their decision to make.
 
     Verify this on any box with probe-system-wsl.ps1 before trusting it.
 
@@ -96,6 +115,12 @@ $RulePrefix  = 'Neubit VMS'
 $ConsolePort = 80
 $VmCreatorId = '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}'   # WSL's Hyper-V firewall VM
 
+# The account that owns the distro and runs the logon task. Elevation does not
+# change it — an administrator elevating their own session keeps the same SID and
+# the same profile, and WSL's per-user registration keys off exactly that. Read it
+# once so the import, the trigger and the messages cannot disagree.
+$OwnerAccount = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+
 function Write-Step { param([string]$Message) Write-Host "==> $Message" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$Message) Write-Host "  . $Message" -ForegroundColor DarkGray }
 function Write-Warn { param([string]$Message) Write-Host "  ! $Message" -ForegroundColor Yellow }
@@ -111,12 +136,17 @@ function Assert-Administrator {
 }
 
 <#
-Run a PowerShell script block as NT AUTHORITY\SYSTEM and return its output.
+Run a block of PowerShell in THIS session and return its output.
 
-A throwaway scheduled task, because it is built in. The alternatives all cost
-something we do not want to pay: PsExec is a third-party binary to redistribute
-and is increasingly flagged by endpoint protection, and a service wrapper is a
-whole executable to sign for the sake of a handful of one-shot commands.
+It used to run as SYSTEM through a throwaway scheduled task. It does not any more,
+and the replacement is deliberately the dullest thing that can work: this script is
+already running interactively and elevated as the account that will own the distro,
+which is precisely the context every one of these commands needs. There is nothing
+left to hand the work off to.
+
+The blocks are passed as text rather than script blocks because their callers build
+them by interpolation, and are echoed as they run — a `wsl --import` of 2.9 GB is
+several minutes of silence otherwise.
 
 Output is routed through a file rather than the task's own streams: a task has no
 stdout to inherit, and losing the child's explanation is the single most expensive
@@ -124,72 +154,38 @@ mistake the NVR made in this area — `Start-Transcript` does not capture a nati
 command's console output either, so a careful error message went to a console
 nobody was watching while the log recorded "exit code 1".
 #>
-function Invoke-AsSystem {
+function Invoke-InSession {
     param(
         [Parameter(Mandatory)][string] $Script,
-        [string] $What = 'command',
-        [int]    $TimeoutSeconds = 900
+        [string] $What = 'command'
     )
 
-    $stamp   = [guid]::NewGuid().ToString('N').Substring(0, 8)
-    $dir     = Join-Path $env:ProgramData 'Neubit\VMS\install'
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    $scriptPath = Join-Path $dir "as-system-$stamp.ps1"
-    $logPath    = Join-Path $dir "as-system-$stamp.log"
-    $donePath   = Join-Path $dir "as-system-$stamp.done"
+    $block = [scriptblock]::Create($Script)
 
-    # The wrapper writes a .done file carrying the exit code. Task Scheduler's own
-    # LastTaskResult reports whether the TASK ran, not whether the script inside it
-    # succeeded, and treating the two as the same is how a failed import is
-    # reported as a successful install.
-    $wrapper = @"
-`$ErrorActionPreference = 'Continue'
-try {
-    & {
-$Script
-    } *>&1 | Tee-Object -FilePath '$logPath'
-    `$code = 0
-} catch {
-    `$_ | Out-String | Add-Content -LiteralPath '$logPath'
-    `$code = 1
-}
-Set-Content -LiteralPath '$donePath' -Value `$code
-"@
-    Set-Content -LiteralPath $scriptPath -Value $wrapper -Encoding utf8
-
-    $taskName = "NeubitVMSInstall-$stamp"
-    $action   = New-ScheduledTaskAction -Execute 'powershell.exe' `
-                    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptPath`""
-    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-                    -ExecutionTimeLimit ([TimeSpan]::FromSeconds($TimeoutSeconds + 60))
-
+    # Relaxed for the same reason it is relaxed around every other native call in
+    # this script: in Windows PowerShell 5.1, `2>&1` on a native exe wraps each
+    # stderr line in a NativeCommandError, and under 'Stop' the first one is
+    # terminating — so wsl.exe reporting ordinary progress would abort the install.
+    # The blocks below check $LASTEXITCODE and throw on their own.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal `
-            -Settings $settings -Force | Out-Null
-        Start-ScheduledTask -TaskName $taskName
-
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        while (-not (Test-Path -LiteralPath $donePath)) {
-            if ((Get-Date) -gt $deadline) { throw "$What as SYSTEM timed out after ${TimeoutSeconds}s" }
-            Start-Sleep -Milliseconds 700
+        $out = & $block 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            Write-Host "    $line" -ForegroundColor DarkGray
+            $line
         }
-        $code = (Get-Content -LiteralPath $donePath -Raw).Trim()
-        $out  = if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath } else { @() }
-        foreach ($line in $out) { Write-Host "    $line" -ForegroundColor DarkGray }
-        if ($code -ne '0') { throw "$What as SYSTEM failed (see the lines above)" }
-        return $out
     }
-    finally {
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $scriptPath, $logPath, $donePath -Force -ErrorAction SilentlyContinue
-    }
+    catch { throw "$What failed: $($_.Exception.Message)" }
+    finally { $ErrorActionPreference = $prev }
+
+    return $out
 }
 
-<# Whether SYSTEM already has the distro. Asked as SYSTEM, because asking as the
-   installing user answers a different question — see the header. #>
+<# Whether this account already has the distro. Asked as this account, because
+   that is now the only account that can have it — see the header. #>
 function Test-DistroPresent {
-    $out = Invoke-AsSystem -What 'distro check' -TimeoutSeconds 120 -Script @'
+    $out = Invoke-InSession -What 'distro check' -Script @'
     $names = (wsl.exe --list --quiet) -replace "`0", '' -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     if ($names -contains 'neubit-vms') { 'PRESENT' } else { 'ABSENT' }
 '@
@@ -209,11 +205,11 @@ function Stop-Appliance {
         if ($existing.State -ne 'Disabled') {
             Disable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
         }
-        Write-Ok 'boot task stopped'
-    } catch { Write-Ok 'no boot task registered' }
+        Write-Ok 'logon task stopped'
+    } catch { Write-Ok 'no logon task registered' }
 
     try {
-        Invoke-AsSystem -What 'terminate distro' -TimeoutSeconds 180 -Script @'
+        Invoke-InSession -What 'terminate distro' -Script @'
     $names = (wsl.exe --list --quiet) -replace "`0", '' -split "`r?`n" | ForEach-Object { $_.Trim() }
     if ($names -contains 'neubit-vms') {
         wsl.exe -d neubit-vms -u root -- /opt/neubit/boot.sh stop
@@ -275,8 +271,9 @@ function Set-MirroredNetworking {
     # from inside the distro, http://<lan-ip>/login returned 200 against exactly
     # that.
     #
-    # .wslconfig is per-user, and the appliance's distro runs as SYSTEM, so it is
-    # SYSTEM's copy that governs it.
+    # .wslconfig is per-user, and the appliance's distro is registered to the
+    # installing account, so it is THAT account's copy that governs it. It was
+    # SYSTEM's until WSL stopped supporting LocalSystem — see the header.
     #
     # ══ AND WHY IT IS NOT ALWAYS MIRRORED ════════════════════════════════════
     #
@@ -290,8 +287,7 @@ function Set-MirroredNetworking {
     # the desktop shell are the same box, the shell asks 127.0.0.1, and NAT
     # forwards it. It defaults to true; it is pinned here so a pre-existing
     # .wslconfig that turned it off cannot take the console down.
-    $systemProfile = Join-Path $env:SystemRoot 'System32\config\systemprofile'
-    $cfg = Join-Path $systemProfile '.wslconfig'
+    $cfg = Join-Path $env:USERPROFILE '.wslconfig'
     $build = [Environment]::OSVersion.Version.Build
     $canMirror = $build -ge 22621
 
@@ -327,7 +323,7 @@ localhostForwarding=true
     }
 
     if ((Test-Path -LiteralPath $cfg) -and ((Get-Content -LiteralPath $cfg -Raw) -match $marker)) {
-        Write-Ok "networking already configured for SYSTEM ($cfg)"
+        Write-Ok "networking already configured for $OwnerAccount ($cfg)"
     } else {
         Set-Content -LiteralPath $cfg -Value $desired -Encoding ascii
         Write-Ok "networking configured ($cfg)"
@@ -383,17 +379,24 @@ function Set-FirewallRules {
     Write-Ok "allowed inbound TCP/$ConsolePort (Windows Firewall)"
 }
 
-function Register-BootTask {
-    # At startup, as SYSTEM, whether or not anyone signs in. Starting the distro is
-    # all Windows has to do — /etc/wsl.conf's `[boot] command=` runs boot.sh inside
-    # it, which starts the engine and the stack. That is why this is a task and not
-    # a service: there is no long-running Windows-side process to supervise, and a
-    # service wrapper would be an executable to write, sign and maintain for the
-    # sake of one command.
+function Register-LogonTask {
+    # AT LOGON, as the account that owns the distro — not at startup, and not as
+    # SYSTEM. See the header for why neither of those is available any more.
+    #
+    # Starting the distro is all Windows has to do: /etc/wsl.conf's `[boot] command=`
+    # runs boot.sh inside it, which starts the engine and the stack. That is why this
+    # is a task and not a service — there is no long-running Windows-side process to
+    # supervise, and a service could not launch WSL anyway.
     $action = New-ScheduledTaskAction -Execute 'wsl.exe' `
                   -Argument "-d $DistroName -u root -- /opt/neubit/boot.sh boot"
-    $trigger = New-ScheduledTaskTrigger -AtStartup
-    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+
+    # A short delay, because the trigger fires while the session is still being
+    # built. Mirrored networking follows the host's interfaces, and starting the
+    # distro before they are up costs a restart cycle for nothing.
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $OwnerAccount
+    $trigger.Delay = 'PT20S'
+
+    $principal = New-ScheduledTaskPrincipal -UserId $OwnerAccount -LogonType Interactive -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet `
                     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
                     -StartWhenAvailable `
@@ -402,8 +405,28 @@ function Register-BootTask {
 
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
         -Principal $principal -Settings $settings -Force `
-        -Description 'Starts the Neubit VMS appliance at boot. Removed by uninstall-appliance.ps1.' | Out-Null
-    Write-Ok "boot task registered as SYSTEM ($TaskName)"
+        -Description "Starts the Neubit VMS appliance when $OwnerAccount signs in. Removed by uninstall-appliance.ps1." | Out-Null
+    Write-Ok "logon task registered for $OwnerAccount ($TaskName)"
+}
+
+function Enable-AutoLogonOption {
+    # Windows 11 hides netplwiz's "Users must enter a user name and password"
+    # checkbox whenever passwordless (Hello) sign-in is on, which is the default —
+    # so the operator opens the dialog this script tells them to open and the option
+    # they were told to clear is not there. Clearing this value shows it again.
+    #
+    # It enables NOTHING on its own and stores no password. Auto-logon is still an
+    # explicit act by the operator, in a built-in dialog that puts the credential in
+    # an LSA secret rather than in the cleartext HKLM values this script would
+    # otherwise have to write.
+    $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device'
+    try {
+        if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key -Force | Out-Null }
+        Set-ItemProperty -LiteralPath $key -Name 'DevicePasswordLessBuildVersion' -Value 0 -Type DWord
+        Write-Ok 'netplwiz auto-logon option made visible (nothing enabled, no password stored)'
+    } catch {
+        Write-Warn "could not unhide the netplwiz auto-logon option: $($_.Exception.Message)"
+    }
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -521,8 +544,8 @@ $importScript = @"
     if (`$LASTEXITCODE -ne 0) { throw "wsl --import failed with `$LASTEXITCODE" }
     'imported'
 "@
-Invoke-AsSystem -Script $importScript -What 'distro import' -TimeoutSeconds 1800 | Out-Null
-Write-Ok "$DistroName imported into SYSTEM's profile"
+Invoke-InSession -Script $importScript -What 'distro import' | Out-Null
+Write-Ok "$DistroName imported for $OwnerAccount"
 
 # ── 6. configuration ─────────────────────────────────────────────────────────
 Write-Step 'Writing the appliance configuration'
@@ -633,7 +656,7 @@ $envScript = @"
     wsl.exe -d $DistroName -u root -- bash '$envShWsl' '$Version' '$bulkWsl' '$AdminEmail' '$adminPass' '$RuntimeEnv'
     if (`$LASTEXITCODE -ne 0) { throw "writing /opt/neubit/.env failed with `$LASTEXITCODE" }
 "@
-Invoke-AsSystem -Script $envScript -What 'write .env' -TimeoutSeconds 300 | Out-Null
+Invoke-InSession -Script $envScript -What 'write .env' | Out-Null
 Write-Ok "bulk storage mapped to $bulkWsl"
 Write-Ok "VE_ENV=$RuntimeEnv"
 
@@ -654,8 +677,9 @@ Sign in, change this password, then delete this file.
 }
 
 # ── 7. start at boot, and now ────────────────────────────────────────────────
-Write-Step 'Registering the boot task'
-Register-BootTask
+Write-Step 'Registering the logon task'
+Register-LogonTask
+Enable-AutoLogonOption
 Enable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
 
 Write-Step 'Starting the appliance'
@@ -692,6 +716,30 @@ if ($ready) {
     } else {
         Write-Host '    password  the one you passed as -AdminPassword'
     }
+
+    # ── the step that is not done yet ────────────────────────────────────────
+    #
+    # Said here, loudly, because everything above looks finished and is not. The
+    # appliance starts from a LOGON task — see the header for why no boot task can
+    # work — so a server that reboots to a sign-in screen serves nothing until
+    # somebody signs in. Every other note in this script describes something that
+    # already happened; this one describes work still owed.
+    Write-Host ''
+    Write-Host '  ONE STEP LEFT - without it this server does NOT come back on its own.' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host "  The appliance starts when $OwnerAccount signs in. Make Windows do that:"
+    Write-Host ''
+    Write-Host '    1. netplwiz'
+    Write-Host '    2. clear  "Users must enter a user name and password to use this computer"'
+    Write-Host "    3. choose $OwnerAccount, enter its password, OK"
+    Write-Host '    4. reboot, sign in to NOTHING, and browse to this box from another machine'
+    Write-Host ''
+    Write-Host '  Step 4 is the only proof. Everything before it works just as well on a' -ForegroundColor DarkGray
+    Write-Host '  machine that never restarts unattended.' -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host '  Lock the console afterwards if the machine is reachable by people: set a' -ForegroundColor DarkGray
+    Write-Host '  screen saver with "On resume, display logon screen". Locking keeps the' -ForegroundColor DarkGray
+    Write-Host '  session - and the appliance - running.' -ForegroundColor DarkGray
 } else {
     Write-Warn 'The console did not answer within six minutes.'
     Write-Host ''

@@ -1,34 +1,41 @@
 ﻿<#
 .SYNOPSIS
-    Verify the one assumption the whole appliance design rests on: that SYSTEM can
-    own and start a WSL2 distro, so the console comes up at boot with nobody
-    logged in.
+    Verify that this box can run the appliance: that THIS account can own and start
+    a WSL2 distro, and that the machine can be made to come back on its own after a
+    power cut.
 
 .DESCRIPTION
     Run this ELEVATED on any candidate box. It changes nothing that it does not
     undo — a throwaway distro and a throwaway scheduled task, both removed on the
     way out.
 
-    ══ WHY THIS SCRIPT EXISTS ══════════════════════════════════════════════════
+    ══ WHY THIS SCRIPT EXISTS, AND WHY IT NOW ASKS A DIFFERENT QUESTION ═════════
 
-    WSL distros are registered PER USER, under HKCU\...\Lxss. So a distro imported
-    by the administrator who ran the installer is invisible to SYSTEM, which is the
-    account a boot-time task runs under. Get that wrong and the appliance works
-    perfectly until the first reboot and then never starts again with nobody signed
-    in — which is exactly the property the product is sold on. The failure would
-    reach a customer before it reached us.
+    It used to prove that SYSTEM could own a distro, because the appliance started
+    from a boot task and WSL registers distros PER USER under HKCU\...\Lxss. That
+    question is settled and the answer is no:
 
-    install-appliance.ps1 is built for the answer "SYSTEM has its own registration,
-    so do everything as SYSTEM". This proves it on real hardware rather than
-    inferring it from documentation.
+        Running WSL as local system is not supported.
+        Error code: Wsl/WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED
 
-    The NVR's own plan records what happens otherwise, three times in one week:
-    "this is the third claim this week that read correctly and had never been
-    executed." A five-minute probe is cheaper than that.
+    Nor does the usual fallback survive contact — the Store build of WSL cannot be
+    reached from session 0 at all, so a task under a normal account with "run
+    whether user is logged on or not" fails for a second, independent reason
+    (microsoft/WSL#9271, #11280).
+
+    So the installer imports the distro as the account running it and triggers AT
+    LOGON, and unattended restart is bought with auto-logon rather than with a boot
+    task. This probe asks about that shape: can this account do the import, and can
+    this machine be set to log itself in.
+
+    The failure this exists to prevent has not changed. It would reach a customer
+    as an appliance that installs perfectly, serves the console all day, and is
+    dead after the first power cut with nobody on site to notice why.
 
 .PARAMETER Rootfs
-    A rootfs tarball to import. Optional — without one the probe still answers the
-    registration and boot-task questions using whatever distro it can see.
+    A rootfs tarball to import. The payload ships one — pass `-Rootfs .\rootfs.tar`.
+    Without it the probe cannot exercise the path the installer actually takes, and
+    says so rather than passing.
 #>
 [CmdletBinding()]
 param(
@@ -49,12 +56,13 @@ function Note { param([string]$m) Write-Host "        $m" -ForegroundColor DarkG
 $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host 'This probe must run ELEVATED — it registers a scheduled task under SYSTEM.' -ForegroundColor Red
+    Write-Host 'This probe must run ELEVATED — it reads firewall and logon policy and registers a scheduled task.' -ForegroundColor Red
     exit 2
 }
 
-# Run a script as SYSTEM and hand back what it printed. Same mechanism the
-# installer uses, so a pass here is a pass for the installer's own path.
+# Run a script as SYSTEM and hand back what it printed. The installer no longer
+# uses this; it is kept because check 3 reports what SYSTEM can and cannot do on
+# this particular box, and that is the whole explanation for the design.
 function AsSystem {
     param([Parameter(Mandatory)][string] $Script, [int] $TimeoutSeconds = 600)
 
@@ -109,69 +117,81 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 # ── 2 ────────────────────────────────────────────────────────────────────────
-Head 'SYSTEM can run wsl.exe at all'
+#
+# THE GATE. This is the exact sequence install-appliance.ps1 performs, run as the
+# same account, in the same session. Nothing below matters if this fails.
+Head 'This account can import, start and unregister a distro'
+if (-not $Rootfs) {
+    No 'no -Rootfs given, so the path the installer takes was never exercised'
+    Note 'The payload ships one:  .\probe-system-wsl.ps1 -Rootfs .\rootfs.tar'
+} elseif (-not (Test-Path -LiteralPath $Rootfs)) {
+    No "rootfs not found: $Rootfs"
+} else {
+    $dir = Join-Path $env:TEMP 'neubit-probe-distro'
+    Remove-Item -Recurse -Force -LiteralPath $dir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+    & wsl.exe --import $Probe $dir $Rootfs --version 2 2>&1 |
+        ForEach-Object { $t = ($_ -replace "`0", '').Trim(); if ($t) { Note $t } }
+    $importOk = ($LASTEXITCODE -eq 0)
+
+    $who = ''
+    if ($importOk) {
+        $who = ((& wsl.exe -d $Probe -u root -- id -un) -replace "`0", '') -join ''
+        $who = $who.Trim()
+    }
+
+    & wsl.exe --terminate $Probe 2>&1 | Out-Null
+    & wsl.exe --unregister $Probe 2>&1 | Out-Null
+    Remove-Item -Recurse -Force -LiteralPath $dir -ErrorAction SilentlyContinue
+
+    if ($importOk -and $who -eq 'root') {
+        Yes "imported a distro as $($identity.Name), ran a command in it as root, removed it"
+    } else {
+        No 'the import / start / remove cycle did not complete'
+        Note "import succeeded = $importOk    id in distro = '$who'"
+        Note 'This is the path install-appliance.ps1 takes. Do not install on this box.'
+    }
+}
+
+# ── 3 ────────────────────────────────────────────────────────────────────────
+#
+# Informational, and it is the reason the design looks the way it does. Reported
+# rather than graded: whichever way it lands, the appliance still installs as a
+# logon task.
+Head 'Why this installs as a logon task, not a boot task'
 $r = AsSystem -TimeoutSeconds 180 -Script @'
     $out = (wsl.exe --status) -replace "`0", ''
     "exit=$LASTEXITCODE"
     $out
 '@
+foreach ($l in $r.out) { $t = "$l".Trim(); if ($t) { Note $t } }
 if ($r.ok -and (($r.out -join ' ') -match 'exit=0')) {
-    Yes 'wsl.exe runs under NT AUTHORITY\SYSTEM'
+    Note 'SYSTEM can run wsl.exe on this box TODAY. The appliance still installs as a'
+    Note 'logon task deliberately — the Store updates WSL in the background and current'
+    Note 'builds refuse LocalSystem, so a boot task would die at some later reboot'
+    Note 'rather than here, where somebody is watching.'
 } else {
-    No 'SYSTEM could not run wsl.exe'
-    foreach ($l in $r.out) { Note $l }
-    Note 'The appliance cannot start at boot without this. Nothing below will help.'
-}
-
-# ── 3 ────────────────────────────────────────────────────────────────────────
-Head "SYSTEM's distro registration is separate from this account's"
-$mine = ((& wsl.exe --list --quiet) -replace "`0", '' -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join ', '
-$r = AsSystem -TimeoutSeconds 180 -Script @'
-    $names = (wsl.exe --list --quiet) -replace "`0", '' -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-    if ($names) { "SYSTEM-SEES: " + ($names -join ', ') } else { "SYSTEM-SEES: (none)" }
-'@
-$systemSees = (($r.out | Where-Object { $_ -match 'SYSTEM-SEES' }) -join '')
-Note "this account sees : $(if ($mine) { $mine } else { '(none)' })"
-Note "SYSTEM sees       : $($systemSees -replace 'SYSTEM-SEES: ', '')"
-if ($r.ok) {
-    Yes 'SYSTEM has its own distro list'
-    Note 'This is why install-appliance.ps1 imports the distro AS SYSTEM. A distro'
-    Note 'imported by the installing admin would be invisible to the boot task.'
-} else {
-    No 'could not read SYSTEM''s distro list'
+    Note 'SYSTEM cannot run wsl.exe here. Expected on current WSL, and exactly why the'
+    Note 'appliance starts from a logon task instead.'
 }
 
 # ── 4 ────────────────────────────────────────────────────────────────────────
-if ($Rootfs) {
-    Head 'SYSTEM can import, start and unregister a distro'
-    if (-not (Test-Path -LiteralPath $Rootfs)) {
-        No "rootfs not found: $Rootfs"
-    } else {
-        $dir = Join-Path $env:TEMP 'neubit-probe-distro'
-        $r = AsSystem -TimeoutSeconds 900 -Script @"
-    Remove-Item -Recurse -Force '$dir' -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path '$dir' | Out-Null
-    wsl.exe --import $Probe '$dir' '$Rootfs' --version 2
-    "import exit=`$LASTEXITCODE"
-    `$who = wsl.exe -d $Probe -u root -- id -un
-    "whoami-in-distro=`$who"
-    wsl.exe --terminate $Probe
-    wsl.exe --unregister $Probe
-    "unregister exit=`$LASTEXITCODE"
-    Remove-Item -Recurse -Force '$dir' -ErrorAction SilentlyContinue
-"@
-        $joined = ($r.out -join ' ')
-        if ($r.ok -and $joined -match 'import exit=0' -and $joined -match 'whoami-in-distro=root') {
-            Yes 'SYSTEM imported a distro, ran a command in it as root, and removed it'
-        } else {
-            No 'the SYSTEM import/start/remove cycle did not complete'
-            foreach ($l in $r.out) { Note $l }
-        }
-    }
+#
+# A logon task only survives a power cut if the machine logs itself in. On a
+# domain-joined box that is a policy question, not a local one, and finding out
+# afterwards means telling a customer their server does not restart.
+Head 'The machine can be made to sign itself in'
+$cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+if ($cs -and $cs.PartOfDomain) {
+    No "domain-joined ($($cs.Domain)) - auto-logon may be blocked by Group Policy"
+    Note 'Confirm with the customer IT before promising unattended restart. Without'
+    Note 'auto-logon the console comes back only when somebody signs in.'
 } else {
-    Head 'SYSTEM can import a distro  (skipped)'
-    Note 'Pass -Rootfs <path to a .tar> to exercise the real import path.'
-    Note 'Produce one with:  docker create --name r ubuntu:24.04; docker export r -o rootfs.tar'
+    Yes 'workgroup machine - auto-logon can be configured locally'
+    Note 'After installing: run netplwiz, clear "Users must enter a user name and'
+    Note 'password", choose the account that installed the appliance, then REBOOT to'
+    Note 'prove the console comes back on its own.'
 }
 
 # ── 5 ────────────────────────────────────────────────────────────────────────
@@ -226,7 +246,9 @@ if ($Fail -eq 0) {
     Write-Host '  real reboot with nobody signed in. Only a reboot proves that. Install,' -ForegroundColor DarkGray
     Write-Host '  reboot, sign in to NOTHING, and browse to the box from another machine.' -ForegroundColor DarkGray
 } else {
-    Write-Host '  Read the FAIL lines above before installing.' -ForegroundColor Yellow
+    Write-Host '  Read the FAIL lines above before installing.
+  Only a reboot proves the last mile: install, reboot, touch nothing, and browse
+  to this box from another machine.' -ForegroundColor Yellow
 }
 Write-Host ''
 exit $(if ($Fail -eq 0) { 0 } else { 1 })

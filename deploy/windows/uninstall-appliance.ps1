@@ -3,8 +3,12 @@
     Remove the Neubit VMS appliance from this Windows box.
 
 .DESCRIPTION
-    Undoes exactly what install-appliance.ps1 did: the boot task, the firewall
-    rules, and the WSL distro from SYSTEM's profile.
+    Undoes exactly what install-appliance.ps1 did: the logon task, the firewall
+    rules, and the WSL distro from the installing account's profile.
+
+    RUN IT AS THE ACCOUNT THAT INSTALLED IT. WSL distros are registered per user,
+    so another administrator's elevated prompt will report the distro as absent and
+    leave several GB on the disk.
 
     DATA IS KEPT BY DEFAULT. Recordings and the database are the customer's, and an
     uninstall run to fix something unrelated must not be the thing that loses a
@@ -17,7 +21,7 @@
         Windows folder and survives untouched.
       * the DATABASE lives in named volumes inside the distro's virtual disk, so
         unregistering the distro takes it with it. -KeepData therefore leaves the
-        distro in place and removes only the boot task and the firewall rules,
+        distro in place and removes only the logon task and the firewall rules,
         which is what you want before a reinstall.
 
 .PARAMETER KeepData
@@ -56,59 +60,26 @@ function Assert-Administrator {
     $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw 'This must run as Administrator: it removes a SYSTEM scheduled task, a WSL distro and firewall rules.'
+        throw 'This must run as Administrator: it removes a scheduled task, a WSL distro and firewall rules.'
     }
 }
 
-# Same throwaway-task trick as the installer, and for the same reason: the distro
-# is registered in SYSTEM's profile, so it can only be unregistered from there.
-function Invoke-AsSystem {
-    param([Parameter(Mandatory)][string] $Script, [string] $What = 'command', [int] $TimeoutSeconds = 600)
+# Runs in THIS session, as the account that owns the distro. It used to hand the
+# work to SYSTEM through a throwaway scheduled task, because that was where the
+# distro lived; WSL no longer permits LocalSystem, so the installer registers the
+# distro to the installing account and this runs there too. See the installer's
+# header for the whole story.
+function Invoke-InSession {
+    param([Parameter(Mandatory)][string] $Script, [string] $What = 'command')
 
-    $stamp      = [guid]::NewGuid().ToString('N').Substring(0, 8)
-    $dir        = Join-Path $env:ProgramData 'Neubit\VMS\install'
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    $scriptPath = Join-Path $dir "rm-system-$stamp.ps1"
-    $logPath    = Join-Path $dir "rm-system-$stamp.log"
-    $donePath   = Join-Path $dir "rm-system-$stamp.done"
-
-    $wrapper = @"
-`$ErrorActionPreference = 'Continue'
-try {
-    & {
-$Script
-    } *>&1 | Tee-Object -FilePath '$logPath'
-    `$code = 0
-} catch {
-    `$_ | Out-String | Add-Content -LiteralPath '$logPath'
-    `$code = 1
-}
-Set-Content -LiteralPath '$donePath' -Value `$code
-"@
-    Set-Content -LiteralPath $scriptPath -Value $wrapper -Encoding utf8
-
-    $taskName  = "NeubitVMSUninstall-$stamp"
-    $action    = New-ScheduledTaskAction -Execute 'powershell.exe' `
-                     -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptPath`""
-    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-
+    $block = [scriptblock]::Create($Script)
+    $prev  = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Force | Out-Null
-        Start-ScheduledTask -TaskName $taskName
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        while (-not (Test-Path -LiteralPath $donePath)) {
-            if ((Get-Date) -gt $deadline) { throw "$What as SYSTEM timed out" }
-            Start-Sleep -Milliseconds 700
-        }
-        foreach ($line in (Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue)) {
-            Write-Host "    $line" -ForegroundColor DarkGray
-        }
-        if ((Get-Content -LiteralPath $donePath -Raw).Trim() -ne '0') { throw "$What as SYSTEM failed" }
+        & $block 2>&1 | ForEach-Object { Write-Host "    $($_.ToString())" -ForegroundColor DarkGray }
     }
-    finally {
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $scriptPath, $logPath, $donePath -Force -ErrorAction SilentlyContinue
-    }
+    catch { throw "$What failed: $($_.Exception.Message)" }
+    finally { $ErrorActionPreference = $prev }
 }
 
 Assert-Administrator
@@ -123,11 +94,11 @@ Write-Step 'Stopping the appliance'
 try {
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
-    Write-Ok 'boot task removed'
-} catch { Write-Ok 'no boot task registered' }
+    Write-Ok 'logon task removed'
+} catch { Write-Ok 'no logon task registered' }
 
 try {
-    Invoke-AsSystem -What 'stop the stack' -TimeoutSeconds 300 -Script @'
+    Invoke-InSession -What 'stop the stack' -Script @'
     $names = (wsl.exe --list --quiet) -replace "`0", '' -split "`r?`n" | ForEach-Object { $_.Trim() }
     if ($names -contains 'neubit-vms') {
         wsl.exe -d neubit-vms -u root -- /opt/neubit/boot.sh stop
@@ -151,9 +122,9 @@ try {
 # NOT the .wslconfig. Mirrored networking is machine-wide and another distro on
 # this box may now depend on it; silently reverting a global network setting on the
 # way out is worse than leaving a two-line file behind. Say so instead.
-Write-Warn ("SYSTEM's .wslconfig was left in place — mirrored networking is machine-wide and " +
+Write-Warn ("This account's .wslconfig was left in place — mirrored networking is machine-wide and " +
             "removing it could break another WSL distro. Delete " +
-            "$env:SystemRoot\System32\config\systemprofile\.wslconfig by hand if nothing else needs it.")
+            "$env:USERPROFILE\.wslconfig by hand if nothing else needs it.")
 
 # ── 3. the distro ────────────────────────────────────────────────────────────
 if ($KeepData) {
@@ -167,7 +138,7 @@ if ($KeepData) {
         if ($answer -ne 'YES') { Write-Host '  Aborted.' -ForegroundColor Yellow; exit 1 }
     }
     try {
-        Invoke-AsSystem -What 'unregister the distro' -TimeoutSeconds 900 -Script @'
+        Invoke-InSession -What 'unregister the distro' -Script @'
     $names = (wsl.exe --list --quiet) -replace "`0", '' -split "`r?`n" | ForEach-Object { $_.Trim() }
     if ($names -contains 'neubit-vms') {
         wsl.exe --unregister neubit-vms

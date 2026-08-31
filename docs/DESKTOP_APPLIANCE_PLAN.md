@@ -334,13 +334,43 @@ stack. So there is no long-running Windows-side process to supervise, which is w
 this is a scheduled task rather than a service — a service wrapper would be an
 executable to write, sign and maintain for the sake of one command.
 
-**Everything runs as SYSTEM.** WSL distros are registered per-user under
-`HKCU\...\Lxss`, so a distro imported by the administrator running the installer is
-invisible to SYSTEM — the account a boot task runs under. Get that wrong and the
-appliance works beautifully until the first reboot and then never starts again with
-nobody signed in, which is precisely the property the product is sold on. The import,
-the boot task and the `.wslconfig` therefore all live in SYSTEM's context, via a
-throwaway scheduled task (built in; no PsExec to redistribute).
+**~~Everything runs as SYSTEM.~~ Superseded 2026-08-31 — see below.** WSL distros
+are registered per-user under `HKCU\...\Lxss`, so a distro imported by the
+administrator running the installer is invisible to SYSTEM — the account a boot task
+runs under. Get that wrong and the appliance works beautifully until the first reboot
+and then never starts again with nobody signed in, which is precisely the property
+the product is sold on. The import, the boot task and the `.wslconfig` therefore all
+lived in SYSTEM's context, via a throwaway scheduled task.
+
+> **This is no longer possible, and the reasoning above is what makes the
+> correction expensive.** On the first customer machine it was ever run against
+> (Windows 11 build 26200, WSL 2.7.10.0), `probe-system-wsl.ps1` returned:
+>
+> ```
+> Running WSL as local system is not supported.
+> Error code: Wsl/WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED
+> ```
+>
+> WSL refuses LocalSystem outright. The obvious fallback — a task under an ordinary
+> account with *run whether user is logged on or not* — fails for a second and
+> independent reason: the Store build of WSL is unreachable from session 0 at all
+> ([microsoft/WSL#9271](https://github.com/microsoft/WSL/issues/9271),
+> [#11280](https://github.com/microsoft/WSL/issues/11280)). **No scheduled task of
+> any shape can start a distro with nobody signed in.** Pinning an older WSL is not
+> a third option; the Store updates it in the background and has already been
+> reported breaking auto-start that way
+> ([#41394](https://github.com/Microsoft/wsl/issues/41394)), which moves the failure
+> from install day to some later reboot on a customer site.
+>
+> **The appliance now installs as a LOGON task** owned by the installing account,
+> with unattended restart bought through auto-logon — the same bargain Docker
+> Desktop makes on Windows. That is a real concession: the box boots into a signed-in
+> session, and on a domain-joined machine Group Policy may forbid it outright, so the
+> probe now checks for that before anything is promised to a customer.
+>
+> The properly correct answer on Windows hardware is a headless Hyper-V guest, whose
+> automatic start action is a first-class feature and needs no session at all. That
+> is a different build artifact (VHDX, not a WSL tarball) and has not been costed.
 
 **One dockerd launcher, used at bake time and at run time.** P0's nastiest finding
 was an engine reporting `images=0` with 8.1 GB in `/var/lib/docker`, because a bare
@@ -735,8 +765,14 @@ whose NAT IP churn would have needed refreshing at every boot.
 
 ### Still open from P0
 
-- **Windows Service registration surviving logout and reboot** — the one item not
-  reached. Everything else in P0 is answered.
+- **~~Windows Service registration surviving logout and reboot~~ — ANSWERED THE
+  EXPENSIVE WAY, 2026-08-31.** This was the one item P0 never reached, and it was
+  the one item that mattered: it is where the design was wrong. A reboot on any
+  candidate box would have found it in ten minutes. Instead it was found by a probe
+  run on a customer's machine, after a release had been built and carried to site.
+  The lesson is not "run the probe" — the probe existed and worked. It is that an
+  unverified assumption load-bearing enough to be called *the whole design* is not
+  allowed to stay unverified while everything else is built on top of it.
 - **Redis on Windows** — deliberately deferred; it only matters for Route A.
 
 ---
@@ -746,6 +782,7 @@ whose NAT IP churn would have needed refreshing at every boot.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | WSL2 unavailable or forbidden on a customer server | Route B dead for that customer | P0 measures how common this is. Route A is the escape hatch; do not start it speculatively |
+| **WSL removes a capability the appliance depends on** | Realised 2026-08-31: LocalSystem and session 0 both withdrawn, boot task dead, install shape changed under a customer | The appliance rides a moving target that Microsoft updates in the background and does not version for us. Treat every WSL capability as rented. A headless Hyper-V guest owns its own boot and is the exit if this happens again |
 | Installer size ~5.3 GB, of which 3.7 GB is `planet.pmtiles` | Slow distribution, awkward air-gapped delivery | **Make the offline basemap an optional payload** — that alone takes the installer to ~1.6 GB. `TILES_MAXZOOM` is already an env knob, so a reduced-zoom planet file is a supported configuration, not new work |
 | Two deployment shapes drift (if Route A is ever taken) | Appliance breaks in ways dev never sees | CI must build and smoke-test the appliance on every release, not on demand |
 | Redis has no clean Windows story | Blocks Route A; a licence cost under Memurai | Decide in P0. Moving the Celery broker to JetStream would remove Redis from the estate entirely — worth costing |

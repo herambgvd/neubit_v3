@@ -1,7 +1,7 @@
 # The Neubit VMS Windows appliance
 
-One installer on a Windows server gives you three things: the VMS running as a
-supervised service, the web console on the LAN, and a desktop app that loads the
+One installer on a Windows server gives you three things: the VMS running under a
+supervised distro, the web console on the LAN, and a desktop app that loads the
 same console. This directory is the server half; [`../../desktop/`](../../desktop/)
 is the app.
 
@@ -15,25 +15,57 @@ is the app.
 ```
 Windows host
 │
-├── Scheduled task "Neubit VMS appliance"   ── SYSTEM, at startup, no login needed
-│      └── wsl -d neubit-vms -- /opt/neubit/boot.sh boot
+├── Auto-logon of the install account       ── set up by hand, netplwiz
+│      └── Scheduled task "Neubit VMS appliance"   ── AT LOGON, that account
+│             └── wsl -d neubit-vms -- /opt/neubit/boot.sh boot
 │
-└── WSL2 distro  neubit-vms                 ── imported into SYSTEM's profile
+└── WSL2 distro  neubit-vms                 ── imported into that account's profile
        │  /etc/wsl.conf  →  [boot] command=/opt/neubit/boot.sh
        ├── dockerd                          ── started by boot.sh, ONE launcher
        └── docker compose up -d             ── deploy/docker-compose.yml
                                                + docker-compose.appliance.yml
 ```
 
-Windows does one thing: start the distro at boot. Everything else is inside it,
-because that is where the product already knows how to run.
+Windows does one thing: start the distro when the account signs in. Everything else
+is inside it, because that is where the product already knows how to run.
+
+### Why a logon task and not a boot task
+
+Because there is no boot task that can work. This design was a SYSTEM-owned distro
+started at startup, which is the right shape for an appliance and is no longer
+available:
+
+```
+Running WSL as local system is not supported.
+Error code: Wsl/WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED
+```
+
+The obvious fallback dies too, for a second and independent reason: the Store build
+of WSL cannot be reached from session 0 at all, so a task under an ordinary account
+with *run whether user is logged on or not* fails as surely as one under SYSTEM
+([microsoft/WSL#9271](https://github.com/microsoft/WSL/issues/9271),
+[#11280](https://github.com/microsoft/WSL/issues/11280)). No scheduled task of any
+shape starts a distro with nobody signed in.
+
+Pinning an older WSL is not a third option. The Store updates it in the background,
+and there are already reports of exactly that breaking auto-start
+([#41394](https://github.com/Microsoft/wsl/issues/41394)) — which would take the
+appliance down at some later reboot on a customer site rather than here, in front
+of the person installing it.
+
+So unattended restart is bought where it is actually available: **auto-logon**, the
+same way Docker Desktop gets a Windows box back after a power cut. That is a
+deliberate trade, and it is the one place this design asks something of the
+customer's security posture. `probe-system-wsl.ps1` checks whether the box can even
+do it — a domain-joined machine may be forbidden by Group Policy, and that is worth
+knowing before promising a server that restarts itself.
 
 ## Files
 
 | | |
 |---|---|
 | `build-appliance.ps1` | **Build machine.** Bakes the distro tarball — engine and every release image already inside — into `dist/appliance/`. |
-| `install-appliance.ps1` | **Customer machine, elevated.** Imports the distro as SYSTEM, wires storage, opens the firewall, registers the boot task. |
+| `install-appliance.ps1` | **Customer machine, elevated.** Imports the distro as the account running it, wires storage, opens the firewall, registers the logon task. |
 | `uninstall-appliance.ps1` | Undoes it. Keeps the data unless told otherwise. |
 | `probe-system-wsl.ps1` | Verifies a candidate box *before* you install on it. See below. |
 | `appliance/wsl.conf` | Goes to `/etc/wsl.conf` in the distro. |
@@ -88,17 +120,32 @@ installer is not an option.
 
 ### Run it from a local disk
 
-Copy the folder to the machine first. The import runs **as SYSTEM** (see below),
-and SYSTEM cannot reach a mapped network drive or a UNC path authenticated as
-you — the payload has to be somewhere SYSTEM can open. A local folder, or a USB
-stick with a drive letter, is fine.
+Copy the folder to the machine first. `wsl --import` reads 2.9 GB through the
+Windows redirector when the payload sits on a share, and a dropped connection
+surfaces deep inside the import as an error that says nothing about the network. A
+local folder, or a USB stick with a drive letter, is fine.
+
+Unblock the zip **before** extracting it — Properties → Security → *Unblock*, or
+`Get-ChildItem <dir> -Recurse | Unblock-File` afterwards. Mark-of-the-Web rides on
+every extracted `.ps1` otherwise and PowerShell refuses them as unsigned, which
+reads like a corrupt download. On a stock Windows 11 the execution policy also
+blocks local scripts outright; set it for the one window rather than the machine:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+```
 
 ## Install
 
 ```powershell
-# Elevated.
+# Elevated, AS THE ACCOUNT THE SERVER WILL AUTO-LOGON.
 .\install-appliance.ps1 -DistroDir 'C:\Neubit\distro' -BulkDir 'D:\NeubitData'
 ```
+
+Which account runs it matters now: the distro is registered to it, the logon task
+triggers on it, and the uninstaller must be run as it too. Installing as a personal
+admin account and then auto-logging-on a different one gives a machine that signs
+itself in and starts nothing.
 
 ### Two paths, not one
 
@@ -148,23 +195,24 @@ It answers the questions that decide whether this design works on that hardware,
 and undoes everything it does:
 
 1. Is WSL 2 there and usable?
-2. Can **SYSTEM** run `wsl.exe`?
-3. Does SYSTEM have its **own** distro registration, separate from yours?
-4. Can SYSTEM import, start and unregister a distro?
+2. Can **this account** import, start and unregister a distro?
+3. What can SYSTEM do here — reported, not graded, because it explains the design.
+4. Can this machine be made to sign itself in?
 5. Is `networkingMode=mirrored` available (Windows 11 / Server 2022+)?
 6. Can the Hyper-V firewall be opened for WSL?
 7. Which disks are mechanical?
 
-**Question 3 is the one the whole design rests on.** WSL distros are registered
-per-user under `HKCU\...\Lxss`. A distro imported by the administrator running the
-installer is invisible to SYSTEM — the account a boot-time task runs under. Get it
-wrong and the appliance works beautifully until the first reboot, then never starts
-again with nobody signed in, which is exactly the property the product is sold on.
-So the installer does the import, the boot task and the `.wslconfig` all in SYSTEM's
-context.
+**Question 2 is the gate.** It runs the exact sequence the installer runs, as the
+same account, in the same session. If it fails, nothing else on the list matters.
 
-The probe cannot prove the last mile. **Only a reboot proves the boot task fires.**
-Install, reboot, sign in to *nothing*, and browse to the box from another machine.
+**Question 4 is the one that reaches the customer.** A logon task only survives a
+power cut if the machine logs itself in, and on a domain-joined box that is Group
+Policy's decision rather than yours. Discovering it afterwards means telling a
+customer their server does not restart.
+
+The probe cannot prove the last mile. **Only a reboot proves it.** Install,
+configure auto-logon, reboot, touch nothing, and browse to the box from another
+machine.
 
 ## Networking: two gates, and both are shut by default
 
@@ -174,8 +222,9 @@ the desktop shell on the appliance itself needs no work at all — it reaches
 
 The installer opens both gates:
 
-1. **`networkingMode=mirrored`** in *SYSTEM's* `.wslconfig`, so the distro shares
-   the host's interfaces and a socket bound `0.0.0.0` answers on the LAN address.
+1. **`networkingMode=mirrored`** in the *install account's* `.wslconfig`, so the
+   distro shares the host's interfaces and a socket bound `0.0.0.0` answers on the
+   LAN address.
 2. **A Hyper-V firewall rule.** Mirrored mode alone is not enough:
    `Get-NetFirewallHyperVVMSetting` reports `DefaultInboundAction: Block`. In the
    P0 spike the socket was bound and answering *from inside the distro* while
@@ -209,8 +258,18 @@ wsl -d neubit-vms -u root -- /opt/neubit/boot.sh status
 wsl -d neubit-vms -u root -- tail -50 /var/log/dockerd.log
 ```
 
-Run those **elevated**, or they answer about *your* WSL rather than SYSTEM's and
-report the distro as missing.
+Run those **as the account that installed it**. WSL registers distros per user, so
+any other account — including an administrator — is told the distro does not exist.
+
+### The console does not come back after a reboot
+
+Sign in and check whether it starts then. If it does, the appliance is fine and
+auto-logon is what is missing:
+
+```powershell
+netplwiz     # clear "Users must enter a user name and password"
+Get-ScheduledTask -TaskName 'Neubit VMS appliance' | Select-Object State, @{n='LastResult';e={($_ | Get-ScheduledTaskInfo).LastTaskResult}}
+```
 
 ### The failure that looks like corruption
 
