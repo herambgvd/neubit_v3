@@ -862,12 +862,46 @@ async def rating(
             # case — nobody has confirmed it is in kWh.
             unusable.append(str(pid))
 
+    # No explicit selection: fall back to the registers an operator BOUND as
+    # `energy_register` in point_roles. When this endpoint was written there was
+    # no stored fact saying which register is the supply, so the caller had to
+    # name them per request. The metric registry changed that: the role IS that
+    # fact now — asserted, provenance-carrying, and deliberately excluding twin
+    # meters and sub-boards (contract §21). An explicit `point_id` list still
+    # overrides, because a caller asking about one specific meter is asking a
+    # narrower question, not contradicting the stored fact.
+    role_default = False
+    if not chosen:
+        role_rows = (
+            (
+                await db.execute(
+                    sa_text(
+                        "SELECT point_id FROM point_roles"
+                        " WHERE role = 'energy_register'"
+                        "   AND (tenant_id = CAST(:tenant AS uuid) OR (:tenant IS NULL AND tenant_id IS NULL))"
+                    ),
+                    {"tenant": str(tenant) if tenant else None},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for pid in role_rows:
+            # Role-bound but not a candidate here = bound at another site, or
+            # unplaced. Silently using it would attribute another site's (or no
+            # site's) energy to this one, so it is simply not chosen.
+            if pid in by_id and pid not in chosen:
+                chosen.append(pid)
+        role_default = bool(chosen)
+
     blocked: list[str] = []
     if not chosen:
         blocked.append(
-            "No meter selected. Choose the kWh registers that make up this site's "
-            "incoming supply — the platform holds no fact saying which meter that "
-            "is, and guessing from a tag would be an invention."
+            "No meter selected. Bind the site's supply registers to the "
+            "`energy_register` role on the Metric Roles screen (or pass "
+            "`point_id` explicitly) — the platform stores no other fact saying "
+            "which meter is the supply, and guessing from a tag would be an "
+            "invention."
             if candidates
             else (
                 "No point at this site has a CONFIRMED kWh unit. A rating counts "
