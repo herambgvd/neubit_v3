@@ -18,13 +18,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { mapGroupLayout } from "../videoWall";
 
-export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallPreset }: any) {
+// How far ahead of a switch to hand the NEXT stop to the caller so it can be
+// mounted, hidden and already playing before anyone sees it. Capped at half the
+// dwell below, so a short dwell does not leave both stops streaming most of the
+// time — the overlap is what this costs, and it must stay bounded.
+const PREWARM_LEAD_MS = 4_000;
+
+export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallPreset, prewarm }: any) {
   const [active, setActive] = useState(false);
   const [paused, setPaused] = useState(false);
   const [index, setIndex] = useState(0);
   const applyRef = useRef(applyWallPreset);
+  const prewarmRef = useRef(prewarm);
   useEffect(() => {
     applyRef.current = applyWallPreset;
+    prewarmRef.current = prewarm;
   });
 
   const seconds = Math.max(1, Number(pattern?.seconds) || 10);
@@ -110,6 +118,24 @@ export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallP
     }, seconds * 1000);
     return () => clearInterval(id);
   }, [active, paused, stops.length, seconds]);
+
+  // Hand the NEXT stop over early so the caller can mount it hidden and let it
+  // finish connecting off screen. The caller (the double-buffered PatternStage)
+  // is what turns this into a switch with no visible connecting state; the engine
+  // only decides WHEN the next stop becomes known.
+  //
+  // The lead is capped at half the dwell: the preloaded stop streams alongside the
+  // visible one until the switch, and that overlap is the whole cost of a smooth
+  // rotation. A 6s dwell gets a 3s lead, not 4s of near-permanent double load.
+  const dwellMs = seconds * 1000;
+  useEffect(() => {
+    if (!active || paused || stops.length <= 1) return undefined;
+    const nextStop = stops[(index + 1) % stops.length];
+    if (!nextStop) return undefined;
+    const lead = Math.min(PREWARM_LEAD_MS, dwellMs / 2);
+    const id = setTimeout(() => prewarmRef.current?.(nextStop), dwellMs - lead);
+    return () => clearTimeout(id);
+  }, [active, paused, index, stops, dwellMs]);
 
   return {
     active,

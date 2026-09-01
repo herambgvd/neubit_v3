@@ -126,6 +126,11 @@ function LivePlayer({
   // recorder camera stream through the node's live endpoint while reusing this
   // player's whole WHEP-first / h264-transcode / HLS-fallback engine.
   source,
+  // Hold the session until the caller knows enough to mint the RIGHT one. A wall
+  // tile does not know whether its camera is federated until the camera list has
+  // loaded; starting before then mints against the wrong control plane and the
+  // tile shows "camera not found". Defaults to true — nothing else has to care.
+  enabled = true,
   // Extra control buttons (React node) merged INTO the player's own control bar,
   // so a host (e.g. a wall tile) can add spotlight/remove next to play/zoom/fit —
   // one control cluster, not two. Rendered at the left of the bar with a divider.
@@ -134,7 +139,7 @@ function LivePlayer({
   onSnapshot,
 }: any) {
   const { hlsUrl, webrtcUrl, ready, loading: sessionLoading, error: sessionError, retry: retrySession } =
-    useLiveSession(cameraId, { profile, source });
+    useLiveSession(cameraId, { profile, source, enabled });
 
   // Keep the freshest session URLs (with the CURRENT token) in refs. The attach
   // effect keys on the token-less stream identity (streamKey) so a token-only

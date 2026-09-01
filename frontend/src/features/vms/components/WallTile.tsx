@@ -53,6 +53,11 @@ function WallTile({
   isHero = false,
   spotlight = false, // fills the whole wall → room for the PTZ overlay
   railDragging = false,
+  // True once the camera list has ANSWERED (local + federated). Until then a tile
+  // restored from storage knows its camera id but not whether that camera is
+  // federated — and guessing "local" mints against the wrong control plane, which
+  // is what showed "camera not found" on every tile after a refresh.
+  estateReady = true,
   onAssign, // (cameraId, index) — from rail drag / picker
   onAssignMany, // (cameraIds[], index) — a whole rail branch dropped here
   onSwap, // (fromIndex, index) — from tile→tile drag
@@ -222,6 +227,9 @@ function WallTile({
         cameraName={name}
         profile={profile}
         source={source}
+        // Wait for the estate list, then start once, correctly. `camera` being
+        // present is enough on its own — the answer has arrived for this tile.
+        enabled={estateReady || !!camera}
         minimal
         fit="contain"
         className="!rounded-none h-full w-full"

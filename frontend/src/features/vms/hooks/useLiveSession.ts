@@ -84,7 +84,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
       }, delay);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cameraId],
+    [cameraId, src],
   );
 
   const start = useCallback(async () => {
@@ -131,7 +131,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
       setError(apiError(e, "Could not start the live stream"));
       setLoading(false);
     }
-  }, [cameraId, profile, scheduleRenew]);
+  }, [cameraId, profile, src, scheduleRenew]);
 
   const retry = useCallback(() => {
     clearTimers();
@@ -139,6 +139,14 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
   }, [start]);
 
   // Kick off / tear down with the camera + enabled flag.
+  //
+  // `src` IS a dependency, and leaving it out was a real bug: a wall tile does not
+  // know whether its camera is federated until the camera list lands, so `source`
+  // arrives one render LATE. Without it here, the session minted against the wrong
+  // control plane (the local one, with a `fed:<node>:<cam>` id it cannot resolve)
+  // was never retried, and the tile sat on "camera not found" until something
+  // unrelated remounted it. Callers pass a memo-stable source, so this re-runs when
+  // the source genuinely changes and not on every render.
   useEffect(() => {
     if (!enabled || !cameraId) return undefined;
     disposedRef.current = false;
@@ -155,7 +163,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
       if (cur?.session_id) src.release(cur.session_id).catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraId, profile, enabled]);
+  }, [cameraId, profile, enabled, src]);
 
   return {
     session,
