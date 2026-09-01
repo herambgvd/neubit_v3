@@ -1026,10 +1026,6 @@ class BenchmarkConfigRequest(BaseModel):
     ac_category: str | None = None
 
 
-@bi_router.put(
-    "/rating/benchmark-config",
-    dependencies=[Depends(require_permission(PERM_MANAGE))],
-)
 def _withhold_band_if_frozen(meters: list[dict], bench: dict) -> dict:
     """No grade for a rating whose EVERY register is frozen.
 
@@ -1053,6 +1049,10 @@ def _withhold_band_if_frozen(meters: list[dict], bench: dict) -> dict:
     return bench
 
 
+@bi_router.put(
+    "/rating/benchmark-config",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
 async def set_benchmark_config(
     db: Db, scope: Caller, who: Who, body: BenchmarkConfigRequest
 ) -> dict:
