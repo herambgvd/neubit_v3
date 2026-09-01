@@ -167,6 +167,13 @@ trap 'kill -TERM "$child" 2>/dev/null' TERM INT
 # served 500s with MODULE_NOT_FOUND on next/swc, because /app/node_modules had
 # silently become the HOST's darwin tree.
 #
+# TRIGGER, caught in the act by this watchdog minutes after it was written: a
+# host-side `npm ci` in the bind-mounted frontend/ directory. Heavy writes from
+# the host into the shared path make Docker Desktop re-mount the share, and the
+# nested volumes do not come back with it. So it is not only Docker restarts —
+# running npm/yarn on the host while the container is up will do it. Recreate
+# afterwards, or do package work inside the container.
+#
 # A degraded-but-running container is the worst outcome: health checks pass,
 # the port answers, and every request fails. So watch the same device-id
 # invariant while running and EXIT when it breaks — an exited container with

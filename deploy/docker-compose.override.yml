@@ -138,6 +138,13 @@ services:
       #
       # To check: `docker exec <c> cat /proc/mounts | grep /app` must show
       # /app/.next and /app/node_modules on their own devices, not just /app.
+      #
+      # It can also break MID-RUN (no restart, entrypoint never re-runs), so
+      # the entrypoint watches the same invariant every 20s and stops the dev
+      # server when it breaks. Known trigger besides a Docker Desktop restart:
+      # a host-side `npm ci`/`npm install` in the bind-mounted frontend/ —
+      # heavy host writes make Docker re-mount the share and the nested volumes
+      # do not return. Do package work in the container, or recreate after.
 
   admin-frontend:
     build:
