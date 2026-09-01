@@ -258,7 +258,7 @@ Invoke-Checked -Exe 'wsl' -Arguments @('--import', $BuildDistro, $DistroDir, $Ro
 try {
     Write-Step 'Installing the container engine into the distro'
     $prep = Join-Path $Work 'prep.sh'
-    @'
+    $prepScript = @'
 #!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -276,7 +276,14 @@ rm -rf /var/lib/apt/lists/*
 mkdir -p /opt/neubit
 dockerd --version
 docker compose version
-'@ -replace "`r`n", "`n" | Set-Content -LiteralPath $prep -Encoding utf8 -NoNewline
+'@ -replace "`r`n", "`n"
+    # NOT Set-Content -Encoding utf8. In PowerShell 5.1 that writes a BOM, bash reads
+    # the BOM as part of the first token, and the first line of every script staged
+    # this way died as "﻿set: command not found" — silently, because the line that
+    # failed was the `set -euo pipefail` that would have aborted on it. Both bake
+    # scripts have therefore been running with no error trapping at all. WriteAllText
+    # with a plain UTF8Encoding($false) writes the bytes bash expects.
+    [IO.File]::WriteAllText($prep, $prepScript, (New-Object Text.UTF8Encoding($false)))
     $prepWsl = '/mnt/' + $prep.Substring(0,1).ToLower() + ($prep.Substring(2) -replace '\\','/')
     Invoke-Checked -Exe 'wsl' -What 'engine install' -Arguments @(
         '-d', $BuildDistro, '-u', 'root', '--', 'bash', $prepWsl
@@ -315,7 +322,8 @@ chmod +x /opt/neubit/boot.sh /opt/neubit/migrate.sh
 ls -la /opt/neubit /opt/gateway
 "@ -replace "`r`n", "`n"
     $stageFile = Join-Path $Work 'stage.sh'
-    Set-Content -LiteralPath $stageFile -Value $stage -Encoding utf8 -NoNewline
+    # See the note on $prep above: -Encoding utf8 writes a BOM that bash chokes on.
+    [IO.File]::WriteAllText($stageFile, $stage, (New-Object Text.UTF8Encoding($false)))
     $stageWsl = '/mnt/' + $stageFile.Substring(0,1).ToLower() + ($stageFile.Substring(2) -replace '\\','/')
     Invoke-Checked -Exe 'wsl' -What 'stage /opt/neubit' -Arguments @(
         '-d', $BuildDistro, '-u', 'root', '--', 'bash', $stageWsl
@@ -395,7 +403,12 @@ finally {
 
 # ── 4. the rest of the payload ───────────────────────────────────────────────
 Write-Step 'Staging the install scripts'
-foreach ($f in @('install-appliance.ps1', 'uninstall-appliance.ps1', 'probe-system-wsl.ps1', 'README.md')) {
+# backup/restore ride along because the database they protect lives INSIDE the
+# distro this payload replaces. An operator who has the new payload but not these
+# two has no way to carry their tenants, users and recorders across the upgrade —
+# and would only discover that after the old distro was already unregistered.
+foreach ($f in @('install-appliance.ps1', 'uninstall-appliance.ps1', 'probe-system-wsl.ps1',
+                 'backup-appliance-db.ps1', 'restore-appliance-db.ps1', 'README.md')) {
     Copy-Item -LiteralPath (Join-Path $WindowsDir $f) -Destination $OutDir -Force
     Write-Ok $f
 }

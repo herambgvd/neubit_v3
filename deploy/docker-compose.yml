@@ -75,11 +75,21 @@ services:
       # Two things must be true before a dependant may connect, so check both:
       #   1. the REAL server is listening on TCP. The init server runs with
       #      listen_addresses='' , so -h forces a genuine answer.
-      #   2. init-service-dbs.sh has finished. neubit_nvr is the last database it
-      #      creates, so its existence is the completion marker.
+      #   2. init-service-dbs.sh has finished. The LAST database it creates is the
+      #      completion marker.
+      #
+      #      This marker was `neubit_nvr` until 2026-09-01, when that database was
+      #      deliberately dropped from init-service-dbs.sh (the NVR owns its own
+      #      postgres now). The healthcheck was not updated with it, so on a FRESH
+      #      volume the marker never appeared, postgres stayed `unhealthy` forever,
+      #      and every service gated on `service_healthy` never started — six
+      #      containers up and a console that never answered. Invisible on any
+      #      EXISTING volume, which is exactly why it reached a customer install.
+      #
+      #      KEEP THIS IN STEP WITH THE END OF THE LIST IN init-service-dbs.sh.
       test:
         - CMD-SHELL
-        - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" && psql -U "$$POSTGRES_USER" -d neubit_nvr -c 'SELECT 1' >/dev/null 2>&1
+        - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" && psql -U "$$POSTGRES_USER" -d neubit_dashboards -c 'SELECT 1' >/dev/null 2>&1
       interval: 5s
       timeout: 5s
       retries: 30
@@ -252,9 +262,13 @@ services:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
-    # 0001_ingest is a metadata baseline — see deploy/migrate.sh.
+    # 0001_dashboards is THIS service's baseline — see deploy/migrate.sh. It read
+    # 0001_ingest until 2026-09-01: a copy-paste from another service, which
+    # alembic answered with `Can't locate revision identified by '0001_ingest'`,
+    # restart-looping the container forever. A service's baseline is the revision
+    # in ITS OWN migrations/versions carrying `down_revision = None`.
     command: >
-      bash -c "/usr/local/bin/neubit-migrate 0001_ingest &&
+      bash -c "/usr/local/bin/neubit-migrate 0001_dashboards &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes:
       - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
