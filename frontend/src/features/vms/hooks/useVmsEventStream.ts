@@ -27,8 +27,6 @@ export function useVmsEventStream({ cameraId = null, enabled = true, max = MAX_E
       return;
     }
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
-    const token = tokens.access;
-    if (!token) return;
 
     let es = null;
     let closed = false;
@@ -37,6 +35,13 @@ export function useVmsEventStream({ cameraId = null, enabled = true, max = MAX_E
 
     const connect = () => {
       if (closed) return;
+      // Read the token at CONNECT time, not from the mount-time closure: when
+      // the access token expires the server drops the stream, and this retry
+      // must reconnect with the token lib/api.ts stored after its 401→refresh —
+      // a captured 12h-old token would just 401 forever. Same fix as
+      // useVmsPopups; the five hooks share this shape.
+      const token = tokens.access;
+      if (!token) return;
       let url =
         `${api.defaults.baseURL}/realtime/vms-events` + `?token=${encodeURIComponent(token)}`;
       if (cameraId) url += `&camera_id=${encodeURIComponent(cameraId)}`;
