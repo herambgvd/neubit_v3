@@ -32,6 +32,34 @@
 set -e
 cd /app
 
+# ── MOUNT-SHADOW GUARD ───────────────────────────────────────────────────────
+# After a Docker Desktop restart (a reboot, an update, the machine sleeping),
+# this container can come back with its named volumes SHADOWED: the config
+# still lists node_modules and .next as volumes, but /proc/mounts shows only
+# the /app host bind — the gRPC-FUSE share re-mounts OVER the volumes on VM
+# boot. `docker restart` does NOT fix it; only a recreate re-attaches them.
+#
+# Running in that state is what caused every shape of this container's
+# recurring breakage: .next fills with the host's mixed build (routes 404
+# their own chunks), and — far worse — the repair below runs `npm ci` INTO
+# THE HOST'S CHECKOUT, replacing the host's darwin binaries with musl ones.
+# So: detect the shadow FIRST and refuse to start. When the volumes are
+# attached, /app/.next sits on its own device (ext4) while /app is the FUSE
+# share; identical device ids mean the volume is not there.
+mkdir -p .next
+if [ "$(stat -c %d /app)" = "$(stat -c %d /app/.next)" ]; then
+  echo "════════════════════════════════════════════════════════════════════"
+  echo "[dev-entrypoint] REFUSING TO START: the named volumes are SHADOWED."
+  echo "  /app/.next is on the same device as /app — the frontend_next and"
+  echo "  frontend_node_modules volumes did not attach (this happens after a"
+  echo "  Docker Desktop restart; a plain 'restart' will NOT fix it)."
+  echo "  Fix:  docker compose up -d --force-recreate frontend"
+  echo "  Starting anyway would fill the HOST checkout with container output"
+  echo "  and npm-ci over the host's node_modules."
+  echo "════════════════════════════════════════════════════════════════════"
+  exit 1
+fi
+
 STAMP=node_modules/.neubit-install-stamp
 reason=""
 
