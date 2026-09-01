@@ -30,7 +30,13 @@ neubit_ingest        # external webhooks / event ingestion
 neubit_workflow      # SOP / automation engine (+ its Celery worker and beat)
 neubit_access        # access control: doors, credentials, events
 neubit_vision        # VMS: cameras, recordings, exports
-neubit_nvr           # the Go recorder's own store
+  # neubit_nvr was ensured here until 2026-09-01. REMOVED: the locked
+  # single-ownership architecture gives the NVR its OWN postgres (the
+  # standalone appliance stack), and the live DSN audit showed no container on
+  # this server has ever pointed at it — an empty database re-created on every
+  # compose up was a placeholder for a deployment shape that no longer exists.
+  # If a platform-hosted recorder ever returns, add its database back here
+  # deliberately.
 neubit_reporting     # IoT reading store (TimescaleDB hypertables + rollups)
 neubit_dashboards    # dashboard + widget definitions (no readings)
 "
