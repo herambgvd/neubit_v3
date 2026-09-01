@@ -57,6 +57,7 @@ import PatternHud from "./components/PatternHud";
 import PatternFormModal from "./components/PatternFormModal";
 import SaveWallGroupModal from "./components/SaveWallGroupModal";
 import { usePatternRotation } from "./hooks/usePatternRotation";
+import { useEstateCameras } from "./hooks/useEstateCameras";
 
 const LS_LAYOUT = "neubit.vms.wall.layout";
 const LS_CELLS = "neubit.vms.wall.cells";
@@ -162,46 +163,9 @@ export default function Streaming() {
   useEffect(() => writeLS(LS_QUALITY, quality), [quality]);
 
   // ── cameras ─────────────────────────────────────────────────────────────
-  const camerasQ = useQuery<any>({
-    queryKey: ["vms-wall-cameras"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
-    refetchInterval: 20_000,
-  });
-  // Federated recorder cameras — cameras OWNED by registered NVR nodes, pulled up
-  // read-only and streamed THROUGH each node. Merged into the same wall so the
-  // camera tree shows recorders as top-level branches alongside local cameras.
-  const fedQ = useQuery<any>({
-    queryKey: ["vms-wall-federation-cameras"],
-    queryFn: () => vms.federation.cameras(),
-    refetchInterval: 30_000,
-  });
-  const cameras = useMemo(() => {
-    const local = asItems(camerasQ.data);
-    // Each federated camera gets a composite id (`fed:<node>:<cam>`) so it never
-    // collides with a local camera id; real_id + node_id drive the node-issued
-    // live source (see WallTile). Grouped under its recorder in the rail via
-    // site_id/site_name = the node.
-    const fed = (fedQ.data?.items || []).map((c) => ({
-      id: `fed:${c.node_id}:${c.id}`,
-      real_id: c.id,
-      name: c.name,
-      status: c.status,
-      federated: true,
-      // PTZ capability as the node reported it (public.ptz.capable) — drives the
-      // wall's PTZ overlay gate; commands proxy through the node (operate-through-node).
-      ptz_capable: !!(c.ptz && c.ptz.capable),
-      node_id: c.node_id,
-      node_name: c.node_name,
-      site_id: `nvr:${c.node_id}`,
-      site_name: c.node_name,
-    }));
-    return [...fed, ...local];
-  }, [camerasQ.data, fedQ.data]);
-  const cameraById = useMemo(() => {
-    const m = new Map<any, any>();
-    cameras.forEach((c) => m.set(c.id, c));
-    return m;
-  }, [cameras]);
+  // Local + federated, merged in one place — the Patterns console reads the SAME
+  // hook, so a group built here resolves to the same names there.
+  const { cameras, cameraById, localQ: camerasQ, fedQ } = useEstateCameras();
 
   const mountedIds = useMemo(
     () => new Set<any>(cells.map((c) => c.cameraId).filter(Boolean)),

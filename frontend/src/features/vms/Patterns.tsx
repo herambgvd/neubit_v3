@@ -1,35 +1,39 @@
 "use client";
 
-// VMS → Config → Patterns. Master/detail with a Patterns | Camera Groups toggle
-// (ported from neubit_v2's patterns page, rethemed to v3 tokens + the shared
-// MasterDetail / ListPanel scaffold).
+// VMS → Config → Patterns. A minimal-chrome console like every other Configurations
+// surface: ConsolePage frame + MasterDetail, with the Patterns | Camera Groups
+// segment in the GLOBAL top bar (ConsoleStrip) rather than a tab bar of its own —
+// which is what made this page read as a different product from Video Wall next door.
 //   • Patterns    = named rotating sequences of camera GROUPS (dwell seconds).
 //   • Camera Groups = a set of cameras arranged in a grid layout (the unit a
 //     pattern rotates through).
 // The detail's "Open in streaming" launches the wall in pattern-rotation mode.
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ui/kit";
-import { MasterDetail, ListPanel, EmptyDetail, TabBar } from "@/components/common";
+import { ConsolePage } from "@/components/console";
+import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
+import { useEstateCameras } from "./hooks/useEstateCameras";
 import PatternListRow from "./components/PatternListRow";
 import PatternDetail from "./components/PatternDetail";
 import PatternFormModal from "./components/PatternFormModal";
 import CameraGroupFormModal from "./components/CameraGroupFormModal";
 
-const TABS = [
-  { key: "patterns", label: "Patterns", icon: "heroicons:squares-2x2" },
-  { key: "groups", label: "Camera Groups", icon: "heroicons-outline:video-camera" },
-];
-
 export default function Patterns() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState("patterns");
+  // Patterns | Camera Groups lives in the global top bar (ConsoleStrip) now, not in
+  // a tab bar of this page's own — so the active one is read from ?view=, the same
+  // way Platform, Workflow and Building Intelligence read theirs. "patterns" is the
+  // default and owns the bare URL.
+  const view = useSearchParams().get("view");
+  const tab = view === "groups" ? "groups" : "patterns";
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<any>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -49,26 +53,20 @@ export default function Patterns() {
     queryFn: () => vms.groups.list(),
     refetchInterval: 30_000,
   });
-  const camerasQ = useQuery<any>({
-    queryKey: ["vms-patterns-cameras"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
-    staleTime: 30_000,
-  });
 
   const patterns = useMemo(() => asItems(patternsQ.data), [patternsQ.data]);
   const groups = useMemo(() => asItems(groupsQ.data), [groupsQ.data]);
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+  // Local + FEDERATED cameras, exactly as the wall sees them. This page used to
+  // read `/vms/cameras` alone; on a federated install that list is empty, so the
+  // builder had nothing to place and a saved group's detail printed the stored
+  // `fed:<node>:<cam>` id instead of the camera's name.
+  const { cameras, cameraById } = useEstateCameras();
 
   const groupById = useMemo(() => {
     const m = new Map<any, any>();
     groups.forEach((g) => m.set(g.id, g));
     return m;
   }, [groups]);
-  const cameraById = useMemo(() => {
-    const m = new Map<any, any>();
-    cameras.forEach((c) => m.set(c.id, c));
-    return m;
-  }, [cameras]);
 
   const items = isPatternTab ? patterns : groups;
   const listLoading = isPatternTab ? patternsQ.isLoading : groupsQ.isLoading;
@@ -89,13 +87,11 @@ export default function Patterns() {
     if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
   }, [selected, filtered]);
 
-  // Reset selection + search when switching tabs.
-  function switchTab(next) {
-    if (next === tab) return;
-    setTab(next);
-    setSelectedId(null);
-    setSearch("");
-  }
+  // Selection needs no reset — the other tab's id is simply not in `items`, so
+  // `selected` goes null and the auto-select above picks that tab's first row. The
+  // search term does need clearing: "lobby" typed against patterns is not a filter
+  // anyone asked to carry over to groups.
+  useEffect(() => setSearch(""), [tab]);
 
   // ── mutations (toggle active / delete) ─────────────────────────────────────
   const invalidateActive = () =>
@@ -145,14 +141,7 @@ export default function Patterns() {
   const activeCount = items.filter((i) => i.is_active !== false).length;
 
   return (
-    <div
-      className="flex h-[calc(100%+1.5rem)] min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 pt-3 pb-2 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
-      <div className="mb-4 shrink-0">
-        <TabBar tabs={TABS} active={tab} onChange={switchTab} />
-      </div>
-
+    <ConsolePage>
       <MasterDetail
         fill
         className="min-h-0 flex-1"
@@ -283,6 +272,6 @@ export default function Patterns() {
       )}
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
-    </div>
+    </ConsolePage>
   );
 }

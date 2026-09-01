@@ -66,6 +66,10 @@ export const configConsoles: NavItem[] = [
   { title: "Sites", icon: "heroicons-outline:map-pin", link: "/sites", perm: "neubit.read" },
   { title: "Video Wall", icon: "heroicons-outline:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
   { title: "Linkage", icon: "heroicons-outline:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
+  // Patterns + Camera Groups — the rotating wall sequences and the camera sets they
+  // rotate through. An operator SAVES a group from the Streaming wall, so without a
+  // way back in there is no way to rename, re-layout or delete one.
+  { title: "Patterns", icon: "heroicons-outline:rectangle-group", link: "/config/patterns", perm: "vms.config.manage", module: "vms" },
   { title: "Workflow", icon: "heroicons-outline:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
   { title: "Ingest", icon: "heroicons-outline:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
   { title: "Security", icon: "heroicons-outline:shield-exclamation", link: "/config/security", perm: "security.manage" },

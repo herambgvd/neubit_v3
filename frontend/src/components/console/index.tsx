@@ -2,12 +2,25 @@
 
 // Console primitives — the ONE definition of the minimal-chrome console look used
 // by every Configurations surface (Users & Roles, Sites, System, Security,
-// Platform, Federation).
+// Platform, Federation, Storage, Ingest, Workflow, Video Wall, Linkage, Patterns).
 //
 // These were previously hand-rolled inside Users.jsx and copy-pasted into Sites,
 // then re-invented with a different token set in Security/Platform/Federation —
 // which is exactly how the three-design-system drift happened. Every console now
 // composes from here, so a change to the look lands everywhere at once.
+//
+// A NEW CONFIG CONSOLE NEEDS THREE THINGS, and skipping any one of them is what
+// makes a page read as a different product from the console beside it:
+//   1. `<ConsolePage>` as its frame — never a hand-rolled div repeating the classes
+//      below. The margins here are not decoration: they are matched to <main>'s
+//      padding on the routes AppLayout lists as `contained`, so a page that invents
+//      its own bleed lands 12px off in both directions.
+//   2. Its route in AppLayout's `contained` set — the height math above assumes
+//      that bounded, overflow-hidden pane.
+//   3. Its route in ConsoleStrip's STRIP_ROUTES, with a branch rendering its modtab
+//      (plus its sub-view segment, if it has one). Sub-views belong in the GLOBAL
+//      top bar and are driven by ?view=; a tab bar rendered inside the page is the
+//      single most visible way a console stops matching its neighbours.
 //
 // The palette is the NeuBit navy set (`nb-*` in tailwind.config.js). Configurations
 // surfaces accent BLUE (nb-blue / nb-blueb) to match their launcher tone and the
