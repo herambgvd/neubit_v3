@@ -495,8 +495,13 @@ export default function Ratings() {
                               {r.benchmark.band.min != null
                                 ? `${r.benchmark.band.min}–${r.benchmark.band.max}`
                                 : `below ${r.benchmark.band.max}`}{" "}
-                              {r.benchmark.band_unit} · zone {r.benchmark.zone} ·{" "}
-                              {r.benchmark.ac_category}
+                              {r.benchmark.band_unit} ·{" "}
+                              {/* jan-2022 resolves to a size category + AC-share
+                                  percentage; feb-2009 to a zone + AC category.
+                                  The server states the resolved context either
+                                  way — print it, fall back to the 2009 pair. */}
+                              {r.benchmark.context ??
+                                `zone ${r.benchmark.zone} · ${r.benchmark.ac_category}`}
                             </span>
                           </div>
                         ) : null}
