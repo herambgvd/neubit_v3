@@ -1725,3 +1725,68 @@ behind: no test specs were registered beyond the three real definitions, no
 benchmark config was set for Aeon Tower (its zone is genuinely unknown — an
 invented zone would grade a real EPI against the wrong table), and the only
 thing entered under core's site facts is the cited emission factor.
+
+### §21 addendum — the BEE January-2022 revision, pinned and seeded (2026-09-01)
+
+§21 left a promise standing: "the revision enters as a NEW version row when
+somebody pins it." Pinned, read in full, and seeded by migration
+**0017_bee_jan2022_revision** as `bee_star_office` version **jan-2022** —
+the feb-2009 row untouched (versioning is data; history stays):
+
+> Bureau of Energy Efficiency, "Schedule for Star Rating of Commercial
+> Buildings — Office Buildings", **w.e.f. 01 January 2022**, Section 6 (Star
+> Rating Table). Copy hosted by JREDA (Jharkhand Renewable Energy
+> Development Agency):
+> https://api.jreda.com/all-uploaded-img/Directory/6343f17ec4de0.pdf
+
+**The equation model.** Unlike 2009's fixed EPI ranges, each 2022 band is a
+straight-line equation — "y=(a\*b)+c, where 'b' denotes the percentage of AC
+area out of total built-up area" — per climatic zone × building size
+category (in line with ECBC 2017: Large BUA > 30,000 m²; Medium
+10,000 ≤ BUA ≤ 30,000 m²; Small BUA < 10,000 m²). The coefficients are
+seeded verbatim (`bands.kind = "linear_by_ac_share"`); the site-specific
+band table is computed at resolution time by
+`evaluator.linear_band_table()`. Two site inputs feed it: the **size
+category DERIVES from `site_facts.gross_floor_area_sqm`** (never stored
+separately — a corrected area re-categorises the site), and the **AC share
+is a new continuous operator input** `ac_share_percent` (0–100) on
+`benchmark_site_config` (`PUT /bi/rating/benchmark-config`; the 2009
+`ac_category` column stays for the 2009 version). NULL blocks the jan-2022
+band naming exactly `ac_share_percent`.
+
+**Boundary semantics — encoded from the document's own worked example.** The
+document's header line ("The equations provide the upper limit of the
+corresponding Star Rating. Lower limit will be the value obtained by the
+equation of next higher rating") disagrees with its own worked example,
+which is the precise statement and is what the evaluator encodes: *"any
+building having 75% AC area, and having EPI less than 131.25 kwh/sqm. but
+equals to or more than 117.5 kwh/sqm. that building will be awarded 2-star
+rating"* (Large, Composite; 131.25 = the 1★ equation at x=75, 117.5 = the
+2★ equation). So the s-star equation value is the INCLUSIVE LOWER edge of
+the s-star band, the exclusive upper edge is the (s−1)-star equation, 5★ is
+open below, and EPI ≥ the 1★ value grades 1★ ("Lowest EPI value for
+1-Star"). The contradiction is stated in the seeded row's notes rather than
+silently resolved.
+
+**Which version applies.** The latest version whose effective date ≤ the
+evaluation window's END — `benchmark_standards.effective_from` (backfilled
+2009-02-01 for feb-2009; 2022-01-01 for jan-2022), the same rule the metric
+registry applies to definitions. jan-2022 governs today's windows; feb-2009
+still grades historical windows ending before 2022. The version in force is
+printed wherever a band (or its refusal) renders.
+
+**Known document defects, recorded not repaired silently:** the Terminology
+section prints the Medium range garbled as "30,000 m² ≤ BUA < 10,000 m²"
+(read as 10,000–30,000, per ECBC 2017 and the document's own fees table),
+and the header-line/worked-example disagreement above. Eligibility
+(connected load ≥ 100 kW) rides along as a note, NOT a refusal — our EPI is
+a measurement, not a scheme application.
+
+**Aeon Tower today:** zone `warm_humid` and `ac_category` `gt50pct_ac` are
+operator-recorded placeholders; `ac_share_percent` is UNSET, so the jan-2022
+band renders **blocked naming `ac_share_percent`** until someone records it
+— and EPI-band grading stays withheld anyway while every supply register is
+frozen (that discipline is untouched). Found while wiring this in and fixed:
+`PUT /bi/rating/benchmark-config` had been decorating the
+`_withhold_band_if_frozen` helper instead of its handler, so the config
+route was unreachable.
