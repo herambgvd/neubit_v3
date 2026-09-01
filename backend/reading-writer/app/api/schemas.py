@@ -626,18 +626,31 @@ class BenchmarkState(BaseModel):
     """The band — or the exact input still missing.
 
     `available` means a CITED standard is loaded (migration 0016 seeds BEE
-    Feb-2009). The `band` itself appears only when the site's climate zone and
-    AC-share category are recorded AND the EPI is computable; every other
-    state is a `reason` naming what exists and what is missing.
+    Feb-2009; migration 0017 the Jan-2022 revision — `version` names the one
+    in force for the window, selected by effective date ≤ the window end).
+    The `band` itself appears only when the version's site inputs are recorded
+    (feb-2009: climate zone + AC category; jan-2022: climate zone +
+    `ac_share_percent`, with the size category derived from the recorded area)
+    AND the EPI is computable; every other state is a `reason` naming what
+    exists and what is missing (`missing` carries the input's exact name).
     """
 
     available: bool
     standard: str | None = None
     version: str | None = None
+    # "fixed_ranges" (feb-2009) or "linear_by_ac_share" (jan-2022).
+    kind: str | None = None
     title: str | None = None
     citation: str | None = None
     zone: str | None = None
     ac_category: str | None = None
+    size_category: str | None = None
+    ac_share_percent: float | None = None
+    # Human line for the resolved context ("zone Warm and Humid · Large Office
+    # (BUA 40,000 m²) · 75% AC area") — what the panel prints beside a band.
+    context: str | None = None
+    # The exact missing input's name when blocked (e.g. `ac_share_percent`).
+    missing: str | None = None
     # The star band the EPI falls in — {stars, min, max} — or null.
     band: dict | None = None
     # The applicable table (zone + category resolved), for display beside it.

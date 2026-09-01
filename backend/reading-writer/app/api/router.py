@@ -27,7 +27,7 @@ from typing import Annotated, get_args
 from fastapi import APIRouter, Depends, Query
 from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
 from kernel.errors import ForbiddenError, ValidationError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field as PField
 from reporting.db import get_db
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1003,6 +1003,11 @@ async def rating(
             await rt.benchmark_state(
                 db, tenant, site_id,
                 epi["epi_kwh_per_sqm_year"] if epi else None,
+                # The window END picks the standard VERSION: the latest whose
+                # effective date ≤ it (jan-2022 today; feb-2009 for windows
+                # ending before 2022) — same rule the metric registry applies
+                # to definitions.
+                as_of=end,
             ),
         ),
         baseline=await rt.baseline_state(db, tenant, site_id),
@@ -1023,7 +1028,11 @@ class BenchmarkConfigRequest(BaseModel):
     site_id: uuid.UUID
     standard_key: str = "bee_star_office"
     climate_zone: str | None = None
+    # feb-2009 reads the over/under-50% CATEGORY; jan-2022 reads the
+    # CONTINUOUS percentage. Both are operator statements; each version of the
+    # standard reads its own field and blocks, by name, on the one it needs.
     ac_category: str | None = None
+    ac_share_percent: float | None = PField(default=None, ge=0, le=100)
 
 
 def _withhold_band_if_frozen(meters: list[dict], bench: dict) -> dict:
@@ -1066,12 +1075,13 @@ async def set_benchmark_config(
     all_sites = await rt.sites(db, tenant)
     if not any(s["site_id"] == body.site_id for s in all_sites):
         raise ForbiddenError("no such site in this tenant's reporting store")
+    # Validate against EVERY seeded version of the standard: a config outlives
+    # version transitions (the zone is read by both feb-2009 and jan-2022;
+    # `ac_category` only by the fixed-range 2009 tables — the 2022 rows key
+    # their zones by SIZE category, which is derived from the area, not stored).
     std = q._rows(
         await db.execute(
-            sa_text(
-                "SELECT bands FROM benchmark_standards WHERE key = :k "
-                "ORDER BY created_at DESC LIMIT 1"
-            ),
+            sa_text("SELECT bands FROM benchmark_standards WHERE key = :k"),
             {"k": body.standard_key},
         )
     )
@@ -1080,34 +1090,39 @@ async def set_benchmark_config(
             f"no benchmark standard `{body.standard_key}` is seeded — a config "
             f"cannot point at a standard that is not there"
         )
-    zones = (std[0]["bands"] or {}).get("zones") or {}
+    zones: set[str] = set()
+    cats: set[str] = set()
+    for row in std:
+        bands = row["bands"] or {}
+        zdefs = bands.get("zones") or {}
+        zones |= set(zdefs)
+        if (bands.get("kind") or "fixed_ranges") == "fixed_ranges":
+            for z in zdefs.values():
+                cats |= {k for k in z if k != "label"}
     if body.climate_zone is not None and body.climate_zone not in zones:
         raise ValidationError(
             f"climate zone `{body.climate_zone}` is not in the standard's tables "
             f"({', '.join(sorted(zones))})"
         )
-    if body.ac_category is not None:
-        cats = set()
-        for z in zones.values():
-            cats |= {k for k in z if k != "label"}
-        if body.ac_category not in cats:
-            raise ValidationError(
-                f"AC category `{body.ac_category}` is not in the standard's tables "
-                f"({', '.join(sorted(cats))})"
-            )
+    if body.ac_category is not None and body.ac_category not in cats:
+        raise ValidationError(
+            f"AC category `{body.ac_category}` is not in the standard's tables "
+            f"({', '.join(sorted(cats))})"
+        )
     actor = str(getattr(who, "user_id", "") or "") or None
     await db.execute(
         sa_text(
             """
             INSERT INTO benchmark_site_config
                 (site_id, tenant_id, standard_key, climate_zone, ac_category,
-                 set_by, set_at)
+                 ac_share_percent, set_by, set_at)
             VALUES (CAST(:site AS uuid), CAST(:tenant AS uuid), :std, :zone,
-                    :ac, :actor, now())
+                    :ac, :ac_share, :actor, now())
             ON CONFLICT (site_id) DO UPDATE
                SET standard_key = excluded.standard_key,
                    climate_zone = excluded.climate_zone,
                    ac_category = excluded.ac_category,
+                   ac_share_percent = excluded.ac_share_percent,
                    set_by = excluded.set_by, set_at = excluded.set_at
             """
         ),
@@ -1117,6 +1132,7 @@ async def set_benchmark_config(
             "std": body.standard_key,
             "zone": body.climate_zone,
             "ac": body.ac_category,
+            "ac_share": body.ac_share_percent,
             "actor": actor,
         },
     )
@@ -1126,6 +1142,7 @@ async def set_benchmark_config(
         "standard_key": body.standard_key,
         "climate_zone": body.climate_zone,
         "ac_category": body.ac_category,
+        "ac_share_percent": body.ac_share_percent,
         "set_by": actor,
     }
 
