@@ -1,6 +1,6 @@
 // .form-control {
 //   @apply bg-transparent dark:bg-slate-900 transition duration-300 ease-in-out border border-slate-200
-//    dark:border-slate-700 focus:ring-1 focus:ring-slate-600 focus:outline-none focus:ring-opacity-90 rounded
+//    dark:border-slate-700 focus:ring-1 focus:ring-slate-600 focus:outline-hidden focus:ring-slate-600/90 rounded-sm
 //     placeholder:text-slate-400 text-slate-900 text-sm px-3  placeholder:font-normal block w-full h-[40px] dark:text-white;
 // }
 
@@ -11,7 +11,7 @@
 .form-control {
   @apply bg-white dark:bg-slate-900  transition duration-300 ease-in-out border border-slate-200
    dark:border-slate-700 dark:text-slate-300  focus:ring-1 focus:ring-slate-600
-   dark:focus:ring-slate-900 focus:outline-none focus:ring-opacity-90 rounded
+   dark:focus:ring-slate-900 focus:outline-hidden focus:ring-slate-600/90 rounded-sm
     placeholder:text-slate-400 text-slate-900 text-sm px-3  placeholder:font-normal dark:placeholder:text-slate-400 block w-full;
 }
 
@@ -22,12 +22,12 @@
   @apply relative;
   &.has-error {
     .form-control {
-      @apply border-danger-500 focus:ring-danger-500  focus:ring-opacity-90 focus:ring-1;
+      @apply border-danger-500 focus:ring-danger-500  focus:ring-danger-500/90 focus:ring-1;
     }
   }
   &.is-valid {
     .form-control {
-      @apply border-success-500 focus:ring-success-500 focus:ring-opacity-90 focus:ring-1;
+      @apply border-success-500 focus:ring-success-500 focus:ring-success-500/90 focus:ring-1;
     }
   }
 }
@@ -37,7 +37,7 @@
 }
 
 .form-control[disabled] {
-  @apply cursor-not-allowed bg-slate-50 text-slate-800 placeholder:text-opacity-60 dark:bg-slate-600;
+  @apply cursor-not-allowed bg-slate-50 text-slate-800 placeholder:text-slate-800/60 dark:bg-slate-600;
 }
 
 // vue date range picker css
@@ -65,10 +65,10 @@
 
 // file input
 .file-control {
-  @apply bg-transparent dark:bg-slate-900 dark:text-white transition duration-300 ease-in-out border border-slate-200 dark:border-slate-700 focus:ring-1 focus:ring-slate-900 dark:focus:ring-slate-900 focus:outline-none focus:ring-opacity-90 rounded   text-sm ltr:pl-3 rtl:pr-3   placeholder:font-normal;
+  @apply bg-transparent dark:bg-slate-900 dark:text-white transition duration-300 ease-in-out border border-slate-200 dark:border-slate-700 focus:ring-1 focus:ring-slate-900 dark:focus:ring-slate-900 focus:outline-hidden focus:ring-slate-900/90 rounded-sm   text-sm ltr:pl-3 rtl:pr-3   placeholder:font-normal;
 }
 .badge-title {
-  @apply bg-slate-900 text-white px-2 py-[3px] rounded text-sm;
+  @apply bg-slate-900 text-white px-2 py-[3px] rounded-sm text-sm;
 }
 
 // datae picker

@@ -1,17 +1,17 @@
 .input-group-control {
-  @apply bg-white dark:bg-slate-900 dark:placeholder:text-slate-400 transition duration-300 ease-in-out border border-slate-200 dark:border-slate-700 focus:ring-0  focus:outline-none  
-  rounded placeholder:text-slate-400 text-slate-900 text-sm px-3  placeholder:font-light focus:border-slate-600  dark:focus:border-slate-900 dark:text-white;
+  @apply bg-white dark:bg-slate-900 dark:placeholder:text-slate-400 transition duration-300 ease-in-out border border-slate-200 dark:border-slate-700 focus:ring-0  focus:outline-hidden  
+  rounded-sm placeholder:text-slate-400 text-slate-900 text-sm px-3  placeholder:font-light focus:border-slate-600  dark:focus:border-slate-900 dark:text-white;
 }
 
 .fromGroup2 {
   &.has-error {
     .input-group-control {
-      @apply border-danger-500 focus:ring-danger-500  focus:ring-opacity-90 focus:ring-1;
+      @apply border-danger-500 focus:ring-danger-500  focus:ring-danger-500/90 focus:ring-1;
     }
   }
   &.is-valid {
     .input-group-control {
-      @apply border-success-500 focus:ring-success-500 focus:ring-opacity-90 focus:ring-1;
+      @apply border-success-500 focus:ring-success-500 focus:ring-success-500/90 focus:ring-1;
     }
   }
 }
@@ -21,12 +21,12 @@
 }
 
 .input-group-control[disabled] {
-  @apply cursor-not-allowed bg-slate-50 text-slate-400 placeholder:text-opacity-60 dark:bg-slate-600;
+  @apply cursor-not-allowed bg-slate-50 text-slate-400 placeholder:text-slate-400/60 dark:bg-slate-600;
 }
 
 .input-group-text {
   @apply bg-white dark:bg-slate-900 transition duration-300 ease-in-out  flex items-center justify-center px-3 border
-   border-slate-200 dark:border-slate-700 ltr:rounded-tl rtl:rounded-tr rtl:rounded-br ltr:rounded-bl text-slate-400 text-base font-light;
+   border-slate-200 dark:border-slate-700 ltr:rounded-tl-sm rtl:rounded-tr-sm rtl:rounded-br-sm ltr:rounded-bl-sm text-slate-400 text-base font-light;
 }
 .inputGroup.has-prepend {
   .input-group-control {
@@ -51,7 +51,7 @@
   }
   .input-group-addon.right {
     .input-group-text {
-      @apply ltr:rounded-tl-[0] ltr:rounded-bl-[0] ltr:rounded-tr ltr:rounded-br rtl:rounded-tl  rtl:rounded-bl rtl:rounded-tr-[0] rtl:rounded-br-[0];
+      @apply ltr:rounded-tl-[0] ltr:rounded-bl-[0] ltr:rounded-tr-sm ltr:rounded-br-sm rtl:rounded-tl-sm  rtl:rounded-bl-sm rtl:rounded-tr-[0] rtl:rounded-br-[0];
     }
   }
 }
@@ -93,7 +93,7 @@
   &.right {
     .append-slot {
       .btn {
-        @apply rounded-tl-[0] rounded-bl-[0] rounded-tr rounded-br  -mx-3;
+        @apply rounded-tl-[0] rounded-bl-[0] rounded-tr-sm rounded-br-sm  -mx-3;
       }
     }
   }

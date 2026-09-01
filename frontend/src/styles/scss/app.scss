@@ -2,9 +2,11 @@
 // Variables only, so this emits no CSS and is safe to pull in ahead of Tailwind.
 @import "icon-assets";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+// Tailwind v4 entry. Dart Sass leaves a `.css` @import alone (it is a plain CSS
+// import, not a Sass partial), so it reaches PostCSS intact and @tailwindcss/postcss
+// inlines it here — keeping the whole app on one stylesheet, with the same cascade
+// layer order v3 produced.
+@import "../tailwind.css";
 
 @layer base {
   body {

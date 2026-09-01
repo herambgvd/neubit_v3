@@ -184,9 +184,15 @@ $Work        = Join-Path $env:TEMP "neubit-appliance-$Version"
 
 # Every image the appliance runs. Third-party ones are pulled and re-tagged so the
 # payload is self-contained and pinned; ours are built.
+# Must list EVERY service the base compose builds. A service missing here is not
+# baked, is not pinned by the appliance overlay, and boot.sh runs --no-build — so
+# compose refuses to start the whole stack rather than skipping one container.
+# Cross-check with:  docker compose -f docker-compose.yml config  |  grep -B... build
 $OwnServices = @(
     'core', 'ingest', 'workflow', 'access', 'vision', 'ops-agent',
-    'frontend', 'admin-frontend', 'tiles'
+    'frontend', 'admin-frontend', 'tiles',
+    # the reporting / BI plane, added with feat/vms
+    'dashboards', 'reading-writer', 'reporting-projector', 'reporting-migrate'
 )
 $ThirdParty = @(
     'traefik:v3.1',

@@ -12,21 +12,26 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.audit import record as audit_record
-from ...core.errors import ConflictError, NotFoundError
+from ...core.errors import ConflictError, NotFoundError, ValidationError
 from ...tenancy.scope import Scope, assert_owned, scoped
 from ..events import emit
 from ..floor.models import Floor
 from ..zone.models import Zone
-from .models import Site
+from .models import Site, SiteEmissionFactor, SiteTariffSlab
 from .schemas import (
     Coordinates,
     CreateSiteRequest,
+    EmissionFactorPublic,
+    EmissionFactorsUpdate,
     GeoPoint,
     SitePublic,
+    TariffSlabPublic,
+    TariffSlabsUpdate,
     UpdateSiteRequest,
 )
 
@@ -176,6 +181,164 @@ class SiteService:
         await self._emit(actor, "updated", row, body.model_dump(exclude_none=True))
         return SitePublic.from_row(row, floor_count=await self._floor_count(site_id))
 
+    async def set_building_facts(self, site_id: str, body, *, actor) -> SitePublic:
+        """Record the operator's assertions about the building itself.
+
+        A SET, not a patch: every one of the four fields is written from the
+        request, so an explicit null CLEARS it and the site goes back to "not
+        recorded". That state has to be reachable — a rating that divides by a
+        wrong area an operator cannot take back is worse than one that says it
+        has no area.
+
+        Nothing is inferred here. There is no default area, no assumed currency
+        and no fallback tariff; what the operator did not state stays absent.
+        """
+        row = await self._get_row(site_id)
+
+        if body.energy_tariff_per_kwh is not None and not body.tariff_currency:
+            # A bare 8.5 is not a price. Refusing is the honest response;
+            # assuming rupees would put a currency on a screen nobody stated.
+            raise ValidationError("A tariff needs a currency")
+
+        row.gross_floor_area_sqm = body.gross_floor_area_sqm
+        row.energy_tariff_per_kwh = body.energy_tariff_per_kwh
+        row.tariff_currency = body.tariff_currency if body.energy_tariff_per_kwh is not None else None
+        row.occupancy = body.occupancy
+
+        actor_user_id = str(getattr(actor, "id", "")) or None
+        now = _utcnow()
+        # Provenance of the ASSERTION, separate from the row's own updated_at —
+        # which moves when anyone edits a phone number and so cannot say who
+        # stands behind a number a rating divides by.
+        row.building_facts_updated_at = now
+        row.building_facts_updated_by = actor_user_id
+        row.updated_by = actor_user_id
+        row.updated_at = now
+
+        await self.db.commit()
+        await self.db.refresh(row)
+        await self._emit(actor, "building_facts_updated", row, {})
+        return SitePublic.from_row(row, floor_count=await self._floor_count(site_id))
+
+
+    # ── Time-of-Use tariff slabs + emission factors (migration 0019) ──────
+    #
+    # Both are INPUT PATHS for Building Intelligence: homes for numbers an
+    # operator will supply later, never values this code supplies. Both PUTs
+    # are FULL REPLACES — the retraction property `set_building_facts`
+    # established: an explicit empty list clears the set, because a wrong rate
+    # (or factor) an operator cannot take back is worse than none.
+
+    async def _slab_rows(self, site_id: str) -> list[SiteTariffSlab]:
+        return list(
+            (
+                await self.db.execute(
+                    select(SiteTariffSlab)
+                    .where(SiteTariffSlab.site_id == site_id)
+                    .order_by(
+                        SiteTariffSlab.effective_from.asc(), SiteTariffSlab.position.asc()
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def _factor_rows(self, site_id: str) -> list[SiteEmissionFactor]:
+        return list(
+            (
+                await self.db.execute(
+                    select(SiteEmissionFactor)
+                    .where(SiteEmissionFactor.site_id == site_id)
+                    .order_by(SiteEmissionFactor.effective_from.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def get_tariff_slabs(self, site_id: str) -> list[TariffSlabPublic]:
+        await self._get_row(site_id)  # scope + existence
+        return [TariffSlabPublic.model_validate(r) for r in await self._slab_rows(site_id)]
+
+    async def set_tariff_slabs(
+        self, site_id: str, body: TariffSlabsUpdate, *, actor
+    ) -> list[TariffSlabPublic]:
+        """Replace the site's WHOLE slab list.
+
+        PRECEDENCE (stated once, in code): when any slab with `effective_from`
+        on or before the date being priced exists, the slab set overrides the
+        scalar `energy_tariff_per_kwh` ENTIRELY for that date; an hour no slab
+        covers has NO price — absence, never a fallback into the scalar. The
+        scalar applies only when no slab set is in effect.
+
+        Coverage of the 24h cycle is deliberately NOT enforced and no filler
+        slab is ever invented: a partial tariff is a partial statement, and the
+        UI warns rather than the server completing it.
+        """
+        row = await self._get_row(site_id)
+        actor_user_id = str(getattr(actor, "id", "")) or None
+
+        await self.db.execute(
+            sa_delete(SiteTariffSlab).where(SiteTariffSlab.site_id == site_id)
+        )
+        for idx, slab in enumerate(body.slabs):
+            self.db.add(
+                SiteTariffSlab(
+                    tenant_id=row.tenant_id,
+                    site_id=site_id,
+                    name=slab.name,
+                    start_minute=slab.start_minute,
+                    end_minute=slab.end_minute,
+                    rate_per_kwh=slab.rate_per_kwh,
+                    currency=slab.currency,
+                    effective_from=slab.effective_from,
+                    position=idx,
+                    created_by=actor_user_id,
+                )
+            )
+        await self.db.commit()
+        await self._emit(actor, "tariff_slabs_updated", row, {"slab_count": len(body.slabs)})
+        return [TariffSlabPublic.model_validate(r) for r in await self._slab_rows(site_id)]
+
+    async def get_emission_factors(self, site_id: str) -> list[EmissionFactorPublic]:
+        await self._get_row(site_id)
+        return [EmissionFactorPublic.model_validate(r) for r in await self._factor_rows(site_id)]
+
+    async def set_emission_factors(
+        self, site_id: str, body: EmissionFactorsUpdate, *, actor
+    ) -> list[EmissionFactorPublic]:
+        """Replace the site's WHOLE emission-factor list. Every factor carries
+        its REQUIRED source (schema-enforced): a number with no citation is an
+        invented figure and never reaches this table."""
+        row = await self._get_row(site_id)
+
+        dates = [f.effective_from for f in body.factors]
+        if len(dates) != len(set(dates)):
+            # Two factors from the same date are a contradiction, not a history.
+            raise ValidationError("Two emission factors share the same effective-from date")
+
+        actor_user_id = str(getattr(actor, "id", "")) or None
+        await self.db.execute(
+            sa_delete(SiteEmissionFactor).where(SiteEmissionFactor.site_id == site_id)
+        )
+        for factor in body.factors:
+            self.db.add(
+                SiteEmissionFactor(
+                    tenant_id=row.tenant_id,
+                    site_id=site_id,
+                    kg_co2_per_kwh=factor.kg_co2_per_kwh,
+                    source=factor.source,
+                    effective_from=factor.effective_from,
+                    created_by=actor_user_id,
+                )
+            )
+        await self.db.commit()
+        await self._emit(
+            actor, "emission_factors_updated", row, {"factor_count": len(body.factors)}
+        )
+        return [EmissionFactorPublic.model_validate(r) for r in await self._factor_rows(site_id)]
+
     async def delete(self, site_id: str, *, actor) -> None:
         row = await self._get_row(site_id)
         now = _utcnow()
@@ -284,11 +447,66 @@ class SiteService:
             current = await self.db.get(Site, current.parent_id)
 
     async def _emit(self, actor, event: str, row: Site, after: dict) -> None:
+        # The BUILDING FACTS ride on every site event, read from the row core
+        # just committed rather than from the request body. Same rule the device
+        # placement events follow (pipeline contract §18): the authority STATES
+        # the fact beside the id it owns, instead of a subscriber being told to
+        # go and ask. `reading-writer`'s site-facts consumer mirrors these into
+        # `neubit_reporting.site_facts` so Building Intelligence can divide by an
+        # area without reading a database it is banned from reading.
+        #
+        # Since migration 0019 the WHOLE fact set rides too — city, tariff
+        # slabs, emission factors — read fresh from the rows just committed, so
+        # a mirror that misses one message is corrected by the next site edit
+        # of any kind and no COALESCE gymnastics are needed on the other side.
+        # An empty list is a statement ("no slabs"), not an omission.
+        address = row.address if isinstance(row.address, dict) else {}
+        city = address.get("city") or None
+        slabs = [
+            {
+                "name": s.name,
+                "start_minute": s.start_minute,
+                "end_minute": s.end_minute,
+                "rate_per_kwh": s.rate_per_kwh,
+                "currency": s.currency,
+                "effective_from": s.effective_from.isoformat(),
+                "position": s.position,
+            }
+            for s in await self._slab_rows(row.site_id)
+        ]
+        factors = [
+            {
+                "kg_co2_per_kwh": f.kg_co2_per_kwh,
+                "source": f.source,
+                "effective_from": f.effective_from.isoformat(),
+            }
+            for f in await self._factor_rows(row.site_id)
+        ]
         await emit(
             row.tenant_id,
             "site",
             event,
-            {"site_id": row.site_id, **after},
+            {
+                "site_id": row.site_id,
+                "name": row.name,
+                "is_active": row.is_active,
+                # Human location, resolved server-side from core's own row.
+                # Null when the address (or its city) was never recorded — the
+                # mirror stores null and BI renders an em dash, never a guess.
+                "city": city,
+                "gross_floor_area_sqm": row.gross_floor_area_sqm,
+                "energy_tariff_per_kwh": row.energy_tariff_per_kwh,
+                "tariff_currency": row.tariff_currency,
+                "occupancy": row.occupancy,
+                "tariff_slabs": slabs,
+                "emission_factors": factors,
+                "building_facts_updated_at": (
+                    row.building_facts_updated_at.isoformat()
+                    if row.building_facts_updated_at
+                    else None
+                ),
+                **after,
+            },
         )
         await audit_record(
             self.db,

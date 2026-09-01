@@ -122,6 +122,35 @@ services:
     image: neubit-v3-admin-frontend:${NEUBIT_VERSION}
     restart: unless-stopped
 
+  # ── the reporting / BI plane ─────────────────────────────────────────────
+  #
+  # Added when feat/vms merged. Every one of these carries a `build:` in the base
+  # file, and an unpinned build context does not degrade on an appliance — boot.sh
+  # runs `up -d --no-build`, so compose refuses to start ANY of the stack. Pinning
+  # them here is what keeps that from being a silent release trap.
+
+  dashboards:
+    build: !reset null
+    image: neubit-v3-dashboards:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  reading-writer:
+    build: !reset null
+    image: neubit-v3-reading-writer:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  reporting-projector:
+    build: !reset null
+    image: neubit-v3-reporting-projector:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  # No restart policy, deliberately: this one runs the reporting migrations and
+  # exits, and everything downstream gates on service_completed_successfully.
+  # `unless-stopped` would restart a container whose job is to finish.
+  reporting-migrate:
+    build: !reset null
+    image: neubit-v3-reporting-migrate:${NEUBIT_VERSION}
+
   tiles:
     build: !reset null
     image: neubit-v3-tiles:${NEUBIT_VERSION}

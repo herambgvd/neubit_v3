@@ -9,8 +9,7 @@
 .table-checkbox {
   @apply relative before:flex before:flex-col before:items-center before:justify-center   
   before:w-[18px] before:h-[18px] before:m-[-0.7px] before:bg-slate-100 dark:before:bg-slate-500  before:absolute
-    before:inset-0 before:rounded w-4 h-4 rounded checked:before:bg-slate-900
-    checked:before:leading-[10px]
+    before:inset-0 before:rounded-sm w-4 h-4 rounded-sm checked:before:bg-slate-900 checked:before:leading-[10px]
     checked:before:ring-2 checked:before:ring-black-500
     checked:before:ring-offset-2 checked:before:dark:ring-slate-700
     checked:before:dark:ring-offset-0;

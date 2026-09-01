@@ -36,3 +36,6 @@ yarn-error.log*
 # nginx in dev to serve /tiles). Multi-GB deployment artefact — never commit it,
 # and .dockerignore keeps it out of the image too.
 /public/tiles/
+
+# typescript
+*.tsbuildinfo

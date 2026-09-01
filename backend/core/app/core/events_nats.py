@@ -21,6 +21,63 @@ log = get_logger("events")
 _nc: Any = None  # nats.aio.client.Client
 _js: Any = None  # JetStream context
 
+# ── the EVENTS stream's subject list ─────────────────────────────────────────
+# MUST stay identical to ``kernel.events.EVENTS_SUBJECTS`` (backend/kernel) and to
+# gokernel's list, because whichever service connects first is the one that
+# creates the stream. Core cannot import the kernel package (it does not ship in
+# core's image), so this is a deliberate copy — change both, or a service will
+# quietly converge the stream back to the other list.
+#
+# EVENTS used to be ``tenant.>``. It was narrowed so the live IoT sensor feed
+# could get its OWN bounded stream (``IOT_READINGS``, subjects ``tenant.*.iot.>``):
+# NATS refuses overlapping subjects between streams on one account, and EVENTS is
+# unbounded on purpose because it carries low-volume domain events worth keeping.
+#
+# ⚠ ADDING A NEW DOMAIN? Add it here AND in kernel.events, or its events land on a
+# subject no stream captures — the realtime SSE relays (core NATS, at-most-once)
+# still work, but there is no persistence and no durable consumer is possible.
+EVENTS_STREAM = "EVENTS"
+EVENTS_SUBJECTS = [
+    "tenant.*.access.>",
+    "tenant.*.core.>",
+    "tenant.*.device.>",
+    "tenant.*.erasure.>",
+    "tenant.*.fire.>",
+    "tenant.*.ingest.>",
+    "tenant.*.notify.>",
+    "tenant.*.sites.>",
+    "tenant.*.tags.>",
+    "tenant.*.tenant.>",
+    "tenant.*.vms.>",
+    "tenant.*.workflow.>",
+]
+
+
+async def _ensure_events_stream(js) -> None:
+    """Create EVENTS, or converge an existing one onto EVENTS_SUBJECTS.
+
+    ``add_stream`` only CREATES; on an existing stream it raises, and this used to
+    be swallowed — so a subject-list change would never reach a running stack.
+    Update explicitly, only when it differs. Never raises: core must still boot.
+    """
+    try:
+        info = await js.stream_info(EVENTS_STREAM)
+    except Exception:
+        try:
+            await js.add_stream(name=EVENTS_STREAM, subjects=list(EVENTS_SUBJECTS))
+        except Exception as e:  # concurrent create by another service — fine
+            log.info("EVENTS stream ensure note: %s", e)
+        return
+
+    if sorted(info.config.subjects or []) != sorted(EVENTS_SUBJECTS):
+        try:
+            info.config.subjects = list(EVENTS_SUBJECTS)
+            await js.update_stream(config=info.config)
+            log.info("EVENTS stream subjects converged to %s", EVENTS_SUBJECTS)
+        except Exception as e:
+            log.warning("EVENTS stream subject update failed: %s", e)
+
+
 
 async def connect() -> None:
     """Connect to NATS and ensure the JetStream event stream exists. Safe to call once."""
@@ -35,11 +92,9 @@ async def connect() -> None:
 
         _nc = await nats.connect(url, name="neubit-core")
         _js = _nc.jetstream()
-        # One durable stream capturing all tenant events for replay/audit.
-        try:
-            await _js.add_stream(name="EVENTS", subjects=["tenant.>"])
-        except Exception:
-            pass  # already exists
+        # One durable stream capturing the platform's domain events for replay/audit.
+        # NOT the IoT sensor feed — that has its own bounded stream. See above.
+        await _ensure_events_stream(_js)
         log.info("NATS connected: %s", url)
     except Exception as e:  # broker down / lib missing → degrade gracefully
         log.warning("NATS connect failed (%s) — events are no-ops", e)

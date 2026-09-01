@@ -58,11 +58,15 @@ class RecordingConsumer:
             return
         async with self._sessionmaker() as db:
             svc = RecordingService(db, _PLATFORM_SCOPE, bearer=None)
-            try:
-                rec_id = await svc.persist_segment(tenant_id, payload)
-            except Exception as exc:  # noqa: BLE001 — one bad event must not kill the sub
-                log.warning("recording persist failed for %s: %s", payload.get("path"), exc)
-                return
+            # Raising IS the retry contract (kernel.events): a transient failure
+            # (database down) must NAK and redeliver, not be swallowed into an
+            # ack that loses the segment row forever. This used to catch-and-log
+            # — a hangover from the auto-ack era, when the catch protected
+            # nothing but the log. The persist is deduped by path, so a
+            # redelivery after a partial failure is a no-op; the consumer itself
+            # is safe either way, because the bus catches handler exceptions to
+            # make its ack decision.
+            rec_id = await svc.persist_segment(tenant_id, payload)
             if rec_id:
                 log.info(
                     "recording persisted: %s camera=%s (%.0fs)",

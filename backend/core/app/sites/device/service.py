@@ -23,6 +23,7 @@ from ...core.errors import ConflictError, NotFoundError
 from ...tenancy.scope import Scope, assert_owned, scoped
 from ..events import emit
 from ..floor.models import Floor
+from ..site.models import Site
 from ..zone.models import Zone
 from .models import DevicePlacement
 from .schemas import (
@@ -122,18 +123,7 @@ class DevicePlacementService:
 
         await self.db.commit()
         await self.db.refresh(row)
-        await self._emit(
-            actor,
-            event,
-            row,
-            {
-                "device_id": row.device_id,
-                "device_type": row.device_type,
-                "service": row.service,
-                "floor_id": row.floor_id,
-                "zone_id": row.zone_id,
-            },
-        )
+        await self._emit(actor, event, row, {"floor_position": row.floor_position})
         return DevicePlacementPublic.from_row(row)
 
     async def get(self, device_id: str) -> DevicePlacementPublic:
@@ -177,22 +167,26 @@ class DevicePlacementService:
 
     async def remove(self, device_id: str, *, actor) -> None:
         row = await self._get_row(device_id)
-        placement_id, dev_id = row.placement_id, row.device_id
-        site_id, tenant_id = row.site_id, row.tenant_id
+        # Everything the event needs is read BEFORE the delete — after it the row
+        # is gone and a consumer would be told a device was unplaced without
+        # being told which kind of device, or from where.
+        placement_id = row.placement_id
+        gone = {
+            "device_id": row.device_id,
+            "device_type": row.device_type,
+            "service": row.service,
+            "site_id": row.site_id,
+            "floor_id": row.floor_id,
+            "zone_id": row.zone_id,
+            "tenant_id": row.tenant_id,
+        }
         await self.db.execute(
             sa_delete(DevicePlacement).where(
                 DevicePlacement.placement_id == placement_id
             )
         )
         await self.db.commit()
-        await self._emit_ids(
-            actor,
-            "placement_removed",
-            device_id=dev_id,
-            site_id=site_id,
-            tenant_id=tenant_id,
-            after={},
-        )
+        await self._emit_ids(actor, "placement_removed", **gone, changed={})
 
     async def list_by_floor(
         self, floor_id: str, *, device_type: str | None = None
@@ -217,24 +211,79 @@ class DevicePlacementService:
         rows = (await self.db.execute(stmt)).scalars().all()
         return [DevicePlacementPublic.from_row(r) for r in rows]
 
-    async def _emit(self, actor, event: str, row: DevicePlacement, after: dict) -> None:
+    # ── events ───────────────────────────────────────────────────────────────
+    #
+    # A placement event is the ONLY thing a consumer gets, so it carries the whole
+    # fact rather than a diff: which device, of what kind, in which service, and
+    # the site / floor / zone it now sits in — ids AND names.
+    #
+    # The names are read from core's own rows here, on the way out. That is the
+    # same rule the reporting store's placement write already followed ("names
+    # come from core, never from the browser"), moved to the only place that can
+    # honour it without a second HTTP hop: the authority publishes the label
+    # beside the id it minted.
+    #
+    # `changed` is the caller's diff and is for the audit log only. A consumer
+    # that reads it instead of the canonical fields would break the moment a
+    # PATCH touches one field — which is exactly what `update` sends.
+
+    async def _location_names(self, site_id, floor_id, zone_id) -> dict:
+        site = await self.db.get(Site, site_id) if site_id else None
+        floor = await self.db.get(Floor, floor_id) if floor_id else None
+        zone = await self.db.get(Zone, zone_id) if zone_id else None
+        return {
+            "site_name": getattr(site, "name", None),
+            "floor_name": getattr(floor, "name", None),
+            "zone_name": getattr(zone, "name", None),
+        }
+
+    async def _emit(self, actor, event: str, row: DevicePlacement, changed: dict) -> None:
         await self._emit_ids(
             actor,
             event,
             device_id=row.device_id,
+            device_type=row.device_type,
+            service=row.service,
             site_id=row.site_id,
+            floor_id=row.floor_id,
+            zone_id=row.zone_id,
             tenant_id=row.tenant_id,
-            after=after,
+            changed=changed,
         )
 
     async def _emit_ids(
-        self, actor, event, *, device_id, site_id, tenant_id, after
+        self,
+        actor,
+        event,
+        *,
+        device_id,
+        device_type,
+        service,
+        site_id,
+        floor_id,
+        zone_id,
+        tenant_id,
+        changed,
     ) -> None:
+        names = await self._location_names(site_id, floor_id, zone_id)
         await emit(
             tenant_id,
             "device_placement",
             event,
-            {"device_id": device_id, "site_id": site_id, **after},
+            {
+                "device_id": device_id,
+                "device_type": device_type,
+                "service": service,
+                "site_id": site_id,
+                "floor_id": floor_id,
+                "zone_id": zone_id,
+                **names,
+                # Who asserted it. A consumer that keeps its own copy of the
+                # placement can record the same author rather than an anonymous
+                # system write.
+                "actor_id": str(getattr(actor, "id", "")) or None,
+                "changed": changed,
+            },
         )
         await audit_record(
             self.db,
@@ -242,5 +291,5 @@ class DevicePlacementService:
             action=f"device_placement.{event}",
             target_type="device_placement",
             target_id=device_id,
-            meta={"site_id": site_id, **after},
+            meta={"site_id": site_id, **changed},
         )

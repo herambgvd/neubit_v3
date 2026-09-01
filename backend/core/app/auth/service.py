@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
 from ..tenancy.scope import Scope, assert_owned
 from .models import ApiKey, PasswordResetToken, RefreshToken, Role, User
+from . import dynamic_permissions
 from .permissions import PERMISSIONS, WILDCARD
 from .schemas import (
     ApiKeyCreateIn,
@@ -340,7 +341,9 @@ class AuthService:
 
     # --- roles (dynamic RBAC) ---------------------------------------------
     async def create_role(self, data: CreateRoleIn, scope: Scope | None = None) -> Role:
-        unknown = PERMISSIONS.unknown(data.permissions)
+        # Static catalog PLUS whatever satellites registered — a per-dataset
+        # dashboard permission is grantable exactly like a built-in one.
+        unknown = await dynamic_permissions.unknown(self.db, data.permissions)
         if unknown:
             raise ValidationError(f"unknown permissions: {unknown}")
         if WILDCARD in data.permissions:
@@ -375,7 +378,7 @@ class AuthService:
         if role.is_system:
             raise ValidationError("the system Administrator role cannot be modified")
         if data.permissions is not None:
-            unknown = PERMISSIONS.unknown(data.permissions)
+            unknown = await dynamic_permissions.unknown(self.db, data.permissions)
             if unknown:
                 raise ValidationError(f"unknown permissions: {unknown}")
             if WILDCARD in data.permissions:

@@ -44,6 +44,44 @@ log = logging.getLogger("vision.common.core_audit")
 _DEFAULT_TIMEOUT = 4.0
 
 
+# A dropped audit is a COMPLIANCE hole, not a debug detail. These two counters make
+# "the trail has never recorded anything" a visible fact rather than something you can
+# only discover by querying core's audit_log and finding it empty: every drop logs at
+# ERROR with the reason and the running totals, and `audit_delivery_stats()` is
+# readable from a health/diagnostic surface.
+_dropped = 0
+_delivered = 0
+
+
+def _drop(action: str, camera_id: str, reason: str) -> None:
+    global _dropped
+    _dropped += 1
+    log.error(
+        "VIDEO AUDIT DROPPED action=%s cam=%s reason=%s (dropped=%d delivered=%d) "
+        "— this op is NOT in the tamper-evident trail",
+        action,
+        camera_id,
+        reason,
+        _dropped,
+        _delivered,
+    )
+
+
+def _bump_delivered() -> None:
+    global _delivered
+    _delivered += 1
+
+
+def audit_delivery_stats() -> dict[str, int]:
+    """Delivered/dropped audit-ingest counts since process start.
+
+    Exposed so a health surface can say the trail is broken. `dropped > 0` with
+    `delivered == 0` is the shape of the bug this module shipped with: every call
+    rejected 401 and every rejection swallowed.
+    """
+    return {"delivered": _delivered, "dropped": _dropped}
+
+
 async def report_video_audit(
     *,
     action: str,
@@ -89,14 +127,21 @@ async def report_video_audit(
         async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT, headers=headers) as client:
             resp = await client.post(url, json=payload)
         if resp.status_code >= 400:
-            # A rejected ingest is logged but swallowed — the user op already succeeded.
-            log.warning(
-                "video audit ingest %s cam=%s → %s", action, camera_id, resp.status_code
+            # A rejected ingest is swallowed — the user op already succeeded — but it
+            # is an ERROR, not a warning, and it carries the response BODY. This is the
+            # line that would have shown `401 user not found or inactive` for the
+            # entire life of this module instead of a mute counter of nothing.
+            _drop(
+                action,
+                camera_id,
+                f"HTTP {resp.status_code}: {resp.text[:400]}",
             )
+        else:
+            _bump_delivered()
     except httpx.HTTPError as exc:
-        log.info("video audit ingest %s cam=%s failed (network): %s", action, camera_id, exc)
+        _drop(action, camera_id, f"network: {exc!r}")
     except Exception as exc:  # noqa: BLE001 — auditing must never crash the user request
-        log.warning("video audit ingest %s cam=%s unexpected error: %s", action, camera_id, exc)
+        _drop(action, camera_id, f"unexpected: {exc!r}")
 
 
 # Strong refs to in-flight background audit tasks. Without this, the event loop only

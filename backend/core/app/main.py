@@ -19,6 +19,7 @@ from app.device_brands import seed_brands
 from app.module_catalog import seed_modules
 from app.tenancy.seed import seed_tenancy
 from app.core import events_nats
+from app.core.shutdown import install_signal_handlers
 
 log = get_logger("example")
 
@@ -41,6 +42,12 @@ async def lifespan(app):
     async with get_sessionmaker()() as db:
         await seed_modules(db)
         await seed_brands(db)
+    # Chain `shutting_down` onto uvicorn's SIGTERM/SIGINT handlers so the SSE
+    # relays can end their responses when the process is asked to exit. It has to
+    # happen HERE and not in the shutdown half below: uvicorn waits for open
+    # connections BEFORE it runs lifespan shutdown, so code down there never runs
+    # in the case that hangs. See app/core/shutdown.py.
+    install_signal_handlers()
     await events_nats.connect()
     await events_nats.publish("system", "core", "startup", {"service": "core"})
     yield

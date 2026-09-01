@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.deps import get_current_user, require_permission
+from ..auth.deps import get_current_user, require_permission, require_service_permission
 from ..auth.models import User
 from ..auth.permissions import CorePerm
 from ..core.audit import record as audit_record
@@ -273,13 +273,21 @@ async def consume_dual_auth(
 async def ingest_video_audit(
     data: AuditIngestIn,
     db: AsyncSession = Depends(get_db),
-    caller: User = Depends(require_permission(CorePerm.AUDIT_WRITE)),
+    caller: User | None = Depends(require_service_permission(CorePerm.AUDIT_WRITE)),
 ) -> dict:
     """Service-to-service ingest: vision reports a playback/export/delete for the trail.
 
     The satellite verified the acting user's JWT locally and passes their identity so
     the CORE hash-chain / audit trail is the single tamper-evident record of every
     sensitive video op (who / what / when / camera / range). Gated by ``audit.write``.
+
+    ``require_service_permission``, NOT ``require_permission``: the only caller is a
+    background one. `vision` mints a superadmin service token with a fixed system
+    ``sub`` that has no `users` row, so ``require_permission`` -> ``get_current_user``
+    rejected every single call with `401 user not found or inactive` and vision
+    swallowed it. No video audit event ever landed. ``caller`` is therefore
+    ``None`` for a service token; the actor snapshot below already falls back
+    through ``getattr``.
     """
     # Build a lightweight actor snapshot so the audit row carries the real user, not
     # the service account, while staying tenant-scoped to the caller's tenant. The

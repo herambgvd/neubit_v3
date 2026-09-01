@@ -4,39 +4,39 @@
 .alert-primary {
   @apply bg-primary-500 text-white;
   &.light-mode {
-    @apply bg-opacity-[14%] text-primary-500;
+    @apply bg-primary-500/[14%] text-primary-500;
   }
 }
 .alert-secondary {
   @apply bg-secondary-500 text-white;
 
   &.light-mode {
-    @apply bg-opacity-[14%] text-slate-900;
+    @apply bg-secondary-500/[14%] text-slate-900;
   }
 }
 .alert-success {
   @apply bg-success-500 text-white;
 
   &.light-mode {
-    @apply bg-opacity-[14%] text-success-500;
+    @apply bg-success-500/[14%] text-success-500;
   }
 }
 .alert-danger {
   @apply bg-danger-500 text-white;
   &.light-mode {
-    @apply bg-opacity-[14%] text-danger-500;
+    @apply bg-danger-500/[14%] text-danger-500;
   }
 }
 .alert-warning {
   @apply bg-warning-500 text-white;
   &.light-mode {
-    @apply bg-opacity-[14%] text-warning-500;
+    @apply bg-warning-500/[14%] text-warning-500;
   }
 }
 .alert-info {
   @apply bg-info-500 text-white;
   &.light-mode {
-    @apply bg-opacity-[14%] text-info-500;
+    @apply bg-info-500/[14%] text-info-500;
   }
 }
 .alert-light {
@@ -50,7 +50,7 @@
 .alert-dark {
   @apply bg-slate-900 text-white;
   &.light-mode {
-    @apply bg-opacity-[54%] text-slate-100;
+    @apply bg-slate-900/[54%] text-slate-100;
   }
 }
 

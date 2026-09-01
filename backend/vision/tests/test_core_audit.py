@@ -30,8 +30,9 @@ class _Principal:
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int = 201):
+    def __init__(self, status_code: int = 201, text: str = ""):
         self.status_code = status_code
+        self.text = text
 
 
 class _FakeClient:
@@ -138,7 +139,7 @@ async def test_non_2xx_is_swallowed(monkeypatch):
     class _403Client(_FakeClient):
         async def post(self, url, json=None):
             _FakeClient.calls.append({"url": url, "json": json, "headers": self.headers})
-            return _FakeResponse(403)
+            return _FakeResponse(403, "forbidden")
 
     monkeypatch.setattr(core_audit.httpx, "AsyncClient", _403Client)
 
@@ -149,3 +150,38 @@ async def test_non_2xx_is_swallowed(monkeypatch):
     )
     # It attempted the POST (and swallowed the 403).
     assert len(_FakeClient.calls) == 1
+
+
+async def test_drops_are_counted_and_delivery_is_counted(monkeypatch):
+    """A dropped audit must be COUNTED, not just swallowed.
+
+    The regression this guards: `require_permission` on core rejected vision's
+    service token with `401 user not found or inactive` on every call, the client
+    swallowed it, and nothing anywhere said the tamper-evident trail was empty.
+    Swallowing stays (the user's playback must not fail) — invisibility does not.
+    """
+    monkeypatch.setenv("VE_CORE_URL", "http://core:8000")
+    monkeypatch.setattr(core_audit, "_dropped", 0)
+    monkeypatch.setattr(core_audit, "_delivered", 0)
+
+    class _401Client(_FakeClient):
+        async def post(self, url, json=None):
+            return _FakeResponse(401, "user not found or inactive")
+
+    monkeypatch.setattr(core_audit.httpx, "AsyncClient", _401Client)
+    await core_audit.report_video_audit(
+        action="vms.playback.view", camera_id="cam-1",
+        principal=_Principal(uuid.uuid4(), uuid.uuid4()),
+    )
+    assert core_audit.audit_delivery_stats() == {"delivered": 0, "dropped": 1}
+
+    class _OkClient(_FakeClient):
+        async def post(self, url, json=None):
+            return _FakeResponse(201, "")
+
+    monkeypatch.setattr(core_audit.httpx, "AsyncClient", _OkClient)
+    await core_audit.report_video_audit(
+        action="vms.playback.view", camera_id="cam-1",
+        principal=_Principal(uuid.uuid4(), uuid.uuid4()),
+    )
+    assert core_audit.audit_delivery_stats() == {"delivered": 1, "dropped": 1}

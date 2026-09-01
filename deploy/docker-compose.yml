@@ -21,6 +21,11 @@ volumes:
   # `up --force-recreate` silently deletes them and `/files/<key>` starts 404ing
   # while the DB still holds the image_url. S3 deployments don't use this path.
   corefiles:
+  # JetStream's file store. `-sd /data` had NO volume behind it, so every stream,
+  # every message and every durable consumer lived in the nats container's
+  # writable layer — a `docker compose up --force-recreate` silently wiped the
+  # event spine, and the services quietly re-created empty streams on reconnect.
+  natsdata:
 
 services:
 
@@ -49,9 +54,12 @@ services:
     env_file: .env
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Creates neubit_ingest + neubit_workflow — but ONLY on a fresh volume
-      # (Postgres runs initdb scripts on first init only). On an existing volume
-      # create them manually (see deploy/postgres/init-service-dbs.sh header).
+      # The per-service databases, on a FRESH volume. Postgres runs initdb
+      # scripts on first init only, so this alone left every service added after
+      # a deployment's volume was created needing a manual `createdb`. The
+      # `db-init` service below runs the SAME script on every `up`, which is what
+      # actually keeps an existing volume in step; this hook stays so a fresh
+      # volume has its databases before anything else starts.
       - ./postgres/init-service-dbs.sh:/docker-entrypoint-initdb.d/10-init-service-dbs.sh:ro
     healthcheck:
       # NOT `pg_isready -U $$POSTGRES_USER`. That returns 0 as soon as ANY server
@@ -78,6 +86,31 @@ services:
       start_period: 60s
     networks: [neubit]
 
+  # ── per-service databases, on EVERY start ───────────────────────
+  # The initdb hook above only fires on a fresh volume, so it cannot create a
+  # database for a service added later — that needed a manual `createdb` on
+  # every existing deployment, documented in a comment nobody reads until a
+  # service is already restart-looping on "database does not exist". This runs
+  # the same idempotent script against the running server on every `up`, so the
+  # list in that script is the single source of truth for both cases.
+  #
+  # It exits 0 when everything exists, and NON-ZERO when a database is missing
+  # and could not be created — services depend on `service_completed_successfully`,
+  # so a failure stops the stack here rather than surfacing as a restart loop.
+  db-init:
+    image: timescale/timescaledb:2.17.2-pg16
+    env_file: .env
+    environment:
+      PGHOST: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: ["bash", "/init-service-dbs.sh"]
+    volumes:
+      - ./postgres/init-service-dbs.sh:/init-service-dbs.sh:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [neubit]
+    restart: "no"
+
   redis:
     image: redis:7-alpine
     healthcheck:
@@ -89,8 +122,24 @@ services:
 
   nats:
     image: nats:2.10-alpine
-    command: ["-js", "-sd", "/data"]
-    # 4222 + 8222 published for development only -- see the override.
+    # -m 8222 enables the HTTP monitoring endpoint. Without it, port 8222 was
+    # published but nothing listened on it, so stream/consumer state could not be
+    # inspected over HTTP at all — every "is the bus backed up?" question needed a
+    # throwaway nats-box container on the docker network. Monitoring is read-only
+    # (no publish, no admin), so exposing it costs nothing and answers:
+    #   curl -s localhost:8222/jsz?streams=1 | jq
+    #   curl -s localhost:8222/varz | jq .
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    # 4222 + 8222 published for DEVELOPMENT ONLY, from docker-compose.override.yml.
+    # An appliance install runs THIS file alone, and publishing the event bus put
+    # it on the customer's LAN.
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     networks: [neubit]
 
   # ── infra-control sidecar (privileged) ──────────────────────────
@@ -119,22 +168,33 @@ services:
       OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       nats: { condition: service_started }
-    # See deploy/migrate.sh. This used to be an UNCONDITIONAL
-    # `alembic upgrade 0001 && alembic stamp head`, which is right for a fresh DB
-    # (the baseline builds the current schema from ORM metadata, so the later
-    # deltas would collide) but silently WRONG for an existing one: `stamp` marks
-    # every later revision applied without running it, so an existing database
-    # never receives a new column and the API 500s on the missing field.
-    # migrate.sh picks per database instead of assuming.
+    # 8000 published for DEVELOPMENT ONLY, from docker-compose.override.yml.
+    #
+    # `migrate.sh`, NOT `alembic upgrade head` and NOT the old
+    # `upgrade 0001 && stamp head`. The 0001 baseline is a create_all() of the
+    # live ORM metadata, so on a FRESH database the later deltas collide, while on
+    # an EXISTING one a blanket `stamp head` marks every unapplied migration as
+    # done and it silently never runs. The script picks the right branch per
+    # database — see the long comment at the top of backend/core/migrate.sh.
+    #
+    # `--timeout-graceful-shutdown`: uvicorn's default is None, which
+    # `asyncio.wait_for` reads as "wait forever" — so ONE open SSE relay on
+    # `/api/v1/realtime/…` (a browser with a dashboard open is enough) makes
+    # `docker compose restart core` sit on "Waiting for connections to close"
+    # indefinitely. The relays now end their own responses on SIGTERM
+    # (backend/core/app/core/shutdown.py) and this is the BACKSTOP for everything
+    # that cannot: a WebSocket parked on receive_text(), a request wedged on a
+    # slow query, a relay added later that forgets to check.
     command: >
-      bash -c "/usr/local/bin/neubit-migrate 0001 &&
-               uvicorn app.main:app --host 0.0.0.0 --port 8000"
+      bash -c "./migrate.sh &&
+               uvicorn app.main:app --host 0.0.0.0 --port 8000
+               --timeout-graceful-shutdown 10"
     volumes:
       # Persist uploaded blobs across rebuilds — see the `corefiles` volume note.
       - corefiles:/app/data
-      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
     networks: [neubit]
     labels:
       - traefik.enable=true
@@ -160,6 +220,37 @@ services:
       VE_INGEST_PUBLIC_BASE_URL: ${VE_INGEST_PUBLIC_BASE_URL:-http://localhost}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
+      nats: { condition: service_started }
+    command: >
+      bash -c "alembic upgrade head &&
+               uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks: [neubit]
+
+  # ── dashboards service (Python / neubit kernel) ─────────────────
+  # The no-code dashboard builder's STORE: dashboards, the widgets on them and
+  # their grid geometry. Owns its own DB (neubit_dashboards) on the shared
+  # Postgres, the pattern every other satellite uses.
+  #
+  # It does NOT read the reading store. A widget carries a structured query spec
+  # and that spec is executed by the reading-writer's /api/v1/bi/query — the
+  # service that owns the readings schema (contract §7). This one never opens
+  # neubit_reporting, so there is no second query path against those tables.
+  #
+  # `alembic upgrade head` — the ordinary path, which is right here because this
+  # service's baseline is a real migration rather than a create_all() of the live
+  # ORM metadata. Core is the odd one out and runs `migrate.sh` instead; do not
+  # copy core's command here.
+  dashboards:
+    build:
+      context: ../backend
+      dockerfile: dashboards/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_dashboards
+    depends_on:
+      postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
     # 0001_ingest is a metadata baseline — see deploy/migrate.sh.
     command: >
@@ -183,6 +274,7 @@ services:
       VE_WORKFLOW_INLINE_CORRELATION: "1"
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       nats: { condition: service_started }
     command: >
@@ -230,6 +322,7 @@ services:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_access
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
     # 0001_access_baseline is a metadata baseline — see deploy/migrate.sh.
     command: >
@@ -274,6 +367,7 @@ services:
       VE_ENFORCE_H264_WEB: ${VE_ENFORCE_H264_WEB:-true}
     depends_on:
       postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
     volumes:
       # P3-B: mount the shared recordings volume so vision can CHECKSUM segments
@@ -292,6 +386,215 @@ services:
   # minio (dev S3 cold tier) REMOVED — recording storage / tiering is owned by the
   # NVR recorder, not this VMS. The vision storage data-plane was removed, so no S3
   # cold tier is needed here.
+
+  # ── reporting store (schema owner, one-shot migrator) ───────────
+  # The IoT readings pipeline's database: neubit_reporting on the shared postgres
+  # (TimescaleDB 2.17 — the platform's first hypertable). Owns the `readings`
+  # hypertable, the `points` dimension, and the 1m/1h continuous aggregates.
+  #
+  # This container is NOT a server. It ensures the database exists, runs the
+  # migrations, reconciles the Timescale background policies against the
+  # VE_READINGS_* environment below, and exits. `restart: "no"` on purpose — a
+  # migrator that restarts forever is a migrator that is failing in a loop.
+  # The reading-writer (the NATS JetStream consumer that fills the schema) is a
+  # separate, long-running service.
+  #
+  # The reporting DB is the ONE place data from several services is gathered for
+  # querying — the documented exception to the platform's no-cross-service-reads
+  # rule. It reads no other service's private schema; data arrives over NATS.
+  reporting-migrate:
+    build:
+      context: ../backend
+      dockerfile: reporting/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_reporting
+      # ── Retention / compression knobs. Change these per deployment; different
+      # compliance regimes want very different windows. Raw short, rollups long.
+      # After editing: `docker compose up -d reporting-migrate` re-reconciles.
+      # Set any retention var to `off` to disable that policy entirely.
+      # Full documentation: backend/reporting/reporting/policies.py
+      VE_READINGS_CHUNK_INTERVAL: ${VE_READINGS_CHUNK_INTERVAL:-1 day}
+      VE_READINGS_COMPRESS_AFTER: ${VE_READINGS_COMPRESS_AFTER:-7 days}
+      VE_READINGS_1M_COMPRESS_AFTER: ${VE_READINGS_1M_COMPRESS_AFTER:-30 days}
+      VE_READINGS_1H_COMPRESS_AFTER: ${VE_READINGS_1H_COMPRESS_AFTER:-365 days}
+      VE_READINGS_RETENTION: ${VE_READINGS_RETENTION:-90 days}
+      VE_READINGS_1M_RETENTION: ${VE_READINGS_1M_RETENTION:-400 days}
+      VE_READINGS_1H_RETENTION: ${VE_READINGS_1H_RETENTION:-1825 days}
+      VE_READINGS_1M_REFRESH_START: ${VE_READINGS_1M_REFRESH_START:-2 hours}
+      VE_READINGS_1M_REFRESH_END: ${VE_READINGS_1M_REFRESH_END:-1 minute}
+      VE_READINGS_1M_REFRESH_EVERY: ${VE_READINGS_1M_REFRESH_EVERY:-1 minute}
+      VE_READINGS_1H_REFRESH_START: ${VE_READINGS_1H_REFRESH_START:-1 day}
+      VE_READINGS_1H_REFRESH_END: ${VE_READINGS_1H_REFRESH_END:-1 hour}
+      VE_READINGS_1H_REFRESH_EVERY: ${VE_READINGS_1H_REFRESH_EVERY:-5 minutes}
+    depends_on:
+      postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
+    restart: "no"
+    networks: [neubit]
+
+  # ── reading-writer (IoT pipeline, Phase B) ──────────────────────
+  # The ONLY thing that writes the `readings` hypertable. A durable QUEUE-GROUP
+  # JetStream consumer on `IOT_READINGS` (subjects `tenant.*.iot.>`), filtered to
+  # `tenant.*.iot.reading.>` — alerts are events, not measurements, and have no
+  # row here.
+  #
+  # REDUNDANCY: scale it. `docker compose up -d --scale reading-writer=2` and NATS
+  # distributes messages between the replicas, because every replica binds the
+  # SAME durable name. No leader election, nothing to configure per replica. (Drop
+  # the host port binding below if you scale beyond one.)
+  #
+  # It imports the schema from the `reporting` package and never redeclares it; it
+  # does not run migrations — `reporting-migrate` owns that.
+  reading-writer:
+    build:
+      context: ../backend
+      dockerfile: reading-writer/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_reporting
+      # ── the stream this service OWNS (created/converged at startup) ─────────
+      # Bounded on BOTH size and age; whichever binds first wins. See
+      # backend/reading-writer/app/config.py for how these numbers were chosen.
+      VE_IOT_STREAM_MAX_BYTES: ${VE_IOT_STREAM_MAX_BYTES:-8589934592}
+      VE_IOT_STREAM_MAX_AGE_SEC: ${VE_IOT_STREAM_MAX_AGE_SEC:-604800}
+      # ── batching: flush on N rows or T ms, whichever comes first ────────────
+      VE_READINGS_BATCH_ROWS: ${VE_READINGS_BATCH_ROWS:-500}
+      VE_READINGS_BATCH_MS: ${VE_READINGS_BATCH_MS:-1000}
+      VE_READINGS_QUEUE_BATCHES: ${VE_READINGS_QUEUE_BATCHES:-4}
+      # ── ack: only after the batch is durably written ────────────────────────
+      VE_READINGS_ACK_WAIT_SEC: ${VE_READINGS_ACK_WAIT_SEC:-120}
+      VE_READINGS_MAX_ACK_PENDING: ${VE_READINGS_MAX_ACK_PENDING:-5000}
+      # ── tenant resolution: the gateway's tenant key → a platform tenant UUID.
+      # The live aeon feed publishes the literal key `default`, which is not a
+      # UUID, and `readings.tenant_id` is `uuid NOT NULL`. Map it, or unmapped
+      # keys get a stable synthetic UUID and a loud warning. See app/tenants.py.
+      VE_READINGS_TENANT_MAP: ${VE_READINGS_TENANT_MAP:-}
+      VE_READINGS_DEFAULT_TENANT_ID: ${VE_READINGS_DEFAULT_TENANT_ID:-}
+      # ── a hung database must not look healthy ──────────────────────────────
+      # Two halves of the same failure, because neither covers the other:
+      #
+      #   VE_DB_STATEMENT_TIMEOUT_MS — a server-side ceiling on every query this
+      #     service runs. A write blocked on a lock used to hang indefinitely;
+      #     now it RAISES, which the existing retry/NAK path already handles and
+      #     the health flag already reflects. Generous (60s) because the same
+      #     engine serves the BI query API.
+      #   VE_READINGS_WRITE_STALL_SEC — a client-side watchdog. `docker
+      #     compose pause postgres` SIGSTOPs the server, so its own statement
+      #     timeout is frozen and never fires; only the client can notice that a
+      #     write has been in flight far too long. It does not cancel anything
+      #     (nothing is acked, so nothing is lost) — it turns /readyz red so the
+      #     silence is visible. Deliberately well under the statement timeout.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS:-60000}
+      VE_READINGS_WRITE_STALL_SEC: ${VE_READINGS_WRITE_STALL_SEC:-20}
+      # ── retirement: when a point stops counting ────────────────────────────
+      # A point that stops reporting used to count toward every Building
+      # Intelligence figure forever, and the only way out was to DELETE the
+      # dimension row — which orphans its readings. A point whose last_seen_at is
+      # older than this is treated as retired at QUERY TIME (nothing is written,
+      # nothing is deleted) and drops out of the counts; it returns the instant a
+      # reading arrives. 0 disables the horizon and leaves only explicit
+      # retirement via POST /bi/points/{id}/retire.
+      VE_READINGS_RETIRE_AFTER_DAYS: ${VE_READINGS_RETIRE_AFTER_DAYS:-30}
+      # ── observability ──────────────────────────────────────────────────────
+      VE_READINGS_LAG_WARN: ${VE_READINGS_LAG_WARN:-10000}
+      # ── dashboard datasets → core's permission catalog ─────────────────────
+      # A dataset is registered as DATA and names the permission needed to read
+      # it. This service publishes those keys to core so a ROLE CAN GRANT THEM;
+      # without it only a wildcard admin could ever open the dataset (the
+      # ingest.read bug). Best-effort — core being down never fails a chart.
+      VE_CORE_URL: ${VE_CORE_URL:-http://core:8000}
+    depends_on:
+      postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
+      nats: { condition: service_started }
+      reporting-migrate: { condition: service_completed_successfully }
+    # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
+    # an operational surface, not a tenant API — and for the same reason it is
+    # published for DEVELOPMENT ONLY, from docker-compose.override.yml. An
+    # appliance runs this file alone, where publishing it would put an unauthed
+    # operational surface on the customer's LAN.
+    restart: unless-stopped
+    networks: [neubit]
+
+  # ── reporting-projector (domain events → the reporting store) ───
+  # The ONLY thing that writes the relations declared in
+  # `neubit_reporting.reporting_projections`. One durable pull consumer per
+  # projection; access control is the first, on EVENTS / `tenant.*.access.>`.
+  #
+  # WHY IT EXISTS: the platform bans services from reading each other's
+  # databases, and `neubit_reporting` is the documented exception FOR QUERYING —
+  # not a licence to open `neubit_access`. So a domain publishes on the spine and
+  # this consumes the spine. It opens one database and never another.
+  #
+  # ADDING A DOMAIN IS AN INSERT, NOT A RELEASE. A row in `reporting_projections`
+  # declares the subject, the target relation and its columns, the rollups and the
+  # `dashboard_datasets` row to publish. This service re-reads that table every
+  # VE_PROJECTOR_RELOAD_SEC, creates what the spec declares (additively — see
+  # backend/projector/app/ensure.py) and starts consuming. No rebuild, no
+  # migration, no builder release.
+  #
+  # REDUNDANCY: scale it. Every replica binds the SAME durable name per
+  # projection, so NATS distributes messages between them.
+  reporting-projector:
+    build:
+      context: ../backend
+      dockerfile: projector/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_reporting
+      # ── batching: flush on N rows or T ms, whichever comes first ────────────
+      # Smaller than the reading-writer's 500 on purpose: domain events arrive at
+      # human rates, so the timer is what fires and a bigger row threshold would
+      # only delay a swipe reaching the store.
+      VE_PROJECTOR_BATCH_ROWS: ${VE_PROJECTOR_BATCH_ROWS:-200}
+      VE_PROJECTOR_BATCH_MS: ${VE_PROJECTOR_BATCH_MS:-1000}
+      VE_PROJECTOR_QUEUE_BATCHES: ${VE_PROJECTOR_QUEUE_BATCHES:-4}
+      # ── ack: only after the batch is durably written ────────────────────────
+      VE_PROJECTOR_ACK_WAIT_SEC: ${VE_PROJECTOR_ACK_WAIT_SEC:-120}
+      VE_PROJECTOR_MAX_ACK_PENDING: ${VE_PROJECTOR_MAX_ACK_PENDING:-2000}
+      # ── how fast a newly-inserted projection starts being collected ─────────
+      VE_PROJECTOR_RELOAD_SEC: ${VE_PROJECTOR_RELOAD_SEC:-30}
+      # Set to 0 in a deployment where the projected relations are managed out of
+      # band; the projector then writes only into relations that already exist.
+      VE_PROJECTOR_ENSURE_RELATIONS: ${VE_PROJECTOR_ENSURE_RELATIONS:-1}
+      # ── tenant resolution ──────────────────────────────────────────────────
+      # A system-scoped event's subject segment is the literal `platform`, which
+      # is not a uuid, and the projected relations declare `tenant_id uuid NOT
+      # NULL`. Map it, or unmapped keys get a stable synthetic UUID and a loud
+      # warning. Same three rules (and the same namespace) as the reading-writer.
+      VE_PROJECTOR_TENANT_MAP: ${VE_PROJECTOR_TENANT_MAP:-}
+      VE_PROJECTOR_DEFAULT_TENANT_ID: ${VE_PROJECTOR_DEFAULT_TENANT_ID:-}
+      # ── observability ──────────────────────────────────────────────────────
+      # ── a hung database must not look healthy ──────────────────────────────
+      # Two halves of the same failure, because neither covers the other:
+      #
+      #   VE_DB_STATEMENT_TIMEOUT_MS — a server-side ceiling on every query this
+      #     service runs. A write blocked on a lock used to hang indefinitely;
+      #     now it RAISES, which the existing retry/NAK path already handles and
+      #     the health flag already reflects. Generous (60s) because the same
+      #     engine serves the BI query API.
+      #   VE_PROJECTOR_WRITE_STALL_SEC — a client-side watchdog. `docker
+      #     compose pause postgres` SIGSTOPs the server, so its own statement
+      #     timeout is frozen and never fires; only the client can notice that a
+      #     write has been in flight far too long. It does not cancel anything
+      #     (nothing is acked, so nothing is lost) — it turns /readyz red so the
+      #     silence is visible. Deliberately well under the statement timeout.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS:-60000}
+      VE_PROJECTOR_WRITE_STALL_SEC: ${VE_PROJECTOR_WRITE_STALL_SEC:-20}
+      VE_PROJECTOR_LAG_WARN: ${VE_PROJECTOR_LAG_WARN:-5000}
+    depends_on:
+      postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
+      nats: { condition: service_started }
+      reporting-migrate: { condition: service_completed_successfully }
+    # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
+    # an operational surface, not a tenant API. The builder reads the datasets it
+    # registers through the reading-writer's /api/v1/bi/... — one query path.
+    # Published for DEVELOPMENT ONLY, from docker-compose.override.yml — see the
+    # note on reading-writer.
+    restart: unless-stopped
+    networks: [neubit]
 
   # ── operator console (Next.js) ──────────────────────────────────
   frontend:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -33,12 +34,68 @@ from ..connectors.base import ControllerEvent
 from ..connectors.factory import get_connector
 from .crypto import decrypt_secret
 from .events import emit_access_event
-from .models import AccessEvent, Instance
+from .models import AccessEvent, Door, Instance
 
 log = logging.getLogger("access.ingestion")
 
 # How long to wait before restarting a listener that gave up permanently.
 RESTART_BACKOFF_SECONDS = 30
+
+# How long a door lookup is reused. Doors are renamed by a person, not by a
+# machine, so minutes is plenty and it keeps a busy lobby from running one SELECT
+# per swipe.
+DOOR_CACHE_TTL_SECONDS = 300
+
+
+class _DoorCache:
+    """Controller door uid → this platform's own door id and name.
+
+    WHY THE PUBLISHER RESOLVES THIS, AND NOT THE CONSUMER
+    -----------------------------------------------------
+    The reporting projector turns these events into rows in `neubit_reporting`
+    and charts them, and a chart legend reading `a7f3…` instead of `Lobby North`
+    is a regression dressed up as generalisation. But the projector is FORBIDDEN
+    from opening `neubit_access` — that ban is the whole reason the reporting
+    store exists (dashboard-builder contract §1). A consumer that "just" joined
+    the doors table would be the second write path this platform keeps deleting.
+
+    So the resolution happens HERE, where the doors table is owned, and the
+    answer travels on the wire. That is the general rule for any domain that
+    wants its events charted with human labels: publish the label.
+
+    A door the controller reports and this platform has no local record for
+    resolves to (None, None) and is published as such. It renders as absence
+    downstream, which is what it is — not as "Unknown door", which would be a
+    label nobody assigned.
+    """
+
+    def __init__(self, ttl: int = DOOR_CACHE_TTL_SECONDS) -> None:
+        self._ttl = ttl
+        self._hits: dict[tuple[str, str], tuple[float, tuple[str | None, str | None]]] = {}
+
+    async def resolve(
+        self, session, instance_id: str, door_ref: str | None
+    ) -> tuple[str | None, str | None]:
+        if not door_ref:
+            return None, None
+        key = (instance_id, door_ref)
+        now = time.monotonic()
+        hit = self._hits.get(key)
+        if hit is not None and now - hit[0] < self._ttl:
+            return hit[1]
+        row = (
+            await session.execute(
+                select(Door.id, Door.name)
+                .where(Door.instance_id == instance_id, Door.remote_ref == door_ref)
+                .limit(1)
+            )
+        ).first()
+        # A MISS is cached too, and deliberately: a controller reporting a door
+        # nobody has mapped would otherwise run a SELECT for every one of its
+        # events, forever.
+        found: tuple[str | None, str | None] = (row[0], row[1]) if row else (None, None)
+        self._hits[key] = (now, found)
+        return found
 
 
 def _parse_dt(raw: str | None) -> datetime:
@@ -57,6 +114,7 @@ class SignalRSupervisor:
         self.bus = bus
         self._tasks: dict[str, asyncio.Task] = {}
         self._stopping = False
+        self._doors = _DoorCache()
 
     async def start(self) -> None:
         """Spawn a listener per active instance across ALL tenants.
@@ -151,13 +209,18 @@ class SignalRSupervisor:
             published=False,
         )
 
-        # 1. Persist (own session per event).
+        # 1. Persist (own session per event), and resolve the local door on the
+        #    same session so the published event can carry its name.
         sm = get_sessionmaker()
+        door_id = door_name = None
         try:
             async with sm() as session:
                 session.add(row)
                 await session.commit()
                 await session.refresh(row)
+                door_id, door_name = await self._doors.resolve(
+                    session, inst["id"], ev.door_ref
+                )
         except Exception as exc:  # noqa: BLE001
             log.warning("event persist failed (instance=%s): %s", inst["id"], exc)
             return
@@ -176,6 +239,11 @@ class SignalRSupervisor:
                     "result": row.result,
                     "remote_uid": ev.remote_uid,
                     "door_ref": ev.door_ref,
+                    # The LOCAL door, resolved above. Consumers (the reporting
+                    # projector, the workflow correlation engine) get a usable
+                    # label without opening this service's database.
+                    "door_id": door_id,
+                    "door_name": door_name,
                     "cardholder_ref": ev.cardholder_ref,
                     "site_id": inst["site_id"],
                     "occurred_at": occurred_at.isoformat(),

@@ -126,6 +126,37 @@ class CorePerm:
     VMS_WALL_VIEW = "vms.wall.view"
     VMS_WALL_CONTROL = "vms.wall.control"
     VMS_WALL_MANAGE = "vms.wall.manage"
+    # --- Building Intelligence --------------------------------------------
+    # The IoT reading store's READ side, enforced by the reading-writer
+    # (`backend/reading-writer/app/api/router.py`) — the schema's owner serves
+    # its own reads (contract §7). Registered HERE, like the VMS keys above, so
+    # a tenant admin can grant it in the role editor and it rides in the JWT
+    # permissions claim. A key that is not in this catalog can only ever be held
+    # by a wildcard admin, which is not a usable permission model.
+    BI_READ = "bi.read"
+    # The WRITE key of the Building Intelligence API, and separate from bi.read
+    # on purpose: reading the estate and making a statement ABOUT it are
+    # different jobs. Two things use it and they are the same kind of decision —
+    # RETIRING a point (what is part of the estate) and PLACING a device in a
+    # site / floor / zone (where that part of it is). Neither ever touches a
+    # measurement: both write a dimension row and nothing else.
+    BI_MANAGE = "bi.manage"
+    # Dashboard builder — the no-code dashboards over the reading store. READ =
+    # list and open a dashboard; MANAGE = create / edit / delete / arrange it.
+    # Enforced by the `dashboards` service
+    # (`backend/dashboards/app/dashboards/router.py`). A widget's DATA is still
+    # gated by `bi.read` on the reading-writer, so a user who can open a
+    # dashboard but cannot read the store sees the canvas and empty widgets
+    # rather than numbers they are not entitled to.
+    DASHBOARDS_READ = "dashboards.read"
+    DASHBOARDS_MANAGE = "dashboards.manage"
+    # --- Ingest (external webhooks / event ingestion) ----------------------
+    # Enforced by the ingest service (`backend/ingest/app/ingest/router.py`) and,
+    # until now, MISSING from this catalog — so no role could grant them and only
+    # a wildcard admin could reach Ingest at all. Registering a key here is not
+    # book-keeping: it is what makes the permission grantable.
+    INGEST_READ = "ingest.read"
+    INGEST_MANAGE = "ingest.manage"
     # --- Enterprise security (P6-D) ---------------------------------------
     # Manage the security surface: 2FA-enforcement policy, LDAP/AD directory,
     # OIDC SSO. Held by a tenant's security admin.
@@ -134,6 +165,13 @@ class CorePerm:
     # else. Deliberately SEPARATE from security.manage so the approver is a
     # distinct privileged role, not just whoever configures security.
     DUALAUTH_APPROVE = "dualauth.approve"
+    # --- Runtime permission registration (service-to-service) --------------
+    # Lets a satellite publish the permission keys IT enforces into this catalog
+    # so a role can grant them. Needed because the dashboard builder's datasets
+    # are registered as DATA (an INSERT into the reporting store) and each names
+    # the permission required to read it — a key core cannot know at build time.
+    # Held by a service token, never by an operator role.
+    PERMISSION_REGISTER = "permission.register"
 
 
 PERMISSIONS.register(
@@ -185,7 +223,48 @@ PERMISSIONS.register(
     Permission(CorePerm.VMS_WALL_VIEW, "View video walls + live state", "VMS"),
     Permission(CorePerm.VMS_WALL_CONTROL, "Drive video-wall live state (push / presets / tours)", "VMS"),
     Permission(CorePerm.VMS_WALL_MANAGE, "Create / edit video walls, monitors, presets, tours", "VMS"),
+    # --- Building Intelligence ---------------------------------------------
+    Permission(
+        CorePerm.BI_READ,
+        "View building intelligence (energy / HVAC / water readings)",
+        "Building Intelligence",
+        "Read the IoT reading store: category summaries, devices, points and "
+        "time series. Read-only — nothing in this API writes.",
+    ),
+    Permission(
+        CorePerm.BI_MANAGE,
+        "Manage the measurement estate (place and retire)",
+        "Building Intelligence",
+        "Place a device in a site, floor or zone so its readings can answer a "
+        "floor-wise question, and retire a point that is no longer part of the "
+        "estate. Both write a dimension row; neither deletes a reading. Placing "
+        "also needs sites.read / floors.read to choose the place.",
+    ),
+    Permission(
+        CorePerm.DASHBOARDS_READ,
+        "View dashboards",
+        "Dashboards",
+        "Open the dashboards built over the reading store. The widgets' data is "
+        "gated separately by 'View building intelligence' (bi.read).",
+    ),
+    Permission(
+        CorePerm.DASHBOARDS_MANAGE,
+        "Build / edit dashboards",
+        "Dashboards",
+        "Create, rename and delete dashboards, add widgets and arrange the canvas.",
+    ),
+    # --- Ingest ------------------------------------------------------------
+    Permission(CorePerm.INGEST_READ, "View ingest categories / webhooks / events", "Ingest"),
+    Permission(CorePerm.INGEST_MANAGE, "Create / edit ingest webhooks + rules", "Ingest"),
     # --- Enterprise security ----------------------------------------------
     Permission(CorePerm.SECURITY_MANAGE, "Manage 2FA policy / LDAP / SSO", "Security"),
     Permission(CorePerm.DUALAUTH_APPROVE, "Approve four-eyes requests", "Security"),
+    # --- Runtime permission registration -----------------------------------
+    Permission(
+        CorePerm.PERMISSION_REGISTER,
+        "Register permission keys (service-to-service)",
+        "System",
+        "Lets a satellite service publish the permission keys it enforces into "
+        "this catalog so a role can grant them.",
+    ),
 )
