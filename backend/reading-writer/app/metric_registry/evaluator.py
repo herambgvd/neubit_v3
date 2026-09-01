@@ -690,9 +690,16 @@ async def resolve_benchmark(
     std = std_rows[0]
     bands = std["bands"] or {}
     kind = bands.get("kind") or "fixed_ranges"
+    # `head` travels onto EVERY return below, refusals included, and it grows as
+    # each fact is established. A blocked state must name what EXISTS as well as
+    # what is missing — "the standard is loaded and cited, your zone is set, only
+    # the AC share is not" is a different situation from "no standard at all",
+    # and the screen has to be able to say which. Dropping the citation on the
+    # refusal path made a cited standard look uncited.
     head = {
         "standard": std["key"], "version": std["version"], "title": std["title"],
         "kind": kind,
+        "citation": std.get("citation"),
         "effective_from": (
             std["effective_from"].isoformat() if std.get("effective_from") else None
         ),
@@ -708,6 +715,8 @@ async def resolve_benchmark(
                 f"zone on the site's benchmark config"
             ),
         }
+    head["zone"] = zone
+    head["ac_category"] = cfg.get("ac_category") if cfg else None
     zones = bands.get("zones") or {}
     zone_def = zones.get(zone) or {}
 
@@ -734,6 +743,9 @@ async def resolve_benchmark(
                 ),
             }
         size = size_category_for(float(area))
+        # (the recorded area itself already travels on the response's `site`
+        # object; only the derived category is new information here)
+        head["size_category"] = size
         ac_share = cfg.get("ac_share_percent")
         if ac_share is None:
             return {

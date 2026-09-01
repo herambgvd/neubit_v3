@@ -311,10 +311,14 @@ async def benchmark_state(
         has_standard = resolved.get("standard") is not None
         missing = resolved.get("missing")
         return {
+            # Spread the resolver's own result rather than re-listing fields:
+            # it carries every fact ESTABLISHED before the refusal (citation,
+            # zone, size category, recorded area), and a hand-maintained list
+            # here silently dropped them — a cited standard rendered as
+            # uncited and a recorded zone as unset, which is the opposite of
+            # what this blocked state is for.
+            **{k: v for k, v in resolved.items() if k != "ok"},
             "available": has_standard,
-            "standard": resolved.get("standard"),
-            "version": resolved.get("version"),
-            "kind": resolved.get("kind"),
             "missing": missing,
             "reason": resolved["reason"],
             "what_it_needs": (
