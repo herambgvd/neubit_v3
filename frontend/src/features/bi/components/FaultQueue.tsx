@@ -27,7 +27,6 @@
 //
 //   • There is no rupee impact and no CCEI driver. Both need to know what a point
 //     measures and what it costs; the wire says neither.
-import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { LoadingBlock } from "@/components/console";
@@ -83,175 +82,120 @@ function SeverityChip({ severity, count }: { severity: string | null; count: num
   );
 }
 
-// How long one fault holds the frame before the carousel moves on. Slow on
-// purpose: this is a sentence a human reads, not a banner they glance at.
-const DWELL_MS = 7000;
-
-function FaultCard({ row }: any) {
+// One fault, rendered inline for the ticker rail. Everything the list row said
+// is still here — severity, device, point, the gateway's verbatim sentence, the
+// age — laid out on a single line because the rail scrolls horizontally.
+function FaultItem({ row }: any) {
   const m = severityMeta(row.severity);
   return (
-    <div className="flex items-start gap-2.5 px-1 py-2.5">
+    <span className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap">
       <span
-        className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-[7px] border"
+        className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border"
         style={{ borderColor: `${m.accent}55`, background: `${m.accent}18`, color: m.accent }}
         title={m.label}
       >
-        <Icon icon={m.icon} className="text-[13px]" />
+        <Icon icon={m.icon} className="text-[12px]" />
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-[12.5px] font-semibold text-nb-ink">{row.device_tag || "—"}</span>
-          {row.point_addr && (
-            <span className="font-mono text-[11px] text-nb-faint" title={row.point_addr}>
-              {pointOf(row.point_addr)}
-            </span>
-          )}
-          <span className="rounded-[5px] border border-nb-line px-1.5 py-px text-[10px] uppercase tracking-[1.1px] text-nb-faint">
-            {typeLabel(row.alert_type)}
-          </span>
-        </div>
-        {/* The gateway's own sentence, verbatim. It is the one place the value
-            that tripped the rule is stated, and rewording it would be this
-            console asserting something it did not measure. */}
-        <p
-          className="mt-1 line-clamp-3 text-[11.5px] leading-snug text-nb-soft"
-          title={row.message || undefined}
-        >
-          {row.message || "—"}
-        </p>
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-[11px] text-nb-faint" title={row.ts}>
-          {fmtRelative(row.ts)}
-        </div>
-        {row.conn_slug && (
-          <div className="mt-0.5 font-mono text-[10.5px] text-nb-faint">{row.conn_slug}</div>
-        )}
-      </div>
+      <span className="text-[12px] font-semibold text-nb-ink">{row.device_tag || "—"}</span>
+      {row.point_addr && (
+        <span className="font-mono text-[11px] text-nb-faint" title={row.point_addr}>
+          {pointOf(row.point_addr)}
+        </span>
+      )}
+      <span className="rounded-[5px] border border-nb-line px-1.5 py-px text-[10px] uppercase tracking-[1.1px] text-nb-faint">
+        {typeLabel(row.alert_type)}
+      </span>
+      {/* The gateway's own sentence, verbatim. It is the one place the value that
+          tripped the rule is stated, and rewording it would be this console
+          asserting something it did not measure. */}
+      <span className="text-[11.5px] text-nb-soft">{row.message || "—"}</span>
+      <span className="text-[11px] text-nb-faint" title={row.ts}>
+        {fmtRelative(row.ts)}
+      </span>
+      {row.conn_slug && (
+        <span className="font-mono text-[10.5px] text-nb-faint">{row.conn_slug}</span>
+      )}
+    </span>
+  );
+}
+
+/** Severity counts, for the SECTION HEADER rather than a row of their own.
+ *  Exported so the panel's title line can carry them — a queue whose headline
+ *  is "how many, how bad" belongs beside the title, and moving it there gives
+ *  the faults themselves the row it used to occupy. */
+export function FaultSeverity({ query }: any) {
+  const data = query.data;
+  if (!data?.available) return null;
+  const bySeverity = data.by_severity || [];
+  const shown = (data.items || []).length;
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+      {bySeverity.map((s: any) => (
+        <SeverityChip key={s.severity ?? "_none"} severity={s.severity} count={s.alerts} />
+      ))}
+      {data.total > shown && (
+        <span className="text-[11px] text-nb-faint">
+          showing {shown} of {data.total}
+        </span>
+      )}
     </div>
   );
 }
 
-// ── The carousel ─────────────────────────────────────────────────────────────
+// ── The ticker ───────────────────────────────────────────────────────────────
 //
-// WHY NOT A LIST. A scrolled list of faults reads as a wall: every row is the
-// same shape, the newest one is wherever the scroll happens to be, and in a
-// panel this size two or three rows are visible at a time with no indication
-// that more exist. One fault at a time, given the width of the card, is
-// readable at a glance — which is the whole job of a live queue.
+// WHY A TICKER AND NOT A LIST OR A CAROUSEL. A scrolled list reads as a wall:
+// same-shaped rows, the newest wherever the scroll was left, and in a panel this
+// size only two or three visible with nothing to say more exist. A slide
+// carousel fixed the reading but cost a whole row of arrows and dots and made
+// every fault wait its turn behind a timer. A ticker shows the queue as what it
+// is — a continuous run of events — in ONE row, with no controls at all.
 //
-// THREE RULES THE ROTATION FOLLOWS, each of them about not fighting the reader:
+// The track holds the items TWICE and slides exactly half its own width. At the
+// instant the first copy leaves, the second is where it started, so the loop has
+// no jump and no gap. The duplicate is `aria-hidden`: a screen reader gets the
+// queue once, not twice.
 //
-//   1. Hovering or focusing PAUSES it. Text that slides away mid-sentence is
-//      worse than no rotation at all.
-//   2. Touching an arrow or a dot STOPS it for good. Manual navigation is
-//      someone saying which fault they want to look at; resuming the carousel
-//      would take it back off them.
-//   3. `prefers-reduced-motion` never auto-advances. The arrows still work, so
-//      no fault becomes unreachable — the motion goes, the content does not.
+// Speed is per-instance, not fixed. `SECONDS_PER_FAULT` × the item count means
+// two faults do not crawl and twenty do not sprint — the rail always moves at
+// about a reading pace regardless of how loud the estate is.
 //
-// The index is clamped against the CURRENT item count on every render, because
-// the query behind this refetches: a queue that shrinks while someone is on the
-// last card must land somewhere real rather than render an undefined row.
-function FaultCarousel({ items }: { items: any[] }) {
-  const [i, setI] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const [manual, setManual] = useState(false);
-  const reduced = useRef(false);
+// Hover or focus PAUSES it (CSS, on the rail, so it works without React), and
+// `prefers-reduced-motion` stops the animation entirely while turning the rail
+// into a normal horizontal scroller — the motion goes, no fault becomes
+// unreachable.
+const SECONDS_PER_FAULT = 9;
 
-  useEffect(() => {
-    reduced.current =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-  }, []);
-
-  const n = items.length;
-  const at = n ? Math.min(i, n - 1) : 0;
-
-  useEffect(() => {
-    if (n < 2 || paused || manual || reduced.current) return;
-    const t = setTimeout(() => setI((k) => (k + 1) % n), DWELL_MS);
-    return () => clearTimeout(t);
-  }, [at, n, paused, manual]);
-
-  const go = (d: number) => {
-    setManual(true);
-    setI((k) => (((k + d) % n) + n) % n);
-  };
-
-  const row = items[at];
-  if (!row) return null;
+function FaultTicker({ items }: { items: any[] }) {
+  const duration = Math.max(18, items.length * SECONDS_PER_FAULT);
+  const run = (dup: boolean) => (
+    // `min-w-full` is what makes the loop seamless when the estate is QUIET.
+    // With two faults the content is narrower than the rail, and a track sized
+    // to content would slide a gap through the frame every cycle. Floored at the
+    // rail's width, one run is always at least a full frame, so translating the
+    // track by half of itself lands the second run exactly where the first
+    // started — loud estate or quiet one.
+    <div
+      className={`flex min-w-full shrink-0 items-center gap-8 pr-8 ${dup ? "nb-ticker-dup" : ""}`}
+      aria-hidden={dup || undefined}
+    >
+      {items.map((row: any) => (
+        <FaultItem key={`${dup ? "d" : ""}${row.alert_id}`} row={row} />
+      ))}
+    </div>
+  );
 
   return (
-    <div
-      className="flex min-h-0 flex-1 flex-col"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") go(-1);
-        if (e.key === "ArrowRight") go(1);
-      }}
-      tabIndex={n > 1 ? 0 : -1}
-      role="group"
-      aria-roledescription="carousel"
-      aria-label={`Fault ${at + 1} of ${n}`}
-      // A card keyed by its alert id remounts on change, so the transition is
-      // per-fault rather than one element mutating its own text mid-read.
-    >
-      {/* A MINIMUM HEIGHT, not just `flex-1`. One fault needs roughly this much
-          room — an icon, an identity line, up to three lines of the gateway's
-          own sentence — and asking for it as leftover space is how this panel
-          first shipped showing nothing at all: the column had about forty
-          pixels to spare, `overflow-hidden` clipped the card to that, and the
-          controls underneath made it look like a carousel with no slides.
-          Content that cannot fit must push, or scroll, or say so. It must never
-          be silently cropped to zero. */}
-      <div className="min-h-[92px] flex-1 overflow-hidden rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.45)]">
-        <FaultCard key={row.alert_id} row={row} />
-      </div>
-
-      {n > 1 && (
-        <div className="mt-2 flex shrink-0 items-center gap-2">
-          <button
-            onClick={() => go(-1)}
-            aria-label="Previous fault"
-            className="grid h-6 w-6 place-items-center rounded-[6px] border border-nb-line text-nb-faint hover:text-nb-ink"
-          >
-            <Icon icon="heroicons:chevron-left" className="text-[13px]" />
-          </button>
-
-          <div className="flex flex-1 items-center justify-center gap-1.5">
-            {items.map((it: any, k: number) => (
-              <button
-                key={it.alert_id}
-                onClick={() => {
-                  setManual(true);
-                  setI(k);
-                }}
-                aria-label={`Fault ${k + 1}`}
-                aria-current={k === at}
-                className={`h-1.5 rounded-full transition-all ${
-                  k === at ? "w-4 bg-nb-accent" : "w-1.5 bg-nb-line hover:bg-nb-faint"
-                }`}
-              />
-            ))}
-          </div>
-
-          <span className="font-mono text-[10.5px] text-nb-faint">
-            {at + 1}/{n}
-          </span>
-
-          <button
-            onClick={() => go(1)}
-            aria-label="Next fault"
-            className="grid h-6 w-6 place-items-center rounded-[6px] border border-nb-line text-nb-faint hover:text-nb-ink"
-          >
-            <Icon icon="heroicons:chevron-right" className="text-[13px]" />
-          </button>
+    <div className="nb-ticker-hold py-1">
+      <div className="nb-ticker-rail overflow-hidden">
+        <div
+          className="nb-ticker flex"
+          style={{ ["--nb-ticker-duration" as any]: `${duration}s` }}
+        >
+          {run(false)}
+          {run(true)}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -279,28 +223,21 @@ export default function FaultQueue({ query, hours }: any) {
     );
 
   const items = data?.items || [];
-  const bySeverity = data?.by_severity || [];
+
+  // The counts now live in the section header (`FaultSeverity`). What is left
+  // here is the queue itself — or, when it is empty, the one sentence that says
+  // so. An empty queue is GOOD NEWS and is stated as such; it is not the same
+  // as the no-collector state above, which is silence.
+  if (!items.length)
+    return (
+      <p className="py-2 text-[11.5px] text-nb-good">
+        No fault was raised in the last {hours} hours.
+      </p>
+    );
 
   return (
     <>
-      <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-        {bySeverity.length ? (
-          bySeverity.map((s: any) => (
-            <SeverityChip key={s.severity ?? "_none"} severity={s.severity} count={s.alerts} />
-          ))
-        ) : (
-          <span className="text-[11.5px] text-nb-good">
-            No fault was raised in the last {hours} hours.
-          </span>
-        )}
-        {data?.total > items.length && (
-          <span className="ml-auto text-[11px] text-nb-faint">
-            showing {items.length} of {data.total}
-          </span>
-        )}
-      </div>
-
-      {items.length > 0 && <FaultCarousel items={items} />}
+      <FaultTicker items={items} />
     </>
   );
 }

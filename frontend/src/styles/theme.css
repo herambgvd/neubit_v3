@@ -148,6 +148,16 @@
 @keyframes nb-dot-pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.25 } }
 .nb-pulse { animation: nb-dot-pulse 1.4s ease-in-out infinite; }
 
+/* The fault ticker. The track holds the items TWICE and slides exactly half its
+   own width, so the second copy is under the cursor at the instant the first
+   scrolls out — a loop with no jump and no gap to notice. Duration is set per
+   instance from the item count (see FaultQueue), because a fixed duration would
+   make two faults crawl and twenty sprint. */
+@keyframes nb-ticker { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+.nb-ticker { animation: nb-ticker var(--nb-ticker-duration, 40s) linear infinite; }
+.nb-ticker-hold:hover .nb-ticker,
+.nb-ticker-hold:focus-within .nb-ticker { animation-play-state: paused; }
+
 /* prefers-reduced-motion. RGL animates every tile's transform and its placeholder
    by default and offers no option to stop; ECharts is handled in JS
    (features/dashboards/charts/echarts.ts `motionOptions`), because a canvas
@@ -162,4 +172,11 @@
   }
   .nb-skeleton,
   .nb-pulse { animation: none !important; }
+  /* A stopped ticker must not become an unreadable pile: the track stops
+     sliding AND the rail becomes scrollable, so every fault is still
+     reachable by hand. Motion is what this setting asks to remove — not
+     content. */
+  .nb-ticker { animation: none !important; }
+  .nb-ticker-rail { overflow-x: auto !important; }
+  .nb-ticker-dup { display: none !important; }
 }

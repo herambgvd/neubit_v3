@@ -74,7 +74,7 @@ import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 
 import ActivityChart from "./components/ActivityChart";
-import FaultQueue from "./components/FaultQueue";
+import FaultQueue, { FaultSeverity } from "./components/FaultQueue";
 import { bi } from "./api";
 import { categoryMeta, deviceTypeLabel } from "./constants";
 
@@ -426,11 +426,15 @@ export default function Portfolio() {
                 )}
               </SectionCard>
 
-              <SectionCard className="flex min-h-0 flex-1 flex-col">
+              <SectionCard className="shrink-0">
                 <SectionHead
                   icon="heroicons:bell-alert"
                   title={`Live queue · ${ALERT_HOURS} h`}
                   hint="Raised by the gateway. Severity, type and wording are its own; nothing here is inferred."
+                  // The counts belong on the title line: "how many, how bad" IS
+                  // this panel's headline, and putting it here gives the faults
+                  // themselves the row the chips used to take.
+                  action={<FaultSeverity query={alertsQ} />}
                 />
                 <FaultQueue query={alertsQ} hours={ALERT_HOURS} />
               </SectionCard>
