@@ -27,6 +27,7 @@
 //
 //   • There is no rupee impact and no CCEI driver. Both need to know what a point
 //     measures and what it costs; the wire says neither.
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { LoadingBlock } from "@/components/console";
@@ -82,10 +83,14 @@ function SeverityChip({ severity, count }: { severity: string | null; count: num
   );
 }
 
-function FaultRow({ row }: any) {
+// How long one fault holds the frame before the carousel moves on. Slow on
+// purpose: this is a sentence a human reads, not a banner they glance at.
+const DWELL_MS = 7000;
+
+function FaultCard({ row }: any) {
   const m = severityMeta(row.severity);
   return (
-    <li className="flex items-start gap-2.5 border-t border-nb-line/40 px-1 py-2.5 first:border-t-0">
+    <div className="flex items-start gap-2.5 px-1 py-2.5">
       <span
         className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-[7px] border"
         style={{ borderColor: `${m.accent}55`, background: `${m.accent}18`, color: m.accent }}
@@ -108,7 +113,12 @@ function FaultRow({ row }: any) {
         {/* The gateway's own sentence, verbatim. It is the one place the value
             that tripped the rule is stated, and rewording it would be this
             console asserting something it did not measure. */}
-        <p className="mt-1 text-[11.5px] leading-snug text-nb-soft">{row.message || "—"}</p>
+        <p
+          className="mt-1 line-clamp-3 text-[11.5px] leading-snug text-nb-soft"
+          title={row.message || undefined}
+        >
+          {row.message || "—"}
+        </p>
       </div>
       <div className="shrink-0 text-right">
         <div className="text-[11px] text-nb-faint" title={row.ts}>
@@ -118,7 +128,123 @@ function FaultRow({ row }: any) {
           <div className="mt-0.5 font-mono text-[10.5px] text-nb-faint">{row.conn_slug}</div>
         )}
       </div>
-    </li>
+    </div>
+  );
+}
+
+// ── The carousel ─────────────────────────────────────────────────────────────
+//
+// WHY NOT A LIST. A scrolled list of faults reads as a wall: every row is the
+// same shape, the newest one is wherever the scroll happens to be, and in a
+// panel this size two or three rows are visible at a time with no indication
+// that more exist. One fault at a time, given the width of the card, is
+// readable at a glance — which is the whole job of a live queue.
+//
+// THREE RULES THE ROTATION FOLLOWS, each of them about not fighting the reader:
+//
+//   1. Hovering or focusing PAUSES it. Text that slides away mid-sentence is
+//      worse than no rotation at all.
+//   2. Touching an arrow or a dot STOPS it for good. Manual navigation is
+//      someone saying which fault they want to look at; resuming the carousel
+//      would take it back off them.
+//   3. `prefers-reduced-motion` never auto-advances. The arrows still work, so
+//      no fault becomes unreachable — the motion goes, the content does not.
+//
+// The index is clamped against the CURRENT item count on every render, because
+// the query behind this refetches: a queue that shrinks while someone is on the
+// last card must land somewhere real rather than render an undefined row.
+function FaultCarousel({ items }: { items: any[] }) {
+  const [i, setI] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [manual, setManual] = useState(false);
+  const reduced = useRef(false);
+
+  useEffect(() => {
+    reduced.current =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+  }, []);
+
+  const n = items.length;
+  const at = n ? Math.min(i, n - 1) : 0;
+
+  useEffect(() => {
+    if (n < 2 || paused || manual || reduced.current) return;
+    const t = setTimeout(() => setI((k) => (k + 1) % n), DWELL_MS);
+    return () => clearTimeout(t);
+  }, [at, n, paused, manual]);
+
+  const go = (d: number) => {
+    setManual(true);
+    setI((k) => (((k + d) % n) + n) % n);
+  };
+
+  const row = items[at];
+  if (!row) return null;
+
+  return (
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") go(-1);
+        if (e.key === "ArrowRight") go(1);
+      }}
+      tabIndex={n > 1 ? 0 : -1}
+      role="group"
+      aria-roledescription="carousel"
+      aria-label={`Fault ${at + 1} of ${n}`}
+      // A card keyed by its alert id remounts on change, so the transition is
+      // per-fault rather than one element mutating its own text mid-read.
+    >
+      <div className="min-h-0 flex-1 overflow-hidden rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.45)]">
+        <FaultCard key={row.alert_id} row={row} />
+      </div>
+
+      {n > 1 && (
+        <div className="mt-2 flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => go(-1)}
+            aria-label="Previous fault"
+            className="grid h-6 w-6 place-items-center rounded-[6px] border border-nb-line text-nb-faint hover:text-nb-ink"
+          >
+            <Icon icon="heroicons:chevron-left" className="text-[13px]" />
+          </button>
+
+          <div className="flex flex-1 items-center justify-center gap-1.5">
+            {items.map((it: any, k: number) => (
+              <button
+                key={it.alert_id}
+                onClick={() => {
+                  setManual(true);
+                  setI(k);
+                }}
+                aria-label={`Fault ${k + 1}`}
+                aria-current={k === at}
+                className={`h-1.5 rounded-full transition-all ${
+                  k === at ? "w-4 bg-nb-accent" : "w-1.5 bg-nb-line hover:bg-nb-faint"
+                }`}
+              />
+            ))}
+          </div>
+
+          <span className="font-mono text-[10.5px] text-nb-faint">
+            {at + 1}/{n}
+          </span>
+
+          <button
+            onClick={() => go(1)}
+            aria-label="Next fault"
+            className="grid h-6 w-6 place-items-center rounded-[6px] border border-nb-line text-nb-faint hover:text-nb-ink"
+          >
+            <Icon icon="heroicons:chevron-right" className="text-[13px]" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -166,16 +292,7 @@ export default function FaultQueue({ query, hours }: any) {
         )}
       </div>
 
-      {items.length > 0 && (
-        // In the pinned layout this list takes the height its card has left and
-        // scrolls inside it. Below `xl` nothing bounds the card, so the cap is
-        // what stops one noisy hour from becoming the whole page.
-        <ul className="max-h-[420px] min-h-0 flex-1 overflow-y-auto xl:max-h-none">
-          {items.map((row: any) => (
-            <FaultRow key={row.alert_id} row={row} />
-          ))}
-        </ul>
-      )}
+      {items.length > 0 && <FaultCarousel items={items} />}
     </>
   );
 }
