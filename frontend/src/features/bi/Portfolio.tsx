@@ -61,14 +61,11 @@ import { Icon } from "@iconify/react";
 
 import {
   ConsolePage,
-  ConsoleScroll,
   SectionCard,
   SectionHead,
   LoadingBlock,
-  PanelStat,
   KpiStrip,
   Kpi,
-  EstateMain,
   Leaderboard,
   LeaderRow,
   LeaderChip,
@@ -289,139 +286,142 @@ export default function Portfolio() {
 
   return (
     <ConsolePage>
-      <ConsoleScroll>
-        {/* No page title and no standfirst. The nav already says Portfolio, and
-            the paragraph that used to sit here restated what the KPI strip
-            shows one line lower. Only the freshness stamp survives, because
-            nothing else on the page says how old the numbers are. */}
-        <div className="mb-3 flex items-center justify-end gap-2 text-[11px] text-nb-faint">
-          {summaryQ.isFetching && (
-            <Icon icon="svg-spinners:180-ring" className="text-sm text-nb-blueb" />
-          )}
-          {s && <span>updated {fmtRelative(s.generated_at)}</span>}
-        </div>
+      {/* No page title and no standfirst. The nav already says Portfolio, and the
+          paragraph that used to sit here restated what the KPI strip shows one
+          line lower.
 
-        {err ? (
-          <SectionCard className="text-center text-xs text-nb-crit">{err}</SectionCard>
-        ) : summaryQ.isLoading ? (
-          <LoadingBlock label="Reading the store…" />
-        ) : (
-          <div className="space-y-3">
-            <KpiStrip>
-              <Kpi
-                icon="heroicons:star"
-                label="Portfolio score"
-                value={scoredSites.length ? Math.round(scoredMean!) : null}
-                sub={
-                  scoredSites.length
-                    ? `mean CCEI over ${scoredSites.length} scored site(s)`
-                    : "CCEI blocked on every site — the rows say why, input by input"
-                }
-                title="CCEI v1 = 0.6 × intensity_score + 0.4 × hvac_health, evaluated by the metric registry per site. A composite of a refusal is a refusal: a site missing its area, its benchmark inputs, or holding frozen chillers scores a dash with the reasons attached — never an invented number."
-              />
-              <Kpi
-                icon="heroicons:cpu-chip"
-                label="Devices"
-                value={s.total_devices}
-                sub="reporting into the store"
-              />
-              <Kpi
-                icon="heroicons:signal"
-                label="Points"
-                value={s.total_points}
-                sub={`${s.total_points_reporting} reporting in last ${s.fresh_minutes} min`}
-                tone={s.total_points_reporting === s.total_points ? "good" : "warn"}
-              />
-              <Kpi
-                icon="heroicons:bolt"
-                label="Measured kWh"
-                value={measuredTotal != null ? measuredTotal.toLocaleString() : null}
-                sub={
-                  measuredTotal != null
-                    ? `${measured.length} site(s), operator-confirmed registers, ${alertHours}h`
-                    : "no kWh register confirmed — confirm units in Ratings"
-                }
-                tone="good"
-                title={
-                  measuredTotal != null
-                    ? undefined
-                    : "Consumption is last − first over a confirmed kWh register. Zero registers are confirmed, so there is nothing measured to show — confirming them happens in Ratings, by a human."
-                }
-              />
-              <Kpi
-                icon="heroicons:bell-alert"
-                label={`Critical · ${alertHours}h`}
-                value={critTotal}
-                sub="raised by the gateway, nothing inferred"
-                tone={critTotal ? "crit" : "good"}
-              />
-            </KpiStrip>
+          This strip carries the two ages nothing else on the page states, and they
+          answer DIFFERENT questions: `last reading` is how fresh the ESTATE is (the
+          newest reading in the store), `updated` is how fresh this PAGE is. A stale
+          estate behind a freshly-fetched page is exactly the failure worth seeing,
+          so both stay, side by side. */}
+      <div className="mb-3 flex shrink-0 items-center justify-end gap-2 text-[11px] text-nb-faint">
+        {summaryQ.isFetching && (
+          <Icon icon="svg-spinners:180-ring" className="text-sm text-nb-blueb" />
+        )}
+        {s && (
+          <>
+            <span>
+              last reading <span className="text-nb-soft">{fmtRelative(s.last_reading_at)}</span>
+            </span>
+            <span className="text-nb-line">·</span>
+            <span>updated {fmtRelative(s.generated_at)}</span>
+          </>
+        )}
+      </div>
 
-            <EstateMain
-              left={
-                <>
-                  <SectionCard>
-                    <SectionHead
-                      icon="heroicons:trophy"
-                      title="Site leaderboard"
-                      desc="Sites the store has been told about, plus the points no site owns. A dash is a blocked score — its reasons sit on the row."
-                    />
-                    <Leaderboard>
-                      {sites.map((site: any) => (
-                        <SiteRow key={site.site_id ?? "_unplaced"} site={site} alertHours={alertHours} />
-                      ))}
-                    </Leaderboard>
-                  </SectionCard>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    {s.categories.map((row: any) => (
-                      <CategoryCard key={row.category ?? "_none"} row={row} />
-                    ))}
-                  </div>
-                </>
+      {err ? (
+        <SectionCard className="text-center text-xs text-nb-crit">{err}</SectionCard>
+      ) : summaryQ.isLoading ? (
+        <LoadingBlock label="Reading the store…" />
+      ) : (
+        // THE PAGE ITSELF DOES NOT SCROLL. The KPI strip is pinned and the two
+        // columns scroll independently inside what is left of the viewport, so the
+        // numbers a glance is for never leave the screen.
+        //
+        // Only from `xl` up. Below that the columns stack into one narrow lane that
+        // cannot fit a leaderboard AND a chart at any height, and pinning there
+        // would trap content in a few unusable pixels — narrow gets an ordinary
+        // page scroll, which is the honest behaviour for it.
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-1">
+          <KpiStrip className="shrink-0">
+            <Kpi
+              icon="heroicons:star"
+              label="Portfolio score"
+              value={scoredSites.length ? Math.round(scoredMean!) : null}
+              sub={
+                scoredSites.length
+                  ? `mean CCEI over ${scoredSites.length} scored site(s)`
+                  : "CCEI blocked on every site — the rows say why, input by input"
               }
-              right={
-                <>
-                  <SectionCard>
-                    <SectionHead
-                      icon="heroicons:chart-bar"
-                      title="Ingest — last 24 hours"
-                      desc="Samples per hour by category. A count of samples, not of any physical quantity."
-                    />
-                    {activityQ.isLoading ? (
-                      <LoadingBlock label="Loading rollup…" />
-                    ) : (
-                      <ActivityChart rows={activityQ.data || []} />
-                    )}
-                  </SectionCard>
-
-                  <SectionCard>
-                    <SectionHead
-                      icon="heroicons:bell-alert"
-                      title={`Live queue · ${ALERT_HOURS} h`}
-                      desc="Raised by the gateway. Severity, type and wording are its own; nothing here is inferred."
-                    />
-                    <FaultQueue query={alertsQ} hours={ALERT_HOURS} />
-                  </SectionCard>
-
-                  <SectionCard>
-                    <SectionHead icon="heroicons:clock" title="Store" />
-                    <PanelStat label="First reading" value={fmtRelative(s.first_reading_at)} />
-                    <PanelStat label="Last reading" value={fmtRelative(s.last_reading_at)} tone="good" />
-                    <PanelStat label="Samples this hour" value={s.readings_last_hour.toLocaleString()} />
-                    <PanelStat label="Categories reporting" value={s.categories.filter((c: any) => c.category).length} />
-                    <PanelStat
-                      label="Unclassified points"
-                      value={s.categories.find((c: any) => !c.category)?.points ?? 0}
-                      tone="faint"
-                    />
-                  </SectionCard>
-                </>
+              title="CCEI v1 = 0.6 × intensity_score + 0.4 × hvac_health, evaluated by the metric registry per site. A composite of a refusal is a refusal: a site missing its area, its benchmark inputs, or holding frozen chillers scores a dash with the reasons attached — never an invented number."
+            />
+            <Kpi
+              icon="heroicons:cpu-chip"
+              label="Devices"
+              value={s.total_devices}
+              sub="reporting into the store"
+            />
+            <Kpi
+              icon="heroicons:signal"
+              label="Points"
+              value={s.total_points}
+              sub={`${s.total_points_reporting} reporting in last ${s.fresh_minutes} min`}
+              tone={s.total_points_reporting === s.total_points ? "good" : "warn"}
+            />
+            <Kpi
+              icon="heroicons:bolt"
+              label="Measured kWh"
+              value={measuredTotal != null ? measuredTotal.toLocaleString() : null}
+              sub={
+                measuredTotal != null
+                  ? `${measured.length} site(s), operator-confirmed registers, ${alertHours}h`
+                  : "no kWh register confirmed — confirm units in Ratings"
+              }
+              tone="good"
+              title={
+                measuredTotal != null
+                  ? undefined
+                  : "Consumption is last − first over a confirmed kWh register. Zero registers are confirmed, so there is nothing measured to show — confirming them happens in Ratings, by a human."
               }
             />
+            <Kpi
+              icon="heroicons:bell-alert"
+              label={`Critical · ${alertHours}h`}
+              value={critTotal}
+              sub="raised by the gateway, nothing inferred"
+              tone={critTotal ? "crit" : "good"}
+            />
+          </KpiStrip>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto xl:grid-cols-[1.52fr_1fr] xl:overflow-hidden">
+            <div className="min-w-0 space-y-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+              <SectionCard>
+                <SectionHead
+                  icon="heroicons:trophy"
+                  title="Site leaderboard"
+                  desc="Sites the store has been told about, plus the points no site owns. A dash is a blocked score — its reasons sit on the row."
+                />
+                <Leaderboard>
+                  {sites.map((site: any) => (
+                    <SiteRow key={site.site_id ?? "_unplaced"} site={site} alertHours={alertHours} />
+                  ))}
+                </Leaderboard>
+              </SectionCard>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {s.categories.map((row: any) => (
+                  <CategoryCard key={row.category ?? "_none"} row={row} />
+                ))}
+              </div>
+            </div>
+
+            <div className="min-w-0 space-y-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+              <SectionCard>
+                <SectionHead
+                  icon="heroicons:chart-bar"
+                  title="Ingest — last 24 hours"
+                  desc="Samples per hour by category. A count of samples, not of any physical quantity."
+                />
+                {activityQ.isLoading ? (
+                  <LoadingBlock label="Loading rollup…" />
+                ) : (
+                  <ActivityChart rows={activityQ.data || []} />
+                )}
+              </SectionCard>
+
+              <SectionCard>
+                <SectionHead
+                  icon="heroicons:bell-alert"
+                  title={`Live queue · ${ALERT_HOURS} h`}
+                  desc="Raised by the gateway. Severity, type and wording are its own; nothing here is inferred."
+                />
+                <FaultQueue query={alertsQ} hours={ALERT_HOURS} />
+              </SectionCard>
+            </div>
           </div>
-        )}
-      </ConsoleScroll>
+        </div>
+      )}
     </ConsolePage>
   );
 }
