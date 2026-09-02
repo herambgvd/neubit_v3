@@ -32,6 +32,7 @@ import { Icon } from "@iconify/react";
 
 import { vms } from "../api";
 import LivePlayer, { PlayerBtn } from "./LivePlayer";
+import TilePlayback from "./TilePlayback";
 import { STATUS_PRESETS } from "../constants";
 
 const EDGE = {
@@ -58,6 +59,22 @@ function WallTile({
   // federated — and guessing "local" mints against the wrong control plane, which
   // is what showed "camera not found" on every tile after a refresh.
   estateReady = true,
+  // ── recorded playback, IN THIS TILE ──────────────────────────────────────
+  // When the wall is in playback and this tile is participating (the focused
+  // tile, or every filled tile with Sync on), the cell shows the recording at
+  // `playbackAnchorMs` instead of the live stream. The tile does not open
+  // anything: same cell, same chrome, same neighbours — see TilePlayback.
+  playback = false,
+  playbackMaster = false, // this tile drives the shared clock
+  playbackAnchorMs = null,
+  playbackAnchorSeq = 0,
+  playbackToMs = 0,
+  playbackPlaying = true,
+  playbackSpeed = 1,
+  playbackClock = null,
+  onPlaybackEnded, // (atMs) — the master's window ran out; carry the wall on
+  focused = false,
+  onFocus, // (index) — a click makes this the tile the transport is bound to
   onAssign, // (cameraId, index) — from rail drag / picker
   onAssignMany, // (cameraIds[], index) — a whole rail branch dropped here
   onSwap, // (fromIndex, index) — from tile→tile drag
@@ -210,6 +227,10 @@ function WallTile({
   // 64 tiles all saying "Connecting…". Skipping them is both the honest picture
   // and what makes the rest of the wall come up.
   const dark = DARK_STATUSES.has(status) && !forceLive;
+  // Playback wins over the dark placeholder: "this camera is offline NOW" says
+  // nothing about whether it was recording an hour ago, and the recording is
+  // exactly what an operator opens playback to see.
+  const playing_back = playback && !!camera;
   // Once the camera comes back the override has done its job — drop it, so a
   // later outage darkens the tile again instead of dialling forever.
   if (forceLive && !DARK_STATUSES.has(status)) setForceLive(false);
@@ -226,11 +247,30 @@ function WallTile({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
+      // A single click binds the playback transport to this tile — the camera
+      // whose coverage the timeline draws, and the one that leads a seek. There
+      // was no single-click action on a filled tile before, so this costs nothing
+      // and saves the operator hunting for a "which camera?" dropdown.
+      onClick={() => onFocus?.(index)}
       onDoubleClick={() => onSpotlight?.(index)}
       className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${
-        dropActive ? "outline outline-2 outline-[#22d3ee]" : "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]"
+        dropActive
+          ? "outline outline-2 outline-[#22d3ee]"
+          : focused
+            ? "border border-[#22d3ee] shadow-[0_0_0_1px_rgba(34,211,238,.45)]"
+            : "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]"
       }`}
     >
+      {/* PLAYBACK badge — the tile must never look live while it is not. The
+          live player paints its own LIVE badge in the same corner, so the two
+          states read the same way in the same place. */}
+      {playing_back && (
+        <span className="pointer-events-none absolute left-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-[#22d3ee] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#04121f]">
+          <Icon icon="heroicons-solid:play" className="text-[10px]" />
+          Playback
+        </span>
+      )}
+
       {/* Status-coloured top edge — sits just above the video INSIDE this tile
           only (z-[1]); the tile lives in the wall's z-0 stacking context so this
           never paints over the header account dropdown. */}
@@ -255,7 +295,25 @@ function WallTile({
       {/* Dark camera — the NVR's NO VIDEO cell, not a spinner. It says which
           state the estate reported, offers the same spotlight/remove cluster the
           live tiles have, and lets the operator overrule a stale status. */}
-      {dark ? (
+      {playing_back ? (
+        <>
+          <TilePlayback
+            camera={camera}
+            anchorMs={playbackAnchorMs}
+            anchorSeq={playbackAnchorSeq}
+            windowToMs={playbackToMs}
+            playing={playbackPlaying}
+            speed={playbackSpeed}
+            master={playbackMaster}
+            clock={playbackClock}
+            compact={!isHero}
+            onReachedEnd={onPlaybackEnded}
+          />
+          <div className="absolute bottom-2 right-2 z-20 flex items-center gap-0.5 rounded-[9px] border border-white/15 bg-black/55 p-0.5 opacity-0 backdrop-blur-xs transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {tileControls}
+          </div>
+        </>
+      ) : dark ? (
         <>
           <div className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center">
             <Icon icon="heroicons-outline:video-camera-slash" className={`text-white/25 ${isHero ? "text-4xl" : "text-2xl"}`} />

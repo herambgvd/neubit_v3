@@ -179,13 +179,24 @@ export default function WallToolbar({
         )}
         <IconBtn icon="heroicons-outline:arrow-path" title="Refresh cameras" spinning={refreshing} onClick={onRefresh} />
 
-        {/* Playout (DVR transport) toggle */}
-        <IconBtn
-          icon="heroicons-outline:film"
-          title={playoutOpen ? "Hide playout transport" : "Show playout transport"}
-          active={playoutOpen}
+        {/* PLAYBACK — the wall's DVR. It opens the transport dock, and from there
+            a click on the timeline puts the recording in the tiles themselves.
+            Named and iconed for what the operator is after (playback) rather than
+            for the mechanism (a playout transport), which is why the old label
+            read as a developer's word for a viewer's feature. */}
+        <button
+          type="button"
+          title={playoutOpen ? "Close playback" : "Playback — scrub recordings on the wall"}
           onClick={onTogglePlayout}
-        />
+          className={`inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border px-2.5 text-xs font-medium transition ${
+            playoutOpen
+              ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+              : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
+          }`}
+        >
+          <Icon icon="heroicons-outline:play-circle" className="text-base" />
+          Playback
+        </button>
 
         {/* Alarm count chip (real count; hidden at zero) */}
         {alarmCount > 0 && (
