@@ -173,13 +173,6 @@ export default function FaultQueue({ query, hours }: any) {
           ))}
         </ul>
       )}
-
-      <p className="mt-2.5 border-t border-nb-line/50 pt-2 text-[11px] leading-relaxed text-nb-faint">
-        Raised by the gateway and read from <span className="font-mono">iot_alerts</span>, over a
-        bounded {hours}-hour window. An alert carries no unit, no cost and no device category — the
-        wire does not say — so this queue counts and quotes, and converts nothing. Acknowledgement
-        happens in the gateway and is not published, so no acknowledgement state is shown.
-      </p>
     </>
   );
 }

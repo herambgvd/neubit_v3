@@ -124,11 +124,14 @@ function CategoryCard({ row }: any) {
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
+      {/* one line, scrolled — NOT wrapped. A wrapping chip list makes the card
+          as tall as the estate's messiest category, and every other card in the
+          row grows to match it. */}
+      <div className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5">
         {row.device_types.map((t: any) => (
           <span
             key={`${t.device_type}`}
-            className="rounded-[6px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 py-0.5 text-[10.5px] text-nb-soft"
+            className="shrink-0 rounded-[6px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 py-0.5 text-[10.5px] text-nb-soft"
           >
             {deviceTypeLabel(t.device_type)}
             <span className="ml-1 font-mono text-nb-faint">{t.devices}</span>
@@ -148,7 +151,7 @@ function CategoryCard({ row }: any) {
   );
 
   const cls =
-    "block rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-3.5 transition";
+    "block w-[248px] shrink-0 rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-3.5 transition";
 
   return meta.href ? (
     <Link href={meta.href} className={`${cls} hover:border-nb-blue/60 hover:bg-white/[.03]`}>
@@ -375,25 +378,24 @@ export default function Portfolio() {
           </KpiStrip>
 
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto xl:grid-cols-[1.52fr_1fr] xl:overflow-hidden">
-            <div className="min-w-0 space-y-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
-              <SectionCard>
+            {/* The leaderboard owns the column's whole height and scrolls its
+                ROWS, not itself: the heading stays put while the sites move
+                under it. This is the list that grows — a second site, a tenth,
+                a portfolio — so it is the one given the height that is left
+                over rather than a height of its own. */}
+            <div className="flex min-w-0 flex-col xl:min-h-0">
+              <SectionCard className="flex min-h-0 flex-1 flex-col">
                 <SectionHead
                   icon="heroicons:trophy"
                   title="Site leaderboard"
                   desc="Sites the store has been told about, plus the points no site owns. A dash is a blocked score — its reasons sit on the row."
                 />
-                <Leaderboard>
+                <Leaderboard className="min-h-0 flex-1 overflow-y-auto pr-1">
                   {sites.map((site: any) => (
                     <SiteRow key={site.site_id ?? "_unplaced"} site={site} alertHours={alertHours} />
                   ))}
                 </Leaderboard>
               </SectionCard>
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {s.categories.map((row: any) => (
-                  <CategoryCard key={row.category ?? "_none"} row={row} />
-                ))}
-              </div>
             </div>
 
             <div className="min-w-0 space-y-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
@@ -419,6 +421,25 @@ export default function Portfolio() {
                 <FaultQueue query={alertsQ} hours={ALERT_HOURS} />
               </SectionCard>
             </div>
+          </div>
+
+          {/* THE CATEGORY STRIP IS ONE ROW, PINNED, AND IT IS NOT IN A COLUMN.
+              It used to sit under the leaderboard, which meant the two grew into
+              the same scroll: every site added pushed the estate's category
+              breakdown further out of reach, and the leaderboard never got the
+              height it is the whole point of. Sites are the thing that grows
+              here; categories are the thing that does not. So the set that grows
+              gets the flexible height, and the set that is fixed gets a fixed
+              row.
+
+              It scrolls sideways rather than wrapping, because a wrap would make
+              this strip two rows tall on some viewports and one on others — and
+              the leaderboard above would change height with it for no reason a
+              reader could see. */}
+          <div className="flex shrink-0 gap-3 overflow-x-auto pb-0.5">
+            {s.categories.map((row: any) => (
+              <CategoryCard key={row.category ?? "_none"} row={row} />
+            ))}
           </div>
         </div>
       )}
