@@ -412,12 +412,12 @@ export default function Portfolio() {
                 The chart is a fixed 150px of bars, so it is fixed. The queue is
                 the list that varies, so it takes the height left over and
                 scrolls its rows inside itself. */}
-            <div className="flex min-w-0 flex-col gap-3 xl:min-h-0">
+            <div className="flex min-w-0 flex-col gap-3 xl:min-h-0 xl:overflow-y-auto">
               <SectionCard className="shrink-0">
                 <SectionHead
                   icon="heroicons:chart-bar"
                   title="Ingest — last 24 hours"
-                  desc="Samples per hour by category. A count of samples, not of any physical quantity."
+                  hint="Samples per hour by category. A count of samples, not of any physical quantity — the source payloads carry no unit."
                 />
                 {activityQ.isLoading ? (
                   <LoadingBlock label="Loading rollup…" />
@@ -430,7 +430,7 @@ export default function Portfolio() {
                 <SectionHead
                   icon="heroicons:bell-alert"
                   title={`Live queue · ${ALERT_HOURS} h`}
-                  desc="Raised by the gateway. Severity, type and wording are its own; nothing here is inferred."
+                  hint="Raised by the gateway. Severity, type and wording are its own; nothing here is inferred."
                 />
                 <FaultQueue query={alertsQ} hours={ALERT_HOURS} />
               </SectionCard>

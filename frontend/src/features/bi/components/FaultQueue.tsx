@@ -200,7 +200,15 @@ function FaultCarousel({ items }: { items: any[] }) {
       // A card keyed by its alert id remounts on change, so the transition is
       // per-fault rather than one element mutating its own text mid-read.
     >
-      <div className="min-h-0 flex-1 overflow-hidden rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.45)]">
+      {/* A MINIMUM HEIGHT, not just `flex-1`. One fault needs roughly this much
+          room — an icon, an identity line, up to three lines of the gateway's
+          own sentence — and asking for it as leftover space is how this panel
+          first shipped showing nothing at all: the column had about forty
+          pixels to spare, `overflow-hidden` clipped the card to that, and the
+          controls underneath made it look like a carousel with no slides.
+          Content that cannot fit must push, or scroll, or say so. It must never
+          be silently cropped to zero. */}
+      <div className="min-h-[92px] flex-1 overflow-hidden rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.45)]">
         <FaultCard key={row.alert_id} row={row} />
       </div>
 
