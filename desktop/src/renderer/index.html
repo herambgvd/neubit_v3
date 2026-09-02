@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- No CSP meta here: installGlobalSecurity() sets one on every file://
+         response, which covers this page and cannot be edited out of the markup. -->
+    <title>Neubit VMS</title>
+    <style>
+      :root {
+        --ground: #0b1219;
+        --surface: #111d28;
+        --surface-2: #16273400;
+        --line: #1e3242;
+        --ink: #dfeaf3;
+        --ink-2: #93aabd;
+        --muted: #6b8399;
+        --accent: #45cfe8;
+        --accent-ink: #05222b;
+        --bad: #e78b84;
+        --good: #5cc794;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 14px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+        display: grid;
+        place-items: center;
+        /* The frameless-ish look of a launcher: nothing here should feel like a
+           web page, because the operator is not on the network yet. */
+        user-select: none;
+      }
+
+      main {
+        width: min(30rem, calc(100vw - 3rem));
+        padding: 2rem 0;
+      }
+
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 0.6rem;
+        margin-bottom: 0.35rem;
+      }
+      .brand b {
+        font-size: 1.35rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .brand span {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 0.65rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .lede {
+        color: var(--ink-2);
+        margin: 0 0 1.75rem;
+      }
+
+      h2 {
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 0.65rem;
+        font-family: ui-monospace, Consolas, monospace;
+      }
+
+      .servers {
+        list-style: none;
+        margin: 0 0 1.5rem;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .servers:empty {
+        display: none;
+      }
+
+      .server {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0.75rem 0.9rem;
+        cursor: pointer;
+        text-align: left;
+        width: 100%;
+        color: inherit;
+        font: inherit;
+      }
+      .server:hover,
+      .server:focus-visible {
+        border-color: var(--accent);
+        outline: none;
+      }
+      .server .meta {
+        flex: 1;
+        min-width: 0;
+      }
+      .server .name {
+        font-weight: 600;
+        display: block;
+      }
+      .server .url {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 0.78rem;
+        color: var(--muted);
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .server .drop {
+        background: none;
+        border: 0;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 1.1rem;
+        line-height: 1;
+        padding: 0.25rem 0.4rem;
+        border-radius: 4px;
+      }
+      .server .drop:hover {
+        color: var(--bad);
+        background: #2a1614;
+      }
+
+      form {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 1.1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+        font-size: 0.78rem;
+        color: var(--ink-2);
+      }
+
+      input {
+        background: var(--ground);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        color: var(--ink);
+        font: inherit;
+        padding: 0.55rem 0.65rem;
+        user-select: text;
+      }
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      .row {
+        display: flex;
+        gap: 0.6rem;
+      }
+      .row > * {
+        flex: 1;
+      }
+
+      button.action {
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink);
+        border-radius: 4px;
+        font: inherit;
+        font-weight: 600;
+        padding: 0.55rem 0.8rem;
+        cursor: pointer;
+      }
+      button.action:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      button.action.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-ink);
+      }
+      button.action:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .status {
+        min-height: 1.4rem;
+        font-size: 0.82rem;
+        color: var(--ink-2);
+      }
+      .status.bad {
+        color: var(--bad);
+      }
+      .status.good {
+        color: var(--good);
+      }
+
+      footer {
+        margin-top: 1.5rem;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><b>NeuBit</b><span>Genius Vision Digital</span></div>
+      <p class="lede">Connect this workstation to a Neubit VMS server.</p>
+
+      <h2 id="saved-heading" hidden>Saved servers</h2>
+      <ul class="servers" id="servers"></ul>
+
+      <h2>Add a server</h2>
+      <form id="add">
+        <label>
+          Name
+          <input id="label" type="text" placeholder="Control room" autocomplete="off" />
+        </label>
+        <label>
+          Address
+          <input
+            id="url"
+            type="text"
+            placeholder="192.168.1.10"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <p class="status" id="status"></p>
+        <div class="row">
+          <button class="action" type="button" id="test">Test connection</button>
+          <button class="action primary" type="submit" id="connect">Connect</button>
+        </div>
+      </form>
+
+      <footer id="version"></footer>
+    </main>
+    <script type="module" src="./launcher.ts"></script>
+  </body>
+</html>

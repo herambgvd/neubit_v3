@@ -23,9 +23,34 @@
 #
 # To run WITHOUT hot-reload (prod-like), use the base file only:
 #   docker compose -f docker-compose.yml up -d
+#
+# It also OWNS every published host port except the gateway's :80. The base file
+# publishes the gateway alone, because it is what an appliance install runs: with
+# postgres/redis/nats published there, an appliance put its datastores on the
+# customer's LAN. Everything a developer reaches directly — psql on :5432, the
+# Traefik dashboard, core on :8000 — is restored here.
+#
+# One of those, `frontend` on :3000, is worth knowing about: it serves the console
+# but 404s every /api/v1 call, because the console's API base is same-origin
+# relative and only the gateway routes /api. Develop against http://localhost, not
+# http://localhost:3000, or logging in fails with "Request failed with status
+# code 404" and it looks like a broken backend.
 # ─────────────────────────────────────────────────────────────────────────────
 services:
+  gateway:
+    ports: ["80:80", "8090:8080"]              # 8090 = Traefik dashboard
+
+  postgres:
+    ports: ["5432:5432"]
+
+  redis:
+    ports: ["6379:6379"]
+
+  nats:
+    ports: ["4222:4222", "8222:8222"]
+
   core:
+    ports: ["8000:8000"]
     environment:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
@@ -55,7 +80,7 @@ services:
       - ../backend/vision/migrations:/app/migrations
       - ../backend/vision/tests:/app/tests
       - ../backend/kernel:/opt/kernel
-    command: bash -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
+    command: bash -c "/usr/local/bin/neubit-migrate 0001_vision_baseline && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
 
   dashboards:
     environment:
@@ -73,6 +98,17 @@ services:
   # bind-mount the source over it, and run `npm run dev`. So `docker compose up`
   # (auto-merges this) = dev; `docker compose -f docker-compose.yml up` = production.
   frontend:
+    # A DISTINCT TAG, and it matters more than it looks.
+    #
+    # Without it this `target: deps` build writes to `neubit-v3-frontend:latest` —
+    # the very tag the base compose builds the `runner` stage into. Because this
+    # override auto-merges on every `up`, running the stack in dev SILENTLY
+    # replaced the production image with the deps stage: CMD=[node], no server.js,
+    # exits 0 on start, console never comes up. An image payload saved from a
+    # developer's machine shipped a console that could not boot, and the base
+    # file's "PRODUCTION by default" comment had not been true for months.
+    image: neubit-v3-frontend:dev
+    ports: ["3000:3000"]                       # serves the UI but 404s /api — see header
     build:
       context: ../frontend
       target: deps
@@ -138,6 +174,7 @@ services:
       - ../frontend/package-lock.json:/app/package-lock.json
 
   admin-frontend:
+    image: neubit-v3-admin-frontend:dev        # distinct tag — see the frontend note
     build:
       context: ../admin-frontend
       target: deps
@@ -163,6 +200,10 @@ services:
   # not written) but does mean an edit costs a few seconds of consumption. The
   # `reporting` package is mounted too: it owns the schema this service imports.
   reading-writer:
+    # /health, /readyz, /metrics, /stats. Development only: the base file is what
+    # an appliance runs alone, and an unauthed operational surface does not belong
+    # on a customer's LAN.
+    ports: ["8020:8000"]
     environment:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
@@ -176,6 +217,7 @@ services:
   # down and rebuilds it — safe (nothing is acked that was not written) but it
   # costs a few seconds of consumption per edit.
   reporting-projector:
+    ports: ["8021:8000"]        # development only - see reading-writer
     environment:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:

@@ -4,7 +4,7 @@
     //min-width: 70px;
     &.fc-prev-button {
       &:after {
-        // content: url("https://api.iconify.design/akar-icons/chevron-left.svg?color=white&width=24");
+        // content: $icon-chevron-left-white; (inlined — see _icon-assets.scss)
         position: absolute;
         left: 50%;
         top: 50%;
@@ -13,7 +13,7 @@
     }
     &.fc-next-button {
       &:after {
-        //content: url("https://api.iconify.design/akar-icons/chevron-right.svg?color=white&width=24");
+        //content: $icon-chevron-right-white; (inlined — see _icon-assets.scss)
         position: absolute;
         left: 50%;
         top: 50%;

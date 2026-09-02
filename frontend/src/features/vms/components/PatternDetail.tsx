@@ -115,12 +115,20 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
                     <div
                       key={i}
                       className={`flex items-center justify-center overflow-hidden rounded-sm border px-1 text-center text-[10px] ${
-                        cid
+                        cam
                           ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb"
-                          : "border-nb-line bg-[rgba(6,11,26,.3)] text-nb-faint"
+                          : cid
+                            ? "border-[rgba(251,146,60,.45)] bg-[rgba(251,146,60,.08)] text-nb-warn"
+                            : "border-nb-line bg-[rgba(6,11,26,.3)] text-nb-faint"
                       }`}
                     >
-                      <span className="truncate">{cam?.name || (cid ? cid : `Cell ${i + 1}`)}</span>
+                      {/* A cell holds a camera id, and an id is not a name. When the
+                          estate no longer carries it (camera deleted, recorder
+                          unregistered) say so — printing the raw `fed:<node>:<cam>`
+                          string tells an operator nothing they can act on. */}
+                      <span className="truncate" title={cid || undefined}>
+                        {cam?.name || (cid ? "Camera unavailable" : `Cell ${i + 1}`)}
+                      </span>
                     </div>
                   );
                 })}

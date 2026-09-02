@@ -11,6 +11,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog, Spinner } from "@/components/ui/kit";
+import { ConsolePage } from "@/components/console";
 import { MasterDetail, ListPanel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
@@ -91,11 +92,10 @@ export default function LinkageRulesPage() {
   );
 
   return (
-    <div
-      className="-mx-6 lg:-mx-8 -my-6 min-h-full px-6 lg:px-8 py-6 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
-    >
+    <ConsolePage>
       <MasterDetail
+        fill
+        className="min-h-0 flex-1"
         aside={
           <ListPanel
             title="Linkage"
@@ -205,6 +205,6 @@ export default function LinkageRulesPage() {
         onClose={() => setConfirm(null)}
         pending={delMut.isPending}
       />
-    </div>
+    </ConsolePage>
   );
 }

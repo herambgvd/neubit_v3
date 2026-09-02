@@ -1,0 +1,174 @@
+# The appliance overlay, merged on top of deploy/docker-compose.yml inside the
+# neubit-vms distro. Three jobs, and every one of them is a P0 finding.
+#
+#  1. PIN THE IMAGES. The base file carries `build:` for the eight in-house
+#     services. An appliance has no source and no build context, so compose must
+#     never attempt a build — it would fail minutes in with an error about a
+#     missing Dockerfile rather than saying the payload is incomplete.
+#
+#  2. SPLIT THE STORAGE ACROSS TWO VOLUMES. `pgdata` and the container layers stay
+#     on the distro's own ext4 (which the installer places on the SSD); recordings
+#     and the offline basemap bind-mount a Windows path on the big spinning disk.
+#     The P0 box made the case by itself: apt against the HDD spent minutes parked
+#     in `jbd2_log_wait_commit`, and Postgres fsync would be worse.
+#
+#  3. RESTART POLICIES. Nothing here is supervised from Windows beyond starting the
+#     distro, so compose's own restart policy IS the supervision.
+#
+# ${...} values are written by install-appliance.ps1 into /opt/neubit/.env.
+
+services:
+  gateway:
+    image: traefik:v3.1
+    restart: unless-stopped
+    # ══ TWO PORTS, AND THE SECOND ONE IS NOT A CONVENIENCE ═══════════════════
+    #
+    # "80:80" alone is reachable from the LAN and NOT from the machine it runs
+    # on. Docker publishes a 0.0.0.0 port with an iptables DNAT rule in
+    # PREROUTING, which only sees traffic arriving on an interface; loopback
+    # never passes through it, and no socket is listening either. Measured on the
+    # first customer box:
+    #
+    #     the distro's eth0 (10.24.103.39): 200
+    #     loopback          (127.0.0.1)   : 000
+    #
+    # The host cannot use its own address to get in instead: under
+    # networkingMode=mirrored, Windows reaching its own IPv4 lands on its own
+    # stack rather than the distro (microsoft/WSL#41284; hostAddressLoopback does
+    # not fix it). So the appliance served every operator on the LAN while being
+    # unreachable from the server itself — including by its own installer.
+    #
+    # A loopback mapping fixes that, because Docker cannot DNAT loopback and
+    # arranges a real listener for it. But NOT on the same port:
+    #
+    #     127.0.0.1:80 -> failed to bind host port: address already in use
+    #
+    # 0.0.0.0:80 already covers 127.0.0.1:80, so the pair is a plain socket
+    # conflict and the gateway will not start at all. This was tried on the
+    # customer's machine and took the console down; the throwaway container that
+    # "proved" loopback publishing worked had used a different port, which is the
+    # only reason it bound.
+    #
+    # So: the wildcard keeps port 80 for the LAN, and loopback gets 8080. The
+    # address operators use is unchanged. 8080 is for this machine only — the
+    # installer's health check and anyone standing at the server.
+    ports: !override
+      - "80:80"
+      - "127.0.0.1:8080:80"
+
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  nats:
+    restart: unless-stopped
+
+  ops-agent:
+    build: !reset null
+    image: neubit-v3-ops-agent:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  core:
+    build: !reset null
+    image: neubit-v3-core:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  ingest:
+    build: !reset null
+    image: neubit-v3-ingest:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  workflow:
+    build: !reset null
+    image: neubit-v3-workflow:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  workflow-worker:
+    build: !reset null
+    image: neubit-v3-workflow:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  workflow-beat:
+    build: !reset null
+    image: neubit-v3-workflow:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  access:
+    build: !reset null
+    image: neubit-v3-access:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  vision:
+    build: !reset null
+    image: neubit-v3-vision:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  frontend:
+    build: !reset null
+    # The RUNNER stage, explicitly. On a developer's machine the dev override
+    # builds the `deps` stage into the same tag, producing an image whose CMD is a
+    # bare `node` — it exits 0 on start and the console never comes up. An image
+    # payload saved from such a machine ships a console that cannot boot; that was
+    # P0 defect 1. build-appliance.ps1 builds with `-f docker-compose.yml` alone,
+    # in a clean workspace, and tags the result with the release version so the
+    # two can never collide.
+    image: neubit-v3-frontend:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  admin-frontend:
+    build: !reset null
+    image: neubit-v3-admin-frontend:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  # ── the reporting / BI plane ─────────────────────────────────────────────
+  #
+  # Added when feat/vms merged. Every one of these carries a `build:` in the base
+  # file, and an unpinned build context does not degrade on an appliance — boot.sh
+  # runs `up -d --no-build`, so compose refuses to start ANY of the stack. Pinning
+  # them here is what keeps that from being a silent release trap.
+
+  dashboards:
+    build: !reset null
+    image: neubit-v3-dashboards:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  reading-writer:
+    build: !reset null
+    image: neubit-v3-reading-writer:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  reporting-projector:
+    build: !reset null
+    image: neubit-v3-reporting-projector:${NEUBIT_VERSION}
+    restart: unless-stopped
+
+  # No restart policy, deliberately: this one runs the reporting migrations and
+  # exits, and everything downstream gates on service_completed_successfully.
+  # `unless-stopped` would restart a container whose job is to finish.
+  reporting-migrate:
+    build: !reset null
+    image: neubit-v3-reporting-migrate:${NEUBIT_VERSION}
+
+  tiles:
+    build: !reset null
+    image: neubit-v3-tiles:${NEUBIT_VERSION}
+    restart: unless-stopped
+    volumes: !override
+      # The offline basemap is 3.7 GB — larger than every container image
+      # combined — so it lives on the bulk volume, not in the distro VHD.
+      - ${NEUBIT_BULK}/tiles:/data
+
+volumes:
+  # Bulk, sequential, cheap per GB: the Windows volume the operator chose.
+  recordings:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${NEUBIT_BULK}/recordings
+
+  # pgdata and corefiles are NOT redefined. They stay as ordinary named volumes
+  # inside the distro's ext4, which is the whole reason the installer asks where
+  # to put the distro separately from where to put the recordings.

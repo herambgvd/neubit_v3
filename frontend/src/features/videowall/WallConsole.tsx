@@ -26,6 +26,7 @@ import { Button, Input, Modal, Spinner } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useScreens } from "@/lib/desktop";
 import { vms } from "@/features/vms/api";
 import CameraRail from "@/features/vms/components/CameraRail";
 
@@ -34,10 +35,16 @@ import { useWallState } from "./hooks/useWallState";
 import { sortedMonitors, filledCount, wallGridStyle } from "./wallLayout";
 import MonitorTile from "./components/MonitorTile";
 import WallCellPicker from "./components/WallCellPicker";
+import ScreenMenu from "./components/ScreenMenu";
 
 export default function WallConsole({ wallId }: any) {
   const { can } = useAuth();
   const control = can("vms.wall.control");
+  // Desktop shell only — in a browser this is inert and ScreenMenu renders
+  // nothing. Putting a monitor on the glass in front of you is a LOCAL view
+  // action, so it is not gated on vms.wall.control: it changes nothing anyone
+  // else can see, and the page already required vms.wall.view to reach.
+  const screens = useScreens();
 
   const [railOpen, setRailOpen] = useState(true);
   const [railDragging, setRailDragging] = useState(false);
@@ -249,6 +256,7 @@ export default function WallConsole({ wallId }: any) {
         <span className="font-mono text-[11px] text-[#9a92c8]">{liveCount} live</span>
 
         <div className="ml-auto flex items-center gap-1.5">
+          <ScreenMenu wall={wall} monitors={monitors} screens={screens} />
           {control && (
             <>
               <PresetMenu presets={presets} onApply={recallPreset} onSave={() => setSaveOpen(true)} onRefetch={() => presetsQ.refetch()} wallId={wallId} />

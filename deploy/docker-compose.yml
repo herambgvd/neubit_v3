@@ -33,7 +33,15 @@ services:
   gateway:
     image: traefik:v3.1
     command: ["--configFile=/etc/traefik/traefik.yml"]
-    ports: ["80:80", "8090:8080"]              # 8090 = dashboard (dev)
+    # The ONLY published port in this file. Everything else -- the datastores, core,
+    # the Next servers, the Traefik dashboard -- is reachable on the compose network
+    # and is published for DEVELOPMENT ONLY, from docker-compose.override.yml.
+    #
+    # An appliance install runs this file alone. Publishing postgres/redis/nats here
+    # put the database on the customer's LAN; publishing the frontend on :3000 also
+    # handed operators a port that serves the UI but 404s every /api/v1 call, because
+    # the console's API base is same-origin relative and only this gateway routes it.
+    ports: ["80:80"]
     volumes:
       - ../gateway/traefik.yml:/etc/traefik/traefik.yml:ro
       - ../gateway/dynamic:/etc/traefik/dynamic:ro
@@ -44,7 +52,6 @@ services:
   postgres:
     image: timescale/timescaledb:2.17.2-pg16
     env_file: .env
-    ports: ["5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
       # The per-service databases, on a FRESH volume. Postgres runs initdb
@@ -55,10 +62,38 @@ services:
       # volume has its databases before anything else starts.
       - ./postgres/init-service-dbs.sh:/docker-entrypoint-initdb.d/10-init-service-dbs.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      # NOT `pg_isready -U $$POSTGRES_USER`. That returns 0 as soon as ANY server
+      # answers, INCLUDING the temporary one the entrypoint runs while it executes
+      # initdb and /docker-entrypoint-initdb.d -- so `depends_on: service_healthy`
+      # gated on nothing. On a first boot against an empty volume, core, ingest,
+      # vision, access and workflow all raced ahead and exited 1 with
+      # ConnectionRefusedError. Invisible on any existing volume; fatal on every
+      # fresh install. (It also probed a database named "neubit" -- pg_isready
+      # defaults dbname to the user -- and reported healthy straight through the
+      # resulting `FATAL: database "neubit" does not exist`.)
+      #
+      # Two things must be true before a dependant may connect, so check both:
+      #   1. the REAL server is listening on TCP. The init server runs with
+      #      listen_addresses='' , so -h forces a genuine answer.
+      #   2. init-service-dbs.sh has finished. The LAST database it creates is the
+      #      completion marker.
+      #
+      #      This marker was `neubit_nvr` until 2026-09-01, when that database was
+      #      deliberately dropped from init-service-dbs.sh (the NVR owns its own
+      #      postgres now). The healthcheck was not updated with it, so on a FRESH
+      #      volume the marker never appeared, postgres stayed `unhealthy` forever,
+      #      and every service gated on `service_healthy` never started — six
+      #      containers up and a console that never answered. Invisible on any
+      #      EXISTING volume, which is exactly why it reached a customer install.
+      #
+      #      KEEP THIS IN STEP WITH THE END OF THE LIST IN init-service-dbs.sh.
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" && psql -U "$$POSTGRES_USER" -d neubit_dashboards -c 'SELECT 1' >/dev/null 2>&1
       interval: 5s
-      timeout: 3s
-      retries: 15
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     networks: [neubit]
 
   # ── per-service databases, on EVERY start ───────────────────────
@@ -88,7 +123,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -106,7 +140,9 @@ services:
     #   curl -s localhost:8222/jsz?streams=1 | jq
     #   curl -s localhost:8222/varz | jq .
     command: ["-js", "-sd", "/data", "-m", "8222"]
-    ports: ["4222:4222", "8222:8222"]
+    # 4222 + 8222 published for DEVELOPMENT ONLY, from docker-compose.override.yml.
+    # An appliance install runs THIS file alone, and publishing the event bus put
+    # it on the customer's LAN.
     volumes:
       - natsdata:/data
     healthcheck:
@@ -145,7 +181,8 @@ services:
       db-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       nats: { condition: service_started }
-    ports: ["8000:8000"]
+    # 8000 published for DEVELOPMENT ONLY, from docker-compose.override.yml.
+    #
     # `migrate.sh`, NOT `alembic upgrade head` and NOT the old
     # `upgrade 0001 && stamp head`. The 0001 baseline is a create_all() of the
     # live ORM metadata, so on a FRESH database the later deltas collide, while on
@@ -225,9 +262,16 @@ services:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
+    # 0001_dashboards is THIS service's baseline — see deploy/migrate.sh. It read
+    # 0001_ingest until 2026-09-01: a copy-paste from another service, which
+    # alembic answered with `Can't locate revision identified by '0001_ingest'`,
+    # restart-looping the container forever. A service's baseline is the revision
+    # in ITS OWN migrations/versions carrying `down_revision = None`.
     command: >
-      bash -c "alembic upgrade head &&
+      bash -c "/usr/local/bin/neubit-migrate 0001_dashboards &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
     networks: [neubit]
 
   # ── workflow service (Python / neubit_common) ───────────────────
@@ -294,9 +338,12 @@ services:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
+    # 0001_access_baseline is a metadata baseline — see deploy/migrate.sh.
     command: >
-      bash -c "alembic upgrade head &&
+      bash -c "/usr/local/bin/neubit-migrate 0001_access_baseline &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
     networks: [neubit]
 
   # ── vision — VMS control-plane (Python / neubit kernel) ─────────
@@ -341,8 +388,12 @@ services:
       # (read) and the retention/tiering worker can DELETE + COPY them (write) — same
       # /recordings path as mediamtx + nvr so the on-disk paths match.
       - recordings:/recordings
+      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
+    # 0001_vision_baseline is a metadata baseline. This service is the one the P0
+    # spike caught failing on a fresh database — 0025 tried to ADD a column the
+    # baseline had already created. See deploy/migrate.sh.
     command: >
-      bash -c "alembic upgrade head &&
+      bash -c "/usr/local/bin/neubit-migrate 0001_vision_baseline &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks: [neubit]
 
@@ -473,8 +524,10 @@ services:
       nats: { condition: service_started }
       reporting-migrate: { condition: service_completed_successfully }
     # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
-    # an operational surface, not a tenant API.
-    ports: ["8020:8000"]
+    # an operational surface, not a tenant API — and for the same reason it is
+    # published for DEVELOPMENT ONLY, from docker-compose.override.yml. An
+    # appliance runs this file alone, where publishing it would put an unauthed
+    # operational surface on the customer's LAN.
     restart: unless-stopped
     networks: [neubit]
 
@@ -552,7 +605,8 @@ services:
     # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
     # an operational surface, not a tenant API. The builder reads the datasets it
     # registers through the reading-writer's /api/v1/bi/... — one query path.
-    ports: ["8021:8000"]
+    # Published for DEVELOPMENT ONLY, from docker-compose.override.yml — see the
+    # note on reading-writer.
     restart: unless-stopped
     networks: [neubit]
 
@@ -563,13 +617,37 @@ services:
     build: ../frontend
     env_file: .env
     depends_on: [core]
-    ports: ["3000:3000"]
     networks: [neubit]
     labels:
       - traefik.enable=true
       - traefik.http.routers.web.rule=PathPrefix(`/`)
       - traefik.http.routers.web.entrypoints=web
       - traefik.http.services.web.loadbalancer.server.port=3000
+
+  # ── offline basemap tiles ───────────────────────────────────────
+  # Serves the self-hosted PMTiles world archive the Sites Map draws when Google
+  # Maps is off (the default). SELF-PROVISIONING: on first start, if deploy/tiles/
+  # holds no archive, the container extracts one from the Protomaps planet in the
+  # background — `docker compose up` is the only command anyone has to run.
+  #
+  # The extract is a multi-GB download, so nginx serves from the first second and
+  # the map simply fills in when the archive lands. Until then (and on an
+  # air-gapped host with no archive at all) the console shows a "basemap not
+  # installed" panel; nothing else is affected.
+  #
+  #   TILES_MAXZOOM   detail vs size — z8=543MB · z10=3.7GB · z12=17GB · z15=137GB
+  #   TILES_AUTO_PROVISION=0   never download; serve only what is already in
+  #                            deploy/tiles/ (the air-gapped setting)
+  tiles:
+    build: ./tiles-server
+    environment:
+      TILES_MAXZOOM: ${TILES_MAXZOOM:-10}
+      TILES_AUTO_PROVISION: ${TILES_AUTO_PROVISION:-1}
+    volumes:
+      - ./tiles:/data
+    networks: [neubit]
+    # Routed by the gateway's FILE provider (gateway/dynamic/routes.yml), not by
+    # Docker labels — the label provider is off in gateway/traefik.yml.
 
   # ── super-admin panel (separate app) ────────────────────────────
   admin-frontend:

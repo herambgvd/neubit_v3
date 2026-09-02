@@ -29,6 +29,7 @@ export default function CameraRail({
   cameras = [],
   mountedIds,
   onPick,
+  onPickMany,
   onDragStateChange,
   isLoading,
 }: any) {
@@ -96,8 +97,14 @@ export default function CameraRail({
     const onWall = mountedIds?.has(c.id);
     return (
       <li key={c.id}>
-        <button
-          type="button"
+        {/* A div, not a <button>. Chromium's handling of a real mousedown on a form
+            control competes with starting a native drag, and a row whose whole job
+            is to be dragged should not be arguing with the browser about that.
+            role/tabIndex/onKeyDown give back what the button provided: focus, Enter
+            and Space. */}
+        <div
+          role="button"
+          tabIndex={0}
           draggable
           onDragStart={(e) => {
             e.dataTransfer.setData("text/camera-id", c.id);
@@ -105,8 +112,18 @@ export default function CameraRail({
             onDragStateChange?.(true);
           }}
           onDragEnd={() => onDragStateChange?.(false)}
-          onClick={() => onPick?.(c)}
-          title={c.status === "online" ? "Add to wall" : `${c.name} · ${c.status}`}
+          // DOUBLE click, not single: a single click on a list this dense is how an
+          // operator reads it — scrolling, focusing, checking a status dot. Putting
+          // a camera on the wall is a deliberate act and now takes a deliberate
+          // gesture, so brushing the list no longer rearranges the wall.
+          onDoubleClick={() => onPick?.(c)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onPick?.(c);
+            }
+          }}
+          title={c.status === "online" ? "Double-click to add to wall" : `${c.name} · ${c.status}`}
           className={`group flex w-full items-center gap-2 rounded-[7px] py-1.5 pl-7 pr-2 text-left transition ${
             onWall ? "bg-[rgba(34,211,238,.08)] hover:bg-[rgba(34,211,238,.12)]" : "hover:bg-[rgba(150,180,245,.07)]"
           }`}
@@ -131,7 +148,7 @@ export default function CameraRail({
               className="shrink-0 text-sm text-transparent group-hover:text-[#7e93bf]"
             />
           )}
-        </button>
+        </div>
       </li>
     );
   };
@@ -191,10 +208,36 @@ export default function CameraRail({
                   const open = isOpen(site.id);
                   return (
                     <li key={site.id}>
-                      <button
-                        type="button"
+                      {/* The branch header is itself a drag source: an operator
+                          thinking "put this recorder up" should not have to drag
+                          five cameras one at a time. It carries the branch's camera
+                          ids as `text/camera-ids`; a tile fills from the drop point
+                          onward. Single click still collapses — that is what a tree
+                          header is for — so adding is double-click, matching the
+                          camera rows. */}
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData(
+                            "text/camera-ids",
+                            JSON.stringify(site.cameras.map((c) => c.id)),
+                          );
+                          e.dataTransfer.effectAllowed = "copy";
+                          onDragStateChange?.(true);
+                        }}
+                        onDragEnd={() => onDragStateChange?.(false)}
                         onClick={() => toggle(site.id)}
-                        className="flex w-full items-center gap-1.5 rounded-[7px] px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
+                        onDoubleClick={() => onPickMany?.(site.cameras)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggle(site.id);
+                          }
+                        }}
+                        title={`${site.name} — double-click or drag to put all ${site.cameras.length} on the wall`}
+                        className="flex w-full cursor-pointer items-center gap-1.5 rounded-[7px] px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
                       >
                         <Icon
                           icon="heroicons-mini:chevron-right"
@@ -226,7 +269,7 @@ export default function CameraRail({
                             </span>
                           </>
                         )}
-                      </button>
+                      </div>
                       {open && (
                         <ul className="space-y-0.5 border-l border-[rgba(150,180,245,.15)] pl-1.5">
                           {site.cameras.map(renderCameraRow)}
@@ -242,7 +285,7 @@ export default function CameraRail({
       </div>
 
       <div className="border-t border-[rgba(150,180,245,.22)] px-3 py-2 font-mono text-[10px] uppercase tracking-[1px] text-[#7e93bf]">
-        Drag a camera onto a tile, or click to fill the next free tile.
+        Drag a camera or a recorder onto a tile — or double-click to fill the next free tiles.
       </div>
     </aside>
   );

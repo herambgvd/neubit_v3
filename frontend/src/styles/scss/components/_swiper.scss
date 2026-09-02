@@ -5,10 +5,10 @@
     @apply rtl:rotate-180;
   }
   .swiper-button-next:after {
-    content: url("https://api.iconify.design/heroicons-outline/chevron-right.svg?color=white&width=24");
+    content: $icon-chevron-right-white;
   }
   .swiper-button-prev:after {
-    content: url("https://api.iconify.design/heroicons-outline/chevron-left.svg?color=white&width=24");
+    content: $icon-chevron-left-white;
   }
   .swiper-pagination-bullet {
     height: 2px;

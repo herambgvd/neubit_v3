@@ -276,6 +276,10 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           { icon: "heroicons:circle-stack", label: "Storage", href: "/storage", tone: "blue", perm: "vms.camera.read", module: "vms" },
           { icon: "heroicons:bolt", label: "Linkage & Policies", href: "/config/linkage", tone: "att", perm: "neubit.read", module: "vms" },
           { icon: "heroicons:computer-desktop", label: "Wall Layouts", href: "/config/video-wall", tone: "blue", perm: "vms.wall.manage", module: "vms" },
+          // Beside Wall Layouts on purpose: a wall layout is where tiles GO, a pattern
+          // is what rotates through them. Gated on vms.config.manage, matching
+          // PERM_MANAGE on the patterns + camera-group routers.
+          { icon: "heroicons-outline:rectangle-group", label: "Patterns", href: "/config/patterns", tone: "blue", perm: "vms.config.manage", module: "vms" },
           { icon: "heroicons:rectangle-stack", label: "Workflow", href: "/workflow-config", tone: "blue", perm: "neubit.read", module: "workflow" },
           { icon: "heroicons:arrow-down-on-square-stack", label: "Ingest", href: "/ingest", tone: "blue", perm: "neubit.read", module: "workflow" },
           { icon: "heroicons:signal", label: "External Access", href: "/config/onvif-server", tone: "blue", perm: "vms.config.manage" },

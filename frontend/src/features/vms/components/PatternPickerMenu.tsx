@@ -8,7 +8,20 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 
-export default function PatternPickerMenu({ patterns = [], loading, activeId, onPlay, onStop, onCreate }: any) {
+export default function PatternPickerMenu({
+  patterns = [],
+  loading,
+  activeId,
+  // Which stop the running rotation is on, 1-based, and how many there are.
+  // Shown instead of a spinner: a rotation that is WORKING must not look like a
+  // request that never came back.
+  stop,
+  total,
+  paused = false,
+  onPlay,
+  onStop,
+  onCreate,
+}: any) {
   const [open, setOpen] = useState(false);
   const ref = useRef<any>(null);
 
@@ -36,7 +49,21 @@ export default function PatternPickerMenu({ patterns = [], loading, activeId, on
         <Icon icon="heroicons-outline:squares-2x2" className="text-sm" />
         {active ? <span className="max-w-[8rem] truncate">{active.name}</span> : "Patterns"}
         {active ? (
-          <Icon icon="svg-spinners:180-ring" className="text-xs" />
+          // Running state: which stop we are on, and paused vs rotating. The
+          // spinner that used to live here is the app's LOADING glyph — the same
+          // one this menu shows a few lines below while patterns are fetching —
+          // so a healthy rotation was indistinguishable from a stuck request.
+          <span className="flex items-center gap-1">
+            {total > 0 && (
+              <span className="font-mono text-[10px] tabular-nums text-[#67e8f9]/80">
+                {stop}/{total}
+              </span>
+            )}
+            {/* Deliberately NOT animated. The counter above ticks on every dwell,
+                which is the honest liveness signal; a spinning glyph next to it
+                would walk straight back into "this looks like it is loading". */}
+            <Icon icon={paused ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-xs" />
+          </span>
         ) : (
           patterns.length > 0 && (
             <span className="rounded-full bg-[rgba(150,180,245,.1)] px-1.5 text-[9px] font-semibold text-[#aec2e8]">{patterns.length}</span>

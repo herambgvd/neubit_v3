@@ -16,8 +16,9 @@ neubit_v3/
 │   ├── sites device workflow vision gates fire octosense   (Python control plane)
 │   ├── nvr realtime                                        (Go data plane)
 │   └── drivers/     integration drivers (protocol → api → brand)
-├── frontend/        Next.js modular monolith (Vercel theme) · also the Wails desktop UI
-└── deploy/          docker-compose (local)
+├── frontend/        Next.js modular monolith (Vercel theme) · the ONE console, web and desktop
+├── desktop/         Electron shell — loads that same console (docs/DESKTOP_APPLIANCE_PLAN.md)
+└── deploy/          docker-compose (local) · deploy/windows/ = the Windows appliance
 ```
 
 ## Start here

@@ -18,7 +18,14 @@ const securityHeaders = [
 // Allow the private-network ranges so ONE dev server works from any LAN address;
 // NEXT_DEV_ORIGINS adds hostnames (or `*.example.com`) on top. Dev-only knob —
 // production builds ignore it.
+// 127.0.0.1 is here for the DESKTOP SHELL. `localhost` is trusted by default and
+// the loopback IP is not, which reads as a half-broken page rather than as a
+// blocked request: the SSR HTML arrives so the login page's branding panel paints,
+// the client bundle 403s so the page never hydrates, and every mount-animated
+// element — the sign-in card included — stays at opacity 0. No error, anywhere.
+// Verified: `Origin: http://localhost` → 200, `Origin: http://127.0.0.1` → 403.
 const allowedDevOrigins = [
+  "127.0.0.1",
   "192.168.*.*",
   "10.*.*.*",
   "172.*.*.*",

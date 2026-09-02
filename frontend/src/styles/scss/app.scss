@@ -1,3 +1,7 @@
+// Inlined icon data: URIs (generated — see scripts/build-icon-bundle.mjs).
+// Variables only, so this emits no CSS and is safe to pull in ahead of Tailwind.
+@import "icon-assets";
+
 // Tailwind v4 entry. Dart Sass leaves a `.css` @import alone (it is a plain CSS
 // import, not a Sass partial), so it reaches PostCSS intact and @tailwindcss/postcss
 // inlines it here — keeping the whole app on one stylesheet, with the same cascade

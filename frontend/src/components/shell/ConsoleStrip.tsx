@@ -25,6 +25,7 @@ const STRIP_ROUTES = new Set<any>([
   "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config",
   "/ingest", "/config/security", "/platform", "/config/video-wall",
   "/config/linkage", "/config/onvif-server", "/federation", "/storage",
+  "/config/patterns",
   // Building Intelligence — one modtab plus a segment across the BUILT consoles.
   // The unbuilt Sense/Think surfaces are deliberately absent here: the launcher
   // already shows them as SOON, and a dead segment cell would be exactly the
@@ -60,6 +61,7 @@ export default function ConsoleStrip() {
   const isSecurity = pathname === "/config/security";
   const isPlatform = pathname === "/platform";
   const isVideoWall = pathname === "/config/video-wall";
+  const isPatterns = pathname === "/config/patterns";
   const isLinkage = pathname === "/config/linkage";
   const isExternal = pathname === "/config/onvif-server";
   const isFederation = pathname === "/federation";
@@ -162,6 +164,39 @@ export default function ConsoleStrip() {
           <Link
             href="/wall"
             title="Open the live Wall Console"
+            className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+          >
+            <Icon icon="heroicons-outline:tv" className="text-[14px]" /> LIVE WALL
+          </Link>
+        </div>
+      )}
+
+      {isPatterns && (
+        <div className="flex min-w-0 items-center gap-2">
+          <div className={modtab}>
+            <Icon icon="heroicons-outline:rectangle-group" className="text-[14px]" />
+            Patterns
+          </div>
+          <div className={segBox}>
+            {[
+              { v: "patterns", label: "PATTERNS", icon: "heroicons-outline:squares-2x2" },
+              { v: "groups", label: "CAMERA GROUPS", icon: "heroicons-outline:video-camera" },
+            ].map((s) => {
+              // "patterns" is the default view and owns the bare /config/patterns URL,
+              // the same deal Platform's "notifications" and Workflow's first view have.
+              const on = (view || "patterns") === s.v;
+              return (
+                <Link key={s.v} href={`/config/patterns?view=${s.v}`} className={seg(on)}>
+                  <Icon icon={s.icon} className="text-[14px]" /> {s.label}
+                </Link>
+              );
+            })}
+          </div>
+          {/* A pattern exists to rotate on the live wall — the same relationship
+              Video Wall has with the Wall Console, so it gets the same jump. */}
+          <Link
+            href="/streaming"
+            title="Open the live wall"
             className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons-outline:tv" className="text-[14px]" /> LIVE WALL

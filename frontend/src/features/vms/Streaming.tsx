@@ -54,12 +54,26 @@ import SpotlightOverlay from "./components/SpotlightOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
 import PatternPickerMenu from "./components/PatternPickerMenu";
 import PatternHud from "./components/PatternHud";
+import PatternStage, { STAGE_FADE_MS, stopKey } from "./components/PatternStage";
 import PatternFormModal from "./components/PatternFormModal";
 import SaveWallGroupModal from "./components/SaveWallGroupModal";
 import { usePatternRotation } from "./hooks/usePatternRotation";
+import { useEstateCameras } from "./hooks/useEstateCameras";
 
-const LS_LAYOUT = "neubit.vms.wall.layout";
-const LS_CELLS = "neubit.vms.wall.cells";
+// WHAT THE WALL ITSELF IS — the grid and the camera in each cell — is PER TAB
+// (sessionStorage). A control room runs two screens off one browser and needs a
+// different set of cameras on each; with these in localStorage the second tab
+// restored the first tab's wall and started playing the same cameras again, which
+// made that setup impossible and quietly doubled the load on the recorder.
+// A tab still keeps its wall across a refresh — sessionStorage survives reload,
+// not a new tab, which is exactly the line we want.
+//
+// To carry a wall between tabs or bring one back tomorrow, use the durable paths
+// that already exist: a Saved layout (below) or a server-side Camera Group.
+const SS_LAYOUT = "neubit.vms.wall.layout";
+const SS_CELLS = "neubit.vms.wall.cells";
+// PREFERENCES stay shared across tabs — they describe how this operator likes the
+// console, not what is on one screen.
 const LS_SAVED = "neubit.vms.wall.saved";
 const LS_RAIL = "neubit.vms.wall.rail";
 const LS_VIEW = "neubit.vms.wall.view";
@@ -73,36 +87,46 @@ const SPOTLIGHT_GRID = {
   gridTemplateRows: "minmax(0, 1fr)",
 };
 
-// ── localStorage helpers (SSR-safe) ───────────────────────────────────────
-function readLS(key, fallback) {
+// ── storage helpers (SSR-safe) ────────────────────────────────────────────
+// One pair of readers over both stores, so which store a key lives in is decided
+// once, at the constant, instead of at every call site.
+function read(store, key, fallback) {
   if (typeof window === "undefined") return fallback;
   try {
-    const raw = localStorage.getItem(key);
+    const raw = store().getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
   }
 }
-function writeLS(key, value) {
+function write(store, key, value) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    store().setItem(key, JSON.stringify(value));
   } catch {
     /* quota / private mode — silent */
   }
 }
+const local = () => localStorage;
+const tab = () => sessionStorage;
+
+const readLS = (key, fallback?: any) => read(local, key, fallback);
+const writeLS = (key, value) => write(local, key, value);
+// Per-tab: the wall's own contents.
+const readSS = (key, fallback?: any) => read(tab, key, fallback);
+const writeSS = (key, value) => write(tab, key, value);
 
 export default function Streaming() {
   // ── layout + cells (persisted) ──────────────────────────────────────────
   const [layoutKey, setLayoutKey] = useState(() => {
-    const k = readLS(LS_LAYOUT, DEFAULT_LAYOUT_KEY);
+    const k = readSS(SS_LAYOUT, DEFAULT_LAYOUT_KEY);
     return typeof k === "string" ? k : DEFAULT_LAYOUT_KEY;
   });
   const layout = useMemo(() => getLayout(layoutKey), [layoutKey]);
 
   const [cells, setCells] = useState(() => {
-    const cap = getLayout(readLS(LS_LAYOUT, DEFAULT_LAYOUT_KEY)).capacity;
-    const saved = readLS(LS_CELLS, null);
+    const cap = getLayout(readSS(SS_LAYOUT, DEFAULT_LAYOUT_KEY)).capacity;
+    const saved = readSS(SS_CELLS, null);
     const base = Array.from({ length: cap }, emptyCell);
     if (Array.isArray(saved)) {
       for (let i = 0; i < cap && i < saved.length; i += 1) {
@@ -154,54 +178,18 @@ export default function Streaming() {
   });
 
   // Persist layout + cell camera-ids (never persist session URLs — short-lived).
-  useEffect(() => writeLS(LS_LAYOUT, layoutKey), [layoutKey]);
-  useEffect(() => writeLS(LS_CELLS, cells.map((c) => ({ cameraId: c.cameraId || null }))), [cells]);
+  // sessionStorage: this tab's wall, not every tab's.
+  useEffect(() => writeSS(SS_LAYOUT, layoutKey), [layoutKey]);
+  useEffect(() => writeSS(SS_CELLS, cells.map((c) => ({ cameraId: c.cameraId || null }))), [cells]);
   useEffect(() => writeLS(LS_SAVED, savedLayouts), [savedLayouts]);
   useEffect(() => writeLS(LS_RAIL, railOpen), [railOpen]);
   useEffect(() => writeLS(LS_VIEW, viewMode), [viewMode]);
   useEffect(() => writeLS(LS_QUALITY, quality), [quality]);
 
   // ── cameras ─────────────────────────────────────────────────────────────
-  const camerasQ = useQuery<any>({
-    queryKey: ["vms-wall-cameras"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
-    refetchInterval: 20_000,
-  });
-  // Federated recorder cameras — cameras OWNED by registered NVR nodes, pulled up
-  // read-only and streamed THROUGH each node. Merged into the same wall so the
-  // camera tree shows recorders as top-level branches alongside local cameras.
-  const fedQ = useQuery<any>({
-    queryKey: ["vms-wall-federation-cameras"],
-    queryFn: () => vms.federation.cameras(),
-    refetchInterval: 30_000,
-  });
-  const cameras = useMemo(() => {
-    const local = asItems(camerasQ.data);
-    // Each federated camera gets a composite id (`fed:<node>:<cam>`) so it never
-    // collides with a local camera id; real_id + node_id drive the node-issued
-    // live source (see WallTile). Grouped under its recorder in the rail via
-    // site_id/site_name = the node.
-    const fed = (fedQ.data?.items || []).map((c) => ({
-      id: `fed:${c.node_id}:${c.id}`,
-      real_id: c.id,
-      name: c.name,
-      status: c.status,
-      federated: true,
-      // PTZ capability as the node reported it (public.ptz.capable) — drives the
-      // wall's PTZ overlay gate; commands proxy through the node (operate-through-node).
-      ptz_capable: !!(c.ptz && c.ptz.capable),
-      node_id: c.node_id,
-      node_name: c.node_name,
-      site_id: `nvr:${c.node_id}`,
-      site_name: c.node_name,
-    }));
-    return [...fed, ...local];
-  }, [camerasQ.data, fedQ.data]);
-  const cameraById = useMemo(() => {
-    const m = new Map<any, any>();
-    cameras.forEach((c) => m.set(c.id, c));
-    return m;
-  }, [cameras]);
+  // Local + federated, merged in one place — the Patterns console reads the SAME
+  // hook, so a group built here resolves to the same names there.
+  const { cameras, cameraById, localQ: camerasQ, fedQ, isSuccess: estateReady } = useEstateCameras();
 
   const mountedIds = useMemo(
     () => new Set<any>(cells.map((c) => c.cameraId).filter(Boolean)),
@@ -268,6 +256,31 @@ export default function Streaming() {
     });
   }, []);
 
+  // Put a whole branch (a recorder) on the wall, starting at `startIndex` and
+  // walking forward. Tiles already showing one of these cameras are left alone —
+  // dropping a recorder twice must not duplicate it across the grid — and the
+  // walk stops at the last tile rather than wrapping, so a 12-camera recorder on
+  // a 2x2 fills what it can and says what it could not.
+  const assignMany = useCallback((cameraIds, startIndex = 0) => {
+    setCells((prev) => {
+      const next = [...prev];
+      const already = new Set(next.map((c) => c.cameraId).filter(Boolean));
+      const pending = cameraIds.filter((id) => !already.has(id));
+      let placed = 0;
+      for (let i = startIndex; i < next.length && placed < pending.length; i += 1) {
+        next[i] = { cameraId: pending[placed] };
+        placed += 1;
+      }
+      const missed = pending.length - placed;
+      if (missed > 0) {
+        toast.message(
+          `Placed ${placed} camera${placed === 1 ? "" : "s"} — ${missed} did not fit. Pick a larger layout.`,
+        );
+      }
+      return next;
+    });
+  }, []);
+
   // Swap two tiles (tile→tile drag).
   const swapCells = useCallback((from, to) => {
     setCells((prev) => {
@@ -301,6 +314,22 @@ export default function Streaming() {
     [assignToCell],
   );
 
+  // Double-clicking a recorder header puts its cameras up from the first FREE
+  // tile, so it extends the wall instead of overwriting what is already on it.
+  // A drop, by contrast, starts exactly where the operator aimed.
+  const pickBranch = useCallback(
+    (cams) => {
+      const ids = cams.map((c) => c.id);
+      const firstFree = cellsRef.current.findIndex((c) => !c.cameraId);
+      if (firstFree === -1) {
+        toast.message("Grid full — remove a tile or pick a larger layout.");
+        return;
+      }
+      assignMany(ids, firstFree);
+    },
+    [assignMany],
+  );
+
   // ── Stable, INDEX-BASED tile handlers (video-wall render-perf) ────────────
   // One handler instance shared by every tile — each tile passes its OWN stable
   // `index` when invoking. This replaces the per-render `(x) => fn(i, x)` closures
@@ -309,6 +338,10 @@ export default function Streaming() {
   const handleAssign = useCallback(
     (cameraId, index) => assignToCell(index, cameraId),
     [assignToCell],
+  );
+  const handleAssignMany = useCallback(
+    (cameraIds, index) => assignMany(cameraIds, index),
+    [assignMany],
   );
   const handleSwap = useCallback((from, index) => swapCells(from, index), [swapCells]);
   const handleClose = useCallback((index) => closeCell(index), [closeCell]);
@@ -370,12 +403,81 @@ export default function Streaming() {
   }, [groups]);
 
   const [activePattern, setActivePattern] = useState<any>(null);
+  // ── the rotation stage (double buffer) ──────────────────────────────────
+  // Two layer slots and which one is in front. The engine hands us the next stop
+  // early; we load it into the BACK slot, where it mounts hidden and connects, and
+  // at the dwell boundary we just move `front`. Nothing remounts in view, so the
+  // switch has no connecting state. See PatternStage for the whole argument.
+  const [stage, setStage] = useState<any>({ slots: [null, null], front: 0 });
+  const stageRef = useRef(stage);
+  stageRef.current = stage;
+
+  // Preload — put a stop in the back slot without changing what is on screen.
+  const preloadStop = useCallback((stop) => {
+    if (!stop) return;
+    setStage((st) => {
+      const back = 1 - st.front;
+      // Already showing it, or already holding it — nothing to do. Re-setting the
+      // slot would remount players that are mid-connect for no reason.
+      if (stopKey(st.slots[st.front]) === stopKey(stop)) return st;
+      if (stopKey(st.slots[back]) === stopKey(stop)) return st;
+      const slots = [...st.slots];
+      slots[back] = stop;
+      return { ...st, slots };
+    });
+  }, []);
+
   const rotation = usePatternRotation({
     pattern: activePattern,
     groupById,
     cameraIdSet,
     applyWallPreset,
+    prewarm: preloadStop,
   });
+
+  // Show the stop the engine is on. Normally it is already sitting in the back
+  // slot (preloaded and playing), so this is a one-field flip. It falls back to
+  // loading-then-showing for the cases where nothing was preloaded: the first stop
+  // after pressing play, and an operator hitting prev/next on the HUD.
+  const currentStopKey = stopKey(rotation.current);
+  useEffect(() => {
+    if (!rotation.active || !rotation.current) return;
+    setStage((st) => {
+      if (stopKey(st.slots[st.front]) === currentStopKey) return st;
+      const back = 1 - st.front;
+      if (stopKey(st.slots[back]) === currentStopKey) return { slots: st.slots, front: back };
+      const slots = [...st.slots];
+      slots[back] = rotation.current;
+      return { slots, front: back };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rotation.active, currentStopKey]);
+
+  // Once the fade is over, drop the layer that faded OUT. This is what keeps the
+  // overlap bounded: without it the outgoing stop would keep streaming for the
+  // whole dwell and the wall would sit at 2× recorder load permanently rather
+  // than for the few seconds either side of a switch.
+  useEffect(() => {
+    if (!rotation.active) return undefined;
+    const id = setTimeout(() => {
+      setStage((st) => {
+        const back = 1 - st.front;
+        if (!st.slots[back]) return st;
+        const slots = [...st.slots];
+        slots[back] = null;
+        return { ...st, slots };
+      });
+    }, STAGE_FADE_MS + 200);
+    return () => clearTimeout(id);
+  }, [stage.front, rotation.active]);
+
+  // Leaving pattern mode tears both layers down. `cells` already holds the stop
+  // that was on screen (the engine keeps calling applyWallPreset), so the manual
+  // wall picks up exactly what the operator was looking at.
+  useEffect(() => {
+    if (rotation.active) return;
+    setStage((st) => (st.slots[0] || st.slots[1] ? { slots: [null, null], front: 0 } : st));
+  }, [rotation.active]);
 
   const startPattern = useCallback(
     (pattern, { fullscreen = false }: any = {}) => {
@@ -502,7 +604,7 @@ export default function Streaming() {
     root.querySelectorAll("video").forEach((v) => {
       v.muted = allMuted;
     });
-  }, [allMuted, cells]);
+  }, [allMuted, cells, stage]);
 
   // ESC exits spotlight (fullscreen exit is handled natively by the browser).
   useEffect(() => {
@@ -562,8 +664,10 @@ export default function Streaming() {
       isHero={isHero || spotlightMode}
       spotlight={spotlightMode}
       railDragging={railDragging}
+      estateReady={estateReady}
       style={spotlightMode ? undefined : tileStyleFor(i)}
       onAssign={handleAssign}
+      onAssignMany={handleAssignMany}
       onSwap={handleSwap}
       onClose={handleClose}
       onSpotlight={handleSpotlight}
@@ -600,6 +704,9 @@ export default function Streaming() {
             patterns={patterns}
             loading={patternsQ.isLoading}
             activeId={rotation.active ? activePattern?.id : null}
+            stop={rotation.index + 1}
+            total={rotation.total}
+            paused={rotation.paused}
             onPlay={(p) => startPattern(p)}
             onStop={exitPattern}
             onCreate={() => setPatternFormOpen(true)}
@@ -624,6 +731,7 @@ export default function Streaming() {
             cameras={cameras}
             mountedIds={mountedIds}
             onPick={pickCamera}
+            onPickMany={pickBranch}
             onDragStateChange={setRailDragging}
             isLoading={camerasQ.isLoading || fedQ.isLoading}
             onlineCount={onlineCount}
@@ -641,17 +749,35 @@ export default function Streaming() {
                 LivePlayer session instead of remounting. */}
             {viewMode !== "map" && (
               <div
+                // The mute-all sweep hangs off THIS element, not the grid inside it:
+                // during a pattern the grid is replaced by PatternStage, and a ref on
+                // the grid alone would leave mute-all silently doing nothing exactly
+                // when the wall is unattended.
+                ref={gridRef}
                 className={`relative min-h-0 overflow-hidden p-1.5 ${viewMode === "split" ? "flex-[1.15]" : "flex-1"}`}
               >
-                <div
-                  ref={gridRef}
-                  className="grid h-full min-h-0 gap-1.5"
-                  style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
-                >
-                  {isSpotlightActive
-                    ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
-                    : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
-                </div>
+                {/* While a pattern runs, the STAGE owns the wall — the manual grid
+                    must not render at the same time or both would mount players for
+                    the same cameras and double the load on the recorder. Spotlight
+                    still wins over both: it is a deliberate operator action. */}
+                {rotation.active && !isSpotlightActive ? (
+                  <PatternStage
+                    slots={stage.slots}
+                    front={stage.front}
+                    cameraById={cameraById}
+                    estateReady={estateReady}
+                    qualityProfile={qualityProfile}
+                  />
+                ) : (
+                  <div
+                    className="grid h-full min-h-0 gap-1.5"
+                    style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
+                  >
+                    {isSpotlightActive
+                      ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
+                      : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
+                  </div>
+                )}
                 {isSpotlightActive && (
                   <SpotlightOverlay
                     label={spotlightCam?.name || "Camera"}

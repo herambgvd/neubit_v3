@@ -163,7 +163,7 @@
       left: calc(50% + 10px);
     }
     &:after {
-      content: url("https://api.iconify.design/heroicons/calendar.svg?width=18&height=18");
+      content: $icon-calendar;
       height: 20px;
       position: absolute;
       top: 50%;
@@ -195,7 +195,7 @@
       text-align: center;
     }
     &:after {
-      content: url("https://api.iconify.design/heroicons-outline/filter.svg?width=18&height=18");
+      content: $icon-filter;
       height: 20px;
       position: absolute;
       top: 50%;
@@ -222,14 +222,14 @@
   .date-range-custom {
     .container-class {
       &:after {
-        content: url("https://api.iconify.design/heroicons/calendar.svg?color=white&width=18&height=18");
+        content: $icon-calendar-white;
       }
     }
   }
   .date-range-custom2 {
     .container-class {
       &:after {
-        content: url("https://api.iconify.design/heroicons-outline/filter.svg?color=white&width=18&height=18");
+        content: $icon-filter-white;
       }
     }
   }

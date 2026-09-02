@@ -34,6 +34,14 @@ venv/
 data/
 pgdata/
 
+# --- Offline basemap ---
+# The PMTiles world archive (0.5–17 GB depending on max zoom) and the pmtiles CLI
+# that builds it are DEPLOYMENT ARTEFACTS, not source. Build with
+# `npm run map:tiles` in frontend/, then copy the archive to the target host.
+# The glyphs and sprites under frontend/public/map/ ARE committed — they are small
+# and the image must build without network.
+deploy/tiles/
+
 # --- OS / editor ---
 .DS_Store
 Thumbs.db
