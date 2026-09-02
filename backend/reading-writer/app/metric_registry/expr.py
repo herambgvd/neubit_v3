@@ -6,6 +6,7 @@ GRAMMAR (all of it)
     term    := factor (('*' | '/') factor)*
     factor  := NUMBER | NAME | '(' expr ')' | '-' factor | FUNC '(' args ')'
     FUNC    := 'abs' | 'annualize' | 'band_score' | 'benchmark_score'
+             | 'norm_up' | 'norm_down'
 
 `×` and `÷` are accepted as spellings of `*` and `/`. Nothing else exists: no
 comparisons, no exponent, no attribute access, no subscripts, no strings, no
@@ -38,6 +39,22 @@ buried constants. Shape: inside [lo, hi] → 100; below, linear 100→0 over
 `abs(x)` when the sign is conventional, as a chiller ΔT's is). The result is
 DIMENSIONLESS whatever x is — a score is not a temperature.
 
+`norm_up(x, floor, target)` and `norm_down(x, target, worst)` — the CCEI
+methodology spec's two normalization functions (§3.1 higher-is-better, §3.2
+lower-is-better), which map a metric in its own engineering unit onto the
+common 0-100 component scale:
+
+    norm_up   = clamp(100 · (x − floor) / (target − floor), 0, 100)
+    norm_down = clamp(100 · (worst − x) / (worst − target), 0, 100)
+
+The bounds are numeric LITERALS for the same reason band_score's are: they are
+the spec's per-metric target/floor/worst parameters, and they belong in the
+formula ROW where a reviewer and a version diff can see them. `norm_up` needs
+floor < target and `norm_down` needs target < worst — an inverted pair is a
+sign error that would silently score every site backwards, so it is a
+registration error, not a runtime surprise. Both are DIMENSIONLESS out: a
+score is not a kW/TR and not a percentage of anything.
+
 `benchmark_score(x)` — the position of x against the EFFECTIVE benchmark
 standard's band edges: best-band edge → 100, worst-band edge → 0, linear
 between, clamped. The edges are DATA (`benchmark_standards` + the site's zone
@@ -67,11 +84,14 @@ class EvalRefusal(Exception):
         self.reason = reason
 
 
-_FUNCS = ("abs", "annualize", "band_score", "benchmark_score")
+_FUNCS = ("abs", "annualize", "band_score", "benchmark_score", "norm_up", "norm_down")
 
 # arity per function — checked at parse, so a wrong call is a registration
 # error naming itself, never a TypeError at evaluation.
-_FUNC_ARITY = {"abs": 1, "annualize": 1, "benchmark_score": 1, "band_score": 3}
+_FUNC_ARITY = {
+    "abs": 1, "annualize": 1, "benchmark_score": 1,
+    "band_score": 3, "norm_up": 3, "norm_down": 3,
+}
 
 _BINOPS: dict[type, str] = {
     ast.Add: "+",
@@ -126,10 +146,24 @@ def _check(node: ast.AST) -> None:
                 f"{node.func.id}() takes exactly {arity} argument{'s' if arity != 1 else ''}"
             )
         if node.func.id == "band_score":
-            lo, hi = _band_literals(node)
+            lo, hi = _literal_pair(node)
             if not (0 < lo < hi):
                 raise ExprError(
                     f"band_score(x, lo, hi) needs 0 < lo < hi; got lo={lo:g}, hi={hi:g}"
+                )
+        if node.func.id == "norm_up":
+            floor, target = _literal_pair(node)
+            if not floor < target:
+                raise ExprError(
+                    f"norm_up(x, floor, target) is higher-is-better and needs "
+                    f"floor < target; got floor={floor:g}, target={target:g}"
+                )
+        if node.func.id == "norm_down":
+            target, worst = _literal_pair(node)
+            if not target < worst:
+                raise ExprError(
+                    f"norm_down(x, target, worst) is lower-is-better and needs "
+                    f"target < worst; got target={target:g}, worst={worst:g}"
                 )
         for a in node.args:
             _check(a)
@@ -137,14 +171,17 @@ def _check(node: ast.AST) -> None:
     raise ExprError(f"`{type(node).__name__}` is not in the language")
 
 
-def _band_literals(node: ast.Call) -> tuple[float, float]:
-    """band_score's lo/hi must be numeric literals — spec parameters IN the
-    row, where a reviewer sees them, not names resolved from anywhere."""
+def _literal_pair(node: ast.Call) -> tuple[float, float]:
+    """The two bound arguments of a three-argument normalization function
+    (band_score's lo/hi, norm_up's floor/target, norm_down's target/worst).
+    They must be numeric literals — spec parameters IN the row, where a
+    reviewer sees them, not names resolved from anywhere."""
+    fn = node.func.id  # type: ignore[union-attr]
     vals = []
     for a in node.args[1:]:
         if not (isinstance(a, ast.Constant) and isinstance(a.value, (int, float))
                 and not isinstance(a.value, bool)):
-            raise ExprError("band_score(x, lo, hi): lo and hi must be numeric literals")
+            raise ExprError(f"{fn}(): the two bound arguments must be numeric literals")
         vals.append(float(a.value))
     return vals[0], vals[1]
 
@@ -199,6 +236,13 @@ def _infer(node: ast.AST, env: dict[str, Qty]) -> Qty:
             return arg
         if fn == "band_score":
             # a 0-100 score against a band in the argument's own unit
+            return DIMENSIONLESS
+        if fn in ("norm_up", "norm_down"):
+            # CCEI spec §3.1/§3.2: any engineering unit onto the 0-100 scale.
+            # Deliberately NOT dimension-checked against the bounds: the bounds
+            # are stated in the argument's own unit by construction, and the
+            # registration-time check that matters (floor < target, target <
+            # worst) already ran in `_check`.
             return DIMENSIONLESS
         # benchmark_score: the one benchmark dimension this platform holds
         if arg.dimension != "energy_per_area":
@@ -260,8 +304,14 @@ def _eval(node: ast.AST, env: dict[str, float], window_days: float | None,
             if not window_days or window_days <= 0:
                 raise EvalRefusal("blocked", "annualize() needs a window with nonzero length")
             return v * (365.0 / window_days)
+        if fn == "norm_up":
+            floor, target = _literal_pair(node)
+            return min(100.0, max(0.0, 100.0 * (v - floor) / (target - floor)))
+        if fn == "norm_down":
+            target, worst = _literal_pair(node)
+            return min(100.0, max(0.0, 100.0 * (worst - v) / (worst - target)))
         if fn == "band_score":
-            lo, hi = _band_literals(node)
+            lo, hi = _literal_pair(node)
             if v < 0:
                 return 0.0
             if v < lo:
