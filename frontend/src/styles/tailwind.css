@@ -1,0 +1,242 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Tailwind v4 entry — the former `tailwind.config.js`, expressed CSS-first.
+   Every value here is a 1:1 carry-over of the v3 config; nothing was re-derived
+   and nothing was "simplified". If a colour resolves differently after this
+   file, that is a bug.
+
+   This is imported from `scss/app.scss` (a plain-CSS `@import`, which Dart Sass
+   passes straight through to PostCSS) so the whole app still ships as ONE
+   stylesheet and the cascade-layer order stays exactly as it was under v3.
+   ──────────────────────────────────────────────────────────────────────────── */
+@import "tailwindcss";
+
+/* Sources. v4 auto-detects, but the entry is reached through a Sass import, so
+   the auto-detection base is ambiguous — pin it. Paths are relative to this file
+   (src/styles/), so `../` is `src/`. */
+@source "../**/*.{js,ts,jsx,tsx}";
+
+/* v3 had `darkMode: "class"`. v4 needs the variant spelled out. `:where()` keeps
+   specificity at zero so `dark:` behaves exactly like it did in v3. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* `static`, NOT a bare `@theme`. Tailwind 4 TREE-SHAKES theme variables that no
+   utility class happens to reference, and emits nothing for the rest — with no
+   warning and no build failure, so the loss is silent. It was not hypothetical
+   here: 81 of the 118 variables declared in this block were absent from the
+   served stylesheet, including the ENTIRE `--shadow-*` elevation scale, every
+   `--animate-*` keyframe alias, and most of the 50–900 colour ramps. Anything
+   reading those variables directly — inline styles, SCSS, a chart's colour
+   lookup, a `var(--shadow-base2)` in a component — got nothing back.
+
+   `@theme static` emits every declaration regardless of use, which is what a
+   design-token contract requires: the tokens exist because they are the
+   vocabulary, not because something already happens to spend them. See
+   docs/design-tokens.md §8.
+
+   VERIFY BY FETCHING THE COMPILED STYLESHEET, not by reading this file. */
+@theme static {
+  /* ── NeuBit command-console palette (fixed hexes; do not flip with theme) ── */
+  --color-nb-bg: #0c1530;
+  --color-nb-bg2: #0a1024;
+  --color-nb-panel: #0e1734;
+  --color-nb-field: #0b1228;
+  --color-nb-ink: #f2f6ff;
+  --color-nb-muted: #cfd0f2;
+  --color-nb-soft: #aec2e8;
+  --color-nb-faint: #9a92c8;
+  --color-nb-line: rgba(160, 150, 245, 0.2);
+  --color-nb-line2: rgba(150, 180, 245, 0.42);
+  --color-nb-teal: #22d3ee;
+  --color-nb-tealb: #67e8f9;
+  --color-nb-violet: #a78bfa;
+  --color-nb-violetb: #c4b5fd;
+  --color-nb-blue: #60a5fa;
+  --color-nb-blueb: #93c5fd;
+  --color-nb-good: #34d399;
+  --color-nb-warn: #fbbf24;
+  --color-nb-crit: #f87171;
+
+  /* ── Semantic tokens: these read the CSS variables set in theme.css ──────── */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-border: var(--card-border);
+  --color-muted: var(--muted);
+  --color-hover: var(--hover);
+  --color-field: var(--field-border);
+
+  /* ── Scales ──────────────────────────────────────────────────────────────── */
+  --color-primary-50: #f6f8ff;
+  --color-primary-100: #edf0ff;
+  --color-primary-200: #d1dafe;
+  --color-primary-300: #b4c2fd;
+  --color-primary-400: #8092ff;
+  --color-primary-500: #4669fa;
+  --color-primary-600: #3f5edf;
+  --color-primary-700: #2a3f96;
+  --color-primary-800: #203071;
+  --color-primary-900: #151f49;
+
+  --color-secondary-50: #f9fafb;
+  --color-secondary-100: #f4f5f7;
+  --color-secondary-200: #e5e7eb;
+  --color-secondary-300: #d2d6dc;
+  --color-secondary-400: #9fa6b2;
+  --color-secondary-500: #a0aec0;
+  --color-secondary-600: #475569;
+  --color-secondary-700: #334155;
+  --color-secondary-800: #1e293b;
+  --color-secondary-900: #0f172a;
+
+  --color-danger-50: #fff7f7;
+  --color-danger-100: #feefef;
+  --color-danger-200: #fcd6d7;
+  --color-danger-300: #fabbbd;
+  --color-danger-400: #f68b8d;
+  --color-danger-500: #f1595c;
+  --color-danger-600: #d75052;
+  --color-danger-700: #913638;
+  --color-danger-800: #6d292a;
+  --color-danger-900: #461a1b;
+
+  /* `black` keeps its DEFAULT so text-black / bg-black stay true black. */
+  --color-black: #000000;
+  --color-black-50: #f9fafb;
+  --color-black-100: #f4f5f7;
+  --color-black-200: #e5e7eb;
+  --color-black-300: #d2d6dc;
+  --color-black-400: #9fa6b2;
+  --color-black-500: #111112;
+  --color-black-600: #475569;
+  --color-black-700: #334155;
+  --color-black-800: #1e293b;
+  --color-black-900: #0f172a;
+
+  --color-warning-50: #fffaf8;
+  --color-warning-100: #fff4f1;
+  --color-warning-200: #fee4da;
+  --color-warning-300: #fdd2c3;
+  --color-warning-400: #fcb298;
+  --color-warning-500: #fa916b;
+  --color-warning-600: #df8260;
+  --color-warning-700: #965741;
+  --color-warning-800: #714231;
+  --color-warning-900: #492b20;
+
+  --color-info-50: #f3feff;
+  --color-info-100: #e7feff;
+  --color-info-200: #c5fdff;
+  --color-info-300: #a3fcff;
+  --color-info-400: #5ff9ff;
+  --color-info-500: #0ce7fa;
+  --color-info-600: #00b8d4;
+  --color-info-700: #007a8d;
+  --color-info-800: #005e67;
+  --color-info-900: #003f42;
+
+  --color-success-50: #f3fef8;
+  --color-success-100: #e7fdf1;
+  --color-success-200: #c5fbe3;
+  --color-success-300: #a3f9d5;
+  --color-success-400: #5ff5b1;
+  --color-success-500: #50c793;
+  --color-success-600: #3f9a7a;
+  --color-success-700: #2e6d61;
+  --color-success-800: #1f4b47;
+  --color-success-900: #0f2a2e;
+
+  /* v3 overrode gray 50–900 in `extend`; 950 kept falling through to the
+     Tailwind default, so it still does here. */
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f4f5f7;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d2d6dc;
+  --color-gray-400: #9fa6b2;
+  --color-gray-500: #68768a;
+  --color-gray-600: #475569;
+  --color-gray-700: #334155;
+  --color-gray-800: #1e293b;
+  --color-gray-900: #0f172a;
+
+  /* ── Type ────────────────────────────────────────────────────────────────── */
+  /* Vestigial: body text is Geist Sans, applied via GeistSans.className in
+     app/layout.js. Kept only so any stray `font-inter` still resolves. */
+  --font-inter: Inter, sans-serif;
+
+  /* ── Elevation ───────────────────────────────────────────────────────────── */
+  --shadow-base: 0px 0px 1px rgba(40, 41, 61, 0.08), 0px 0.5px 2px rgba(96, 97, 112, 0.16);
+  --shadow-base2: 0px 2px 4px rgba(40, 41, 61, 0.04), 0px 8px 16px rgba(96, 97, 112, 0.16);
+  --shadow-base3: 16px 10px 40px rgba(15, 23, 42, 0.22);
+  --shadow-deep: -2px 0px 8px rgba(0, 0, 0, 0.16);
+  --shadow-dropdown: 0px 4px 8px rgba(0, 0, 0, 0.08);
+  --shadow-testi: 0px 4px 24px rgba(0, 0, 0, 0.06);
+  --shadow-todo: rgba(235, 233, 241, 0.6) 0px 3px 10px 0px;
+
+  /* ── Motion ──────────────────────────────────────────────────────────────── */
+  --animate-spin-slow: spin 3s linear infinite;
+  --animate-zoom: zoom 1s ease-in-out infinite;
+  --animate-tada: tada 1.5s ease-in-out infinite;
+
+  @keyframes zoom {
+    0%,
+    100% {
+      transform: scale(0.5);
+    }
+    50% {
+      transform: scale(1);
+    }
+  }
+  @keyframes tada {
+    0% {
+      transform: scale3d(1, 1, 1);
+    }
+    10%,
+    20% {
+      transform: scale3d(1, 1, 0.95) rotate3d(0, 0, 1, -10deg);
+    }
+    30%,
+    50%,
+    70%,
+    90% {
+      transform: scale3d(1, 1, 1) rotate3d(0, 0, 1, 10deg);
+    }
+    40%,
+    60%,
+    80% {
+      transform: rotate3d(0, 0, 1, -10deg);
+    }
+    100% {
+      transform: scale3d(1, 1, 1);
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   v3 → v4 preflight compatibility.
+
+   v4 changed three preflight defaults in ways that are invisible at build time
+   and obvious on screen. Restoring the v3 behaviour here is deliberate: this
+   migration is a config port, not a restyle.
+   ──────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  /* v3: unspecified borders/dividers were gray-200. v4: currentColor. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+
+  /* v3: placeholders were gray-400. v4: currentColor at 50% opacity. */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+
+  /* v3: buttons kept `cursor: pointer`. v4 defers to the browser (`default`). */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}

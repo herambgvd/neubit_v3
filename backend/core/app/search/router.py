@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.deps import get_current_user
 from ..auth.models import Role, User
 from ..auth.permissions import CorePerm
+from ..auth.service import AuthService
 from ..db.base import get_db
+from ..tenancy.scope import scope_of, scoped
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -33,13 +35,20 @@ async def search(
     if not term:
         return {"results": results}
     like = f"%{term}%"
+    # Tenant isolation: a tenant-admin must only ever see THEIR tenant's users/roles
+    # here, exactly like the /users and /roles lists. Super-admins see everyone.
+    scope = scope_of(user)
 
     if user.role.grants(CorePerm.USER_READ):
         rows = (
             await db.execute(
-                select(User)
-                .where(or_(User.email.ilike(like), User.full_name.ilike(like)))
-                .limit(_LIMIT)
+                scoped(
+                    select(User).where(
+                        or_(User.email.ilike(like), User.full_name.ilike(like))
+                    ),
+                    User,
+                    scope,
+                ).limit(_LIMIT)
             )
         ).scalars().all()
         for u in rows:
@@ -55,8 +64,12 @@ async def search(
             )
 
     if user.role.grants(CorePerm.ROLE_READ):
+        # roles_query already scopes to own-tenant + shared system roles (NULL tenant);
+        # super-admins get all. Just add the name filter + limit.
         rows = (
-            await db.execute(select(Role).where(Role.name.ilike(like)).limit(_LIMIT))
+            await db.execute(
+                AuthService(db).roles_query(scope).where(Role.name.ilike(like)).limit(_LIMIT)
+            )
         ).scalars().all()
         for r in rows:
             results.append(

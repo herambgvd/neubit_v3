@@ -1,0 +1,164 @@
+# electron-builder — packaging for Neubit VMS.
+#
+# Produces ONE installer that carries both halves:
+#
+#   * the Electron shell (this directory), always; and
+#   * the server appliance — the baked WSL2 distro — when
+#     deploy/windows/build-appliance.ps1 has staged it into ../dist/appliance.
+#
+# Running `npm run package:win` WITHOUT that step still succeeds and produces a
+# client-only installer. That is a supported shape, not a degraded one: an operator
+# workstation connects to a server elsewhere and has no business running one. See
+# build/installer.nsh, which skips the appliance silently when the payload is absent.
+
+appId: com.geniusvision.neubit.vms
+productName: Neubit VMS
+copyright: Copyright © Genius Vision Digital
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+
+# ── the appliance payload is NOT embedded here ───────────────────────────────
+#
+# It used to be `extraResources: ../dist/appliance`, and that CANNOT WORK. NSIS's
+# makensis is a 32-bit program: to embed a payload it memory-maps the compressed
+# blob, and a 2.9 GB appliance does not fit in a 32-bit address space. The build
+# fails at the last step, after doing all the work:
+#
+#   File: failed creating mmap of "...neubit-vms-desktop-0.1.0-x64.nsis.7z"
+#   APP_64_UNPACKED_SIZE=3275259
+#
+# Shrinking under the limit is not available either — the distro is 5.7 GB raw and
+# 2.9 GB gzipped, and the only way below that is to stop shipping the images,
+# which is the entire point of Route B.
+#
+# So the payload travels BESIDE the installer instead:
+#
+#   Neubit VMS 0.1.0\
+#     Neubit VMS Setup 0.1.0-x64.exe      <- this, ~80 MB
+#     appliance\                          <- dist/appliance, ~2.9 GB
+#       neubit-vms.tar.gz
+#       install-appliance.ps1  ...
+#
+# build/installer.nsh looks for that folder next to itself ($EXEDIR) and installs
+# the server half when it is there. That keeps the property this design was chosen
+# for — ONE installer for both shapes — and it is better than embedding for the
+# case the product actually has to serve: an air-gapped site, where a folder on a
+# USB stick is the delivery mechanism and a web installer is not an option.
+#
+# A NOTE FOR CI: the two halves are built by two commands in this order —
+# deploy\windows\build-appliance.ps1 first, then npm run package:win — and the
+# release is the installer plus that folder, zipped together.
+
+# ── auto-update ──────────────────────────────────────────────────────────────
+#
+# DELIBERATELY ABSENT. electron-updater with no publish config reports "no feed"
+# and moves on, which is honest; a placeholder URL would make `checkForUpdates`
+# fail against a host that does not exist and bury the real error in a stack
+# trace. The NVR shell still carries `updates.example.com` for exactly this
+# reason and it has never worked.
+#
+# Filling this in is P4, and it is one decision for BOTH products — see the plan's
+# open decisions. When it lands:
+#
+#   publish:
+#     provider: generic
+#     url: https://<the feed host>/vms/${channel}
+#
+# ── code signing ─────────────────────────────────────────────────────────────
+#
+# ABSENT, AND DEFERRED ON PURPOSE — product owner's call, 2026-08-27. Builds ship
+# unsigned for now. Recorded here rather than left looking like an oversight, so
+# nobody adds a certificate config believing it was simply forgotten.
+#
+# Nothing in this file changes when a certificate arrives: electron-builder reads
+# it from CSC_LINK / CSC_KEY_PASSWORD in the environment. Only CI changes.
+#
+# TWO THINGS FOLLOW FROM SHIPPING UNSIGNED, and both are cheaper to know now:
+#
+#  1. SmartScreen. The installer requests elevation (perMachine), so a customer
+#     gets "Windows protected your PC" and has to click More info -> Run anyway.
+#     It is not a failure and it looks exactly like one. deploy/windows/README.md
+#     carries the click path, so a field engineer is not improvising on site.
+#
+#  2. AUTO-UPDATE WILL REFUSE TO INSTALL. `nsis.verifyUpdateCodeSignature`
+#     defaults to TRUE, and electron-updater verifies the downloaded update's
+#     publisher name against its signature before running it. Against an unsigned
+#     build that check cannot pass — the update downloads and then does nothing.
+#     So when the feed lands (P4) it is signed builds, or
+#     `verifyUpdateCodeSignature: false` as a DELIBERATE, argued choice: turning
+#     it off means the updater runs whatever the feed serves, which is only
+#     acceptable over HTTPS to a host we control.
+#
+#     Harmless today — there is no publish block above, so nothing ever checks.
+
+win:
+  icon: build/icon.ico
+  # artifactName is set PER TARGET below, not here.
+  #
+  # A single `${productName}-${version}-${arch}.${ext}` at this level looks right and
+  # silently loses a build: nsis and portable both produce an `.exe`, so they resolve
+  # to the same filename and the second one written wins. The first run of this config
+  # produced exactly one file in dist/ — the portable, wearing the installer's name.
+  target:
+    - target: nsis
+      arch: [x64]
+    # A portable build for the case that comes up constantly in this market: an
+    # engineer on a customer site who needs the console on a machine they are not
+    # allowed to install software on.
+    - target: portable
+      arch: [x64]
+
+nsis:
+  artifactName: ${productName} Setup ${version}-${arch}.${ext}
+  include: build/installer.nsh
+  oneClick: false
+  # perMachine, and elevated, because the appliance half registers a scheduled task
+  # under SYSTEM, imports a WSL distro into SYSTEM's profile and writes firewall
+  # rules. A per-user install could do none of those and would produce a desktop app
+  # beside a server that never starts — the worst of both.
+  #
+  # A client-only build pays a UAC prompt it does not strictly need. That is the
+  # right trade: one prompt, versus two installers to build, sign and tell apart.
+  perMachine: true
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Neubit VMS
+  # Keep the operator's saved servers and preferences across an upgrade. They live
+  # in userData, which electron-builder does not touch, but deleteAppDataOnUninstall
+  # would remove them on the way out — and an uninstall/reinstall to fix something
+  # unrelated should not lose the server list.
+  deleteAppDataOnUninstall: false
+
+portable:
+  artifactName: ${productName} Portable ${version}-${arch}.${ext}
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.business
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+
+linux:
+  icon: build/icon.png
+  category: Utility
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]

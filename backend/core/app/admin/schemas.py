@@ -5,7 +5,9 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from ..core.fields import AsciiEmail
 
 
 class TenantOut(BaseModel):
@@ -34,7 +36,7 @@ class CreateTenantIn(BaseModel):
     """Create a tenant and its first tenant-admin user in one call."""
 
     name: str = Field(min_length=1)
-    admin_email: EmailStr
+    admin_email: AsciiEmail
     admin_password: str
 
 
@@ -59,7 +61,7 @@ class LicenseIn(BaseModel):
 class TenantAdminIn(BaseModel):
     """Provision an admin user inside a specific tenant."""
 
-    email: EmailStr
+    email: AsciiEmail
     password: str
     full_name: str | None = None
 

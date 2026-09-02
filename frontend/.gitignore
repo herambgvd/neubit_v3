@@ -31,3 +31,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+
+# Offline basemap archive dropped here for `npm run dev` (there is no Traefik/
+# nginx in dev to serve /tiles). Multi-GB deployment artefact — never commit it,
+# and .dockerignore keeps it out of the image too.
+/public/tiles/
+
+# typescript
+*.tsbuildinfo

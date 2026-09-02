@@ -1,0 +1,189 @@
+"""Media-node registry router — permission-gated, tenant-scoped (MN-1a).
+
+Mounted under the service api_prefix (``/api/v1``) with the ``/vms`` domain prefix, so
+paths are ``/api/v1/vms/media-nodes...``. Mirrors the NVR router: every endpoint is gated
+via ``kernel.auth.require_permission`` and runs inside the caller's tenant scope
+(``get_scope``). Node onboarding is infrastructure/config, so it gates on the existing
+``vms.config.manage`` permission (no new perm needed — the tenant-admin ``*`` wildcard
+grants it today).
+
+Endpoints:
+  * ``GET    /media-nodes``        — list (tenant-scoped).
+  * ``POST   /media-nodes``        — register (probes reachability; never hard-fails).
+  * ``GET    /media-nodes/{id}``   — detail.
+  * ``PATCH  /media-nodes/{id}``   — edit (name/api_url/bases/label/capacity/status).
+  * ``DELETE /media-nodes/{id}``   — remove (blocked while cameras are still assigned).
+  * ``POST   /media-nodes/{id}/pair`` — trade a recorder-minted pairing code for a
+    scoped credential (the bootstrap for an independently deployed recorder).
+"""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, Response, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from kernel.auth import Scope, get_scope, require_permission
+
+from app.db import get_db
+
+from .schemas import (
+    MediaNodeCreate,
+    MediaNodeListResponse,
+    MediaNodePublic,
+    MediaNodeUpdate,
+)
+from .service import MediaNodeService
+
+# Node onboarding is an infrastructure/config write — gate on the existing config-manage
+# permission (added to core's catalog already; the tenant-admin "*" wildcard grants it).
+PERM_MANAGE = "vms.config.manage"
+
+router = APIRouter(prefix="/vms", tags=["VMS Media Nodes"])
+
+
+async def get_media_node_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> MediaNodeService:
+    return MediaNodeService(db, scope)
+
+
+@router.get(
+    "/media-nodes",
+    response_model=MediaNodeListResponse,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def list_media_nodes(
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    status_: str | None = Query(None, alias="status", max_length=16),
+    q: str | None = Query(None, max_length=255),
+) -> MediaNodeListResponse:
+    return await svc.list_(skip=skip, limit=limit, status=status_, q=q)
+
+
+@router.post(
+    "/media-nodes",
+    response_model=MediaNodePublic,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def register_media_node(
+    body: MediaNodeCreate,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> MediaNodePublic:
+    return await svc.create(body)
+
+
+@router.get(
+    "/media-nodes/{node_id}",
+    response_model=MediaNodePublic,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def get_media_node(
+    node_id: str,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> MediaNodePublic:
+    return await svc.get(node_id)
+
+
+@router.patch(
+    "/media-nodes/{node_id}",
+    response_model=MediaNodePublic,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def update_media_node(
+    node_id: str,
+    body: MediaNodeUpdate,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> MediaNodePublic:
+    return await svc.update(node_id, body)
+
+
+@router.delete(
+    "/media-nodes/{node_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def delete_media_node(
+    node_id: str,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> Response:
+    await svc.delete(node_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── federation trust / credential management ─────────────────────────────────────
+# Manage the scoped credentials the recorder node issues to this VMS. Same PERM_MANAGE
+# (vms.config.manage) gate as the rest of node onboarding — credential trust is an
+# infrastructure/config write. The node's federation API is proxied via the service JWT.
+
+
+@router.get(
+    "/media-nodes/{node_id}/credentials",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def list_media_node_credentials(
+    node_id: str,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> dict:
+    """List the federation credentials the recorder node has issued (no raw keys)."""
+    return {"items": await svc.list_credentials(node_id)}
+
+
+@router.post(
+    "/media-nodes/{node_id}/enroll",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def enroll_media_node_credential(
+    node_id: str,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> dict:
+    """Enrol a fresh scoped credential on the node, store it, and surface the raw key
+    ONCE ({credential, id, label, grants}) — the node never returns it again."""
+    return await svc.enroll_credential(node_id)
+
+
+class PairRequest(BaseModel):
+    """Body of a re-pair: just the code an operator read off the recorder's console."""
+
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=1, max_length=64)
+
+
+@router.post(
+    "/media-nodes/{node_id}/pair",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def pair_media_node(
+    node_id: str,
+    body: PairRequest,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> dict:
+    """Trade a recorder-minted pairing code for a scoped credential and store it.
+
+    The re-pair path for a node that was registered before it could be reached, or whose
+    credential was revoked on the recorder. ``POST /media-nodes/{id}/enroll`` remains the
+    shared-secret route, which only a co-located recorder answers.
+    """
+    return await svc.pair_credential(node_id, body.code)
+
+
+@router.delete(
+    "/media-nodes/{node_id}/credentials/{cred_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def revoke_media_node_credential(
+    node_id: str,
+    cred_id: str,
+    svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
+) -> Response:
+    await svc.revoke_credential(node_id, cred_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

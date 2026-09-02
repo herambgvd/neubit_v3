@@ -11,16 +11,21 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...auth.deps import require_permission
+from ...auth.deps import get_current_user, require_permission
 from ...auth.models import User
 from ...core.errors import ValidationError
 from ...core.storage import get_storage
 from ...db.base import get_db
 from ...tenancy.scope import Scope, get_scope
 from .schemas import (
+    BuildingFactsUpdate,
     CreateSiteRequest,
+    EmissionFactorListResponse,
+    EmissionFactorsUpdate,
     SiteListResponse,
     SitePublic,
+    TariffSlabListResponse,
+    TariffSlabsUpdate,
     ThreatLevelUpdate,
     UpdateSiteRequest,
 )
@@ -31,9 +36,13 @@ router = APIRouter(prefix="/sites", tags=["Sites"])
 
 async def _service(
     db: Annotated[AsyncSession, Depends(get_db)],
-    scope=Depends(get_scope),
+    scope: Annotated[Scope, Depends(get_scope)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> SiteService:
-    return SiteService(db, scope)
+    # A super-admin (platform scope) is never site-confined; a tenant user is limited
+    # to their User.site_ids (empty = all sites in the tenant).
+    site_ids = [] if scope.is_platform else list(user.site_ids or [])
+    return SiteService(db, scope, site_ids=site_ids)
 
 
 @router.get(
@@ -99,6 +108,104 @@ async def update_site(
     actor: User = Depends(require_permission("sites.update")),
 ) -> SitePublic:
     return await svc.update(site_id, body, actor=actor)
+
+
+@router.put(
+    "/{site_id}/building-facts",
+    response_model=SitePublic,
+)
+async def set_building_facts(
+    site_id: str,
+    body: BuildingFactsUpdate,
+    svc: Annotated[SiteService, Depends(_service)],
+    actor: User = Depends(require_permission("sites.update")),
+) -> SitePublic:
+    """Record area / tariff / occupancy for this site.
+
+    Its own route rather than a field on PATCH /sites/{id}: that path applies
+    `exclude_none=True`, so a null there is indistinguishable from "not
+    mentioned" and a recorded area could never be taken back. Here the four
+    fields are written as a SET, so an explicit null means NOT RECORDED — which
+    is exactly the state Building Intelligence → Ratings renders as "cannot
+    rate — no area recorded for this site".
+
+    Gated by `sites.update`, the same permission that governs every other fact
+    about a site. Nothing on this route infers a value.
+    """
+    return await svc.set_building_facts(site_id, body, actor=actor)
+
+
+@router.get(
+    "/{site_id}/tariff-slabs",
+    response_model=TariffSlabListResponse,
+    dependencies=[Depends(require_permission("sites.read"))],
+)
+async def get_tariff_slabs(
+    site_id: str,
+    svc: Annotated[SiteService, Depends(_service)],
+) -> TariffSlabListResponse:
+    items = await svc.get_tariff_slabs(site_id)
+    return TariffSlabListResponse(items=items, total=len(items))
+
+
+@router.put(
+    "/{site_id}/tariff-slabs",
+    response_model=TariffSlabListResponse,
+)
+async def set_tariff_slabs(
+    site_id: str,
+    body: TariffSlabsUpdate,
+    svc: Annotated[SiteService, Depends(_service)],
+    actor: User = Depends(require_permission("sites.update")),
+) -> TariffSlabListResponse:
+    """Replace the site's Time-of-Use tariff slabs — the WHOLE list, every time.
+
+    Full-replace for the same reason `building-facts` is: a PATCH built on
+    `exclude_none=True` cannot say "take this back", and a wrong rate an
+    operator cannot retract is worse than none. An explicit empty list clears
+    the set and the scalar tariff (if recorded) is in effect again.
+
+    PRECEDENCE: when any slab is in effect for a date, the slabs override the
+    scalar ENTIRELY; an hour no slab covers has no price. Coverage is not
+    enforced and no filler slab is invented — the UI warns about gaps/overlaps.
+    Gated by `sites.update`, like every other fact about a site.
+    """
+    items = await svc.set_tariff_slabs(site_id, body, actor=actor)
+    return TariffSlabListResponse(items=items, total=len(items))
+
+
+@router.get(
+    "/{site_id}/emission-factors",
+    response_model=EmissionFactorListResponse,
+    dependencies=[Depends(require_permission("sites.read"))],
+)
+async def get_emission_factors(
+    site_id: str,
+    svc: Annotated[SiteService, Depends(_service)],
+) -> EmissionFactorListResponse:
+    items = await svc.get_emission_factors(site_id)
+    return EmissionFactorListResponse(items=items, total=len(items))
+
+
+@router.put(
+    "/{site_id}/emission-factors",
+    response_model=EmissionFactorListResponse,
+)
+async def set_emission_factors(
+    site_id: str,
+    body: EmissionFactorsUpdate,
+    svc: Annotated[SiteService, Depends(_service)],
+    actor: User = Depends(require_permission("sites.update")),
+) -> EmissionFactorListResponse:
+    """Replace the site's emission factors (kg CO2/kWh) — full list, every time.
+
+    Every factor carries a REQUIRED `source`: the operator states where the
+    number came from, because a factor with no citation is exactly the
+    fabrication this platform forbids. An explicit empty list clears the set
+    (the retraction property). Nothing here defaults, infers or seeds a value.
+    """
+    items = await svc.set_emission_factors(site_id, body, actor=actor)
+    return EmissionFactorListResponse(items=items, total=len(items))
 
 
 @router.delete(

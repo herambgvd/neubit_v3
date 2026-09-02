@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neubit-vision"
+version = "0.1.0"
+description = "VMS control-plane service (vision) — camera + NVR master records, ONVIF onboarding/discovery, multi-brand drivers, config, per-camera ACL, health aggregation. Owns its own DB (neubit_vision). Reuses core RBAC; interoperates with the Go nvr data-plane over NATS + REST."
+requires-python = ">=3.11"
+
+dependencies = [
+    "kernel",          # shared kernel (installed as a path dep — see [tool.uv.sources])
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "httpx>=0.27",             # ONVIF/ISAPI/brand REST clients (drivers)
+    # ONVIF SDK — the OnvifDriver + NvrService SOAP paths need these to talk to real
+    # ONVIF cameras/NVRs (GetProfiles / enumerate_channels / GetCapabilities / PTZ /
+    # PullPoint events). Drivers import them LAZILY and still degrade gracefully if the
+    # wheel is somehow absent, but they are pinned as RUNTIME deps (same as gvd_nvr —
+    # see gvd_nvr backend/requirements.txt `onvif-zeep` + `WSDiscovery`) so the shipped
+    # image has a working ONVIF client. WITHOUT them the SOAP driver paths no-op with
+    # "not installed" — this was the P1-D gap.
+    "onvif-zeep>=0.2.12",
+    "WSDiscovery>=2.0.0",
+    # P6-C ONVIF server — OUR VMS answering ONVIF SOAP requests as a device. The SOAP
+    # handlers build/parse envelopes with lxml (same as gvd_nvr's onvif_device). lxml
+    # already arrives transitively via onvif-zeep/zeep, but pin it explicitly since the
+    # onvif_server domain imports it directly.
+    "lxml>=5.0",
+    # P3-B storage tiering — S3/MinIO put/head/delete for the cold tier. Imported
+    # LAZILY in app.vms.common.storage_backend so the service degrades gracefully if
+    # the wheel is absent, but pinned as a runtime dep so tiering works in the image.
+    "boto3>=1.34",
+    # P6-B tamper-proof signed export — Ed25519 keypair to sign the export manifest
+    # (SHA-256 + signature sidecar). Same primitive core uses for licensing (EdDSA).
+    # Imported LAZILY in app.vms.export.signing so an absent wheel degrades to unsigned
+    # manifests rather than crashing the export worker.
+    "cryptography>=42.0",
+    # P6-B operational reporting — PDF report export (camera-uptime / coverage / storage
+    # / event-stats). Imported LAZILY in app.vms.reports.render so CSV/JSON still work if
+    # the wheel is absent (PDF then 503s gracefully). Same dep core/workflow use.
+    "reportlab>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "aiosqlite>=0.20"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+# When installed with uv, resolve kernel from the sibling source dir.
+[tool.uv.sources]
+kernel = { path = "/opt/kernel", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100

@@ -21,7 +21,14 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from kernel.auth import Principal, Scope, get_principal, get_scope
+from kernel.auth import (
+    Principal,
+    Scope,
+    get_principal,
+    get_scope,
+    require_active_license,
+    require_feature,
+)
 from kernel.config import get_settings
 from kernel.errors import register_error_handlers
 from kernel.events import subject
@@ -53,6 +60,13 @@ async def lifespan(app: FastAPI):
     global _supervisor
     await bus.connect()
     await bus.publish(subject(None, "access", "startup"), {"service": "access"})
+    # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
+    from kernel.lifecycle import subscribe_tenant_offboard, subscribe_tenant_provisioned
+
+    from app.db import database
+
+    await subscribe_tenant_provisioned(bus, database, durable="access-provision")
+    await subscribe_tenant_offboard(bus, database, durable="access-offboard")
 
     # Start real-time event ingestion (one SignalR listener per active instance).
     # Never blocks/crashes startup — the supervisor swallows discovery + connect
@@ -108,9 +122,11 @@ def create_app() -> FastAPI:
             "is_platform": scope.is_platform,
         }
 
-    # Mount the access REST API under the service api_prefix.
+    # Mount the access REST API under the service api_prefix, gated by the tenant's
+    # "access" module + an unexpired license (super-admins bypass).
+    access_gate = [Depends(require_feature("access")), Depends(require_active_license())]
     for r in access_routers:
-        app.include_router(r, prefix=settings.api_prefix)
+        app.include_router(r, prefix=settings.api_prefix, dependencies=access_gate)
 
     return app
 

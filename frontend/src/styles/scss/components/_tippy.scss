@@ -30,7 +30,7 @@
     @apply bg-white text-slate-900 dark:bg-slate-700 shadow-dropdown dark:border-slate-700 dark:border;
   }
   .tippy-box[data-theme~="custom-light2"] {
-    @apply bg-white text-slate-900 dark:bg-slate-700 shadow-dropdown dark:border-slate-700 dark:border rounded;
+    @apply bg-white text-slate-900 dark:bg-slate-700 shadow-dropdown dark:border-slate-700 dark:border rounded-sm;
     .tippy-content {
       @apply p-0;
     }

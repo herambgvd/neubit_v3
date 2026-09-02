@@ -1,0 +1,240 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DEV override — hot-reload for the Python backend services.
+#
+# `docker compose` auto-merges this file on top of docker-compose.yml for every
+# `up` / `build` run from this directory, so it's active in development WITHOUT
+# touching the production-clean base compose.
+#
+# What it does: bind-mounts each service's source over the image copy and runs
+# uvicorn with `--reload`, so editing a .py on the host reloads the worker in
+# place — no `docker compose build` needed for backend changes anymore.
+#
+# The images are editable installs (`uv pip install -e .`), so the mounted source
+# IS the imported package. vision also gets the shared `kernel` mounted (it's an
+# editable `-e /opt/kernel` install) so kernel edits hot-reload too.
+#
+# WATCHFILES_FORCE_POLLING: Docker Desktop (macOS) does NOT propagate host inotify
+# events across the bind-mount VM boundary, so watchfiles must POLL stat() mtimes
+# to see host edits. (Same class of issue as the Traefik file-watch on Docker mac.)
+#
+# NOTE: the uvicorn command is a SINGLE line on purpose — a YAML folded (`>`) block
+# with a more-indented continuation preserves the newline, and in `bash -c` that
+# newline terminates the uvicorn command early (dropping the --reload flags).
+#
+# To run WITHOUT hot-reload (prod-like), use the base file only:
+#   docker compose -f docker-compose.yml up -d
+#
+# It also OWNS every published host port except the gateway's :80. The base file
+# publishes the gateway alone, because it is what an appliance install runs: with
+# postgres/redis/nats published there, an appliance put its datastores on the
+# customer's LAN. Everything a developer reaches directly — psql on :5432, the
+# Traefik dashboard, core on :8000 — is restored here.
+#
+# One of those, `frontend` on :3000, is worth knowing about: it serves the console
+# but 404s every /api/v1 call, because the console's API base is same-origin
+# relative and only the gateway routes /api. Develop against http://localhost, not
+# http://localhost:3000, or logging in fails with "Request failed with status
+# code 404" and it looks like a broken backend.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  gateway:
+    ports: ["80:80", "8090:8080"]              # 8090 = Traefik dashboard
+
+  postgres:
+    ports: ["5432:5432"]
+
+  redis:
+    ports: ["6379:6379"]
+
+  nats:
+    ports: ["4222:4222", "8222:8222"]
+
+  core:
+    ports: ["8000:8000"]
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/core/app:/app/app
+      # Mount migrations too so newly-added Alembic revisions apply on restart
+      # (the start command runs `./migrate.sh` before uvicorn).
+      - ../backend/core/migrations:/app/migrations
+      # The migrate script is part of the schema bring-up and changes with the
+      # migrations, so mount it alongside them rather than baking dev to an old copy.
+      - ../backend/core/migrate.sh:/app/migrate.sh
+    # `--timeout-graceful-shutdown 5`: THE reason an edit under `backend/core/app`
+    # used to hang the container forever. On reload uvicorn asks connections to
+    # close and then waits with no timeout at all, so an open SSE relay on
+    # `/api/v1/realtime/…` held the worker up and core stopped answering
+    # everything — including /auth/login — until somebody restarted it by hand.
+    # The relays cooperate now (backend/core/app/core/shutdown.py) so the common
+    # case finishes in milliseconds; this bounds the ones that cannot. Shorter
+    # than the base compose's 10s because a dev reload is meant to feel instant
+    # and there is nothing here worth waiting on.
+    command: bash -c "./migrate.sh && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --timeout-graceful-shutdown 5"
+
+  vision:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/vision/app:/app/app
+      - ../backend/vision/migrations:/app/migrations
+      - ../backend/vision/tests:/app/tests
+      - ../backend/kernel:/opt/kernel
+    command: bash -c "/usr/local/bin/neubit-migrate 0001_vision_baseline && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
+
+  dashboards:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/dashboards/app:/app/app
+      # Mount migrations too so a newly-added revision applies on restart (the
+      # start command runs `alembic upgrade head` before uvicorn).
+      - ../backend/dashboards/migrations:/app/migrations
+      - ../backend/kernel:/opt/kernel
+    command: bash -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/kernel/kernel"
+
+  # ── frontends: DEV hot-reload. The base compose builds the PRODUCTION standalone
+  # image (node server.js); here we build only the `deps` stage (has node_modules),
+  # bind-mount the source over it, and run `npm run dev`. So `docker compose up`
+  # (auto-merges this) = dev; `docker compose -f docker-compose.yml up` = production.
+  frontend:
+    # A DISTINCT TAG, and it matters more than it looks.
+    #
+    # Without it this `target: deps` build writes to `neubit-v3-frontend:latest` —
+    # the very tag the base compose builds the `runner` stage into. Because this
+    # override auto-merges on every `up`, running the stack in dev SILENTLY
+    # replaced the production image with the deps stage: CMD=[node], no server.js,
+    # exits 0 on start, console never comes up. An image payload saved from a
+    # developer's machine shipped a console that could not boot, and the base
+    # file's "PRODUCTION by default" comment had not been true for months.
+    image: neubit-v3-frontend:dev
+    ports: ["3000:3000"]                       # serves the UI but 404s /api — see header
+    build:
+      context: ../frontend
+      target: deps
+    # NOT a bare `npm run dev`. The entrypoint verifies the container's own
+    # node_modules before starting: that it exists, that it was installed from
+    # the package-lock.json currently on disk, and that its NATIVE binaries load
+    # in this container. It repairs the tree when any of those is false, and it
+    # clears a corrupt Turbopack cache if the dev server dies on start.
+    #
+    # This broke four times in one day and every recovery was manual. The two
+    # causes were a volume holding the HOST's macOS binaries in a musl container
+    # (a dev server that 500s, or a stylesheet that is 600 bytes of
+    # `/* unparsable */` because Tailwind's oxide binary will not load), and a
+    # volume seeded once and never refreshed, so a newly added dependency was
+    # simply absent no matter how many times the image was rebuilt.
+    entrypoint: ["/usr/local/bin/dev-entrypoint.sh"]
+    # --webpack, NOT Turbopack, and only here — `npm run dev` stays generic so a
+    # native Linux checkout is unaffected.
+    #
+    # Turbopack's persistent cache does not survive this environment. It failed
+    # repeatedly, in three different shapes: a corrupt SST file
+    # ("Failed to restore task data"), an endless "Another write batch or
+    # compaction is already active", and finally a build that emitted every
+    # chunk EXCEPT `chunks/ssr/[turbopack]_runtime.js`, so every route 500'd on
+    # `Cannot find module` with a routes-manifest that was never written. That
+    # last one reproduced on a brand-new empty volume with 29 GB free, which is
+    # what ruled out disk pressure and the macOS bind mount as the cause.
+    #
+    # webpack dev serves the same app on the first try. The cost is a slower
+    # cold start; the benefit is a dev server that comes back up.
+    command: ["npm", "run", "dev", "--", "--webpack"]
+    environment:
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../frontend:/app
+      # NAMED, not anonymous. An anonymous volume is invisible in `docker volume
+      # ls`, cannot be dropped without knowing its hash, and accumulates a new
+      # one per recreate — so "delete the bad node_modules" was itself a puzzle.
+      # Naming them makes the repair `docker volume rm neubit-v3_frontend_node_modules`,
+      # and the entrypoint above usually means nobody has to.
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+      #
+      # ADDING A VOLUME HERE NEEDS `--force-recreate`, NOT `restart`.
+      # `docker compose restart` reuses the existing container, which keeps the
+      # mount set it was CREATED with. Both volumes above sat in this file while
+      # the running container had only the `../frontend:/app` bind — `docker
+      # inspect` listed them, but `/proc/mounts` inside the container did not,
+      # and a write to /app/.next landed in the HOST checkout.
+      #
+      # That is what put a host-side production build (BUILD_ID, standalone/,
+      # hashed chunk names) and stale Turbopack output into the dev server's
+      # .next. Two routes then never emitted a client chunk, the browser 404'd
+      # on /_next/static/chunks/app/(app)/<route>/page.js, and Next's error
+      # boundary reloaded into the same missing chunk — a reload loop while
+      # every health check stayed green.
+      #
+      # It also meant the container and the host shared ONE node_modules, so
+      # the container's `npm ci` overwrote the host's darwin binaries with
+      # linux-musl ones and any host-side `npm install` broke the container.
+      # The entrypoint's "native addons are not ELF" repair was fighting that,
+      # not a corrupt install.
+      #
+      # To check: `docker exec <c> cat /proc/mounts | grep /app` must show
+      # /app/.next and /app/node_modules on their own devices, not just /app.
+      #
+      # It can also break MID-RUN (no restart, entrypoint never re-runs), so
+      # the entrypoint watches the same invariant every 20s and stops the dev
+      # server when it breaks. Known trigger besides a Docker Desktop restart:
+      # a host-side `npm ci`/`npm install` in the bind-mounted frontend/ —
+      # heavy host writes make Docker re-mount the share and the nested volumes
+      # do not return. Do package work in the container, or recreate after.
+
+  admin-frontend:
+    image: neubit-v3-admin-frontend:dev        # distinct tag — see the frontend note
+    build:
+      context: ../admin-frontend
+      target: deps
+    command: npm run dev
+    environment:
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../admin-frontend:/app
+      # Named for the same reason as the frontend's. This one has no start-up
+      # self-check because it has no dev traffic to break; if it starts failing
+      # the same way, give it the same `dev-entrypoint.sh`.
+      - admin_frontend_node_modules:/app/node_modules
+      - admin_frontend_next:/app/.next
+
+  # ── reading-writer: DEV hot-reload. Same pattern as the other Python services.
+  # The pipeline lives in the lifespan, so a reload tears the JetStream consumer
+  # down and rebuilds it — which is safe (durable consumer, nothing acked that was
+  # not written) but does mean an edit costs a few seconds of consumption. The
+  # `reporting` package is mounted too: it owns the schema this service imports.
+  reading-writer:
+    # /health, /readyz, /metrics, /stats. Development only: the base file is what
+    # an appliance runs alone, and an unauthed operational surface does not belong
+    # on a customer's LAN.
+    ports: ["8020:8000"]
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/reading-writer/app:/app/app
+      - ../backend/reporting:/opt/reporting
+      - ../backend/kernel:/opt/kernel
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/reporting/reporting
+
+  # ── reporting-projector: DEV hot-reload. Same pattern as the reading-writer.
+  # The consumers live in the lifespan, so a reload tears every durable consumer
+  # down and rebuilds it — safe (nothing is acked that was not written) but it
+  # costs a few seconds of consumption per edit.
+  reporting-projector:
+    ports: ["8021:8000"]        # development only - see reading-writer
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../backend/projector/app:/app/app
+      - ../backend/reporting:/opt/reporting
+      - ../backend/kernel:/opt/kernel
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/reporting/reporting
+
+volumes:
+  # The dev containers' own node_modules and build caches. Named so they can be
+  # inspected and dropped by name when something does go wrong — see the
+  # frontend service's note.
+  frontend_node_modules:
+  frontend_next:
+  admin_frontend_node_modules:
+  admin_frontend_next:

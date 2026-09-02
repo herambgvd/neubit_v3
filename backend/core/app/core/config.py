@@ -92,6 +92,13 @@ class Settings(BaseSettings):
     license_token_file: str | None = None
     license_public_key: str | None = None
     license_public_key_file: str | None = "license_pub.pem"
+    # Global (whole-deployment) license expiry enforcement — the single-tenant /
+    # on-prem model where one signed license gates the entire app. In the CLOUD
+    # multi-tenant edition each tenant is gated per-request instead (kernel
+    # require_active_license + per-tenant license_state), so turn this OFF there
+    # (VE_LICENSE_ENFORCE_GLOBAL=false) to avoid a global license blocking all
+    # tenants. Defaults True to preserve on-prem behaviour.
+    license_enforce_global: bool = True
 
     # --- Object storage (logos, exports, snapshots, clips) -----------------
     # Public base URL of the frontend — used to build links inside emails

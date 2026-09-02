@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neubit-reporting-projector"
+version = "0.1.0"
+description = "Reporting projector — durable NATS consumers that project domain events into neubit_reporting, driven entirely by the reporting_projections registry."
+requires-python = ">=3.11"
+
+dependencies = [
+    "kernel",             # shared config/db/events (path dep)
+    "neubit-reporting",   # the reporting store's engine/session factory
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "nats-py>=2.6",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+[tool.uv.sources]
+kernel = { path = "/opt/kernel", editable = true }
+neubit-reporting = { path = "/opt/reporting", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100

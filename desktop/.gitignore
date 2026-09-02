@@ -1,0 +1,15 @@
+node_modules/
+out/
+dist/
+*.log
+.DS_Store
+.env
+.env.local
+
+# native addon build artifacts (P3 — the libVLC video wall)
+native/build/
+resources/native/
+
+# electron-builder cache
+.cache/
+*.tsbuildinfo

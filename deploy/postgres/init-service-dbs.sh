@@ -1,24 +1,81 @@
 #!/bin/bash
-# Create the per-service databases on the shared Postgres.
+# Create the per-service databases on the shared Postgres. IDEMPOTENT.
 #
-# IMPORTANT: Postgres only runs /docker-entrypoint-initdb.d/* scripts on a FRESH
-# data volume (first init). On an EXISTING volume this is a no-op — create the DBs
-# manually instead (see deploy notes / the orchestrator runs them):
+# THIS SCRIPT RUNS TWICE, ON PURPOSE
+# ----------------------------------
+#   1. As a Postgres initdb hook (/docker-entrypoint-initdb.d), on a FRESH volume.
+#   2. As the `db-init` compose service, on EVERY `docker compose up`.
 #
-#   docker compose exec postgres createdb -U "$POSTGRES_USER" neubit_ingest
-#   docker compose exec postgres createdb -U "$POSTGRES_USER" neubit_workflow
-#   docker compose exec postgres createdb -U "$POSTGRES_USER" neubit_access
+# (2) exists because (1) alone was the bug. Postgres runs initdb scripts only on
+# first init, so every service added to this list AFTER a deployment's volume was
+# created needed a manual `createdb` on that deployment — and the header of this
+# very file used to say so, listing seven databases and telling the reader to
+# create them by hand. Five services still had the problem. A deployment step
+# that lives only in a comment is a deployment step that does not happen: the
+# service starts, `alembic upgrade` fails to connect, and the container restarts
+# in a loop that reads like a network fault.
+#
+# ADDING A SERVICE: add its database to DATABASES below and nothing else. Both
+# entry points read the same list, so a fresh volume and a five-year-old one end
+# up with the same set of databases.
 #
 # The control DB (POSTGRES_DB, e.g. neubit_control) is created by the base image.
+# neubit_reporting is ALSO ensured by `reporting-migrate` (python -m
+# reporting.ensure_db); the duplicate is harmless and keeps either path standalone.
 set -euo pipefail
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-    SELECT 'CREATE DATABASE neubit_ingest'
-      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neubit_ingest')\gexec
-    SELECT 'CREATE DATABASE neubit_workflow'
-      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neubit_workflow')\gexec
-    SELECT 'CREATE DATABASE neubit_access'
-      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neubit_access')\gexec
-EOSQL
+# Every database this platform's services own, one per line. `#` starts a comment.
+DATABASES="
+neubit_ingest        # external webhooks / event ingestion
+neubit_workflow      # SOP / automation engine (+ its Celery worker and beat)
+neubit_access        # access control: doors, credentials, events
+neubit_vision        # VMS: cameras, recordings, exports
+  # neubit_nvr was ensured here until 2026-09-01. REMOVED: the locked
+  # single-ownership architecture gives the NVR its OWN postgres (the
+  # standalone appliance stack), and the live DSN audit showed no container on
+  # this server has ever pointed at it — an empty database re-created on every
+  # compose up was a placeholder for a deployment shape that no longer exists.
+  # If a platform-hosted recorder ever returns, add its database back here
+  # deliberately.
+neubit_reporting     # IoT reading store (TimescaleDB hypertables + rollups)
+neubit_dashboards    # dashboard + widget definitions (no readings)
+"
 
-echo "init-service-dbs: ensured neubit_ingest + neubit_workflow + neubit_access exist"
+# psql connects over the local socket under the initdb hook (no PGHOST) and over
+# TCP under the db-init service (PGHOST/PGPASSWORD supplied by compose). Same
+# command either way.
+created=()
+existing=()
+while read -r line; do
+  db="${line%%#*}"
+  db="${db// /}"
+  [ -z "$db" ] && continue
+  if psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+       -tAc "SELECT 1 FROM pg_database WHERE datname = '$db'" | grep -q 1; then
+    existing+=("$db")
+  else
+    # CREATE DATABASE cannot run inside a transaction block, so it is its own
+    # statement rather than part of a heredoc. The existence check above makes
+    # the whole thing idempotent; a concurrent create just loses the race and is
+    # tolerated, because the database exists either way.
+    psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+      -c "CREATE DATABASE \"$db\"" >/dev/null 2>&1 || true
+    created+=("$db")
+  fi
+done <<< "$DATABASES"
+
+echo "init-service-dbs: created=[${created[*]-}] already-present=[${existing[*]-}]"
+
+# Fail loudly if anything is still missing. A database that could not be created
+# must not be discovered later as a service restart loop.
+missing=()
+while read -r line; do
+  db="${line%%#*}"; db="${db// /}"
+  [ -z "$db" ] && continue
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+    -tAc "SELECT 1 FROM pg_database WHERE datname = '$db'" | grep -q 1 || missing+=("$db")
+done <<< "$DATABASES"
+if [ ${#missing[@]} -gt 0 ]; then
+  echo "init-service-dbs: FAILED to create: ${missing[*]}" >&2
+  exit 1
+fi

@@ -21,9 +21,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import JSON, DateTime, String, Uuid, delete, func, select
+from sqlalchemy import JSON, DateTime, String, Uuid, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,6 +46,10 @@ class AuditLog(Base):
     # system / anonymous actions.
     actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     actor_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Display name at the time of the action — snapshotted for the same reason as
+    # the email: the trail must stay readable after a rename or a delete. NULL for
+    # system actions and for users who never set a full name (UI falls back to email).
+    actor_name: Mapped[str | None] = mapped_column(String, nullable=True)
     # --- multi-tenancy -----------------------------------------------------
     # The tenant this action belongs to (the actor's tenant at the time). NULL =
     # a platform/super-admin/system action. Tenant-admins only see their own rows.
@@ -82,6 +86,7 @@ async def record(
     entry = AuditLog(
         actor_id=getattr(actor, "id", None),
         actor_email=getattr(actor, "email", None),
+        actor_name=getattr(actor, "full_name", None) or None,
         # Stamp the actor's tenant so the trail is tenant-scoped. Super-admins (and
         # system/anonymous actions) have no tenant → NULL (platform scope).
         tenant_id=getattr(actor, "tenant_id", None),
@@ -105,6 +110,7 @@ class AuditLogOut(BaseModel):
     id: uuid.UUID
     actor_id: uuid.UUID | None
     actor_email: str | None
+    actor_name: str | None
     action: str
     target_type: str | None
     target_id: str | None
@@ -118,6 +124,8 @@ audit_router = APIRouter(prefix="/audit", tags=["audit"])
 @audit_router.get("", response_model=Page[AuditLogOut])
 async def list_audit(
     params: PageParams = Depends(page_params),
+    action: str | None = Query(None, max_length=64),
+    q: str | None = Query(None, max_length=128),
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission(CorePerm.AUDIT_READ)),
 ) -> Page[AuditLogOut]:
@@ -125,10 +133,24 @@ async def list_audit(
 
     Tenant-scoped: a tenant-admin only sees actions recorded under their own tenant;
     a super-admin sees the whole platform trail (incl. tenant_id NULL rows).
+
+    Optional filters: ``action`` matches an action category by PREFIX (e.g. ``user``
+    → ``user.*``); ``q`` is a free-text search over the actor name + email + action key.
     """
     from ..tenancy.scope import scope_of, scoped
 
     stmt = scoped(select(AuditLog).order_by(AuditLog.ts.desc()), AuditLog, scope_of(user))
+    if action:
+        stmt = stmt.where(AuditLog.action.ilike(f"{action}%"))
+    if q:
+        term = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                AuditLog.actor_name.ilike(term),
+                AuditLog.actor_email.ilike(term),
+                AuditLog.action.ilike(term),
+            )
+        )
     return await paginate(db, stmt, params, item_model=AuditLogOut)
 
 

@@ -7,6 +7,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
+from ..core.fields import AsciiEmail
+
 
 # --- roles -------------------------------------------------------------------
 class RoleOut(BaseModel):
@@ -38,6 +40,9 @@ class UserOut(BaseModel):
     email: str
     full_name: str | None
     role: RoleOut
+    # Platform (vendor) super-admin — gates vendor-only features (e.g. External
+    # Access / ONVIF server) that a client's own admin must NOT be able to enable.
+    is_superadmin: bool = False
     is_active: bool
     email_verified: bool
     created_at: dt.datetime
@@ -47,12 +52,29 @@ class UserOut(BaseModel):
     preferences: dict = {}
     # Whether the user has an active TOTP second factor.
     totp_enabled: bool = False
+    # --- account security posture (real, row-backed) -----------------------
+    # Consecutive failed logins + brute-force lock expiry. ``locked`` is the
+    # derived "is this account currently locked" (auto lockout OR an admin lock,
+    # which sets locked_until far in the future).
+    failed_login_count: int = 0
+    locked_until: dt.datetime | None = None
+    locked: bool = False
+    password_changed_at: dt.datetime | None = None
+    # Count of the user's live (non-revoked, unexpired) sessions — filled by the
+    # router from the refresh-token table (0 when not resolved).
+    active_sessions: int = 0
+    # --- site access scope -------------------------------------------------
+    # The site ids this user is confined to; EMPTY = unrestricted (all sites).
+    site_ids: list[str] = []
     # Platform super-admin flag (tenant_id NULL + is_superadmin True). The admin
     # console reads this to gate access to the cross-tenant panel.
     is_superadmin: bool = False
 
 
 class LoginIn(BaseModel):
+    # Deliberately plain EmailStr, not AsciiEmail: sign-in and password-reset only
+    # LOOK UP an existing row, and accounts created before the ASCII rule must still
+    # be able to get in (and be renamed). Only account-creating schemas are strict.
     email: EmailStr
     password: str
 
@@ -73,6 +95,10 @@ class LoginResult(BaseModel):
     access_token: str | None = None
     refresh_token: str | None = None
     token_type: str = "bearer"
+    # Set when a security policy REQUIRES 2FA but the user hasn't enrolled yet. The
+    # client must route them to /auth/me/2fa/setup (using the short-lived
+    # ``mfa_token`` as a bearer) before they can obtain real tokens.
+    enrollment_required: bool = False
 
 
 class MfaLoginIn(BaseModel):
@@ -131,13 +157,13 @@ class AccessOut(BaseModel):
 class SetupIn(BaseModel):
     """First-run setup: create the very first administrator (only when none exist)."""
 
-    email: EmailStr
+    email: AsciiEmail
     password: str
     full_name: str | None = None
 
 
 class CreateUserIn(BaseModel):
-    email: EmailStr
+    email: AsciiEmail
     password: str
     full_name: str | None = None
     role_id: uuid.UUID
@@ -149,12 +175,37 @@ class CreateUserIn(BaseModel):
     # tenant (a tenant-admin can never provision into another tenant). A tenant-admin
     # can also never set is_superadmin (there is no field for it).
     tenant_id: uuid.UUID | None = None
+    # Site access scope for the new user (site ids). EMPTY = unrestricted.
+    site_ids: list[str] = []
 
 
 class UpdateUserIn(BaseModel):
     role_id: uuid.UUID | None = None
     is_active: bool | None = None
     full_name: str | None = None
+    # Admin-side identity + credential edits. Both are optional and only applied when
+    # sent: a new address must still be unique, and an omitted (or empty) password
+    # leaves the existing one untouched — the console sends it only when refilled.
+    email: AsciiEmail | None = None
+    password: str | None = None
+    # None = leave scope unchanged; a list (incl. []) REPLACES it ([] = unrestricted).
+    site_ids: list[str] | None = None
+
+
+class CloneUserIn(BaseModel):
+    """Fast onboarding: copy a source user's role, status and site scope into a new
+    account. Only identity differs — a fresh email + name; the new user sets their
+    own password via the emailed invite (no plaintext is ever copied)."""
+
+    email: AsciiEmail
+    full_name: str | None = None
+    send_invite: bool = True
+
+
+class CloneRoleIn(BaseModel):
+    """Copy a role's permissions + description under a new name."""
+
+    name: str
 
 
 class ConfirmPasswordIn(BaseModel):

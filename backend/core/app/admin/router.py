@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import User
 from ..auth.security import create_access_token
+from ..core import events_nats
 from ..core.audit import record as audit_record
 from ..core.errors import NotFoundError, ValidationError
 from ..db.base import get_db
@@ -62,6 +63,11 @@ async def create_tenant(
     await audit_record(
         db, actor=actor, action="tenant.create", target_type="tenant",
         target_id=str(tenant.id), meta={"name": tenant.name, "slug": tenant.slug},
+    )
+    # Announce the new tenant on the spine so services can provision per-tenant state
+    # (per-tenant DB/bucket lands in Phase 7; today it's a hook + audit trail).
+    await events_nats.publish(
+        str(tenant.id), "tenant", "provisioned", {"name": tenant.name, "slug": tenant.slug}
     )
     out = TenantOut.model_validate(tenant)
     out.license_state = effective_license_state(tenant)
@@ -129,6 +135,7 @@ async def suspend_tenant(
     await audit_record(
         db, actor=actor, action="tenant.suspend", target_type="tenant", target_id=str(tenant_id),
     )
+    await events_nats.publish(str(tenant_id), "tenant", "suspended", {})
     out = TenantOut.model_validate(tenant)
     out.license_state = effective_license_state(tenant)
     return out
@@ -145,6 +152,7 @@ async def reactivate_tenant(
     await audit_record(
         db, actor=actor, action="tenant.reactivate", target_type="tenant", target_id=str(tenant_id),
     )
+    await events_nats.publish(str(tenant_id), "tenant", "reactivated", {})
     out = TenantOut.model_validate(tenant)
     out.license_state = effective_license_state(tenant)
     return out
@@ -238,7 +246,13 @@ async def impersonate_tenant(
     super-admin can open the tenant's operator console. Audited."""
     svc = TenantService(db)
     admin = await svc.primary_admin(tenant_id)
-    token = create_access_token(admin)
+    from ..tenancy.entitlements import token_entitlements
+
+    features, limits, license_state, tenant_status = await token_entitlements(db, admin)
+    token = create_access_token(
+        admin, features=features, limits=limits,
+        license_state=license_state, tenant_status=tenant_status,
+    )
     await audit_record(
         db, actor=actor, action="tenant.impersonate", target_type="tenant",
         target_id=str(tenant_id), meta={"as_user": admin.email},
@@ -258,6 +272,9 @@ async def delete_tenant(
         db, actor=actor, action="tenant.delete", target_type="tenant",
         target_id=str(tenant_id), meta={"name": tenant.name},
     )
+    # Right-to-erase: every service wipes this tenant's data from its own DB on receipt
+    # (kernel.lifecycle.subscribe_tenant_offboard). Core's own rows cascaded via the FK.
+    await events_nats.publish(str(tenant_id), "tenant", "offboarded", {"name": tenant.name})
 
 
 # --- cross-tenant user directory ---------------------------------------------

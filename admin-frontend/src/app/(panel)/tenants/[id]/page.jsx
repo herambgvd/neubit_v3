@@ -344,37 +344,50 @@ function LicenseCard({ tenant, onSaved }) {
           <Input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} />
         </Field>
 
-        {/* Modules / feature entitlements — one toggle per catalog module. */}
+        {/* Modules — laid out like the operator console's own navigation so a
+            super-admin toggles exactly what the tenant will see (a capability that
+            powers several nav items, e.g. Video, shows one toggle + its module chip). */}
         <div>
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
-            <Blocks className="h-3.5 w-3.5" /> Modules
+            <Blocks className="h-3.5 w-3.5" /> Modules &amp; console access
           </div>
           {modulesQ.isLoading ? (
             <Skeleton className="h-24 rounded-lg" />
-          ) : catalog.length === 0 && extraFeatureKeys.length === 0 ? (
-            <p className="text-xs text-muted">No modules in the catalog yet.</p>
           ) : (
-            <div className="divide-y divide-card-border rounded-lg border border-card-border">
-              {catalog.map((m) => (
-                <FeatureRow
-                  key={m.key}
-                  title={m.name || m.key}
-                  subtitle={m.description || m.category}
-                  checked={!!features[m.key]}
-                  onChange={(on) => toggleFeature(m.key, on)}
-                />
-              ))}
-              {extraFeatureKeys.map((k) => (
-                <FeatureRow
-                  key={k}
-                  title={humanizeKey(k)}
-                  subtitle="Custom flag (not in catalog)"
-                  checked={!!features[k]}
-                  onChange={(on) => toggleFeature(k, on)}
-                />
-              ))}
-            </div>
+            <ConsoleModuleTree
+              features={features}
+              toggle={toggleFeature}
+              catalog={catalog}
+              extraKeys={extraFeatureKeys}
+            />
           )}
+        </div>
+
+        {/* Effective modules preview — what the tenant's operator console will
+            actually show for the CURRENT toggle state (same resolution the
+            operator's GET /features uses: a module is on iff its flag is truthy).
+            Confirms a toggle takes effect before/after saving. */}
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
+            <Blocks className="h-3.5 w-3.5" /> Operator will see
+          </div>
+          {(() => {
+            const enabledNames = [
+              ...catalog.filter((m) => features[m.key]).map((m) => m.name || m.key),
+              ...extraFeatureKeys.filter((k) => features[k]).map((k) => humanizeKey(k)),
+            ];
+            return enabledNames.length === 0 ? (
+              <p className="text-xs text-muted">No modules enabled — the console shows core admin only.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {enabledNames.map((n) => (
+                  <span key={n} className="inline-flex items-center rounded-md border border-success/20 bg-success/10 px-2 py-0.5 text-xs text-success">
+                    {n}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Quota limits — structured key/number rows (replaces raw JSON). */}
@@ -440,6 +453,161 @@ function FeatureRow({ title, subtitle, checked, onChange }) {
         {subtitle ? <div className="truncate text-xs text-muted">{subtitle}</div> : null}
       </div>
       <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+// Mirrors the operator console's navigation (frontend/src/config/menu.js) so the
+// super-admin sees WHAT each licence unlocks. Leaves map to a module key; core items
+// are always on. Several nav items can share one module (Cameras + NVR = "vms"), so
+// their toggles move together — the module chip makes that transparent.
+const MODULE_TREE = [
+  {
+    section: "Command Center",
+    items: [
+      { label: "Dashboard", module: "vms" },
+      {
+        label: "Devices",
+        children: [
+          { label: "Access Control", module: "access" },
+          { label: "Cameras", module: "vms" },
+          { label: "NVR", module: "vms" },
+        ],
+      },
+      { label: "Streaming", sub: "Video Wall · Recordings · Playback · Camera events", module: "vms" },
+      { label: "Incidents", core: true },
+    ],
+  },
+  {
+    section: "Operations",
+    items: [
+      { label: "Workflow & SOP", sub: "Automation · Ingest", module: "workflow" },
+      { label: "Dashboards & Reports", module: "analytics" },
+      { label: "Network Management", module: "nms" },
+    ],
+  },
+  {
+    section: "Safety & Sensors",
+    items: [
+      { label: "Fire & Safety", module: "fire" },
+      { label: "OctoSense Analytics", module: "octosense" },
+    ],
+  },
+];
+
+function TreeRow({ item, depth, features, toggle, moduleName }) {
+  const pad = { paddingLeft: 12 + depth * 18 };
+  if (item.children) {
+    return (
+      <div>
+        <div style={pad} className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted/70">
+          {item.label}
+        </div>
+        <div className="divide-y divide-card-border border-t border-card-border">
+          {item.children.map((c) => (
+            <TreeRow key={c.label} item={c} depth={depth + 1} features={features} toggle={toggle} moduleName={moduleName} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  const on = item.core ? true : !!features[item.module];
+  return (
+    <div style={pad} className="flex items-center justify-between gap-3 px-3 py-2.5">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm text-foreground">{item.label}</span>
+          {item.core ? (
+            <Badge tone="neutral">Always on</Badge>
+          ) : (
+            <span className="shrink-0 rounded bg-hover px-1.5 py-0.5 text-[10px] text-muted">
+              {moduleName(item.module)}
+            </span>
+          )}
+        </div>
+        {item.sub ? <div className="truncate text-xs text-muted">{item.sub}</div> : null}
+      </div>
+      <Switch
+        checked={on}
+        disabled={!!item.core}
+        onCheckedChange={(v) => !item.core && toggle(item.module, v)}
+      />
+    </div>
+  );
+}
+
+// Every module key the console-nav tree already places.
+function treeModuleKeys() {
+  const keys = new Set();
+  const walk = (items) =>
+    items.forEach((it) => {
+      if (it.module) keys.add(it.module);
+      if (it.children) walk(it.children);
+    });
+  MODULE_TREE.forEach((g) => walk(g.items));
+  return keys;
+}
+
+function ConsoleModuleTree({ features, toggle, catalog, extraKeys }) {
+  const moduleName = (key) =>
+    catalog.find((m) => m.key === key)?.name || humanizeKey(key);
+  const covered = treeModuleKeys();
+  // Catalog modules the fixed tree doesn't place (e.g. a super-admin-added module) —
+  // still get a toggle so EVERY module can be enabled/disabled here.
+  const additional = catalog.filter((m) => !covered.has(m.key));
+  return (
+    <div className="space-y-4">
+      {MODULE_TREE.map((group) => (
+        <div key={group.section}>
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted/70">
+            {group.section}
+          </div>
+          <div className="divide-y divide-card-border rounded-lg border border-card-border">
+            {group.items.map((item) => (
+              <TreeRow key={item.label} item={item} depth={0} features={features} toggle={toggle} moduleName={moduleName} />
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {additional.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted/70">
+            Additional modules
+          </div>
+          <div className="divide-y divide-card-border rounded-lg border border-card-border">
+            {additional.map((m) => (
+              <FeatureRow
+                key={m.key}
+                title={m.name || m.key}
+                subtitle={m.description || m.category}
+                checked={!!features[m.key]}
+                onChange={(on) => toggle(m.key, on)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Any tenant feature flag not in the catalog at all (legacy/custom). */}
+      {extraKeys.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted/70">
+            Other
+          </div>
+          <div className="divide-y divide-card-border rounded-lg border border-card-border">
+            {extraKeys.map((k) => (
+              <FeatureRow
+                key={k}
+                title={humanizeKey(k)}
+                subtitle="Custom flag (not in the console map)"
+                checked={!!features[k]}
+                onChange={(on) => toggle(k, on)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

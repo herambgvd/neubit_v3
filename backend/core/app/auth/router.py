@@ -7,6 +7,7 @@ Access is permission-gated (require_permission), never role-name-gated.
 from __future__ import annotations
 
 import csv
+import datetime as _dtmod
 import io
 import os
 import secrets
@@ -27,8 +28,14 @@ from ..core.storage import get_storage
 from ..db.base import get_db
 from ..tenancy.scope import scope_of
 from .cookies import clear_refresh_cookie, set_refresh_cookie
-from .deps import get_current_sid, get_current_user, require_permission
+from .deps import (
+    get_current_sid,
+    get_current_user,
+    require_permission,
+    require_service_permission,
+)
 from .models import User
+from . import dynamic_permissions
 from .permissions import PERMISSIONS, CorePerm
 from .schemas import (
     AccessOut,
@@ -36,6 +43,8 @@ from .schemas import (
     ApiKeyCreateIn,
     ApiKeyOut,
     ChangePasswordIn,
+    CloneRoleIn,
+    CloneUserIn,
     ConfirmPasswordIn,
     CreateRoleIn,
     CreateUserIn,
@@ -65,15 +74,27 @@ from .service import AuthService
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-async def _user_out(user: User) -> UserOut:
-    """Serialise a User, resolving its avatar_key → a fetchable avatar_url.
+def _now_utc() -> _dtmod.datetime:
+    return _dtmod.datetime.now(_dtmod.timezone.utc)
+
+
+async def _user_out(user: User, active_sessions: int = 0) -> UserOut:
+    """Serialise a User, resolving its avatar_key → a fetchable avatar_url and
+    deriving the ``locked`` flag from ``locked_until``.
 
     The DB holds a storage *key*; the client needs a *URL*. We resolve it here at
     response time via the storage backend (a stable local URL or a presigned S3
     link), exactly like branding does for its logo. No avatar => avatar_url None.
+    The security-posture fields (failed_login_count, locked_until,
+    password_changed_at, site_ids, totp_enabled) map straight off the model.
     """
     out = UserOut.model_validate(user)
     out.avatar_url = await get_storage().url(user.avatar_key) if user.avatar_key else None
+    lu = user.locked_until
+    if lu is not None and lu.tzinfo is None:
+        lu = lu.replace(tzinfo=_dtmod.timezone.utc)
+    out.locked = bool(lu and lu > _now_utc())
+    out.active_sessions = active_sessions
     return out
 
 
@@ -130,6 +151,16 @@ async def login(
     # First factor passed. If 2FA is on, don't issue tokens yet — challenge for it.
     if user.totp_enabled:
         return LoginResult(mfa_required=True, mfa_token=svc.issue_mfa_challenge(user))
+    # Per-tenant 2FA ENFORCEMENT (P6-D): if a security policy mandates 2FA for this
+    # user but they haven't enrolled, block token issuance and signal enrollment.
+    # The client uses the short-lived challenge token to authorize the enroll flow
+    # (POST /auth/2fa/enroll/*), then logs in again with the new second factor.
+    from ..security.service import SecurityService
+
+    if await SecurityService(db).user_must_enroll_2fa(user):
+        return LoginResult(
+            enrollment_required=True, mfa_token=svc.issue_mfa_challenge(user)
+        )
     access, refresh = await svc.issue_tokens(
         user, user_agent=request.headers.get("user-agent"), ip=_client_ip(request)
     )
@@ -379,6 +410,59 @@ async def two_factor_recovery_codes(
     return RecoveryCodesOut(recovery_codes=codes)
 
 
+# --- 2FA enrollment during enforced login (no access token yet) --------------
+async def _user_from_mfa_token(mfa_token: str, db: AsyncSession) -> User:
+    """Resolve the user behind a short-lived 'mfa' challenge token (raises 401)."""
+    import jwt as _jwt
+
+    from .security import decode_token
+
+    try:
+        payload = decode_token(mfa_token)
+    except _jwt.PyJWTError:
+        raise UnauthorizedError("invalid or expired 2FA session")
+    if payload.get("type") != "mfa":
+        raise UnauthorizedError("not a 2FA enrollment token")
+    user = await db.get(User, uuid.UUID(payload["sub"]))
+    if user is None or not user.is_active:
+        raise UnauthorizedError("2FA session is no longer valid")
+    return user
+
+
+@router.post("/2fa/enroll/begin", response_model=TotpSetupOut)
+async def enroll_begin(
+    data: MfaLoginIn,  # reuse: carries mfa_token (code unused here)
+    db: AsyncSession = Depends(get_db),
+) -> TotpSetupOut:
+    """When 2FA is ENFORCED and the user has none, begin enrolment using the login
+    challenge token (no access token exists yet). Returns the secret + otpauth URI."""
+    user = await _user_from_mfa_token(data.mfa_token, db)
+    secret, uri = await AuthService(db).begin_totp_setup(user)
+    return TotpSetupOut(secret=secret, otpauth_uri=uri)
+
+
+@router.post("/2fa/enroll/confirm", response_model=TokenOut)
+async def enroll_confirm(
+    data: MfaLoginIn,  # carries mfa_token + the first TOTP code
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> TokenOut:
+    """Confirm enrolment (verify the first code), enable 2FA, and sign the user in.
+
+    Completes the enforced-2FA login: the user now has a second factor, so real
+    access + refresh tokens are issued directly."""
+    svc = AuthService(db)
+    user = await _user_from_mfa_token(data.mfa_token, db)
+    await svc.confirm_totp_setup(user, data.code)
+    access, refresh = await svc.issue_tokens(
+        user, user_agent=request.headers.get("user-agent"), ip=_client_ip(request)
+    )
+    await audit_record(
+        db, actor=user, action="auth.2fa_enroll", target_type="user", target_id=str(user.id),
+    )
+    return TokenOut(access_token=access, refresh_token=refresh)
+
+
 @router.post("/forgot-password")
 async def forgot_password(data: ForgotPasswordIn, db: AsyncSession = Depends(get_db)) -> dict:
     result = await AuthService(db).request_password_reset(data.email)
@@ -402,8 +486,37 @@ async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_d
 
 # --- permission catalog (for the role editor UI) -----------------------------
 @router.get("/permissions")
-async def permissions(_: User = Depends(require_permission(CorePerm.ROLE_READ))) -> dict:
-    return {"groups": PERMISSIONS.grouped()}
+async def permissions(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission(CorePerm.ROLE_READ)),
+) -> dict:
+    """The role editor's catalog: the static keys plus the ones services
+    registered at runtime (see `dynamic_permissions`). A key that is enforced but
+    not listed here can only ever be held by a wildcard admin, which is not a
+    usable permission model — that was the `ingest.read` bug."""
+    return {"groups": await dynamic_permissions.grouped(db)}
+
+
+@router.post("/permissions/registrations")
+async def register_permissions(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_service_permission(CorePerm.PERMISSION_REGISTER)),
+) -> dict:
+    """Publish the permission keys a satellite enforces, so a role can grant them.
+
+    Service-to-service (a short-lived superadmin service token), idempotent, and
+    additive only: a registration can never redefine a key the static catalog
+    already owns. The dashboard builder calls this with one key per registered
+    dataset, which is what makes "registration is data, not code" hold all the
+    way through to the role editor.
+    """
+    source = str(body.get("source") or "unknown")
+    perms = body.get("permissions") or []
+    if not isinstance(perms, list):
+        raise ValidationError("permissions must be a list")
+    written = await dynamic_permissions.register(db, source=source, permissions=perms)
+    return {"registered": written}
 
 
 # --- roles (dynamic RBAC) ----------------------------------------------------
@@ -468,6 +581,11 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
 ) -> UserOut:
+    # A name is mandatory when an admin creates an account by hand: the audit trail
+    # and every user list read as a person, not an address. (CSV import deliberately
+    # still accepts a blank name column — see import_users.)
+    if not (data.full_name or "").strip():
+        raise ValidationError("Full name is required.")
     # Scope forces a tenant-admin's new users into their own tenant and blocks
     # setting is_superadmin / a cross-tenant tenant_id (see AuthService.create_user).
     user = await AuthService(db).create_user(data, scope_of(actor))
@@ -525,8 +643,10 @@ async def list_users(
     # tenants via the /admin API instead.
     scope = scope_of(actor)
     tenant_id = None if scope.is_platform else scope.tenant_id
-    page = await paginate(db, AuthService(db).users_query(tenant_id), params)
-    page.items = [await _user_out(u) for u in page.items]
+    svc = AuthService(db)
+    page = await paginate(db, svc.users_query(tenant_id), params)
+    counts = await svc.active_session_counts([u.id for u in page.items])
+    page.items = [await _user_out(u, counts.get(u.id, 0)) for u in page.items]
     return page
 
 
@@ -631,8 +751,10 @@ async def get_user(
 ) -> UserOut:
     """Fetch one user. A tenant-admin only sees users in their own tenant (404
     otherwise); super-admins see any user."""
-    user = await AuthService(db).get_user(user_id, scope_of(actor))
-    return await _user_out(user)
+    svc = AuthService(db)
+    user = await svc.get_user(user_id, scope_of(actor))
+    counts = await svc.active_session_counts([user.id])
+    return await _user_out(user, counts.get(user.id, 0))
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
@@ -643,9 +765,15 @@ async def update_user(
     actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
 ) -> UserOut:
     user = await AuthService(db).update_user(user_id, data, scope_of(actor))
+    # Record WHAT changed, never the secret itself — an audit trail holding plaintext
+    # passwords would be a breach in its own right. mode="json" keeps the UUIDs/emails
+    # storable in the JSON meta column.
+    changed = data.model_dump(exclude_none=True, mode="json")
+    if changed.pop("password", None):  # truthy, like the service's "blank = unchanged"
+        changed["password_changed"] = True
     await audit_record(
         db, actor=actor, action="user.update", target_type="user",
-        target_id=str(user_id), meta=data.model_dump(exclude_none=True),
+        target_id=str(user_id), meta=changed,
     )
     return await _user_out(user)
 
@@ -669,6 +797,105 @@ async def delete_user(
         db, actor=actor, action="user.delete", target_type="user",
         target_id=str(user_id), meta={"email": user.email},
     )
+
+
+# --- admin account actions ---------------------------------------------------
+@router.post("/users/{user_id}/lock", response_model=UserOut)
+async def lock_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
+) -> UserOut:
+    """Manually lock a user out of sign-in until an admin unlocks them."""
+    if actor.id == user_id:
+        raise ValidationError("You cannot lock your own account.")
+    user = await AuthService(db).admin_lock_user(user_id, scope_of(actor))
+    await audit_record(
+        db, actor=actor, action="user.lock", target_type="user",
+        target_id=str(user_id), meta={"email": user.email},
+    )
+    return await _user_out(user)
+
+
+@router.post("/users/{user_id}/unlock", response_model=UserOut)
+async def unlock_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
+) -> UserOut:
+    """Clear a lock (manual or brute-force) and reset the failed-login counter."""
+    user = await AuthService(db).admin_unlock_user(user_id, scope_of(actor))
+    await audit_record(
+        db, actor=actor, action="user.unlock", target_type="user",
+        target_id=str(user_id), meta={"email": user.email},
+    )
+    return await _user_out(user)
+
+
+@router.post("/users/{user_id}/reset-mfa", response_model=UserOut)
+async def reset_user_mfa(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
+) -> UserOut:
+    """Disable the target user's TOTP second factor (lost-device recovery)."""
+    user = await AuthService(db).admin_reset_mfa(user_id, scope_of(actor))
+    await audit_record(
+        db, actor=actor, action="user.reset_mfa", target_type="user",
+        target_id=str(user_id), meta={"email": user.email},
+    )
+    return await _user_out(user)
+
+
+@router.post("/users/{user_id}/revoke-sessions", response_model=UserOut)
+async def force_sign_out_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
+) -> UserOut:
+    """Force sign-out: revoke every live session/refresh token for the user."""
+    user = await AuthService(db).admin_revoke_sessions(user_id, scope_of(actor))
+    await audit_record(
+        db, actor=actor, action="user.revoke_sessions", target_type="user",
+        target_id=str(user_id), meta={"email": user.email},
+    )
+    return await _user_out(user, 0)
+
+
+@router.post("/users/{user_id}/clone", response_model=UserOut, status_code=201)
+async def clone_user(
+    user_id: uuid.UUID,
+    data: CloneUserIn,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
+) -> UserOut:
+    """Fast onboarding: copy a user's role, status and site scope into a new account
+    (fresh email/name; the new user sets their own password via the invite)."""
+    svc = AuthService(db)
+    user = await svc.clone_user(user_id, data, scope_of(actor))
+    await audit_record(
+        db, actor=actor, action="user.clone", target_type="user",
+        target_id=str(user.id), meta={"email": user.email, "cloned_from": str(user_id)},
+    )
+    if data.send_invite:
+        await _send_invite_email(db, user)
+    return await _user_out(user)
+
+
+@router.post("/roles/{role_id}/clone", response_model=RoleOut, status_code=201)
+async def clone_role(
+    role_id: uuid.UUID,
+    data: CloneRoleIn,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_permission(CorePerm.ROLE_MANAGE)),
+) -> RoleOut:
+    """Copy a role's permissions + description under a new name."""
+    role = await AuthService(db).clone_role(role_id, data.name, scope_of(actor))
+    await audit_record(
+        db, actor=actor, action="role.clone", target_type="role",
+        target_id=str(role.id), meta={"name": role.name, "cloned_from": str(role_id)},
+    )
+    return role
 
 
 # --- API keys ----------------------------------------------------------------

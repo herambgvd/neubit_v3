@@ -22,6 +22,7 @@ from kernel.errors import ConflictError, ValidationError
 from .events import emit
 from .models import (
     AlertFormat,
+    DeviceToken,
     Form,
     Notification,
     NotificationChannel,
@@ -534,6 +535,100 @@ class NotificationService:
         await self.db.commit()
 
 
+# ── Device tokens (mobile push registration) ───────────────────────────
+
+
+class DeviceTokenService:
+    """Register/unregister a user's mobile push tokens (FCM/APNs).
+
+    Scoped to the caller: a user registers tokens for THEMSELVES within their own
+    tenant. Re-registering the same ``(tenant, platform, token)`` upserts (updates
+    the label + re-enables) rather than duplicating.
+    """
+
+    def __init__(self, db: AsyncSession, scope: Scope) -> None:
+        self.db = db
+        self.scope = scope
+
+    async def _row(self, device_token_id: str) -> DeviceToken:
+        row = await self.db.get(DeviceToken, device_token_id)
+        assert_owned(row, self.scope, message="Device token not found")
+        return row
+
+    async def register(self, body, *, actor) -> DeviceToken:
+        user_id = _actor_id(actor)
+        if not user_id:
+            raise ValidationError("cannot register a device token without a user")
+        # Upsert on (tenant, platform, token) — a device re-registering keeps one row.
+        stmt = scoped(
+            select(DeviceToken).where(
+                DeviceToken.platform == body.platform,
+                DeviceToken.token == body.token,
+            ),
+            DeviceToken, self.scope,
+        )
+        existing = (await self.db.execute(stmt)).scalars().first()
+        if existing is not None:
+            existing.user_id = user_id
+            existing.label = body.label if body.label is not None else existing.label
+            existing.is_active = True
+            existing.updated_by = user_id
+            existing.updated_at = utcnow()
+            await self.db.commit()
+            await self.db.refresh(existing)
+            return existing
+        row = DeviceToken(
+            tenant_id=self.scope.tenant_id,
+            user_id=user_id,
+            platform=body.platform,
+            token=body.token,
+            label=body.label,
+            is_active=True,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        self.db.add(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return row
+
+    async def list_mine(self, *, actor) -> list[DeviceToken]:
+        """The caller's registered device tokens (own user only)."""
+        user_id = _actor_id(actor)
+        if not user_id:
+            return []
+        stmt = scoped(
+            select(DeviceToken).where(DeviceToken.user_id == user_id),
+            DeviceToken, self.scope,
+        ).order_by(DeviceToken.created_at.desc())
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def unregister(self, device_token_id: str, *, actor) -> None:
+        row = await self._row(device_token_id)
+        # A user may only unregister their own device token.
+        if row.user_id != _actor_id(actor) and not self.scope.is_superadmin:
+            raise ValidationError("cannot unregister another user's device token")
+        await self.db.delete(row)
+        await self.db.commit()
+
+    async def unregister_by_token(self, platform: str, token: str, *, actor) -> bool:
+        """Delete the caller's row for a given (platform, token). True if removed."""
+        user_id = _actor_id(actor)
+        stmt = scoped(
+            select(DeviceToken).where(
+                DeviceToken.platform == platform,
+                DeviceToken.token == token,
+            ),
+            DeviceToken, self.scope,
+        )
+        row = (await self.db.execute(stmt)).scalars().first()
+        if row is None or (row.user_id != user_id and not self.scope.is_superadmin):
+            return False
+        await self.db.delete(row)
+        await self.db.commit()
+        return True
+
+
 # ── Threat level ───────────────────────────────────────────────────────
 
 
@@ -633,7 +728,7 @@ class InstanceService:
         return row
 
     async def list_(self, *, skip=0, limit=50, status=None, priority=None, site_id=None,
-                    sop_id=None, assigned_to=None, q=None):
+                    sop_id=None, assigned_to=None, q=None, event_id=None, source=None):
         stmt = scoped(select(WorkflowInstance), WorkflowInstance, self.scope)
         count = scoped(select(func.count()).select_from(WorkflowInstance), WorkflowInstance, self.scope)
         for col, val in [
@@ -646,6 +741,39 @@ class InstanceService:
             if val is not None:
                 stmt = stmt.where(col == val)
                 count = count.where(col == val)
+        # event_id — the CROSS-LINK key from a camera event. A camera event's own id
+        # (VmsEvent.id) rides in the envelope PAYLOAD (trigger_data.payload.event_id),
+        # while WorkflowInstance.event_id holds the bus envelope UUID (a different id).
+        # So match EITHER identifier so a lookup by a camera-event id finds the
+        # incident it spawned, and a lookup by the envelope id also works.
+        if event_id is not None:
+            link = or_(
+                WorkflowInstance.event_id == event_id,
+                WorkflowInstance.trigger_data["payload"]["event_id"].as_string() == event_id,
+            )
+            stmt = stmt.where(link)
+            count = count.where(link)
+        # source — the ORIGINATING domain (the EventBus source tag stored on the
+        # envelope): "vision" (camera events), "access", "ingest", … The UI groups
+        # camera-ish sources under "Camera". "manual" matches operator-raised
+        # incidents (created via POST /instances → extra.source == "manual", no
+        # trigger envelope).
+        if source is not None:
+            if source == "manual":
+                # Operator-raised incidents have no originating-event envelope, so no
+                # domain source tag. A JSON column set to Python None stores JSON
+                # 'null' (not SQL NULL), so extracting .source yields NULL — that's
+                # the portable "no envelope source" test (also matches an envelope
+                # that carries no source). extra.source == 'manual' is the explicit
+                # opt-in if a create ever stamps it.
+                src = or_(
+                    WorkflowInstance.trigger_data["source"].as_string().is_(None),
+                    WorkflowInstance.extra["source"].as_string() == "manual",
+                )
+            else:
+                src = WorkflowInstance.trigger_data["source"].as_string() == source
+            stmt = stmt.where(src)
+            count = count.where(src)
         # Full-text-ish search over the incident name + its SOP name (v2 parity).
         if q:
             like = f"%{q.strip()}%"

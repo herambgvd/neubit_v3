@@ -12,6 +12,15 @@ http:
     #   core       (100)      — /api/|/health|/metrics|/files ALWAYS win otherwise
     #   admin      (50)       — the admin.localhost host, for what core didn't claim
     #   frontend   (1)        — catch-all operator console (localhost + any host)
+    tiles:
+      # Offline basemap — the PMTiles world archive the Sites Map draws from, read
+      # by the browser with HTTP range requests. Public map data, not tenant data,
+      # so no ForwardAuth: gating it would only add a per-tile auth round-trip.
+      # 110 to peel /tiles off before the SPA catch-all.
+      rule: "PathPrefix(`/tiles`)"
+      service: tiles
+      entryPoints: [web]
+      priority: 110
     ingest:
       # The versioned config API + ONLY the public webhook receiver (/ingest/hooks).
       # A bare /ingest prefix would swallow the operator UI's /ingest page → keep it narrow.
@@ -19,17 +28,166 @@ http:
       service: ingest
       entryPoints: [web]
       priority: 110
+      middlewares: [api-protected]
     workflow:
       rule: "PathPrefix(`/api/v1/workflow`)"
       service: workflow
       entryPoints: [web]
       priority: 110
+      middlewares: [api-protected]
     access:
       # Access-control API — instance CRUD + reconcile + mirror reads under /api/v1/access.
       rule: "PathPrefix(`/api/v1/access`)"
       service: access
       entryPoints: [web]
       priority: 110
+      middlewares: [api-protected]
+    dashboards:
+      # Dashboard + widget DEFINITIONS under /api/v1/dashboards. The widgets' DATA
+      # is not here — it comes from /api/v1/bi/query on the reading-writer, which
+      # owns the readings schema. A bare /dashboards prefix would swallow the
+      # operator UI's own /dashboards page, so keep this narrow.
+      rule: "PathPrefix(`/api/v1/dashboards`)"
+      service: dashboards
+      entryPoints: [web]
+      priority: 110
+      middlewares: [api-protected]
+    reading-writer:
+      # Building Intelligence read API under /api/v1/bi. ONLY that prefix: the
+      # rest of the reading-writer (/health, /readyz, /metrics, /stats) stays an
+      # operational surface reachable on the container port, never through the
+      # tenant edge — and a bare /metrics prefix here would collide with core's.
+      rule: "PathPrefix(`/api/v1/bi`)"
+      service: reading-writer
+      entryPoints: [web]
+      priority: 110
+      middlewares: [api-protected]
+    vision:
+      # VMS control-plane — cameras/NVR/discovery/config/health under /api/v1/vms.
+      rule: "PathPrefix(`/api/v1/vms`)"
+      service: vision
+      entryPoints: [web]
+      priority: 110
+      middlewares: [api-protected]
+    nvr:
+      # VMS data-plane (Go) — data-plane status/ops under /api/v1/nvr.
+      rule: "PathPrefix(`/api/v1/nvr`)"
+      service: nvr
+      entryPoints: [web]
+      priority: 110
+      middlewares: [api-protected]
+    onvif-server:
+      # P6-C ONVIF server — OUR VMS answering as an ONVIF device so external
+      # VMS/recorders (Milestone/Genetec/NVRs) discover + pull our streams/recordings.
+      # The SOAP endpoints live at the vision service ROOT (/onvif/*), authenticated by
+      # WS-Security UsernameToken (NOT the kernel JWT). Priority 110 so it peels off
+      # /onvif before the SPA catch-all.
+      rule: "PathPrefix(`/onvif`)"
+      service: vision
+      entryPoints: [web]
+      priority: 110
+    # ── VMS public media (P2-C) ────────────────────────────────────────────
+    # Browser-facing HLS + WebRTC/WHEP proxied to the MediaMTX node, token-gated
+    # by the media-auth ForwardAuth (→ vision /media/verify). Priority 110 so
+    # they win over the SPA catch-all (like the /api routes). The prefix is
+    # stripped so MediaMTX sees its native /<name>/index.m3u8 + /<name>/whep.
+    # The MediaMTX control API (:9997) is NOT routed here — it stays internal.
+    media-hls:
+      rule: "PathPrefix(`/media/hls`)"
+      service: mediamtx-hls
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media-hls-strip
+    media-whep:
+      rule: "PathPrefix(`/media/whep`)"
+      service: mediamtx-whep
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media-whep-strip
+    # ── VMS recorded playback (P4-A) ───────────────────────────────────────
+    # Browser-facing recorded-fmp4 playback proxied to the MediaMTX PLAYBACK
+    # server (:9996), token-gated by the SAME media-auth ForwardAuth as live. The
+    # /media/playback prefix is stripped so MediaMTX sees its native /get?path=…
+    # (and /list). The playback server serves a single seekable fmp4 stream (no
+    # relative-segment playlist), so a plain stripPrefix suffices — no rebounce.
+    media-playback:
+      rule: "PathPrefix(`/media/playback`)"
+      service: mediamtx-playback
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media-playback-strip
+    # ── VMS media — NODE 2 (local multi-node test: mediamtx-2 / nvr-2) ──────
+    # Same media-auth ForwardAuth. WHEP + playback work per-node; HLS's
+    # root-absolute cookieCheck bounce is node-agnostic (rebounces to /media/hls),
+    # so node-2 HLS-fallback is a known gap — live uses WHEP, fine for the test.
+    media2-hls:
+      rule: "PathPrefix(`/media2/hls`)"
+      service: mediamtx2-hls
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media2-hls-strip
+    media2-whep:
+      rule: "PathPrefix(`/media2/whep`)"
+      service: mediamtx2-whep
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media2-whep-strip
+    media2-playback:
+      rule: "PathPrefix(`/media2/playback`)"
+      service: mediamtx2-playback
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media2-playback-strip
+    # ── VMS media — RECORDER-1 (local 2-recorder test: mediamtx-r1 / nvr-r1) ──
+    media1-hls:
+      rule: "PathPrefix(`/media1/hls`)"
+      service: mediamtxr1-hls
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media1-hls-strip
+    media1-whep:
+      rule: "PathPrefix(`/media1/whep`)"
+      service: mediamtxr1-whep
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media1-whep-strip
+    media1-playback:
+      rule: "PathPrefix(`/media1/playback`)"
+      service: mediamtxr1-playback
+      entryPoints: [web]
+      priority: 110
+      middlewares:
+        - media-auth
+        - media1-playback-strip
+    # Catches MediaMTX's root-absolute HLS cookieCheck bounce (see
+    # media-hls-rebounce) and 302s it back under /media/hls. Scoped as tightly as
+    # possible: a `.m3u8` path carrying `?cookieCheck=1`, and NOT already prefixed.
+    # Priority 105 so it beats the SPA catch-all but sits below the real media
+    # routes. `service` is required by Traefik even though the middleware always
+    # redirects before hitting it — point it at the HLS backend as a safe no-op.
+    media-hls-rebounce:
+      rule: "PathRegexp(`\\.m3u8$`) && Query(`cookieCheck`, `1`) && !PathPrefix(`/media/`)"
+      service: mediamtx-hls
+      entryPoints: [web]
+      priority: 105
+      middlewares:
+        - media-hls-rebounce
     core:
       # NOTE: `/api/` (trailing slash) — a bare `/api` prefix also swallows frontend
       # routes like `/api-keys`. Backend endpoints are all under `/api/v1/...`.
@@ -37,6 +195,7 @@ http:
       service: core
       entryPoints: [web]
       priority: 100
+      middlewares: [core-protected]
     admin:
       rule: "Host(`admin.localhost`)"
       service: admin-frontend
@@ -65,6 +224,67 @@ http:
       loadBalancer:
         servers:
           - url: "http://access:8000"
+    vision:
+      loadBalancer:
+        servers:
+          - url: "http://vision:8000"
+    dashboards:
+      loadBalancer:
+        servers:
+          - url: "http://dashboards:8000"
+    reading-writer:
+      loadBalancer:
+        servers:
+          - url: "http://reading-writer:8000"
+    nvr:
+      loadBalancer:
+        servers:
+          - url: "http://nvr:8000"
+    # MediaMTX public listeners (control API :9997 stays internal, never routed).
+    mediamtx-hls:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx:8888"
+    mediamtx-whep:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx:8889"
+    # MediaMTX recorded-playback server (P4-A). Internal :9996, routed only through
+    # the gateway under /media/playback (token-gated); never published to the host.
+    mediamtx-playback:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx:9996"
+    # NODE 2 (local multi-node test) — point at mediamtx-2.
+    mediamtx2-hls:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-2:8888"
+    mediamtx2-whep:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-2:8889"
+    mediamtx2-playback:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-2:9996"
+    # RECORDER-1 (local 2-recorder test) — point at mediamtx-r1.
+    mediamtxr1-hls:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-r1:8888"
+    mediamtxr1-whep:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-r1:8889"
+    mediamtxr1-playback:
+      loadBalancer:
+        servers:
+          - url: "http://mediamtx-r1:9996"
+    tiles:
+      loadBalancer:
+        servers:
+          - url: "http://tiles:80"
     frontend:
       loadBalancer:
         servers:

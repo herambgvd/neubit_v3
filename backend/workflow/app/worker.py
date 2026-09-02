@@ -105,6 +105,13 @@ def run_correlation_consumer() -> str:
     return "stopped"
 
 
+@celery_app.task(name="app.worker.run_notify_consumer")
+def run_notify_consumer() -> str:
+    """Long-running NATS notify.request/vms.popup → outbox consumer. Blocks."""
+    asyncio.run(wf_tasks.run_notify_consumer())
+    return "stopped"
+
+
 @celery_app.task(name="app.worker.ping")
 def ping() -> str:
     """Sample on-demand task — proves the worker executes queued jobs."""

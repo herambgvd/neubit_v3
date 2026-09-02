@@ -19,6 +19,7 @@ CATALOG: list[dict] = [
         "default": "",
         "group": "General",
         "label": "Announcement banner",
+        "placeholder": "e.g. Scheduled maintenance on Sunday, 2–4 AM",
         "description": "Shown as a banner to every signed-in user. Leave empty to hide.",
         "public": True,
     },
@@ -28,6 +29,7 @@ CATALOG: list[dict] = [
         "default": "",
         "group": "General",
         "label": "Support email",
+        "placeholder": "support@yourcompany.com",
         "description": "Contact address shown in the footer and system emails.",
         "public": True,
     },
@@ -55,10 +57,28 @@ CATALOG: list[dict] = [
         "default": 0,
         "group": "Data retention",
         "label": "Audit log retention (days)",
+        "placeholder": "e.g. 90 (0 = keep forever)",
         "description": "Automatically delete audit entries older than this. 0 keeps them forever.",
         "public": False,
     },
+    # --- Maps ----------------------------------------------------------------
+    {
+        "key": "maps_tiles_url",
+        "type": "text",
+        "default": "/tiles/planet.pmtiles",
+        "group": "Maps",
+        "label": "Offline basemap archive",
+        "placeholder": "/tiles/planet.pmtiles",
+        "description": (
+            "URL of the self-hosted PMTiles world basemap the Sites Map draws when Google Maps "
+            "is off. Keep it same-origin so the map keeps working with no internet."
+        ),
+        "public": False,
+    },
     # --- Google Maps ---------------------------------------------------------
+    # Opt-in ONLY: with the toggle off (the default) the Sites Map runs on the
+    # offline basemap above, which needs no key and no internet.
+    #
     # The browser JS loader needs the api_key in-browser, so it is exposed to any
     # authenticated user via GET /settings/maps (NOT the unauthenticated /public
     # subset). The real security boundary is the HTTP-referrer restriction on the
@@ -69,7 +89,10 @@ CATALOG: list[dict] = [
         "default": False,
         "group": "Google Maps",
         "label": "Enable Google Maps",
-        "description": "Render the Sites Map with Google Maps. Requires an API key below.",
+        "description": (
+            "Draw the Sites Map with Google Maps instead of the offline basemap. "
+            "Requires internet access and an API key below."
+        ),
         "public": False,
     },
     {
@@ -78,7 +101,9 @@ CATALOG: list[dict] = [
         "default": "",
         "group": "Google Maps",
         "label": "Maps API key",
+        "placeholder": "AIzaSy… (paste your Google Maps API key)",
         "description": "Google Maps JavaScript API key. Restrict it by HTTP referrer in Google Cloud Console.",
+        "secret": True,
         "public": False,
     },
     {
@@ -87,6 +112,7 @@ CATALOG: list[dict] = [
         "default": 22.9734,
         "group": "Google Maps",
         "label": "Default latitude",
+        "placeholder": "e.g. 22.9734",
         "description": "Initial map centre latitude when no sites have coordinates.",
         "public": False,
     },
@@ -96,6 +122,7 @@ CATALOG: list[dict] = [
         "default": 78.6569,
         "group": "Google Maps",
         "label": "Default longitude",
+        "placeholder": "e.g. 78.6569",
         "description": "Initial map centre longitude when no sites have coordinates.",
         "public": False,
     },
@@ -105,6 +132,7 @@ CATALOG: list[dict] = [
         "default": 5,
         "group": "Google Maps",
         "label": "Default zoom",
+        "placeholder": "1–22, e.g. 5",
         "description": "Initial map zoom level (1–22).",
         "public": False,
     },

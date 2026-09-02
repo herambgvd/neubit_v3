@@ -58,7 +58,12 @@
     @apply flex text-slate-600 font-medium dark:text-slate-300 text-sm capitalize px-[10px] py-3 rounded-[4px] cursor-pointer;
   }
   .menu-icon {
-    @apply icon-box inline-flex items-center text-slate-600 dark:text-slate-300 text-lg ltr:mr-3 rtl:ml-3;
+    // v3 let `@apply` pull in a plain user class (`.icon-box`, defined in
+    // layout/_menu.scss) because Sass concatenates everything into one stylesheet.
+    // v4 applies real utilities only, so `.icon-box`'s declarations are inlined.
+    // Its colour and size were already overridden on the same line under v3; only
+    // the transition actually survived that cascade, so that is all that carries.
+    @apply transition-all duration-150 inline-flex items-center text-slate-600 dark:text-slate-300 text-lg ltr:mr-3 rtl:ml-3;
   }
 }
 // menu item has chilren
@@ -113,14 +118,14 @@
 // active menu
 .item-has-children {
   .parent_active {
-    @apply bg-secondary-500 bg-opacity-20;
+    @apply bg-secondary-500 bg-secondary-500/20;
     .icon-box,
     .menu-icon,
     .text-box {
       @apply text-slate-700 dark:text-slate-200;
     }
     .menu-arrow {
-      @apply bg-secondary-500 text-slate-600 text-opacity-70 bg-opacity-30 dark:text-white;
+      @apply bg-secondary-500 text-slate-600 text-slate-600/70 bg-secondary-500/30 dark:text-white;
     }
   }
 }
