@@ -34,6 +34,23 @@
 //   • No IAQ / environment panel. There are ZERO environment points, so that tile
 //     stays SOON in the launcher rather than being filled with something else.
 //
+// THE PAGE NO LONGER EXPLAINS ITSELF ON SCREEN, and that is a deliberate trade.
+// It used to carry a standfirst, a "What is not here" panel and a paragraph
+// under Floor-wise — together more prose than data, which buried the numbers
+// they were meant to qualify. Those reasons did not stop being true, so they
+// live HERE, where the next person to change this file reads them, instead of
+// in front of an operator who reads the same four paragraphs every morning.
+//
+// The rule that survives ON screen is the one that cannot be moved: a slot with
+// no honest input renders "—" and carries its reason in the row or the tooltip
+// beside it, never a zero and never a guess. A short label is fine; a silent
+// fabrication is not.
+//
+// Floor-wise was removed with its panel. The placement facts it showed are not
+// lost — the leaderboard's UNPLACED pseudo-row is the same statement, on the
+// surface where a site is already being read, and pinning still happens in
+// Configurations → Sites.
+//
 // The "no console yet" caption is NOT dead code. `fire` still has none and must
 // keep none: its single point has never produced a reading, so the category does
 // not appear in `points` at all, and the caption is what a category earns by
@@ -52,7 +69,6 @@ import {
   KpiStrip,
   Kpi,
   EstateMain,
-  EstateHeader,
   Leaderboard,
   LeaderRow,
   LeaderChip,
@@ -274,20 +290,16 @@ export default function Portfolio() {
   return (
     <ConsolePage>
       <ConsoleScroll>
-        <EstateHeader
-          crumbs={[{ label: "Portfolio" }]}
-          desc="Every device and measurement point that has reported into the reading store, by
-              site and by category. Counts are of what has REPORTED — a device appears here
-              because a reading arrived, not because something was configured."
-          right={
-            <>
-              {summaryQ.isFetching && (
-                <Icon icon="svg-spinners:180-ring" className="text-sm text-nb-blueb" />
-              )}
-              {s && <span>updated {fmtRelative(s.generated_at)}</span>}
-            </>
-          }
-        />
+        {/* No page title and no standfirst. The nav already says Portfolio, and
+            the paragraph that used to sit here restated what the KPI strip
+            shows one line lower. Only the freshness stamp survives, because
+            nothing else on the page says how old the numbers are. */}
+        <div className="mb-3 flex items-center justify-end gap-2 text-[11px] text-nb-faint">
+          {summaryQ.isFetching && (
+            <Icon icon="svg-spinners:180-ring" className="text-sm text-nb-blueb" />
+          )}
+          {s && <span>updated {fmtRelative(s.generated_at)}</span>}
+        </div>
 
         {err ? (
           <SectionCard className="text-center text-xs text-nb-crit">{err}</SectionCard>
@@ -352,7 +364,7 @@ export default function Portfolio() {
                     <SectionHead
                       icon="heroicons:trophy"
                       title="Site leaderboard"
-                      desc="Every site the reporting store has been told about, plus the points no site owns. The score slot reads the metric registry's CCEI per site — a value only when every component evaluates; otherwise the dash, with the per-input reasons beside it. OPEN drills into the site's consoles."
+                      desc="Sites the store has been told about, plus the points no site owns. A dash is a blocked score — its reasons sit on the row."
                     />
                     <Leaderboard>
                       {sites.map((site: any) => (
@@ -374,7 +386,7 @@ export default function Portfolio() {
                     <SectionHead
                       icon="heroicons:chart-bar"
                       title="Ingest — last 24 hours"
-                      desc="Samples per hour, stacked by category, read from the readings_1h continuous aggregate. This counts samples, not a physical quantity: the source payloads carry no unit, so nothing here is converted into one."
+                      desc="Samples per hour by category. A count of samples, not of any physical quantity."
                     />
                     {activityQ.isLoading ? (
                       <LoadingBlock label="Loading rollup…" />
@@ -386,8 +398,8 @@ export default function Portfolio() {
                   <SectionCard>
                     <SectionHead
                       icon="heroicons:bell-alert"
-                      title={`Live queue — faults raised in the last ${ALERT_HOURS} hours`}
-                      desc="Alerts the gateway itself raised, projected onto the reporting store. Severity, type, device and wording are the gateway's; nothing here is inferred. It is deliberately NOT labelled cross-domain: an alert carries no device category, so it cannot be attributed to energy or HVAC without inventing the attribution."
+                      title={`Live queue · ${ALERT_HOURS} h`}
+                      desc="Raised by the gateway. Severity, type and wording are its own; nothing here is inferred."
                     />
                     <FaultQueue query={alertsQ} hours={ALERT_HOURS} />
                   </SectionCard>
@@ -403,100 +415,6 @@ export default function Portfolio() {
                       value={s.categories.find((c: any) => !c.category)?.points ?? 0}
                       tone="faint"
                     />
-                  </SectionCard>
-
-                  <SectionCard>
-                    <SectionHead
-                      icon="heroicons:map"
-                      title="Floor-wise"
-                      desc="Where the estate is anchored. A point with no floor counts as UNPLACED and is shown as one — never folded into a floor it was not placed on. Placement is a device-level statement made by pinning the device on its floor plan under Configurations → Sites; nothing is ever inferred from a device tag."
-                    />
-                    {s.placement ? (
-                      <>
-                        <PanelStat
-                          label="Placed on a floor"
-                          value={`${s.placement.with_floor} of ${s.placement.points}`}
-                          tone={s.placement.with_floor ? "good" : "faint"}
-                        />
-                        <PanelStat
-                          label="Placed on a site"
-                          value={`${s.placement.with_site} of ${s.placement.points}`}
-                          tone={s.placement.with_site ? "good" : "faint"}
-                        />
-                        <PanelStat
-                          label="Unplaced"
-                          value={s.placement.unplaced}
-                          tone={s.placement.unplaced ? "warn" : "good"}
-                        />
-                      </>
-                    ) : null}
-                    <ul className="mt-2 space-y-1.5">
-                      {(s.floors || []).map((f: any) => (
-                        <li
-                          key={f.floor_id ?? "_unplaced"}
-                          className="flex items-center justify-between gap-2 text-[11.5px]"
-                        >
-                          <span className={f.floor_id ? "text-nb-soft" : "text-nb-faint italic"}>
-                            {f.floor_name || (f.floor_id ? f.floor_id : "Unplaced")}
-                            {f.site_name ? (
-                              <span className="ml-1 text-nb-faint">· {f.site_name}</span>
-                            ) : null}
-                          </span>
-                          <span className="font-mono text-nb-ink">{f.points}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="mt-2 border-t border-nb-line/50 pt-2">
-                      <p className="text-[11px] leading-relaxed text-nb-faint">
-                        No placement is inferred. The gateway wire carries none, and a
-                        floor parsed out of a device tag would be right for most of an
-                        estate and silently wrong for the rest — which is worse than
-                        “unplaced”. A device is pinned ONCE, on its floor plan under
-                        Sites, and every point of that device follows the pin.
-                      </p>
-                      <Link
-                        href="/sites"
-                        className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-nb-blueb hover:underline"
-                      >
-                        <Icon icon="heroicons:map-pin" className="text-sm" />
-                        Open Sites → floor plan
-                      </Link>
-                    </div>
-                  </SectionCard>
-
-                  <SectionCard>
-                    <SectionHead
-                      icon="heroicons:information-circle"
-                      title="What is not here"
-                      desc="Stated rather than hidden, so a blank panel is never mistaken for a broken one."
-                    />
-                    <ul className="space-y-2 text-[11.5px] leading-relaxed text-nb-faint">
-                      <li>
-                        <span className="text-nb-soft">No units.</span> Every point reports its value
-                        with an empty unit, so none is shown. Inferring one from a tag would put a
-                        number on screen that nobody measured.
-                      </li>
-                      <li>
-                        <span className="text-nb-soft">No IAQ &amp; Environment.</span> Zero environment
-                        points exist in the store, so that surface stays unbuilt rather than filled
-                        with a stand-in.
-                      </li>
-                      <li>
-                        <span className="text-nb-soft">No consumption or cost.</span> Deriving kWh or a
-                        tariff needs to know what a point measures; the wire does not say. The
-                        measured-kWh slot above unblocks per register, as an operator confirms
-                        units in Ratings — never all at once by a pattern.
-                      </li>
-                      <li>
-                        <span className="text-nb-soft">The score is CCEI, or its reasons.</span>{" "}
-                        The leaderboard&apos;s score slot reads the metric registry&apos;s CCEI
-                        (0.6 × energy-intensity vs the cited BEE bands + 0.4 × chiller-ΔT health).
-                        A composite of a refusal is a refusal, so a site missing its area or
-                        benchmark inputs — or holding frozen chillers — shows the dash with every
-                        component&apos;s own reason. A trend still needs a history of scores that
-                        does not exist yet.
-                      </li>
-                    </ul>
                   </SectionCard>
                 </>
               }
