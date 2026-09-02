@@ -58,6 +58,7 @@ import PatternStage, { STAGE_FADE_MS, stopKey } from "./components/PatternStage"
 import PatternFormModal from "./components/PatternFormModal";
 import SaveWallGroupModal from "./components/SaveWallGroupModal";
 import { usePatternRotation } from "./hooks/usePatternRotation";
+import { useWallPlayback } from "./hooks/useWallPlayback";
 import { useEstateCameras } from "./hooks/useEstateCameras";
 
 // WHAT THE WALL ITSELF IS — the grid and the camera in each cell — is PER TAB
@@ -151,6 +152,15 @@ export default function Streaming() {
     return QUALITY_LEVELS.some((l) => l.key === qv) ? qv : "auto";
   });
   const [playoutOpen, setPlayoutOpen] = useState(false);
+  // The wall's DVR: live ⇄ playback, the window, the shared clock, Sync. The
+  // tiles themselves show the recording (WallTile → TilePlayback); this only
+  // holds where the wall is pointed. See hooks/useWallPlayback.
+  const pb = useWallPlayback();
+  // The tile the transport is bound to: whose coverage the timeline draws, and —
+  // in playback — the master clock every synced tile follows. Click any tile to
+  // move it; it falls back to the first filled tile so the dock is never
+  // pointed at nothing.
+  const [focusIndex, setFocusIndex] = useState<any>(null);
 
   const [railOpen, setRailOpen] = useState(() => readLS(LS_RAIL, true) !== false);
   const [railDragging, setRailDragging] = useState(false);
@@ -346,6 +356,27 @@ export default function Streaming() {
   const handleSwap = useCallback((from, index) => swapCells(from, index), [swapCells]);
   const handleClose = useCallback((index) => closeCell(index), [closeCell]);
   const handleSpotlight = useCallback((index) => setSpotlight(index), []);
+  const handleFocus = useCallback((index) => setFocusIndex(index), []);
+  // The focused tile searched a whole window and found NO footage — the wall is
+  // sitting in a gap. Re-anchor past it: the node clamps forward, so this lands
+  // on the next recording there is instead of stopping at every gap.
+  //
+  // A tile that simply reached the end of its window does NOT come here; it opens
+  // its own next window in place (TilePlayback), so one camera's short recording
+  // never drags the whole wall through a re-open.
+  //
+  // The clamp to `now` is what stops this walking forever: past the present there
+  // is nothing to find, and a wall left frozen on "no footage" with the clock
+  // stopped tells the operator nothing. Playback that has caught up with the
+  // present belongs on the live stream, which is where it goes.
+  const handlePlaybackEnded = useCallback(
+    (atMs) => {
+      const next = atMs + 1_000;
+      if (next >= Date.now()) pb.goLive();
+      else pb.playAt(next);
+    },
+    [pb.playAt, pb.goLive],
+  );
   const handlePickHere = useCallback(
     (index) => setPicker({ open: true, tileIndex: index }),
     [],
@@ -649,6 +680,24 @@ export default function Streaming() {
   const isSpotlightActive = spotlight != null && !!cells[spotlight]?.cameraId;
   const spotlightCam = spotlight != null ? cameraById.get(cells[spotlight]?.cameraId) : null;
 
+  // Which tile the transport is bound to. An explicit click wins; a spotlight is
+  // the operator pointing at a camera just as plainly; otherwise the first filled
+  // tile, so the dock always has a camera even on a wall nobody has clicked.
+  const focusTile = useMemo(() => {
+    if (focusIndex != null && cells[focusIndex]?.cameraId) return focusIndex;
+    if (isSpotlightActive) return spotlight;
+    const first = cells.findIndex((c) => c.cameraId);
+    return first >= 0 ? first : null;
+  }, [focusIndex, cells, isSpotlightActive, spotlight]);
+  const focusCamera = focusTile != null ? cameraById.get(cells[focusTile]?.cameraId) : null;
+
+  // A tile shows the RECORDING when the wall is in playback and either it is the
+  // focused tile or Sync is on (Sync = the whole wall at one instant).
+  const playbackFor = useCallback(
+    (i) => pb.isPlayback && (pb.sync || i === focusTile),
+    [pb.isPlayback, pb.sync, focusTile],
+  );
+
   // Render a single WallTile. Keyed by STABLE tile index so promoting to
   // spotlight preserves the mounted LivePlayer (session reuse).
   const renderTile = (cell, i, { isHero = false, spotlightMode = false }: any = {}) => (
@@ -665,6 +714,17 @@ export default function Streaming() {
       railDragging={railDragging}
       estateReady={estateReady}
       style={spotlightMode ? undefined : tileStyleFor(i)}
+      playback={playbackFor(i)}
+      playbackMaster={i === focusTile}
+      playbackAnchorMs={pb.anchorMs}
+      playbackAnchorSeq={pb.anchorSeq}
+      playbackToMs={pb.win.toMs}
+      playbackPlaying={pb.playing}
+      playbackSpeed={pb.speed}
+      playbackClock={pb.clock}
+      focused={i === focusTile}
+      onFocus={handleFocus}
+      onPlaybackEnded={handlePlaybackEnded}
       onAssign={handleAssign}
       onAssignMany={handleAssignMany}
       onSwap={handleSwap}
@@ -817,8 +877,16 @@ export default function Streaming() {
               from the toolbar. Wired to the selected/first camera. */}
           {playoutOpen && (
             <PlayoutBar
-              camera={spotlightCam || cameraById.get(wallCameraIds[0]) || null}
-              onClose={() => setPlayoutOpen(false)}
+              camera={focusCamera}
+              pb={pb}
+              // Hiding the transport also returns the wall to live: the dock is
+              // the ONLY way back from playback, and a wall left frozen on an
+              // hour-old recording with no visible control saying so is the worst
+              // failure this surface has.
+              onClose={() => {
+                pb.goLive();
+                setPlayoutOpen(false);
+              }}
             />
           )}
         </main>
