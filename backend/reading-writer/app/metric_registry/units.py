@@ -53,6 +53,12 @@ UNIT_DIMENSION: dict[str, str] = {
     "Hz": "frequency",
     "V": "voltage",
     "A": "current",
+    # emissions. `kgCO2` is a MASS of CO2-equivalent, and the grid emission
+    # factor is a mass per unit of energy — its own dimension, so that a factor
+    # can never be added to a mass or to a tariff by accident.
+    "kgCO2": "mass",
+    "tCO2": "mass",
+    "kgCO2/kWh": "emission_factor",
     # geometry / volume (site facts, water)
     "m2": "area",
     "m3": "volume",
@@ -70,7 +76,7 @@ UNIT_DIMENSION["degF_delta"] = "temperature_delta"
 
 KNOWN_DIMENSIONS = sorted(
     set(UNIT_DIMENSION.values())
-    | {"temperature_delta", "energy_per_area", "dimensionless"}
+    | {"temperature_delta", "energy_per_area", "mass_per_area", "dimensionless"}
 )
 
 
@@ -146,7 +152,25 @@ def add_sub(op: str, a: Qty, b: Qty) -> Qty:
 # here is refused. The evaluator and the registration check both go through it.
 _DIV_TABLE: dict[tuple[str, str], str] = {
     ("energy", "area"): "energy_per_area",
+    # kg CO2 ÷ m² — the carbon-intensity denominator (spec §4.3)
+    ("mass", "area"): "mass_per_area",
 }
+
+# Closed PRODUCT table, same discipline as division: an unlisted product is
+# refused rather than guessed. Multiplication is commutative here, so each pair
+# is registered once and looked up both ways.
+_MUL_TABLE: dict[frozenset[str], str] = {
+    # kWh × (kg CO2 / kWh) = kg CO2. This is the only way a mass enters a
+    # formula on this platform, and it is the reason `emission_factor` is its
+    # own dimension: energy × anything-else does not produce emissions.
+    frozenset({"energy", "emission_factor"}): "mass",
+}
+
+
+# The unit a product lands in. A product's unit is not derivable by string
+# surgery the way a quotient's is (`kWh` × `kgCO2/kWh` is `kgCO2`, not
+# `kWh·kgCO2/kWh`), so the table states it.
+_MUL_UNIT: dict[str, str] = {"mass": "kgCO2"}
 
 
 def mul_div(op: str, a: Qty, b: Qty) -> Qty:
@@ -155,6 +179,10 @@ def mul_div(op: str, a: Qty, b: Qty) -> Qty:
         return Qty(a.dimension, a.unit)
     if a.dimension == "dimensionless" and op == "*":
         return Qty(b.dimension, b.unit)
+    if op == "*":
+        result = _MUL_TABLE.get(frozenset({a.dimension, b.dimension}))
+        if result is not None:
+            return Qty(result, _MUL_UNIT.get(result))
     if op == "/":
         if a.dimension == b.dimension:
             # same-dimension ratio; unit sameness enforced when both known

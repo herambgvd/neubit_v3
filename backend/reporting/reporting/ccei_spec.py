@@ -24,11 +24,11 @@ weights.
 That is the point. A leaf becomes a row when the estate can actually measure it,
 and not one day earlier:
 
-  * `chw_delta_t_in_band`, `temp_in_band`, `co2_in_band`, `humidity_in_band`
-    are band-OCCUPANCY metrics (spec §3.3, "Σ minutes within band / Σ valid
-    minutes"). The registry's input aggregations are scalar (avg/last/sum/…);
-    occupancy needs the formula evaluated per bucket and the result counted,
-    which is an evaluator capability that does not exist yet.
+  * `temp_in_band`, `co2_in_band` and `humidity_in_band` are band-OCCUPANCY
+    metrics and the `occupancy` kind now exists to express them — but none of
+    the three has a sensor on this estate, so they stay named and undefined.
+    `chw_delta_t_in_band` is the one of the four that DOES have its signal, and
+    it is defined below.
   * `plant_kw_per_tr` needs chilled-water FLOW (TR = flow × ΔT / 3.517). No
     flow signal is bound on this estate.
   * `economizer_capture` needs return-air temperature, damper position and
@@ -36,9 +36,6 @@ and not one day earlier:
   * `consumption_vs_baseline` and `avoided_emissions` need a baseline, and the
     baseline rule is same-month-last-year — it needs ≥13 months of history.
   * `clean_energy_share` needs on-site/PPA/REC generation metering.
-  * `carbon_intensity` needs the site's gross floor area and its grid emission
-    factor as typed inputs; the factor is recorded but the fact vocabulary does
-    not carry it yet.
   * The four OPI leaves are the platform's OWN event trail (uptime heartbeats,
     alarm acknowledge/resolve timestamps, workflow outcomes). The registry's
     inputs read points and site facts; an event-bus input source does not exist.
@@ -88,7 +85,8 @@ LEAVES: dict[str, dict] = {
         "label": "Chilled-water ΔT in the 5–7 °C band (%)",
         "direction": "higher", "target": 95, "floor": 60,
         "source": "CHW supply/return temperature",
-        "blocked_by": "band occupancy (§3.3) needs a per-bucket evaluation the registry cannot express yet",
+        # DEFINED — see LEAF_DEFINITIONS. Kept in this table because the table
+        # is the spec's component list, not a list of gaps.
     },
     "economizer_capture": {
         "label": "Economizer free-cooling capture (%)",
@@ -132,7 +130,7 @@ LEAVES: dict[str, dict] = {
         "label": "Carbon intensity (kg CO₂/m²/yr)",
         "direction": "lower", "target": 9.0, "worst": 20.0,
         "source": "kWh × grid emission factor ÷ area",
-        "blocked_by": "needs gross floor area AND the grid emission factor as a typed input; the fact vocabulary carries neither yet",
+        # DEFINED — see LEAF_DEFINITIONS.
     },
     "avoided_emissions": {
         "label": "Avoided emissions (% vs baseline)",
@@ -213,6 +211,94 @@ SUB_INDICES: dict[str, dict] = {
     },
 }
 
+# ── The leaves that ARE defined ──────────────────────────────────────────────
+#
+# `chw_delta_t_in_band` (EEI, weight 0.25) is the first of the fourteen the
+# estate can actually measure: both chilled-water temperatures are bound to
+# roles on every chiller.
+#
+# THE BAND IS 5–7 K, WHICH IS THE SPEC'S, NOT THE ONE THIS PLATFORM USED. The
+# earlier `hvac_health` v1 graded |ΔT| against 3–7 K — a band chosen from
+# general chilled-water practice when no spec was in hand. §4.1 states 5–7, so
+# 5–7 it is; the old row keeps its own band, because versioning is data.
+#
+# `abs()` IS LOAD-BEARING. This platform defines ΔT as leaving − entering, which
+# is NEGATIVE for a machine that is cooling, and the spec's band is stated on
+# the magnitude. Taking the absolute value also means a chiller wired with its
+# sensors swapped scores the same as one wired correctly — that is a real
+# anomaly on this estate (1F York reads leaving WARMER than entering) and it is
+# deliberately NOT this metric's job: a band-occupancy percentage that silently
+# became a sign check would answer neither question well. The sign belongs to
+# the plant-room investigation.
+# `carbon_intensity` (CPI, weight 0.50) is the second. Its three inputs each
+# come from a different kind of place, and that is the point of typing them:
+#
+#   energy  measured   — last − first over the site's confirmed kWh registers
+#   factor  cited      — the grid emission factor row effective at the window's
+#                        end, carrying the document an operator entered with it
+#   area    recorded   — the site's gross floor area, an operator's assertion
+#
+# The score is `norm_down` against the spec's 9.0 target and 20.0 worst value
+# (§4.3), so a site at or under 9 kg CO₂/m²/yr scores 100 and one at or over 20
+# scores 0. `annualize()` scales the measured window to a year over the COVERED
+# span, the same definition `/bi/rating` uses — the "/yr" in the unit is that
+# call, not an assumption about how long the meter has been running.
+LEAF_DEFINITIONS: dict[str, dict] = {
+    "carbon_intensity": {
+        "key": "carbon_intensity",
+        "version": 1,
+        "kind": "formula",
+        "applies_to": {"scope": "site"},
+        "inputs": {
+            "energy": {"role": "energy_register", "unit": "kWh", "aggregation": "consumption"},
+            "factor": {"source": "emission_factor", "unit": "kgCO2/kWh"},
+            "area": {"fact": "gross_floor_area_sqm", "unit": "m2", "source": "site_fact"},
+        },
+        "formula": "norm_down(annualize(energy * factor / area), 9.0, 20.0)",
+        "components": None,
+        "output": {"dimension": "dimensionless"},
+        "guards": ["units_confirmed"],
+        "display": {
+            "label": "Carbon intensity (kg CO₂/m²/yr)",
+            "description": (
+                "Annualized Scope-2 emissions per square metre, scored against the "
+                "spec's 9.0 target and 20.0 worst value. Energy is measured, the "
+                "emission factor is cited, the area is recorded — a missing one of "
+                "the three refuses by name rather than being assumed."
+            ),
+            "precision": 1,
+            "citation": CITATION,
+        },
+    },
+    "chw_delta_t_in_band": {
+        "key": "chw_delta_t_in_band",
+        "version": 1,
+        "kind": "occupancy",
+        "applies_to": {"scope": "device", "category": "hvac", "device_type": "chiller"},
+        "inputs": {
+            "iwt": {"role": "inlet_water_temp", "dimension": "temperature", "aggregation": "avg"},
+            "owt": {"role": "outlet_water_temp", "dimension": "temperature", "aggregation": "avg"},
+        },
+        "formula": "in_band(abs(owt - iwt), 5, 7)",
+        "components": None,
+        "output": {"dimension": "dimensionless"},
+        # A frozen temperature pair has no ΔT to be in or out of a band; scoring
+        # a dead sensor's constant as 100% in-band is precisely the five stars
+        # for a dead meter this platform refuses elsewhere.
+        "guards": ["units_confirmed", "same_unit", "non_frozen"],
+        "display": {
+            "label": "Chilled-water ΔT in the 5–7 °C band (%)",
+            "description": (
+                "Share of the window in which |leaving − entering| chilled-water "
+                "temperature sat inside the spec's 5–7 K design band, counted per "
+                "bucket (§3.3), not tested once on a window average."
+            ),
+            "precision": 1,
+            "citation": CITATION,
+        },
+    },
+}
+
 CCEI_KEY = "ccei"
 CCEI_VERSION = 2
 SUB_INDEX_VERSION = 1
@@ -224,7 +310,7 @@ def definitions() -> list[dict]:
     Shaped exactly as `metric_definitions` stores a definition, so the registry's
     own `typecheck` can be run over the list without translation.
     """
-    rows: list[dict] = []
+    rows: list[dict] = list(LEAF_DEFINITIONS.values())
     for key, sub in SUB_INDICES.items():
         rows.append(
             {

@@ -6,7 +6,7 @@ GRAMMAR (all of it)
     term    := factor (('*' | '/') factor)*
     factor  := NUMBER | NAME | '(' expr ')' | '-' factor | FUNC '(' args ')'
     FUNC    := 'abs' | 'annualize' | 'band_score' | 'benchmark_score'
-             | 'norm_up' | 'norm_down'
+             | 'norm_up' | 'norm_down' | 'in_band'
 
 `×` and `÷` are accepted as spellings of `*` and `/`. Nothing else exists: no
 comparisons, no exponent, no attribute access, no subscripts, no strings, no
@@ -55,6 +55,14 @@ sign error that would silently score every site backwards, so it is a
 registration error, not a runtime surprise. Both are DIMENSIONLESS out: a
 score is not a kW/TR and not a percentage of anything.
 
+`in_band(x, lo, hi)` — MEMBERSHIP, not a score: 1 when lo ≤ x ≤ hi, else 0.
+It is the per-bucket half of an occupancy metric (spec §3.3, "Σ minutes within
+band / Σ valid minutes"): the evaluator runs the formula once per bucket and
+the occupancy is the mean of these ones and zeros. Bounds are literals for the
+same reason every other bound here is, and `lo` may be 0 — a ceiling band like
+CO₂ < 1000 ppm is written `in_band(co2, 0, 1000)` and is a real band, unlike
+band_score's, which needs a positive floor to have a shape.
+
 `benchmark_score(x)` — the position of x against the EFFECTIVE benchmark
 standard's band edges: best-band edge → 100, worst-band edge → 0, linear
 between, clamped. The edges are DATA (`benchmark_standards` + the site's zone
@@ -84,13 +92,16 @@ class EvalRefusal(Exception):
         self.reason = reason
 
 
-_FUNCS = ("abs", "annualize", "band_score", "benchmark_score", "norm_up", "norm_down")
+_FUNCS = (
+    "abs", "annualize", "band_score", "benchmark_score",
+    "norm_up", "norm_down", "in_band",
+)
 
 # arity per function — checked at parse, so a wrong call is a registration
 # error naming itself, never a TypeError at evaluation.
 _FUNC_ARITY = {
     "abs": 1, "annualize": 1, "benchmark_score": 1,
-    "band_score": 3, "norm_up": 3, "norm_down": 3,
+    "band_score": 3, "norm_up": 3, "norm_down": 3, "in_band": 3,
 }
 
 _BINOPS: dict[type, str] = {
@@ -151,6 +162,12 @@ def _check(node: ast.AST) -> None:
                 raise ExprError(
                     f"band_score(x, lo, hi) needs 0 < lo < hi; got lo={lo:g}, hi={hi:g}"
                 )
+        if node.func.id == "in_band":
+            lo, hi = _literal_pair(node)
+            if not (0 <= lo < hi):
+                raise ExprError(
+                    f"in_band(x, lo, hi) needs 0 <= lo < hi; got lo={lo:g}, hi={hi:g}"
+                )
         if node.func.id == "norm_up":
             floor, target = _literal_pair(node)
             if not floor < target:
@@ -179,10 +196,18 @@ def _literal_pair(node: ast.Call) -> tuple[float, float]:
     fn = node.func.id  # type: ignore[union-attr]
     vals = []
     for a in node.args[1:]:
+        # `-1` parses as USub over a Constant, not as a negative literal. Unfold
+        # it, so a negative bound fails the RANGE check with the range named
+        # rather than being reported as "not a literal" — a wrong reason costs
+        # whoever reads it a detour.
+        sign = 1.0
+        if isinstance(a, ast.UnaryOp) and isinstance(a.op, (ast.USub, ast.UAdd)):
+            sign = -1.0 if isinstance(a.op, ast.USub) else 1.0
+            a = a.operand
         if not (isinstance(a, ast.Constant) and isinstance(a.value, (int, float))
                 and not isinstance(a.value, bool)):
             raise ExprError(f"{fn}(): the two bound arguments must be numeric literals")
-        vals.append(float(a.value))
+        vals.append(sign * float(a.value))
     return vals[0], vals[1]
 
 
@@ -236,6 +261,9 @@ def _infer(node: ast.AST, env: dict[str, Qty]) -> Qty:
             return arg
         if fn == "band_score":
             # a 0-100 score against a band in the argument's own unit
+            return DIMENSIONLESS
+        if fn == "in_band":
+            # membership of x's own band, in x's own unit — 1 or 0, no unit
             return DIMENSIONLESS
         if fn in ("norm_up", "norm_down"):
             # CCEI spec §3.1/§3.2: any engineering unit onto the 0-100 scale.
@@ -304,6 +332,9 @@ def _eval(node: ast.AST, env: dict[str, float], window_days: float | None,
             if not window_days or window_days <= 0:
                 raise EvalRefusal("blocked", "annualize() needs a window with nonzero length")
             return v * (365.0 / window_days)
+        if fn == "in_band":
+            lo, hi = _literal_pair(node)
+            return 1.0 if lo <= v <= hi else 0.0
         if fn == "norm_up":
             floor, target = _literal_pair(node)
             return min(100.0, max(0.0, 100.0 * (v - floor) / (target - floor)))

@@ -20,6 +20,7 @@ from app.metric_registry import registry
 from reporting.ccei_spec import (
     CCEI_KEY,
     CCEI_VERSION,
+    LEAF_DEFINITIONS,
     LEAVES,
     SUB_INDICES,
     definitions,
@@ -82,19 +83,50 @@ def test_all_fourteen_components_are_named_exactly_once():
     assert set(named) == set(LEAVES)
 
 
-def test_no_leaf_is_seeded_as_a_definition():
-    """The refusal IS the deliverable. Seeding a leaf that cannot be measured —
-    as a stub, a zero, or a redistributed weight — turns "we cannot measure this"
-    into a number, which is the one thing this registry exists to prevent."""
+def test_only_a_measurable_leaf_is_seeded():
+    """A leaf becomes a row when the estate can measure it, and not one day
+    earlier. Seeding one that cannot be measured — as a stub, a zero, or a
+    weight redistributed onto its siblings — turns "we cannot measure this" into
+    a number, which is the one thing this registry exists to prevent."""
     seeded = set(_by_key())
-    assert seeded == {"ccei", "eei", "opi", "cpi", "cci"}
-    assert not (seeded & set(LEAVES))
+    assert {"ccei", "eei", "opi", "cpi", "cci"} <= seeded
+    # every seeded leaf is one the pack DECLARES measurable, and vice versa
+    assert seeded & set(LEAVES) == set(LEAF_DEFINITIONS)
+
+
+def test_a_defined_leaf_does_not_also_claim_to_be_blocked():
+    """`blocked_by` is what the evaluator prints in place of a value. A leaf
+    that has a definition AND a blocked reason would print a stale excuse for a
+    metric that computes."""
+    for key in LEAF_DEFINITIONS:
+        assert "blocked_by" not in LEAVES[key], key
+
+
+def test_the_defined_leaf_uses_the_spec_s_band_not_the_platform_s_old_one():
+    """§4.1 states the chilled-water design band as 5–7 °C. `hvac_health` v1
+    used 3–7, chosen from general practice before the spec was in hand. A band
+    is a spec parameter and lives in the formula row, so the drift is visible
+    here rather than in someone's memory."""
+    row = _by_key()["chw_delta_t_in_band"]
+    assert row["formula"] == "in_band(abs(owt - iwt), 5, 7)"
+    assert row["kind"] == "occupancy"
+    # this platform's ΔT is leaving − entering, i.e. negative while cooling;
+    # the spec's band is on the magnitude, so abs() is required, not cosmetic
+    assert "abs(" in row["formula"]
+
+
+def test_the_defined_leaf_refuses_a_frozen_sensor():
+    """A frozen temperature pair has no ΔT to be in or out of a band. Without
+    the guard, a dead sensor's constant would score 100% in-band — the same
+    class of lie as five stars for a dead meter."""
+    assert "non_frozen" in _by_key()["chw_delta_t_in_band"]["guards"]
 
 
 def test_every_leaf_says_what_blocks_it():
     """A named gap with no reason is a dead end for whoever has to close it."""
     for key, leaf in LEAVES.items():
-        assert leaf.get("blocked_by"), key
+        if key not in LEAF_DEFINITIONS:
+            assert leaf.get("blocked_by"), key
         assert leaf.get("source"), key
         assert leaf["direction"] in ("higher", "lower"), key
         # a direction implies which bound the spec states
