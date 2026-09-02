@@ -167,7 +167,10 @@ export default function FaultQueue({ query, hours }: any) {
       </div>
 
       {items.length > 0 && (
-        <ul className="max-h-[420px] overflow-y-auto">
+        // In the pinned layout this list takes the height its card has left and
+        // scrolls inside it. Below `xl` nothing bounds the card, so the cap is
+        // what stops one noisy hour from becoming the whole page.
+        <ul className="max-h-[420px] min-h-0 flex-1 overflow-y-auto xl:max-h-none">
           {items.map((row: any) => (
             <FaultRow key={row.alert_id} row={row} />
           ))}

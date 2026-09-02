@@ -150,8 +150,12 @@ function CategoryCard({ row }: any) {
     </>
   );
 
+  // `flex-1` so the strip SPANS the page rather than huddling at its left, with
+  // a floor low enough that the three stats and the label still read. Past the
+  // point where every card is at its floor the strip scrolls sideways instead of
+  // squeezing them into unreadable slivers.
   const cls =
-    "block w-[248px] shrink-0 rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-3.5 transition";
+    "block min-w-[212px] flex-1 rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-3.5 transition";
 
   return meta.href ? (
     <Link href={meta.href} className={`${cls} hover:border-nb-blue/60 hover:bg-white/[.03]`}>
@@ -398,8 +402,18 @@ export default function Portfolio() {
               </SectionCard>
             </div>
 
-            <div className="min-w-0 space-y-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
-              <SectionCard>
+            {/* Two cards, each answering for its own height — NOT one column
+                scrolled as a unit. Scrolling the column moved the ingest chart
+                off screen to reach the fault list, which is the one pairing on
+                this page that has to be read together: a queue that suddenly
+                fills means nothing until you can see whether ingest fell over at
+                the same hour.
+
+                The chart is a fixed 150px of bars, so it is fixed. The queue is
+                the list that varies, so it takes the height left over and
+                scrolls its rows inside itself. */}
+            <div className="flex min-w-0 flex-col gap-3 xl:min-h-0">
+              <SectionCard className="shrink-0">
                 <SectionHead
                   icon="heroicons:chart-bar"
                   title="Ingest — last 24 hours"
@@ -412,7 +426,7 @@ export default function Portfolio() {
                 )}
               </SectionCard>
 
-              <SectionCard>
+              <SectionCard className="flex min-h-0 flex-1 flex-col">
                 <SectionHead
                   icon="heroicons:bell-alert"
                   title={`Live queue · ${ALERT_HOURS} h`}
