@@ -662,7 +662,6 @@ export default function Streaming() {
       // restarted. The spotlight hero simply gets a bigger surface, same stream.
       profile={qualityProfile || tileProfile(layout.capacity, isHero)}
       isHero={isHero || spotlightMode}
-      spotlight={spotlightMode}
       railDragging={railDragging}
       estateReady={estateReady}
       style={spotlightMode ? undefined : tileStyleFor(i)}

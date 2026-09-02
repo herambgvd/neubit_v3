@@ -253,15 +253,12 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
         </div>
       )}
 
-      {/* Federated note — operate-through-node covers only pan/tilt/zoom/focus;
-          presets + patrols live on the recorder, not proxied here. */}
-      {federated && (
-        <div className="flex items-center gap-1.5 border-t border-white/10 pt-2 text-[10px] text-white/45">
-          <Icon icon="heroicons-outline:cpu-chip" className="text-xs" />
-          Controlled through its recorder — presets &amp; patrols managed on the NVR
-        </div>
-      )}
-
+      {/* No federated footnote here. Operate-through-node covers pan/tilt/zoom/
+          focus and nothing else, which is why the preset/patrol sections below are
+          gated on !federated — the ABSENCE of those controls already says it. On a
+          federated install every camera is federated, so the note printed a
+          permanent caption under every PTZ pad and ate overlay height on the
+          spotlight tile without ever telling the operator something new. */}
       {/* Preset bar — local cameras only (not proxied through a node). */}
       {!federated && (
       <div className="flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-2">
