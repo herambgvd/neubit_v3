@@ -23,6 +23,11 @@ never a null that renders as 0, never infinity. The statuses:
     no_benchmark        the formula grades against a benchmark standard and one
                         of ITS inputs is missing: no standard seeded, or the
                         site's climate zone / AC-share category not set
+    not_defined         a composite names a component that has no definition —
+                        the component is DECLARED (with its weight) but nothing
+                        computes it yet. Where the composite documents the
+                        component, the refusal is that documentation: what the
+                        metric is, what measures it, what is in the way
     blocked             arithmetic refused (division by zero) or a composite
                         component refused — a composite of a refusal is a
                         refusal, and the item carries EVERY component's own
@@ -1105,6 +1110,28 @@ async def _evaluate_site_formula(
     return out
 
 
+def _undefined_reason(parent: dict, metric: str, end: dt.datetime) -> str:
+    """What to say about a component that is named but has no definition.
+
+    The bare fact — no row is effective — is the fallback, not the answer. When
+    the parent documents the component, the operator gets the sentence that
+    tells them whether the gap is a field job (a sensor nobody installed), a
+    config job (a fact nobody recorded) or a build job (a capability nobody
+    wrote). Those three need three different people, and the key alone names
+    none of them.
+    """
+    doc = ((parent.get("display") or {}).get("components") or {}).get(metric) or {}
+    label = doc.get("label") or metric
+    blocked = doc.get("blocked_by")
+    if not blocked:
+        return f"no metric `{metric}` is effective at {end.isoformat()}"
+    source = doc.get("source")
+    out = f"{label} is not defined — {blocked}"
+    if source:
+        out += f" (source: {source})"
+    return out
+
+
 async def _evaluate_site_composite(
     db: AsyncSession, tenant, defn: dict, site: dict, start, end, res, depth
 ) -> dict:
@@ -1118,9 +1145,15 @@ async def _evaluate_site_composite(
     for c in defn["components"]:
         sub_defn = await registry.effective(db, tenant, c["metric"], end)
         if sub_defn is None:
+            # A component named but not defined. "no metric `x` is effective"
+            # is TRUE and useless — it tells an operator that a key is missing,
+            # not what would make it exist. A composite may therefore document
+            # its own components (`display.components[key]`), and a pack that
+            # does gets its sentence printed instead: what the metric is, what
+            # measures it, and what is in the way. See `reporting.ccei_spec`.
             parts.append({"metric": c["metric"], "weight": c["weight"],
-                          "status": "blocked", "value": None,
-                          "reason": f"no metric `{c['metric']}` is effective at {end.isoformat()}"})
+                          "status": "not_defined", "value": None,
+                          "reason": _undefined_reason(defn, c["metric"], end)})
             continue
         sub_scope = (sub_defn.get("applies_to") or {}).get("scope", "device")
         sub = await evaluate(

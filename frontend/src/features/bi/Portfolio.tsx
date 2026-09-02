@@ -339,9 +339,9 @@ export default function Portfolio() {
               sub={
                 scoredSites.length
                   ? `mean CCEI over ${scoredSites.length} scored site(s)`
-                  : "CCEI blocked on every site — the rows say why, input by input"
+                  : "CCEI blocked on every site — the rows name which components are missing"
               }
-              title="CCEI v1 = 0.6 × intensity_score + 0.4 × hvac_health, evaluated by the metric registry per site. A composite of a refusal is a refusal: a site missing its area, its benchmark inputs, or holding frozen chillers scores a dash with the reasons attached — never an invented number."
+              title="CCEI v2 = 0.35 × EEI + 0.25 × OPI + 0.20 × CPI + 0.20 × CCI — the NEUBIT CCEI Methodology Specification v1.0, evaluated by the metric registry per site over four sub-indices and fourteen component metrics. A composite of a refusal is a refusal: the dash names every component the estate cannot yet measure, at its spec weight, and what is in the way — never an invented number."
             />
             <Kpi
               icon="heroicons:cpu-chip"
