@@ -107,44 +107,35 @@ services:
     environment:
       WATCHPACK_POLLING: "true"
     volumes:
-      - ../frontend:/app
-      # NAMED, not anonymous. An anonymous volume is invisible in `docker volume
-      # ls`, cannot be dropped without knowing its hash, and accumulates a new
-      # one per recreate — so "delete the bad node_modules" was itself a puzzle.
-      # Naming them makes the repair `docker volume rm neubit-v3_frontend_node_modules`,
-      # and the entrypoint above usually means nobody has to.
-      - frontend_node_modules:/app/node_modules
-      - frontend_next:/app/.next
+      # NO bind mount of /app, and therefore NO volumes nested inside one.
       #
-      # ADDING A VOLUME HERE NEEDS `--force-recreate`, NOT `restart`.
-      # `docker compose restart` reuses the existing container, which keeps the
-      # mount set it was CREATED with. Both volumes above sat in this file while
-      # the running container had only the `../frontend:/app` bind — `docker
-      # inspect` listed them, but `/proc/mounts` inside the container did not,
-      # and a write to /app/.next landed in the HOST checkout.
+      # The previous shape was `../frontend:/app` with named volumes at
+      # /app/node_modules and /app/.next. Docker Desktop repeatedly re-mounted
+      # the host share OVER those nested volumes — at boot, after a Desktop
+      # restart, and even mid-run after heavy host-side writes — leaving the
+      # container reading the host's darwin node_modules in a musl image. That
+      # produced ChunkLoadError reload loops, MODULE_NOT_FOUND 500s, and a
+      # container that looked healthy while failing every request. Guards were
+      # added to detect it; the honest outcome was a container that refused to
+      # start, which is a Bad Gateway for whoever is using the console.
       #
-      # That is what put a host-side production build (BUILD_ID, standalone/,
-      # hashed chunk names) and stale Turbopack output into the dev server's
-      # .next. Two routes then never emitted a client chunk, the browser 404'd
-      # on /_next/static/chunks/app/(app)/<route>/page.js, and Next's error
-      # boundary reloaded into the same missing chunk — a reload loop while
-      # every health check stayed green.
+      # So the nesting is gone. node_modules and .next now live in the
+      # container's own filesystem — node_modules baked by the `deps` stage
+      # from package-lock.json (musl binaries, correct by construction), .next
+      # rebuilt per container. Only the things that need hot reload are bound,
+      # and none of them is a parent of the other two, so there is nothing left
+      # for a re-mount to shadow.
       #
-      # It also meant the container and the host shared ONE node_modules, so
-      # the container's `npm ci` overwrote the host's darwin binaries with
-      # linux-musl ones and any host-side `npm install` broke the container.
-      # The entrypoint's "native addons are not ELF" repair was fighting that,
-      # not a corrupt install.
-      #
-      # To check: `docker exec <c> cat /proc/mounts | grep /app` must show
-      # /app/.next and /app/node_modules on their own devices, not just /app.
-      #
-      # It can also break MID-RUN (no restart, entrypoint never re-runs), so
-      # the entrypoint watches the same invariant every 20s and stops the dev
-      # server when it breaks. Known trigger besides a Docker Desktop restart:
-      # a host-side `npm ci`/`npm install` in the bind-mounted frontend/ —
-      # heavy host writes make Docker re-mount the share and the nested volumes
-      # do not return. Do package work in the container, or recreate after.
+      # Adding a NEW root-level file that Next reads (a new config, say) means
+      # adding it here. That is the cost, and it is a smaller one than a dev
+      # environment that breaks itself.
+      - ../frontend/src:/app/src
+      - ../frontend/public:/app/public
+      - ../frontend/next.config.js:/app/next.config.js
+      - ../frontend/tsconfig.json:/app/tsconfig.json
+      - ../frontend/postcss.config.js:/app/postcss.config.js
+      - ../frontend/package.json:/app/package.json
+      - ../frontend/package-lock.json:/app/package-lock.json
 
   admin-frontend:
     build:
@@ -154,12 +145,17 @@ services:
     environment:
       WATCHPACK_POLLING: "true"
     volumes:
-      - ../admin-frontend:/app
-      # Named for the same reason as the frontend's. This one has no start-up
-      # self-check because it has no dev traffic to break; if it starts failing
-      # the same way, give it the same `dev-entrypoint.sh`.
-      - admin_frontend_node_modules:/app/node_modules
-      - admin_frontend_next:/app/.next
+      # Same shape as the frontend above, for the same reason — read that note.
+      # This one was already broken by the shadow ("sh: next: not found", exit
+      # 127) because its node_modules had become the host's tree too.
+      - ../admin-frontend/src:/app/src
+      - ../admin-frontend/public:/app/public
+      - ../admin-frontend/next.config.js:/app/next.config.js
+      - ../admin-frontend/jsconfig.json:/app/jsconfig.json
+      - ../admin-frontend/postcss.config.js:/app/postcss.config.js
+      - ../admin-frontend/tailwind.config.js:/app/tailwind.config.js
+      - ../admin-frontend/package.json:/app/package.json
+      - ../admin-frontend/package-lock.json:/app/package-lock.json
 
   # ── reading-writer: DEV hot-reload. Same pattern as the other Python services.
   # The pipeline lives in the lifespan, so a reload tears the JetStream consumer
@@ -192,7 +188,10 @@ volumes:
   # The dev containers' own node_modules and build caches. Named so they can be
   # inspected and dropped by name when something does go wrong — see the
   # frontend service's note.
-  frontend_node_modules:
-  frontend_next:
-  admin_frontend_node_modules:
-  admin_frontend_next:
+  # frontend_node_modules / frontend_next / admin_frontend_node_modules /
+  # admin_frontend_next were REMOVED 2026-09-02. They were volumes nested
+  # inside a bind mount, which Docker Desktop kept shadowing; both frontends
+  # now take node_modules and .next from their own image layer instead. Drop
+  # the leftovers with:
+  #   docker volume rm neubit-v3_frontend_node_modules neubit-v3_frontend_next \
+  #     neubit-v3_admin_frontend_node_modules neubit-v3_admin_frontend_next
