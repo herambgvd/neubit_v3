@@ -19,7 +19,18 @@
     or writing while its database is dropped underneath it.
 
 .PARAMETER InFile
-    The .sql produced by backup-appliance-db.ps1.
+    The .sql produced by backup-appliance-db.ps1. The .env saved beside it is used
+    automatically unless -EnvFile says otherwise.
+
+.PARAMETER EnvFile
+    The /opt/neubit/.env saved with the dump. Its POSTGRES_PASSWORD,
+    VE_DATABASE_URL, VE_JWT_SECRET and VE_SECRETS_KEY are put back into the new
+    install's .env before the stack comes up — see backup-appliance-db.ps1 for why
+    the restore is worthless without them. Pass -NoEnv to skip deliberately.
+
+.PARAMETER NoEnv
+    Restore the databases without carrying the old secrets over. Only correct when
+    the .env was never replaced (the distro was not re-imported).
 
 .PARAMETER Distro
     The WSL distro name. Defaults to neubit-vms.
@@ -30,6 +41,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string] $InFile,
+    [string] $EnvFile = '',
+    [switch] $NoEnv,
     [string] $Distro = 'neubit-vms',
     [switch] $Yes
 )
@@ -55,6 +68,23 @@ if (-not $Yes) {
 }
 
 $inWsl = '/mnt/' + $InFile.Substring(0,1).ToLower() + ($InFile.Substring(2).Replace('\', '/'))
+
+# The secrets saved with the dump, defaulting to the sibling this backup writes.
+if (-not $NoEnv) {
+    if (-not $EnvFile) { $EnvFile = [regex]::Replace($InFile, '\.sql$', '') + '.env' }
+    if (-not (Test-Path -LiteralPath $EnvFile)) {
+        throw ("no environment file at $EnvFile. The dump alone restores a database " +
+               "the new install cannot open — its POSTGRES_PASSWORD, VE_JWT_SECRET and " +
+               "VE_SECRETS_KEY were regenerated when the distro was replaced. Find the " +
+               ".env saved with this dump, pass -EnvFile, or pass -NoEnv if you are sure " +
+               "the .env was never replaced.")
+    }
+    $EnvFile = (Resolve-Path -LiteralPath $EnvFile).Path
+    Write-Host "Secrets: $EnvFile"
+}
+$envWsl = if ($NoEnv) { '' } else {
+    '/mnt/' + $EnvFile.Substring(0,1).ToLower() + ($EnvFile.Substring(2).Replace('\', '/'))
+}
 
 $sh = @"
 set -uo pipefail
@@ -88,9 +118,38 @@ done
 echo '--- restoring ---'
 # ON_ERROR_STOP so a broken dump fails HERE, loudly, instead of half-restoring and
 # leaving a database that looks populated and is not.
-docker exec -i "`$cid" psql -U neubit -d postgres -v ON_ERROR_STOP=1 < '$inWsl'
+# `CREATE ROLE neubit;` is the first statement pg_dumpall writes, and the role
+# ALWAYS exists already — the new install's postgres created it from POSTGRES_USER
+# on first boot. Under ON_ERROR_STOP that single line aborted the entire restore
+# before one table was created; measured on a scratch cluster of the same image,
+# psql exit 3, nothing restored. Dropping the line is lossless: the `ALTER ROLE`
+# immediately after it sets every attribute and the password anyway.
+#
+# ON_ERROR_STOP stays on for everything else. The point is to fail loudly on a
+# genuinely broken dump, not to wave through the one error we have proven benign.
+grep -v '^CREATE ROLE neubit;`$' '$inWsl' | docker exec -i "`$cid" psql -U neubit -d postgres -v ON_ERROR_STOP=1
 rc=`$?
 if [ `$rc -ne 0 ]; then echo "!! restore failed (psql exit `$rc)" >&2; exit `$rc; fi
+
+# The restore has just put the OLD database password back (the dump's ALTER ROLE),
+# so the new install's freshly generated .env no longer opens its own database.
+# Carry the old secrets across before anything tries to connect. Only these four:
+# everything else in .env belongs to the NEW install (NEUBIT_VERSION, paths, the
+# ops-agent token) and must not be dragged backwards.
+if [ -n '$envWsl' ] && [ -f '$envWsl' ]; then
+  echo '--- carrying the per-install secrets across ---'
+  for k in POSTGRES_PASSWORD VE_DATABASE_URL VE_JWT_SECRET VE_SECRETS_KEY; do
+    v=`$(grep -E "^`${k}=" '$envWsl' | head -1 | cut -d= -f2-)
+    if [ -z "`$v" ]; then echo "  !! `$k missing from the saved .env" >&2; continue; fi
+    if grep -qE "^`${k}=" /opt/neubit/.env; then
+      # `|` as the delimiter: VE_DATABASE_URL contains slashes.
+      sed -i "s|^`${k}=.*|`${k}=`${v}|" /opt/neubit/.env
+    else
+      printf '%s=%s\n' "`$k" "`$v" >> /opt/neubit/.env
+    fi
+    echo "  restored `$k"
+  done
+fi
 
 echo '--- bringing the whole stack up (migrations run now) ---'
 `$COMPOSE up -d --no-build
