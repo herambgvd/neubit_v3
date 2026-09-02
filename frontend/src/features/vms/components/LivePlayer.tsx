@@ -40,6 +40,26 @@ const WHEP_MAX_ATTEMPTS = 8;
 const WHEP_RETRY_MS = 2_000;
 const HLS_COLD_RETRIES = 8;
 
+// Digital-zoom limits. WHEEL_ZOOM_STEP is per wheel EVENT (not per delta pixel)
+// so a mouse notch and a trackpad flick move the same amount.
+const MAX_ZOOM = 5;
+const WHEEL_ZOOM_STEP = 0.25;
+
+// ── connect budgets ────────────────────────────────────────────────────────
+// How long one tile may HOLD a connectGate slot while its connection forms. The
+// gate exists to stop the wall bursting the NVR's connection ceiling, but a
+// camera that is off answers WHEP 404 for the full 8 x 2s ladder and then burns
+// the HLS cold-retry budget on top — all while holding one of MAX(4) slots. On a
+// 131-camera recorder that is the whole wall stuck on "Connecting…": the dead
+// tiles own every slot and the live ones never get one. After this the tile keeps
+// trying on its own, it just stops blocking the queue.
+const GATE_MAX_HOLD_MS = 12_000;
+// How long a tile may sit on the spinner at all. Past this the ladder is stopped
+// and the tile says NO VIDEO with a Retry — an operator learns nothing from a
+// spinner that has been turning for a minute, and the abandoned retry loop is
+// load on a recorder that has already said no.
+const CONNECT_DEADLINE_MS = 20_000;
+
 // Silence AbortError rejection NOISE, once, process-wide. When we abort in-flight
 // WHEP fetch(es) / body reads on unmount, Chrome reports the rejection to
 // `unhandledrejection` in the SAME microtask — sometimes BEFORE the awaiting
@@ -181,17 +201,75 @@ function LivePlayer({
     else v.pause();
   }, []);
 
-  const zoomBy = useCallback((delta) => {
-    setZoom((z) => {
-      const next = Math.min(5, Math.max(1, +(z + delta).toFixed(2)));
-      if (next === 1) setPan({ x: 0, y: 0 });
-      return next;
-    });
+  // Live refs so the wheel listener — registered ONCE, non-passive — reads the
+  // current zoom/pan without being torn down and re-added on every zoom step.
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const panRef = useRef(pan);
+  panRef.current = pan;
+
+  // Pan is clamped to the frame: at scale z the picture overhangs its box by
+  // (z-1)/2 per side, so translating further than that just drags black in.
+  const clampPan = (p, z, el) => {
+    const r = el?.getBoundingClientRect?.();
+    if (!r) return p;
+    const mx = ((z - 1) * r.width) / 2;
+    const my = ((z - 1) * r.height) / 2;
+    return { x: Math.min(mx, Math.max(-mx, p.x)), y: Math.min(my, Math.max(-my, p.y)) };
+  };
+
+  // Zoom about a POINT (client coords) — the pixel under the cursor stays under
+  // the cursor, which is what makes wheel-zoom feel like the NVR's rather than
+  // like a slider. The frame paints as translate(pan) scale(z) about the element
+  // centre, so a point d from that centre lands at pan + z·d; holding it still
+  // while z → z' gives pan' = d − k(d − pan), k = z'/z. Passing a null point
+  // (the +/− buttons) zooms about the centre, where that reduces to pan' = k·pan.
+  const zoomAt = useCallback((delta, clientX = null, clientY = null) => {
+    const el = videoRef.current;
+    const z = zoomRef.current;
+    const next = Math.min(MAX_ZOOM, Math.max(1, +(z + delta).toFixed(2)));
+    if (next === z) return;
+    if (next === 1) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const k = next / z;
+    const r = el?.getBoundingClientRect?.();
+    const p = panRef.current;
+    let dx = 0;
+    let dy = 0;
+    if (r && clientX != null) {
+      dx = clientX - (r.left + r.width / 2);
+      dy = clientY - (r.top + r.height / 2);
+    }
+    setZoom(next);
+    setPan(clampPan({ x: dx - k * (dx - p.x), y: dy - k * (dy - p.y) }, next, el));
   }, []);
+
+  const zoomBy = useCallback((delta) => zoomAt(delta), [zoomAt]);
   const resetZoom = useCallback(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }, []);
+
+  // Wheel-to-zoom over the picture, like the NVR. React's onWheel is delegated
+  // from the root as a PASSIVE listener, so preventDefault there is a no-op and
+  // the page would scroll out from under the operator mid-zoom; owning the
+  // gesture means registering our own non-passive listener.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return undefined;
+    const onWheel = (e) => {
+      e.preventDefault();
+      // Normalise to one step per EVENT: a mouse notch reports ~±100 and a
+      // trackpad a stream of small deltas, and scaling by the raw delta makes
+      // the two feel like different controls.
+      zoomAt(e.deltaY < 0 ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP, e.clientX, e.clientY);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
 
   // Pan the zoomed frame by dragging.
   const onPanDown = (e) => {
@@ -200,7 +278,16 @@ function LivePlayer({
   };
   const onPanMove = (e) => {
     if (!panDrag.current) return;
-    setPan({ x: panDrag.current.px + (e.clientX - panDrag.current.sx), y: panDrag.current.py + (e.clientY - panDrag.current.sy) });
+    setPan(
+      clampPan(
+        {
+          x: panDrag.current.px + (e.clientX - panDrag.current.sx),
+          y: panDrag.current.py + (e.clientY - panDrag.current.sy),
+        },
+        zoomRef.current,
+        videoRef.current,
+      ),
+    );
   };
   const onPanUp = () => {
     panDrag.current = null;
@@ -250,7 +337,42 @@ function LivePlayer({
     const releaseGate = () => {
       if (slotReleased) return;
       slotReleased = true;
+      if (gateTimer) {
+        clearTimeout(gateTimer);
+        gateTimer = null;
+      }
       releaseSlot();
+    };
+
+    // Two timers bound how long this attach may cost the rest of the wall.
+    //   gateTimer     — hands our gate slot on after GATE_MAX_HOLD_MS even though
+    //                   we are still connecting, so one unreachable camera cannot
+    //                   sit in the queue's way. We keep trying without the slot.
+    //   deadlineTimer — gives up entirely after CONNECT_DEADLINE_MS.
+    let gateTimer = null;
+    let deadlineTimer = null;
+
+    // A connection SETTLED — playing, or the ladder is out of options. Frees the
+    // slot and cancels the deadline (nothing left to time out).
+    const settle = () => {
+      if (deadlineTimer) {
+        clearTimeout(deadlineTimer);
+        deadlineTimer = null;
+      }
+      releaseGate();
+    };
+
+    // Stop trying and say so. `disposed` is the flag every retry loop already
+    // checks before rescheduling, so setting it here unwinds the whole ladder
+    // (WHEP retries, HLS cold retries) instead of leaving it hammering a recorder
+    // that has answered. Retry re-mounts the engine via the `attach` counter.
+    const giveUp = (msg) => {
+      if (disposed) return;
+      disposed = true;
+      setError(msg);
+      setLoading(false);
+      settle();
+      cleanup();
     };
 
     setLoading(true);
@@ -327,7 +449,7 @@ function LivePlayer({
         else {
           setError("Stream is unavailable right now.");
           setLoading(false);
-          releaseGate();
+          settle();
         }
       };
 
@@ -350,7 +472,7 @@ function LivePlayer({
           if (evt.streams[0]) {
             video.srcObject = evt.streams[0];
             setLoading(false);
-            releaseGate();
+            settle();
             onReady?.("webrtc");
             if (autoPlay) video.play().catch(() => {});
           }
@@ -476,7 +598,7 @@ function LivePlayer({
         nativeLoaded = () => {
           if (disposed) return;
           setLoading(false);
-          releaseGate();
+          settle();
           onReady?.("hls");
           if (autoPlay) video.play().catch(() => {});
         };
@@ -486,7 +608,7 @@ function LivePlayer({
           else {
             setError("Stream is unavailable right now.");
             setLoading(false);
-            releaseGate();
+            settle();
           }
         };
         video.addEventListener("loadedmetadata", nativeLoaded);
@@ -502,7 +624,7 @@ function LivePlayer({
           else {
             setError("This browser cannot play the stream.");
             setLoading(false);
-            releaseGate();
+            settle();
           }
           return;
         }
@@ -524,7 +646,7 @@ function LivePlayer({
           if (disposed) return;
           warmedUp = true;
           setLoading(false);
-          releaseGate();
+          settle();
           onReady?.("hls");
           if (autoPlay) video.play().catch(() => {});
         });
@@ -562,7 +684,7 @@ function LivePlayer({
             }
             setError("Stream is unavailable right now.");
             setLoading(false);
-            releaseGate();
+            settle();
             return;
           }
 
@@ -589,7 +711,7 @@ function LivePlayer({
                 } catch {
                   setError("Stream is unavailable right now.");
                   setLoading(false);
-                  releaseGate();
+                  settle();
                 }
                 break;
               default:
@@ -603,7 +725,7 @@ function LivePlayer({
                 }
                 setError("Stream is unavailable right now.");
                 setLoading(false);
-                releaseGate();
+                settle();
             }
           }
         });
@@ -611,7 +733,7 @@ function LivePlayer({
         if (!disposed) {
           setError("Player failed to initialise.");
           setLoading(false);
-          releaseGate();
+          settle();
         }
       }
     };
@@ -623,9 +745,14 @@ function LivePlayer({
     // slot we were just handed and bail without opening a connection.
     acquireSlot().then(() => {
       if (disposed) {
-        releaseGate();
+        settle();
         return;
       }
+      gateTimer = setTimeout(releaseGate, GATE_MAX_HOLD_MS);
+      deadlineTimer = setTimeout(
+        () => giveUp("No video — the camera did not start streaming."),
+        CONNECT_DEADLINE_MS,
+      );
       // startWebRTC/startHLS own their errors; swallow any stray rejection
       // (e.g. an aborted signal on unmount) so it never floats unhandled.
       if (preferWebrtc && webrtcUrl) startWebRTC().catch(() => {});
@@ -636,8 +763,9 @@ function LivePlayer({
       disposed = true;
       // Unmount is a settle point: free our slot (whether still queued, mid-
       // connect, or already settled — releaseGate is idempotent) so the next
-      // tile can proceed and the gate never deadlocks.
-      releaseGate();
+      // tile can proceed and the gate never deadlocks, and drop both budget
+      // timers so neither fires against a torn-down player.
+      settle();
       cleanup();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -722,26 +850,57 @@ function LivePlayer({
 
       {/* Loading / warming-up overlay */}
       {busy && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/60 text-white/85">
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/60 text-white/85">
           <Icon icon="svg-spinners:180-ring" className="text-2xl" />
           <p className="text-xs">{ready ? "Connecting…" : "Starting stream…"}</p>
         </div>
       )}
 
-      {/* Error / retry overlay */}
+      {/* No-video / retry overlay. On a wall tile (`minimal`) this is the NVR's
+          NO VIDEO card — a flat dark cell, a struck-through camera, the reason in
+          small type — not a red alert box: on a 64-tile wall a dozen red triangles
+          read as an incident when they only mean a dozen cameras are off. The
+          detail/modal player keeps the louder treatment, where one failure IS the
+          whole screen and the operator asked for that camera specifically.
+
+          The tile card sits at z-[4], not z-20: it must cover the picture but stay
+          UNDER a host's own bottom strip (the wall tile paints the camera name at
+          z-10), so a tile that loses video does not also lose its label. The
+          control cluster is z-30 and stays reachable over both. */}
       {playError && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 px-4 text-center">
-          <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl text-red-400" />
-          <p className="max-w-sm text-xs text-red-200">{playError}</p>
-          <button
-            type="button"
-            onClick={retry}
-            className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500"
-          >
-            <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
-            Retry
-          </button>
-        </div>
+        minimal ? (
+          <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center">
+            <Icon icon="heroicons-outline:video-camera-slash" className="text-2xl text-white/25" />
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[2px] text-white/50">
+              No video
+            </p>
+            <p className="line-clamp-2 max-w-full text-[10px] leading-tight text-white/30">{playError}</p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                retry();
+              }}
+              className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-[#22d3ee] hover:text-[#67e8f9]"
+            >
+              <Icon icon="heroicons-outline:arrow-path" className="text-[11px]" />
+              Retry
+            </button>
+          </div>
+        ) : (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 px-4 text-center">
+            <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl text-red-400" />
+            <p className="max-w-sm text-xs text-red-200">{playError}</p>
+            <button
+              type="button"
+              onClick={retry}
+              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500"
+            >
+              <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
+              Retry
+            </button>
+          </div>
+        )
       )}
 
       {/* LIVE badge */}
@@ -752,35 +911,52 @@ function LivePlayer({
         </span>
       )}
 
-      {/* Player controls — play/pause + digital zoom + fit toggle. Available on
-          EVERY player (wall tiles too); surfaced on hover (or whenever zoomed).
-          Bottom-right so it never collides with the tile's own top-right toolbar. */}
-      {!busy && !playError && (
-        <div
-          className={`absolute bottom-2 right-2 z-20 flex items-center gap-0.5 rounded-[9px] border border-white/15 bg-black/55 p-0.5 backdrop-blur-xs transition-opacity ${
-            zoom > 1 ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-          }`}
-        >
-          {extraControls && (
-            <>
-              {extraControls}
-              <span className="mx-0.5 h-4 w-px bg-white/15" />
-            </>
-          )}
-          <PlayerBtn icon={paused ? "heroicons-solid:play" : "heroicons-solid:pause"} title={paused ? "Play" : "Pause"} onClick={togglePlay} />
-          <span className="mx-0.5 h-4 w-px bg-white/15" />
-          <PlayerBtn icon="heroicons-outline:magnifying-glass-minus" title="Zoom out" onClick={() => zoomBy(-0.5)} disabled={zoom <= 1} />
-          {zoom > 1 && <span className="px-0.5 font-mono text-[10px] tabular-nums text-white/80">{zoom.toFixed(1)}×</span>}
-          <PlayerBtn icon="heroicons-outline:magnifying-glass-plus" title="Zoom in" onClick={() => zoomBy(0.5)} disabled={zoom >= 5} />
-          {zoom > 1 && <PlayerBtn icon="heroicons-outline:arrow-uturn-left" title="Reset zoom" onClick={resetZoom} />}
-          <span className="mx-0.5 h-4 w-px bg-white/15" />
-          <PlayerBtn
-            icon={fitMode === "cover" ? "mdi:fit-to-screen-outline" : "mdi:crop-free"}
-            title={fitMode === "cover" ? "Fit whole frame (no crop)" : "Fill tile (crop edges)"}
-            onClick={() => setFitMode((m) => (m === "cover" ? "contain" : "cover"))}
-          />
-        </div>
-      )}
+      {/* Player controls — the host's own buttons (spotlight / remove on a wall
+          tile) plus play/pause, digital zoom and the fit toggle. Surfaced on hover,
+          or whenever zoomed.
+          
+          This bar renders in EVERY state, including while connecting and after a
+          failure. It used to be gated on `!busy && !playError`, which meant the one
+          tile an operator most wants to act on — the one spinning on "Connecting…"
+          because its camera is off — was the one tile with no Remove button, and
+          the only way off the wall was Clear-all or a bigger layout. The video
+          controls disable themselves when there is no picture to act on; the host's
+          buttons stay live, because removing a dead tile is not a video action. */}
+      <div
+        className={`absolute bottom-2 right-2 z-30 flex items-center gap-0.5 rounded-[9px] border border-white/15 bg-black/55 p-0.5 backdrop-blur-xs transition-opacity ${
+          zoom > 1 ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+        }`}
+      >
+        {extraControls && (
+          <>
+            {extraControls}
+            <span className="mx-0.5 h-4 w-px bg-white/15" />
+          </>
+        )}
+        <PlayerBtn
+          icon={paused ? "heroicons-solid:play" : "heroicons-solid:pause"}
+          title={paused ? "Play" : "Pause"}
+          onClick={togglePlay}
+          disabled={busy || !!playError}
+        />
+        <span className="mx-0.5 h-4 w-px bg-white/15" />
+        <PlayerBtn icon="heroicons-outline:magnifying-glass-minus" title="Zoom out" onClick={() => zoomBy(-0.5)} disabled={zoom <= 1} />
+        {zoom > 1 && <span className="px-0.5 font-mono text-[10px] tabular-nums text-white/80">{zoom.toFixed(1)}×</span>}
+        <PlayerBtn
+          icon="heroicons-outline:magnifying-glass-plus"
+          title="Zoom in (or scroll over the picture)"
+          onClick={() => zoomBy(0.5)}
+          disabled={zoom >= MAX_ZOOM || busy || !!playError}
+        />
+        {zoom > 1 && <PlayerBtn icon="heroicons-outline:arrow-uturn-left" title="Reset zoom" onClick={resetZoom} />}
+        <span className="mx-0.5 h-4 w-px bg-white/15" />
+        <PlayerBtn
+          icon={fitMode === "cover" ? "mdi:fit-to-screen-outline" : "mdi:crop-free"}
+          title={fitMode === "cover" ? "Fit whole frame (no crop)" : "Fill tile (crop edges)"}
+          onClick={() => setFitMode((m) => (m === "cover" ? "contain" : "cover"))}
+          disabled={busy || !!playError}
+        />
+      </div>
 
       {/* Chrome (hover) — hidden entirely in `minimal` mode */}
       {!minimal && !playError && (

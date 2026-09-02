@@ -30,12 +30,9 @@
 import { memo, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { useAuth } from "@/lib/auth";
 import { vms } from "../api";
 import LivePlayer, { PlayerBtn } from "./LivePlayer";
-import PtzOverlay from "./PtzOverlay";
 import { STATUS_PRESETS } from "../constants";
-import { isPtzCapable } from "../formUtils";
 
 const EDGE = {
   online: "bg-emerald-500",
@@ -45,13 +42,16 @@ const EDGE = {
   unknown: "bg-amber-500",
 };
 
+// Statuses the estate reports for a camera that CANNOT be streamed right now.
+// A tile in one of these does not dial the recorder at all (see below).
+const DARK_STATUSES = new Set(["offline", "error"]);
+
 function WallTile({
   index,
   cameraId,
   camera,
   profile = "sub",
   isHero = false,
-  spotlight = false, // fills the whole wall → room for the PTZ overlay
   railDragging = false,
   // True once the camera list has ANSWERED (local + federated). Until then a tile
   // restored from storage knows its camera id but not whether that camera is
@@ -68,7 +68,10 @@ function WallTile({
 }: any) {
   const rootRef = useRef<any>(null);
   const [dropActive, setDropActive] = useState(false);
-  const { can } = useAuth();
+  // "Try anyway" on a dark tile. The estate's status is a poll result and can be a
+  // minute stale, so the operator keeps the final say — but the DEFAULT must be to
+  // believe it, because dialling a camera that is off is what jams the wall.
+  const [forceLive, setForceLive] = useState(false);
 
   // Federated (recorder-owned) cameras stream THROUGH their node: mint/renew a
   // node-issued live token via /vms/federation. Local VMS cameras use LivePlayer's
@@ -88,6 +91,23 @@ function WallTile({
       release: async () => {},
     };
   }, [fedNodeId, fedRealId]);
+
+  // The tile's OWN buttons. They ride inside the player's control bar when there
+  // is a player (one cluster, not two) and stand alone on a dark tile — either
+  // way spotlight/remove are always within reach.
+  const tileControls = useMemo(
+    () => (
+      <>
+        <PlayerBtn
+          icon="heroicons-outline:arrows-pointing-out"
+          title="Spotlight (double-click)"
+          onClick={() => onSpotlight?.(index)}
+        />
+        <PlayerBtn icon="heroicons-outline:x-mark" title="Remove from wall" onClick={() => onClose?.(index)} />
+      </>
+    ),
+    [index, onSpotlight, onClose],
+  );
 
   const onDragOver = (e) => {
     // Accept a rail camera, a whole rail branch (a recorder), or another tile.
@@ -182,6 +202,18 @@ function WallTile({
   const preset = STATUS_PRESETS[status] || STATUS_PRESETS.unknown;
   const edge = EDGE[status] || EDGE.unknown;
 
+  // A camera the estate reports as offline/error gets NO player: we already know
+  // the answer, and asking anyway is not free. Each attempt holds one of the four
+  // connectGate slots through a 16s WHEP-404 ladder plus the HLS cold-retry
+  // budget, so on a recorder with a hundred dark channels the dead tiles own the
+  // queue and the LIVE ones never connect — which is exactly the wall that showed
+  // 64 tiles all saying "Connecting…". Skipping them is both the honest picture
+  // and what makes the rest of the wall come up.
+  const dark = DARK_STATUSES.has(status) && !forceLive;
+  // Once the camera comes back the override has done its job — drop it, so a
+  // later outage darkens the tile again instead of dialling forever.
+  if (forceLive && !DARK_STATUSES.has(status)) setForceLive(false);
+
   return (
     <div
       ref={rootRef}
@@ -220,26 +252,54 @@ function WallTile({
         </span>
       )}
 
-      {/* Player — full-bleed, minimal (the tile owns the overlays). */}
-      <LivePlayer
-        key={`${cameraId}:${profile}`}
-        cameraId={camera?.federated ? camera.real_id : cameraId}
-        cameraName={name}
-        profile={profile}
-        source={source}
-        // Wait for the estate list, then start once, correctly. `camera` being
-        // present is enough on its own — the answer has arrived for this tile.
-        enabled={estateReady || !!camera}
-        minimal
-        fit="contain"
-        className="!rounded-none h-full w-full"
-        extraControls={
-          <>
-            <PlayerBtn icon="heroicons-outline:arrows-pointing-out" title="Spotlight (double-click)" onClick={() => onSpotlight?.(index)} />
-            <PlayerBtn icon="heroicons-outline:x-mark" title="Remove from wall" onClick={() => onClose?.(index)} />
-          </>
-        }
-      />
+      {/* Dark camera — the NVR's NO VIDEO cell, not a spinner. It says which
+          state the estate reported, offers the same spotlight/remove cluster the
+          live tiles have, and lets the operator overrule a stale status. */}
+      {dark ? (
+        <>
+          <div className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center">
+            <Icon icon="heroicons-outline:video-camera-slash" className={`text-white/25 ${isHero ? "text-4xl" : "text-2xl"}`} />
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[2px] text-white/50">No video</p>
+            <p className="text-[10px] text-white/30">Camera {preset.label.toLowerCase()}</p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setForceLive(true);
+              }}
+              className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-[#22d3ee] hover:text-[#67e8f9]"
+            >
+              <Icon icon="heroicons-outline:arrow-path" className="text-[11px]" />
+              Try anyway
+            </button>
+          </div>
+          {/* The controls are a SIBLING of the placeholder, not a child: the
+              placeholder is a positioned z-[3] box and therefore its own stacking
+              context, so anything inside it is trapped below the tile's z-10 name
+              strip and the buttons would sit under that gradient. Out here they
+              layer with the live tiles' control bar, at the same z and the same
+              spot, which is also what makes the two states feel like one tile. */}
+          <div className="absolute bottom-2 right-2 z-20 flex items-center gap-0.5 rounded-[9px] border border-white/15 bg-black/55 p-0.5 opacity-0 backdrop-blur-xs transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {tileControls}
+          </div>
+        </>
+      ) : (
+        /* Player — full-bleed, minimal (the tile owns the overlays). */
+        <LivePlayer
+          key={`${cameraId}:${profile}`}
+          cameraId={camera?.federated ? camera.real_id : cameraId}
+          cameraName={name}
+          profile={profile}
+          source={source}
+          // Wait for the estate list, then start once, correctly. `camera` being
+          // present is enough on its own — the answer has arrived for this tile.
+          enabled={estateReady || !!camera}
+          minimal
+          fit="contain"
+          className="!rounded-none h-full w-full"
+          extraControls={tileControls}
+        />
+      )}
 
       {/* Bottom gradient info strip — slim (mockup): name + status only. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center gap-1.5 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-5">
@@ -253,26 +313,12 @@ function WallTile({
         )}
       </div>
 
-      {/* PTZ overlay — only when this tile fills the wall (spotlight) and the
-          camera is PTZ-capable. Kept off dense grid tiles to avoid clutter.
-          Stop drag/double-click from bubbling to the tile while operating it. */}
-      {spotlight && (isPtzCapable(camera) || camera?.federated) && (
-        <div
-          className="absolute bottom-3 left-3 z-30 max-w-[min(28rem,calc(100%-1.5rem))]"
-          draggable={false}
-          onDragStart={(e) => e.preventDefault()}
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          {/* Federated cameras route PTZ THROUGH their owning recorder (operate-
-              through-node); local cameras use the local control plane. */}
-          <PtzOverlay
-            cameraId={camera?.federated ? camera.real_id : cameraId}
-            canControl={can("vms.ptz.control")}
-            fedNodeId={camera?.federated ? camera.node_id : null}
-            fedRealId={camera?.federated ? camera.real_id : null}
-          />
-        </div>
-      )}
+      {/* No PTZ pad on the wall. A spotlighted tile used to carry the full
+          pan/tilt/zoom/focus overlay bottom-left; it is off for now by request.
+          The control surface itself is untouched and still reaches PTZ cameras
+          from the camera detail view and the live-player modal (PtzOverlay is
+          mounted by FederatedCameraDetail and LivePlayerModal) — this only stops
+          it from sitting on top of the wall's picture. */}
 
     </div>
   );
