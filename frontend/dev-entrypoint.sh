@@ -159,9 +159,48 @@ child=$!
 # Forward the stop signal, or `docker compose stop` waits out its whole timeout.
 trap 'kill -TERM "$child" 2>/dev/null' TERM INT
 
+# ── RUNTIME shadow watchdog ──────────────────────────────────────────────────
+# The start-up check above is NOT enough: observed 2026-09-01, a container that
+# booted with its volumes correctly attached had them SHADOWED while running —
+# Docker Desktop re-mounted the host share over the nested volume mounts with
+# no restart (RestartCount 0, entrypoint never re-ran). The dev server then
+# served 500s with MODULE_NOT_FOUND on next/swc, because /app/node_modules had
+# silently become the HOST's darwin tree.
+#
+# TRIGGER, caught in the act by this watchdog minutes after it was written: a
+# host-side `npm ci` in the bind-mounted frontend/ directory. Heavy writes from
+# the host into the shared path make Docker Desktop re-mount the share, and the
+# nested volumes do not come back with it. So it is not only Docker restarts —
+# running npm/yarn on the host while the container is up will do it. Recreate
+# afterwards, or do package work inside the container.
+#
+# A degraded-but-running container is the worst outcome: health checks pass,
+# the port answers, and every request fails. So watch the same device-id
+# invariant while running and EXIT when it breaks — an exited container with
+# the reason in its logs is honest, and the fix is one documented command.
+(
+  while sleep 20; do
+    kill -0 "$child" 2>/dev/null || exit 0
+    if [ "$(stat -c %d /app 2>/dev/null)" = "$(stat -c %d /app/.next 2>/dev/null)" ]; then
+      echo "════════════════════════════════════════════════════════════════════"
+      echo "[dev-entrypoint] VOLUMES WENT SHADOWED WHILE RUNNING — stopping."
+      echo "  /app/.next is back on the same device as /app: Docker Desktop"
+      echo "  re-mounted the host share over the named volumes mid-run. The dev"
+      echo "  server would serve 500s and write container output into the HOST"
+      echo "  checkout, so it is being stopped instead."
+      echo "  Fix:  docker compose up -d --force-recreate frontend"
+      echo "════════════════════════════════════════════════════════════════════"
+      kill -TERM "$child" 2>/dev/null
+      exit 0
+    fi
+  done
+) &
+watchdog=$!
+
 started=$(date +%s)
 wait "$child" || status=$?
 status=${status:-0}
+kill "$watchdog" 2>/dev/null
 elapsed=$(( $(date +%s) - started ))
 
 if [ "$status" -ne 0 ] && [ "$elapsed" -lt 30 ]; then

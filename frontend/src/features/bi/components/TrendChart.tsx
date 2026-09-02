@@ -35,6 +35,22 @@ export interface Bucket {
   txt_last: string | null;
 }
 
+// Axis ticks across [lo, hi].
+//
+// THE LOOP BOUND IS RELATIVE, NOT ABSOLUTE, and that is the whole point of this
+// function's history: it used to end at `v <= hi + 1e-9`, a fixed epsilon meant
+// as float-comparison slack. For an ordinary series that is invisible. For a
+// series living far below 1e-9 it is catastrophic — a point pinned at 1e-21
+// gives lo/hi ≈ 1e-21 and step ≈ 5e-23, so `hi + 1e-9` is effectively 1e-9 and
+// the loop needs ~2e13 iterations to reach it. The console froze solid, then
+// died with "RangeError: Invalid array length" once push passed 2^32 entries.
+// Such values are real here (a KW point reporting 1.0e-21 is this estate's
+// idea of zero), so the slack has to scale with the step it is slackening.
+//
+// The count cap is defence in depth, not the fix: no arithmetic bug in here
+// should ever be able to hang the whole console again.
+const MAX_TICKS = 64;
+
 function niceTicks(lo: number, hi: number): number[] {
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [];
   if (hi === lo) return [lo];
@@ -42,13 +58,30 @@ function niceTicks(lo: number, hi: number): number[] {
   const step = Math.pow(10, Math.floor(Math.log10(span / 3)));
   const mult = [1, 2, 2.5, 5, 10].find((m) => span / (step * m) <= 4) ?? 10;
   const s = step * mult;
+  if (!Number.isFinite(s) || s <= 0) return [lo, hi];
+  const eps = s * 1e-6;
   const out: number[] = [];
-  for (let v = Math.ceil(lo / s) * s; v <= hi + 1e-9; v += s) out.push(Number(v.toFixed(6)));
+  for (let v = Math.ceil(lo / s) * s; v <= hi + eps && out.length < MAX_TICKS; v += s) {
+    out.push(v);
+  }
   return out;
 }
 
-const fmtTick = (v: number) =>
-  Math.abs(v) >= 1000 ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : String(Number(v.toFixed(2)));
+// `toFixed(2)` collapses everything below 0.005 to "0", so a series living at
+// 1e-21 would print an axis of identical zeros — three ticks all reading 0 is
+// not a scale, it is a lie about one. Very small magnitudes get exponential
+// notation instead; exact zero stays "0".
+const fmtTick = (v: number) => {
+  if (v === 0) return "0";
+  const a = Math.abs(v);
+  if (a >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  // Two decimals, not one: the flat-series pad is ±5%, so adjacent ticks differ
+  // in the third significant figure — `toExponential(1)` printed 1.0e-21 twice
+  // for the very series that exposed this function, which is the same
+  // identical-labels lie one scale down.
+  if (a < 0.01) return v.toExponential(2);
+  return String(Number(v.toFixed(2)));
+};
 
 export default function TrendChart({
   buckets = [],

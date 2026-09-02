@@ -13,10 +13,14 @@ owners, and until this change the platform could state none of them:
    (core, migration 0018), typed beside the address, and reaches this store as
    `site_facts` through the site-facts event mirror. NULL means NOT RECORDED.
 3. **A benchmark standard** — the bands that turn a number into a grade.
-   Since migration 0016 one IS loaded (BEE Star Rating for Office Buildings,
-   February 2009, cited verbatim), but a band still renders only when the
-   site's climate zone and AC-share category are RECORDED and the EPI is
-   computable — see `benchmark_state()` for how each missing input is named.
+   TWO versions are loaded (BEE Star Rating for Office Buildings: February
+   2009 via migration 0016, and the January-2022 straight-line-equation
+   revision via 0017, both cited verbatim); the version in force is the
+   latest whose effective date ≤ the window end. A band still renders only
+   when the version's site inputs are RECORDED (zone + AC category for 2009;
+   zone + `ac_share_percent` for 2022, size category derived from the area)
+   and the EPI is computable — see `benchmark_state()` for how each missing
+   input is named.
 
 EVERY ONE OF THOSE CAN BE MISSING, AND MISSING IS AN ANSWER
 ------------------------------------------------------------
@@ -272,52 +276,86 @@ async def benchmark_state(
     tenant: uuid.UUID | None,
     site_id: uuid.UUID,
     epi_value: float | None,
+    *,
+    as_of: dt.datetime | None = None,
 ) -> dict:
     """What band this EPI falls into — or exactly which input is missing.
 
-    A rating scheme is a PUBLISHED document, and since migration 0016 one IS
-    loaded: BEE Star Rating for Office Buildings (February 2009), Annexure 4,
-    seeded verbatim with its citation (`benchmark_standards`). A band still
-    renders ONLY when everything it needs exists:
+    A rating scheme is a PUBLISHED document, and two versions ARE loaded:
+    BEE Star Rating for Office Buildings, February 2009 (migration 0016,
+    Annexure 4 fixed ranges) and the January-2022 revision (migration 0017,
+    straight-line equations in the AC-share percentage, per building size
+    category). WHICH VERSION APPLIES is the latest whose effective date ≤
+    `as_of` (callers pass the evaluation window's end) — jan-2022 for today's
+    windows, feb-2009 for historical windows ending before 2022. A band still
+    renders ONLY when everything the version in force needs exists:
 
-      1. the standard        — loaded, cited (available=True names it);
-      2. the site's climate zone and AC-share category — OPERATOR inputs on
-         `benchmark_site_config` (BEE's bands differ by both). NULL means NOT
-         RECORDED and the band is blocked naming which one;
-      3. a computable EPI    — blocked upstream (no area → no EPI, and the
+      1. the standard version — loaded, cited (available=True names it);
+      2. the site's inputs — OPERATOR statements on `benchmark_site_config`:
+         climate zone (both versions), `ac_category` (feb-2009) or
+         `ac_share_percent` (jan-2022, a continuous 0–100 percentage), plus
+         the recorded built-up area (jan-2022 derives Large/Medium/Small from
+         it). NULL means NOT RECORDED and the band is blocked naming which
+         input, exactly;
+      3. a computable EPI     — blocked upstream (no area → no EPI, and the
          `blocked` list already says so).
 
     The blocked state names BOTH what exists and what is missing: a standard
-    sitting loaded while the zone is unset is a different situation from no
+    sitting loaded while an input is unset is a different situation from no
     standard at all, and the screen should say which one it is in.
     """
     from ..metric_registry.evaluator import _band_for, resolve_benchmark
 
-    resolved = await resolve_benchmark(db, tenant, site_id)
+    resolved = await resolve_benchmark(db, tenant, site_id, as_of=as_of)
     if not resolved.get("ok"):
         has_standard = resolved.get("standard") is not None
+        missing = resolved.get("missing")
         return {
+            # Spread the resolver's own result rather than re-listing fields:
+            # it carries every fact ESTABLISHED before the refusal (citation,
+            # zone, size category, recorded area), and a hand-maintained list
+            # here silently dropped them — a cited standard rendered as
+            # uncited and a recorded zone as unset, which is the opposite of
+            # what this blocked state is for.
+            **{k: v for k, v in resolved.items() if k != "ok"},
             "available": has_standard,
-            "standard": resolved.get("standard"),
-            "version": resolved.get("version"),
+            "missing": missing,
             "reason": resolved["reason"],
             "what_it_needs": (
-                "Record the site's climate zone and air-conditioned-share "
-                "category on the benchmark config (PUT /bi/rating/benchmark-config); "
-                "nothing derives a zone from a city name."
+                (
+                    f"Record `{missing}` "
+                    + (
+                        "in Configurations → Sites."
+                        if missing == "gross_floor_area_sqm"
+                        else "on the benchmark config "
+                             "(PUT /bi/rating/benchmark-config)."
+                    )
+                    + " Nothing is derived or defaulted."
+                    if missing
+                    else "Record the site's benchmark inputs on the benchmark "
+                         "config (PUT /bi/rating/benchmark-config); nothing "
+                         "derives a zone from a city name."
+                )
                 if has_standard
                 else "A benchmark table — standard name, version, climate zone and "
                      "the EPI boundaries — seeded WITH its citation."
             ),
         }
+    ctx = resolved.get("context") or (
+        f"zone {resolved['zone']}, {resolved.get('ac_category')}"
+    )
     out = {
         "available": True,
         "standard": resolved["standard"],
         "version": resolved["version"],
+        "kind": resolved.get("kind"),
         "title": resolved.get("title"),
         "citation": resolved.get("citation"),
         "zone": resolved["zone"],
-        "ac_category": resolved["ac_category"],
+        "ac_category": resolved.get("ac_category"),
+        "size_category": resolved.get("size_category"),
+        "ac_share_percent": resolved.get("ac_share_percent"),
+        "context": resolved.get("context"),
         "band_table": resolved.get("band_table"),
         "band_unit": resolved.get("unit"),
         "what_it_needs": None,
@@ -325,9 +363,9 @@ async def benchmark_state(
     if epi_value is None:
         out["reason"] = (
             f"{resolved['title']} ({resolved['version']}) is loaded and the "
-            f"site's zone ({resolved['zone']}) and AC category "
-            f"({resolved['ac_category']}) are set — the band renders as soon as "
-            f"the EPI is computable; see `blocked` for what still stops it."
+            f"site's benchmark inputs ({ctx}) are set — the band renders as "
+            f"soon as the EPI is computable; see `blocked` for what still "
+            f"stops it."
         )
         return out
     band = _band_for(resolved["band_table"], float(epi_value))
@@ -335,17 +373,15 @@ async def benchmark_state(
         out["reason"] = (
             f"EPI {epi_value:.1f} {resolved.get('unit') or ''} is above the "
             f"1-star upper bound — the scheme awards no star at this intensity. "
-            f"Graded against {resolved['title']} ({resolved['version']}), zone "
-            f"{resolved['zone']}, {resolved['ac_category']}."
+            f"Graded against {resolved['title']} ({resolved['version']}), {ctx}."
         )
         return out
     out["band"] = band
     out["reason"] = (
         f"{band['stars']}-star band per {resolved['title']} "
-        f"({resolved['version']}), zone {resolved['zone']}, "
-        f"{resolved['ac_category']}. NOTE the scheme's EPI excludes on-site "
-        f"renewable generation and basement area — confirm the measured supply "
-        f"matches that definition before quoting the star."
+        f"({resolved['version']}), {ctx}. NOTE the scheme's EPI excludes "
+        f"on-site renewable generation and basement area — confirm the "
+        f"measured supply matches that definition before quoting the star."
     )
     return out
 

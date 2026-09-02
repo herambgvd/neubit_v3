@@ -553,12 +553,26 @@ _SITE_ROLE_POINTS_SQL = """
      ORDER BY p.device_tag NULLS LAST, p.point_tag NULLS LAST
 """
 
+# WHICH VERSION APPLIES (contract §21 addendum): the LATEST version whose
+# effective date ≤ the evaluation window's END — jan-2022 for today's windows,
+# feb-2009 for historical windows that end before 2022-01-01. Versioning is
+# data; the old row is never edited or removed. A NULL effective_from (pre-0017
+# rows mid-migration) sorts last and only matches when nothing dated does.
 _BENCHMARK_SQL = """
-    SELECT key, version, title, citation, source_url, bands, notes
+    SELECT key, version, title, citation, source_url, bands, notes,
+           effective_from
       FROM benchmark_standards
      WHERE key = :key
-     ORDER BY created_at DESC
+       AND (effective_from IS NULL OR effective_from <= CAST(:as_of AS date))
+     ORDER BY effective_from DESC NULLS LAST, created_at DESC
      LIMIT 1
+"""
+
+_SITE_AREA_SQL = """
+    SELECT gross_floor_area_sqm
+      FROM site_facts
+     WHERE site_id = CAST(:site AS uuid)
+       AND (CAST(:tenant AS uuid) IS NULL OR tenant_id = CAST(:tenant AS uuid))
 """
 
 _BENCHMARK_CONFIG_SQL = """
@@ -578,57 +592,223 @@ async def _sites_for(db: AsyncSession, tenant, site_id) -> list[dict]:
     )
 
 
-async def resolve_benchmark(db: AsyncSession, tenant, site_id) -> dict:
+def size_category_for(area_sqm: float) -> str:
+    """The 2022 schedule's building size category, DERIVED from the recorded
+    built-up area — never stored separately, so a corrected area
+    re-categorises the site without a second fact drifting out of step.
+
+    Per the document (in line with ECBC 2017): Large BUA > 30,000 m²;
+    Medium 10,000 ≤ BUA ≤ 30,000 m²; Small BUA < 10,000 m². NOTE the
+    document's Terminology section prints the Medium range garbled
+    ("30,000 m² ≤ BUA < 10,000 m²"); it is read as 10,000–30,000, consistent
+    with the document's own fees table.
+    """
+    if area_sqm > 30000:
+        return "large"
+    if area_sqm >= 10000:
+        return "medium"
+    return "small"
+
+
+def linear_band_table(star_coeffs: dict, ac_share: float) -> list[dict]:
+    """The jan-2022 star bands at ONE site's AC share — rendered in the same
+    {stars, min, max} shape the fixed-range tables use, so `_band_for` grades
+    both kinds with one rule.
+
+    Each star's equation y = a·x + c (x = percentage of AC area out of total
+    built-up area) is evaluated at x = ac_share. BOUNDARY SEMANTICS, from the
+    document's own worked example (Section 6, quoted verbatim): "any building
+    having 75% AC area, and having EPI less than 131.25 kwh/sqm. but equals
+    to or more than 117.5 kwh/sqm. that building will be awarded 2-star
+    rating" — where 131.25 is the 1-star equation and 117.5 the 2-star
+    equation at x=75. So the s-star equation value is the INCLUSIVE LOWER
+    edge of the s-star band and the exclusive upper edge is the (s−1)-star
+    equation:
+
+        5★:  EPI < y₄          (open below; y₅ is the stated 5-star edge and
+                                nothing better than it has a sixth star)
+        s★:  yₛ ≤ EPI < yₛ₋₁   (s = 2..4)
+        1★:  EPI ≥ y₁          ("Lowest EPI value for 1-Star will be: …")
+
+    The document's header line ("the equations provide the upper limit of the
+    corresponding Star Rating") disagrees with its own example; the example
+    is the precise statement and is what is encoded. Stated in the seeded
+    row's notes (migration 0017) as well.
+    """
+    y = {s: float(star_coeffs[str(s)]["a"]) * float(ac_share)
+            + float(star_coeffs[str(s)]["c"])
+         for s in range(1, 6)}
+    eq = {s: f"{star_coeffs[str(s)]['a']:g}x+{star_coeffs[str(s)]['c']:g}"
+          for s in range(1, 6)}
+    out = []
+    for s in range(5, 0, -1):
+        out.append({
+            "stars": s,
+            "min": None if s == 5 else y[s],
+            "max": None if s == 1 else y[s - 1],
+            "equation": eq[s],
+            "equation_value": y[s],
+        })
+    return out
+
+
+async def resolve_benchmark(
+    db: AsyncSession, tenant, site_id, *, as_of: dt.datetime | None = None
+) -> dict:
     """The band edges a `benchmark_score()` grades against — or the reason
-    there are none. Returns {"ok": True, best, worst, standard, version, zone,
-    ac_category, band_table, citation} or {"ok": False, "reason": ...}.
+    there are none. Returns {"ok": True, best, worst, standard, version, kind,
+    zone, band_table, citation, context, ...} or {"ok": False, "reason": ...}.
+
+    `as_of` selects WHICH VERSION applies: the latest whose effective date ≤
+    the evaluation window's end (callers pass the window end; default now).
+    jan-2022 governs today's windows; feb-2009 stays for windows ending
+    before 2022.
 
     Every miss names ITS missing input: the honest states are different and
     the screen must be able to say which one this is.
     """
+    when = as_of or dt.datetime.now(dt.timezone.utc)
     cfg_rows = _rows(
         await db.execute(text(_BENCHMARK_CONFIG_SQL), {"site": str(site_id)})
     )
     cfg = cfg_rows[0] if cfg_rows else {}
     key = (cfg.get("standard_key") or "bee_star_office") if cfg else "bee_star_office"
-    std_rows = _rows(await db.execute(text(_BENCHMARK_SQL), {"key": key}))
+    std_rows = _rows(
+        await db.execute(
+            text(_BENCHMARK_SQL), {"key": key, "as_of": when.date()}
+        )
+    )
     if not std_rows:
         return {
             "ok": False,
             "reason": (
                 "no benchmark standard sourced — `benchmark_standards` holds no "
-                f"row for `{key}`; a band table enters only with a citation"
+                f"row for `{key}` effective at {when.date().isoformat()}; a band "
+                f"table enters only with a citation"
             ),
         }
     std = std_rows[0]
+    bands = std["bands"] or {}
+    kind = bands.get("kind") or "fixed_ranges"
+    # `head` travels onto EVERY return below, refusals included, and it grows as
+    # each fact is established. A blocked state must name what EXISTS as well as
+    # what is missing — "the standard is loaded and cited, your zone is set, only
+    # the AC share is not" is a different situation from "no standard at all",
+    # and the screen has to be able to say which. Dropping the citation on the
+    # refusal path made a cited standard look uncited.
+    head = {
+        "standard": std["key"], "version": std["version"], "title": std["title"],
+        "kind": kind,
+        "citation": std.get("citation"),
+        "effective_from": (
+            std["effective_from"].isoformat() if std.get("effective_from") else None
+        ),
+    }
     zone = cfg.get("climate_zone") if cfg else None
-    ac = cfg.get("ac_category") if cfg else None
     if not zone:
         return {
-            "ok": False,
-            "standard": std["key"], "version": std["version"],
+            **head, "ok": False,
+            "missing": "climate_zone",
             "reason": (
                 f"climate zone not set for this site — {std['title']} "
                 f"({std['version']}) bands are climate-zone-specific; record the "
                 f"zone on the site's benchmark config"
             ),
         }
+    head["zone"] = zone
+    head["ac_category"] = cfg.get("ac_category") if cfg else None
+    zones = bands.get("zones") or {}
+    zone_def = zones.get(zone) or {}
+
+    if kind == "linear_by_ac_share":
+        # The 2022 model: straight-line equations in the AC-share percentage,
+        # per building size category derived from the recorded built-up area.
+        area_rows = _rows(
+            await db.execute(
+                text(_SITE_AREA_SQL),
+                {"site": str(site_id),
+                 "tenant": str(tenant) if tenant else None},
+            )
+        )
+        area = area_rows[0]["gross_floor_area_sqm"] if area_rows else None
+        if area is None:
+            return {
+                **head, "ok": False,
+                "missing": "gross_floor_area_sqm",
+                "reason": (
+                    f"built-up area not recorded for this site — {std['title']} "
+                    f"({std['version']}) sizes its equations by BUA (Large > "
+                    f"30,000 m²; Medium 10,000–30,000 m²; Small < 10,000 m²); "
+                    f"record `gross_floor_area_sqm` in Configurations → Sites"
+                ),
+            }
+        size = size_category_for(float(area))
+        # (the recorded area itself already travels on the response's `site`
+        # object; only the derived category is new information here)
+        head["size_category"] = size
+        ac_share = cfg.get("ac_share_percent")
+        if ac_share is None:
+            return {
+                **head, "ok": False,
+                "missing": "ac_share_percent",
+                "reason": (
+                    f"`ac_share_percent` not recorded for this site — "
+                    f"{std['title']} ({std['version']}) bands are straight-line "
+                    f"equations y = a·b + c in b = the percentage of AC area out "
+                    f"of total built-up area; record `ac_share_percent` (0–100) "
+                    f"on the site's benchmark config "
+                    f"(PUT /bi/rating/benchmark-config)"
+                ),
+            }
+        coeffs = zone_def.get(size)
+        if not coeffs:
+            return {
+                **head, "ok": False,
+                "reason": (
+                    f"{std['title']} ({std['version']}) has no equations for zone "
+                    f"`{zone}` / size `{size}` — the recorded config names a "
+                    f"table the standard does not publish"
+                ),
+            }
+        x = float(ac_share)
+        table = linear_band_table(coeffs, x)
+        # Score edges: the document's best line (5★ equation) → 100, its
+        # worst line (1★ equation) → 0, linear between, clamped — the same
+        # role 2009's 5★ threshold / 1★ upper bound play.
+        by_star = {b["stars"]: b for b in table}
+        best = by_star[5]["equation_value"]
+        worst = by_star[1]["equation_value"]
+        size_label = ((bands.get("size_categories") or {}).get(size) or {}).get(
+            "label", size
+        )
+        return {
+            **head, "ok": True, "best": float(best), "worst": float(worst),
+            "zone": zone, "ac_category": None,
+            "size_category": size, "ac_share_percent": x,
+            "band_table": table,
+            "citation": std["citation"], "unit": bands.get("unit"),
+            "context": (
+                f"zone {zone_def.get('label', zone)} · {size_label} "
+                f"(BUA {float(area):,.0f} m²) · {x:g}% AC area"
+            ),
+        }
+
+    # 2009's fixed-range model: bands per zone × over/under-50%-AC category.
+    ac = cfg.get("ac_category") if cfg else None
     if not ac:
         return {
-            "ok": False,
-            "standard": std["key"], "version": std["version"],
+            **head, "ok": False,
+            "missing": "ac_category",
             "reason": (
                 f"air-conditioned-share category not set for this site — "
                 f"{std['title']} ({std['version']}) publishes different bands for "
                 f">50% and <50% conditioned built-up area"
             ),
         }
-    zones = (std["bands"] or {}).get("zones") or {}
-    table = (zones.get(zone) or {}).get(ac)
+    table = zone_def.get(ac)
     if not table:
         return {
-            "ok": False,
-            "standard": std["key"], "version": std["version"],
+            **head, "ok": False,
             "reason": (
                 f"{std['title']} ({std['version']}) has no band table for zone "
                 f"`{zone}` / category `{ac}` — the recorded config names a table "
@@ -640,18 +820,22 @@ async def resolve_benchmark(db: AsyncSession, tenant, site_id) -> dict:
     best = min(b["max"] for b in table if b.get("max") is not None and b.get("min") is None)
     worst = max(b["max"] for b in table if b.get("max") is not None)
     return {
-        "ok": True, "best": float(best), "worst": float(worst),
-        "standard": std["key"], "version": std["version"], "title": std["title"],
+        **head, "ok": True, "best": float(best), "worst": float(worst),
         "zone": zone, "ac_category": ac, "band_table": table,
-        "citation": std["citation"], "unit": (std["bands"] or {}).get("unit"),
+        "citation": std["citation"], "unit": bands.get("unit"),
+        "context": f"zone {zone_def.get('label', zone)} · {ac}",
     }
 
 
 def _band_for(table: list[dict], value: float) -> dict | None:
     """The star band `value` falls in, reading the table as published: a band
-    is (min, max]-shaped with the 5-star row open below. Above the worst upper
-    bound there is NO band — the scheme awards no star, and this returns None
-    rather than pretending the bottom band stretches forever."""
+    is (min, max]-shaped with the 5-star row open below. On a 2009 fixed-range
+    table, above the worst upper bound there is NO band — the scheme awards no
+    star, and this returns None rather than pretending the bottom band
+    stretches forever. A jan-2022 table (built by `linear_band_table`) has its
+    1-star row open ABOVE, because the document names the 1-star equation the
+    band's "Lowest EPI value" — its rows cover the whole line and None does
+    not occur."""
     for b in sorted(table, key=lambda b: b["stars"], reverse=True):
         lo, hi = b.get("min"), b.get("max")
         if (lo is None or value >= lo) and (hi is None or value < hi):
@@ -868,20 +1052,27 @@ async def _evaluate_site_formula(
     benchmark = None
     bench_note = None
     if expr.uses(tree, "benchmark_score"):
-        resolved = await resolve_benchmark(db, tenant, site["site_id"])
+        # Version selection: the window END picks the standard version, the
+        # same way `registry.effective` picks the metric definition —
+        # yesterday's window grades under the standard in force yesterday.
+        resolved = await resolve_benchmark(db, tenant, site["site_id"], as_of=end)
         if not resolved.get("ok"):
             out = _refusal("no_benchmark", resolved["reason"])
             if resolved.get("standard"):
                 out["benchmark"] = {k: resolved.get(k) for k in ("standard", "version")}
             out["inputs"] = input_report
             return out
-        benchmark = {"best": resolved["best"], "worst": resolved["worst"]}
         bench_note = {
             "standard": resolved["standard"], "version": resolved["version"],
-            "zone": resolved["zone"], "ac_category": resolved["ac_category"],
+            "kind": resolved.get("kind"),
+            "zone": resolved["zone"], "ac_category": resolved.get("ac_category"),
             "best_edge": resolved["best"], "worst_edge": resolved["worst"],
             "citation": resolved["citation"],
         }
+        for k in ("size_category", "ac_share_percent", "context"):
+            if resolved.get(k) is not None:
+                bench_note[k] = resolved[k]
+        benchmark = {"best": resolved["best"], "worst": resolved["worst"]}
 
     # annualize() over a consumption formula scales the COVERED span; a formula
     # with no consumption input keeps the requested window.
