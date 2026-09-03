@@ -324,6 +324,17 @@ def _nothing_measured(rows: list[list] | None) -> bool:
 
 
 async def run(db: AsyncSession, tenant: Any, ds: Dataset, spec: BuilderSpec) -> TableResult:
+    if ds.definition.engine == "metric_registry":
+        # A COMPUTED dataset: its rows come from the metric evaluator, so there
+        # is no statement to generate. Dispatched here rather than in the router
+        # so that everything before this point — permission, dashboard context,
+        # `validated()` — stays the one path for every dataset. Imported locally
+        # because that module builds its definition from `registry`, which this
+        # module already imports.
+        from . import metric_dataset
+
+        return await metric_dataset.run(db, tenant, ds, spec)
+
     q: BuilderQuery = spec.query
     d = ds.definition
     start, end = q.window.resolve()
@@ -407,6 +418,12 @@ async def distinct_values(
     """
     d = ds.definition
     dim = d.dimension(column)
+    if d.engine == "metric_registry":
+        from . import metric_dataset
+
+        return await metric_dataset.distinct_values(
+            db, tenant, column=column, search=search, limit=limit
+        )
     rel = d.choose_relation(hours)
     end = dt.datetime.now(dt.timezone.utc)
     start = end - dt.timedelta(hours=hours)

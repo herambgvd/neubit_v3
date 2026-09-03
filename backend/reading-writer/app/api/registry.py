@@ -302,8 +302,10 @@ class Measure(BaseModel):
     comparable: bool = True
     comparable_within: list[str] = Field(default_factory=list)
     incomparable_hint: str = ""
-    # {relation_key: {aggregate: PhysicalAgg}}
-    physical: dict[str, dict[str, PhysicalAgg]]
+    # {relation_key: {aggregate: PhysicalAgg}}. Empty for a dataset whose
+    # `engine` is not `sql`: there is no column to name, and a mapping that
+    # named one would be a claim about a relation nothing reads.
+    physical: dict[str, dict[str, PhysicalAgg]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _check(self) -> "Measure":
@@ -328,6 +330,18 @@ class Defaults(BaseModel):
 class Definition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # WHAT ANSWERS THIS DATASET. `sql` is every dataset that is a relation in
+    # `neubit_reporting`: the generator writes a SELECT and the store answers it.
+    # `metric_registry` is a dataset whose rows are COMPUTED — see
+    # `metric_dataset.py` — and for which no SELECT is generated at all.
+    #
+    # This is one field rather than a second registry because everything else a
+    # dataset owes the builder is unchanged: it still declares dimensions,
+    # measures, relations with their window ceilings, and a permission, and it
+    # still travels through `/bi/datasets`, `validated()` and the comparability
+    # rules. Only the last step — turning a validated state into rows — differs,
+    # and `execute.run` dispatches on this.
+    engine: Literal["sql", "metric_registry"] = "sql"
     tenant_column: str | None = "tenant_id"
     relations: list[Relation] = Field(min_length=1)
     auto: list[AutoRule] = Field(default_factory=list)
@@ -357,6 +371,17 @@ class Definition(BaseModel):
                     raise ValueError(f"measure {m.key!r} names unknown dimension {c!r}")
             if m.unit_dimension and m.unit_dimension not in dim_keys:
                 raise ValueError(f"measure {m.key!r} names unknown unit dimension")
+            if self.engine != "sql":
+                # A computed dataset has no columns to map. A definition that
+                # supplied one anyway would be describing a relation nothing
+                # reads, and the next person to change that relation would
+                # believe they had changed this dataset.
+                if m.physical:
+                    raise ValueError(
+                        f"measure {m.key!r} declares a physical mapping, but this "
+                        f"dataset's engine is {self.engine!r} and generates no SQL"
+                    )
+                continue
             for rel in rel_keys:
                 if rel not in m.physical:
                     raise ValueError(
@@ -541,6 +566,21 @@ async def load(db: AsyncSession, *, fresh: bool = False) -> dict[str, Dataset]:
         ds = _parse_row(row)
         if ds is not None:
             out[ds.key] = ds
+    # COMPUTED datasets, which cannot be a registry row. A row's whole content is
+    # relations and columns, and a dataset answered by the metric evaluator has
+    # neither — writing one as a row would mean naming a relation nobody reads
+    # (see `Definition.engine`). Imported here rather than at module scope
+    # because that module builds its definition out of THIS one's models.
+    #
+    # They are merged in rather than served from a second route on purpose: a
+    # dataset the builder cannot see in `/bi/datasets` is a dataset nothing can
+    # chart, which is the gap this exists to close.
+    from .metric_dataset import virtual_datasets
+
+    for ds in virtual_datasets().values():
+        # A registry ROW wins a key collision, so a computed dataset can be
+        # replaced by a real relation later without a release of this service.
+        out.setdefault(ds.key, ds)
     _cache = (now, out)
     return out
 
