@@ -141,24 +141,23 @@ class CorePerm:
     # site / floor / zone (where that part of it is). Neither ever touches a
     # measurement: both write a dimension row and nothing else.
     BI_MANAGE = "bi.manage"
-    # Dashboard builder — the no-code dashboards over the reading store. READ =
-    # list and open a dashboard; MANAGE = create / edit / delete / arrange it.
-    # Enforced by the `dashboards` service
-    # (`backend/dashboards/app/dashboards/router.py`). A widget's DATA is still
-    # gated by `bi.read` on the reading-writer, so a user who can open a
-    # dashboard but cannot read the store sees the canvas and empty widgets
-    # rather than numbers they are not entitled to.
-    DASHBOARDS_READ = "dashboards.read"
-    DASHBOARDS_MANAGE = "dashboards.manage"
     # DashForge embeds — the dashboards NeuBit SHOWS but does not build. DashForge
     # is the single dashboarding surface; this platform registers which of its
     # dashboards appear here and renders them.
     #
-    # READ is load-bearing in a way `dashboards.read` is not. DashForge's
-    # `/public/embed/:token` is UNAUTHENTICATED — the token IS the credential —
-    # so the only check standing in front of that data is the one NeuBit makes
-    # before minting a token (`backend/dashforge/app/embeds/router.py`). A caller
-    # without this key never gets a token and therefore never gets the data.
+    # `dashboards.read` / `dashboards.manage` stood here until 2026-09-03, gating
+    # NeuBit's own builder. Both went with it. A key kept in this catalog after
+    # its enforcer is deleted is worse than no key: the role editor keeps offering
+    # it, an admin grants it believing it restricts something, and it restricts
+    # nothing. See the note in 0021_drop_dashboards_permissions for what happens
+    # to a role that already held one.
+    #
+    # DASHFORGE_READ is load-bearing in a way `dashboards.read` never was.
+    # DashForge's `/public/embed/:token` is UNAUTHENTICATED — the token IS the
+    # credential — so the only check standing in front of that data is the one
+    # NeuBit makes before minting a token
+    # (`backend/dashforge/app/embeds/router.py`). A caller without this key never
+    # gets a token and therefore never gets the data.
     # MANAGE decides which dashboards are registered here at all, which is why it
     # is separate: being allowed to LOOK at an embedded dashboard must not imply
     # being allowed to point the console at a different one.
@@ -253,19 +252,6 @@ PERMISSIONS.register(
         "floor-wise question, and retire a point that is no longer part of the "
         "estate. Both write a dimension row; neither deletes a reading. Placing "
         "also needs sites.read / floors.read to choose the place.",
-    ),
-    Permission(
-        CorePerm.DASHBOARDS_READ,
-        "View dashboards",
-        "Dashboards",
-        "Open the dashboards built over the reading store. The widgets' data is "
-        "gated separately by 'View building intelligence' (bi.read).",
-    ),
-    Permission(
-        CorePerm.DASHBOARDS_MANAGE,
-        "Build / edit dashboards",
-        "Dashboards",
-        "Create, rename and delete dashboards, add widgets and arrange the canvas.",
     ),
     Permission(
         CorePerm.DASHFORGE_READ,

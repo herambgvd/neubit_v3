@@ -89,7 +89,7 @@ services:
       #      KEEP THIS IN STEP WITH THE END OF THE LIST IN init-service-dbs.sh.
       test:
         - CMD-SHELL
-        - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" && psql -U "$$POSTGRES_USER" -d neubit_dashboards -c 'SELECT 1' >/dev/null 2>&1
+        - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" && psql -U "$$POSTGRES_USER" -d dashforge -c 'SELECT 1' >/dev/null 2>&1
       interval: 5s
       timeout: 5s
       retries: 30
@@ -237,43 +237,6 @@ services:
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks: [neubit]
 
-  # ── dashboards service (Python / neubit kernel) ─────────────────
-  # The no-code dashboard builder's STORE: dashboards, the widgets on them and
-  # their grid geometry. Owns its own DB (neubit_dashboards) on the shared
-  # Postgres, the pattern every other satellite uses.
-  #
-  # It does NOT read the reading store. A widget carries a structured query spec
-  # and that spec is executed by the reading-writer's /api/v1/bi/query — the
-  # service that owns the readings schema (contract §7). This one never opens
-  # neubit_reporting, so there is no second query path against those tables.
-  #
-  # `alembic upgrade head` — the ordinary path, which is right here because this
-  # service's baseline is a real migration rather than a create_all() of the live
-  # ORM metadata. Core is the odd one out and runs `migrate.sh` instead; do not
-  # copy core's command here.
-  dashboards:
-    build:
-      context: ../backend
-      dockerfile: dashboards/Dockerfile
-    env_file: .env
-    environment:
-      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_dashboards
-    depends_on:
-      postgres: { condition: service_healthy }
-      db-init: { condition: service_completed_successfully }
-      nats: { condition: service_started }
-    # 0001_dashboards is THIS service's baseline — see deploy/migrate.sh. It read
-    # 0001_ingest until 2026-09-01: a copy-paste from another service, which
-    # alembic answered with `Can't locate revision identified by '0001_ingest'`,
-    # restart-looping the container forever. A service's baseline is the revision
-    # in ITS OWN migrations/versions carrying `down_revision = None`.
-    command: >
-      bash -c "/usr/local/bin/neubit-migrate 0001_dashboards &&
-               uvicorn app.main:app --host 0.0.0.0 --port 8000"
-    volumes:
-      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
-    networks: [neubit]
-
   # ── dashforge service (Python / neubit kernel) ──────────────────
   # The registry of EMBEDDED DashForge dashboards: which of them this platform
   # shows, under what name, and the gated per-session mint of their embed
@@ -313,9 +276,12 @@ services:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
       nats: { condition: service_started }
-    # 0001_dashforge is THIS service's baseline — see deploy/migrate.sh, and the
-    # note on the dashboards service above for what naming another service's
-    # baseline here costs.
+    # 0001_dashforge is THIS service's baseline — see deploy/migrate.sh. A
+    # service's baseline is the revision in ITS OWN migrations/versions carrying
+    # `down_revision = None`; naming another service's here is a copy-paste that
+    # alembic answers with `Can't locate revision identified by ...`, which
+    # surfaces as a container restart-looping forever rather than as a config
+    # error.
     command: >
       bash -c "/usr/local/bin/neubit-migrate 0001_dashforge &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"

@@ -1,5 +1,31 @@
 # Dashboard builder — the contract
 
+> **RETIRED, 2026-09-03 — but do not delete this document.**
+>
+> NeuBit's own dashboard builder is gone: the `dashboards` service,
+> `frontend/src/features/dashboards/`, the `/dashboards` routes and the
+> `dashboards.*` permission keys were all removed. DashForge is this platform's
+> dashboarding surface now, reached at `/bi/dashboards`. **There is no NeuBit
+> screen behind anything this document describes as a builder UI** — §§1–8, 10
+> and 11 are history, kept because they record why the design was what it was.
+>
+> What is NOT history, and is still live code this file is the contract for:
+>
+> * the **dataset registry** and the **projection registry** (§2, §9) in
+>   `neubit_reporting` — how a domain publishes queryable data;
+> * the **server-side SQL generation and refusal rules** (§3, §4) in the
+>   reading-writer's `/api/v1/bi/query`, which still owns the readings schema;
+> * **spec versioning** (§6), which is why the export in
+>   `docs/dashboard-builder-final-export-2026-09-03.json` contains two spec
+>   grammars.
+>
+> `docs/iot-pipeline-contract.md` cites §9 of this file for the projection
+> registry, which is the immediate reason deleting it would break something real.
+>
+> The one dashboard anybody had actually built, with its widgets and its version
+> history, is preserved as data in
+> `docs/dashboard-builder-final-export-2026-09-03.json`.
+
 The builder is a NeuBit module. It must serve every domain on this platform —
 IoT readings today, VMS, access control and fire next — not the IoT store it
 happens to have been born against.

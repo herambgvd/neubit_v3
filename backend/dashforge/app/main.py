@@ -13,11 +13,14 @@ What it is NOT, and why:
   own datasource. This service never opens `neubit_reporting`, so the rule that
   gives the readings schema one owner (contract §7) is untouched by the
   integration.
-* It is NOT the retirement of `backend/dashboards`. That service, its routes and
-  its data are deliberately left running and untouched. Removal is a separate
-  step and must not happen until this integration is proven; two dashboard
-  surfaces existing at once is the cost of not deleting a working one on
-  the same day its replacement first boots.
+* It was NOT, on the day it landed, the retirement of `backend/dashboards` —
+  that service was deliberately left running until this integration had been
+  proven, because two dashboard surfaces existing at once is a smaller cost than
+  deleting a working one on the day its replacement first boots. That proving is
+  done: the builder was removed on 2026-09-03, and this is now the only
+  dashboarding surface. Comment kept rather than deleted because the sequencing
+  is the reason the changeover was survivable, and the next person tempted to
+  land a replacement and a deletion together should see it.
 
 Gating, applied once at mount so no route can forget it:
     require_feature("analytics")   the "Dashboards & Reports" module

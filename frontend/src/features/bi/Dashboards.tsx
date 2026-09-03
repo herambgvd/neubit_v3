@@ -8,13 +8,13 @@
 // what appears here is the set of DashForge dashboards REGISTERED on this
 // platform, rendered through a short-lived embed token.
 //
-// WHAT WAS NOT DONE, AND MUST NOT BE DONE HERE. NeuBit's own builder — the
-// `dashboards` service, its `/dashboards` routes, its data and its viewer — is
-// deliberately left running and untouched. Removing it is a separate step and
-// must not happen until this integration is proven in a real deployment; a
-// migration that deletes the old surface on the same day the new one first boots
-// has no way back. So the builder is still reachable at /dashboards and still
-// gated by `dashboards.*`; nothing on this page touches it.
+// That second step has now happened: NeuBit's own builder — the `dashboards`
+// service, its `/dashboards` routes, its feature directory and its `dashboards.*`
+// permission keys — was removed on 2026-09-03, once this surface had been proven
+// against a real DashForge. It was deliberately left running until then, because
+// deleting the old surface on the day the new one first boots leaves no way back.
+// The one dashboard anybody had actually built is preserved as data in
+// docs/dashboard-builder-final-export-2026-09-03.json.
 //
 // Deliberately thin, for the same reason the previous version was:
 //   • The strip is a MENU, not a manager. Authoring happens in DashForge.

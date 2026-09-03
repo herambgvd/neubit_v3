@@ -1,0 +1,2396 @@
+{
+  "_what_this_is": "A complete, verbatim export of the NeuBit dashboard builder's live store (the Postgres database `neubit_dashboards`) — every dashboard, every widget on it, and every saved version — taken immediately before the builder was deleted from this repository.",
+  "_why_it_exists": "NeuBit retired its own dashboard builder in favour of DashForge, the sibling product that is now this platform's single dashboarding surface. Deleting the `dashboards` service also ends the life of its database, and the rows below are not test fixtures: a person sat down and built `Building Overview` on 2026-08-30 and kept editing it for four hours. Code deletion is recoverable from git; a dropped database is not. This file is what makes the removal a migration rather than a loss — it carries enough to rebuild these widgets in DashForge with the old service gone, which is why it also resolves the point UUIDs the specs reference into human-readable device/point tags (see `referenced_points`) and restates each spec in plain English (see `reconstruction_notes`). The raw rows are kept alongside, unmodified, because a summary somebody wrote is not evidence and the raw row is.",
+  "_taken_at": "2026-09-03",
+  "_taken_from": "docker compose (deploy/) → postgres → database `neubit_dashboards`, schema at alembic revision 0003_dashboard_versions",
+  "_source_of_truth_for_the_schema": "backend/dashboards/app/dashboards/models.py at commit 55c0792 — read it in git history if a column below needs interpreting. Geometry (x/y/w/h) is in GRID CELLS, not pixels: x/w are in units of `grid_cols` across the canvas width, y/h in units of `row_height` pixels.",
+  "_two_spec_grammars_live_here": "Widget specs are versioned and BOTH versions are present in this export. spec_version 1 is the original IoT-shaped grammar (`query.scope` of points/device/category/all + a single `metric`). spec_version 2 is the domain-agnostic grammar (`query.dataset` + `select`/`group_by`/`having`/`order_by`) described in docs/dashboard-builder-contract.md. The builder upgraded a v1 spec on read and never rewrote the stored row, so a widget untouched since before the v2 migration is still stored as v1. Do not assume one grammar when rebuilding.",
+  "_counts": {
+    "dashboards": 1,
+    "widgets": 7,
+    "versions": 7
+  },
+  "_completeness": "These counts are the FULL contents of the three tables, not a filtered selection — no WHERE clause was used. Note for anyone comparing against the removal brief, which said 8 stored versions: the live table held 7 (`version` 1 through 7, no gaps). 7 is what was there and 7 is what is here.",
+  "referenced_points": [
+    {
+      "point_id": "f00115da-55d8-45cd-a157-cfe6f86f9329",
+      "device_tag": "B2_Main Incomer",
+      "point_tag": "CL2_A",
+      "unit": "A",
+      "category": "energy",
+      "type": "num",
+      "device_type": "incomer",
+      "site_name": "Aeon Tower",
+      "floor_name": "Basement 2",
+      "zone_name": null
+    },
+    {
+      "point_id": "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+      "device_tag": "B2_Main Incomer",
+      "point_tag": "CL1_A",
+      "unit": "A",
+      "category": "energy",
+      "type": "num",
+      "device_type": "incomer",
+      "site_name": "Aeon Tower",
+      "floor_name": "Basement 2",
+      "zone_name": null
+    },
+    {
+      "point_id": "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+      "device_tag": "B2_Main Incomer",
+      "point_tag": "CAvg_A",
+      "unit": "A",
+      "category": "energy",
+      "type": "num",
+      "device_type": "incomer",
+      "site_name": "Aeon Tower",
+      "floor_name": "Basement 2",
+      "zone_name": null
+    }
+  ],
+  "reconstruction_notes": {
+    "dashboard": {
+      "name": "Building Overview",
+      "description": "Live energy + HVAC from the aeon gateway",
+      "canvas": "12 columns wide, 56px row height",
+      "page_filters": [
+        {
+          "id": "f_cat",
+          "label": "Category",
+          "dataset": "iot_readings",
+          "column": "category",
+          "op": "in",
+          "multi": true
+        }
+      ],
+      "page_variables": []
+    },
+    "widgets": [
+      {
+        "title": "Main incomer currents",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "w": 8,
+          "h": 5
+        },
+        "means": {
+          "renders_as": "time-series line chart",
+          "spec_version": 1,
+          "reads": "these specific points: B2_Main Incomer / CAvg_A (A, category=energy), B2_Main Incomer / CL1_A (A, category=energy), B2_Main Incomer / CL2_A (A, category=energy)",
+          "aggregate": "avg",
+          "shape": "one row per bucket (series)",
+          "group_by": "point",
+          "window": {
+            "last_hours": 2
+          },
+          "limit": 3,
+          "resolution_or_rollup": "auto"
+        }
+      },
+      {
+        "title": "Energy points — last value",
+        "position": {
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 5
+        },
+        "means": {
+          "renders_as": "data table",
+          "spec_version": 1,
+          "reads": "every point in category 'energy'",
+          "aggregate": "last",
+          "shape": "one row per bucket (aggregate)",
+          "group_by": "point",
+          "window": {
+            "last_hours": 1
+          },
+          "limit": 8,
+          "resolution_or_rollup": "auto"
+        }
+      },
+      {
+        "title": "Sample volume by device",
+        "position": {
+          "x": 0,
+          "y": 5,
+          "w": 5,
+          "h": 5
+        },
+        "means": {
+          "renders_as": "bar chart",
+          "spec_version": 1,
+          "reads": "every point in the tenant",
+          "aggregate": "count",
+          "shape": "one row per bucket (aggregate)",
+          "group_by": "device",
+          "window": {
+            "last_hours": 2
+          },
+          "limit": 8,
+          "resolution_or_rollup": "auto"
+        }
+      },
+      {
+        "title": "Chiller — average",
+        "position": {
+          "x": 8,
+          "y": 5,
+          "w": 4,
+          "h": 4
+        },
+        "means": {
+          "renders_as": "single-value stat / KPI tile",
+          "spec_version": 1,
+          "reads": "every point in category 'hvac'",
+          "aggregate": "avg",
+          "shape": "one row per bucket (aggregate)",
+          "group_by": "point",
+          "window": {
+            "last_hours": 1
+          },
+          "limit": 1,
+          "resolution_or_rollup": "auto"
+        }
+      },
+      {
+        "title": "Readings by device",
+        "position": {
+          "x": 8,
+          "y": 9,
+          "w": 4,
+          "h": 5
+        },
+        "means": {
+          "renders_as": "pie chart",
+          "spec_version": 2,
+          "reads": "dataset 'iot_readings'",
+          "selects": [
+            "dimension device_tag",
+            "count(value)"
+          ],
+          "group_by": [
+            "device_tag"
+          ],
+          "filters": [],
+          "having": [],
+          "order_by": [
+            {
+              "select_index": 1,
+              "dir": "desc"
+            }
+          ],
+          "time_series": false,
+          "window": {
+            "last_hours": 6
+          },
+          "limit": 8,
+          "resolution_or_rollup": "auto"
+        }
+      },
+      {
+        "title": "Point activity by hour",
+        "position": {
+          "x": 0,
+          "y": 10,
+          "w": 8,
+          "h": 5
+        },
+        "means": {
+          "renders_as": "heatmap",
+          "spec_version": 2,
+          "reads": "dataset 'iot_readings'",
+          "selects": [
+            "avg(value)"
+          ],
+          "group_by": [],
+          "filters": [],
+          "having": [],
+          "order_by": [],
+          "time_series": true,
+          "series_by": "point_id",
+          "window": {
+            "last_hours": 6
+          },
+          "limit": 10,
+          "resolution_or_rollup": "auto"
+        }
+      },
+      {
+        "title": "Top point vs its scope",
+        "position": {
+          "x": 0,
+          "y": 15,
+          "w": 3,
+          "h": 4
+        },
+        "means": {
+          "renders_as": "gauge",
+          "spec_version": 2,
+          "reads": "dataset 'iot_readings'",
+          "selects": [
+            "dimension point_tag",
+            "last(value)"
+          ],
+          "group_by": [
+            "point_tag"
+          ],
+          "filters": [],
+          "having": [],
+          "order_by": [
+            {
+              "select_index": 1,
+              "dir": "desc"
+            }
+          ],
+          "time_series": false,
+          "window": {
+            "last_hours": 6
+          },
+          "limit": 10,
+          "resolution_or_rollup": "auto"
+        }
+      }
+    ]
+  },
+  "raw": {
+    "dashboards": [
+      {
+        "id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "name": "Building Overview",
+        "slug": "building-overview",
+        "description": "Live energy + HVAC from the aeon gateway",
+        "grid_cols": 12,
+        "row_height": 56,
+        "created_by": "3cd1c8ca-c927-41af-9101-c345241c7492",
+        "created_at": "2026-08-30T08:29:05.243066+00:00",
+        "updated_at": "2026-08-30T11:52:58.251385+00:00",
+        "config": {
+          "filters": [
+            {
+              "id": "f_cat",
+              "label": "Category",
+              "dataset": "iot_readings",
+              "column": "category",
+              "op": "in",
+              "multi": true
+            }
+          ],
+          "variables": []
+        }
+      }
+    ],
+    "widgets": [
+      {
+        "id": "c272009a-4d30-431a-b362-b865b4651359",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "title": "Main incomer currents",
+        "spec": {
+          "spec_version": 1,
+          "viz": "line",
+          "query": {
+            "kind": "series",
+            "scope": {
+              "type": "points",
+              "point_ids": [
+                "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+                "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+                "f00115da-55d8-45cd-a157-cfe6f86f9329"
+              ]
+            },
+            "metric": "avg",
+            "rollup": "auto",
+            "window": {
+              "last_hours": 2
+            },
+            "group_by": "point",
+            "limit": 3
+          }
+        },
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 5,
+        "created_at": "2026-08-30T08:48:35.333544+00:00",
+        "updated_at": "2026-08-30T08:48:35.33355+00:00"
+      },
+      {
+        "id": "22a17194-c0ab-459d-bbfc-b794084f301a",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "title": "Energy points — last value",
+        "spec": {
+          "spec_version": 1,
+          "viz": "table",
+          "query": {
+            "kind": "aggregate",
+            "scope": {
+              "type": "category",
+              "category": "energy"
+            },
+            "metric": "last",
+            "rollup": "auto",
+            "window": {
+              "last_hours": 1
+            },
+            "group_by": "point",
+            "limit": 8
+          },
+          "options": {}
+        },
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 5,
+        "created_at": "2026-08-30T08:48:35.360044+00:00",
+        "updated_at": "2026-08-30T12:31:57.169326+00:00"
+      },
+      {
+        "id": "9a0e2929-162a-44ab-b9f5-8521e220075d",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "title": "Sample volume by device",
+        "spec": {
+          "spec_version": 1,
+          "viz": "bar",
+          "query": {
+            "kind": "aggregate",
+            "scope": {
+              "type": "all"
+            },
+            "metric": "count",
+            "rollup": "auto",
+            "window": {
+              "last_hours": 2
+            },
+            "group_by": "device",
+            "limit": 8
+          }
+        },
+        "x": 0,
+        "y": 5,
+        "w": 5,
+        "h": 5,
+        "created_at": "2026-08-30T08:48:35.387747+00:00",
+        "updated_at": "2026-08-30T08:48:35.38775+00:00"
+      },
+      {
+        "id": "33cd5f26-19a5-4cae-aa4d-27940d7da94c",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "title": "Chiller — average",
+        "spec": {
+          "spec_version": 1,
+          "viz": "stat",
+          "query": {
+            "kind": "aggregate",
+            "scope": {
+              "type": "category",
+              "category": "hvac"
+            },
+            "metric": "avg",
+            "rollup": "auto",
+            "window": {
+              "last_hours": 1
+            },
+            "group_by": "point",
+            "limit": 1,
+            "ignore_all_filters": true
+          },
+          "options": {}
+        },
+        "x": 8,
+        "y": 5,
+        "w": 4,
+        "h": 4,
+        "created_at": "2026-08-30T08:48:35.416167+00:00",
+        "updated_at": "2026-08-30T12:27:33.11321+00:00"
+      },
+      {
+        "id": "bf468afa-24ff-4ed1-8ec5-2a1baa8ce78b",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "title": "Readings by device",
+        "spec": {
+          "spec_version": 2,
+          "viz": "pie",
+          "query": {
+            "dataset": "iot_readings",
+            "resolution": "auto",
+            "filters": [],
+            "filter_combinator": "AND",
+            "having": [],
+            "window": {
+              "last_hours": 6
+            },
+            "select": [
+              {
+                "dimension": "device_tag"
+              },
+              {
+                "measure": "value",
+                "aggregate": "count"
+              }
+            ],
+            "time_series": false,
+            "series_by": null,
+            "series_label": null,
+            "group_by": [
+              "device_tag"
+            ],
+            "order_by": [
+              {
+                "select_index": 1,
+                "dir": "desc"
+              }
+            ],
+            "limit": 8
+          }
+        },
+        "x": 8,
+        "y": 9,
+        "w": 4,
+        "h": 5,
+        "created_at": "2026-08-30T10:23:55.76794+00:00",
+        "updated_at": "2026-08-30T11:44:05.851127+00:00"
+      },
+      {
+        "id": "808e9c04-cf5b-4609-a9e7-6fec44fdbc81",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "title": "Point activity by hour",
+        "spec": {
+          "spec_version": 2,
+          "viz": "heatmap",
+          "query": {
+            "dataset": "iot_readings",
+            "resolution": "auto",
+            "filters": [],
+            "filter_combinator": "AND",
+            "having": [],
+            "window": {
+              "last_hours": 6
+            },
+            "select": [
+              {
+                "measure": "value",
+                "aggregate": "avg"
+              }
+            ],
+            "time_series": true,
+            "series_by": "point_id",
+            "series_label": "point_tag",
+            "group_by": [],
+            "order_by": [],
+            "limit": 10
+          }
+        },
+        "x": 0,
+        "y": 10,
+        "w": 8,
+        "h": 5,
+        "created_at": "2026-08-30T10:23:55.733995+00:00",
+        "updated_at": "2026-08-30T10:23:55.734+00:00"
+      },
+      {
+        "id": "a8dfa7b5-7d62-4cf1-a794-4d40ff5a9383",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "title": "Top point vs its scope",
+        "spec": {
+          "spec_version": 2,
+          "viz": "gauge",
+          "query": {
+            "dataset": "iot_readings",
+            "resolution": "auto",
+            "filters": [],
+            "filter_combinator": "AND",
+            "having": [],
+            "window": {
+              "last_hours": 6
+            },
+            "select": [
+              {
+                "dimension": "point_tag"
+              },
+              {
+                "measure": "value",
+                "aggregate": "last"
+              }
+            ],
+            "time_series": false,
+            "series_by": null,
+            "series_label": null,
+            "group_by": [
+              "point_tag"
+            ],
+            "order_by": [
+              {
+                "select_index": 1,
+                "dir": "desc"
+              }
+            ],
+            "limit": 10
+          }
+        },
+        "x": 0,
+        "y": 15,
+        "w": 3,
+        "h": 4,
+        "created_at": "2026-08-30T10:23:55.82744+00:00",
+        "updated_at": "2026-08-30T11:44:05.848251+00:00"
+      }
+    ],
+    "versions": [
+      {
+        "id": "2825aa76-b95a-4f00-b1f0-9e3aa03d5cfc",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "version": 1,
+        "label": "edited “Chiller — average”",
+        "snapshot": {
+          "name": "Building Overview",
+          "description": "Live energy + HVAC from the aeon gateway",
+          "grid_cols": 12,
+          "row_height": 56,
+          "config": {
+            "filters": [
+              {
+                "id": "f_cat",
+                "label": "Category",
+                "dataset": "iot_readings",
+                "column": "category",
+                "op": "in",
+                "multi": true
+              }
+            ],
+            "variables": []
+          },
+          "widgets": [
+            {
+              "id": "c272009a-4d30-431a-b362-b865b4651359",
+              "title": "Main incomer currents",
+              "spec": {
+                "spec_version": 1,
+                "viz": "line",
+                "query": {
+                  "kind": "series",
+                  "scope": {
+                    "type": "points",
+                    "point_ids": [
+                      "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+                      "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+                      "f00115da-55d8-45cd-a157-cfe6f86f9329"
+                    ]
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "point",
+                  "limit": 3
+                }
+              },
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "22a17194-c0ab-459d-bbfc-b794084f301a",
+              "title": "Energy points — last value",
+              "spec": {
+                "spec_version": 1,
+                "viz": "table",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "energy"
+                  },
+                  "metric": "last",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 0,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "9a0e2929-162a-44ab-b9f5-8521e220075d",
+              "title": "Sample volume by device",
+              "spec": {
+                "spec_version": 1,
+                "viz": "bar",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "all"
+                  },
+                  "metric": "count",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "device",
+                  "limit": 8
+                }
+              },
+              "x": 0,
+              "y": 5,
+              "w": 5,
+              "h": 5
+            },
+            {
+              "id": "33cd5f26-19a5-4cae-aa4d-27940d7da94c",
+              "title": "Chiller — average",
+              "spec": {
+                "spec_version": 1,
+                "viz": "stat",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "hvac"
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 1,
+                  "ignore_all_filters": true
+                },
+                "options": {}
+              },
+              "x": 8,
+              "y": 5,
+              "w": 4,
+              "h": 4
+            },
+            {
+              "id": "bf468afa-24ff-4ed1-8ec5-2a1baa8ce78b",
+              "title": "Readings by device",
+              "spec": {
+                "spec_version": 2,
+                "viz": "pie",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "device_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "count"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "device_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 9,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "808e9c04-cf5b-4609-a9e7-6fec44fdbc81",
+              "title": "Point activity by hour",
+              "spec": {
+                "spec_version": 2,
+                "viz": "heatmap",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "measure": "value",
+                      "aggregate": "avg"
+                    }
+                  ],
+                  "time_series": true,
+                  "series_by": "point_id",
+                  "series_label": "point_tag",
+                  "group_by": [],
+                  "order_by": [],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 10,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "a8dfa7b5-7d62-4cf1-a794-4d40ff5a9383",
+              "title": "Top point vs its scope",
+              "spec": {
+                "spec_version": 2,
+                "viz": "gauge",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "point_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "last"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "point_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 15,
+              "w": 3,
+              "h": 4
+            }
+          ]
+        },
+        "created_by": "3cd1c8ca-c927-41af-9101-c345241c7492",
+        "created_at": "2026-08-30T12:27:23.369918+00:00"
+      },
+      {
+        "id": "9bb63eeb-a0de-459f-93ab-dd032f4a2480",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "version": 2,
+        "label": "edited “BROKEN EDIT — should be undone”",
+        "snapshot": {
+          "name": "Building Overview",
+          "description": "Live energy + HVAC from the aeon gateway",
+          "grid_cols": 12,
+          "row_height": 56,
+          "config": {
+            "filters": [
+              {
+                "id": "f_cat",
+                "label": "Category",
+                "dataset": "iot_readings",
+                "column": "category",
+                "op": "in",
+                "multi": true
+              }
+            ],
+            "variables": []
+          },
+          "widgets": [
+            {
+              "id": "c272009a-4d30-431a-b362-b865b4651359",
+              "title": "Main incomer currents",
+              "spec": {
+                "spec_version": 1,
+                "viz": "line",
+                "query": {
+                  "kind": "series",
+                  "scope": {
+                    "type": "points",
+                    "point_ids": [
+                      "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+                      "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+                      "f00115da-55d8-45cd-a157-cfe6f86f9329"
+                    ]
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "point",
+                  "limit": 3
+                }
+              },
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "22a17194-c0ab-459d-bbfc-b794084f301a",
+              "title": "Energy points — last value",
+              "spec": {
+                "spec_version": 1,
+                "viz": "table",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "energy"
+                  },
+                  "metric": "last",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 0,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "9a0e2929-162a-44ab-b9f5-8521e220075d",
+              "title": "Sample volume by device",
+              "spec": {
+                "spec_version": 1,
+                "viz": "bar",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "all"
+                  },
+                  "metric": "count",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "device",
+                  "limit": 8
+                }
+              },
+              "x": 0,
+              "y": 5,
+              "w": 5,
+              "h": 5
+            },
+            {
+              "id": "33cd5f26-19a5-4cae-aa4d-27940d7da94c",
+              "title": "BROKEN EDIT — should be undone",
+              "spec": {
+                "spec_version": 1,
+                "viz": "stat",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "hvac"
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 1,
+                  "ignore_all_filters": true
+                },
+                "options": {}
+              },
+              "x": 8,
+              "y": 5,
+              "w": 9,
+              "h": 4
+            },
+            {
+              "id": "bf468afa-24ff-4ed1-8ec5-2a1baa8ce78b",
+              "title": "Readings by device",
+              "spec": {
+                "spec_version": 2,
+                "viz": "pie",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "device_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "count"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "device_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 9,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "808e9c04-cf5b-4609-a9e7-6fec44fdbc81",
+              "title": "Point activity by hour",
+              "spec": {
+                "spec_version": 2,
+                "viz": "heatmap",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "measure": "value",
+                      "aggregate": "avg"
+                    }
+                  ],
+                  "time_series": true,
+                  "series_by": "point_id",
+                  "series_label": "point_tag",
+                  "group_by": [],
+                  "order_by": [],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 10,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "a8dfa7b5-7d62-4cf1-a794-4d40ff5a9383",
+              "title": "Top point vs its scope",
+              "spec": {
+                "spec_version": 2,
+                "viz": "gauge",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "point_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "last"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "point_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 15,
+              "w": 3,
+              "h": 4
+            }
+          ]
+        },
+        "created_by": "3cd1c8ca-c927-41af-9101-c345241c7492",
+        "created_at": "2026-08-30T12:27:33.053553+00:00"
+      },
+      {
+        "id": "aaa24df3-29e5-4fba-9a2d-21fa777c8514",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "version": 3,
+        "label": "before restoring version 1",
+        "snapshot": {
+          "name": "Building Overview",
+          "description": "Live energy + HVAC from the aeon gateway",
+          "grid_cols": 12,
+          "row_height": 56,
+          "config": {
+            "filters": [
+              {
+                "id": "f_cat",
+                "label": "Category",
+                "dataset": "iot_readings",
+                "column": "category",
+                "op": "in",
+                "multi": true
+              }
+            ],
+            "variables": []
+          },
+          "widgets": [
+            {
+              "id": "c272009a-4d30-431a-b362-b865b4651359",
+              "title": "Main incomer currents",
+              "spec": {
+                "spec_version": 1,
+                "viz": "line",
+                "query": {
+                  "kind": "series",
+                  "scope": {
+                    "type": "points",
+                    "point_ids": [
+                      "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+                      "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+                      "f00115da-55d8-45cd-a157-cfe6f86f9329"
+                    ]
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "point",
+                  "limit": 3
+                }
+              },
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "22a17194-c0ab-459d-bbfc-b794084f301a",
+              "title": "Energy points — last value",
+              "spec": {
+                "spec_version": 1,
+                "viz": "table",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "energy"
+                  },
+                  "metric": "last",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 0,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "9a0e2929-162a-44ab-b9f5-8521e220075d",
+              "title": "Sample volume by device",
+              "spec": {
+                "spec_version": 1,
+                "viz": "bar",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "all"
+                  },
+                  "metric": "count",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "device",
+                  "limit": 8
+                }
+              },
+              "x": 0,
+              "y": 5,
+              "w": 5,
+              "h": 5
+            },
+            {
+              "id": "33cd5f26-19a5-4cae-aa4d-27940d7da94c",
+              "title": "BROKEN EDIT — should be undone",
+              "spec": {
+                "spec_version": 1,
+                "viz": "stat",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "hvac"
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 1,
+                  "ignore_all_filters": true
+                },
+                "options": {}
+              },
+              "x": 8,
+              "y": 5,
+              "w": 9,
+              "h": 4
+            },
+            {
+              "id": "bf468afa-24ff-4ed1-8ec5-2a1baa8ce78b",
+              "title": "Readings by device",
+              "spec": {
+                "spec_version": 2,
+                "viz": "pie",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "device_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "count"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "device_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 9,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "808e9c04-cf5b-4609-a9e7-6fec44fdbc81",
+              "title": "Point activity by hour",
+              "spec": {
+                "spec_version": 2,
+                "viz": "heatmap",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "measure": "value",
+                      "aggregate": "avg"
+                    }
+                  ],
+                  "time_series": true,
+                  "series_by": "point_id",
+                  "series_label": "point_tag",
+                  "group_by": [],
+                  "order_by": [],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 10,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "a8dfa7b5-7d62-4cf1-a794-4d40ff5a9383",
+              "title": "Top point vs its scope",
+              "spec": {
+                "spec_version": 2,
+                "viz": "gauge",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "point_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "last"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "point_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 15,
+              "w": 3,
+              "h": 4
+            }
+          ]
+        },
+        "created_by": "3cd1c8ca-c927-41af-9101-c345241c7492",
+        "created_at": "2026-08-30T12:27:33.111938+00:00"
+      },
+      {
+        "id": "1049c59d-880d-4f3f-a906-3ac17f509198",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "version": 4,
+        "label": "restored version 1",
+        "snapshot": {
+          "name": "Building Overview",
+          "description": "Live energy + HVAC from the aeon gateway",
+          "grid_cols": 12,
+          "row_height": 56,
+          "config": {
+            "filters": [
+              {
+                "id": "f_cat",
+                "label": "Category",
+                "dataset": "iot_readings",
+                "column": "category",
+                "op": "in",
+                "multi": true
+              }
+            ],
+            "variables": []
+          },
+          "widgets": [
+            {
+              "id": "c272009a-4d30-431a-b362-b865b4651359",
+              "title": "Main incomer currents",
+              "spec": {
+                "spec_version": 1,
+                "viz": "line",
+                "query": {
+                  "kind": "series",
+                  "scope": {
+                    "type": "points",
+                    "point_ids": [
+                      "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+                      "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+                      "f00115da-55d8-45cd-a157-cfe6f86f9329"
+                    ]
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "point",
+                  "limit": 3
+                }
+              },
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "22a17194-c0ab-459d-bbfc-b794084f301a",
+              "title": "Energy points — last value",
+              "spec": {
+                "spec_version": 1,
+                "viz": "table",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "energy"
+                  },
+                  "metric": "last",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 0,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "9a0e2929-162a-44ab-b9f5-8521e220075d",
+              "title": "Sample volume by device",
+              "spec": {
+                "spec_version": 1,
+                "viz": "bar",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "all"
+                  },
+                  "metric": "count",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "device",
+                  "limit": 8
+                }
+              },
+              "x": 0,
+              "y": 5,
+              "w": 5,
+              "h": 5
+            },
+            {
+              "id": "33cd5f26-19a5-4cae-aa4d-27940d7da94c",
+              "title": "Chiller — average",
+              "spec": {
+                "spec_version": 1,
+                "viz": "stat",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "hvac"
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 1,
+                  "ignore_all_filters": true
+                },
+                "options": {}
+              },
+              "x": 8,
+              "y": 5,
+              "w": 4,
+              "h": 4
+            },
+            {
+              "id": "bf468afa-24ff-4ed1-8ec5-2a1baa8ce78b",
+              "title": "Readings by device",
+              "spec": {
+                "spec_version": 2,
+                "viz": "pie",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "device_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "count"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "device_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 9,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "808e9c04-cf5b-4609-a9e7-6fec44fdbc81",
+              "title": "Point activity by hour",
+              "spec": {
+                "spec_version": 2,
+                "viz": "heatmap",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "measure": "value",
+                      "aggregate": "avg"
+                    }
+                  ],
+                  "time_series": true,
+                  "series_by": "point_id",
+                  "series_label": "point_tag",
+                  "group_by": [],
+                  "order_by": [],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 10,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "a8dfa7b5-7d62-4cf1-a794-4d40ff5a9383",
+              "title": "Top point vs its scope",
+              "spec": {
+                "spec_version": 2,
+                "viz": "gauge",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "point_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "last"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "point_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 15,
+              "w": 3,
+              "h": 4
+            }
+          ]
+        },
+        "created_by": "3cd1c8ca-c927-41af-9101-c345241c7492",
+        "created_at": "2026-08-30T12:27:33.117131+00:00"
+      },
+      {
+        "id": "3ace847e-fc3c-4156-bb03-316931855af5",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "version": 5,
+        "label": "edited “Energy points — last value”",
+        "snapshot": {
+          "name": "Building Overview",
+          "description": "Live energy + HVAC from the aeon gateway",
+          "grid_cols": 12,
+          "row_height": 56,
+          "config": {
+            "filters": [
+              {
+                "id": "f_cat",
+                "label": "Category",
+                "dataset": "iot_readings",
+                "column": "category",
+                "op": "in",
+                "multi": true
+              }
+            ],
+            "variables": []
+          },
+          "widgets": [
+            {
+              "id": "c272009a-4d30-431a-b362-b865b4651359",
+              "title": "Main incomer currents",
+              "spec": {
+                "spec_version": 1,
+                "viz": "line",
+                "query": {
+                  "kind": "series",
+                  "scope": {
+                    "type": "points",
+                    "point_ids": [
+                      "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+                      "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+                      "f00115da-55d8-45cd-a157-cfe6f86f9329"
+                    ]
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "point",
+                  "limit": 3
+                }
+              },
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "22a17194-c0ab-459d-bbfc-b794084f301a",
+              "title": "Energy points — last value",
+              "spec": {
+                "spec_version": 1,
+                "viz": "table",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "energy"
+                  },
+                  "metric": "last",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 8
+                },
+                "options": {
+                  "calc_fields": [
+                    {
+                      "name": "Per sample",
+                      "formula": "[LAST] / [SAMPLES]"
+                    }
+                  ]
+                }
+              },
+              "x": 8,
+              "y": 0,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "9a0e2929-162a-44ab-b9f5-8521e220075d",
+              "title": "Sample volume by device",
+              "spec": {
+                "spec_version": 1,
+                "viz": "bar",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "all"
+                  },
+                  "metric": "count",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "device",
+                  "limit": 8
+                }
+              },
+              "x": 0,
+              "y": 5,
+              "w": 5,
+              "h": 5
+            },
+            {
+              "id": "33cd5f26-19a5-4cae-aa4d-27940d7da94c",
+              "title": "Chiller — average",
+              "spec": {
+                "spec_version": 1,
+                "viz": "stat",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "hvac"
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 1,
+                  "ignore_all_filters": true
+                },
+                "options": {}
+              },
+              "x": 8,
+              "y": 5,
+              "w": 4,
+              "h": 4
+            },
+            {
+              "id": "bf468afa-24ff-4ed1-8ec5-2a1baa8ce78b",
+              "title": "Readings by device",
+              "spec": {
+                "spec_version": 2,
+                "viz": "pie",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "device_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "count"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "device_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 9,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "808e9c04-cf5b-4609-a9e7-6fec44fdbc81",
+              "title": "Point activity by hour",
+              "spec": {
+                "spec_version": 2,
+                "viz": "heatmap",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "measure": "value",
+                      "aggregate": "avg"
+                    }
+                  ],
+                  "time_series": true,
+                  "series_by": "point_id",
+                  "series_label": "point_tag",
+                  "group_by": [],
+                  "order_by": [],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 10,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "a8dfa7b5-7d62-4cf1-a794-4d40ff5a9383",
+              "title": "Top point vs its scope",
+              "spec": {
+                "spec_version": 2,
+                "viz": "gauge",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "point_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "last"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "point_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 15,
+              "w": 3,
+              "h": 4
+            }
+          ]
+        },
+        "created_by": "3cd1c8ca-c927-41af-9101-c345241c7492",
+        "created_at": "2026-08-30T12:30:32.969788+00:00"
+      },
+      {
+        "id": "4bb8c420-46ba-47ec-be67-b6f953820818",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "version": 6,
+        "label": "edited “Energy points — last value”",
+        "snapshot": {
+          "name": "Building Overview",
+          "description": "Live energy + HVAC from the aeon gateway",
+          "grid_cols": 12,
+          "row_height": 56,
+          "config": {
+            "filters": [
+              {
+                "id": "f_cat",
+                "label": "Category",
+                "dataset": "iot_readings",
+                "column": "category",
+                "op": "in",
+                "multi": true
+              }
+            ],
+            "variables": []
+          },
+          "widgets": [
+            {
+              "id": "c272009a-4d30-431a-b362-b865b4651359",
+              "title": "Main incomer currents",
+              "spec": {
+                "spec_version": 1,
+                "viz": "line",
+                "query": {
+                  "kind": "series",
+                  "scope": {
+                    "type": "points",
+                    "point_ids": [
+                      "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+                      "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+                      "f00115da-55d8-45cd-a157-cfe6f86f9329"
+                    ]
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "point",
+                  "limit": 3
+                }
+              },
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "22a17194-c0ab-459d-bbfc-b794084f301a",
+              "title": "Energy points — last value",
+              "spec": {
+                "spec_version": 1,
+                "viz": "table",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "energy"
+                  },
+                  "metric": "last",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 8
+                },
+                "options": {
+                  "calc_fields": [
+                    {
+                      "name": "Per sample",
+                      "formula": "[last] / [samples]"
+                    }
+                  ]
+                }
+              },
+              "x": 8,
+              "y": 0,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "9a0e2929-162a-44ab-b9f5-8521e220075d",
+              "title": "Sample volume by device",
+              "spec": {
+                "spec_version": 1,
+                "viz": "bar",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "all"
+                  },
+                  "metric": "count",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "device",
+                  "limit": 8
+                }
+              },
+              "x": 0,
+              "y": 5,
+              "w": 5,
+              "h": 5
+            },
+            {
+              "id": "33cd5f26-19a5-4cae-aa4d-27940d7da94c",
+              "title": "Chiller — average",
+              "spec": {
+                "spec_version": 1,
+                "viz": "stat",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "hvac"
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 1,
+                  "ignore_all_filters": true
+                },
+                "options": {}
+              },
+              "x": 8,
+              "y": 5,
+              "w": 4,
+              "h": 4
+            },
+            {
+              "id": "bf468afa-24ff-4ed1-8ec5-2a1baa8ce78b",
+              "title": "Readings by device",
+              "spec": {
+                "spec_version": 2,
+                "viz": "pie",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "device_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "count"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "device_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 9,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "808e9c04-cf5b-4609-a9e7-6fec44fdbc81",
+              "title": "Point activity by hour",
+              "spec": {
+                "spec_version": 2,
+                "viz": "heatmap",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "measure": "value",
+                      "aggregate": "avg"
+                    }
+                  ],
+                  "time_series": true,
+                  "series_by": "point_id",
+                  "series_label": "point_tag",
+                  "group_by": [],
+                  "order_by": [],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 10,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "a8dfa7b5-7d62-4cf1-a794-4d40ff5a9383",
+              "title": "Top point vs its scope",
+              "spec": {
+                "spec_version": 2,
+                "viz": "gauge",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "point_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "last"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "point_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 15,
+              "w": 3,
+              "h": 4
+            }
+          ]
+        },
+        "created_by": "3cd1c8ca-c927-41af-9101-c345241c7492",
+        "created_at": "2026-08-30T12:31:03.770813+00:00"
+      },
+      {
+        "id": "8b972166-27d6-444b-bb73-b58478bcadd8",
+        "tenant_id": "c8ca5b7b-050d-4a10-8b06-0f4836d92397",
+        "dashboard_id": "745fa71d-32f6-4782-ab64-0ebadef29068",
+        "version": 7,
+        "label": "edited “Energy points — last value”",
+        "snapshot": {
+          "name": "Building Overview",
+          "description": "Live energy + HVAC from the aeon gateway",
+          "grid_cols": 12,
+          "row_height": 56,
+          "config": {
+            "filters": [
+              {
+                "id": "f_cat",
+                "label": "Category",
+                "dataset": "iot_readings",
+                "column": "category",
+                "op": "in",
+                "multi": true
+              }
+            ],
+            "variables": []
+          },
+          "widgets": [
+            {
+              "id": "c272009a-4d30-431a-b362-b865b4651359",
+              "title": "Main incomer currents",
+              "spec": {
+                "spec_version": 1,
+                "viz": "line",
+                "query": {
+                  "kind": "series",
+                  "scope": {
+                    "type": "points",
+                    "point_ids": [
+                      "ef18ceb5-d7f6-45f1-b902-699fa8a708c8",
+                      "998952ac-7c39-4f1e-9d55-2b570ec7badf",
+                      "f00115da-55d8-45cd-a157-cfe6f86f9329"
+                    ]
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "point",
+                  "limit": 3
+                }
+              },
+              "x": 0,
+              "y": 0,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "22a17194-c0ab-459d-bbfc-b794084f301a",
+              "title": "Energy points — last value",
+              "spec": {
+                "spec_version": 1,
+                "viz": "table",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "energy"
+                  },
+                  "metric": "last",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 8
+                },
+                "options": {}
+              },
+              "x": 8,
+              "y": 0,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "9a0e2929-162a-44ab-b9f5-8521e220075d",
+              "title": "Sample volume by device",
+              "spec": {
+                "spec_version": 1,
+                "viz": "bar",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "all"
+                  },
+                  "metric": "count",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 2
+                  },
+                  "group_by": "device",
+                  "limit": 8
+                }
+              },
+              "x": 0,
+              "y": 5,
+              "w": 5,
+              "h": 5
+            },
+            {
+              "id": "33cd5f26-19a5-4cae-aa4d-27940d7da94c",
+              "title": "Chiller — average",
+              "spec": {
+                "spec_version": 1,
+                "viz": "stat",
+                "query": {
+                  "kind": "aggregate",
+                  "scope": {
+                    "type": "category",
+                    "category": "hvac"
+                  },
+                  "metric": "avg",
+                  "rollup": "auto",
+                  "window": {
+                    "last_hours": 1
+                  },
+                  "group_by": "point",
+                  "limit": 1,
+                  "ignore_all_filters": true
+                },
+                "options": {}
+              },
+              "x": 8,
+              "y": 5,
+              "w": 4,
+              "h": 4
+            },
+            {
+              "id": "bf468afa-24ff-4ed1-8ec5-2a1baa8ce78b",
+              "title": "Readings by device",
+              "spec": {
+                "spec_version": 2,
+                "viz": "pie",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "device_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "count"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "device_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 8
+                }
+              },
+              "x": 8,
+              "y": 9,
+              "w": 4,
+              "h": 5
+            },
+            {
+              "id": "808e9c04-cf5b-4609-a9e7-6fec44fdbc81",
+              "title": "Point activity by hour",
+              "spec": {
+                "spec_version": 2,
+                "viz": "heatmap",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "measure": "value",
+                      "aggregate": "avg"
+                    }
+                  ],
+                  "time_series": true,
+                  "series_by": "point_id",
+                  "series_label": "point_tag",
+                  "group_by": [],
+                  "order_by": [],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 10,
+              "w": 8,
+              "h": 5
+            },
+            {
+              "id": "a8dfa7b5-7d62-4cf1-a794-4d40ff5a9383",
+              "title": "Top point vs its scope",
+              "spec": {
+                "spec_version": 2,
+                "viz": "gauge",
+                "query": {
+                  "dataset": "iot_readings",
+                  "resolution": "auto",
+                  "filters": [],
+                  "filter_combinator": "AND",
+                  "having": [],
+                  "window": {
+                    "last_hours": 6
+                  },
+                  "select": [
+                    {
+                      "dimension": "point_tag"
+                    },
+                    {
+                      "measure": "value",
+                      "aggregate": "last"
+                    }
+                  ],
+                  "time_series": false,
+                  "series_by": null,
+                  "series_label": null,
+                  "group_by": [
+                    "point_tag"
+                  ],
+                  "order_by": [
+                    {
+                      "select_index": 1,
+                      "dir": "desc"
+                    }
+                  ],
+                  "limit": 10
+                }
+              },
+              "x": 0,
+              "y": 15,
+              "w": 3,
+              "h": 4
+            }
+          ]
+        },
+        "created_by": "3cd1c8ca-c927-41af-9101-c345241c7492",
+        "created_at": "2026-08-30T12:31:57.176383+00:00"
+      }
+    ],
+    "alembic_version": "0003_dashboard_versions"
+  }
+}

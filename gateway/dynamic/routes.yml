@@ -42,21 +42,11 @@ http:
       entryPoints: [web]
       priority: 110
       middlewares: [api-protected]
-    dashboards:
-      # Dashboard + widget DEFINITIONS under /api/v1/dashboards. The widgets' DATA
-      # is not here — it comes from /api/v1/bi/query on the reading-writer, which
-      # owns the readings schema. A bare /dashboards prefix would swallow the
-      # operator UI's own /dashboards page, so keep this narrow.
-      rule: "PathPrefix(`/api/v1/dashboards`)"
-      service: dashboards
-      entryPoints: [web]
-      priority: 110
-      middlewares: [api-protected]
     dashforge:
-      # The registry of EMBEDDED DashForge dashboards under /api/v1/dashforge —
-      # a different service from `dashboards` above and deliberately a different
-      # prefix, so the retiring builder keeps answering on its own routes while
-      # this one stands up beside it.
+      # The registry of EMBEDDED DashForge dashboards under /api/v1/dashforge.
+      # A `dashboards` router answered /api/v1/dashboards beside this one until
+      # 2026-09-03, when NeuBit's own builder was retired; the separate prefix is
+      # what let the two stand up side by side through that changeover.
       #
       # Note what is NOT routed here: DashForge's own API and its
       # /public/embed/:token page. Those are reached by the BROWSER directly on
@@ -244,10 +234,6 @@ http:
       loadBalancer:
         servers:
           - url: "http://vision:8000"
-    dashboards:
-      loadBalancer:
-        servers:
-          - url: "http://dashboards:8000"
     dashforge:
       loadBalancer:
         servers:

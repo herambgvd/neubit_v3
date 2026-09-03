@@ -38,7 +38,12 @@ neubit_vision        # VMS: cameras, recordings, exports
   # If a platform-hosted recorder ever returns, add its database back here
   # deliberately.
 neubit_reporting     # IoT reading store (TimescaleDB hypertables + rollups)
-neubit_dashboards    # dashboard + widget definitions (no readings)
+  # neubit_dashboards held NeuBit's own dashboard builder and was ensured
+  # here until 2026-09-03. REMOVED with the builder: DashForge is the
+  # dashboarding surface now and nothing reads this database. The existing
+  # one on a live server is deliberately NOT dropped -- see
+  # docs/dashboard-builder-final-export-2026-09-03.json -- but a fresh
+  # install has no reason to create it.
 neubit_dashforge     # which DashForge dashboards this platform embeds (pointers only)
 dashforge            # DASHFORGE'S OWN database. Not a neubit_* name because it is
                      # not this platform's schema: DashForge owns it, migrates it
