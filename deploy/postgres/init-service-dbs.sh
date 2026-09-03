@@ -39,6 +39,22 @@ neubit_vision        # VMS: cameras, recordings, exports
   # deliberately.
 neubit_reporting     # IoT reading store (TimescaleDB hypertables + rollups)
 neubit_dashboards    # dashboard + widget definitions (no readings)
+neubit_dashforge     # which DashForge dashboards this platform embeds (pointers only)
+dashforge            # DASHFORGE'S OWN database. Not a neubit_* name because it is
+                     # not this platform's schema: DashForge owns it, migrates it
+                     # and is the only thing that reads it. It lives on this
+                     # Postgres for the same reason the other eight do -- one
+                     # server to back up, tune and watch -- and NOT because the two
+                     # products share anything. Composing DashForge in is done from
+                     # NEUBIT deploy/ (docker-compose.dashforge.yml); a compose up
+                     # in its own repo still brings up its own Postgres and must
+                     # keep working untouched.
+                     #
+                     # NOTE FOR THE NEXT EDITOR: this list is a double-quoted bash
+                     # string, so a backtick in a comment here is COMMAND
+                     # SUBSTITUTION, not punctuation. One in this very block ran
+                     # as a command and exited db-init 127, which surfaces as
+                     # every service behind it refusing to start.
 "
 
 # psql connects over the local socket under the initdb hook (no PGHOST) and over

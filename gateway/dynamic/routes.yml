@@ -52,6 +52,22 @@ http:
       entryPoints: [web]
       priority: 110
       middlewares: [api-protected]
+    dashforge:
+      # The registry of EMBEDDED DashForge dashboards under /api/v1/dashforge —
+      # a different service from `dashboards` above and deliberately a different
+      # prefix, so the retiring builder keeps answering on its own routes while
+      # this one stands up beside it.
+      #
+      # Note what is NOT routed here: DashForge's own API and its
+      # /public/embed/:token page. Those are reached by the BROWSER directly on
+      # the DashForge origin (the iframe src), because the embed token is the
+      # credential and proxying it through this gateway would put a bearer
+      # credential in the platform edge's access log for no gain.
+      rule: "PathPrefix(`/api/v1/dashforge`)"
+      service: dashforge
+      entryPoints: [web]
+      priority: 110
+      middlewares: [api-protected]
     reading-writer:
       # Building Intelligence read API under /api/v1/bi. ONLY that prefix: the
       # rest of the reading-writer (/health, /readyz, /metrics, /stats) stays an
@@ -232,6 +248,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://dashboards:8000"
+    dashforge:
+      loadBalancer:
+        servers:
+          - url: "http://dashforge:8000"
     reading-writer:
       loadBalancer:
         servers:

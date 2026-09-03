@@ -1,0 +1,124 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DASHFORGE, COMPOSED IN FROM THIS SIDE.
+#
+# DashForge is a separate product that is also sold standalone. A fresh
+# `docker compose up` in ITS repo must keep working with no NeuBit anywhere —
+# an earlier attempt wired NeuBit into that repo's own compose (an `external`
+# network named `neubit`) and a buyer without that network could not start the
+# stack at all; it was reverted there (`git show 4dc2486` in the DashForge repo).
+# So the integration lives HERE. Nothing in this file exists in that repository,
+# and this file only ever ADDS to what it already publishes.
+#
+# OPT-IN. It is not auto-merged like docker-compose.override.yml is, because a
+# NeuBit deployment without DashForge is a supported shape — the `dashforge`
+# service in the base file serves its registry and answers 503 on an embed
+# session, which is the honest answer when the peer is not deployed. Turn it on
+# by naming it explicitly:
+#
+#   DASHFORGE_REPO=/path/to/dashforge/project \
+#     docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#                    -f docker-compose.dashforge.yml up -d
+#
+# ONE POSTGRES, NOT TWO. DashForge's own compose brings up a Postgres and a
+# Redis of its own; here it uses NeuBit's, exactly as the eight NeuBit services
+# do. That is the platform's pattern and the reason for it is operational, not
+# architectural: one server to back up, tune, watch and upgrade. The two products
+# still share NOTHING — DashForge owns the `dashforge` database, migrates it and
+# is the only thing that reads it (deploy/postgres/init-service-dbs.sh creates
+# it), and NeuBit's services never open it.
+#
+# REDIS DB INDEX 3, NOT 0. NeuBit's services are on `redis://redis:6379/0`.
+# DashForge uses Redis for its cache, rate limiter and stream fan-out with its
+# own key names; on a shared index a `FLUSHDB` from either side — or a key name
+# that happens to collide — silently corrupts the other product's state. A
+# separate logical database costs nothing and makes that impossible.
+#
+# NAME COLLISION: the DashForge compose's own `networks:` note warns that a
+# container on two networks resolves bare service names across BOTH, so it
+# addresses its own services by `conflux-` aliases. Here its containers are on
+# the `neubit` network ONLY, so `postgres` and `redis` are unambiguously
+# NeuBit's — which is what the DSNs below intend. Do not add a second network to
+# these services without re-reading that note.
+#
+# HOST PORTS: docker-compose.override.yml already owns 3000 (NeuBit console),
+# 5432, 6379, 8000, 80, 8090, 4222 and 8222, so DashForge takes 3100/8180.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  dashforge-backend:
+    build:
+      # The DashForge working copy on this machine. No default: a wrong path
+      # would build something unexpected, and compose's own error naming the
+      # unset variable is clearer than a silent guess.
+      context: ${DASHFORGE_REPO:?set DASHFORGE_REPO to the DashForge repo checkout}/backend
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/dashforge?sslmode=disable
+      REDIS_URL: redis://redis:6379/3
+      JWT_SECRET: ${DASHFORGE_JWT_SECRET:-change-me-access-secret-32bytes!!}
+      JWT_REFRESH_SECRET: ${DASHFORGE_JWT_REFRESH_SECRET:-change-me-refresh-secret-32byte}
+      ENCRYPTION_KEY: ${DASHFORGE_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}
+      # EMBED_SECRET is DELIBERATELY set and deliberately not JWT_SECRET.
+      # DashForge falls back to JWT_SECRET when this is unset, which would make
+      # one key sign both session tokens and public embed tokens — and embed
+      # tokens are handed to browsers by design. Distinct keys mean a leaked
+      # embed secret cannot be turned into a DashForge session.
+      EMBED_SECRET: ${DASHFORGE_EMBED_SECRET:-change-me-embed-secret-32bytes!!}
+      # Which origins may put an embed page in an iframe. NOT "*" (the default):
+      # the whole point of the allowlist is that a token which leaks out of this
+      # console cannot be framed into someone else's page and made to look like
+      # theirs. This is the NeuBit console's origin — the gateway on :80.
+      EMBED_FRAME_ANCESTORS: ${DASHFORGE_FRAME_ANCESTORS:-http://localhost http://localhost:80}
+      # The DashForge frontend origin as a BROWSER sees it, used in the snippets
+      # its API hands back. Must match VE_DASHFORGE_PUBLIC_URL on NeuBit's
+      # `dashforge` service or the two would disagree about where the embed page
+      # lives.
+      FRONTEND_URL: ${VE_DASHFORGE_PUBLIC_URL:-http://localhost:3100}
+      CORS_ORIGIN: ${VE_DASHFORGE_PUBLIC_URL:-http://localhost:3100}
+      SUPERADMIN_EMAILS: ${DASHFORGE_SUPERADMIN_EMAILS:-}
+      # Dev runs over plain http; Secure cookies would be dropped by the browser.
+      COOKIE_SECURE: "false"
+      UPLOADS_DB_PATH: /data/uploads/uploads.db
+    volumes:
+      - dashforge-uploads:/data/uploads
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    ports: ["8180:8080"]
+    networks: [neubit]
+
+  dashforge-frontend:
+    build:
+      context: ${DASHFORGE_REPO:?set DASHFORGE_REPO to the DashForge repo checkout}/frontend-next
+      args:
+        # Baked into the Next rewrite manifest at build time — rewrites() runs
+        # during `next build`, so a runtime-only env is too late. The service
+        # name is this file's, not the DashForge repo's, because that repo calls
+        # it `backend` and a bare `backend` on a shared network is exactly the
+        # collision its own compose warns about.
+        BACKEND_ORIGIN: http://dashforge-backend:8080
+    restart: unless-stopped
+    environment:
+      BACKEND_ORIGIN: http://dashforge-backend:8080
+    depends_on:
+      dashforge-backend: { condition: service_healthy }
+    healthcheck:
+      # 127.0.0.1, NOT localhost: in this image `localhost` resolves to ::1
+      # first and the Next standalone server binds IPv4 only.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    ports: ["3100:3000"]
+    networks: [neubit]
+
+volumes:
+  dashforge-uploads:

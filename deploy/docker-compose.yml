@@ -274,6 +274,55 @@ services:
       - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
     networks: [neubit]
 
+  # ── dashforge service (Python / neubit kernel) ──────────────────
+  # The registry of EMBEDDED DashForge dashboards: which of them this platform
+  # shows, under what name, and the gated per-session mint of their embed
+  # tokens. Owns its own DB (neubit_dashforge) on the shared Postgres, the
+  # pattern every other satellite uses.
+  #
+  # It stores POINTERS, not dashboards. Layout, widgets and queries live in
+  # DashForge, which owns them; a widget's numbers are fetched by DashForge from
+  # its own datasource. So this service never opens neubit_reporting and adds no
+  # second query path against the readings schema.
+  #
+  # The DashForge PEER itself is not defined here — see
+  # docker-compose.dashforge.yml, which is opt-in via COMPOSE_FILE. Without it
+  # this service still serves the registry and answers 503 on an embed session,
+  # which is the honest answer when the peer is not deployed.
+  dashforge:
+    build:
+      context: ../backend
+      dockerfile: dashforge/Dockerfile
+    env_file: .env
+    environment:
+      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_dashforge
+      # Where THIS SERVICE reaches DashForge (compose network) and where a
+      # BROWSER reaches it (the iframe src). They are different on purpose: the
+      # operator's browser is not on this network, so an internal service name in
+      # the second would produce an iframe that silently never loads.
+      VE_DASHFORGE_BASE_URL: ${VE_DASHFORGE_BASE_URL:-}
+      VE_DASHFORGE_PUBLIC_URL: ${VE_DASHFORGE_PUBLIC_URL:-}
+      # The DashForge service account. Lowest role that can mint (editor), in the
+      # one workspace whose dashboards this platform embeds — never a DashForge
+      # super-admin: this account is the ceiling on what any NeuBit viewer can
+      # ever be shown. See backend/dashforge/app/config.py.
+      VE_DASHFORGE_EMAIL: ${VE_DASHFORGE_EMAIL:-}
+      VE_DASHFORGE_PASSWORD: ${VE_DASHFORGE_PASSWORD:-}
+      VE_DASHFORGE_TOKEN_TTL_MINUTES: ${VE_DASHFORGE_TOKEN_TTL_MINUTES:-15}
+    depends_on:
+      postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
+      nats: { condition: service_started }
+    # 0001_dashforge is THIS service's baseline — see deploy/migrate.sh, and the
+    # note on the dashboards service above for what naming another service's
+    # baseline here costs.
+    command: >
+      bash -c "/usr/local/bin/neubit-migrate 0001_dashforge &&
+               uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
+    networks: [neubit]
+
   # ── workflow service (Python / neubit_common) ───────────────────
   # SOP / automation engine. Owns its own DB (neubit_workflow). API + a Celery
   # worker + beat (three containers sharing one image).

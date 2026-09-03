@@ -150,6 +150,20 @@ class CorePerm:
     # rather than numbers they are not entitled to.
     DASHBOARDS_READ = "dashboards.read"
     DASHBOARDS_MANAGE = "dashboards.manage"
+    # DashForge embeds — the dashboards NeuBit SHOWS but does not build. DashForge
+    # is the single dashboarding surface; this platform registers which of its
+    # dashboards appear here and renders them.
+    #
+    # READ is load-bearing in a way `dashboards.read` is not. DashForge's
+    # `/public/embed/:token` is UNAUTHENTICATED — the token IS the credential —
+    # so the only check standing in front of that data is the one NeuBit makes
+    # before minting a token (`backend/dashforge/app/embeds/router.py`). A caller
+    # without this key never gets a token and therefore never gets the data.
+    # MANAGE decides which dashboards are registered here at all, which is why it
+    # is separate: being allowed to LOOK at an embedded dashboard must not imply
+    # being allowed to point the console at a different one.
+    DASHFORGE_READ = "dashforge.read"
+    DASHFORGE_MANAGE = "dashforge.manage"
     # --- Ingest (external webhooks / event ingestion) ----------------------
     # Enforced by the ingest service (`backend/ingest/app/ingest/router.py`) and,
     # until now, MISSING from this catalog — so no role could grant them and only
@@ -252,6 +266,22 @@ PERMISSIONS.register(
         "Build / edit dashboards",
         "Dashboards",
         "Create, rename and delete dashboards, add widgets and arrange the canvas.",
+    ),
+    Permission(
+        CorePerm.DASHFORGE_READ,
+        "View DashForge dashboards",
+        "Dashboards",
+        "Open the DashForge dashboards registered on this platform. Holding this "
+        "is what mints the short-lived embed token a viewer needs; without it no "
+        "token is ever created, so the dashboard's data is unreachable.",
+    ),
+    Permission(
+        CorePerm.DASHFORGE_MANAGE,
+        "Register / remove DashForge dashboards",
+        "Dashboards",
+        "Choose which DashForge dashboards this platform shows, name them, and "
+        "set the filter values locked into their embed tokens. Authoring the "
+        "dashboards themselves happens in DashForge.",
     ),
     # --- Ingest ------------------------------------------------------------
     Permission(CorePerm.INGEST_READ, "View ingest categories / webhooks / events", "Ingest"),
