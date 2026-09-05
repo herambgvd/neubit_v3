@@ -15,8 +15,31 @@ conventions:
     (the correlation engine) driven by a Celery worker.
   * Scheduled work (escalation / timeout / notification dispatch) via Celery beat.
 
-The connector framework (``app.workflow.connectors``) makes notification delivery
-pluggable — Email + Webhook today, WhatsApp / mobile-push later as drop-in classes.
+LAYOUT — one package per feature, each holding its own models / schemas / service
+/ router, so a change to one subject is a change inside one directory:
+
+    sops/           the playbook: sops, states, transitions
+    triggers/       what starts an incident: triggers, alert formats, simulator
+    instances/      a running incident: state machine, PDF, escalation sweeps
+    forms/          dynamic form definitions + their validator
+    notifications/  templates, channels, outbox, device tokens, connectors
+    threat_levels/  the site / deployment threat-posture register
+    correlation/    the live NATS event→incident consumer + its dedup slots
+
+and two packages that are explicitly NOT features:
+
+    core/           the shared vocabulary and pure rules (leaf; imports no feature)
+    runtime/        process plumbing: the event bus, the per-run task session
+
+plus two files at this level, both of which exist to be the ONE place something is
+listed:
+
+    router.py       assembles the feature routers, in mount order
+    tables.py       imports every model module so Alembic sees all 14 tables
+
+The dependency graph is one-directional and must stay that way:
+``core`` ← features ← ``instances`` ← ``correlation``. Nothing in ``sops``,
+``forms`` or ``notifications`` may import ``instances``.
 
 Wire the routers into the service app::
 

@@ -15,14 +15,13 @@ no network happens; real end-to-end delivery is a LIVE-VALIDATE step (real proje
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 import pytest
 
-from app.workflow.connectors import registry
-from app.workflow.connectors.base import DeliveryContext
-from app.workflow.connectors.push import (
+from app.workflow.notifications.connectors import registry
+from app.workflow.notifications.connectors.base import DeliveryContext
+from app.workflow.notifications.connectors.push import (
     PushConnector,
     PushToken,
     _apns_payload,
@@ -32,8 +31,7 @@ from app.workflow.connectors.push import (
 )
 
 
-def _run(coro):
-    return asyncio.run(coro)
+from conftest import run_async as _run
 
 
 # ── registry ──────────────────────────────────────────────────────────
@@ -190,7 +188,7 @@ def test_tenant_scoping_resolver_receives_tenant():
 def test_fcm_delivery_and_prune_with_stub(monkeypatch):
     """Stub the FCM access-token mint + httpx so we exercise the send loop:
     one 200 (delivered) + one UNREGISTERED (pruned)."""
-    from app.workflow.connectors import push as push_mod
+    from app.workflow.notifications.connectors import push as push_mod
 
     async def fake_token(_sa):
         return "bearer-xyz"

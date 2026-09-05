@@ -1,8 +1,10 @@
 """Celery worker + beat schedule for the workflow service.
 
 A Celery app on the shared Redis broker (VE_REDIS_URL) that drives the workflow
-engine's scheduled + async work. The async task bodies live in
-``app.workflow.tasks``; each Celery task wraps one via ``asyncio.run``.
+engine's scheduled + async work. Each Celery task below wraps one async body via
+``asyncio.run``; the bodies live in the ``jobs`` module of the feature that OWNS
+the work, not in a shared task module. Three imports instead of one is the point:
+it says on the import line which part of the domain each sweep belongs to.
 
 Tasks:
   * ``escalation_sweep``       — SLA breach + state-timeout + SOP-rule escalations.
@@ -29,7 +31,9 @@ from celery.schedules import crontab
 
 from kernel.config import get_settings
 
-from app.workflow import tasks as wf_tasks
+from app.workflow.correlation import jobs as correlation_jobs
+from app.workflow.instances import jobs as instance_jobs
+from app.workflow.notifications import jobs as notification_jobs
 
 log = logging.getLogger("workflow.worker")
 
@@ -77,38 +81,38 @@ celery_app.conf.beat_schedule = {
 @celery_app.task(name="app.worker.escalation_sweep")
 def escalation_sweep() -> int:
     """SLA breach + state-timeout + SOP escalation-rule sweep."""
-    return asyncio.run(wf_tasks.escalation_sweep())
+    return asyncio.run(instance_jobs.escalation_sweep())
 
 
 @celery_app.task(name="app.worker.timeout_sweep")
 def timeout_sweep() -> int:
     """Auto-cancel instances idle past the global timeout."""
-    return asyncio.run(wf_tasks.timeout_sweep())
+    return asyncio.run(instance_jobs.timeout_sweep())
 
 
 @celery_app.task(name="app.worker.dispatch_notifications")
 def dispatch_notifications() -> int:
     """Drain the notification outbox through the connector registry."""
-    return asyncio.run(wf_tasks.dispatch_notifications())
+    return asyncio.run(notification_jobs.dispatch_notifications())
 
 
 @celery_app.task(name="app.worker.dedup_cleanup")
 def dedup_cleanup() -> int:
     """Delete expired correlation-dedup slots."""
-    return asyncio.run(wf_tasks.dedup_cleanup())
+    return asyncio.run(correlation_jobs.dedup_cleanup())
 
 
 @celery_app.task(name="app.worker.run_correlation_consumer")
 def run_correlation_consumer() -> str:
     """Long-running NATS→incident consumer. Blocks; run as a dedicated worker."""
-    asyncio.run(wf_tasks.run_correlation_consumer())
+    asyncio.run(correlation_jobs.run_correlation_consumer())
     return "stopped"
 
 
 @celery_app.task(name="app.worker.run_notify_consumer")
 def run_notify_consumer() -> str:
     """Long-running NATS notify.request/vms.popup → outbox consumer. Blocks."""
-    asyncio.run(wf_tasks.run_notify_consumer())
+    asyncio.run(notification_jobs.run_notify_consumer())
     return "stopped"
 
 

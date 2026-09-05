@@ -31,7 +31,7 @@ from kernel.config import get_settings
 from kernel.errors import register_error_handlers
 from kernel.events import subject
 
-from app.workflow.events import bus
+from app.workflow.runtime.events import bus
 from app.workflow.router import routers as workflow_routers
 
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
     await subscribe_tenant_offboard(bus, database, durable="workflow-offboard")
     inline = os.getenv("VE_WORKFLOW_INLINE_CORRELATION", "").lower() in ("1", "true", "yes")
     if inline:
-        from app.workflow.correlation import CorrelationEngine
+        from app.workflow.correlation.engine import CorrelationEngine
 
         _correlation = CorrelationEngine()
         await _correlation.start()
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
     # The notify-request/vms.popup → outbox consumer rides the same inline flag (it
     # feeds the same connector framework). Separate opt-out via VE_WORKFLOW_INLINE_NOTIFY=0.
     if inline and os.getenv("VE_WORKFLOW_INLINE_NOTIFY", "1").lower() in ("1", "true", "yes"):
-        from app.workflow.notify_consumer import NotifyConsumer
+        from app.workflow.notifications.consumer import NotifyConsumer
 
         _notify = NotifyConsumer()
         await _notify.start()

@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from .shared import InstanceStatus
+from ..core.enums import InstanceStatus
 
 
 def _fmt(dt: Any) -> str:

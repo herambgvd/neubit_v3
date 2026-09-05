@@ -16,32 +16,21 @@ cross-link, plus the derived InstancePublic fields:
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db import Base
-from app.workflow.models import WorkflowInstance
-from app.workflow.service import InstanceService
-from app.workflow import schemas as S
+from app.workflow.instances.models import WorkflowInstance
+from app.workflow.instances.service import InstanceService
+from app.workflow.instances import schemas as S
+
+from conftest import make_sqlite_session, run_async as _run
 
 from kernel.auth import Scope
 
 
-def _run(coro):
-    return asyncio.run(coro)
-
-
 async def _make_session():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            lambda c: Base.metadata.create_all(c, tables=[WorkflowInstance.__table__])
-        )
-    sm = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    return engine, sm
+    return await make_sqlite_session(WorkflowInstance.__table__)
 
 
 TENANT_A = uuid.uuid4()

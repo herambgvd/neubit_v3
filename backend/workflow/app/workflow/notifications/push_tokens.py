@@ -23,7 +23,7 @@ from kernel.config import get_settings
 
 from .connectors.push import PushToken
 from .models import DeviceToken
-from .shared import utcnow
+from ..core.primitives import utcnow
 
 log = logging.getLogger("workflow.push_tokens")
 

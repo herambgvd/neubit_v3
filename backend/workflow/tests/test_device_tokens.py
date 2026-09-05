@@ -12,23 +12,18 @@ so they build on SQLite). Exercises:
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db import Base
-from app.workflow.models import DeviceToken, Notification
-from app.workflow.service import DeviceTokenService
-from app.workflow import schemas as S
+from app.workflow.notifications.models import DeviceToken, Notification
+from app.workflow.notifications.service import DeviceTokenService
+from app.workflow.notifications import schemas as S
+
+from conftest import make_sqlite_session, run_async as _run
 
 from kernel.auth import Principal, Scope
-
-
-def _run(coro):
-    return asyncio.run(coro)
 
 
 class _Actor:
@@ -37,16 +32,8 @@ class _Actor:
 
 
 async def _make_session():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        # Build only the tables these tests touch.
-        await conn.run_sync(
-            lambda c: Base.metadata.create_all(
-                c, tables=[DeviceToken.__table__, Notification.__table__]
-            )
-        )
-    sm = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    return engine, sm
+    # Only the tables these tests touch.
+    return await make_sqlite_session(DeviceToken.__table__, Notification.__table__)
 
 
 TENANT_A = uuid.uuid4()
@@ -122,7 +109,7 @@ def test_tenant_isolation_on_fanout():
                     session, Scope(tenant_id=TENANT_B, is_superadmin=False)
                 ).register(S.RegisterDeviceTokenRequest(platform="fcm", token="b-tok"), actor=_Actor("b-user"))
 
-                from app.workflow.notify_consumer import NotifyConsumer
+                from app.workflow.notifications.consumer import NotifyConsumer
 
                 users_a = await NotifyConsumer._tenant_push_users(session, str(TENANT_A))
                 users_b = await NotifyConsumer._tenant_push_users(session, str(TENANT_B))
@@ -138,7 +125,7 @@ def test_notify_consumer_request_enqueues_row():
     async def go():
         engine, sm = await _make_session()
         try:
-            from app.workflow.notify_consumer import NotifyConsumer
+            from app.workflow.notifications.consumer import NotifyConsumer
 
             consumer = NotifyConsumer.__new__(NotifyConsumer)  # skip bus connect
             consumer._sm = sm
@@ -169,7 +156,7 @@ def test_notify_consumer_popup_fans_out_to_push_users():
                     session, Scope(tenant_id=TENANT_A, is_superadmin=False)
                 ).register(S.RegisterDeviceTokenRequest(platform="fcm", token="x"), actor=_Actor("op-1"))
 
-            from app.workflow.notify_consumer import NotifyConsumer
+            from app.workflow.notifications.consumer import NotifyConsumer
 
             consumer = NotifyConsumer.__new__(NotifyConsumer)
             consumer._sm = sm

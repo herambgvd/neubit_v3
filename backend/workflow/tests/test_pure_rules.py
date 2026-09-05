@@ -1,18 +1,17 @@
-"""Unit tests for the pure workflow helpers in ``app.workflow.shared``.
+"""Unit tests for the pure workflow rules — no DB, no event loop.
 
-These cover the form-data validator, the status-machine guard, and the
-transition-condition context builder — all pure/synchronous so they need no DB.
+These cover the form-data validator (``forms.validation``), the status-machine
+guard (``core.enums``), and the trigger/transition condition matcher plus its
+context builder (``core.matching``). They were one file when those three lived
+in one module and stay one file: they are the same KIND of test, and splitting
+them by module would say nothing a reader needs.
 """
 
 from __future__ import annotations
 
-from app.workflow.shared import (
-    InstanceStatus,
-    build_instance_context,
-    is_legal_status_change,
-    matches_conditions,
-    validate_form_data,
-)
+from app.workflow.core.enums import InstanceStatus, is_legal_status_change
+from app.workflow.core.matching import build_instance_context, matches_conditions
+from app.workflow.forms.validation import validate_form_data
 
 
 # ── validate_form_data ─────────────────────────────────────────────────

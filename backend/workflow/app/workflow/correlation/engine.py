@@ -39,8 +39,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from kernel.events import EventBus, subject
 
 from app.db import get_engine
-from .models import SOP, AlertFormat, CorrelationDedup, State, Trigger, WorkflowInstance
-from .shared import InstancePriority, InstanceStatus, matches_conditions, utcnow, walk
+from ..core.enums import InstancePriority, InstanceStatus
+from ..core.matching import matches_conditions, walk
+from ..core.primitives import utcnow
+from ..instances.models import WorkflowInstance
+from ..sops.models import SOP, State
+from ..triggers.models import AlertFormat, Trigger
+from .models import CorrelationDedup
 
 log = logging.getLogger("workflow.correlation")
 

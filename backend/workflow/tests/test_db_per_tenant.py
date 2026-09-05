@@ -12,7 +12,6 @@ the running stack changes; this only exercises the machinery.
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 from kernel.db import Database
@@ -27,8 +26,7 @@ from kernel.provisioning import (
 _BASE = "postgresql+asyncpg://neubit:neubit@postgres:5432/neubit_workflow"
 
 
-def _run(coro):
-    return asyncio.run(coro)
+from conftest import run_async as _run
 
 
 # --- pure unit --------------------------------------------------------------
@@ -61,7 +59,7 @@ def test_provision_and_drop_tenant_db_live():
     tid = str(uuid.uuid4())
     # Use the SERVICE's real database handle + models so create_all builds the actual
     # workflow schema (a fresh Database() has an empty metadata → no tables).
-    import app.workflow.models  # noqa: F401 — registers models on app.db.Base
+    import app.workflow.tables  # noqa: F401 — registers every model on app.db.Base
     from app.db import database as db
 
     async def scenario():

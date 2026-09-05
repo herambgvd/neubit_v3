@@ -7,7 +7,6 @@ column), using a throwaway in-memory Database.
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 from sqlalchemy import Uuid, select
@@ -17,8 +16,7 @@ from kernel.db import Database
 from kernel.lifecycle import erase_tenant_data
 
 
-def _run(coro):
-    return asyncio.run(coro)
+from conftest import run_async as _run
 
 
 def test_erase_removes_only_target_tenant():

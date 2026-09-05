@@ -74,7 +74,7 @@ class PushConnector(Connector):
     ``recipient`` on the notification is the target **user_id**; the connector fans
     the push out to that user's registered device tokens (scoped to the
     notification's tenant). ``token_resolver`` / ``token_pruner`` default to the DB
-    helpers in ``app.workflow.push_tokens`` but can be injected for tests.
+    helpers in ``app.workflow.notifications.push_tokens`` but can be injected for tests.
     """
 
     channel_type = "push"
