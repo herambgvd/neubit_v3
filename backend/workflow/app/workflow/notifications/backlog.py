@@ -16,6 +16,14 @@ DUE for five dispatch ticks and is still pending has not been passed over by a
 busy worker — it has been passed over by no worker. That is ``overdue``, and it is
 the number worth paging on. ``pending`` is context for it.
 
+``claimed`` is counted separately and is NOT folded into ``pending``, because a
+claimed row is one a worker owns right now. It has to be its own number rather than
+be left out: rows in flight are invisible to ``pending``/``overdue``, so a worker
+that claims a batch and then wedges would empty the backlog gauges while delivering
+nothing. ``claimed`` sitting at a constant non-zero across ticks is that wedge. (The
+lease reaper returns those rows to pending once the claim expires, so a permanent
+stall still reaches ``overdue`` eventually — this is what sees it sooner.)
+
 DELIBERATELY NOT COUNTING ``failed`` ROWS AS BACKLOG. A row that exhausted
 MAX_NOTIFY_ATTEMPTS is a delivery that will never be retried; it is a delivery
 problem, not a drain problem, and folding it in would make a broken SMTP server
@@ -66,11 +74,13 @@ async def backlog(session: AsyncSession) -> dict:
         func.count().filter(Notification.status == "pending", due, due_at <= cutoff),
         func.count().filter(Notification.status == "failed"),
         func.min(due_at).filter(Notification.status == "pending", due),
+        func.count().filter(Notification.status == "claimed"),
     ).select_from(Notification)
 
-    pending, ready, overdue, failed, oldest = (await session.execute(stmt)).one()
+    pending, ready, overdue, failed, oldest, claimed = (await session.execute(stmt)).one()
     return {
         "pending": int(pending or 0),
+        "claimed": int(claimed or 0),
         "due": int(ready or 0),
         "overdue": int(overdue or 0),
         "failed": int(failed or 0),
@@ -95,6 +105,11 @@ def prometheus(b: dict, prefix: str = "workflow_") -> str:
         f"that is not draining the outbox does. THIS is the backlog number to page on.",
         f"# TYPE {p}notifications_overdue gauge",
         f"{p}notifications_overdue {b['overdue']}",
+        f"# HELP {p}notifications_claimed Rows a worker currently owns (in flight). "
+        f"Not part of pending. A value that never moves is a worker that claimed a "
+        f"batch and stopped, which every other gauge here reads as an empty outbox.",
+        f"# TYPE {p}notifications_claimed gauge",
+        f"{p}notifications_claimed {b['claimed']}",
         f"# HELP {p}notifications_failed Rows that exhausted their retry budget. A "
         f"delivery problem (provider, credentials), NOT a drain problem.",
         f"# TYPE {p}notifications_failed gauge",

@@ -89,10 +89,27 @@ class Notification(Base, _TenantTimestamped):
     subject: Mapped[str | None] = mapped_column(String(512))
     body: Mapped[str] = mapped_column(String(8192), nullable=False)
     extra: Mapped[dict | None] = mapped_column("metadata_json", JSON)
-    # pending | sent | failed
+    # pending | claimed | sent | failed
+    #
+    # ``claimed`` means EXACTLY ONE worker owns this row right now. It exists
+    # because the drain used to be a plain SELECT: two replicas of the worker
+    # selected the same pending rows and delivered the same alert twice. The claim
+    # is taken under FOR UPDATE SKIP LOCKED and then committed, so the state — not
+    # the lock — is what keeps the second worker off the row while the first is
+    # talking to a provider.
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'pending'"), index=True
     )
+    # When the claim was taken, and by which worker process. ``claimed_at`` is the
+    # LEASE CLOCK: a claim older than VE_WORKFLOW_NOTIFY_CLAIM_LEASE belonged to a
+    # worker that died holding it, and is returned to pending. Both are NULL in
+    # every non-claimed state, so a stale value can never be read as a live claim.
+    #
+    # Kept OUT of last_attempt_at, which was the tempting reuse: "when we last tried
+    # to send" and "when this was claimed" are the same instant today and stop being
+    # so the moment anything is added between the claim and the send.
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(128))
     error: Mapped[str | None] = mapped_column(String(2048))
     instance_id: Mapped[str | None] = mapped_column(String(36), index=True)
     channel_id: Mapped[str | None] = mapped_column(String(36))
