@@ -9,9 +9,10 @@ What is asserted here is what the DATABASE holds after the call (read back in a
 fresh session, so an uncommitted in-memory mutation cannot pass), not which
 method called which.
 
-Also covered: the SOP soft-delete, the version bump, and the two edges the
-invariant does NOT cover — deleting the initial state, and a transition whose
-endpoint state was deleted underneath it.
+Also covered: the SOP soft-delete, the version bump, and the two edges that used
+to fall outside the invariant — deleting the initial state (the pointer is now
+re-derived, and the SOP is left unlaunchable rather than dangling), and a
+transition whose endpoint state was deleted underneath it.
 """
 
 from __future__ import annotations
@@ -383,6 +384,34 @@ def test_delete_is_a_soft_delete_the_row_survives():
                 assert total == 0
             async with sm() as check:
                 assert await check.get(SOP, sop.sop_id) is not None
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
+def test_the_pointer_cannot_be_written_through_the_sop_update_body():
+    """``UpdateSopRequest`` used to carry ``initial_state``, and ``SopService.update``
+    setattrs whatever it is given: a PATCH on the SOP could write any string into
+    the derived pointer, another tenant's state id included."""
+
+    async def go():
+        engine, sm = await _session()
+        try:
+            async with sm() as session:
+                sop = await _new_sop(session)
+                svc = StateService(session, SCOPE_A)
+                mine = await svc.create(sop.sop_id, _state_body("Triage", is_initial=True),
+                                        actor=ACTOR)
+                await SopService(session, SCOPE_A).update(
+                    sop.sop_id,
+                    S.UpdateSopRequest.model_validate(
+                        {"name": "Renamed", "initial_state": str(uuid.uuid4())}),
+                    actor=ACTOR)
+            async with sm() as check:
+                row = await check.get(SOP, sop.sop_id)
+                assert row.name == "Renamed"
+                assert row.initial_state == mine.state_id
         finally:
             await engine.dispose()
 

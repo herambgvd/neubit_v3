@@ -1,9 +1,16 @@
 """SOP / state / transition services — CRUD over the playbook graph.
 
-Three service classes, one module, because they are one feature and they enforce
-each other's invariants: creating a state can clear another state's ``is_initial``
-and re-point ``SOP.initial_state``; deleting a SOP cascades to both child tables.
-Splitting them apart would put those writes on opposite sides of an import.
+Three service classes, one module, because they are one feature and one of them
+writes another's table: creating, promoting or deleting a state clears another
+state's ``is_initial`` and re-derives ``SOP.initial_state`` (see
+``StateService._sync_pointer``). Splitting them apart would put that two-table
+write on opposite sides of an import.
+
+NOT a reason, though it was claimed as one here until the tests went looking:
+deleting a SOP does NOT cascade. ``SopService.delete`` is a SOFT delete -- it sets
+``is_active = False`` and leaves every state and transition exactly where they
+are, which is what makes an incident already running on that SOP still resolvable.
+There are no foreign keys in this schema at all.
 """
 
 from __future__ import annotations

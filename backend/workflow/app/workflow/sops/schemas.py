@@ -42,7 +42,12 @@ class UpdateSopRequest(BaseModel):
     name: Optional[str] = Field(default=None, max_length=255)
     description: Optional[str] = None
     priority: Optional[InstancePriority] = None
-    initial_state: Optional[str] = None
+    # NO ``initial_state``. It is derived from the state flagged ``is_initial``
+    # (StateService._sync_pointer); accepting it here let a PATCH on the SOP write
+    # any string into the column -- a state of another SOP, of another TENANT, or
+    # one that never existed -- and the next graph-editor load could not resolve
+    # it. ``extra="ignore"`` means a client still sending the field is ignored
+    # rather than 422'd. The way to move it is PATCH .../states/{id} is_initial.
     trigger_event_types: Optional[list[str]] = None
     sla_hours: Optional[float] = None
     tags: Optional[list[str]] = None

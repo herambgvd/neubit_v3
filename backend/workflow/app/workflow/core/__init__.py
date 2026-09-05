@@ -16,12 +16,19 @@ What belongs here:
   * ``matching``   — trigger-condition evaluation. Ported verbatim from
     neubit_v2's ``module/correlation/matcher.py``: the operator set is part of the
     trigger contract and must not drift.
+  * ``references`` — the service-side mixin that checks a submitted field naming
+    ANOTHER tenant-owned row. It is the one entry that reads a session, and it is
+    here rather than in the feature that needed it first because the rule it
+    enforces is ``kernel.auth``'s, not a feature's: a service that cannot see this
+    declaration is a service that will re-open the hole it closes. It still
+    imports no model and no feature — the caller names both — so the leaf property
+    below is intact.
 
-What does NOT belong here: anything that touches a session, a model, a connector
+What does NOT belong here: anything that OWNS a session or a model, a connector
 or an HTTP request; anything only one feature uses (put it in that feature);
 anything that would need to import a feature to work.
 
 Nothing is re-exported from this ``__init__``. Import the module you mean
-(``from ..core.enums import InstanceStatus``) so a reader can see which of the
-four kinds of thing a symbol is.
+(``from ..core.enums import InstanceStatus``) so a reader can see which kind of
+thing a symbol is.
 """
