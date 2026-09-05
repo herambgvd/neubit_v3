@@ -141,8 +141,7 @@ class StateService:
             updated_by=_actor_id(actor),
         )
         self.db.add(row)
-        if body.is_initial:
-            sop.initial_state = row.state_id
+        await self._sync_pointer(sop)
         await self.db.commit()
         await self.db.refresh(row)
         await emit(row.tenant_id, "state", "created", {"sop_id": sop_id, "state_id": row.state_id})
@@ -153,13 +152,11 @@ class StateService:
         data = body.model_dump(exclude_none=True)
         if data.get("is_initial"):
             await self._clear_initial(row.sop_id, keep=state_id)
-            sop = await self.db.get(SOP, row.sop_id)
-            if sop:
-                sop.initial_state = state_id
         for k, v in data.items():
             setattr(row, k, v)
         row.updated_by = _actor_id(actor)
         row.updated_at = utcnow()
+        await self._sync_pointer(await self._sop(row.sop_id))
         await self.db.commit()
         await self.db.refresh(row)
         await emit(row.tenant_id, "state", "updated", {"state_id": row.state_id})
@@ -167,23 +164,64 @@ class StateService:
 
     async def delete(self, state_id: str) -> None:
         row = await self._row(state_id)
+        sop_id = row.sop_id
         await self.db.delete(row)
+        await self._sync_pointer(await self._sop(sop_id))
         await self.db.commit()
         await emit(self.scope.tenant_id, "state", "deleted", {"state_id": state_id})
 
+    async def _sync_pointer(self, sop: SOP) -> None:
+        """Recompute ``SOP.initial_state`` from the state actually flagged is_initial.
+
+        DERIVED, never assigned. The old code assigned it from whatever the caller
+        was holding, which on the create path was a State not yet INSERTed — so
+        ``state_id`` was still None (it comes from a column default) and creating
+        an initial state set the pointer to NULL, wiping a correct one. Three
+        methods each having to remember the right value is the shape of that bug;
+        one method reading the flag back cannot produce a value the flag disagrees
+        with, whatever the caller did.
+
+        The flush is load-bearing twice over: it gives a pending State its id, and
+        it applies a pending delete, so the flag we read back is the one the row
+        will actually have after the commit.
+        """
+        await self.db.flush()
+        initial = await self.find_initial(sop.sop_id)
+        sop.initial_state = initial.state_id if initial else None
+
     async def _clear_initial(self, sop_id: str, keep: str | None = None) -> None:
+        """Demote every other initial state of this SOP, and FLUSH the demotion.
+
+        The flush orders the demoting UPDATE before the promoting INSERT/UPDATE
+        that follows it. Without it SQLAlchemy is free to emit them in either
+        order within one flush, and ``uq_workflow_states_one_initial_per_sop``
+        would reject the promotion of a state that is about to be the only one.
+        """
         stmt = scoped(
             select(State).where(State.sop_id == sop_id, State.is_initial.is_(True)),
             State, self.scope,
         )
+        demoted = False
         for s in (await self.db.execute(stmt)).scalars().all():
             if keep and s.state_id == keep:
                 continue
             s.is_initial = False
+            demoted = True
+        if demoted:
+            await self.db.flush()
 
     async def find_initial(self, sop_id: str) -> State | None:
-        stmt = select(State).where(State.sop_id == sop_id, State.is_initial.is_(True)).limit(1)
-        return (await self.db.execute(stmt)).scalars().first()
+        """The caller's initial state for this SOP, or None.
+
+        ``scoped`` for the same reason ``_clear_initial`` is: a state row carrying
+        a foreign tenant_id is corruption, and the pointer this feeds must not be
+        made to name it.
+        """
+        stmt = scoped(
+            select(State).where(State.sop_id == sop_id, State.is_initial.is_(True)),
+            State, self.scope,
+        )
+        return (await self.db.execute(stmt.limit(1))).scalars().first()
 
 
 # ── Transition ─────────────────────────────────────────────────────────

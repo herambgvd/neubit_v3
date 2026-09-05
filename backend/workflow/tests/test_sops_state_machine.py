@@ -20,6 +20,8 @@ import uuid
 
 import pytest
 
+from sqlalchemy.exc import IntegrityError
+
 from kernel.auth import Scope
 from kernel.errors import ConflictError, NotFoundError
 
@@ -109,22 +111,10 @@ def test_second_initial_state_demotes_the_first():
 
 
 # The denormalised pointer. ``SOP.initial_state`` is documented in the model as
-# "a convenience pointer the service keeps in sync"; on the create path it does
-# not. Both facets below fail today for one root cause — see the xfail reason.
+# "a convenience pointer the service keeps in sync"; it is now DERIVED from the
+# is_initial flag on every write path rather than assigned, so these two assert
+# the pointer and the flag can no longer disagree by which endpoint was used.
 
-_POINTER_BUG = (
-    "BUG (found, not fixed): StateService.create assigns "
-    "`sop.initial_state = row.state_id` BEFORE the new State is flushed, so "
-    "`row.state_id` is still None (the id comes from a column default applied at "
-    "INSERT). The SOP's denormalised pointer is therefore never set by the create "
-    "path — and worse, creating a new initial state overwrites a previously "
-    "correct pointer with NULL. StateService.update does not have the bug because "
-    "it promotes an ALREADY-persisted row, which is why the flag and the pointer "
-    "disagree depending on which endpoint the graph editor used."
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_POINTER_BUG)
 def test_creating_an_initial_state_points_the_sop_at_it():
     async def go():
         engine, sm = await _session()
@@ -141,7 +131,6 @@ def test_creating_an_initial_state_points_the_sop_at_it():
     _run(go())
 
 
-@pytest.mark.xfail(strict=True, reason=_POINTER_BUG)
 def test_creating_a_new_initial_state_does_not_null_the_existing_pointer():
     async def go():
         engine, sm = await _session()
@@ -213,6 +202,30 @@ def test_promoting_the_already_initial_state_does_not_demote_itself():
     _run(go())
 
 
+def test_a_second_initial_state_is_refused_by_the_database_itself():
+    """The service demotes the old one first, so it never hits this. Anything that
+    does not -- a second writer, a partial update, a hand-run UPDATE at a psql
+    prompt -- must be stopped by ``uq_workflow_states_one_initial_per_sop`` rather
+    than leave the launch path picking whichever row LIMIT 1 happened to return."""
+
+    async def go():
+        engine, sm = await _session()
+        try:
+            async with sm() as session:
+                sop = await _new_sop(session)
+                await StateService(session, SCOPE_A).create(
+                    sop.sop_id, _state_body("Triage", is_initial=True), actor=ACTOR)
+                session.add(State(tenant_id=TENANT_A, sop_id=sop.sop_id, name="Second",
+                                  is_initial=True, entry_actions=[], exit_actions=[],
+                                  required_role_ids=[]))
+                with pytest.raises(IntegrityError):
+                    await session.commit()
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
 def test_demotion_never_reaches_another_tenants_state():
     """``_clear_initial`` runs through ``scoped``; a same-sop_id row in another
     tenant is a different tenant's data and must not be written to."""
@@ -267,11 +280,6 @@ def test_deleting_the_initial_state_makes_the_sop_unlaunchable():
     _run(go())
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG (found, not fixed): StateService.delete removes the state but leaves "
-    "SOP.initial_state pointing at the deleted id, so GET /workflow/sops/{id} "
-    "returns a dangling initial_state the graph editor cannot resolve. The pointer "
-    "is set here through update(), the one path that sets it at all."))
 def test_deleting_the_initial_state_clears_the_sop_pointer():
     async def go():
         engine, sm = await _session()
