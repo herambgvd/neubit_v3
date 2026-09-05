@@ -46,10 +46,12 @@ class EmbedRegistryService:
     async def create(self, body: EmbedCreate) -> DashForgeEmbed:
         row = DashForgeEmbed(
             # A super-admin registering without a tenant creates a platform row
-            # (tenant_id NULL), which `owns()` treats as readable by everyone —
-            # the same shape core's other tenant-scoped tables use for shared
-            # defaults. `scoped()` here has the identical semantics the kernel's
-            # did, so the fold-in changed no row's visibility.
+            # (tenant_id NULL). That row is visible to super-admins only, on BOTH
+            # the list and the by-id paths. It used to be listed to no one and
+            # fetchable by anyone, because `scoped()` excluded NULL while `owns()`
+            # returned True for it; they now agree. If a platform-wide embed that
+            # every tenant can open is wanted, it needs a real shared flag and a
+            # read path of its own — not an absent tenant_id.
             tenant_id=self.scope.tenant_id,
             name=body.name.strip(),
             description=(body.description or None),

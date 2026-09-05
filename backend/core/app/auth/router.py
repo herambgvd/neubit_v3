@@ -26,7 +26,7 @@ from ..core.pagination import Page, PageParams, page_params, paginate
 from ..core.ratelimit import api_key_rate_limit, login_rate_limit
 from ..core.storage import get_storage
 from ..db.base import get_db
-from ..tenancy.scope import scope_of
+from ..tenancy.scope import scope_of, scoped
 from .cookies import clear_refresh_cookie, set_refresh_cookie
 from .deps import (
     get_current_sid,
@@ -643,13 +643,13 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.USER_READ)),
 ) -> Page[UserOut]:
-    # Tenant scoping: a non-superadmin only ever sees their own tenant's users.
-    # Super-admins (tenant_id NULL) see everyone here; they normally manage
-    # tenants via the /admin API instead.
-    scope = scope_of(actor)
-    tenant_id = None if scope.is_platform else scope.tenant_id
+    # Tenant scoping lives in scope.py, not here. Super-admins see everyone; every
+    # other caller is filtered to their own tenant_id, NULL being a tenancy like any
+    # other. This used to flatten the Scope to a bare tenant_id, which made a
+    # non-superadmin platform user (tenant_id NULL) indistinguishable from a
+    # super-admin and handed them the whole directory.
     svc = AuthService(db)
-    page = await paginate(db, svc.users_query(tenant_id), params)
+    page = await paginate(db, svc.users_query(scope_of(actor)), params)
     counts = await svc.active_session_counts([u.id for u in page.items])
     page.items = [await _user_out(u, counts.get(u.id, 0)) for u in page.items]
     return page
@@ -660,11 +660,15 @@ async def export_users(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.USER_READ)),
 ) -> StreamingResponse:
-    """Download all users as a CSV (email, name, role, status, verified, last login)."""
-    # Same tenant scoping as the users list — a tenant admin exports only theirs.
-    stmt = select(User).order_by(User.created_at.desc())
-    if not actor.is_superadmin and actor.tenant_id is not None:
-        stmt = stmt.where(User.tenant_id == actor.tenant_id)
+    """Download all users as a CSV (email, name, role, status, verified, last login).
+
+    Tenant-scoped through the same helper the listing uses, so the two cannot drift.
+    The hand-rolled filter this replaces read ``if not actor.is_superadmin and
+    actor.tenant_id is not None`` — a caller who was neither (a platform user with
+    ``user.read`` and no tenant) matched no branch, so no filter was applied and the
+    CSV held every user on the platform.
+    """
+    stmt = scoped(select(User).order_by(User.created_at.desc()), User, scope_of(actor))
     rows = (await db.execute(stmt)).scalars().all()
     buf = io.StringIO()
     writer = csv.writer(buf)

@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
-from ..tenancy.scope import Scope, assert_owned
+from ..tenancy.scope import Scope, assert_owned, scoped
 from .models import ApiKey, PasswordResetToken, RefreshToken, Role, User
 from . import dynamic_permissions
 from .permissions import PERMISSIONS, WILDCARD
@@ -633,18 +633,20 @@ class AuthService:
         await self.db.refresh(role)
         return role
 
-    def users_query(self, tenant_id: uuid.UUID | None = None):
+    def users_query(self, scope: Scope):
         """Users list, optionally scoped to a single tenant.
 
-        Pass the caller's tenant_id for a non-superadmin so a tenant admin only
-        sees their own tenant's users. Super-admins pass None to see everyone.
+        Takes the caller's Scope, not a bare tenant_id, and delegates to
+        ``scoped()``. The bare-tenant_id version could not express the difference
+        between "super-admin, no filter" and "a caller whose own tenant_id is NULL",
+        because both arrived as None — so a non-superadmin platform user got the
+        whole platform's directory. Scope carries ``is_superadmin`` separately and
+        cannot be flattened that way.
+
         (v1 shared-DB row-scoping; DB-per-tenant would drop the filter since each
         tenant DB only holds its own users.)
         """
-        stmt = select(User).order_by(User.created_at.desc())
-        if tenant_id is not None:
-            stmt = stmt.where(User.tenant_id == tenant_id)
-        return stmt
+        return scoped(select(User).order_by(User.created_at.desc()), User, scope)
 
     async def delete_user(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
         """Hard-delete a user. Refresh/reset tokens cascade automatically."""

@@ -18,6 +18,11 @@ Usage:
 
 ``scoped`` and ``assert_owned`` deliberately DON'T know about super-admin-vs-tenant
 beyond the Scope flag, so callers can't accidentally forget the bypass.
+
+``scoped`` (the list side) and ``owns`` (the by-id side) MUST agree about what a
+NULL ``tenant_id`` means, or a row is invisible in a listing and fetchable by id.
+They now both mean the same thing: NULL is a tenancy like any other, owned only by
+a caller whose own tenant_id is NULL. ``owns`` carries the long version of why.
 """
 
 from __future__ import annotations
@@ -80,17 +85,41 @@ def scoped(stmt: Select, model: Any, scope: Scope) -> Select:
 def owns(obj: Any, scope: Scope) -> bool:
     """Whether ``scope`` may act on ``obj`` (a row with a ``tenant_id``).
 
-    Super-admin owns everything. A tenant-admin owns a row iff its tenant_id matches
-    theirs. A row with tenant_id NULL (a shared/platform-default row) is treated as
-    owned by everyone for READ purposes — callers that must block a tenant-admin from
-    MUTATING a shared row check that separately.
+    Super-admin owns everything. Everyone else owns a row iff its ``tenant_id``
+    equals theirs — **NULL included**: a NULL row is owned only by a caller whose
+    own tenant_id is NULL.
+
+    This is the same predicate ``scoped()`` applies, and that is the point. It used
+    to return True for every NULL row on the reasoning that NULL means "shared
+    platform default, readable by all". That reasoning is sound for the config
+    singletons and wrong for everything else, and this one predicate was answering
+    for both:
+
+      * ``users`` — a NULL tenant_id is not a shared default, it is the PLATFORM
+        SUPER-ADMIN (see tenancy/models.py). Any tenant-admin holding ``user.read``
+        could fetch the super-admin row by id, and with ``user.manage`` reset its
+        password through ``update_user`` — a tenant-to-platform privilege escalation.
+        The by-id docstring in auth/router.py claimed the opposite.
+      * ``sites`` / ``floors`` / ``zones`` / ``tags`` / ``api_keys`` / ``report_jobs``
+        — a platform-scoped row was writable and deletable by every tenant.
+
+    The config surfaces that genuinely want the NULL fallback (settings, branding,
+    messaging channels, email templates) never called this. They resolve the default
+    explicitly in their own service, deriving the write scope from the caller rather
+    than from the row — see settings/service.py and branding/service.py. They were
+    already correct and are unaffected.
+
+    So the permissive branch had no legitimate caller and one escalating one. If you
+    are about to add a surface that wants "NULL is readable by all", resolve it in
+    that service the way settings does; do not widen this predicate, because it is
+    also what guards the mutation paths.
+
+    Regression test: ``tests/test_tenant_isolation.py`` — a tenant-admin against the
+    super-admin row, both read and write.
     """
     if scope.is_platform:
         return True
-    obj_tenant = getattr(obj, "tenant_id", None)
-    if obj_tenant is None:
-        return True  # shared/system/platform-default row — visible to all tenants
-    return obj_tenant == scope.tenant_id
+    return getattr(obj, "tenant_id", None) == scope.tenant_id
 
 
 def assert_owned(obj: Any, scope: Scope, *, message: str = "not found") -> None:
