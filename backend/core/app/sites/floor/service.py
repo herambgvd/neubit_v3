@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.audit import record as audit_record
 from ...core.errors import NotFoundError
+from ..mutation import apply_update
 from ...tenancy.scope import Scope, assert_owned, scoped
 from ..events import emit
 from ..site.models import Site
@@ -112,8 +113,7 @@ class FloorService:
         if actor_user_id:
             update["updated_by"] = actor_user_id
         update["updated_at"] = _utcnow()
-        for k, v in update.items():
-            setattr(row, k, v)
+        apply_update(row, update)
         await self.db.commit()
         await self.db.refresh(row)
         await self._emit(actor, "updated", row, body.model_dump(exclude_none=True))

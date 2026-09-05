@@ -247,3 +247,79 @@ async def test_dual_auth_action_mismatch_rejected(db):
     with pytest.raises(ValidationError):
         # approval was for vms.export, not tenant.delete
         await svc.check_and_consume(scope_of(approver), "tenant.delete", "cam-1", req.id)
+
+
+# --- directory/SSO role resolution is tenant-scoped ---------------------------
+#
+# `_role_by_name(name, tenant_id)` accepted a tenant_id and then queried on name
+# alone. Two failures, both on an ordinary SSO/LDAP login: a tenant's users could
+# be provisioned with ANOTHER tenant's role and permission list, and two tenants
+# naming a role the same thing turned `scalar_one_or_none()` into
+# MultipleResultsFound — a 500 on every sync and every SSO login.
+
+
+async def _role_in(db, name: str, perms: list[str], tenant_id):
+    from app.auth.models import Role
+
+    role = Role(name=name, permissions=perms, tenant_id=tenant_id)
+    db.add(role)
+    await db.commit()
+    await db.refresh(role)
+    return role
+
+
+async def test_role_lookup_never_borrows_another_tenants_role(db):
+    """Tenant A's map names "Analyst"; only tenant B has one. A must get nothing,
+    not B's role — being handed B's permission list is the whole bug."""
+    from app.tenancy.models import Tenant
+
+    ta = Tenant(name="A", slug="rl-a", status="active", features={}, limits={})
+    tb = Tenant(name="B", slug="rl-b", status="active", features={}, limits={})
+    db.add_all([ta, tb])
+    await db.commit()
+    await db.refresh(ta)
+    await db.refresh(tb)
+    await _role_in(db, "Analyst", ["*"], tb.id)  # B's role, powerful
+
+    svc = SecurityService(db)
+    assert await svc._role_by_name("Analyst", ta.id) is None
+    got = await svc._role_by_name("Analyst", tb.id)
+    assert got is not None and got.tenant_id == tb.id
+
+
+async def test_role_lookup_survives_two_tenants_using_the_same_role_name(db):
+    """The 500. Both tenants call it "Analyst"; each must resolve to its own."""
+    from app.tenancy.models import Tenant
+
+    ta = Tenant(name="A", slug="rl-c", status="active", features={}, limits={})
+    tb = Tenant(name="B", slug="rl-d", status="active", features={}, limits={})
+    db.add_all([ta, tb])
+    await db.commit()
+    await db.refresh(ta)
+    await db.refresh(tb)
+    a_role = await _role_in(db, "Analyst", ["vms.export"], ta.id)
+    b_role = await _role_in(db, "Analyst", ["*"], tb.id)
+
+    svc = SecurityService(db)
+    assert (await svc._role_by_name("Analyst", ta.id)).id == a_role.id
+    assert (await svc._role_by_name("Analyst", tb.id)).id == b_role.id
+
+
+async def test_a_shared_system_role_is_still_resolvable_and_loses_to_a_tenants_own(db):
+    """A NULL-tenant role is a shared catalog entry and stays usable — the fix must
+    not become "tenant roles only". Where both exist, the tenant's own wins, so a
+    tenant can override a system role for its directory users without renaming it.
+    """
+    from app.tenancy.models import Tenant
+
+    ta = Tenant(name="A", slug="rl-e", status="active", features={}, limits={})
+    db.add(ta)
+    await db.commit()
+    await db.refresh(ta)
+    await _role_in(db, "Viewer", ["vms.export"], None)  # shared system role
+    svc = SecurityService(db)
+    shared = await svc._role_by_name("Viewer", ta.id)
+    assert shared is not None and shared.tenant_id is None
+
+    own = await _role_in(db, "Viewer", ["*"], ta.id)
+    assert (await svc._role_by_name("Viewer", ta.id)).id == own.id

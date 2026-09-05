@@ -351,10 +351,12 @@ class AuthService:
             raise ValidationError(f"unknown permissions: {unknown}")
         if WILDCARD in data.permissions:
             raise ValidationError("wildcard '*' is reserved for the system Administrator role")
-        # Role.name carries a GLOBAL unique constraint (unchanged by 0007), so names
-        # stay unique across the whole platform. (Per-tenant name reuse would need a
-        # composite unique + migration; not required here.)
-        if await self._role_by_name(data.name):
+        # Unique per (tenant_id, name) since 0025 — two tenants may both have an
+        # "Analyst". Within the caller's own view the name must still be
+        # unambiguous, so this also refuses a name already held by a SHARED system
+        # role: `roles_query` lists own-tenant and shared roles together, and two
+        # entries reading "Viewer" is a role picker an operator cannot use.
+        if await self._role_by_name(data.name, scope):
             raise ConflictError("a role with this name already exists")
         # A tenant-admin's roles are stamped with their tenant; a super-admin (no
         # scope, or a platform scope) creates a shared platform role (tenant_id NULL).
@@ -424,10 +426,20 @@ class AuthService:
             )
         return stmt
 
-    async def _role_by_name(self, name: str) -> Role | None:
-        return (
-            await self.db.execute(select(Role).where(Role.name == name))
-        ).scalar_one_or_none()
+    async def _role_by_name(self, name: str, scope: Scope | None = None) -> Role | None:
+        """A role of this name the caller could actually be given.
+
+        Scoped to the caller's own tenant plus the shared system roles, the same
+        set `roles_query` lists. Unscoped it searched the whole platform, which was
+        the reporting half of the global-unique-name problem 0025 removed: a tenant
+        was told a name was taken by a row in a tenant it cannot see.
+        """
+        stmt = select(Role).where(Role.name == name)
+        if scope is not None and not scope.is_platform:
+            stmt = stmt.where(
+                (Role.tenant_id == scope.tenant_id) | (Role.tenant_id.is_(None))
+            )
+        return (await self.db.execute(stmt.limit(1))).scalars().first()
 
     async def _require_role(self, role_id: uuid.UUID, scope: Scope | None = None) -> Role:
         role = await self.db.get(Role, role_id)
@@ -617,7 +629,8 @@ class AuthService:
             raise NotFoundError("role not found")
         if scope is not None and not scope.is_platform and src.tenant_id not in (None, scope.tenant_id):
             raise NotFoundError("role not found")
-        if await self._role_by_name(name):
+        # Same conflict rule as create_role: unique within the caller's own view.
+        if await self._role_by_name(name, scope):
             raise ConflictError("a role with this name already exists")
         tenant_id = None if scope is None or scope.is_platform else scope.tenant_id
         # Never carry the wildcard into a custom clone (reserved for the system role).

@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Uuid, func, text  # noqa: F401
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid, func, text  # noqa: F401
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db.base import Base
@@ -23,9 +23,20 @@ class Role(Base):
     """A named bundle of permission keys. Admin-defined (except the system role)."""
 
     __tablename__ = "roles"
+    # Names are unique WITHIN a tenant, not across the platform (0025). A global
+    # unique let the first tenant to use "Analyst" take the name from everyone
+    # else and answered CONFLICT about a row the caller could not see.
+    #
+    # Postgres gets the real key from 0025 as a UNIQUE INDEX with NULLS NOT
+    # DISTINCT, so the shared (tenant_id NULL) roles still collide with each
+    # other. This declaration is what SQLite builds the test schema from, and
+    # SQLite treats NULLs as distinct — so two shared roles of the same name are
+    # rejected in production and accepted in a unit test. create_role refuses
+    # that case in code, which is what the tests actually exercise.
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_roles_tenant_name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     # list[str] of permission keys, e.g. ["user.read", "audit.read"] or ["*"].
     permissions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)

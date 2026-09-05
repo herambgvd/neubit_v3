@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.audit import record as audit_record
 from ...core.errors import ConflictError, NotFoundError, ValidationError
-from ...tenancy.scope import Scope, assert_owned, scoped
+from ..mutation import apply_update
+from ...tenancy.scope import Scope, assert_owned, owns, scoped
 from ..events import emit
 from ..floor.models import Floor
 from ..zone.models import Zone
@@ -93,12 +94,7 @@ class SiteService:
         self, body: CreateSiteRequest, *, actor
     ) -> SitePublic:
         if body.parent_id:
-            parent = await self.db.get(Site, body.parent_id)
-            # A parent from another tenant is invisible → treated as missing.
-            if parent is None or not parent.is_active or (
-                not self.scope.is_platform and parent.tenant_id != self.scope.tenant_id
-            ):
-                raise ConflictError("Parent site does not exist or is inactive")
+            await self._require_assignable_parent(body.parent_id)
 
         actor_user_id = str(getattr(actor, "id", "")) or None
         row = Site(
@@ -160,6 +156,13 @@ class SiteService:
         row = await self._get_row(site_id)
 
         if body.parent_id and body.parent_id != row.parent_id:
+            # Same gate as create. Update used to run the cycle check ALONE and then
+            # blind-setattr the whole body, so `parent_id` was validated on the way
+            # in and unvalidated on the way through — a tenant could re-parent its
+            # own site onto another tenant's. `Site.parent_id` carries no ForeignKey,
+            # so nothing downstream would have objected either, and the cross-tenant
+            # reference is republished on NATS `site.updated` to reporting and BI.
+            await self._require_assignable_parent(body.parent_id)
             await self._assert_no_cycle(site_id, body.parent_id)
 
         update = body.model_dump(exclude_none=True)
@@ -174,8 +177,9 @@ class SiteService:
             update["updated_by"] = actor_user_id
         update["updated_at"] = _utcnow()
 
-        for k, v in update.items():
-            setattr(row, k, v)
+        # parent_id is re-permitted because _require_assignable_parent above has
+        # already vetted the destination; nothing else may move this row.
+        apply_update(row, update, allow=frozenset({"parent_id"}))
         await self.db.commit()
         await self.db.refresh(row)
         await self._emit(actor, "updated", row, body.model_dump(exclude_none=True))
@@ -433,7 +437,30 @@ class SiteService:
             .values(is_active=active, updated_at=now)
         )
 
+    async def _require_assignable_parent(self, parent_id: str) -> None:
+        """The one place a parent site is vetted, for create AND update.
+
+        It was inlined in create only. Keeping it a method is the point: the next
+        path that accepts a parent_id gets the tenancy check by calling this rather
+        than by remembering to re-derive it.
+
+        A parent in another tenant is reported as MISSING, not forbidden, for the
+        same reason assert_owned raises NOT_FOUND — a caller must not be able to
+        probe another tenant's ids by watching the error change.
+        """
+        parent = await self.db.get(Site, parent_id)
+        if parent is None or not parent.is_active or not owns(parent, self.scope):
+            raise ConflictError("Parent site does not exist or is inactive")
+
     async def _assert_no_cycle(self, site_id: str, new_parent: str) -> None:
+        """Walk the ancestor chain looking for site_id.
+
+        The two `db.get` here are deliberately unscoped: the chain is walked as
+        STORED, so a pre-existing cross-tenant edge is still traversed and still
+        reported as a cycle rather than silently ending the walk. The entry point is
+        vetted by _require_assignable_parent above; this is about not trusting rows
+        already in the table.
+        """
         if new_parent == site_id:
             raise ConflictError("Setting this parent would create a cycle")
         seen = {new_parent}

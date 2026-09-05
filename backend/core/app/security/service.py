@@ -15,7 +15,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import Role, User
@@ -153,9 +153,36 @@ class SecurityService:
         return default_role
 
     async def _role_by_name(self, name: str, tenant_id: uuid.UUID | None) -> Role | None:
-        return (
-            await self.db.execute(select(Role).where(Role.name == name))
-        ).scalar_one_or_none()
+        """Resolve a group_role_map name to a role THIS tenant may be given.
+
+        The `tenant_id` argument was accepted and then not used — the query matched
+        on name alone, across every tenant. Two consequences, both reachable from an
+        ordinary SSO login:
+
+          * If tenant A's map named "Analyst" and only tenant B had a role by that
+            name, A's users were provisioned with B's role and B's permission list.
+          * If two tenants both named a role "Analyst", `scalar_one_or_none()` raised
+            MultipleResultsFound — a 500 on every directory sync and every SSO login,
+            triggered by nothing more exotic than a common role name.
+
+        The candidate set is now the tenant's own roles plus the shared system roles
+        (tenant_id NULL), which is the same rule `AuthService._require_role` applies
+        when an admin assigns a role by hand. A tenant's own role WINS over a shared
+        one of the same name, so a tenant can override a system role for its own
+        directory users without renaming it.
+        """
+        rows = (
+            await self.db.execute(
+                select(Role).where(
+                    Role.name == name,
+                    or_(Role.tenant_id == tenant_id, Role.tenant_id.is_(None)),
+                )
+            )
+        ).scalars().all()
+        own = [r for r in rows if r.tenant_id is not None]
+        if own:
+            return own[0]
+        return rows[0] if rows else None
 
     async def _provision_from_entry(
         self, entry: LdapEntry, cfg: DirectoryConfig, tenant_id: uuid.UUID | None
