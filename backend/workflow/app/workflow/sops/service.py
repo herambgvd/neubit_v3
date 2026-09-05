@@ -58,10 +58,21 @@ class SopService:
         if is_active is not None:
             stmt = stmt.where(SOP.is_active.is_(is_active))
             count = count.where(SOP.is_active.is_(is_active))
-        stmt = stmt.order_by(SOP.created_at.desc()).offset(skip).limit(limit)
-        rows = (await self.db.execute(stmt)).scalars().all()
+        stmt = stmt.order_by(SOP.created_at.desc())
         if tag:
-            rows = [r for r in rows if tag in (r.tags or [])]
+            # ``tags`` is a portable JSON column — the same model has to work on
+            # Postgres and on SQLite — so there is no containment operator to push
+            # this into SQL. It used to be filtered in Python AFTER offset/limit and
+            # was never applied to the count, so a tagged listing returned at most
+            # one page's worth of matches and a ``total`` for the UNTAGGED set: page
+            # 2 could come back empty while ``total`` promised more. Filtering the
+            # whole scoped set and paging THAT is what makes the two agree, at the
+            # cost of reading a table that is an operator-authored set of tens —
+            # the same trade ``AlertFormatService.find_by_code`` already makes.
+            matched = [r for r in (await self.db.execute(stmt)).scalars().all()
+                       if tag in (r.tags or [])]
+            return matched[skip:skip + limit], len(matched)
+        rows = (await self.db.execute(stmt.offset(skip).limit(limit))).scalars().all()
         total = int(await self.db.scalar(count) or 0)
         return rows, total
 

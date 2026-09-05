@@ -389,10 +389,6 @@ def test_delete_is_a_soft_delete_the_row_survives():
     _run(go())
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG (found, not fixed): SopService.list_ applies ?tag= in Python AFTER "
-    "offset/limit and never applies it to the count, so a tagged listing returns "
-    "at most one page's worth of matches and a `total` for the untagged set."))
 def test_tag_filter_agrees_with_its_own_total():
     async def go():
         engine, sm = await _session()
@@ -405,6 +401,14 @@ def test_tag_filter_agrees_with_its_own_total():
                     await _new_sop(session, name=f"plain-{i}", tags=["flood"])
                 rows, total = await svc.list_(tag="fire")
                 assert len(rows) == 3
+                assert total == 3
+                # …and the filter is applied BEFORE paging, so a page of a tagged
+                # listing is a page of the MATCHES, not of everything.
+                page, total = await svc.list_(tag="fire", limit=2)
+                assert [r.name for r in page] == ["tagged-2", "tagged-1"]
+                assert total == 3
+                page2, total = await svc.list_(tag="fire", skip=2, limit=2)
+                assert [r.name for r in page2] == ["tagged-0"]
                 assert total == 3
         finally:
             await engine.dispose()
