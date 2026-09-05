@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid, func, text  # noqa: F401
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Uuid, func, text  # noqa: F401
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db.base import Base
@@ -33,7 +33,28 @@ class Role(Base):
     # SQLite treats NULLs as distinct — so two shared roles of the same name are
     # rejected in production and accepted in a unit test. create_role refuses
     # that case in code, which is what the tests actually exercise.
-    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_roles_tenant_name"),)
+    #
+    # Declared as an Index rather than a UniqueConstraint because that is what the
+    # migration creates and what the database holds. Alembic compares the two by
+    # kind: a UniqueConstraint here against a unique index there is reported as one
+    # dropped and one added on every autogenerate run, forever.
+    # `postgresql_nulls_not_distinct` is not decoration: without it Postgres treats
+    # every NULL tenant_id as distinct and the SHARED role namespace has no
+    # uniqueness at all — any number of platform-wide "Administrator" roles. It is
+    # also what makes autogenerate quiet; declared without it, the model and the
+    # database describe two different indexes and every run proposes replacing one
+    # with the other. Other dialects ignore the dialect-prefixed argument, which is
+    # why the SQLite test schema still builds (and why it accepts duplicate shared
+    # names that Postgres refuses — create_role refuses them in code).
+    __table_args__ = (
+        Index(
+            "uq_roles_tenant_name",
+            "tenant_id",
+            "name",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -165,11 +186,21 @@ class ApiKey(Base):
     """
 
     __tablename__ = "api_keys"
+    # UNIQUE, not merely indexed. `authenticate_api_key` resolves a presented key by
+    # prefix with `.scalar_one_or_none()`, so two rows sharing one turns every
+    # POST /auth/token into a MultipleResultsFound 500 — the credential path stops
+    # working for everyone, not just the duplicate holder. 0023 created this index
+    # unique; the column declared plain `index=True`, so `alembic --autogenerate`
+    # proposed DROPPING the uniqueness the credential path depends on. That was the
+    # suite's only schema drift, and it is the kind that teaches a reviewer to stop
+    # trusting the tool. 0026 also drops the redundant non-unique ix_api_keys_prefix
+    # this column used to create.
+    __table_args__ = (Index("uq_api_keys_prefix", "prefix", unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
-    prefix: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    prefix: Mapped[str] = mapped_column(String, nullable=False)
     key_hash: Mapped[str] = mapped_column(String, nullable=False)
     # The permission keys this key may exercise — the whole of its authority.
     # Validated against the catalog at creation and against the CREATOR's own
