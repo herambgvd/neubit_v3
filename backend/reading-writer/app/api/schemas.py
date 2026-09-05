@@ -543,10 +543,19 @@ class ConfirmUnitsRequest(BaseModel):
     `unit = null` CLEARS — unit, source and provenance all go back to NULL and
     the point is unconfirmed again. A mis-typed unit an operator cannot take back
     would silently corrupt every rating computed from it.
+
+    `acknowledge_not_reporting` is the answer to a REFUSAL, never a default. A
+    unit confirmed on a point that has never carried a reading — or has carried
+    none for a day — is a fact no rating can use, and the confirmation quietly
+    succeeding is what makes it invisible for days. So the server refuses, names
+    the points and the device's reporting siblings, and this flag is how an
+    operator who has read that says "the address is right, the device is offline".
+    It lives on the REQUEST so it cannot be switched on once and forgotten.
     """
 
     point_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
     unit: str | None = Field(default=None, max_length=64)
+    acknowledge_not_reporting: bool = False
 
 
 class SiteFactsRow(BaseModel):

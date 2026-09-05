@@ -21,6 +21,22 @@
 //
 // A point nobody confirms stays unbound, every metric that needs it renders
 // BLOCKED with the reason, and that is the honest state — not a defect.
+//
+// SINCE THE INTAKE PANEL, this page also answers the question that "honest
+// state" left hanging: WHICH points are waiting, and which of them arrived this
+// week. New sensors land on this estate weekly and the refusal that follows one
+// is buried inside a metric evaluation nobody reads. The worklist belongs above
+// this table rather than on a page of its own — the person triaging arrivals is
+// the person who binds the role, and clicking an arrival filters this table to
+// its device.
+//
+// AND CONFIRMING IS NOW GUARDED. Binding a role to a point that is carrying no
+// readings is refused, not stored: `IWT`/`OWT` were once bound on a chiller that
+// publishes `4FKC2_IWT`/`4FKC2_OWT`, the confirmation succeeded, and the metric
+// refused `no_data` for days while the machine ran perfectly. The refusal names
+// the points on that device which ARE reporting and rebinds nothing; an operator
+// who knows the address is right and the device merely offline asserts it anyway
+// through <NotReportingChallenge>, which is a second, deliberate act.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -37,6 +53,11 @@ import { useAuth } from "@/lib/auth";
 
 import { PERM_MANAGE } from "./constants";
 import { metrics } from "./metricsApi";
+import IntakePanel from "./components/IntakePanel";
+import NotReportingChallenge, {
+  notReportingDetail,
+  type NotReportingDetail,
+} from "./components/NotReportingChallenge";
 
 const VIEWS = [
   { value: "unconfirmed", label: "UNBOUND" },
@@ -55,6 +76,14 @@ export default function MetricRoles() {
   const [role, setRole] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [days, setDays] = useState(7);
+  const [intakeState, setIntakeState] = useState("");
+  // The server's refusal, held so the operator can read WHICH points are not
+  // reporting and what the device publishes instead. Cleared on every new
+  // attempt: a stale challenge answered with "assert anyway" would acknowledge
+  // a set the operator is no longer looking at.
+  const [challenge, setChallenge] = useState<NotReportingDetail | null>(null);
+  const [challengeMsg, setChallengeMsg] = useState<string | null>(null);
 
   const q = useQuery<any>({
     queryKey: ["bi-metric-roles", view, search],
@@ -82,9 +111,12 @@ export default function MetricRoles() {
   }, [rows]);
 
   const confirm = useMutation({
-    mutationFn: ({ point_ids, role: r }: any) => metrics.confirmRoles({ point_ids, role: r }),
+    mutationFn: ({ point_ids, role: r, acknowledge_not_reporting }: any) =>
+      metrics.confirmRoles({ point_ids, role: r, acknowledge_not_reporting }),
     onSuccess: (res: any) => {
       setErr(null);
+      setChallenge(null);
+      setChallengeMsg(null);
       setDone(
         `${res.updated} point(s) ${res.role === null ? "cleared back to unbound" : `bound to role “${res.role}”`}` +
           (res.not_visible ? ` · ${res.not_visible} not visible to you and untouched` : ""),
@@ -95,9 +127,26 @@ export default function MetricRoles() {
     },
     onError: (e) => {
       setDone(null);
+      // A point carrying no readings is not an error to report and forget: it is
+      // a question. Nothing was stored, the selection is kept, and the operator
+      // either fixes the point or says the address is right anyway.
+      const detail = notReportingDetail(e);
+      if (detail) {
+        setErr(null);
+        setChallenge(detail);
+        setChallengeMsg(apiError(e, "Not stored"));
+        return;
+      }
+      setChallenge(null);
       setErr(apiError(e, "Could not record the role"));
     },
   });
+
+  function fire(vars: any) {
+    setChallenge(null);
+    setChallengeMsg(null);
+    confirm.mutate(vars);
+  }
 
   function selectGroup(g: { role: string; ids: string[] }) {
     const next: Record<string, boolean> = {};
@@ -110,6 +159,18 @@ export default function MetricRoles() {
 
   return (
     <div className="space-y-3">
+      {/* WHAT ARRIVED, above the table that gives it meaning. This page already
+          lists every point and already carries the confirm bar, so the arrivals
+          worklist grows here rather than becoming a third screen asserting the
+          same two facts. */}
+      <IntakePanel
+        days={days}
+        state={intakeState}
+        onDays={setDays}
+        onState={setIntakeState}
+        onFocusDevice={(tag: string) => setSearch(tag)}
+      />
+
       <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
@@ -179,16 +240,30 @@ export default function MetricRoles() {
             ))}
           </select>
           <ActionButton
-            onClick={() => confirm.mutate({ point_ids: ids, role })}
+            onClick={() => fire({ point_ids: ids, role })}
             disabled={confirm.isPending || !role}
           >
             {confirm.isPending ? "Saving…" : `Confirm as ${role || "…"}`}
           </ActionButton>
-          <QuietButton onClick={() => confirm.mutate({ point_ids: ids, role: null })}>
+          <QuietButton onClick={() => fire({ point_ids: ids, role: null })}>
             Clear role
           </QuietButton>
           <QuietButton onClick={() => setPicked({})}>Deselect</QuietButton>
         </div>
+      )}
+      {challenge && (
+        <NotReportingChallenge
+          detail={challenge}
+          message={challengeMsg || undefined}
+          busy={confirm.isPending}
+          onAssertAnyway={() =>
+            confirm.mutate({ point_ids: ids, role, acknowledge_not_reporting: true })
+          }
+          onCancel={() => {
+            setChallenge(null);
+            setChallengeMsg(null);
+          }}
+        />
       )}
       {done && <p className="text-[11.5px] text-nb-good">{done}</p>}
       {err && <p className="text-[11.5px] text-nb-crit">{err}</p>}

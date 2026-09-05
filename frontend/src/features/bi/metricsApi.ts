@@ -54,7 +54,27 @@ export const metrics = {
   roles: ({ category, search, confirmed, limit, offset }: any = {}) =>
     unwrap(api.get(`${M}/roles${qs({ category, search, confirmed, limit, offset })}`)),
 
-  /** Operator asserts (role) or retracts (role: null) for explicit point ids. */
-  confirmRoles: ({ point_ids, role }: { point_ids: string[]; role: string | null }) =>
-    unwrap(api.post(`${M}/roles/confirm`, { point_ids, role })),
+  /** Operator asserts (role) or retracts (role: null) for explicit point ids.
+   *
+   *  `acknowledge_not_reporting` is sent only in ANSWER to a 422
+   *  POINT_NOT_REPORTING. Binding a role to a point carrying no readings is the
+   *  mistake this guard exists for — `IWT` bound on a chiller that publishes
+   *  `4FKC2_IWT`, accepted, then refusing `no_data` for days. Sending the flag
+   *  by default would put that mistake back. */
+  confirmRoles: ({
+    point_ids,
+    role,
+    acknowledge_not_reporting,
+  }: {
+    point_ids: string[];
+    role: string | null;
+    acknowledge_not_reporting?: boolean;
+  }) =>
+    unwrap(
+      api.post(`${M}/roles/confirm`, {
+        point_ids,
+        role,
+        ...(acknowledge_not_reporting ? { acknowledge_not_reporting: true } : {}),
+      }),
+    ),
 };
