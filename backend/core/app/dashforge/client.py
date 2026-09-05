@@ -42,27 +42,32 @@ reach is the `scope` lock (models.py), not the TTL.
 
 SERVICE-ACCOUNT SESSION
 -----------------------
-DashForge's mint route is authed, editor+, workspace-scoped. This service holds
+DashForge's mint route is authed, editor+, workspace-scoped. This module holds
 one account and caches its access token in memory until shortly before expiry —
 in memory and not in the database on purpose: a service credential that outlives
 the process is a credential somebody has to remember to rotate, and re-logging in
 after a restart costs one request. A 401 from the mint call drops the cached
 token and retries ONCE, which is what makes a DashForge restart (new JWT secret,
 or a rotated session) heal instead of requiring a NeuBit restart.
+
+The cache is per PROCESS. That was one satellite container before the fold-in and
+is one core worker now; several core workers each hold their own session, which
+is the same shape a scaled-out satellite would have had and costs one extra login
+per worker.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 
 import httpx
-from kernel.errors import AppError
 
-from app.config import get_dashforge_settings
+from ..core.errors import AppError
+from ..core.logging import get_logger
+from .config import get_dashforge_settings
 
-log = logging.getLogger("dashforge.client")
+log = get_logger("dashforge.client")
 
 
 class DashForgeUnavailable(AppError):
@@ -97,7 +102,7 @@ class DashForgeRefused(AppError):
 # mint never starts with a token that expires mid-flight.
 _LOGIN_SKEW = 60.0
 # How long a cached DashForge session is trusted without proof. DashForge access
-# tokens are short-lived and this service does not parse them (reading another
+# tokens are short-lived and this module does not parse them (reading another
 # product's JWT claims is a coupling to its token format that buys nothing here),
 # so the cache is bounded by a conservative wall clock and corrected by the 401
 # retry below, which is the authority.

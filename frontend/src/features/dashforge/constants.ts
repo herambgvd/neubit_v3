@@ -1,6 +1,6 @@
 // Permission keys and timings for the DashForge embed surface.
 
-/** Gated by the `dashforge` service (`backend/dashforge/app/embeds/router.py`),
+/** Gated by core's dashforge module (`backend/core/app/dashforge/router.py`),
  *  registered in core's catalog so a role can actually grant them.
  *
  *  READ is not a formality here. DashForge's `/public/embed/:token` is
@@ -18,7 +18,7 @@ export const MODULE = "analytics";
 /** How long before a session token expires to mint the next one, in ms.
  *
  *  The lifetime itself is the SERVER's decision (VE_DASHFORGE_TOKEN_TTL_MINUTES,
- *  reasoned about in `backend/dashforge/app/embeds/client.py`); this is only the
+ *  reasoned about in `backend/core/app/dashforge/client.py`); this is only the
  *  margin. 60s covers a slow re-mint and a clock a minute out of step without
  *  the iframe ever reloading onto a dead token, which the embed page renders as
  *  a bare "link expired" — correct, and alarming to somebody who did nothing

@@ -29,6 +29,7 @@ def _import_all_models() -> None:
     import app.auth.models  # noqa: F401
     import app.branding.models  # noqa: F401
     import app.core.audit  # noqa: F401
+    import app.dashforge.models  # noqa: F401
     import app.device_brands.models  # noqa: F401
     import app.messaging  # noqa: F401
     import app.module_catalog.models  # noqa: F401

@@ -1,8 +1,9 @@
 """Request / response models for the DashForge embed registry.
 
-The rule this file follows is the same one `dashboards/schemas.py` documents for
-widget specs, applied to a different foreign object: validate the ENVELOPE, never
-the meaning. NeuBit does not know what a DashForge dashboard's variables are
+The rule this file follows: validate the ENVELOPE, never the meaning. (It was
+inherited from the retired `dashboards` builder's widget-spec validation, whose
+schemas.py stated it and is gone — restated here rather than left as a pointer
+into a deleted file.) NeuBit does not know what a DashForge dashboard's variables are
 called, so a `scope` binding is checked for shape (a flat map of non-empty names
 to strings, bounded) and nothing else. Whether `site_id` is lockable on dashboard
 41 is a question only DashForge can answer, and it answers it at mint with a

@@ -44,11 +44,26 @@ neubit_reporting     # IoT reading store (TimescaleDB hypertables + rollups)
   # one on a live server is deliberately NOT dropped -- see
   # docs/dashboard-builder-final-export-2026-09-03.json -- but a fresh
   # install has no reason to create it.
-neubit_dashforge     # which DashForge dashboards this platform embeds (pointers only)
+  # neubit_dashforge held the embed registry -- which DashForge dashboards
+  # this platform shows -- and was ensured here from 2026-09-03 until
+  # 2026-09-05. REMOVED: the dashforge satellite was folded into core
+  # (backend/core/app/dashforge) and its one table now lives in the control
+  # database, created by core migration 0022_dashforge_embeds. The live
+  # database is deliberately NOT dropped -- it held 0 rows at the fold-in and
+  # is left inert, because a code change is one revert and a dropped database
+  # is not -- but a fresh install has no reason to create it.
+  #
+  # (This comment carried a backtick-quoted name when it was first written and
+  # exited db-init 127 on the very next up, exactly as the NOTE at the bottom
+  # of this string says it would. The note is not decorative.)
+  #
+  # The dashforge entry BELOW is a different database and stays: it is
+  # DashForge's own, not this platform's, and it is the healthcheck's
+  # completion marker.
 dashforge            # DASHFORGE'S OWN database. Not a neubit_* name because it is
                      # not this platform's schema: DashForge owns it, migrates it
                      # and is the only thing that reads it. It lives on this
-                     # Postgres for the same reason the other eight do -- one
+                     # Postgres for the same reason every entry above does -- one
                      # server to back up, tune and watch -- and NOT because the two
                      # products share anything. Composing DashForge in is done from
                      # NEUBIT deploy/ (docker-compose.dashforge.yml); a compose up

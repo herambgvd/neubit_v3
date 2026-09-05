@@ -34,6 +34,7 @@ import app.billing.models  # noqa: F401
 import app.alerts.models  # noqa: F401
 import app.broadcasts.models  # noqa: F401
 import app.security.models  # noqa: F401
+import app.dashforge.models  # noqa: F401
 
 config = context.config
 if config.config_file_name:

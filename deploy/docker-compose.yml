@@ -87,6 +87,13 @@ services:
       #      EXISTING volume, which is exactly why it reached a customer install.
       #
       #      KEEP THIS IN STEP WITH THE END OF THE LIST IN init-service-dbs.sh.
+      #
+      #      Checked again on 2026-09-05, when `neubit_dashforge` left that
+      #      list with the dashforge satellite. It was NOT the marker --
+      #      `dashforge`, DashForge's own database, is last and stayed --
+      #      so this line is unchanged. Verified against a FRESH volume in a
+      #      throwaway compose project rather than by reading the list,
+      #      because reading the list is what failed in 2026-09-01.
       test:
         - CMD-SHELL
         - pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" && psql -U "$$POSTGRES_USER" -d dashforge -c 'SELECT 1' >/dev/null 2>&1
@@ -237,57 +244,25 @@ services:
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     networks: [neubit]
 
-  # ── dashforge service (Python / neubit kernel) ──────────────────
-  # The registry of EMBEDDED DashForge dashboards: which of them this platform
-  # shows, under what name, and the gated per-session mint of their embed
-  # tokens. Owns its own DB (neubit_dashforge) on the shared Postgres, the
-  # pattern every other satellite uses.
+  # ── dashforge: NOT A SERVICE ANY MORE ───────────────────────────
+  # A `dashforge` container stood here from 2026-09-03 to 2026-09-05, owning
+  # neubit_dashforge and serving /api/v1/dashforge. It was folded into core as
+  # `backend/core/app/dashforge` — 1,256 lines with no public surface, no
+  # independent load and no failure domain worth isolating, built as a satellite
+  # only because that is this fleet's pattern. The routes, the permissions and
+  # the 15-minute per-session token mint are unchanged; they answer from core,
+  # which already owns /api/ at the gateway.
   #
-  # It stores POINTERS, not dashboards. Layout, widgets and queries live in
-  # DashForge, which owns them; a widget's numbers are fetched by DashForge from
-  # its own datasource. So this service never opens neubit_reporting and adds no
-  # second query path against the readings schema.
+  # VE_DASHFORGE_* still exists and is still read — by CORE now, via its
+  # `env_file: .env`, the same way it reads every other VE_ setting. See
+  # .env.example and backend/core/app/dashforge/config.py, which explains what
+  # the service account is a ceiling on.
   #
-  # The DashForge PEER itself is not defined here — see
-  # docker-compose.dashforge.yml, which is opt-in via COMPOSE_FILE. Without it
-  # this service still serves the registry and answers 503 on an embed session,
-  # which is the honest answer when the peer is not deployed.
-  dashforge:
-    build:
-      context: ../backend
-      dockerfile: dashforge/Dockerfile
-    env_file: .env
-    environment:
-      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_dashforge
-      # Where THIS SERVICE reaches DashForge (compose network) and where a
-      # BROWSER reaches it (the iframe src). They are different on purpose: the
-      # operator's browser is not on this network, so an internal service name in
-      # the second would produce an iframe that silently never loads.
-      VE_DASHFORGE_BASE_URL: ${VE_DASHFORGE_BASE_URL:-}
-      VE_DASHFORGE_PUBLIC_URL: ${VE_DASHFORGE_PUBLIC_URL:-}
-      # The DashForge service account. Lowest role that can mint (editor), in the
-      # one workspace whose dashboards this platform embeds — never a DashForge
-      # super-admin: this account is the ceiling on what any NeuBit viewer can
-      # ever be shown. See backend/dashforge/app/config.py.
-      VE_DASHFORGE_EMAIL: ${VE_DASHFORGE_EMAIL:-}
-      VE_DASHFORGE_PASSWORD: ${VE_DASHFORGE_PASSWORD:-}
-      VE_DASHFORGE_TOKEN_TTL_MINUTES: ${VE_DASHFORGE_TOKEN_TTL_MINUTES:-15}
-    depends_on:
-      postgres: { condition: service_healthy }
-      db-init: { condition: service_completed_successfully }
-      nats: { condition: service_started }
-    # 0001_dashforge is THIS service's baseline — see deploy/migrate.sh. A
-    # service's baseline is the revision in ITS OWN migrations/versions carrying
-    # `down_revision = None`; naming another service's here is a copy-paste that
-    # alembic answers with `Can't locate revision identified by ...`, which
-    # surfaces as a container restart-looping forever rather than as a config
-    # error.
-    command: >
-      bash -c "/usr/local/bin/neubit-migrate 0001_dashforge &&
-               uvicorn app.main:app --host 0.0.0.0 --port 8000"
-    volumes:
-      - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
-    networks: [neubit]
+  # NOT removed with it: `dashforge` (no neubit_ prefix), DASHFORGE'S OWN
+  # database in init-service-dbs.sh, and docker-compose.dashforge.yml, which
+  # composes in the DashForge PRODUCT. Different thing, confusingly similar name.
+  # The postgres healthcheck probes that database as its completion marker and is
+  # deliberately untouched here.
 
   # ── workflow service (Python / neubit_common) ───────────────────
   # SOP / automation engine. Owns its own DB (neubit_workflow). API + a Celery

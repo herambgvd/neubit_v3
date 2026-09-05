@@ -11,7 +11,7 @@ no check at all — it would ship a token the operator believes is per-tenant.
 import pytest
 from pydantic import ValidationError as PydanticError
 
-from app.embeds.schemas import (
+from app.dashforge.schemas import (
     MAX_SCOPE_BINDINGS,
     MAX_SCOPE_VALUE_LEN,
     EmbedCreate,

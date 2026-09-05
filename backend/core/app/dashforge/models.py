@@ -1,11 +1,22 @@
 """DashForge embed registrations ORM — one row per dashboard NeuBit will show.
 
-One table, tenant-scoped the way every other satellite is: a nullable
-``tenant_id`` (NULL = a platform/super-admin row), read through
-``kernel.auth.scoped`` / ``assert_owned`` so isolation lives in one place rather
-than in every handler. That column is also what makes DPDP right-to-erase work
-generically — ``kernel.lifecycle.erase_tenant_data`` deletes from every table
-that HAS the column, with no per-service model list.
+One table, tenant-scoped the way the rest of core is: a nullable ``tenant_id``
+(NULL = a platform/super-admin row), read through ``app.tenancy.scope`` /
+``assert_owned`` so isolation lives in one place rather than in every handler.
+
+**Why the tenant_id is a real FOREIGN KEY here and was a bare column before.**
+As a satellite this table lived in ``neubit_dashforge`` and ``tenants`` lived in
+core's database, so no FK could span them; the erase on tenant offboard was done
+instead by a NATS subscription (``kernel.lifecycle.subscribe_tenant_offboard``),
+which walked every table carrying a ``tenant_id``. That subscription does not
+survive the fold-in — core PUBLISHES the offboard event, it does not consume its
+own — and dropping it without a replacement would have left this table holding a
+deleted tenant's rows, which is the DPDP right-to-erase failing quietly. The two
+tables are now in one database, so ``ON DELETE CASCADE`` does the same job with
+no bus, no durable consumer and no way for it to be down when it is needed.
+(``sites`` and ``tags`` still carry a bare ``tenant_id`` and are NOT erased this
+way. That is a real gap and a pre-existing one; it is not this change's to fix,
+but do not read their column as the convention to copy.)
 
 **Why the reference is a string, not an integer.** DashForge's dashboard id is
 today a ``uint`` and its workspace id likewise. Storing them as strings costs
@@ -15,9 +26,9 @@ migration of somebody else's identifier lands in NeuBit's release notes.
 
 **Why the workspace reference is stored at all.** Minting is workspace-scoped on
 the DashForge side (``X-Workspace-ID``), and a service account may be a member of
-more than one. Deriving it would mean this service listing workspaces and
-guessing; recording it at registration time makes the mint call unambiguous, and
-a wrong value fails loudly at registration rather than silently later.
+more than one. Deriving it would mean listing workspaces and guessing; recording
+it at registration time makes the mint call unambiguous, and a wrong value fails
+loudly at registration rather than silently later.
 
 **Why ``scope`` lives here and is not computed.** It is the set of filter
 bindings locked into the embed token's signature (DashForge
@@ -29,7 +40,12 @@ has no view of. So it is recorded by whoever registers the dashboard (they hold
 unlockable name is refused by DashForge at mint with a message naming it, which
 is the right place for that check because it is the only side that knows.
 
-Deliberately NOT here: any embed token. See ``app/db.py``.
+Deliberately NOT here: any embed token. A token is a bearer credential minted per
+viewing session (see ``client.py``); storing one would turn this table into a
+credential store whose rows outlive the session that needed them. Nor any
+dashboard definition — layout, widgets and queries live in DashForge, and a
+second copy here would be free to drift from the real one, with the first symptom
+a page that renders one thing and is described here as another.
 """
 
 from __future__ import annotations
@@ -40,6 +56,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     JSON,
     DateTime,
+    ForeignKey,
     Index,
     String,
     Uuid,
@@ -47,7 +64,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db import Base
+from ..db.base import Base
 
 
 def _uuid_str() -> str:
@@ -79,7 +96,9 @@ class DashForgeEmbed(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     # What operators call it HERE. Deliberately not read from DashForge: the name
     # a dashboard carries in its authoring tool is chosen by whoever built it,
@@ -100,6 +119,9 @@ class DashForgeEmbed(Base):
 
     # Who registered it. Informational — authorisation is the permission plus the
     # tenant, never ownership, because an embedded dashboard is a team artefact.
+    # No FK: the registration outliving the operator who made it is correct, and
+    # the alternative (cascade) would delete a working dashboard when its author
+    # leaves.
     created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

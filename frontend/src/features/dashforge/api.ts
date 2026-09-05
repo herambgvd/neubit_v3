@@ -2,10 +2,11 @@
 
 // DashForge embed registry API — the NeuBit side of the DashForge integration.
 //
-// Served by the `dashforge` satellite (`backend/dashforge/app/embeds`), routed at
-// the gateway as `/api/v1/dashforge/*`. It is a DIFFERENT service from
-// `/api/v1/dashboards` (the retiring in-house builder), which keeps answering on
-// its own routes and is deliberately untouched.
+// Served by core's `app/dashforge` module (`backend/core/app/dashforge`). It was
+// a `dashforge` satellite peeled off at the gateway until 2026-09-05; the prefix
+// now falls through to core with the rest of `/api/`. Nothing on this side
+// changed, because nothing here ever named a service — every call goes through
+// the gateway prefix, which is the reason the move needed no frontend edit.
 //
 // Backend contract:
 //   GET    /dashforge/dashboards            ?search        (dashforge.read)

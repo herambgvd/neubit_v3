@@ -156,7 +156,7 @@ class CorePerm:
     # DashForge's `/public/embed/:token` is UNAUTHENTICATED — the token IS the
     # credential — so the only check standing in front of that data is the one
     # NeuBit makes before minting a token
-    # (`backend/dashforge/app/embeds/router.py`). A caller without this key never
+    # (`backend/core/app/dashforge/router.py`). A caller without this key never
     # gets a token and therefore never gets the data.
     # MANAGE decides which dashboards are registered here at all, which is why it
     # is separate: being allowed to LOOK at an embedded dashboard must not imply

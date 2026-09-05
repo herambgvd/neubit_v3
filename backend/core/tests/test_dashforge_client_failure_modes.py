@@ -6,13 +6,10 @@ exchange. Flattening it into a status code would leave a person staring at a
 dashboard that will not open with nothing to act on.
 """
 
-import json
-
-import httpx
 import pytest
 
-from app.config import get_dashforge_settings
-from app.embeds.client import DashForgeClient, DashForgeUnavailable
+from app.dashforge.client import DashForgeClient, DashForgeUnavailable
+from app.dashforge.config import get_dashforge_settings
 
 
 class _Resp:

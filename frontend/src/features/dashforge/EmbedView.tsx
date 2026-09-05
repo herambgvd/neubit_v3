@@ -14,7 +14,7 @@
 // THE TOKEN NEVER OUTLIVES THE VIEW. `session()` mints one on mount and the
 // timer below re-mints shortly before the server-declared expiry, so the URL in
 // this iframe is a credential with a bounded life rather than a stored secret.
-// The lifetime is the SERVER's (see backend/dashforge/app/embeds/client.py);
+// The lifetime is the SERVER's (see backend/core/app/dashforge/client.py);
 // this component only reads `expires_at` and schedules against it. Deliberately
 // NOT done: caching a session in React Query or localStorage. A bearer
 // credential that survives the component that needed it is the leak the

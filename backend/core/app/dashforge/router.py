@@ -1,24 +1,37 @@
 """DashForge embed registry API — `{api_prefix}/dashforge/...`.
 
-Authorisation is the pattern every satellite uses: the core-minted JWT is
-verified LOCALLY with the shared secret, the tenant comes from the token claim
-(never from the request), and each route declares the permission it needs.
+Mounted by ``create_base_app`` alongside the other always-on core routers, so the
+full paths are `/api/v1/dashforge/dashboards...`. That prefix used to be peeled
+off at the gateway to a `dashforge` container; it now falls through to core with
+the rest of `/api/`, and the routes and their permissions are unchanged.
 
     dashforge.read     list registrations, open one (mint a viewing session)
     dashforge.manage   register, edit and remove them
 
-Both keys are registered in core's permission catalog
-(`backend/core/app/auth/permissions.py`, group "Dashboards") so a tenant admin
-can actually grant them in the role editor. A key the catalog does not know about
-can only ever be held by a wildcard admin, which is not a permission model — the
-`ingest.*` keys were exactly that mistake and the catalog comment records it.
+Both keys are in core's permission catalog (``app/auth/permissions.py``, group
+"Dashboards") so a tenant admin can actually grant them in the role editor. A key
+the catalog does not know about can only ever be held by a wildcard admin, which
+is not a permission model — the ``ingest.*`` keys were exactly that mistake and
+the catalog comment records it.
 
-Module gating (`analytics` — "Dashboards & Reports") and the licence check are
-applied where the router is mounted, in `app.main`, so they cannot be forgotten
-per route.
+MODULE AND TENANT GATING ARE ON THE ROUTER, NOT THE ROUTES. Declared once in the
+``APIRouter`` below so a route added later inherits them and cannot forget:
 
-WHY `POST /{id}/session` IS THE WHOLE POINT OF THIS SERVICE
------------------------------------------------------------
+  * ``require_feature("analytics")``  — the "Dashboards & Reports" module.
+  * ``require_tenant_active()``       — suspended tenant / expired licence.
+
+The second one is worth a sentence because it is the piece that had to be
+rebuilt. As a satellite this router was mounted behind the kernel's
+``require_active_license``, which reads the tenant's state from the JWT CLAIM
+because a satellite has no tenants table to ask. Core does have one, and had no
+equivalent per-route gate at all — it refuses a suspended tenant at LOGIN and
+otherwise trusts the token. Dropping the check on the way in would have widened
+this route: a token minted before a suspension would keep minting embed tokens
+until it expired. ``app.tenancy.features.require_tenant_active`` closes the same
+window against the live row.
+
+WHY `POST /{id}/session` IS THE WHOLE POINT OF THIS MODULE
+----------------------------------------------------------
 DashForge's `GET /public/embed/:token` is unauthenticated: the token IS the
 credential. So the ONLY thing standing between a NeuBit-visible dashboard and
 anyone who can load a NeuBit page is the check that happens before a token
@@ -49,13 +62,15 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, Response, status
-from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_dashforge_settings
-from app.db import get_db
-
+from ..auth.deps import get_current_user, require_permission
+from ..auth.models import User
+from ..db.base import get_db
+from ..tenancy.features import require_feature, require_tenant_active
+from ..tenancy.scope import Scope, get_scope
 from .client import DashForgeUnavailable, client as dashforge
+from .config import get_dashforge_settings
 from .schemas import (
     EmbedCreate,
     EmbedListResponse,
@@ -68,17 +83,24 @@ from .service import EmbedRegistryService
 PERM_READ = "dashforge.read"
 PERM_MANAGE = "dashforge.manage"
 
-router = APIRouter(prefix="/dashforge", tags=["DashForge"])
+router = APIRouter(
+    prefix="/dashforge",
+    tags=["DashForge"],
+    dependencies=[
+        Depends(require_feature("analytics")),
+        Depends(require_tenant_active()),
+    ],
+)
 
 
 async def _service(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
-    principal: Annotated[Principal, Depends(get_principal)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> EmbedRegistryService:
-    # The principal rides along for attribution only. Authorisation stays the
+    # The user rides along for attribution only. Authorisation stays the
     # permission plus the tenant.
-    return EmbedRegistryService(db, scope, actor=principal.user_id)
+    return EmbedRegistryService(db, scope, actor=user.id)
 
 
 Svc = Annotated[EmbedRegistryService, Depends(_service)]
@@ -193,7 +215,7 @@ async def open_session(svc: Svc, embed_id: str) -> EmbedSession:
         token=token,
         iframe_url=f"{cfg.public_url.rstrip('/')}/embed/{token}",
         # DashForge's own expiry, passed through — never restated from this
-        # service's clock, which would drift against the signature that actually
+        # platform's clock, which would drift against the signature that actually
         # decides.
         expires_at=str(minted.get("expiresAt") or ""),
         # Echoed so an operator can see on screen what the token is locked to.

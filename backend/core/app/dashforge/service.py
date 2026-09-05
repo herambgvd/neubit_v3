@@ -1,6 +1,6 @@
 """Registry operations, tenant-scoped.
 
-Every read goes through ``kernel.auth.scoped`` and every by-id fetch through
+Every read goes through ``app.tenancy.scope.scoped`` and every by-id fetch through
 ``assert_owned``, so a tenant boundary is one helper call rather than a WHERE
 clause each handler has to remember. ``assert_owned`` raises NOT_FOUND rather
 than FORBIDDEN on purpose (see its docstring): a tenant admin must not be able to
@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import uuid
 
-from kernel.auth import Scope, assert_owned, scoped
-from kernel.errors import ConflictError
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.errors import ConflictError
+from ..tenancy.scope import Scope, assert_owned, scoped
 from .models import DashForgeEmbed
 from .schemas import EmbedCreate, EmbedUpdate
 
@@ -47,7 +47,9 @@ class EmbedRegistryService:
         row = DashForgeEmbed(
             # A super-admin registering without a tenant creates a platform row
             # (tenant_id NULL), which `owns()` treats as readable by everyone —
-            # the same shape every other satellite uses for shared defaults.
+            # the same shape core's other tenant-scoped tables use for shared
+            # defaults. `scoped()` here has the identical semantics the kernel's
+            # did, so the fold-in changed no row's visibility.
             tenant_id=self.scope.tenant_id,
             name=body.name.strip(),
             description=(body.description or None),

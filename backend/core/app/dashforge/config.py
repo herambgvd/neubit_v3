@@ -1,16 +1,26 @@
-"""How this service reaches DashForge.
+"""How this module reaches DashForge.
 
-Its own settings class rather than fields on `kernel.config.Settings`: the shared
-Settings is deliberately the subset every satellite reads (`VE_` prefixed, one
-shared .env), and adding a peer product's credentials to it would put a DashForge
-password in the config object that core, ingest, workflow and vision all
-instantiate. The blast radius of a secret is who can read it.
+Its OWN settings class and not fields on ``app.core.config.Settings``. That was
+true when this lived in a satellite (the shared kernel Settings is instantiated by
+core, ingest, workflow and vision alike, and a peer product's password has no
+business in an object all four hold) and it stays true after the fold-in for a
+narrower reason: ``get_settings()`` is read by every module in this process and
+its object is what a settings dump, a debug endpoint or a traceback repr would
+carry. Keeping the DashForge password in a class that only this module
+instantiates keeps the number of places it can be read from at one.
 
-`VE_DASHFORGE_` prefix, so the shared .env stays one namespace.
+What DID change with the fold-in, stated plainly rather than left to be
+discovered: the service account now lives in CORE's environment instead of the
+``dashforge`` container's. Both are ``env_file: .env`` on the same host reading
+the same ``VE_DASHFORGE_*`` values, so the credential did not move to a new store
+and is not readable by anyone who could not read it before — but it is now inside
+a bigger process, which is why it stays off the shared Settings.
+
+``VE_DASHFORGE_`` prefix, so the shared .env stays one namespace.
 
 THE SERVICE ACCOUNT is the part worth reading. Minting an embed token on
-DashForge is an AUTHENTICATED, editor+ call scoped to a workspace, so this
-service holds ONE DashForge account and mints on behalf of NeuBit callers. Two
+DashForge is an AUTHENTICATED, editor+ call scoped to a workspace, so this module
+holds ONE DashForge account and mints on behalf of NeuBit callers. Two
 consequences that were chosen, not inherited:
 
 * That account is the ceiling on what any NeuBit viewer can ever be shown. It
@@ -21,14 +31,14 @@ consequences that were chosen, not inherited:
 * NeuBit's own permission check therefore cannot be delegated to DashForge.
   DashForge sees one caller, always the same one; it has no idea which NeuBit
   operator is behind it. The gate that decides whether a human may see a
-  dashboard is `dashforge.read`, enforced HERE, before a token exists. See
-  `embeds/router.py`.
+  dashboard is ``dashforge.read``, enforced HERE, before a token exists. See
+  ``router.py``.
 
-Unset `VE_DASHFORGE_BASE_URL` and the feature is simply off: registrations still
-list and manage, and asking for an embed session answers 503 with the reason,
-rather than the service failing to boot. A satellite that refuses to start
-because an optional peer is unconfigured takes the whole compose stack's
-`depends_on` chain down with it.
+Unset ``VE_DASHFORGE_BASE_URL`` and the feature is simply off: registrations
+still list and manage, and asking for an embed session answers 503 with the
+reason. That mattered as a satellite because a service refusing to boot on an
+optional peer takes every ``depends_on`` behind it down with it; it matters more
+now, because refusing to boot would take the whole console with it.
 """
 
 from __future__ import annotations
@@ -41,7 +51,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class DashForgeSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="VE_DASHFORGE_", env_file=".env", extra="ignore")
 
-    # Where this service reaches the DashForge API from inside the compose
+    # Where THIS PROCESS reaches the DashForge API from inside the compose
     # network (http://dashforge-backend:8080). Empty = the integration is off.
     base_url: str = ""
 
@@ -56,7 +66,7 @@ class DashForgeSettings(BaseSettings):
     password: str = ""
 
     # How long a minted embed token lives, in MINUTES. The reasoning for this
-    # number is in `embeds/client.py` next to the mint call, where it is applied.
+    # number is in `client.py` next to the mint call, where it is applied.
     token_ttl_minutes: int = 15
 
     # Seconds to wait on any DashForge call. Short: this sits in front of an
