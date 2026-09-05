@@ -53,6 +53,11 @@ async def get_maps_config(
     browser (the Maps JavaScript API loader needs it); restrict it by HTTP referrer
     in Google Cloud Console. Not part of the unauthenticated /public subset.
 
+    This is the ONLY route that reads the key unmasked, and it is deliberate: the
+    loader cannot use "***". `GET /settings` masks it. The value is encrypted at
+    rest either way — the `"secret": True` flag in the catalog is now enforced
+    rather than merely declared.
+
     With ``google_maps_enabled`` off — the default — the browser draws the map
     from the self-hosted PMTiles archive at ``tiles_url`` instead, which needs no
     key and no internet.
@@ -75,9 +80,12 @@ async def get_settings_config(
 ) -> SettingsOut:
     # A tenant-admin sees their effective settings (tenant override ← platform
     # default); a super-admin (tenant_id None) sees/edits the platform default.
+    # display_values, not all_values: secret-flagged keys come back as "***". The
+    # settings screen never needed the real credential, and this route used to hand
+    # it to every holder of settings.manage on every page load.
     return SettingsOut(
         catalog=catalog.CATALOG,
-        values=await SettingsService(db, actor.tenant_id).all_values(),
+        values=await SettingsService(db, actor.tenant_id).display_values(),
     )
 
 

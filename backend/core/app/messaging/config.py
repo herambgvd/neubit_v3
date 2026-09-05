@@ -34,7 +34,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..core.secrets import decrypt_secret, encrypt_secret
+from ..core.secrets import decrypt_secret_for, encrypt_secret_for
 from ..db.base import Base
 
 # Which JSON keys hold secrets, per channel. Only these are encrypted at rest and
@@ -113,13 +113,31 @@ async def upsert_channel(
     ``config`` comes from the admin UI with secrets in PLAINTEXT; we encrypt the
     declared ``SECRET_FIELDS`` for that channel before persisting.
     """
+    row = await _row_exact(db, channel, tenant_id)
+    existing = dict((row.config if row is not None else None) or {})
+
     # Copy so we never mutate the caller's dict, and encrypt the secret fields.
     stored = dict(config)
     for field in SECRET_FIELDS.get(channel, []):
-        if stored.get(field):  # only encrypt non-empty values
-            stored[field] = encrypt_secret(str(stored[field]))
+        value = stored.get(field)
+        if value in (None, "", MASK):
+            # THE SECRET WAS NOT RE-ENTERED. `GET /messaging/channels/email` returns
+            # the password as "***" (see `masked`), and the admin UI submits the form
+            # it was given — so an ordinary edit, changing a port or toggling
+            # `enabled`, used to arrive with "***" in the password field. This wrote
+            # `encrypt_secret("***")` over the real credential: mail stopped, and the
+            # password was unrecoverable. The stored value is kept instead.
+            # `security/service.py` already got this right for the LDAP bind password
+            # (`if data.bind_password:`); messaging had no equivalent.
+            if existing.get(field):
+                stored[field] = existing[field]
+            else:
+                stored.pop(field, None)
+            continue
+        # Encrypted under the row's OWN tenant key, so one tenant's key never
+        # decrypts another's credentials.
+        stored[field] = encrypt_secret_for(tenant_id, str(value))
 
-    row = await _row_exact(db, channel, tenant_id)
     if row is None:
         row = ChannelConfig(
             channel=channel, enabled=enabled, config=stored, tenant_id=tenant_id
@@ -144,8 +162,15 @@ async def get_config_decrypted(
     decrypted = dict(row.config or {})
     for field in SECRET_FIELDS.get(channel, []):
         if decrypted.get(field):
-            decrypted[field] = decrypt_secret(str(decrypted[field]))
+            # The ROW's tenant, not the caller's: `get_channel` falls back to the
+            # platform-default row, whose secrets are under the platform key.
+            decrypted[field] = decrypt_secret_for(row.tenant_id, str(decrypted[field]))
     return decrypted
+
+
+#: What a secret field reads as on the way OUT. `upsert_channel` treats it on the
+#: way IN as "unchanged", which is what makes an edit through the UI non-destructive.
+MASK = "***"
 
 
 def masked(config: dict, channel: str) -> dict:
@@ -156,5 +181,5 @@ def masked(config: dict, channel: str) -> dict:
     safe = dict(config or {})
     for field in SECRET_FIELDS.get(channel, []):
         if field in safe and safe.get(field):
-            safe[field] = "***"
+            safe[field] = MASK
     return safe

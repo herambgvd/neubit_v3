@@ -262,9 +262,11 @@ class AuthService:
         A matching recovery code is CONSUMED (removed from the list) as a side
         effect — the caller is responsible for committing the session.
         """
-        from ..core.secrets import decrypt_secret
+        from ..core.secrets import decrypt_secret_for
 
-        if user.totp_secret and verify_totp(decrypt_secret(user.totp_secret), code):
+        if user.totp_secret and verify_totp(
+            decrypt_secret_for(user.tenant_id, user.totp_secret), code
+        ):
             return True
         target = hash_api_key(normalize_recovery_code(code))
         codes = list(user.mfa_recovery_codes or [])
@@ -298,10 +300,13 @@ class AuthService:
         """Generate + stash a new (still-disabled) TOTP secret; return
         (secret, otpauth_uri) for the client to show as text + QR."""
         from ..core.config import get_settings
-        from ..core.secrets import encrypt_secret
+        from ..core.secrets import encrypt_secret_for
 
         secret = generate_totp_secret()
-        user.totp_secret = encrypt_secret(secret)
+        # A TOTP seed is the user's second factor and the user belongs to a tenant,
+        # so it is encrypted under that tenant's key like every other tenant-owned
+        # secret. A platform user (tenant_id NULL) gets the platform key.
+        user.totp_secret = encrypt_secret_for(user.tenant_id, secret)
         user.totp_enabled = False
         await self.db.commit()
         issuer = get_settings().app_name or "Vizor"
@@ -310,11 +315,11 @@ class AuthService:
     async def confirm_totp_setup(self, user: User, code: str) -> list[str]:
         """Verify the first code against the pending secret, enable 2FA, and
         return freshly generated one-time recovery codes (shown once)."""
-        from ..core.secrets import decrypt_secret
+        from ..core.secrets import decrypt_secret_for
 
         if not user.totp_secret or user.totp_enabled:
             raise ValidationError("no pending 2FA setup — start setup first")
-        if not verify_totp(decrypt_secret(user.totp_secret), code):
+        if not verify_totp(decrypt_secret_for(user.tenant_id, user.totp_secret), code):
             raise ValidationError("invalid authentication code")
         user.totp_enabled = True
         raw, hashed = generate_recovery_codes()

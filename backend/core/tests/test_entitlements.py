@@ -176,13 +176,67 @@ async def test_access_token_audience_matches_realm(db, admin_role):
 
 
 def test_per_tenant_encryption_is_key_isolated():
-    """A tenant's secret is encrypted under its OWN key — another tenant's key can't
-    recover it (Phase 8 per-tenant encryption keys)."""
-    from app.core.secrets import decrypt_secret_for, encrypt_secret_for
+    """A tenant's secret is encrypted under its OWN key — another tenant's key cannot
+    recover it (Phase 8 per-tenant encryption keys).
+
+    THIS TEST USED TO BE UNABLE TO FAIL. It asserted
+    `decrypt_secret_for(tenant_b, cipher) != "smtp-password"`, and that passed
+    because the old implementation SWALLOWED InvalidToken and returned its input —
+    so the assertion was "ciphertext != plaintext", which is true of any two
+    different strings. It would have passed against an implementation with no key
+    separation at all, which is roughly what production had: `_fernet_for` existed
+    with an STQC docstring and zero production callers.
+
+    B's key must now RAISE. That is an assertion the broken implementation cannot
+    satisfy by accident.
+    """
+    import pytest as _pytest
+
+    from app.core.secrets import (
+        MARKER,
+        SecretDecryptionError,
+        decrypt_secret_for,
+        encrypt_secret_for,
+    )
 
     tenant_a = "11111111-1111-1111-1111-111111111111"
     tenant_b = "22222222-2222-2222-2222-222222222222"
     cipher = encrypt_secret_for(tenant_a, "smtp-password")
 
-    assert decrypt_secret_for(tenant_a, cipher) == "smtp-password"  # own key round-trips
-    assert decrypt_secret_for(tenant_b, cipher) != "smtp-password"  # B cannot decrypt A's
+    assert cipher.startswith(MARKER)  # tagged, so a failure to decrypt is an error
+    assert decrypt_secret_for(tenant_a, cipher) == "smtp-password"
+    with _pytest.raises(SecretDecryptionError):
+        decrypt_secret_for(tenant_b, cipher)
+
+
+def test_a_secret_that_will_not_decrypt_raises_instead_of_being_returned():
+    """The rotation case. Handing back the ciphertext means an SMTP password of
+    `gAAAAAB…` reaches a mail server and the log says "authentication failed" —
+    a key-rotation incident disguised as a credential problem."""
+    import pytest as _pytest
+
+    from app.core.secrets import MARKER, SecretDecryptionError, decrypt_secret
+
+    with _pytest.raises(SecretDecryptionError):
+        decrypt_secret(MARKER + "not-a-valid-fernet-token")
+
+
+def test_a_value_that_was_never_encrypted_is_returned_unchanged():
+    """The leniency that IS wanted, and only this one: deployments hold rows written
+    before encryption existed, and a deploy that cannot read what it wrote yesterday
+    is an outage. It is scoped to values carrying no ciphertext marker at all."""
+    from app.core.secrets import decrypt_secret, decrypt_secret_for
+
+    assert decrypt_secret("plain-old-password") == "plain-old-password"
+    assert decrypt_secret_for("some-tenant", "plain-old-password") == "plain-old-password"
+
+
+def test_a_pre_marker_fernet_token_still_decrypts():
+    """Rows written before the enc:v1 tag are bare Fernet tokens under the platform
+    key. They must keep working — and they must NOT be mistaken for plaintext, which
+    is what would happen if the marker check were the only branch."""
+    from app.core.secrets import _fernet, decrypt_secret
+
+    legacy = _fernet().encrypt(b"old-password").decode()
+    assert legacy.startswith("gAAAAA")
+    assert decrypt_secret(legacy) == "old-password"

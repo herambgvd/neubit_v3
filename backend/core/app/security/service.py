@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.models import Role, User
 from ..auth.security import hash_password
 from ..core.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
-from ..core.secrets import decrypt_secret, encrypt_secret
+from ..core.secrets import decrypt_secret_for, encrypt_secret_for
 from ..tenancy.scope import Scope
 from .ldap_client import LdapClient, LdapEntry, LdapError, build_client
 from .models import DirectoryConfig, DualAuthRequest, SecurityPolicy, SsoConfig
@@ -123,7 +123,9 @@ class SecurityService:
         row.bind_dn = data.bind_dn
         # Only re-encrypt if a new secret was supplied (blank keeps the stored one).
         if data.bind_password:
-            row.bind_password = encrypt_secret(data.bind_password)
+            # Under the row's own tenant key — one tenant's key never decrypts
+            # another's LDAP bind credential.
+            row.bind_password = encrypt_secret_for(tenant_id, data.bind_password)
         row.use_ssl = data.use_ssl
         row.user_dn_base = data.user_dn_base
         row.user_filter = data.user_filter
@@ -236,7 +238,7 @@ class SecurityService:
         tenant_id = None if scope.is_platform else scope.tenant_id
         live = client is None
         if client is None:
-            client = build_client(cfg, decrypt_secret(cfg.bind_password) if cfg.bind_password else None)
+            client = build_client(cfg, decrypt_secret_for(cfg.tenant_id, cfg.bind_password) if cfg.bind_password else None)
         try:
             entries = client.search_users()
         except LdapError as exc:
@@ -270,7 +272,7 @@ class SecurityService:
         """
         tenant_id = cfg.tenant_id
         if client is None:
-            client = build_client(cfg, decrypt_secret(cfg.bind_password) if cfg.bind_password else None)
+            client = build_client(cfg, decrypt_secret_for(cfg.tenant_id, cfg.bind_password) if cfg.bind_password else None)
         try:
             entry = client.authenticate(username, password)
         except LdapError as exc:
@@ -309,7 +311,7 @@ class SecurityService:
         row.issuer = data.issuer
         row.client_id = data.client_id
         if data.client_secret:
-            row.client_secret = encrypt_secret(data.client_secret)
+            row.client_secret = encrypt_secret_for(tenant_id, data.client_secret)
         row.scopes = data.scopes
         row.redirect_uri = data.redirect_uri
         row.email_claim = data.email_claim
@@ -339,7 +341,9 @@ class SecurityService:
         """
         http = http or HttpxAdapter()
         discovery = await fetch_discovery(http, cfg.issuer)
-        secret = decrypt_secret(cfg.client_secret) if cfg.client_secret else None
+        secret = (
+            decrypt_secret_for(cfg.tenant_id, cfg.client_secret) if cfg.client_secret else None
+        )
         claims: OidcClaims = await exchange_code(http, discovery, cfg, code, secret)
         return await self._provision_from_claims(claims, cfg)
 

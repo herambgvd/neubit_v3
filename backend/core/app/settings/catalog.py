@@ -151,5 +151,16 @@ def public_keys() -> set[str]:
     return {item["key"] for item in CATALOG if item.get("public")}
 
 
+def secret_keys() -> set[str]:
+    """Keys whose stored value is a CREDENTIAL.
+
+    `"secret": True` sat on `google_maps_api_key` from the day it was added and
+    nothing read it: the value was written to `app_settings.value` in plaintext and
+    returned unmasked by `GET /settings`. A declared-but-unenforced flag is worse
+    than an absent one — it reads as a control in review. This is what makes it one.
+    """
+    return {row["key"] for row in CATALOG if row.get("secret")}
+
+
 def known_keys() -> set[str]:
     return set(_BY_KEY)
