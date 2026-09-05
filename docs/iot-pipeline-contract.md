@@ -1921,6 +1921,24 @@ rebind would bind to the impostor again and report success. That case stays red
 and loud for a human, because this service's filter comes from
 `VE_READINGS_SUBJECT` and not from a table an operator edits.
 
+**Both halves have the second proof**, as of the same day. The first version of
+this work claimed the projections half was blind to everything the readings half
+had been, and that claim was wrong; two wedges run against both halves settled
+it, and the distinction is worth keeping because the two look identical from the
+outside and behave completely differently:
+
+| wedge | what a pull raises | before | after |
+|---|---|---|---|
+| durable DELETED once and left | `ServiceUnavailableError` — nothing listens on its `MSG.NEXT` subject | **both halves already correct**: failure streak → rebind → replay. Projection recovered in ~3 s, readings consumer in <16 s | unchanged |
+| durable NAME held by a consumer of the WRONG SHAPE (push, or another filter) | 409, folded into `TimeoutError` — the IDLE branch | **both halves blind.** `projector_consuming{access_events}` read 1 with `fetch_failures` 0 for three minutes while nothing was projected | 503 within the window, naming the projection and the reason |
+
+Deleting a durable is therefore *not* the wedge that finds this bug, which is why
+`5b69d72`'s re-delete-every-500 ms experiment saw `consuming` go to 0 and still
+left the hole open. `app/projections` does not request a rebind on either
+condition: its fetch loop demonstrably handles the absent case by itself, and a
+squatted name cannot be repaired by re-binding to it. `_converge_consumer` at
+worker start remains the repair path for a filter that legitimately changed.
+
 ### Verified on the live stack (2026-09-05)
 
 16 containers, no `reporting-projector` among them. With `reporting-projector-access`

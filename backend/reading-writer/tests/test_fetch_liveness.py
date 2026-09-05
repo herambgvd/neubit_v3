@@ -450,3 +450,75 @@ async def _stats_tick(p: Pipeline) -> None:
         await task
     except asyncio.CancelledError:
         pass
+
+
+# ── the projections half, which turned out to have the same 409 hole ──────────
+# Kept in this file on purpose: the two halves are one finding, and splitting
+# them invites somebody to fix one and leave the other, which is exactly what
+# happened once already.
+def test_projection_consuming_flag_alone_reads_green_through_a_hijacked_durable() -> None:
+    """Why the projections half needed a second proof and not just its flag.
+
+    The assigned flag is set from the fetch loop's FAILURE branch. A durable
+    whose name is held by a push consumer never reaches that branch — the
+    server's 409 arrives as a TimeoutError, i.e. the IDLE branch, which sets
+    `consuming` back to True. So the flag is true and the projection is dead.
+    """
+    from app.projections.metrics import ProjectionMetrics
+
+    pm = ProjectionMetrics(key="access_events", running=True, silence_limit_sec=5.0)
+    pm.note_consumer_seen()
+    pm.consuming = True                  # what the idle branch keeps doing
+    pm.note_consumer_missing("it is a PUSH consumer; this projection pulls")
+    assert pm.is_consuming is True       # inside the window, still green
+    pm.last_consumer_seen_mono -= 6.0
+    assert pm.consuming is True          # the old flag: still, wrongly, true
+    assert pm.consumer_confirmed is False
+    assert pm.is_consuming is False      # the one /readyz and /metrics now use
+
+
+def test_projections_readiness_separates_the_two_faults() -> None:
+    """`not_consuming` and `not_confirmed` are different faults with different
+    fixes, and a running projection must land in exactly the right list."""
+    from app.projections.metrics import Metrics as ProjectorMetrics
+
+    m = ProjectorMetrics()
+    wedged = m.projection("access_events")
+    wedged.running, wedged.silence_limit_sec = True, 5.0
+    wedged.note_consumer_seen()
+    wedged.note_consumer_missing("it is a PUSH consumer; this projection pulls")
+    wedged.last_consumer_seen_mono -= 6.0
+
+    failing = m.projection("iot_alerts")
+    failing.running, failing.silence_limit_sec = True, 5.0
+    failing.note_consumer_seen()
+    failing.consuming = False            # what the failure branch does
+
+    assert m.not_consuming == ["iot_alerts"]
+    assert [k for k, _ in m.not_confirmed] == ["access_events"]
+    assert "PUSH" in dict(m.not_confirmed)["access_events"]
+
+
+def test_projector_consuming_metric_exposes_both_proofs() -> None:
+    from app.projections.metrics import Metrics as ProjectorMetrics
+
+    m = ProjectorMetrics()
+    p = m.projection("access_events")
+    p.running, p.silence_limit_sec = True, 5.0
+    p.note_consumer_seen()
+    p.last_consumer_seen_mono -= 6.0
+    text = m.prometheus()
+    assert 'projector_consuming{projection="access_events"} 0' in text
+    assert 'projector_consumer_unconfirmed_sec{projection="access_events"}' in text
+    assert 'projector_consumer_checks_failed_total{projection="access_events"}' in text
+
+
+def test_an_unarmed_projection_never_reds_itself() -> None:
+    """A ProjectionMetrics nobody is driving — a test, or /stats before the
+    worker starts — must not invent an outage."""
+    from app.projections.metrics import ProjectionMetrics
+
+    pm = ProjectionMetrics(key="x", running=True)
+    assert pm.silence_limit_sec == 0.0
+    assert pm.consumer_confirmed is True
+    assert pm.is_consuming is True

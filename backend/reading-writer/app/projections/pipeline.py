@@ -175,6 +175,12 @@ class Worker:
         self._running = True
         self.pm.running = True
         self.pm.consuming = True
+        # Arm the second proof and START ITS CLOCK. The stamp is not a claim the
+        # consumer is healthy — `pull_subscribe` binds to whatever holds the
+        # durable name, impostors included — it is the grace window, so a durable
+        # that is NEVER confirmed still reds instead of sitting at an unset clock.
+        self.pm.silence_limit_sec = self.cfg.fetch_silence_sec
+        self.pm.note_consumer_seen()
         self._tasks = [
             asyncio.create_task(self._fetch_loop(), name=f"pj-fetch-{self.row.key}"),
             asyncio.create_task(self._write_loop(), name=f"pj-write-{self.row.key}"),
@@ -429,12 +435,55 @@ class Worker:
 
     # ── lag ───────────────────────────────────────────────────────────────────
     async def poll_stats(self) -> None:
+        """Lag numbers, and the second liveness proof riding on the same call.
+
+        The `consumer_info` here was always about lag. It is now also the only
+        thing that can see a durable whose NAME is held by the wrong consumer:
+        nats-py maps the server's 409 onto `nats.errors.TimeoutError`
+        (`JetStreamContext._is_temporary_error` treats CONFLICT as temporary), so
+        at the fetch call that wedge is byte-for-byte an idle domain. Measured,
+        not argued: a push consumer put on `reporting-projector-access` held
+        `projector_consuming` at 1 and `fetch_failures` at 0 for three minutes.
+
+        Runs on the projector's own stats task, so it costs no consumer anything.
+        """
         src = self.row.spec.source
         try:
             info = await self._js.consumer_info(src.stream, src.durable)
         except Exception as exc:  # noqa: BLE001
-            log.debug("projection %s: consumer_info unavailable: %s", self.row.key, exc)
+            # Deliberately NOT a rebind request. The fetch loop already handles a
+            # DELETED durable on its own — pulls raise ServiceUnavailableError,
+            # the failure streak fires and it re-binds in about three seconds,
+            # verified on the live stack — so all this has to do is stop the gap
+            # between the deletion and that recovery reading green.
+            self.pm.note_consumer_missing(f"{type(exc).__name__}: {exc}"[:200])
+            log.warning(
+                "projection %s: consumer %s/%s could not be read: %s",
+                self.row.key, src.stream, src.durable, exc,
+            )
             return
+
+        # PRESENT IS NOT ENOUGH — that is the whole finding. Deliberately not
+        # auto-repaired here: `pull_subscribe` would bind to the impostor again
+        # and report success, so a retry fixes nothing and only spins a counter.
+        # `_converge_consumer` at worker start is still the repair path for a
+        # filter that legitimately changed, and a restart applies it; a name taken
+        # by somebody ELSE'S consumer is a human's decision, not this loop's.
+        wrong = None
+        if getattr(info.config, "deliver_subject", None):
+            wrong = "it is a PUSH consumer; this projection pulls"
+        elif (info.config.filter_subject or "") != src.subject:
+            wrong = f"its filter is {info.config.filter_subject!r}, not {src.subject!r}"
+        if wrong:
+            self.pm.note_consumer_missing(wrong)
+            log.error(
+                "projection %s: durable %s/%s IS NOT OUR CONSUMER: %s — every pull will "
+                "read as an idle timeout while nothing is projected",
+                self.row.key, src.stream, src.durable, wrong,
+            )
+        else:
+            self.pm.note_consumer_seen()
+
         self.pm.consumer_pending = info.num_pending or 0
         self.pm.consumer_ack_pending = info.num_ack_pending or 0
         self.pm.consumer_redelivered = info.num_redelivered or 0

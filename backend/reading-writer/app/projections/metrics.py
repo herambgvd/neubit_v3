@@ -52,13 +52,73 @@ class ProjectionMetrics:
 
     last_write_at: float | None = None
     running: bool = False
-    # False while the fetch loop is failing repeatedly — e.g. the durable was
-    # deleted out of band, where every pull errors while the projection quietly
-    # consumes NOTHING. The loop rebinds itself; this flag is what stops /readyz
+    # False while the fetch loop is failing repeatedly. Set from the loop's
+    # failure branch; the loop rebinds itself and this is what stops /readyz
     # reading green in the meantime. Only a fetch that gets an ANSWER (messages,
     # or a clean idle timeout) sets it back to True.
+    #
+    # WHAT IT ACTUALLY CATCHES, measured rather than assumed (2026-09-05). A
+    # durable DELETED and left alone makes every pull raise
+    # `ServiceUnavailableError` — nobody is listening on its MSG.NEXT subject —
+    # so this branch fires, and the loop rebinds and recovers in about three
+    # seconds. That case works and this flag is not why: the rebind is.
+    #
+    # What it does NOT catch is a durable whose NAME is held by a consumer of the
+    # WRONG SHAPE — a push consumer, or a pull consumer on another filter. The
+    # server answers those pulls 409, and nats-py's
+    # `JetStreamContext._is_temporary_error` folds CONFLICT in with NO_MESSAGES
+    # and re-raises it as `nats.errors.TimeoutError`. That lands in the IDLE
+    # branch, which sets this flag back to True. Verified on the live stack: with
+    # `reporting-projector-access` replaced by a push consumer of the same name,
+    # this read 1 and `fetch_failures` read 0 for three minutes while the
+    # projection consumed nothing.
     consuming: bool = True
     fetch_failures: int = 0
+
+    # So there is a SECOND proof, and `is_consuming` is the two ANDed. Asked out
+    # of band by `poll_stats`, which already called `consumer_info` for the lag
+    # numbers and now also checks the shape of what came back. It answers the one
+    # question a pull cannot: is the durable we think we are consuming from still
+    # there, still ours, still pull. Same mechanism as the readings half
+    # (`app/metrics.py`), because it is the same bug on the same process.
+    last_consumer_seen_mono: float | None = None
+    consumer_missing: str | None = None   # why the last check failed; None = fine
+    consumer_checks_failed: int = 0
+    # Window for the second proof, set from ProjectorConfig by the Worker. 0
+    # disables it, which is also what a bare ProjectionMetrics gets, so nothing
+    # nobody is driving can red itself on a check that was never armed.
+    silence_limit_sec: float = 0.0
+
+    def note_consumer_seen(self) -> None:
+        self.last_consumer_seen_mono = time.monotonic()
+        self.consumer_missing = None
+
+    def note_consumer_missing(self, why: str) -> None:
+        """Record that the durable is absent or is not the consumer we bound.
+
+        Deliberately does NOT clear the timestamp: one failed API call during a
+        NATS blip must not red a projection, and letting the clock run is what
+        makes the window apply to this proof too.
+        """
+        self.consumer_missing = why
+        self.consumer_checks_failed += 1
+
+    def consumer_unconfirmed_sec(self) -> float:
+        last = self.last_consumer_seen_mono
+        return 0.0 if last is None else round(time.monotonic() - last, 1)
+
+    @property
+    def consumer_confirmed(self) -> bool:
+        if self.silence_limit_sec <= 0:
+            return True
+        return self.consumer_unconfirmed_sec() < self.silence_limit_sec
+
+    @property
+    def is_consuming(self) -> bool:
+        """Both proofs. This is what `projector_consuming` exposes and what
+        /readyz judges — `consuming` alone reads green through a hijacked
+        durable."""
+        return self.consuming and self.consumer_confirmed
 
     def note_malformed(self, reason: str) -> None:
         self.messages_malformed += 1
@@ -120,6 +180,20 @@ class Metrics:
         failing — a consumer that receives nothing while /readyz would otherwise
         stay green, which is the silence this flag exists to break."""
         return sorted(k for k, p in self.projections.items() if p.running and not p.consuming)
+
+    @property
+    def not_confirmed(self) -> list:
+        """Running projections whose DURABLE could not be confirmed as ours.
+
+        Separate from `not_consuming` because it is a different fault with a
+        different fix — the loop is answering fine, the thing it is asking is not
+        the consumer we bound — and because a pull cannot report it at all (409
+        arrives as a timeout). Pairs of (key, why)."""
+        return sorted(
+            (k, p.consumer_missing or "unconfirmed")
+            for k, p in self.projections.items()
+            if p.running and not p.consumer_confirmed
+        )
 
     def snapshot(self) -> dict:
         return {
@@ -203,13 +277,22 @@ class Metrics:
         per("consumer_redelivered", "gauge", "Redelivered messages.",
             lambda m: m.consumer_redelivered)
         per("consuming", "gauge",
-            "1 while the fetch loop is getting answers. 0 = pulls are failing "
-            "(e.g. the durable was deleted out of band); the loop rebinds itself "
-            "and /readyz is red until it does.",
-            lambda m: int(m.consuming))
+            "1 while this projection is actually consuming: the fetch loop is getting "
+            "answers AND the durable is confirmed to be ours. 0 = pulls are failing "
+            "(a deleted durable; the loop rebinds itself) or the durable name is held "
+            "by a consumer of the wrong shape, which no pull can report because the "
+            "server's 409 reaches the client as a plain timeout.",
+            lambda m: int(m.is_consuming))
         per("fetch_failures_total", "counter",
             "Failed pulls (excluding clean idle timeouts).",
             lambda m: m.fetch_failures)
+        per("consumer_unconfirmed_sec", "gauge",
+            "Seconds since this projection's durable was last confirmed to exist and "
+            "to be OUR pull consumer. The half of `consuming` a pull cannot supply.",
+            lambda m: m.consumer_unconfirmed_sec())
+        per("consumer_checks_failed_total", "counter",
+            "consumer_info calls that found the durable absent or not ours.",
+            lambda m: m.consumer_checks_failed)
         per("last_write_age_sec", "gauge",
             "Seconds since this projection's last committed batch. -1 = never.",
             lambda m: round(time.time() - m.last_write_at, 1) if m.last_write_at else -1)

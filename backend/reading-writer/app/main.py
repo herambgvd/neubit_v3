@@ -77,9 +77,9 @@ are KEPT, applied to the half that has them, neither weakened to match.
 
 The readings half now has the second of those too, which is what closed the gap
 5b69d72 left open in writing. It is the same idea and NOT the same mechanism. The
-projections flag is ASSIGNED from the failure branch of each projection's fetch
-loop; the readings flag is DERIVED from two clocks, and it has to be, because a
-failing pull is not actually observable here:
+projections flag was only ASSIGNED from the failure branch of each projection's
+fetch loop; the readings flag is DERIVED from two clocks, and it has to be,
+because not every failing pull is observable as a failure:
 
   * the loop stamps a heartbeat on every ANSWERED pull, so a task that died or
     stopped iterating goes stale — something an assigned flag cannot notice,
@@ -90,6 +90,20 @@ failing pull is not actually observable here:
     consumer — as a plain `TimeoutError`, identical to an idle feed. Without this
     second proof a durable deleted out of band is invisible at the fetch call,
     which is exactly the wedge this commit had to be able to see.
+
+The second proof was then added to the projections half too, because it is the
+same bug on the same process. Measurement settled which half of the guess was
+right — two wedges, both run against both halves:
+
+  * DURABLE DELETED ONCE AND LEFT ALONE — handled correctly by BOTH, and always
+    was. Pulls raise `ServiceUnavailableError` (nothing is listening on that
+    consumer's MSG.NEXT subject), the failure branch fires and the loop rebinds:
+    the projection recovered in ~3s, the readings consumer in under 16s. Not a
+    blind spot in either, and it is the common real-world failure.
+  * DURABLE NAME HELD BY A CONSUMER OF THE WRONG SHAPE — invisible to both until
+    this. The 409, folded into TimeoutError, arrives in the IDLE branch and sets
+    `consuming` back to true. `projector_consuming{projection="access_events"}`
+    read 1 with `fetch_failures` 0 for three minutes while nothing was projected.
 
 A refused-projection equivalent is still not here and should not be: the readings
 consumer is one durable named in config, not a table of them, so there is no such
@@ -310,6 +324,14 @@ def _projection_reasons() -> list[str]:
     for key in projector_metrics.not_consuming:
         reasons.append(
             f"projections: projection '{key}' is not consuming (pulls failing; rebinding)"
+        )
+    # The 409 case, which the line above structurally cannot reach: a durable
+    # whose name is held by the wrong consumer answers every pull with a status
+    # nats-py reports as an idle timeout, so `consuming` stays true. Same fault
+    # and same second proof as the readings half — see app/projections/metrics.py.
+    for key, why in projector_metrics.not_confirmed:
+        reasons.append(
+            f"projections: projection '{key}' is not consuming: durable unconfirmed: {why}"
         )
     return reasons
 

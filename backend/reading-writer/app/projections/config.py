@@ -81,6 +81,18 @@ class ProjectorConfig:
     # ── observability ─────────────────────────────────────────────────────────
     lag_warn: int = field(default_factory=lambda: _int("VE_PROJECTOR_LAG_WARN", 5000))
     stats_every_sec: int = field(default_factory=lambda: _int("VE_PROJECTOR_STATS_SEC", 30))
+    # How long a projection's durable may go unconfirmed before /readyz calls it
+    # not consuming. See ProjectionMetrics.last_consumer_seen_mono for what this
+    # catches that the fetch loop cannot: a 409 reaches the client as a timeout,
+    # so a durable whose name is held by the wrong consumer is invisible there.
+    #
+    # NOT a traffic threshold. Nothing here measures whether events are arriving;
+    # an idle domain confirms its durable exactly as often as a busy one. 60s
+    # against a 30s `stats_every_sec` means two consecutive checks must fail, so
+    # one NATS blip cannot red a projection. 0 disables the check.
+    fetch_silence_sec: float = field(
+        default_factory=lambda: float(_int("VE_PROJECTOR_FETCH_SILENCE_SEC", 60))
+    )
 
     # ── tenant resolution ─────────────────────────────────────────────────────
     # A subject's tenant segment is `platform` for a system-scoped event, which is
