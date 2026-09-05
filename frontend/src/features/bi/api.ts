@@ -177,10 +177,12 @@ export const bi = {
   // What arrived in a window, what is still unconfirmed ranked so the useful
   // work is first, and — the distinction the units screen cannot make — which
   // rows are addresses that have NEVER carried a reading. Classification reads
-  // `max(readings.ts)`, not `points.last_seen_at`: the writer touches the
-  // dimension row for every message, including a retained one replayed on
-  // reconnect whose timestamp is already stored, so `last_seen_at` says a dead
-  // address is alive. Read-only; nothing here confirms anything.
+  // `max(readings.ts)`, not `points.last_seen_at` — still, now that the writer
+  // no longer advances `last_seen_at` on a message that stored nothing
+  // (`e9818d2`). Two reasons it stays on the data: the rows the old writer
+  // already inflated cannot heal, and they are exactly what this surface exists
+  // to expose; and the screen whose job is catching drift should not be the one
+  // place that trusts a denormalised copy. Read-only; nothing here confirms.
   intake: ({ days, state, pending, new_only, search, limit, offset }: any = {}) =>
     unwrap(
       api.get(`${BI}/intake${qs({ days, state, pending, new_only, search, limit, offset })}`),

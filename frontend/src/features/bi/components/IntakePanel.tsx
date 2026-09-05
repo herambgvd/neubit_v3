@@ -12,11 +12,13 @@
 // who binds a role, and the row they are worried about is in the table below.
 // Clicking a row filters that table to the device.
 //
-// THE COLUMN THAT MATTERS IS "LAST READING", NOT "LAST SEEN". The writer touches
-// `points.last_seen_at` for every message including one whose timestamp is
-// already stored, so a retained MQTT message replayed on reconnect keeps a dead
-// address looking alive forever. The server therefore classifies on
-// `max(readings.ts)` and this panel shows what it decided:
+// THE COLUMN THAT MATTERS IS "LAST READING", NOT "LAST SEEN". `last_seen_at`
+// used to advance on ANY message, including a retained one replayed on
+// reconnect whose timestamp was already stored — so a dead address looked alive
+// forever. `e9818d2` fixed the writer, but classification stays on
+// `max(readings.ts)`: rows inflated before that fix never heal, and they are
+// precisely the ones this panel is here to show. The server classifies and this
+// panel shows what it decided:
 //
 //   reporting               delivering values
 //   awaiting first reading  arrived minutes ago, nothing yet — ordinary
@@ -178,9 +180,9 @@ export default function IntakePanel({
         to until then. <b>Never reported</b> is a different problem and must not be confirmed away:
         that address has produced no value at all, so it is a spelling or a subscription to fix,
         not a dropdown to fill. Classification reads{" "}
-        <span className="font-mono">max(readings.ts)</span>, never{" "}
-        <span className="font-mono">last_seen_at</span> — a replayed retained message moves the
-        latter without carrying any data
+        <span className="font-mono">max(readings.ts)</span>, not{" "}
+        <span className="font-mono">last_seen_at</span> — a replayed retained message used to move
+        the latter without carrying any data, and the rows that happened to never heal
         {th ? ` (silent after ${th.silent_after_hours}h; ${th.first_reading_grace_minutes} min grace for a first reading)` : ""}
         .
       </p>
