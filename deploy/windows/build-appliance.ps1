@@ -192,9 +192,17 @@ $OwnServices = @(
     'core', 'ingest', 'workflow', 'access', 'vision', 'ops-agent',
     'frontend', 'admin-frontend', 'tiles',
     # the reporting / BI plane, added with feat/vms
-    # reporting-projector was folded into reading-writer on 2026-09-05; its
-    # image no longer exists and asking for it here would fail the payload build.
-    'dashboards', 'reading-writer', 'reporting-migrate'
+    # NOT LISTED, and each for the same reason — the image is not built any more,
+    # so `docker tag` would fail here and take the whole 30-minute payload build
+    # with it, on a step that runs BEFORE anything is baked:
+    #   * `dashboards`          — NeuBit's own dashboard builder, retired
+    #     2026-09-03; DashForge is the surface and `backend/dashboards` is gone.
+    #   * `dashforge`           — the satellite was folded into core on
+    #     2026-09-05 (backend/core/app/dashforge). DashForge THE PRODUCT still
+    #     ships, but from its own repo via docker-compose.dashforge.yml, which
+    #     this appliance payload does not carry.
+    #   * `reporting-projector` — folded into reading-writer on 2026-09-05.
+    'reading-writer', 'reporting-migrate'
 )
 $ThirdParty = @(
     'traefik:v3.1',
