@@ -80,8 +80,20 @@ def require_tenant_active():
     Core already refuses both at LOGIN (``AuthService.authenticate``). This closes
     the window that leaves open: a token minted before the suspension keeps
     working until it expires, because nothing on the request path looks again.
-    For most of core that window is accepted; apply this dependency to a router
-    where it is not.
+
+    THE DEFAULT IS NOW INVERTED. This docstring used to say "for most of core that
+    window is accepted; apply this dependency to a router where it is not", and it
+    was applied to exactly one router — because "remember to add the dependency" is
+    not a rule that survives the next router. ``app/app.py`` guards EVERY base
+    router unless it appears in ``_tenant_active_exempt()`` with its reason, and
+    ``app/auth/routes/`` is split into a self-service half and an admin half
+    precisely so the admin half can carry this while sign-in and sign-out do not.
+
+    It resolves a PERSON OR A SERVICE KEY, not ``get_scope``. That is the other
+    reason it stayed on one router: ``get_scope`` goes through
+    ``get_current_user``, which refuses api-key tokens by design, so attaching this
+    anywhere a key reaches 401ed the key. Suspension applies to a tenant's machine
+    credentials at least as much as to its people.
 
     The satellite services get the same guarantee from the kernel's
     ``require_active_license``, which reads the tenant's state from a JWT CLAIM

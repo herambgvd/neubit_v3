@@ -6,6 +6,21 @@ style: a service that holds the ``AsyncSession`` and routes every read through
 with the caller's ``tenant_id``.
 
 Emits domain events on the NATS spine and writes audit entries on every mutation.
+
+TWO THINGS THIS FILE SAYS ABOUT ITSELF THAT ARE WORTH BEING PRECISE ABOUT.
+
+"every by-id fetch through ``assert_owned``" is true, and it was not enough. The
+predicate behind it used to treat a NULL ``tenant_id`` as owned by everyone, so a
+platform-scoped site was readable, writable and deletable by every tenant — see
+`tenancy/scope.py::owns` for why, and for what a NULL tenant_id means on the config
+singletons instead.
+
+And a reference in a request BODY is not covered by either. `parent_id` was vetted
+on create and blind-`setattr` on update, which let a tenant re-point its own site at
+another tenant's; `Site.parent_id` carries no ForeignKey, so nothing downstream
+objected, and the edge was republished on NATS to reporting and BI.
+`_require_assignable_parent` is the one place that check lives now, and
+`app/sites/mutation.py` refuses the structural keys no update body may carry.
 """
 
 from __future__ import annotations
