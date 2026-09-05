@@ -64,6 +64,26 @@ services:
       # tokens are handed to browsers by design. Distinct keys mean a leaked
       # embed secret cannot be turned into a DashForge session.
       EMBED_SECRET: ${DASHFORGE_EMBED_SECRET:-change-me-embed-secret-32bytes!!}
+
+      # ── NeuBit's own data, as a managed datasource ───────────────────────────
+      #
+      # DashForge reads this platform's governed BI API, NOT its Postgres. The
+      # refusals that make a NeuBit number trustworthy -- a frozen sensor, an
+      # unconfirmed unit, a missing site fact -- live in the reading-writer, not
+      # in the schema, so a raw SQL connection would bypass every one of them and
+      # cheerfully average a dead meter.
+      #
+      # The credential is a SCOPED, REVOCABLE SERVICE KEY (`bi.read`), never the
+      # service account's password: a password can do everything a human login
+      # can, including signing in to the console, and cannot be narrowed or
+      # revoked on its own. Both values live in deploy/.env, which is gitignored.
+      #
+      # Unset, `internalds` provisions nothing and says so at boot -- the
+      # documented unconfigured state, and why a deployment without NeuBit BI is
+      # still a supported one.
+      NEUBIT_BI_URL: ${NEUBIT_BI_URL:-}
+      NEUBIT_BI_API_KEY: ${NEUBIT_BI_API_KEY:-}
+      IOT_DATASOURCE_NAME: NeuBit BI
       # Which origins may put an embed page in an iframe. NOT "*" (the default):
       # the whole point of the allowlist is that a token which leaks out of this
       # console cannot be framed into someone else's page and made to look like
