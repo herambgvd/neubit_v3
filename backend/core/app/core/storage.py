@@ -33,7 +33,6 @@ from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
 
-import mimetypes
 
 from fastapi import APIRouter
 from fastapi.responses import FileResponse, Response
@@ -333,10 +332,53 @@ async def serve_local_file(key: str):
     path = storage._path(key)  # reuse the same escape-safe key→path mapping
     if not path.is_file():
         raise NotFoundError(f"object not found: {key}")
-    ctype = mimetypes.guess_type(key)[0] or "application/octet-stream"
+    ctype, headers = _serving_headers(key)
     if _encrypts(key):
         # Decrypt in memory; never hand the browser the ciphertext on disk.
         data = _dec(key, path.read_bytes())
-        return Response(content=data, media_type=ctype)
-    # FileResponse streams the file efficiently and infers the Content-Type.
-    return FileResponse(os.fspath(path), media_type=ctype)
+        return Response(content=data, media_type=ctype, headers=headers)
+    # FileResponse streams the file efficiently.
+    return FileResponse(os.fspath(path), media_type=ctype, headers=headers)
+
+
+#: Types this route will let a browser RENDER inline. Raster images only: they
+#: cannot carry script, so a link to one is not a way to run code on this origin.
+_INLINE_TYPES: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+#: Types that are stored and served but never rendered inline. SVG is XML that can
+#: carry script, and PDF has its own script surface; both go out as downloads.
+#: `<img src>` still displays an SVG served this way, and script in an SVG loaded
+#: as an image does not execute — so logos keep working and links stop being XSS.
+_ATTACH_TYPES: dict[str, str] = {
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+    ".csv": "text/csv",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+def _serving_headers(key: str) -> tuple[str, dict[str, str]]:
+    """Decide the Content-Type and disposition for a stored key.
+
+    The type comes from a WHITELIST keyed on the extension, not from
+    ``mimetypes.guess_type``. guess_type answers for anything — text/html included —
+    and this route has no auth dependency and is routed publicly by Traefik, so its
+    answer was the difference between an image host and a way to serve attacker
+    HTML from the platform origin. Uploads are validated too (core/uploads.py); this
+    is the second half, because files also arrive from report exports and from
+    whatever earlier versions of those routes let through.
+
+    Anything not on either list is served as an opaque download.
+    """
+    ext = os.path.splitext(key)[1].lower()
+    if ext in _INLINE_TYPES:
+        return _INLINE_TYPES[ext], {}
+    ctype = _ATTACH_TYPES.get(ext, "application/octet-stream")
+    name = os.path.basename(key).replace('"', "") or "download"
+    return ctype, {"Content-Disposition": f'attachment; filename="{name}"'}

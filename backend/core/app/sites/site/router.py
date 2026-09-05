@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...auth.deps import get_current_user, require_permission
 from ...auth.models import User
-from ...core.errors import ValidationError
 from ...core.storage import get_storage
+from ...core.uploads import validate_image
 from ...db.base import get_db
 from ...tenancy.scope import Scope, get_scope
 from .schemas import (
@@ -245,15 +245,6 @@ async def update_threat_level(
     return await svc.update_threat_level(site_id, body.threat_level, actor=actor)
 
 
-_IMAGE_TYPES = {
-    "image/jpeg": ".jpg",
-    "image/jpg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/svg+xml": ".svg",
-}
-
-
 @router.post(
     "/{site_id}/image",
     response_model=SitePublic,
@@ -265,21 +256,11 @@ async def upload_site_image(
     scope: Annotated[Scope, Depends(get_scope)],
     actor: User = Depends(require_permission("sites.update")),
 ) -> SitePublic:
-    content_type = (file.content_type or "").lower()
-    if content_type not in _IMAGE_TYPES:
-        raise ValidationError(
-            "Site image must be PNG, JPEG, WEBP, or SVG",
-            code="UNSUPPORTED_MEDIA_TYPE",
-            status_code=415,
-        )
+    # This route already had the whitelist and the cap; the shared validator adds
+    # the magic-number check, so a payload renamed to .png with a matching header is
+    # refused here too, and all three upload routes now answer alike.
     content = await file.read()
-    if len(content) > 8 * 1024 * 1024:
-        raise ValidationError(
-            "Site image must be 8 MiB or smaller",
-            code="FILE_TOO_LARGE",
-            status_code=413,
-        )
-    ext = _IMAGE_TYPES[content_type]
+    content_type, ext = validate_image(content, file.content_type, field="Site image")
     tenant_seg = str(scope.tenant_id) if scope.tenant_id is not None else "platform"
     key = f"{tenant_seg}/sites/{site_id}/image/{uuid4().hex}{ext}"
     await get_storage().put(key, content, content_type)

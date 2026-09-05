@@ -17,6 +17,7 @@ from ..auth.deps import require_permission
 from ..auth.models import User
 from ..auth.permissions import CorePerm
 from ..core.storage import get_storage
+from ..core.uploads import validate_image
 from ..db.base import get_db
 from ..tenancy.deps import optional_tenant_id
 from . import service
@@ -85,9 +86,11 @@ async def upload_logo(
     content type; a random hex suffix keeps the key unique (cache-busts old logos).
     """
     data = await file.read()
-    # Preserve the original extension (".png", ".svg", …) for a clean served URL.
-    ext = os.path.splitext(file.filename or "")[1]
+    # Extension from the validated content type, not from the uploaded filename —
+    # see core/uploads.py. The served URL stays clean and cannot be made to end
+    # in .html.
+    ctype, ext = validate_image(data, file.content_type, field="Logo")
     key = f"branding/logo_{uuid.uuid4().hex}{ext}"
-    await get_storage().put(key, data, file.content_type)
+    await get_storage().put(key, data, ctype)
     branding = await service.set_logo(db, key, actor.tenant_id)
     return await _to_out(branding)

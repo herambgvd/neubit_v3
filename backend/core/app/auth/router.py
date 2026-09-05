@@ -26,6 +26,7 @@ from ..core.pagination import Page, PageParams, page_params, paginate
 from ..core.ratelimit import api_key_rate_limit, login_rate_limit
 from ..core.storage import get_storage
 from ..db.base import get_db
+from ..core.uploads import validate_image
 from ..tenancy.scope import scope_of, scoped
 from .cookies import clear_refresh_cookie, set_refresh_cookie
 from .deps import (
@@ -243,9 +244,14 @@ async def upload_avatar(
     if not await SettingsService(db, user.tenant_id).get("allow_avatar_uploads"):
         raise ValidationError("Profile photo uploads are disabled by the administrator.")
     data = await file.read()
-    ext = os.path.splitext(file.filename or "")[1]
+    # The extension comes from the validated content type, never from the uploaded
+    # filename. It used to be os.path.splitext(file.filename), so any authenticated
+    # user could store `x.html` under /files — which is served with no auth at all
+    # and routed publicly — and be handed the URL in this response. Stored XSS on
+    # the platform origin, self-service.
+    ctype, ext = validate_image(data, file.content_type, field="Profile photo")
     key = f"avatars/{user.id}_{uuid.uuid4().hex}{ext}"
-    await get_storage().put(key, data, file.content_type)
+    await get_storage().put(key, data, ctype)
     old = user.avatar_key
     updated = await AuthService(db).set_avatar(user, key)
     if old and old != key:  # best-effort cleanup of the previous file

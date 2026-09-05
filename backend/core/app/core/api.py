@@ -61,9 +61,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         for key, value in self._HEADERS.items():
             response.headers.setdefault(key, value)
-        # Files (crops/logos) are images, not JSON — relax CSP so they still load.
+        # Files (crops/logos/exports) are blobs, not JSON. The CSP is relaxed only
+        # far enough for an image to load, and `sandbox` is added so that anything
+        # which does reach a browser as a document — an SVG, a legacy .html stored
+        # before the upload whitelist existed — runs with no script, no plugins and
+        # an opaque origin. The route also serves non-raster types as
+        # `Content-Disposition: attachment` (core/storage.py); this is the layer
+        # that still holds if a type slips past that one.
         if request.url.path.startswith("/files"):
-            response.headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'none'; img-src 'self'; sandbox"
+            )
         return response
 
 
