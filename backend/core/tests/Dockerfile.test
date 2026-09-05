@@ -1,0 +1,22 @@
+# The test image: core's shipped image plus a test runner, and NOTHING else.
+#
+# It exists so the suite can run with --network none. The test deps have to come
+# from PyPI once; the tests themselves reach nothing (conftest builds an
+# in-memory SQLite database and drives the app through an in-process ASGI
+# transport). Installing at RUN time would mean either giving every test run a
+# network it does not need, or discovering on an air-gapped machine that the
+# suite cannot start. Installing at BUILD time separates the two: one networked
+# build, cached until requirements-test.txt changes, then offline runs forever.
+#
+# FROM the core image rather than repeating its dependency list: the suite must
+# run against the same fastapi/sqlalchemy/pyjwt the service runs against, and a
+# second list would drift from it silently.
+#
+# This image is local to a developer's machine. It is never pushed, never part of
+# the appliance payload, and deliberately not a stage of backend/core/Dockerfile
+# — a test runner has no business in an artifact that ships to a customer.
+ARG CORE_IMAGE=neubit-v3-core:latest
+FROM ${CORE_IMAGE}
+
+COPY requirements-test.txt /tmp/requirements-test.txt
+RUN pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements-test.txt

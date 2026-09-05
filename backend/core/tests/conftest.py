@@ -2,7 +2,21 @@
 
 Builds an in-memory SQLite database with the full ORM metadata (create_all), a
 session factory bound to it, and helpers to seed a role + user so the security
-tests can run without Postgres or Docker.
+tests can run without Postgres or a Docker network.
+
+HOW TO RUN THIS SUITE
+---------------------
+
+    ./backend/core/run-tests.sh
+
+from anywhere in the repo. That script is the supported path and its header
+explains why there is one: a bare `pytest` on the host fails on core's whole
+dependency set (fastapi, pydantic-settings, sqlalchemy, argon2, pyjwt …) and
+there has never been an install step for them, while a bare `pytest` inside the
+running core container is missing the shared kernel that one test needs. The
+script runs a THROWAWAY container from the core image with the working tree
+mounted read-only — the image supplies the dependencies, the tree supplies the
+code, nothing is copied into or installed on a running service.
 """
 
 from __future__ import annotations
@@ -37,11 +51,22 @@ os.environ.setdefault("VE_JWT_SECRET", "test-jwt-secret")
 # missing module.
 #
 # So the sibling package is put on sys.path when it is not already importable:
-# backend/kernel in a source checkout, /opt/kernel where every satellite image
-# installs it, or VE_KERNEL_PATH. Deliberately NOT a try/except-and-skip in the
-# test module — a contract test that quietly skips itself is the same class of
-# lie this comment exists to end. If the kernel is genuinely not on disk the
-# import still fails, loudly, and it should.
+# backend/kernel relative to this file (which is what run-tests.sh arranges by
+# mounting the whole of backend/ into the container), /opt/kernel where every
+# satellite image installs it, or VE_KERNEL_PATH. Deliberately NOT a
+# try/except-and-skip in the test module — a contract test that quietly skips
+# itself is the same class of lie this comment exists to end. If the kernel is
+# genuinely not on disk the import still fails, loudly.
+#
+# "Loudly" must not mean "instead of the other 49 tests", and for a while it did:
+# this hook was added while the kernel was hand-copied into the live core
+# container, so it was verified in an environment that had been built by hand and
+# then taken away — it proved the hook works when the kernel is present, not that
+# the suite runs where it is actually run. Two things close that. run-tests.sh
+# makes the kernel present from the working tree with no manual step, and
+# `--continue-on-collection-errors` in pyproject.toml means that if this hook ever
+# comes up empty again, the module reports as one named error and the rest of the
+# suite still runs and still reports.
 def _ensure_kernel_importable() -> None:
     try:
         import kernel  # noqa: F401

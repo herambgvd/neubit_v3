@@ -1,0 +1,11 @@
+# Test-only dependencies for core's suite. NOT in pyproject's [project]
+# dependencies and not in the core image: nothing here is imported by the
+# service, and a test runner installed into a production image is surface that
+# runs on a customer's server for no reason.
+#
+# run-tests.sh installs this into a THROWAWAY container built from the core
+# image, so the running stack is never mutated to run a test. See that script's
+# header for why the suite is not simply `pytest` on the host.
+pytest>=8.0
+pytest-asyncio>=0.23     # the whole suite is async (asyncio_mode is set in pyproject)
+aiosqlite>=0.20          # conftest's in-memory SQLite engine — no Postgres, no Docker network

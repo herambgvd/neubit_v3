@@ -54,5 +54,20 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# --continue-on-collection-errors is a BLAST-RADIUS LIMIT, not a convenience.
+#
+# Without it, ONE module that cannot be imported aborts collection of the entire
+# suite: pytest prints "Interrupted: 1 error during collection" and runs zero
+# tests. That is not hypothetical here. tests/test_token_role_id.py imports the
+# shared `kernel` package, which core's image deliberately does not carry, and
+# the result was that the whole security suite — tenant isolation, dual-auth,
+# entitlements, the endpoint tests — silently did not run behind one missing
+# module, reported as a single line that looks like one broken file.
+#
+# The import itself is fixed (run-tests.sh supplies the kernel from the working
+# tree; tests/conftest.py finds it). This flag is what stops the NEXT such
+# import from taking 49 innocent tests with it: the unimportable module is
+# reported as an error, by name, and everything else still runs and still
+# reports. The run still exits non-zero, so nothing is swept under the rug.
+addopts = "-q --continue-on-collection-errors"
 filterwarnings = ["ignore::DeprecationWarning"]
