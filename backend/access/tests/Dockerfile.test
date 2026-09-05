@@ -1,0 +1,9 @@
+# The access test image: the shipped access image plus a test runner, nothing else.
+# Same reasoning as core/tests/Dockerfile.test — one networked build, then the
+# suite runs with --network none forever. Local to a developer's machine; never
+# pushed, never part of the appliance.
+ARG ACCESS_IMAGE=neubit-v3-access:latest
+FROM ${ACCESS_IMAGE}
+
+COPY requirements-test.txt /tmp/requirements-test.txt
+RUN pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements-test.txt

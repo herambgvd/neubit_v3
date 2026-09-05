@@ -65,12 +65,12 @@ class InstanceService:
 
     async def _row(self, instance_id: str) -> Instance:
         row = await self.db.get(Instance, instance_id)
-        assert_owned(row, self.scope, message="Instance not found")
+        assert_owned(row, self.scope, message="Instance not found", allow_shared=False)
         return row
 
     def _connector(self, row: Instance):
         """Build the brand connector, decrypting the stored secret."""
-        secret = decrypt_secret(row.secret_enc)
+        secret = decrypt_secret(row.tenant_id, row.secret_enc)
         return get_connector(row, secret=secret)
 
     # ── CRUD ────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ class InstanceService:
             base_url=body.base_url,
             auth_type=body.auth_type.value,
             username=body.username or "",
-            secret_enc=encrypt_secret(body.secret) if body.secret else None,
+            secret_enc=encrypt_secret(self.scope.tenant_id, body.secret) if body.secret else None,
             verify_tls=body.verify_tls,
             site_id=body.site_id,
             is_active=body.is_active,
@@ -138,7 +138,9 @@ class InstanceService:
         if body.auth_type is not None:
             update["auth_type"] = body.auth_type.value
         if body.secret is not None:
-            update["secret_enc"] = encrypt_secret(body.secret) if body.secret else None
+            # None = unchanged (handled by the `is not None` above); "" = CLEAR the
+            # credential. Keyed by the ROW's tenant, which is what has to open it later.
+            update["secret_enc"] = encrypt_secret(row.tenant_id, body.secret) if body.secret else None
         actor_id = _actor_id(actor)
         if actor_id:
             update["updated_by"] = actor_id

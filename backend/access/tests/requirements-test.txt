@@ -1,0 +1,7 @@
+# Test-only dependencies for access's suite. NOT in pyproject's [project]
+# dependencies and not in the access image — see core/tests/requirements-test.txt
+# for why a test runner has no business in an image that ships to a customer.
+pytest>=8.0
+pytest-asyncio>=0.23
+aiosqlite>=0.20
+httpx>=0.27

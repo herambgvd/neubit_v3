@@ -295,26 +295,52 @@ def scoped(stmt: Select, model: Any, scope: Scope) -> Select:
     return stmt.where(model.tenant_id == scope.tenant_id)
 
 
-def owns(obj: Any, scope: Scope) -> bool:
+def owns(obj: Any, scope: Scope, *, allow_shared: bool = True) -> bool:
     """Whether ``scope`` may act on ``obj`` (a row with a ``tenant_id``).
 
     Super-admin owns everything. A tenant-admin owns a row iff its tenant_id
-    matches theirs. A row with tenant_id NULL (shared/platform-default) is owned
-    by everyone for READ purposes.
+    matches theirs.
+
+    ``allow_shared`` decides what a NULL tenant_id means, and the default is the
+    behaviour every satellite has had until now: NULL is a shared/platform row,
+    readable by everyone. That default is WRONG for most tables and is kept only
+    because this module is imported by nine services and flipping it blind would
+    change behaviour in all of them at once.
+
+    Why it is wrong: ``scoped()`` above EXCLUDES NULL rows from a listing, so with
+    ``allow_shared=True`` a platform row is invisible in every list and reachable
+    by id — and every by-id caller here is also the write/delete path. In core the
+    identical predicate on the ``users`` table let a tenant-admin fetch the
+    super-admin by id and reset its password (core commit 36a7798). In a satellite
+    the equivalent is a platform-scoped controller instance that any tenant can
+    re-credential and send commands to.
+
+    Why it is not simply flipped: a few call sites rely on the permissive read ON
+    PURPOSE — vision assigns cameras to shared platform media nodes and checks them
+    with this predicate. Those sites now say ``allow_shared=True`` explicitly, so
+    the reliance is a statement rather than an accident. A service that wants the
+    correct semantics passes ``allow_shared=False`` at every site and pins that
+    with a test (see access's ``tests/test_ownership_is_strict.py``). When every
+    satellite has done so, the default flips and this paragraph goes.
     """
     if scope.is_platform:
         return True
     obj_tenant = getattr(obj, "tenant_id", None)
     if obj_tenant is None:
-        return True
+        return allow_shared
     return obj_tenant == scope.tenant_id
 
 
-def assert_owned(obj: Any, scope: Scope, *, message: str = "not found") -> None:
+def assert_owned(
+    obj: Any, scope: Scope, *, message: str = "not found", allow_shared: bool = True
+) -> None:
     """Raise NotFound if ``scope`` may not access this by-id object.
 
     NOT_FOUND (not FORBIDDEN) on purpose: a tenant-admin must not be able to tell
     whether an id exists in another tenant. Super-admin always passes.
+
+    ``allow_shared`` is forwarded to :func:`owns` — read its docstring before
+    leaving the default in a new call site.
     """
-    if obj is None or not owns(obj, scope):
+    if obj is None or not owns(obj, scope, allow_shared=allow_shared):
         raise NotFoundError(message)

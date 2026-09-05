@@ -145,7 +145,11 @@ class CameraService:
         node once it heartbeats. Only existence + tenant-usability are enforced here.
         """
         node = await self.db.get(MediaNode, node_id)
-        if node is None or not owns(node, self.scope):
+        # allow_shared=True is the POINT here, and it is spelled out because it is
+        # the default for now and defaults change: a NULL-tenant node is a platform
+        # recorder every tenant may home cameras on. Elsewhere that same default is
+        # a bug — see kernel.auth.owns.
+        if node is None or not owns(node, self.scope, allow_shared=True):
             raise NotFoundError("media node not found")
 
     async def _rehost_recording(self, camera: Camera, old_node_id: str | None) -> None:

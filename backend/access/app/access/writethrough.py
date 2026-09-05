@@ -232,11 +232,11 @@ class WriteThroughService:
     # ── instance + connector ────────────────────────────────────────────
     async def _instance(self, instance_id: str) -> Instance:
         row = await self.db.get(Instance, instance_id)
-        assert_owned(row, self.scope, message="Instance not found")
+        assert_owned(row, self.scope, message="Instance not found", allow_shared=False)
         return row
 
     def _connector(self, row: Instance):
-        return get_connector(row, secret=decrypt_secret(row.secret_enc))
+        return get_connector(row, secret=decrypt_secret(row.tenant_id, row.secret_enc))
 
     # ── mirror helpers ──────────────────────────────────────────────────
     async def _upsert_mirror(

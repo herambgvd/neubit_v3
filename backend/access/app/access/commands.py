@@ -96,13 +96,13 @@ class CommandService:
 
     async def _instance(self, instance_id: str) -> Instance:
         row = await self.db.get(Instance, instance_id)
-        assert_owned(row, self.scope, message="Instance not found")
+        assert_owned(row, self.scope, message="Instance not found", allow_shared=False)
         return row
 
     # ── OData actions ───────────────────────────────────────────────────
     async def _invoke(self, instance_id: str, action_key: str, params: dict) -> Any:
         inst = await self._instance(instance_id)
-        connector = get_connector(inst, secret=decrypt_secret(inst.secret_enc))
+        connector = get_connector(inst, secret=decrypt_secret(inst.tenant_id, inst.secret_enc))
         try:
             result = await connector.invoke_action(action_key, params)
         except DDSHTTPError as exc:
@@ -203,7 +203,7 @@ class CommandService:
         self, instance_id: str, hardware_set: str, *, skip: int, limit: int
     ) -> dict:
         inst = await self._instance(instance_id)
-        connector = get_connector(inst, secret=decrypt_secret(inst.secret_enc))
+        connector = get_connector(inst, secret=decrypt_secret(inst.tenant_id, inst.secret_enc))
         try:
             items = await connector.list_hardware(hardware_set)
         except DDSHTTPError as exc:
@@ -223,7 +223,7 @@ class CommandService:
         self, instance_id: str, scheduled_set: str, *, skip: int, limit: int
     ) -> dict:
         inst = await self._instance(instance_id)
-        connector = get_connector(inst, secret=decrypt_secret(inst.secret_enc))
+        connector = get_connector(inst, secret=decrypt_secret(inst.tenant_id, inst.secret_enc))
         try:
             items = await connector.list_collection(scheduled_set)
         except DDSHTTPError as exc:

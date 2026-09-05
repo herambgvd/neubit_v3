@@ -53,7 +53,7 @@ class AccessGroupCatalog:
     async def _assert_instance(self, instance_id: str) -> Instance:
         """Validate the instance is owned by the caller's tenant (else 404)."""
         row = await self.db.get(Instance, instance_id)
-        assert_owned(row, self.scope, message="Instance not found")
+        assert_owned(row, self.scope, message="Instance not found", allow_shared=False)
         return row
 
     async def _get_owned(self, instance_id: str, group_id: str) -> AccessGroup | None:
@@ -128,7 +128,7 @@ class ScheduleCatalog:
 
     async def _assert_instance(self, instance_id: str) -> Instance:
         row = await self.db.get(Instance, instance_id)
-        assert_owned(row, self.scope, message="Instance not found")
+        assert_owned(row, self.scope, message="Instance not found", allow_shared=False)
         return row
 
     async def _get_owned(self, instance_id: str, schedule_id: str) -> Schedule | None:

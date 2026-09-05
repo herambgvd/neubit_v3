@@ -57,12 +57,12 @@ class DoorService:
 
     async def _door(self, door_id: str) -> Door:
         row = await self.db.get(Door, door_id)
-        assert_owned(row, self.scope, message="Door not found")
+        assert_owned(row, self.scope, message="Door not found", allow_shared=False)
         return row
 
     async def _instance(self, instance_id: str) -> Instance:
         row = await self.db.get(Instance, instance_id)
-        assert_owned(row, self.scope, message="Instance not found")
+        assert_owned(row, self.scope, message="Instance not found", allow_shared=False)
         return row
 
     # ── CRUD ────────────────────────────────────────────────────────────
@@ -146,14 +146,14 @@ class DoorService:
                 409, {"code": "door_not_mapped", "message": "door has no remote_ref"}
             )
         inst = await self.db.get(Instance, door.instance_id)
-        assert_owned(inst, self.scope, message="Instance not found")
+        assert_owned(inst, self.scope, message="Instance not found", allow_shared=False)
 
         # unlock → activate the relay (pulse); lock → return the relay to normal.
         action_key = (
             "output.activate" if action == "unlock" else "output.return_to_normal"
         )
         params = {"uids": [door.remote_ref]}
-        connector = get_connector(inst, secret=decrypt_secret(inst.secret_enc))
+        connector = get_connector(inst, secret=decrypt_secret(inst.tenant_id, inst.secret_enc))
         try:
             result = await connector.invoke_action(action_key, params)
         except DDSHTTPError as exc:
