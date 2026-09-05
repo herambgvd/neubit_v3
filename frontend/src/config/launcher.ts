@@ -146,13 +146,14 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     // shows n beside every r, prints which rollup answered, and renders a frozen
     // series as UNDEFINED rather than as 0.00. So the tile is BUILT.
     //
-    // MOVED OUT: Dashboards. The no-code builder was filed here under "Think" and
-    // it is not a Building Intelligence feature — it is domain-agnostic, it already
-    // charts door-access events and IoT faults as readily as readings, and VMS and
-    // fire register the same way. Filing it here labelled it as BI and sent anyone
-    // looking for a door-access chart to the wrong mode. It now sits in
-    // Configurations → Reporting & Dashboards, with its `perm`/`module` gating
-    // unchanged.
+    // RETIRED, NOT MOVED: NeuBit's own no-code dashboard builder. This note used
+    // to say it had moved to "Configurations → Reporting & Dashboards" — there is
+    // no such group in this file and there never was, so the one comment a reader
+    // consults before hunting for a missing tile sent them somewhere that does not
+    // exist. What actually happened: the builder was retired on 2026-09-03 and
+    // DashForge is the authoring surface. The Dashboards TILE is still in "Think"
+    // below, gated on `dashforge.read`; it opens the dashboards this platform
+    // shows rather than a builder.
     //
     // WATER IS LISTED as of 2026-08-31. It was held back pending agreement, not
     // pending data: 2 devices / 10 points (a sump pump and a flow meter) have
@@ -196,12 +197,11 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         title: "Think",
         accent: "#c4b5fd",
         tiles: [
-          // Dashboards USED to be here and has moved to Configurations → Reporting
-          // & Dashboards. It is the domain-agnostic builder — it already charts
-          // access-control events and IoT faults as readily as readings — so
-          // filing it under Building Intelligence labelled it as a BI feature and
-          // told an operator looking for a door-access chart to look in the wrong
-          // place. Its gating went with it, unchanged.
+          // (A note here claimed the Dashboards tile "has moved to Configurations
+          // → Reporting & Dashboards". It did not: no such group exists in this
+          // file, and the tile is still in THIS group, twenty lines down. The
+          // builder behind it was retired on 2026-09-03 — see the RETIRED, NOT
+          // MOVED note in this mode's header — and the tile now opens DashForge.)
           // BUILT 2026-08-31 — see the RATINGS note above for what it needed
           // and which of those inputs is still missing (the benchmark band, and
           // the screen says so rather than inventing one). `bi.read` +
@@ -219,14 +219,18 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // this screen is where a new sensor domain becomes configuration.
           // Writes need `bi.manage`; the tile gates like every Sense tile.
           { icon: "heroicons:adjustments-horizontal", label: "Metric Roles", href: "/bi/metrics", tone: "att", perm: "bi.read", module: "analytics" },
-          // BUILT 2026-09-01. The VIEWING door for built dashboards. The builder
-          // stays in Configurations → Reporting & Dashboards (authoring is
-          // configuration); this card is where someone goes every morning to
-          // LOOK at one — a horizontal strip of names, click, open. Gated by
-          // `dashboards.read` (the definitions); the widgets' data is separately
-          // gated by `bi.read` on the reading-writer, and the two compose
-          // honestly.
-          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/bi/dashboards", tone: "att", perm: "dashboards.read", module: "analytics" },
+          // BUILT 2026-09-01, re-pointed at DashForge 2026-09-03. The door to the
+          // dashboards this platform SHOWS: a strip of registered names, click,
+          // open. There is no longer a second door for AUTHORING one — NeuBit's
+          // own builder is gone and authoring happens in DashForge.
+          //
+          // `dashforge.read` is the correct gate and NOT a cosmetic swap from the
+          // `dashboards.read` that stood here. That key is deleted, and a tile
+          // naming a key no longer in the catalog is never satisfiable — the tile
+          // would read SOON to everyone including an admin, with the page behind
+          // it working perfectly. `dashforge.read` is also what mints the embed
+          // token, so the tile and the data it leads to now turn on one thing.
+          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/bi/dashboards", tone: "att", perm: "dashforge.read", module: "analytics" },
         ],
       },
     ],
@@ -247,25 +251,6 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           { icon: "heroicons:shield-exclamation", label: "Security", href: "/config/security", tone: "blue", perm: "security.manage" },
           { icon: "heroicons:squares-2x2", label: "Platform", href: "/platform", tone: "blue", perm: "settings.manage" },
           { icon: "heroicons:share", label: "Federation", href: "/federation", tone: "blue", perm: "vms.camera.read", module: "vms" },
-        ],
-      },
-      {
-        // Reporting & Dashboards. The builder is DOMAIN-AGNOSTIC: a widget names a
-        // dataset from the registry, and the registry already carries IoT
-        // readings, door-access events and IoT faults, with VMS and fire arriving
-        // the same way (one row each, no release). It belongs beside the other
-        // cross-cutting configuration surfaces, not inside the one domain it
-        // happened to be built against first.
-        title: "Reporting & Dashboards",
-        accent: "#93c5fd",
-        tiles: [
-          // Gated by `dashboards.read` (the dashboards service — the definitions)
-          // + the `analytics` module. A caller ALSO needs each dataset's own read
-          // permission to see the widgets' DATA, which the reading-writer
-          // enforces per dataset; that is deliberately NOT the gate here, because
-          // "can open the console but the widgets say they could not run" is the
-          // honest state to show, not a hidden tile. Unchanged by the move.
-          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/dashboards", tone: "blue", perm: "dashboards.read", module: "analytics" },
         ],
       },
       {

@@ -1,4 +1,4 @@
-"""Auth API: session + permission catalog + dynamic roles + users + API keys.
+"""Auth API: session + permission catalog + dynamic roles + users + service API keys.
 
 Mounted always-on via ``create_app(registry, extra_routers=[auth.router])``.
 Access is permission-gated (require_permission), never role-name-gated.
@@ -23,7 +23,7 @@ from ..core.config import get_settings
 from ..core.errors import UnauthorizedError, ValidationError
 from ..core.logging import get_logger
 from ..core.pagination import Page, PageParams, page_params, paginate
-from ..core.ratelimit import login_rate_limit
+from ..core.ratelimit import api_key_rate_limit, login_rate_limit
 from ..core.storage import get_storage
 from ..db.base import get_db
 from ..tenancy.scope import scope_of
@@ -42,6 +42,8 @@ from .schemas import (
     ApiKeyCreatedOut,
     ApiKeyCreateIn,
     ApiKeyOut,
+    ApiKeyTokenIn,
+    ApiKeyTokenOut,
     ChangePasswordIn,
     CloneRoleIn,
     CloneUserIn,
@@ -507,9 +509,12 @@ async def register_permissions(
 
     Service-to-service (a short-lived superadmin service token), idempotent, and
     additive only: a registration can never redefine a key the static catalog
-    already owns. The dashboard builder calls this with one key per registered
-    dataset, which is what makes "registration is data, not code" hold all the
-    way through to the role editor.
+    already owns. The caller today is the reading-writer
+    (``app/api/permsync.py``), pushing one key per dataset registered in
+    ``neubit_reporting.dashboard_datasets`` — which is what makes "registration is
+    data, not code" hold all the way through to the role editor. (This named "the
+    dashboard builder" until 2026-09-03; that service is retired, the registry it
+    read is not, and the reading-writer owns it.)
     """
     source = str(body.get("source") or "unknown")
     perms = body.get("permissions") or []
@@ -899,16 +904,37 @@ async def clone_role(
 
 
 # --- API keys ----------------------------------------------------------------
+#
+# The operator surface for the platform's SERVICE CREDENTIAL. Create / list /
+# revoke, all three gated on ``apikey.manage``, which is registered in
+# permissions.py — a gate whose key is not in the catalog is a gate no role can
+# ever open, which is the ``ingest.read`` failure that file's own comment records.
+#
+# There is no read-back and no rotate-in-place: the secret is shown once by
+# ``create`` and exists nowhere afterwards. Replacing a key means creating the new
+# one, moving the peer onto it, and revoking the old one — three explicit steps,
+# each of which is auditable, instead of one that silently invalidates whatever
+# was already deployed.
 @router.post("/api-keys", response_model=ApiKeyCreatedOut, status_code=201)
 async def create_api_key(
     data: ApiKeyCreateIn,
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.APIKEY_MANAGE)),
 ) -> ApiKeyCreatedOut:
-    key, raw = await AuthService(db).create_api_key(data, scope_of(actor))
+    """Mint a scoped service credential. The raw key is in this response and nowhere else."""
+    key, raw = await AuthService(db).create_api_key(data, scope_of(actor), actor=actor)
     await audit_record(
         db, actor=actor, action="apikey.create", target_type="api_key",
-        target_id=str(key.id), meta={"name": key.name},
+        target_id=str(key.id),
+        # The SCOPES are in the audit meta on purpose. "A key was created" is not
+        # the reviewable fact; "a key that can read BI was created" is, and the key
+        # row can be revoked and later purged while the trail has to stay legible.
+        meta={
+            "name": key.name,
+            "prefix": key.prefix,
+            "scopes": list(key.scopes or []),
+            "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+        },
     )
     return ApiKeyCreatedOut(**ApiKeyOut.model_validate(key).model_dump(), key=raw)
 
@@ -931,7 +957,57 @@ async def revoke_api_key(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.APIKEY_MANAGE)),
 ) -> None:
-    await AuthService(db).revoke_api_key(key_id, scope_of(actor))
+    """Kill one credential. Touches no user account — that is the whole point of it.
+
+    Effective at once for anything core serves and for any further exchange, both
+    of which re-read this row. A token the key already holds keeps working at the
+    SATELLITES until it expires, because a satellite verifies statelessly and has
+    nothing to ask; ``api_key_token_ttl_minutes`` (15) is the width of that window
+    and is why it is not 12 hours. Stated here rather than left for someone to
+    discover during an incident.
+    """
+    key = await AuthService(db).revoke_api_key(key_id, scope_of(actor))
     await audit_record(
         db, actor=actor, action="apikey.revoke", target_type="api_key", target_id=str(key_id),
+        meta={"name": key.name, "prefix": key.prefix},
+    )
+
+
+@router.post("/token", response_model=ApiKeyTokenOut)
+async def exchange_api_key(
+    data: ApiKeyTokenIn,
+    db: AsyncSession = Depends(get_db),
+    _rl: None = Depends(api_key_rate_limit),
+) -> ApiKeyTokenOut:
+    """Exchange an ``nbk_...`` service key for a short-lived access token.
+
+    UNAUTHENTICATED, because the key IS the credential — the same relationship
+    /auth/login has with a password. It is rate-limited for the same reason: this
+    is the only endpoint in the platform where a key secret can be guessed at. The
+    bucket is its own and not login's, so a scheduled integration and a human
+    typing their password cannot starve each other (core/ratelimit.py).
+
+    WHAT THIS DELIBERATELY IS NOT: a second thing for the satellites to verify. It
+    returns an ordinary access token, so ingest, workflow, vision, access and the
+    reading-writer authorize a key exactly as they authorize a person, with the
+    code they already run and no kernel change. That is what makes the whole
+    facility additive — its correctness at eight services is demonstrated by those
+    services being untouched.
+
+    Every failure is 401 with one message. Malformed, unknown, wrong secret,
+    revoked and expired are indistinguishable from outside, so the endpoint cannot
+    be used to learn which keys exist or which have been killed.
+    """
+    svc = AuthService(db)
+    key = await svc.authenticate_api_key(data.api_key)
+    token, ttl = await svc.issue_api_key_token(key)
+    # NOT AUDITED, and that is a decision rather than an omission. A machine
+    # re-exchanges every few minutes forever; writing a row each time would bury
+    # the trail this platform's operators actually read under uniform noise, and
+    # audit_log has a retention purge that would then start evicting real entries.
+    # The facts an exchange establishes are recorded where they stay useful:
+    # ``last_used_at`` on the key row (is anything still using this?), and
+    # ``actor_type='apikey'`` on every entry the resulting token goes on to write.
+    return ApiKeyTokenOut(
+        access_token=token, expires_in=ttl, scopes=list(key.scopes or [])
     )

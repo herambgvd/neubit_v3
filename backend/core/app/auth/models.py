@@ -1,4 +1,4 @@
-"""Auth ORM models: Role (dynamic) + User + ApiKey (single-tenant).
+"""Auth ORM models: Role (dynamic) + User + ApiKey (scoped service credential).
 
 RBAC is fully dynamic: roles are rows created by admins, each carrying a chosen
 set of permission keys (from permissions.PERMISSIONS). No hardcoded role names.
@@ -10,7 +10,7 @@ Postgres and on SQLite (tests).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Uuid, func, text  # noqa: F401
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -118,20 +118,60 @@ class User(Base):
 
 
 class ApiKey(Base):
-    """Machine credential (mobile app, integrations). Carries a role like a user.
+    """A SERVICE CREDENTIAL: a scoped, revocable, non-interactive identity.
 
-    Only a SHA-256 hash of the key + its short ``prefix`` are stored; the raw key
-    is shown once at creation.
+    It exists because a peer product had to be given a human's password. DashForge
+    reads this platform's BI data with ``NEUBIT_BI_USER`` / ``NEUBIT_BI_PASSWORD``
+    — a service account's real login — because until 2026-09-05 there was nothing
+    else to give it. A password is the wrong credential for a machine in four
+    specific ways, and every field below exists to answer one of them.
+
+    SCOPED, NOT ROLE-SHAPED — ``scopes``. A key carries a flat list of permission
+    keys chosen at creation, not a role id. A role is a LIVING set: someone widens
+    "Analyst" next quarter and every key wearing it silently widens with it, which
+    is how a BI reader ends up able to create users. ``scopes`` is a snapshot and
+    changes only when a human edits that key. ``role_id`` below is the retired
+    mechanism, kept nullable for the rows that predate this.
+
+    INDEPENDENTLY REVOCABLE — ``revoked_at`` / ``is_active``. Killing a key must
+    not mean disabling the account it was cut from, because that is the reason
+    nobody ever revokes anything: the blast radius of the safe action is a person
+    who cannot log in.
+
+    EXPIRING — ``expires_at``, and ``last_used_at`` next to it. An operator sets an
+    end date, and the last-used stamp is what makes a key that everyone forgot
+    VISIBLE rather than merely old: "issued 14 months ago" is normal, "issued 14
+    months ago and last used never" is a credential to delete.
+
+    ATTRIBUTABLE — ``created_by``. An audit entry written by a key records the key
+    (``actor_type='apikey'``, see core/audit.py); this records who made the key,
+    which is the other half of the question and is not recoverable from the trail
+    once the creating admin has left.
+
+    Only a SHA-256 hash of the whole key is stored, plus ``prefix``, which is a
+    dedicated non-secret id segment rather than a slice of the secret (see
+    ``security.generate_api_key``). The raw key is shown once at creation.
     """
 
     __tablename__ = "api_keys"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
     prefix: Mapped[str] = mapped_column(String, index=True, nullable=False)
     key_hash: Mapped[str] = mapped_column(String, nullable=False)
-    role_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("roles.id"), nullable=False)
-    role: Mapped[Role] = relationship(lazy="selectin")
+    # The permission keys this key may exercise — the whole of its authority.
+    # Validated against the catalog at creation and against the CREATOR's own
+    # effective permissions, so a key can never be wider than the hand that made
+    # it. The wildcard is refused outright: an unbounded machine credential is the
+    # thing this model replaces, not a configuration of it.
+    scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # RETIRED (2026-09-05), kept nullable so the pre-scopes rows still describe
+    # themselves. Nothing reads it to authorize — a key's authority is ``scopes``
+    # and only ``scopes``. Creating with a role_id still works and snapshots that
+    # role's permissions INTO scopes at that moment; it does not store a live link.
+    role_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("roles.id"), nullable=True)
+    role: Mapped[Role | None] = relationship(lazy="selectin")
     # --- multi-tenancy -----------------------------------------------------
     # The tenant this API key belongs to. NULL = a platform-level key (super-admin
     # created). Tenant-admin keys carry their tenant_id and are scoped to it.
@@ -139,10 +179,43 @@ class ApiKey(Base):
         ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # When the key stops being accepted, set by the operator at creation. NULL =
+    # no expiry, which is allowed but is the choice an operator has to make on
+    # purpose rather than the one they get by not thinking about it.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set once, at revocation. Separate from ``is_active`` because "when" is the
+    # question an incident asks and a boolean cannot answer.
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def grants(self, permission: str) -> bool:
+        """Whether this key's scopes cover ``permission``.
+
+        No wildcard branch, unlike ``Role.grants``. A key holding "*" cannot exist
+        (creation refuses it), and writing the branch anyway would leave the one
+        line that has to stay false forever sitting in the middle of the check.
+        """
+        return permission in (self.scopes or [])
+
+    def usable_at(self, now: datetime) -> bool:
+        """Whether the key is live: not revoked, not deactivated, not past expiry."""
+        if not self.is_active or self.revoked_at is not None:
+            return False
+        if self.expires_at is None:
+            return True
+        # SQLite (the test DB) hands back a NAIVE datetime for a column Postgres
+        # returns as aware, and comparing the two raises TypeError. An exception
+        # thrown out of an expiry check does not fail closed — it 500s a path that
+        # was supposed to return 401 — so the value is normalised rather than
+        # trusted to arrive with a tzinfo.
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return expires > now
 
 
 class RefreshToken(Base):
@@ -189,10 +262,11 @@ class PermissionRegistration(Base):
 
     The static catalog in ``permissions.py`` is the authority on anything the
     code itself enforces. This table is for keys the code cannot know at build
-    time — today, the per-dataset read permissions the dashboard builder's
-    registry declares: a dataset is registered with an INSERT into
-    ``neubit_reporting.dashboard_datasets`` and it names the permission required
-    to read it.
+    time — today, the per-dataset read permissions declared by the dataset
+    registry the READING-WRITER owns (it said "the dashboard builder's registry"
+    until 2026-09-03; the builder is retired, the registry outlived it): a dataset
+    is registered with an INSERT into ``neubit_reporting.dashboard_datasets`` and
+    it names the permission required to read it.
 
     Without this, such a key fails ``PERMISSIONS.unknown()`` on role create and no
     role can ever grant it — which is precisely the ``ingest.read`` bug the

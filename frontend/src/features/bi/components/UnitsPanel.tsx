@@ -16,6 +16,16 @@
 //
 // A point nobody confirms keeps a NULL unit and is counted as unconfirmed. That
 // is a perfectly good outcome and the counter at the top says so plainly.
+//
+// WHAT IS NOT A GOOD OUTCOME is a unit confirmed on a point that has never
+// carried a reading: kWh asserted about an address that has produced no number
+// is a fact no rating can ever use, and the confirmation succeeding is exactly
+// what makes it invisible. The server refuses that now
+// (backend/reading-writer/app/api/intake.py) and <NotReportingChallenge> renders
+// the refusal — with the points on the same device that ARE reporting, so the
+// spelling that works sits beside the one that does not. Nothing rebinds
+// automatically; "assert anyway" is available for a real address on a device
+// that is merely offline, and it is a separate, deliberate press.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -32,6 +42,10 @@ import { useAuth } from "@/lib/auth";
 
 import { bi } from "../api";
 import { PERM_MANAGE } from "../constants";
+import NotReportingChallenge, {
+  notReportingDetail,
+  type NotReportingDetail,
+} from "./NotReportingChallenge";
 
 const VIEWS = [
   { value: "unconfirmed", label: "UNCONFIRMED" },
@@ -50,6 +64,12 @@ export default function UnitsPanel() {
   const [unit, setUnit] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // The server's refusal when a selected point is carrying no readings. Held
+  // rather than flattened into `err`, because it is a question with an answer —
+  // and cleared on every new attempt so "assert anyway" can never acknowledge a
+  // set the operator has since changed.
+  const [challenge, setChallenge] = useState<NotReportingDetail | null>(null);
+  const [challengeMsg, setChallengeMsg] = useState<string | null>(null);
 
   const q = useQuery<any>({
     queryKey: ["bi-units", view, search],
@@ -76,9 +96,12 @@ export default function UnitsPanel() {
   }, [rows]);
 
   const confirm = useMutation({
-    mutationFn: ({ point_ids, unit: u }: any) => bi.confirmUnits({ point_ids, unit: u }),
+    mutationFn: ({ point_ids, unit: u, acknowledge_not_reporting }: any) =>
+      bi.confirmUnits({ point_ids, unit: u, acknowledge_not_reporting }),
     onSuccess: (res: any) => {
       setErr(null);
+      setChallenge(null);
+      setChallengeMsg(null);
       setDone(
         `${res.updated} point(s) ${res.unit === null ? "cleared back to unconfirmed" : `recorded as “${res.unit || "no unit (a ratio)"}”`}` +
           (res.not_visible ? ` · ${res.not_visible} not visible to you and untouched` : ""),
@@ -89,9 +112,23 @@ export default function UnitsPanel() {
     },
     onError: (e) => {
       setDone(null);
+      const detail = notReportingDetail(e);
+      if (detail) {
+        setErr(null);
+        setChallenge(detail);
+        setChallengeMsg(apiError(e, "Not stored"));
+        return;
+      }
+      setChallenge(null);
       setErr(apiError(e, "Could not record the unit"));
     },
   });
+
+  function fire(vars: any) {
+    setChallenge(null);
+    setChallengeMsg(null);
+    confirm.mutate(vars);
+  }
 
   function selectGroup(g: { ids: string[] }) {
     const next: Record<string, boolean> = {};
@@ -165,16 +202,30 @@ export default function UnitsPanel() {
             className="h-7 w-36 rounded-[6px] border border-nb-line bg-[rgba(6,11,26,.7)] px-2 font-mono text-[12px] text-nb-ink outline-none focus:border-nb-blue"
           />
           <ActionButton
-            onClick={() => confirm.mutate({ point_ids: ids, unit })}
+            onClick={() => fire({ point_ids: ids, unit })}
             disabled={confirm.isPending}
           >
             {confirm.isPending ? "Saving…" : `Confirm as “${unit || "no unit (a ratio)"}”`}
           </ActionButton>
-          <QuietButton onClick={() => confirm.mutate({ point_ids: ids, unit: null })}>
+          <QuietButton onClick={() => fire({ point_ids: ids, unit: null })}>
             Clear unit
           </QuietButton>
           <QuietButton onClick={() => setPicked({})}>Deselect</QuietButton>
         </div>
+      )}
+      {challenge && (
+        <NotReportingChallenge
+          detail={challenge}
+          message={challengeMsg || undefined}
+          busy={confirm.isPending}
+          onAssertAnyway={() =>
+            confirm.mutate({ point_ids: ids, unit, acknowledge_not_reporting: true })
+          }
+          onCancel={() => {
+            setChallenge(null);
+            setChallengeMsg(null);
+          }}
+        />
       )}
       {done && <p className="text-[11.5px] text-nb-good">{done}</p>}
       {err && <p className="text-[11.5px] text-nb-crit">{err}</p>}

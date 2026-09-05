@@ -42,16 +42,21 @@ http:
       entryPoints: [web]
       priority: 110
       middlewares: [api-protected]
-    dashboards:
-      # Dashboard + widget DEFINITIONS under /api/v1/dashboards. The widgets' DATA
-      # is not here — it comes from /api/v1/bi/query on the reading-writer, which
-      # owns the readings schema. A bare /dashboards prefix would swallow the
-      # operator UI's own /dashboards page, so keep this narrow.
-      rule: "PathPrefix(`/api/v1/dashboards`)"
-      service: dashboards
-      entryPoints: [web]
-      priority: 110
-      middlewares: [api-protected]
+    # NO `dashforge` ROUTER, deliberately. /api/v1/dashforge answered a satellite
+    # here at priority 110 from 2026-09-03 to 2026-09-05; the module was folded
+    # into core, so the prefix now falls through to the core router below with
+    # the rest of /api/ and picks up `core-protected` instead of `api-protected`.
+    # That is the correct chain for it, not a downgrade: `api-protected` adds
+    # forward-auth, whose whole job is to inject identity headers for a service
+    # that cannot ask core — and core does not need to hop through itself to ask
+    # itself. Authorisation was never the gateway's anyway; the routes verify the
+    # JWT and check `dashforge.read` / `.manage` themselves.
+    #
+    # Still NOT routed here, unchanged by the fold-in: DashForge's own API and its
+    # /public/embed/:token page. Those are reached by the BROWSER directly on the
+    # DashForge origin (the iframe src), because the embed token is the credential
+    # and proxying it through this gateway would put a bearer credential in the
+    # platform edge's access log for no gain.
     reading-writer:
       # Building Intelligence read API under /api/v1/bi. ONLY that prefix: the
       # rest of the reading-writer (/health, /readyz, /metrics, /stats) stays an
@@ -228,10 +233,6 @@ http:
       loadBalancer:
         servers:
           - url: "http://vision:8000"
-    dashboards:
-      loadBalancer:
-        servers:
-          - url: "http://dashboards:8000"
     reading-writer:
       loadBalancer:
         servers:

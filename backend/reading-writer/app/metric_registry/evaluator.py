@@ -20,9 +20,20 @@ never a null that renders as 0, never infinity. The statuses:
                         Names the flat input (Insights' discipline, inherited).
     missing_fact        a site-fact input (area, occupancy) is NOT RECORDED —
                         the refusal names the fact and where it is recorded
+    missing_factor      a formula prices carbon and the site has no grid
+                        emission factor effective at the window's end
     no_benchmark        the formula grades against a benchmark standard and one
                         of ITS inputs is missing: no standard seeded, or the
                         site's climate zone / AC-share category not set
+    insufficient_coverage
+                        an occupancy metric's inputs did not report together for
+                        enough of the window (spec §7's coverage gate) — the
+                        percentage is withheld, not computed from a partial one
+    not_defined         a composite names a component that has no definition —
+                        the component is DECLARED (with its weight) but nothing
+                        computes it yet. Where the composite documents the
+                        component, the refusal is that documentation: what the
+                        metric is, what measures it, what is in the way
     blocked             arithmetic refused (division by zero) or a composite
                         component refused — a composite of a refusal is a
                         refusal, and the item carries EVERY component's own
@@ -30,7 +41,9 @@ never a null that renders as 0, never infinity. The statuses:
 
 SITE SCOPE (contract §21). `applies_to.scope: "site"` evaluates per SITE over
 the `site_facts` mirror instead of per device. Inputs may then be site facts
-(`source: "site_fact"`) or site-wide role bindings; aggregation `consumption`
+(`source: "site_fact"`), the site's grid emission factor
+(`source: "emission_factor"`, the row effective at the window's end, carrying
+its own citation) or site-wide role bindings; aggregation `consumption`
 is `last − first` per bound register (monotonic-guarded, a decreased register
 is excluded and reported, exactly `/bi/rating`'s arithmetic), summed across
 the role's registers. `annualize()` in a consumption formula scales over the
@@ -234,6 +247,10 @@ async def evaluate(
                 item = await _evaluate_composite(
                     db, tenant, defn, d["device_id"], start, end, res, _depth
                 )
+            elif defn["kind"] == "occupancy":
+                item = await _evaluate_occupancy(
+                    db, tenant, defn, d["device_id"], start, end, table
+                )
             else:
                 item = await _evaluate_formula(db, tenant, defn, d["device_id"], start, end, table)
             item["device_id"] = str(d["device_id"])
@@ -429,6 +446,105 @@ async def _evaluate_formula(
         "dimension": (defn.get("output") or {}).get("dimension"),
         "inputs": input_report,
         "arithmetic": f"{defn['formula']} = {expr.render(tree, env)} = {value:g}",
+        "series": series,
+    }
+
+
+_UNION_BUCKETS_SQL = """
+    SELECT count(DISTINCT bucket) AS buckets
+      FROM {table}
+     WHERE point_id = ANY(CAST(:pids AS uuid[]))
+       AND (CAST(:tenant AS uuid) IS NULL OR tenant_id = CAST(:tenant AS uuid))
+       AND bucket >= CAST(:start AS timestamptz)
+       AND bucket <  CAST(:end AS timestamptz)
+"""
+
+# Spec §7's coverage gate. A component is scored only where coverage reaches
+# this; below it the component is "insufficient data" and refuses rather than
+# reporting a percentage computed from a fraction of the window.
+_MIN_COVERAGE = 0.80
+
+
+async def _evaluate_occupancy(
+    db: AsyncSession, tenant, defn: dict, device_id, start, end, table: str
+) -> dict:
+    """Band occupancy — spec §3.3, `band% = Σ minutes in band / Σ valid minutes`.
+
+    The formula is evaluated ONCE PER BUCKET and the answer is the mean of the
+    resulting ones and zeros. That ordering is the whole point: aggregating the
+    inputs first and testing the band once answers a different question, because
+    an average ΔT can sit inside a band the instantaneous ΔT left for half the
+    window.
+
+    Binding, unit checks and the frozen guard are `_evaluate_formula`'s — this
+    metric must refuse for exactly the same reasons any other formula over the
+    same roles refuses, and a second implementation of those rules would be a
+    second set of bugs. Only the SCALAR it computed is discarded: for an
+    `in_band` formula over window aggregates that scalar is a single 1 or 0,
+    which is the misleading number this kind exists to avoid ever showing.
+
+    COVERAGE, and what it does and does not measure. The denominator is the
+    number of buckets where ANY bound input reported; the numerator is those
+    where ALL of them did. So it catches the failure it can actually see — one
+    input dropping out while its partner keeps reporting, which silently shrinks
+    the sample the percentage is computed from. It does NOT catch a window where
+    every input went quiet together: to that, a poll every five minutes and a
+    poll every hour look alike, and this estate declares no expected cadence to
+    compare against. Stating the narrower measure beats dressing a wider claim
+    in the same number.
+    """
+    base = await _evaluate_formula(db, tenant, defn, device_id, start, end, table)
+    if base["status"] != "ok":
+        return base
+
+    series = base.get("series") or []
+    pids = [i["point_id"] for i in base.get("inputs") or []]
+    union_rows = _rows(
+        await db.execute(
+            text(_UNION_BUCKETS_SQL.format(table=table)),
+            {"pids": pids, "tenant": str(tenant) if tenant else None,
+             "start": start, "end": end},
+        )
+    )
+    union = int((union_rows[0]["buckets"] if union_rows else 0) or 0)
+
+    if not series:
+        out = _refusal(
+            "no_data",
+            "no bucket in the window had every input reporting, so there are no "
+            "valid minutes to compute a band occupancy over",
+        )
+        out["inputs"] = base.get("inputs")
+        return out
+
+    coverage = len(series) / union if union else 0.0
+    if coverage < _MIN_COVERAGE:
+        out = _refusal(
+            "insufficient_coverage",
+            f"only {len(series)} of {union} bucket(s) had every input reporting "
+            f"({coverage * 100:.0f}%) — below the {_MIN_COVERAGE * 100:.0f}% this "
+            f"metric is scored at, so the occupancy is withheld rather than "
+            f"computed from a partial window",
+        )
+        out["inputs"] = base.get("inputs")
+        out["coverage"] = round(coverage, 4)
+        return out
+
+    inside = sum(1 for pt in series if pt["value"])
+    pct = 100.0 * inside / len(series)
+    return {
+        "status": "ok",
+        "value": pct,
+        "unit": (defn.get("output") or {}).get("unit"),
+        "dimension": (defn.get("output") or {}).get("dimension"),
+        "inputs": base.get("inputs"),
+        "coverage": round(coverage, 4),
+        "buckets_in_band": inside,
+        "buckets_valid": len(series),
+        "arithmetic": (
+            f"{inside} of {len(series)} bucket(s) inside the band "
+            f"(`{defn['formula']}`) = {pct:g}%"
+        ),
         "series": series,
     }
 
@@ -843,6 +959,39 @@ def _band_for(table: list[dict], value: float) -> dict | None:
     return None
 
 
+_EMISSION_FACTOR_SQL = """
+    SELECT kg_co2_per_kwh, effective_from, source
+      FROM site_emission_factors
+     WHERE site_id = CAST(:site AS uuid)
+       AND (CAST(:tenant AS uuid) IS NULL OR tenant_id = CAST(:tenant AS uuid))
+       AND effective_from <= CAST(:at AS date)
+     ORDER BY effective_from DESC, position ASC
+     LIMIT 1
+"""
+
+
+async def _emission_factor_for(db: AsyncSession, tenant, site_id, end: dt.datetime):
+    """The factor EFFECTIVE at the window's end, or None.
+
+    Same rule as a metric version and a benchmark standard: the row that applies
+    to a window is the latest one whose effective date is not after it. A grid
+    factor is republished every year and re-grading last year's emissions with
+    this year's number would be a silent restatement of history.
+
+    The row travels back with its `source` — the citation an operator entered —
+    so a carbon figure on a screen can always be traced to the document it came
+    from rather than to a constant somebody once typed.
+    """
+    rows = _rows(
+        await db.execute(
+            text(_EMISSION_FACTOR_SQL),
+            {"site": str(site_id), "tenant": str(tenant) if tenant else None,
+             "at": end.date()},
+        )
+    )
+    return rows[0] if rows else None
+
+
 async def _evaluate_site_formula(
     db: AsyncSession, tenant, defn: dict, site: dict, start, end, table: str
 ) -> dict:
@@ -876,6 +1025,27 @@ async def _evaluate_site_formula(
             by_role.setdefault(r["role"], []).append(r)
 
     for name, spec in inputs.items():
+        if spec.get("source", "points") == "emission_factor":
+            row = await _emission_factor_for(db, tenant, site["site_id"], end)
+            if row is None:
+                return _refusal(
+                    "missing_factor",
+                    f"input `{name}`: no grid emission factor is recorded for "
+                    f"this site effective on or before "
+                    f"{end.date().isoformat()} — record one in Configurations → "
+                    f"Sites → Emissions. A national average IS a defensible "
+                    f"value, but it is a value somebody has to choose and cite, "
+                    f"not one this metric may assume",
+                )
+            env[name] = float(row["kg_co2_per_kwh"])
+            input_report.append(
+                {"input": name, "source": "emission_factor",
+                 "value": float(row["kg_co2_per_kwh"]), "unit": "kgCO2/kWh",
+                 "effective_from": row["effective_from"],
+                 "factor_source": row["source"]}
+            )
+            continue
+
         if spec.get("source", "points") == "site_fact":
             fact = spec["fact"]
             fact_def = registry.FACT_DEFS[fact]
@@ -1105,6 +1275,28 @@ async def _evaluate_site_formula(
     return out
 
 
+def _undefined_reason(parent: dict, metric: str, end: dt.datetime) -> str:
+    """What to say about a component that is named but has no definition.
+
+    The bare fact — no row is effective — is the fallback, not the answer. When
+    the parent documents the component, the operator gets the sentence that
+    tells them whether the gap is a field job (a sensor nobody installed), a
+    config job (a fact nobody recorded) or a build job (a capability nobody
+    wrote). Those three need three different people, and the key alone names
+    none of them.
+    """
+    doc = ((parent.get("display") or {}).get("components") or {}).get(metric) or {}
+    label = doc.get("label") or metric
+    blocked = doc.get("blocked_by")
+    if not blocked:
+        return f"no metric `{metric}` is effective at {end.isoformat()}"
+    source = doc.get("source")
+    out = f"{label} is not defined — {blocked}"
+    if source:
+        out += f" (source: {source})"
+    return out
+
+
 async def _evaluate_site_composite(
     db: AsyncSession, tenant, defn: dict, site: dict, start, end, res, depth
 ) -> dict:
@@ -1118,9 +1310,15 @@ async def _evaluate_site_composite(
     for c in defn["components"]:
         sub_defn = await registry.effective(db, tenant, c["metric"], end)
         if sub_defn is None:
+            # A component named but not defined. "no metric `x` is effective"
+            # is TRUE and useless — it tells an operator that a key is missing,
+            # not what would make it exist. A composite may therefore document
+            # its own components (`display.components[key]`), and a pack that
+            # does gets its sentence printed instead: what the metric is, what
+            # measures it, and what is in the way. See `reporting.ccei_spec`.
             parts.append({"metric": c["metric"], "weight": c["weight"],
-                          "status": "blocked", "value": None,
-                          "reason": f"no metric `{c['metric']}` is effective at {end.isoformat()}"})
+                          "status": "not_defined", "value": None,
+                          "reason": _undefined_reason(defn, c["metric"], end)})
             continue
         sub_scope = (sub_defn.get("applies_to") or {}).get("scope", "device")
         sub = await evaluate(

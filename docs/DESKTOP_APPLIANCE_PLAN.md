@@ -171,7 +171,7 @@ container runtime on the customer's machine.
 
 - **For:** smallest install, no virtualization dependency, works on hardened and
   air-gapped servers, no third-party licence surface, fastest cold start.
-- **Against:** all fifteen services must be ported and then *kept* ported. Two
+- **Against:** all sixteen services must be ported and then *kept* ported. Two
   deployment shapes (compose on Linux, supervisor on Windows) drift; a change that
   works in dev can break the appliance silently. Redis and Celery-on-Windows are
   unsolved. Realistically a quarter of work before the first install.
@@ -679,7 +679,7 @@ doing a genuinely fresh first install.
 
 | | Before | After |
 |---|---|---|
-| Fresh first boot | core, ingest, vision, access, workflow **exited 1** | **all 12 services up** |
+| Fresh first boot | core, ingest, vision, access, workflow **exited 1** | **all 12 services up** (the stack's size at the time of this run; 16 long-running containers as of 2026-09-05) |
 | Time to `/health` 200 | never got there | **142 s** |
 | Login through the gateway | n/a | **token issued, `/auth/me` 200** |
 | Published ports | postgres, redis, nats on `0.0.0.0` | **gateway only** |
@@ -689,8 +689,15 @@ doing a genuinely fresh first install.
    file is now 325 MB with `CMD=[node server.js]`, against 1.72 GB for `:dev`.
 2. **Healthcheck** — `pg_isready -h 127.0.0.1 …` (the init server sets
    `listen_addresses=''`, so `-h` forces a real answer) **and** a `psql` against
-   `neubit_nvr`, the last database `init-service-dbs.sh` creates, so its existence
-   proves the init scripts finished. Plus `start_period: 60s` for initdb on a slow
+   the LAST database `init-service-dbs.sh` creates, so its existence proves the
+   init scripts finished. **Do not copy the database name out of this paragraph.**
+   It was `neubit_nvr` on the day of this run; that database was removed from the
+   list on 2026-09-01 and the marker was not moved with it, which left a fresh
+   volume waiting forever on a database that would never appear — postgres
+   `unhealthy` for good and every service gated on `service_healthy` never
+   starting. It reached a customer install. The marker is whatever is last in
+   `deploy/postgres/init-service-dbs.sh` (`dashforge` as of 2026-09-05) and
+   `deploy/docker-compose.yml` carries the standing note to move it. Plus `start_period: 60s` for initdb on a slow
    disk.
 3. **Ports** — postgres, redis, nats, core's `:8000`, the frontend's `:3000` and the
    Traefik dashboard all moved to the dev override. The base file publishes the

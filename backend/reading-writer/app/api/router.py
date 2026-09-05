@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from . import builder
 from . import context
 from . import execute as ex
+from . import intake as intake_store
 from . import permsync
 from . import queries as q
 from . import rating as rt
@@ -161,11 +162,13 @@ async def alerts(
 ) -> AlertListResponse:
     """The fault queue — every alert the gateway raised in a bounded window.
 
-    Reads `iot_alerts`, which this service does NOT write: the reporting-projector
-    fills it from `tenant.*.iot.alert.*` (builder contract §9). Reading it here is
-    the rule, not an exception — the reading-writer is the one read path over the
-    whole reporting store, and a second one is exactly the drift that rule exists
-    to prevent.
+    Reads `iot_alerts`, which this MODULE does not write and this PROCESS now
+    does: `app.projections` fills it from `tenant.*.iot.alert.*` (builder contract
+    §9). That distinction is the whole of the ownership rule since the projector
+    was folded in — the readings half still declares nothing about this relation
+    and still issues no write against it. Reading it here is the rule, not an
+    exception: the reading-writer is the one read path over the whole reporting
+    store, and a second one is exactly the drift that rule exists to prevent.
 
     Bounded to `ALERTS_MAX_HOURS` because this reads RAW, for the same reason
     `/bi/points` does: the queue needs each alert's own message, and the hourly
@@ -749,6 +752,65 @@ async def units(
     return UnitListResponse(counts=counts, items=rows)
 
 
+# ── Intake ───────────────────────────────────────────────────────────────────
+#
+# The surface the units and roles screens were missing. New devices land on this
+# estate WEEKLY and, until this route existed, nothing anywhere answered "what
+# arrived and still means nothing to us" — the refusal was real but it was buried
+# inside a metric evaluation nobody reads until a number renders as a dash.
+#
+# It is ONE route rather than one per screen because the question spans both
+# assertions: a point needs a unit before a rating, a role before a metric, and
+# an operator triaging a week's arrivals should not have to hold two lists.
+
+
+@bi_router.get(
+    "/intake",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def intake(
+    db: Db,
+    scope: Caller,
+    days: Annotated[int, Query(ge=1, le=365)] = intake_store.INTAKE_WINDOW_DAYS,
+    state: str | None = None,
+    pending: bool = True,
+    new_only: bool = False,
+    search: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict:
+    """Arrivals, the confirmation backlog ranked by whether the work pays, and
+    the addresses that have never carried a reading.
+
+    `state` is the distinction that matters and it is keyed on
+    `max(readings.ts)`, NOT on `points.last_seen_at`. The writer no longer
+    touches the dimension row for a message that stored nothing, but the rows it
+    already inflated cannot heal — a point that never reports again has no
+    truthful timestamp to write — and this is the surface those rows must show
+    up on. See `app/api/intake.py` for the rest of the argument.
+    `never_reported` is not "pending
+    confirmation" — it is an address that does not exist, and it is the trap
+    that turns a correct refusal into a metric nobody can explain.
+
+    `pending=true` (the default) is the work: everything whose unit no human has
+    confirmed. A missing ROLE rides along per row but is not counted as a
+    backlog — most points are an input to no metric and never will be.
+    """
+    if state is not None and state not in intake_store.STATES:
+        raise ValidationError(f"state must be one of: {', '.join(intake_store.STATES)}")
+    return await intake_store.intake(
+        db,
+        _tenant(scope),
+        days=days,
+        state=state,
+        pending=pending,
+        new_only=new_only,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+
+
 @bi_router.post(
     "/units/confirm",
     dependencies=[Depends(require_permission(PERM_MANAGE))],
@@ -765,7 +827,21 @@ async def confirm_units(db: Db, scope: Caller, who: Who, body: ConfirmUnitsReque
 
     `unit: null` clears back to unconfirmed, which has to be reachable — see
     `ConfirmUnitsRequest`.
+
+    A unit asserted on a point that is not carrying readings is CHALLENGED, not
+    stored (`app/api/intake.py`): kWh on an address that has never produced a
+    number is a fact no rating can ever use, and the confirmation succeeding is
+    what makes it invisible. Clearing is never challenged.
     """
+    challenged: list[dict] = []
+    if body.unit is not None:
+        challenged = await intake_store.guard_confirmable(
+            db,
+            _tenant(scope),
+            point_ids=body.point_ids,
+            acknowledged=body.acknowledge_not_reporting,
+            what="unit",
+        )
     # The caller's USER ID, from the token. Not an email: the JWT does not carry
     # one and asking core for it would be an HTTP round-trip to decorate a
     # provenance field. An id that resolves in the audit log is a better record
@@ -787,6 +863,11 @@ async def confirm_units(db: Db, scope: Caller, who: Who, body: ConfirmUnitsReque
         "unit": body.unit,
         "unit_source": None if body.unit is None else "operator",
         "confirmed_by": None if body.unit is None else actor,
+        # Said out loud in the success response too. An acknowledged assertion on
+        # a silent point is a legitimate act, but it is not the same act as
+        # confirming a point that is delivering values, and the operator who did
+        # it should see which ones they overrode.
+        "confirmed_not_reporting": challenged,
     }
 
 
@@ -1235,11 +1316,16 @@ async def dataset_values(
 async def query(db: Db, scope: Caller, who: Who, body: dict) -> QueryResult:
     """Execute ONE widget's BUILDER STATE and return its data.
 
-    This is the read path behind every dashboard widget. It lives here, not in the
-    dashboards service, for the same reason the rest of this router does: pipeline
-    contract §7 gives the readings schema one owner, and the owner serves its own
-    reads. The dashboards service stores widget definitions and never opens this
-    database.
+    This is the read path behind every widget that charts readings. It lives here
+    for the same reason the rest of this router does: pipeline contract §7 gives
+    the readings schema one owner, and the owner serves its own reads.
+
+    (Until 2026-09-03 that sentence read "it lives here, not in the dashboards
+    service … the dashboards service stores widget definitions and never opens
+    this database". There is no dashboards service now — NeuBit's own builder was
+    retired and DashForge is the authoring surface — but the argument is unchanged
+    and is what still keeps a second reader off this database: whoever holds a
+    widget's definition sends the SPEC here and does not query the store itself.)
 
     The body is a widget SPEC — a structured description of a dataset, some
     columns, an aggregate, a window and a resolution. **It is not SQL and there is

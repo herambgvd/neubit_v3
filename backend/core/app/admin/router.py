@@ -266,14 +266,23 @@ async def delete_tenant(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_superadmin),
 ) -> None:
-    """Delete a tenant + all its users (cascade)."""
-    tenant = await TenantService(db).delete_tenant(tenant_id)
+    """Delete a tenant, erase its data everywhere, and record what was erased."""
+    tenant, removed = await TenantService(db).delete_tenant(tenant_id)
     await audit_record(
         db, actor=actor, action="tenant.delete", target_type="tenant",
-        target_id=str(tenant_id), meta={"name": tenant.name},
+        target_id=str(tenant_id),
+        # The per-table counts go in the trail because this entry is the evidence
+        # the erasure happened, and it is the only thing that survives it. "Deleted
+        # tenant X" cannot be checked against anything; "deleted tenant X, and
+        # these 14 tables gave up these rows" can.
+        meta={"name": tenant.name, "erased": {k: v for k, v in removed.items() if v}},
     )
     # Right-to-erase: every service wipes this tenant's data from its own DB on receipt
-    # (kernel.lifecycle.subscribe_tenant_offboard). Core's own rows cascaded via the FK.
+    # (kernel.lifecycle.subscribe_tenant_offboard). Core does NOT consume its own
+    # event — it erased its own tables synchronously, above, inside the same
+    # transaction as the delete (app/tenancy/erasure.py). That used to read "Core's
+    # own rows cascaded via the FK", which was true only of the eight tables that
+    # had one; eleven others had a bare tenant_id and were erased by nothing.
     await events_nats.publish(str(tenant_id), "tenant", "offboarded", {"name": tenant.name})
 
 

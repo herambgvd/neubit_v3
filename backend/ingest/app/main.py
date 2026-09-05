@@ -1,13 +1,67 @@
-"""Ingest service — bootable skeleton.
+"""Ingest service — the platform's inbound edge for third-party event producers.
 
-No business logic yet: this exists to prove the split works end-to-end —
-kernel config/auth/events/errors wire up, a core-minted JWT authorizes
-locally, and tenant scope resolves from the token. Real ingestion (external
-webhooks / event normalization → NATS) is ported on top of this later.
+This docstring said "bootable skeleton. No business logic yet ... real ingestion
+is ported on top of this later" from the day the service split was proved until
+2026-09-05. The porting happened long ago and nobody came back to the header, so
+the module that a reader opens FIRST claimed the service was a stub while
+``app/ingest/`` held 3.2k lines of pipeline. It is written out here in full
+because the cost of that lie is a rebuild of something that already works.
+
+WHAT IT ACTUALLY IS
+-------------------
+
+Devices and third-party systems (NVRs, alarm panels, vendor clouds) POST to a
+public webhook URL. This service authenticates that POST against per-webhook
+credentials, validates and reshapes the vendor's body into a platform event, and
+publishes it to NATS. Nothing downstream ever speaks to the vendor: the spine is
+the only coupling. Owns ``neubit_ingest``.
+
+THE TWO SURFACES, WHICH IS THE WHOLE DESIGN
+-------------------------------------------
+
+They are split by TRUST, not by convenience, and this module mounts them
+differently on purpose:
+
+* ``config_router`` — the authed operator API under ``{api_prefix}/ingest``:
+  categories, webhooks, event rules, the event log and a replay. JWT-verified
+  locally by the kernel, gated on ``ingest.read`` / ``ingest.manage``, tenant
+  scoped, and additionally gated below on the tenant's ``workflow`` module plus
+  an unexpired licence.
+
+* the PUBLIC receiver — ``GET|POST /ingest/hooks/{slug}``, mounted with NO
+  prefix and NO JWT dependency. A device carries no principal, so it CANNOT be
+  feature-gated here; the slug identifies the webhook and the webhook's own
+  ``auth_type`` authorizes the caller. See the note at the include_router below.
+
+THE PIPELINE (app/ingest/service.py :: ReceiverService)
+-------------------------------------------------------
+
+  slug lookup → per-webhook auth → JSON-Schema validation → rule match or
+  webhook transform → publish ``tenant.<tid>.<domain>.event.received``
+
+and every stage's verdict is written to ``ingest_event_logs`` BEFORE the request
+is answered — including rejections on an unknown slug, which is how an operator
+diagnoses a device that "isn't sending anything". A stored raw payload can be
+re-run through the whole pipeline by the authed replay endpoint, which is why
+this module hands the router the live bus (``bind_event_bus``).
+
+The pieces, each its own module with its own header worth reading:
+
+  * ``security.py``  — per-webhook auth: none / api_key / basic / bearer / hmac.
+    Most secrets are stored as a salted SHA-256; HMAC secrets are the exception
+    and are stored REVERSIBLY ENCRYPTED, because verifying a vendor signature
+    needs the original secret back. Every rejection returns the same bare 401.
+  * ``transform.py`` — JSON Schema validation and the JMESPath
+    ``{target_field: expr}`` field map. Pure, collects errors instead of raising,
+    so a misconfigured webhook is a 422 and not a 500.
+  * ``matcher.py``   — the rule engine. Conditions (exists/equals/contains/…)
+    over the RAW payload; first rule by priority wins and REPLACES the
+    webhook-level transform. A webhook with rules and no match rejects rather
+    than publishing an unrouted event.
+  * ``bootstrap.py`` — optional idempotent brand seeds (``VE_INGEST_AUTO_SEED``).
 
 Run:   uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
-
 from __future__ import annotations
 
 import logging

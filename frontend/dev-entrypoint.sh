@@ -3,61 +3,60 @@
 #
 # THE FAILURE THIS EXISTS FOR
 # ---------------------------
-# The dev override bind-mounts the host checkout over /app and keeps
-# node_modules and .next in volumes so the container's own copies survive. That
-# arrangement broke four times in one day, in two shapes:
+# HISTORY, because the shape of this file only makes sense with it. The dev
+# override used to bind-mount the host checkout over /app and keep node_modules
+# and .next in named volumes NESTED INSIDE that bind. Docker Desktop kept
+# re-mounting the host share over those nested volumes — at boot, after a
+# Desktop restart, and even mid-run after heavy host-side writes — so the
+# container silently ended up reading the HOST's darwin node_modules inside a
+# musl image and writing its build output back into the host checkout. It
+# surfaced as ChunkLoadError reload loops, MODULE_NOT_FOUND 500s, a stylesheet
+# that was 600 bytes of `/* unparsable */` because Tailwind's oxide binary
+# would not load, and repeated "native addons are not ELF" repairs that were
+# really refereeing a fight between two trees.
 #
-#   * WRONG-PLATFORM BINARIES. npm installs native packages per platform. A
-#     macOS host has @next/swc-darwin-arm64 and @tailwindcss/oxide-darwin-arm64;
-#     an alpine container needs the -linux-*-musl builds. When the volume ends up
-#     holding the host's tree, `next dev` starts, fails to load its native half,
-#     and serves 500s — or, worse, serves a stylesheet that is 600 bytes of
-#     `/* unparsable */` because Tailwind's oxide binary is missing but the dev
-#     server carries on regardless.
-#   * A STALE VOLUME. A volume is seeded from the image ONCE, on creation, and
-#     never again. So `docker compose build frontend` after adding a dependency
-#     changes nothing the running container can see: the new package is simply
-#     absent, and the error is a module-not-found from a file that plainly exists
-#     in package.json.
-#   * A CORRUPT TURBOPACK CACHE. A container killed mid-write leaves a half-written
-#     RocksDB in .next/cache, and the next start dies on "Failed to open SST file".
+# That nesting is GONE (2026-09-02). node_modules and .next now live in the
+# container's own filesystem — node_modules baked by the `deps` stage from
+# package-lock.json, so its binaries are musl by construction — and only the
+# source paths are bind-mounted. The whole class of failure went with it.
 #
-# Every one of those was diagnosed and repaired BY HAND. None of them announces
-# what it is. This script makes the container check its own tree at start-up and
-# repair it, so the failure mode is a slow first boot with a clear log line
-# instead of a mystery 500.
+# WHAT REMAINS WORTH CHECKING, and why each is still here:
+#
+#   * WRONG-PLATFORM OR STALE node_modules. Still possible if someone rebuilds
+#     oddly or the image predates a dependency change, and it never announces
+#     itself: `next dev` starts, fails to load its native half, and serves 500s.
+#     The lockfile stamp and the ELF byte-check below catch both.
+#   * A CORRUPT TURBOPACK CACHE. A container killed mid-write leaves a
+#     half-written RocksDB in .next/cache and the next start dies on "Failed to
+#     open SST file". Cheap to throw away, so the crash-retry at the bottom does.
+#   * SOURCE NOT ACTUALLY MOUNTED — the new layout's own failure mode, checked
+#     just below: the container would serve the image's frozen snapshot while
+#     every edit appeared to do nothing.
+#
+# Every one of these was once diagnosed and repaired BY HAND. None announces
+# what it is; that is what this script is for.
 #
 # It is a DEV-ONLY entrypoint. The production runner image is self-contained and
 # never runs this.
 set -e
 cd /app
 
-# ── MOUNT-SHADOW GUARD ───────────────────────────────────────────────────────
-# After a Docker Desktop restart (a reboot, an update, the machine sleeping),
-# this container can come back with its named volumes SHADOWED: the config
-# still lists node_modules and .next as volumes, but /proc/mounts shows only
-# the /app host bind — the gRPC-FUSE share re-mounts OVER the volumes on VM
-# boot. `docker restart` does NOT fix it; only a recreate re-attaches them.
+# ── SOURCE-MOUNT CHECK ───────────────────────────────────────────────────────
+# The compose layout changed on 2026-09-02: /app is NO LONGER bind-mounted, and
+# node_modules/.next are no longer volumes nested inside one. Only the source
+# paths are bound. That removed the shadow failure this script used to guard
+# against (Docker Desktop re-mounting the host share over nested volumes), so
+# the old device-id guard and its runtime watchdog are gone with it — their
+# invariant was "the nested volumes are attached", and there are none now.
 #
-# Running in that state is what caused every shape of this container's
-# recurring breakage: .next fills with the host's mixed build (routes 404
-# their own chunks), and — far worse — the repair below runs `npm ci` INTO
-# THE HOST'S CHECKOUT, replacing the host's darwin binaries with musl ones.
-# So: detect the shadow FIRST and refuse to start. When the volumes are
-# attached, /app/.next sits on its own device (ext4) while /app is the FUSE
-# share; identical device ids mean the volume is not there.
-mkdir -p .next
-if [ "$(stat -c %d /app)" = "$(stat -c %d /app/.next)" ]; then
-  echo "════════════════════════════════════════════════════════════════════"
-  echo "[dev-entrypoint] REFUSING TO START: the named volumes are SHADOWED."
-  echo "  /app/.next is on the same device as /app — the frontend_next and"
-  echo "  frontend_node_modules volumes did not attach (this happens after a"
-  echo "  Docker Desktop restart; a plain 'restart' will NOT fix it)."
-  echo "  Fix:  docker compose up -d --force-recreate frontend"
-  echo "  Starting anyway would fill the HOST checkout with container output"
-  echo "  and npm-ci over the host's node_modules."
-  echo "════════════════════════════════════════════════════════════════════"
-  exit 1
+# What is worth checking in the new layout is the opposite: that the SOURCE is
+# actually bound. If /app/src sits on the same device as /app it came from the
+# image, not the host, and the container would serve a frozen snapshot while
+# every edit appeared to do nothing.
+if [ "$(stat -c %d /app 2>/dev/null)" = "$(stat -c %d /app/src 2>/dev/null)" ]; then
+  echo "[dev-entrypoint] WARNING: /app/src is not bind-mounted from the host —"
+  echo "  this container is serving the image's snapshot and will ignore edits."
+  echo "  Check the frontend service's volumes in docker-compose.override.yml."
 fi
 
 STAMP=node_modules/.neubit-install-stamp
@@ -159,48 +158,10 @@ child=$!
 # Forward the stop signal, or `docker compose stop` waits out its whole timeout.
 trap 'kill -TERM "$child" 2>/dev/null' TERM INT
 
-# ── RUNTIME shadow watchdog ──────────────────────────────────────────────────
-# The start-up check above is NOT enough: observed 2026-09-01, a container that
-# booted with its volumes correctly attached had them SHADOWED while running —
-# Docker Desktop re-mounted the host share over the nested volume mounts with
-# no restart (RestartCount 0, entrypoint never re-ran). The dev server then
-# served 500s with MODULE_NOT_FOUND on next/swc, because /app/node_modules had
-# silently become the HOST's darwin tree.
-#
-# TRIGGER, caught in the act by this watchdog minutes after it was written: a
-# host-side `npm ci` in the bind-mounted frontend/ directory. Heavy writes from
-# the host into the shared path make Docker Desktop re-mount the share, and the
-# nested volumes do not come back with it. So it is not only Docker restarts —
-# running npm/yarn on the host while the container is up will do it. Recreate
-# afterwards, or do package work inside the container.
-#
-# A degraded-but-running container is the worst outcome: health checks pass,
-# the port answers, and every request fails. So watch the same device-id
-# invariant while running and EXIT when it breaks — an exited container with
-# the reason in its logs is honest, and the fix is one documented command.
-(
-  while sleep 20; do
-    kill -0 "$child" 2>/dev/null || exit 0
-    if [ "$(stat -c %d /app 2>/dev/null)" = "$(stat -c %d /app/.next 2>/dev/null)" ]; then
-      echo "════════════════════════════════════════════════════════════════════"
-      echo "[dev-entrypoint] VOLUMES WENT SHADOWED WHILE RUNNING — stopping."
-      echo "  /app/.next is back on the same device as /app: Docker Desktop"
-      echo "  re-mounted the host share over the named volumes mid-run. The dev"
-      echo "  server would serve 500s and write container output into the HOST"
-      echo "  checkout, so it is being stopped instead."
-      echo "  Fix:  docker compose up -d --force-recreate frontend"
-      echo "════════════════════════════════════════════════════════════════════"
-      kill -TERM "$child" 2>/dev/null
-      exit 0
-    fi
-  done
-) &
-watchdog=$!
 
 started=$(date +%s)
 wait "$child" || status=$?
 status=${status:-0}
-kill "$watchdog" 2>/dev/null
 elapsed=$(( $(date +%s) - started ))
 
 if [ "$status" -ne 0 ] && [ "$elapsed" -lt 30 ]; then

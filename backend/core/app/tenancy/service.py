@@ -269,9 +269,35 @@ class TenantService:
             raise NotFoundError("tenant has no users to impersonate")
         return user
 
-    async def delete_tenant(self, tenant_id: uuid.UUID) -> Tenant:
-        """Delete a tenant and all its users (users cascade via the FK)."""
+    async def delete_tenant(self, tenant_id: uuid.UUID) -> tuple[Tenant, dict[str, int]]:
+        """Delete a tenant and erase its data from core's own tables.
+
+        Returns the (detached) tenant and a per-table row count, which the caller
+        puts in the audit entry — an erasure that nobody can show happened is
+        indistinguishable from one that did not.
+
+        ORDER IS LOAD-BEARING. ``erase_tenant_data`` runs FIRST, in this same
+        transaction, because four of core's tables carry ON DELETE SET NULL to
+        ``tenants`` and NULL is this schema's marker for a PLATFORM DEFAULT: a
+        branding row, an app_settings row or a channel_configs row that reaches
+        that constraint is not orphaned, it is PROMOTED — the departed tenant's
+        logo and its stored SMTP credentials become the defaults every other
+        tenant inherits. Deleting first means the constraint never fires.
+
+        Until 2026-09-05 this method was two lines and the docstring said "users
+        cascade via the FK", which was true and was the whole coverage: eleven
+        tables with a bare tenant_id (sites, tags, floors, zones, device
+        placements, tariffs, emission factors, tag links, report jobs, dual-auth
+        requests) were erased by nothing at all. See app/tenancy/erasure.py.
+        """
+        from .erasure import erase_tenant_data
+
         tenant = await self.get_tenant(tenant_id)
+        removed = await erase_tenant_data(self.db, tenant_id)
         await self.db.delete(tenant)
+        # One commit for the erase AND the delete. A partially erased tenant that
+        # still exists is the worst outcome available, so the two are atomic: if
+        # anything above raises — including the classification check refusing an
+        # unclassified table — nothing has happened and the tenant is intact.
         await self.db.commit()
-        return tenant
+        return tenant, removed

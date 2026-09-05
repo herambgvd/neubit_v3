@@ -373,9 +373,14 @@ export function SectionCard({ className = "", children }: any) {
 }
 
 // Uppercase micro-heading used at the top of a SectionCard.
-export function SectionHead({ icon, title, desc, action, className = "" }: any) {
+// `hint` is a `desc` that costs no vertical space: the same sentence, reachable
+// on hover instead of printed under the title. For a caveat a reader needs ONCE
+// — what a chart counts, what a queue does not infer — that is the right trade
+// in a panel whose height is contested. `desc` stays for anything a reader needs
+// every time they look.
+export function SectionHead({ icon, title, desc, hint, action, className = "" }: any) {
   return (
-    <div className={`mb-3 flex items-start gap-2 ${className}`}>
+    <div className={`mb-3 flex items-start gap-2 ${className}`} title={hint}>
       {icon && <Icon icon={icon} className="mt-0.5 text-sm text-nb-blueb" />}
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{title}</div>

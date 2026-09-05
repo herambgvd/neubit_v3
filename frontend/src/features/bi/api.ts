@@ -74,10 +74,11 @@ export const bi = {
   activity: (hours = 24) => unwrap(api.get(`${BI}/activity${qs({ hours })}`)),
 
   // The FAULT QUEUE — alerts the gateway raised, projected into the reporting
-  // store by the reporting-projector and read back here. Bounded to 48 hours by
-  // the server because it reads RAW: the queue needs each alert's own message,
-  // and the hourly rollup deliberately does not carry it (the message is unique
-  // per alert, so grouping by it would make the rollup a copy of the table).
+  // store by the reading-writer's projection consumers and read back here.
+  // Bounded to 48 hours by the server because it reads RAW: the queue needs
+  // each alert's own message, and the hourly rollup deliberately does not carry
+  // it (the message is unique per alert, so grouping by it would make the rollup
+  // a copy of the table).
   // A wider question is a chart, and the `iot_alerts` DATASET answers it.
   //
   // `available: false` means nothing is COLLECTING alerts, which is not the same
@@ -157,8 +158,35 @@ export const bi = {
   units: ({ category, search, confirmed, limit, offset }: any = {}) =>
     unwrap(api.get(`${BI}/units${qs({ category, search, confirmed, limit, offset })}`)),
 
-  confirmUnits: ({ point_ids, unit }: any) =>
-    unwrap(api.post(`${BI}/units/confirm`, { point_ids, unit })),
+  // `acknowledge_not_reporting` is only ever sent in ANSWER to a 422
+  // POINT_NOT_REPORTING — never by default. The server refuses a unit asserted
+  // on a point carrying no readings, because kWh on an address that has produced
+  // no number is a fact no rating can use and the silent success is what hides
+  // it. Passing it unconditionally from here would delete the guard.
+  confirmUnits: ({ point_ids, unit, acknowledge_not_reporting }: any) =>
+    unwrap(
+      api.post(`${BI}/units/confirm`, {
+        point_ids,
+        unit,
+        ...(acknowledge_not_reporting ? { acknowledge_not_reporting: true } : {}),
+      }),
+    ),
+
+  // ── INTAKE ──────────────────────────────────────────────────────────────
+  //
+  // What arrived in a window, what is still unconfirmed ranked so the useful
+  // work is first, and — the distinction the units screen cannot make — which
+  // rows are addresses that have NEVER carried a reading. Classification reads
+  // `max(readings.ts)`, not `points.last_seen_at` — still, now that the writer
+  // no longer advances `last_seen_at` on a message that stored nothing
+  // (`e9818d2`). Two reasons it stays on the data: the rows the old writer
+  // already inflated cannot heal, and they are exactly what this surface exists
+  // to expose; and the screen whose job is catching drift should not be the one
+  // place that trusts a denormalised copy. Read-only; nothing here confirms.
+  intake: ({ days, state, pending, new_only, search, limit, offset }: any = {}) =>
+    unwrap(
+      api.get(`${BI}/intake${qs({ days, state, pending, new_only, search, limit, offset })}`),
+    ),
 
   // ── RATINGS ────────────────────────────────────────────────────────────
   //

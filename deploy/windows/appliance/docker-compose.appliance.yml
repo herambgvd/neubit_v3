@@ -129,19 +129,9 @@ services:
   # runs `up -d --no-build`, so compose refuses to start ANY of the stack. Pinning
   # them here is what keeps that from being a silent release trap.
 
-  dashboards:
-    build: !reset null
-    image: neubit-v3-dashboards:${NEUBIT_VERSION}
-    restart: unless-stopped
-
   reading-writer:
     build: !reset null
     image: neubit-v3-reading-writer:${NEUBIT_VERSION}
-    restart: unless-stopped
-
-  reporting-projector:
-    build: !reset null
-    image: neubit-v3-reporting-projector:${NEUBIT_VERSION}
     restart: unless-stopped
 
   # No restart policy, deliberately: this one runs the reporting migrations and

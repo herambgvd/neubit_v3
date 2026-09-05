@@ -1,5 +1,31 @@
 # Dashboard builder — the contract
 
+> **RETIRED, 2026-09-03 — but do not delete this document.**
+>
+> NeuBit's own dashboard builder is gone: the `dashboards` service,
+> `frontend/src/features/dashboards/`, the `/dashboards` routes and the
+> `dashboards.*` permission keys were all removed. DashForge is this platform's
+> dashboarding surface now, reached at `/bi/dashboards`. **There is no NeuBit
+> screen behind anything this document describes as a builder UI** — §§1–8, 10
+> and 11 are history, kept because they record why the design was what it was.
+>
+> What is NOT history, and is still live code this file is the contract for:
+>
+> * the **dataset registry** and the **projection registry** (§2, §9) in
+>   `neubit_reporting` — how a domain publishes queryable data;
+> * the **server-side SQL generation and refusal rules** (§3, §4) in the
+>   reading-writer's `/api/v1/bi/query`, which still owns the readings schema;
+> * **spec versioning** (§6), which is why the export in
+>   `docs/dashboard-builder-final-export-2026-09-03.json` contains two spec
+>   grammars.
+>
+> `docs/iot-pipeline-contract.md` cites §9 of this file for the projection
+> registry, which is the immediate reason deleting it would break something real.
+>
+> The one dashboard anybody had actually built, with its widgets and its version
+> history, is preserved as data in
+> `docs/dashboard-builder-final-export-2026-09-03.json`.
+
 The builder is a NeuBit module. It must serve every domain on this platform —
 IoT readings today, VMS, access control and fire next — not the IoT store it
 happens to have been born against.
@@ -173,14 +199,19 @@ dashboard. It has been dropped.
 
 The one legal way in follows directly from §1. A domain owns its database and
 nothing may read it, so a domain **publishes** and something consumes the bus and
-writes the reporting store. That something is `backend/projector` —
-**reporting-projector** — and what a domain must declare in order to be projected
-is data, exactly like a dataset.
+writes the reporting store. That something is
+`backend/reading-writer/app/projections` — and what a domain must declare in
+order to be projected is data, exactly like a dataset.
+
+It was its own container, `reporting-projector`, until 2026-09-05. The OWNER did
+not change and neither did anything in this section: the projection consumers are
+still the only writer of these relations, still open one database, still serve no
+tenant API. Only the process boundary went. See pipeline contract §22.
 
 ### 9.1 The shape
 
 ```
-access service ──publish──► NATS EVENTS ──durable pull consumer──► projector
+access service ──publish──► NATS EVENTS ──durable pull consumer──► projections
                             tenant.<t>.access.<cat>.<type>            │
                                                                       ▼
                              neubit_reporting.access_events (hypertable)
@@ -197,8 +228,10 @@ subject, the target relation and its columns, the rollups, and the
 
 ### 9.2 What is not negotiable, and why
 
-* **The projector opens ONE database.** `neubit_reporting`, never
+* **The projection consumers open ONE database.** `neubit_reporting`, never
   `neubit_access` or `neubit_vision`. That ban is why the reporting store exists.
+  They also open their own POOL onto it, which is a different rule and is about
+  not starving the readings writer — pipeline contract §22.
 * **Ack only after a durable write.** A batch is one transaction; nothing is
   acked until it commits, and a failed batch is NAK'd whole. Verified by stopping
   Postgres mid-flight: six write failures, two NAK'd batches, twelve messages
@@ -212,8 +245,10 @@ subject, the target relation and its columns, the rollups, and the
   publish, so using it would make a redelivery look like a new event.
 * **Backpressure is visible and per projection.** A single aggregate number would
   let a healthy access projection hide a fire projection failing every batch.
-  `/readyz` on the projector goes red for a refused projection too: a domain that
-  believes it is being collected and is not is the worst failure available here.
+  `/readyz` goes red for a refused projection too: a domain that believes it is
+  being collected and is not is the worst failure available here. (That readiness
+  endpoint was the projector's own until 2026-09-05; it is the reading-writer's
+  now, and the union reds when EITHER half is wedged.)
 * **DDL is additive only.** The projector creates tables, columns, indexes,
   hypertables and continuous aggregates; it never drops one, never drops a
   column, and never rewrites a column's type. A spec that would need any of those
@@ -265,8 +300,8 @@ Nothing below is a code change. In order:
 |---|---|
 | a domain service | its own database, and publishing its events with the labels on them |
 | reporting-migrate | the IoT schema, `dashboard_datasets`, `reporting_projections` |
-| reporting-projector | every relation declared in `reporting_projections`. The only thing that writes them. |
-| reading-writer | the readings schema, and the ONE read path (`/api/v1/bi/...`) over the whole store |
+| reading-writer `app/projections` | every relation declared in `reporting_projections`. The only thing that writes them. |
+| reading-writer `app/` | the readings schema, and the ONE read path (`/api/v1/bi/...`) over the whole store |
 
 A migration cannot own the projected relations: a projection is inserted at any
 time with no deploy, so a migration cannot know which relations exist. If it had

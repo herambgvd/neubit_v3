@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     password_require_number: bool = True
     password_require_letter: bool = True
     rate_limit_login_per_minute: int = 10
+    # The API-key exchange has its own budget so it and login cannot starve
+    # each other — see core/ratelimit.api_key_rate_limit.
+    rate_limit_api_key_per_minute: int = 60
     # Global per-IP request cap across the whole API (0 disables it). A coarse
     # brute-force / abuse backstop on top of the stricter per-login limit.
     rate_limit_global_per_minute: int = 600
@@ -65,6 +68,16 @@ class Settings(BaseSettings):
     # --- App auth (the app's own users, NOT the license) -------------------
     jwt_secret: str = "change-me-in-prod"
     jwt_ttl_minutes: int = 60 * 12
+    # TTL of the access token an API KEY is exchanged for — deliberately much
+    # shorter than a human's 12 hours, and the reason is revocation. A satellite
+    # verifies a token statelessly, so nothing outside core can learn that a key
+    # was revoked; the only bound on a revoked key's outstanding token is how long
+    # that token lives. Core itself refuses immediately (it re-reads the key row,
+    # exactly as it re-reads the user row), and no further token is ever issued —
+    # this number is the width of the residual window at the SATELLITES.
+    # 12 hours would have made "revoked" mean "revoked tomorrow"; a machine
+    # re-exchanges on 401 without a human, so short costs nothing.
+    api_key_token_ttl_minutes: int = 15
 
     # --- Refresh token cookie (httpOnly hardening) -------------------------
     # The refresh token is delivered as an httpOnly cookie so JavaScript (and

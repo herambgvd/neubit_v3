@@ -25,11 +25,51 @@ gap while it was open: it was assigned unconditionally, so a message with no
 the only thing that could set a unit, and it is the same defect §11 named for
 ``category``.
 
-**The dimension row is upserted from the message.** An unknown ``point_id`` does
-not cost the reading (contract §6) — the ``points`` row is written from what the
-message already carries, in the SAME transaction, before the readings. There is
-deliberately no foreign key, so the order is about keeping the pair consistent,
-not about satisfying a constraint.
+**The dimension row follows STORED READINGS, not messages.** An unknown
+``point_id`` still does not cost the reading (contract §6): the ``points`` row is
+written from what the message already carries, in the SAME transaction. What
+changed is WHICH points are in that statement. The readings insert runs FIRST and
+returns the point ids it actually stored, and only those points are upserted.
+There is deliberately no foreign key, so the order was never about satisfying a
+constraint — which is what makes it free to reverse.
+
+It had to reverse because ``last_seen_at`` and ``retired_at`` moved for ANY
+message. A retained MQTT message the broker replays on every poll stores nothing
+BY DESIGN — its ``(point_id, ts)`` is already there — and still dragged
+``last_seen_at`` to now() and erased ``retired_at`` on the way past. Measured on
+this estate: ``4F Khem Chiller02 / IWT`` carried ``last_seen_at`` three days ahead
+of ``max(readings.ts)``, so a dead address counted as live, outlived the 30-day
+horizon, and offered itself for confirmation exactly like a working one — which
+is how ``inlet_water_temp`` came to be bound to a tag the device had stopped
+publishing under, and the metric then refused ``no_data`` for a running chiller.
+Retirement could not stick either: retiring such an address wrote a fact this
+writer erased minutes later, invisibly.
+
+So the two columns now mean what their names claim:
+
+* ``last_seen_at`` — the timestamp of the newest reading this writer knows is
+  STORED for the point. A reading EXISTS at that instant. Not "a message
+  mentioned it".
+* ``retired_at`` — cleared only inside that same statement, so only a reading
+  that landed can un-retire a point.
+
+The value is the READING's ``ts``, not ``now()``. Every reader compares this
+column to a window (15 minutes fresh, 30 days to the horizon) and then queries
+``readings`` BY ``ts``; an arrival clock would report "live" about a point whose
+data no chart can see, which is a smaller version of the same lie. It is
+ASSIGNED, not GREATEST-ed, so the inflated values already written into the live
+store heal on that point's next real reading — a column that can only ever move
+forward is how this one became untrue in the first place.
+
+A duplicate teaches nothing about the point's DESCRIPTIVE fields either, and
+that is deliberate rather than incidental: a rename rides on every message a
+device sends, so a device that only replays one stored timestamp has no rename to
+tell us about. The dimension row follows the data.
+
+DELIBERATELY NOT DONE: no second column for "when did a message about this point
+last arrive". Nothing reads one — ``LIVE_POINT``, ``_TOTALS_SQL`` and the
+Portfolio's "last reading" label all already MEANT the stored reading — and a
+column with no reader is a column that drifts until someone trusts it.
 
 **All-or-nothing.** The points upsert and the readings insert share one
 transaction. A batch that fails mid-write leaves NOTHING behind, which is exactly
@@ -111,7 +151,7 @@ class PointCache:
         return len(self._seen)
 
 
-def _point_values(r: ParsedReading, now: dt.datetime) -> dict:
+def _point_values(r: ParsedReading, stored_at: dt.datetime, now: dt.datetime) -> dict:
     return {
         "point_id": r.point_id,
         "tenant_id": r.tenant_id,
@@ -124,38 +164,113 @@ def _point_values(r: ParsedReading, now: dt.datetime) -> dict:
         "device_type": r.device_type,
         "type": r.type,
         "meta": r.meta,
+        # When this writer first saw the ADDRESS, which is an arrival fact and
+        # stays one. `last_seen_at` is a claim about the DATA, so it carries the
+        # reading's own measurement time.
         "first_seen_at": now,
-        "last_seen_at": now,
+        "last_seen_at": stored_at,
     }
 
 
-def _fingerprint(r: ParsedReading) -> int:
+# `meta` is absent on purpose: it is a dict, it is not a dimension anyone filters
+# on, and hashing it would re-upsert every point whose gateway added a key.
+_FINGERPRINT_FIELDS = (
+    "tenant_id", "conn_id", "device_id", "device_tag", "point_tag",
+    "unit", "category", "device_type", "type",
+)
+
+
+def _fingerprint(values: dict) -> int:
     """Hash of the dimension fields, so a CHANGED point re-upserts immediately."""
-    return hash(
-        (
-            r.tenant_id, r.conn_id, r.device_id, r.device_tag, r.point_tag,
-            r.unit, r.category, r.device_type, r.type,
-        )
-    )
+    return hash(tuple(values[k] for k in _FINGERPRINT_FIELDS))
+
+
+def dimension_rows(
+    rows: list[ParsedReading],
+    stored_ids: set[uuid.UUID],
+    now: dt.datetime,
+) -> dict[uuid.UUID, dict]:
+    """The `points` rows this batch EARNED, keyed by point_id.
+
+    A point is in here only if one of its readings actually landed — that is the
+    whole guard, and it is why a replayed retained message can no longer move
+    `last_seen_at` or clear `retired_at`.
+
+    A GENUINELY NEW POINT IS NEVER EXCLUDED BY IT. A point_id nothing has stored
+    cannot collide on `(point_id, ts)`, so its first reading always lands and its
+    dimension row appears in the same transaction — which is what `/bi/intake`'s
+    `awaiting_first_reading` state is counting on, and the reason this guard is
+    keyed on the reading rather than on the point already existing.
+
+    `last_seen_at` is the NEWEST ts the batch carried for that point, not the ts
+    of the row that happened to land. Both are true statements: a ts that
+    CONFLICTED is by definition already stored, so either way a reading exists at
+    the instant written. Taking the max also survives a source that publishes a
+    burst out of order, which this estate does.
+
+    Deduplicated by point_id keeping the LAST message's descriptive values —
+    Postgres raises "ON CONFLICT DO UPDATE command cannot affect row a second
+    time" if one statement presents the same key twice, so this is required, not
+    tidiness.
+    """
+    latest: dict[uuid.UUID, ParsedReading] = {}
+    stored_at: dict[uuid.UUID, dt.datetime] = {}
+    for r in rows:
+        if r.point_id not in stored_ids:
+            continue
+        latest[r.point_id] = r
+        prev = stored_at.get(r.point_id)
+        if prev is None or r.ts > prev:
+            stored_at[r.point_id] = r.ts
+    return {pid: _point_values(r, stored_at[pid], now) for pid, r in latest.items()}
 
 
 async def write_batch(
     session: AsyncSession, rows: list[ParsedReading], cache: PointCache, now_mono: float
 ) -> WriteResult:
-    """Upsert the dimension rows and insert the readings, in ONE transaction."""
+    """Insert the readings, then upsert the dimension rows they earned — ONE transaction.
+
+    The readings go first because they are the only thing that knows whether a
+    message carried data. Nothing observes the order: no foreign key, one
+    transaction, all-or-nothing.
+    """
     now = dt.datetime.now(dt.timezone.utc)
 
-    # ── 1. dimension rows ─────────────────────────────────────────────────────
-    # Deduplicate by point_id and keep the LAST occurrence: Postgres raises
-    # "ON CONFLICT DO UPDATE command cannot affect row a second time" if one
-    # statement presents the same key twice, so this is required, not tidiness.
+    # ── 1. readings ───────────────────────────────────────────────────────────
+    # Deduplicate within the batch too. ON CONFLICT DO NOTHING tolerates a
+    # repeated key in one statement, but collapsing it here makes `rows_inserted`
+    # honest and shrinks the statement.
+    seen: dict[tuple[uuid.UUID, dt.datetime], dict] = {}
+    for r in rows:
+        seen[(r.point_id, r.ts)] = {
+            "ts": r.ts,
+            "tenant_id": r.tenant_id,
+            "point_id": r.point_id,
+            "num": r.num,
+            "txt": r.txt,
+            "quality": r.quality,
+        }
+
+    ins = insert(Reading).values(list(seen.values()))
+    ins = ins.on_conflict_do_nothing(index_elements=[Reading.point_id, Reading.ts])
+    # RETURNING on a DO NOTHING yields exactly the rows that LANDED, out of the
+    # statement we were already running: the stored/duplicate split costs no
+    # extra round-trip, no second statement and no lock, and it cannot disagree
+    # with the table the way a follow-up SELECT could under concurrent writers.
+    # `rowcount` is not enough — it counts the inserts without naming them, and
+    # the dimension row needs to know WHICH points earned one.
+    result = await session.execute(ins.returning(Reading.point_id))
+    landed = result.scalars().all()
+    inserted = len(landed)
+
+    # ── 2. dimension rows ─────────────────────────────────────────────────────
     due: dict[uuid.UUID, dict] = {}
     marks: dict[uuid.UUID, int] = {}
-    for r in rows:
-        fp = _fingerprint(r)
-        if cache.due(r.point_id, fp, now_mono):
-            due[r.point_id] = _point_values(r, now)
-            marks[r.point_id] = fp
+    for pid, values in dimension_rows(rows, set(landed), now).items():
+        fp = _fingerprint(values)
+        if cache.due(pid, fp, now_mono):
+            due[pid] = values
+            marks[pid] = fp
 
     points_upserted = 0
     if due:
@@ -222,12 +337,34 @@ async def write_batch(
                 "type": stmt.excluded.type,
                 "meta": stmt.excluded.meta,
                 # first_seen_at is NOT overwritten: it means what it says.
+                #
+                # ASSIGNED, not GREATEST-ed. `excluded.last_seen_at` is a reading
+                # ts this batch proved is stored, so assigning it lets the values
+                # the old writer inflated (a `now()` with no reading behind it)
+                # heal on the point's next real reading. A column that can only
+                # move forward would carry those lies until someone edited the
+                # table by hand.
+                #
+                # It does NOT heal an address that never reports again — nothing
+                # can write a truthful timestamp for a point with no readings,
+                # and inventing one would be the same fabrication. Those rows
+                # keep the figure the old writer left and are now retirable,
+                # which is the remedy `/bi/intake` could not offer before.
                 "last_seen_at": stmt.excluded.last_seen_at,
-                # A point that is REPORTING is not retired, whatever anyone
-                # said about it last month. An explicit retire is a statement
-                # about the present, not a permanent ban, so a reading clears
-                # it and the point returns to BI's counts with its whole
-                # history — none of which retirement ever touched.
+                # Unconditional, and now finally allowed to be: only a point
+                # that STORED a reading in this batch reaches this statement, so
+                # clearing is a claim about data rather than about traffic. A
+                # replayed retained message is not in `due` and can no longer
+                # un-retire the address it names — which is what made retiring
+                # a dead address pointless, because the writer undid it minutes
+                # later and said nothing.
+                #
+                # A point that is genuinely REPORTING is still not retired,
+                # whatever anyone said about it last month: an explicit retire
+                # is a statement about the present, not a permanent ban, so a
+                # real reading clears it and the point returns to BI's counts
+                # with its whole history — none of which retirement ever
+                # touched.
                 "retired_at": None,
             },
         )
@@ -251,26 +388,6 @@ async def write_batch(
         # any point with an explicit point-level placement; and its
         # IS DISTINCT FROM guard means it writes nothing in the steady state.
         await reconcile_placement(session, point_ids=list(due.keys()))
-
-    # ── 2. readings ───────────────────────────────────────────────────────────
-    # Deduplicate within the batch too. ON CONFLICT DO NOTHING tolerates a
-    # repeated key in one statement, but collapsing it here makes `rows_inserted`
-    # honest and shrinks the statement.
-    seen: dict[tuple[uuid.UUID, dt.datetime], dict] = {}
-    for r in rows:
-        seen[(r.point_id, r.ts)] = {
-            "ts": r.ts,
-            "tenant_id": r.tenant_id,
-            "point_id": r.point_id,
-            "num": r.num,
-            "txt": r.txt,
-            "quality": r.quality,
-        }
-
-    ins = insert(Reading).values(list(seen.values()))
-    ins = ins.on_conflict_do_nothing(index_elements=[Reading.point_id, Reading.ts])
-    result = await session.execute(ins)
-    inserted = result.rowcount if result.rowcount is not None and result.rowcount >= 0 else 0
 
     await session.commit()
     # Only what was actually upserted: marking a point the batch skipped would

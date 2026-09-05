@@ -170,7 +170,18 @@ async def test_admin_api_requires_admin_realm(app, world):
 
 async def test_user_create_is_forced_into_actor_tenant(app, world, db):
     """A tenant-admin passing another tenant's id is IGNORED — the new user lands
-    in the admin's own tenant (never cross-tenant provisioning)."""
+    in the admin's own tenant (never cross-tenant provisioning).
+
+    ``full_name`` is in the body because create_user made it MANDATORY on
+    2026-08-07 (55e744c: "a name is mandatory when an admin creates an account by
+    hand"). Without it this POST is a 422 at the router's own guard, the request
+    never reaches AuthService.create_user, and the assertion below — the only
+    thing this test exists for — is never evaluated. That is the dangerous shape
+    of a stale test: it goes red for a reason that has nothing to do with tenant
+    isolation, and while it is red it is also no longer WATCHING tenant
+    isolation. The forcing itself was never broken (auth/service.py: a
+    non-platform scope overrides data.tenant_id outright).
+    """
     from sqlalchemy import select
 
     async with _client(app) as c:
@@ -179,6 +190,7 @@ async def test_user_create_is_forced_into_actor_tenant(app, world, db):
             headers=_auth(world["a_admin"]),
             json={
                 "email": "planted@x.io",
+                "full_name": "Planted User",
                 "password": "Passw0rd!",
                 "role_id": str(world["role"].id),
                 "tenant_id": str(world["tb"].id),  # attempt to plant into tenant B

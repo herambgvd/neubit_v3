@@ -4,10 +4,10 @@
 //
 // Every row here is an alert the GATEWAY raised — a rule tripping, a poll
 // failing, a point going stale — projected onto `neubit_reporting.iot_alerts` by
-// the reporting-projector and read back through `/api/v1/bi/alerts`. Nothing on
-// this panel is computed by the console: the severity, the type, the device and
-// the message are the gateway's own words, including the number that tripped the
-// rule.
+// the reading-writer's projection consumers and read back through
+// `/api/v1/bi/alerts`. Nothing on this panel is computed by the console: the
+// severity, the type, the device and the message are the gateway's own words,
+// including the number that tripped the rule.
 //
 // WHAT THIS PANEL DELIBERATELY DOES NOT SAY, and why each absence is correct:
 //
@@ -82,43 +82,121 @@ function SeverityChip({ severity, count }: { severity: string | null; count: num
   );
 }
 
-function FaultRow({ row }: any) {
+// One fault, rendered inline for the ticker rail. Everything the list row said
+// is still here — severity, device, point, the gateway's verbatim sentence, the
+// age — laid out on a single line because the rail scrolls horizontally.
+function FaultItem({ row }: any) {
   const m = severityMeta(row.severity);
   return (
-    <li className="flex items-start gap-2.5 border-t border-nb-line/40 px-1 py-2.5 first:border-t-0">
+    <span className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap">
       <span
-        className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-[7px] border"
+        className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border"
         style={{ borderColor: `${m.accent}55`, background: `${m.accent}18`, color: m.accent }}
         title={m.label}
       >
-        <Icon icon={m.icon} className="text-[13px]" />
+        <Icon icon={m.icon} className="text-[12px]" />
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-[12.5px] font-semibold text-nb-ink">{row.device_tag || "—"}</span>
-          {row.point_addr && (
-            <span className="font-mono text-[11px] text-nb-faint" title={row.point_addr}>
-              {pointOf(row.point_addr)}
-            </span>
-          )}
-          <span className="rounded-[5px] border border-nb-line px-1.5 py-px text-[10px] uppercase tracking-[1.1px] text-nb-faint">
-            {typeLabel(row.alert_type)}
-          </span>
+      <span className="text-[12px] font-semibold text-nb-ink">{row.device_tag || "—"}</span>
+      {row.point_addr && (
+        <span className="font-mono text-[11px] text-nb-faint" title={row.point_addr}>
+          {pointOf(row.point_addr)}
+        </span>
+      )}
+      <span className="rounded-[5px] border border-nb-line px-1.5 py-px text-[10px] uppercase tracking-[1.1px] text-nb-faint">
+        {typeLabel(row.alert_type)}
+      </span>
+      {/* The gateway's own sentence, verbatim. It is the one place the value that
+          tripped the rule is stated, and rewording it would be this console
+          asserting something it did not measure. */}
+      <span className="text-[11.5px] text-nb-soft">{row.message || "—"}</span>
+      <span className="text-[11px] text-nb-faint" title={row.ts}>
+        {fmtRelative(row.ts)}
+      </span>
+      {row.conn_slug && (
+        <span className="font-mono text-[10.5px] text-nb-faint">{row.conn_slug}</span>
+      )}
+    </span>
+  );
+}
+
+/** Severity counts, for the SECTION HEADER rather than a row of their own.
+ *  Exported so the panel's title line can carry them — a queue whose headline
+ *  is "how many, how bad" belongs beside the title, and moving it there gives
+ *  the faults themselves the row it used to occupy. */
+export function FaultSeverity({ query }: any) {
+  const data = query.data;
+  if (!data?.available) return null;
+  const bySeverity = data.by_severity || [];
+  const shown = (data.items || []).length;
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+      {bySeverity.map((s: any) => (
+        <SeverityChip key={s.severity ?? "_none"} severity={s.severity} count={s.alerts} />
+      ))}
+      {data.total > shown && (
+        <span className="text-[11px] text-nb-faint">
+          showing {shown} of {data.total}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── The ticker ───────────────────────────────────────────────────────────────
+//
+// WHY A TICKER AND NOT A LIST OR A CAROUSEL. A scrolled list reads as a wall:
+// same-shaped rows, the newest wherever the scroll was left, and in a panel this
+// size only two or three visible with nothing to say more exist. A slide
+// carousel fixed the reading but cost a whole row of arrows and dots and made
+// every fault wait its turn behind a timer. A ticker shows the queue as what it
+// is — a continuous run of events — in ONE row, with no controls at all.
+//
+// The track holds the items TWICE and slides exactly half its own width. At the
+// instant the first copy leaves, the second is where it started, so the loop has
+// no jump and no gap. The duplicate is `aria-hidden`: a screen reader gets the
+// queue once, not twice.
+//
+// Speed is per-instance, not fixed. `SECONDS_PER_FAULT` × the item count means
+// two faults do not crawl and twenty do not sprint — the rail always moves at
+// about a reading pace regardless of how loud the estate is.
+//
+// Hover or focus PAUSES it (CSS, on the rail, so it works without React), and
+// `prefers-reduced-motion` stops the animation entirely while turning the rail
+// into a normal horizontal scroller — the motion goes, no fault becomes
+// unreachable.
+const SECONDS_PER_FAULT = 9;
+
+function FaultTicker({ items }: { items: any[] }) {
+  const duration = Math.max(18, items.length * SECONDS_PER_FAULT);
+  const run = (dup: boolean) => (
+    // `min-w-full` is what makes the loop seamless when the estate is QUIET.
+    // With two faults the content is narrower than the rail, and a track sized
+    // to content would slide a gap through the frame every cycle. Floored at the
+    // rail's width, one run is always at least a full frame, so translating the
+    // track by half of itself lands the second run exactly where the first
+    // started — loud estate or quiet one.
+    <div
+      className={`flex min-w-full shrink-0 items-center gap-8 pr-8 ${dup ? "nb-ticker-dup" : ""}`}
+      aria-hidden={dup || undefined}
+    >
+      {items.map((row: any) => (
+        <FaultItem key={`${dup ? "d" : ""}${row.alert_id}`} row={row} />
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="nb-ticker-hold py-1">
+      <div className="nb-ticker-rail overflow-hidden">
+        <div
+          className="nb-ticker flex"
+          style={{ ["--nb-ticker-duration" as any]: `${duration}s` }}
+        >
+          {run(false)}
+          {run(true)}
         </div>
-        {/* The gateway's own sentence, verbatim. It is the one place the value
-            that tripped the rule is stated, and rewording it would be this
-            console asserting something it did not measure. */}
-        <p className="mt-1 text-[11.5px] leading-snug text-nb-soft">{row.message || "—"}</p>
       </div>
-      <div className="shrink-0 text-right">
-        <div className="text-[11px] text-nb-faint" title={row.ts}>
-          {fmtRelative(row.ts)}
-        </div>
-        {row.conn_slug && (
-          <div className="mt-0.5 font-mono text-[10.5px] text-nb-faint">{row.conn_slug}</div>
-        )}
-      </div>
-    </li>
+    </div>
   );
 }
 
@@ -145,41 +223,21 @@ export default function FaultQueue({ query, hours }: any) {
     );
 
   const items = data?.items || [];
-  const bySeverity = data?.by_severity || [];
+
+  // The counts now live in the section header (`FaultSeverity`). What is left
+  // here is the queue itself — or, when it is empty, the one sentence that says
+  // so. An empty queue is GOOD NEWS and is stated as such; it is not the same
+  // as the no-collector state above, which is silence.
+  if (!items.length)
+    return (
+      <p className="py-2 text-[11.5px] text-nb-good">
+        No fault was raised in the last {hours} hours.
+      </p>
+    );
 
   return (
     <>
-      <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-        {bySeverity.length ? (
-          bySeverity.map((s: any) => (
-            <SeverityChip key={s.severity ?? "_none"} severity={s.severity} count={s.alerts} />
-          ))
-        ) : (
-          <span className="text-[11.5px] text-nb-good">
-            No fault was raised in the last {hours} hours.
-          </span>
-        )}
-        {data?.total > items.length && (
-          <span className="ml-auto text-[11px] text-nb-faint">
-            showing {items.length} of {data.total}
-          </span>
-        )}
-      </div>
-
-      {items.length > 0 && (
-        <ul className="max-h-[420px] overflow-y-auto">
-          {items.map((row: any) => (
-            <FaultRow key={row.alert_id} row={row} />
-          ))}
-        </ul>
-      )}
-
-      <p className="mt-2.5 border-t border-nb-line/50 pt-2 text-[11px] leading-relaxed text-nb-faint">
-        Raised by the gateway and read from <span className="font-mono">iot_alerts</span>, over a
-        bounded {hours}-hour window. An alert carries no unit, no cost and no device category — the
-        wire does not say — so this queue counts and quotes, and converts nothing. Acknowledgement
-        happens in the gateway and is not published, so no acknowledgement state is shown.
-      </p>
+      <FaultTicker items={items} />
     </>
   );
 }

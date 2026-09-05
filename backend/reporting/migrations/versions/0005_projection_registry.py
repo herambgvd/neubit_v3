@@ -17,8 +17,9 @@ Nothing published. `neubit_reporting` is the one place data from several
 services is gathered for querying (builder contract §1) and the platform bans
 cross-service reads, so there is exactly one legal way in: a domain PUBLISHES on
 the bus and something consumes the bus and writes here. That something is the
-**reporting projector** (`backend/projector`), and this revision creates the
-table that tells it what to do.
+**projections consumer** — `backend/reading-writer/app/projections`, and
+`backend/projector` in its own container when this revision was written (folded
+in 2026-09-05) — and this revision creates the table that tells it what to do.
 
 REGISTRATION IS DATA — ALL THE WAY DOWN
 ---------------------------------------
@@ -44,12 +45,18 @@ projection needs, and if it did, "registration is data" would be false for the
 half that matters. So the split is:
 
     reporting-migrate  owns the IoT schema and THIS table.
-    reporting-projector owns every relation declared in THIS table.
+    the projections consumer owns every relation declared in THIS table.
+
+(That second line named the `reporting-projector` CONTAINER until 2026-09-05.
+The container is gone; the OWNERSHIP is not, and it is the ownership this split
+depends on — see the note on ensure.py below.)
 
 The projector's DDL is additive-only and every identifier in a spec is checked
 against `^[A-Za-z_][A-Za-z0-9_]*$` before it is quoted — the same allowlist the
 SQL generator uses. It creates, it adds columns and indexes, it never drops and
-never rewrites a column's type. See `backend/projector/app/ensure.py`.
+never rewrites a column's type. See `backend/reading-writer/app/projections/
+ensure.py` (`backend/projector/app/ensure.py` when this revision was written;
+the projector became a module of the reading-writer on 2026-09-05).
 
 THE SYNTHETIC FIXTURE GOES
 --------------------------

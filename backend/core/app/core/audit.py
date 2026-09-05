@@ -8,9 +8,11 @@ happens, and admins read the trail through ``GET /api/audit``.
 Design notes:
   * It is APPEND-ONLY — there is no update/delete endpoint. Tampering with an
     audit trail defeats its purpose.
-  * ``record`` takes the acting ``User`` (or None for system/anonymous actions)
-    and reads ``actor.id`` / ``actor.email`` DEFENSIVELY via getattr, so callers
-    can pass any user-like object (or None) without crashing.
+  * ``record`` takes the acting ``User``, an ``ApiKeyPrincipal`` (auth/deps.py),
+    or None for system/anonymous actions, and reads ``actor.id`` / ``actor.email``
+    DEFENSIVELY via getattr, so callers can pass any user-like object (or None)
+    without crashing. ``actor_type`` says WHICH of the three it was — a machine
+    credential's action must not read as a person's.
   * ``meta`` is a free-form JSON blob for action-specific context (old/new values,
     request ip, target name) — portable JSON so it works on Postgres and SQLite.
 """
@@ -50,6 +52,19 @@ class AuditLog(Base):
     # the email: the trail must stay readable after a rename or a delete. NULL for
     # system actions and for users who never set a full name (UI falls back to email).
     actor_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # WHAT KIND of actor: "user" | "apikey" | "system". Added 2026-09-05 with the
+    # scoped service credential, because until then the trail had no way to say
+    # that a row was written by a machine. The snapshot columns above cannot carry
+    # it: a key has no email, and a key NAMED "DashForge BI reader" landing in
+    # actor_name next to a person's name is a row that reads like a person with an
+    # odd name. An action taken by a credential and an action taken by a human are
+    # different facts and an audit trail that cannot distinguish them is not an
+    # audit trail. Non-null with a "user" default so every pre-existing row keeps
+    # exactly the meaning it had (the backfill in 0023 corrects the actor-less
+    # ones to "system").
+    actor_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="user", server_default="user"
+    )
     # --- multi-tenancy -----------------------------------------------------
     # The tenant this action belongs to (the actor's tenant at the time). NULL =
     # a platform/super-admin/system action. Tenant-admins only see their own rows.
@@ -87,6 +102,11 @@ async def record(
         actor_id=getattr(actor, "id", None),
         actor_email=getattr(actor, "email", None),
         actor_name=getattr(actor, "full_name", None) or None,
+        # No actor at all is a system action; anything else declares its own kind
+        # and defaults to "user". A ``User`` never sets ``audit_actor_type``, so
+        # every existing caller of this function keeps writing exactly the row it
+        # wrote before — the classification is additive, not a reinterpretation.
+        actor_type=("system" if actor is None else str(getattr(actor, "audit_actor_type", "user"))),
         # Stamp the actor's tenant so the trail is tenant-scoped. Super-admins (and
         # system/anonymous actions) have no tenant → NULL (platform scope).
         tenant_id=getattr(actor, "tenant_id", None),
@@ -111,6 +131,7 @@ class AuditLogOut(BaseModel):
     actor_id: uuid.UUID | None
     actor_email: str | None
     actor_name: str | None
+    actor_type: str
     action: str
     target_type: str | None
     target_id: str | None

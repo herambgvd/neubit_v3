@@ -38,6 +38,7 @@ def base_routers() -> list[APIRouter]:
     from .core.realtime_vms import realtime_vms_router
     from .core.realtime_wall import realtime_wall_router
     from .core.storage import files_router
+    from .dashforge import router as dashforge_router
     from .device_brands import router as device_brands_router
     from .infra import router as infra_router
     from .licensing import router as licensing_router
@@ -66,6 +67,7 @@ def base_routers() -> list[APIRouter]:
         module_catalog_router,
         device_brands_router,
         licensing_router,
+        dashforge_router,
         files_router,
         audit_router,
         system_router,

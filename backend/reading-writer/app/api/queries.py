@@ -155,8 +155,10 @@ _EXTENT_SQL = text(
 # classified and unclassified points — this deployment has exactly one
 # (`4F-5F Light DB`: six energy points and one the gateway never classified).
 #
-# The true last reading time comes from `points.last_seen_at` (the writer touches
-# it on ingest) rather than from a bucket start, which would round backwards.
+# The true last reading time comes from `points.last_seen_at` rather than from a
+# bucket start, which would round backwards. That column is the ts of a reading
+# the writer actually STORED — it used to be the arrival time of any message,
+# including a replayed one that stored nothing.
 _TOTALS_SQL = text(
     """
     SELECT count(DISTINCT coalesce(p.device_id::text, p.device_tag)) AS devices,
@@ -1095,10 +1097,12 @@ async def set_retired(
 
 # ── Faults & alerts ──────────────────────────────────────────────────────────
 #
-# `iot_alerts` is NOT part of this service's schema. It is created and written by
-# the reporting-projector from the `iot_alerts` row of `reporting_projections`
-# (builder contract §9), which is why nothing here declares it in
-# `reporting.models` and why the statements below are textual.
+# `iot_alerts` is NOT part of the readings schema. It is created and written by
+# `app.projections` from the `iot_alerts` row of `reporting_projections` (builder
+# contract §9), which is why nothing here declares it in `reporting.models` and
+# why the statements below are textual. Same process since 2026-09-05, still a
+# different owner — a projected relation reaching `reporting.models` would be the
+# first sign the fold-in blurred the two.
 #
 # Reading it from HERE, on the other hand, is exactly right: the reading-writer is
 # the ONE read path over the whole reporting store (pipeline contract §14). A
@@ -1200,8 +1204,8 @@ async def alerts(
         # Two shapes of "not collected yet", and they must not be told apart from
         # a real fault: the relation missing (no projection at all) and a COLUMN
         # missing (a projection older than migration 0011, which is legitimate —
-        # a spec is data and reaches a deployment on the projector's own clock,
-        # not on this service's). Either way the honest answer is "nothing is
+        # a spec is data and reaches a deployment on the registry's own reload
+        # clock, not on a release's). Either way the honest answer is "nothing is
         # collecting them here", not a 500 that reads as a broken screen.
         text_of = str(exc)
         if "does not exist" not in text_of or not (

@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from reporting.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import intake as intake_store
 from ..metric_registry import evaluator, registry
 from ..metric_registry import roles as role_store
 from ..metric_registry.roles import ROLE_DEFS
@@ -155,10 +156,21 @@ class ConfirmRolesRequest(BaseModel):
     field, same as units/confirm, and for the same reason. `role = null`
     CLEARS: the binding is deleted and the point is unbound again; a role an
     operator cannot take back would silently corrupt every metric through it.
+
+    `acknowledge_not_reporting` answers a REFUSAL and is never a default. The
+    binding this whole module exists to make honest was made WRONG once already:
+    `inlet_water_temp` / `outlet_water_temp` bound on `4F Khem Chiller02` to
+    points named `IWT` / `OWT`, while the device publishes `4FKC2_IWT` /
+    `4FKC2_OWT`. The confirmation succeeded, the metric refused `no_data`, and
+    nobody could see why for days. A role on a point carrying no readings is now
+    challenged, with the device's reporting points named — and an operator who
+    knows the address is right and the device merely offline says so HERE, per
+    request, so it cannot be switched on once and forgotten.
     """
 
     point_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
     role: str | None = Field(default=None, max_length=64)
+    acknowledge_not_reporting: bool = False
 
 
 @metrics_router.get("/roles", dependencies=[Depends(require_permission(PERM_READ))])
@@ -202,6 +214,17 @@ async def confirm_roles(db: Db, scope: Caller, who: Who, body: ConfirmRolesReque
             f"role `{body.role}` is not in the vocabulary "
             f"({', '.join(sorted(ROLE_DEFS))})"
         )
+    challenged: list[dict] = []
+    if body.role is not None:
+        # Clearing is never guarded: a binding on a point that never reported is
+        # exactly the one that most needs removing.
+        challenged = await intake_store.guard_confirmable(
+            db,
+            _tenant(scope),
+            point_ids=body.point_ids,
+            acknowledged=body.acknowledge_not_reporting,
+            what="role",
+        )
     actor = _actor(who)
     updated = await role_store.confirm_roles(
         db, _tenant(scope), point_ids=body.point_ids, role=body.role, actor=actor,
@@ -213,4 +236,5 @@ async def confirm_roles(db: Db, scope: Caller, who: Who, body: ConfirmRolesReque
         "role": body.role,
         "role_source": None if body.role is None else "operator",
         "confirmed_by": None if body.role is None else actor,
+        "confirmed_not_reporting": challenged,
     }
