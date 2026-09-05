@@ -876,8 +876,12 @@ That is not enough and the failure was ugly: on the first customer install every
 container was up and healthy, the console answered perfectly, and the installer
 had already printed "The console did not answer within six minutes" and exited 1
 — telling an engineer on a customer's site that a completed install had failed.
-The stack has 15 containers and a first boot that builds the whole schema from
-the ORM metadata before uvicorn binds a port.
+The stack has 16 long-running containers — 18 services in docker-compose.yml,
+two of which (`db-init`, `reporting-migrate`) run once and exit — and a first
+boot that builds the whole schema from the ORM metadata before uvicorn binds a
+port. (It said 15 until 2026-09-05. The number is not decorative here: it is the
+reader's basis for judging whether the timeout below is generous, and it has
+moved twice as services were added and then folded away.)
 
 So: wait longer, say what is happening while waiting, and when it does time out
 ASK THE STACK before pronouncing. A console that has not answered yet is not the

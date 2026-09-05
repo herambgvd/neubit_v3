@@ -92,15 +92,24 @@
 .scroll-none::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Dashboard builder — overrides for the two third-party stylesheets the module
-   imports (`react-grid-layout/css/styles.css` and `react-resizable/css/styles.css`,
-   pulled in by features/dashboards/GridCanvas.tsx).
+   DEAD AS OF 2026-09-03 — every `.react-grid-*` / `.react-resizable-*` rule down
+   to the reduced-motion block below.
 
-   They are the one part of the ported grid that arrives with a look of its own:
-   a light-grey resize handle drawn as a background-image data URI, a red-tinted
-   placeholder, and CSS transitions on every tile. Left alone they read as another
-   product's chrome sitting inside this console, so they are re-pointed at the
-   navy tokens here rather than fought with `!important` at the call site.
+   They were overrides for the two third-party stylesheets NeuBit's own dashboard
+   builder imported (`react-grid-layout/css/styles.css` and
+   `react-resizable/css/styles.css`, pulled in by features/dashboards/GridCanvas.tsx),
+   re-pointed at the navy tokens so another product's chrome would not show through.
+   That builder was retired on 2026-09-03: `features/dashboards/` is deleted, and
+   neither `react-grid-layout` nor `react-resizable` is a dependency of this app any
+   more. Nothing can emit these class names, so nothing here can match.
+
+   Left in place rather than deleted in the same breath as correcting this header —
+   a comment that lies and dead CSS that cannot fire are different sizes of problem,
+   and the second is somebody's deliberate call to make. What must not survive is
+   the header telling a reader that a live module depends on this block.
+
+   The `nb-*` keyframes further down are NOT dead: NeubitAuthShell and the BI
+   FaultQueue use them.
    ──────────────────────────────────────────────────────────────────────────── */
 
 /* The drop shadow of the tile being dragged. RGL sets `z-index: 3` and a
@@ -158,11 +167,15 @@
 .nb-ticker-hold:hover .nb-ticker,
 .nb-ticker-hold:focus-within .nb-ticker { animation-play-state: paused; }
 
-/* prefers-reduced-motion. RGL animates every tile's transform and its placeholder
-   by default and offers no option to stop; ECharts is handled in JS
-   (features/dashboards/charts/echarts.ts `motionOptions`), because a canvas
-   animation is not reachable from CSS at all. Both halves are needed — this rule
-   alone would leave the charts animating. */
+/* prefers-reduced-motion. The `.react-grid-*` selectors below are dead with the
+   rest of the builder's CSS (see the header above) — RGL is not installed. The
+   `nb-*` rules in this block are LIVE and are the reason it stays.
+
+   This paragraph used to end "ECharts is handled in JS
+   (features/dashboards/charts/echarts.ts `motionOptions`) … both halves are
+   needed — this rule alone would leave the charts animating." There is no echarts
+   dependency and no such file; the JS half it told you to go and check does not
+   exist, which is a worse errand than no note at all. */
 @media (prefers-reduced-motion: reduce) {
   .react-grid-item,
   .react-grid-item.cssTransforms,

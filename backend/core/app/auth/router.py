@@ -507,9 +507,12 @@ async def register_permissions(
 
     Service-to-service (a short-lived superadmin service token), idempotent, and
     additive only: a registration can never redefine a key the static catalog
-    already owns. The dashboard builder calls this with one key per registered
-    dataset, which is what makes "registration is data, not code" hold all the
-    way through to the role editor.
+    already owns. The caller today is the reading-writer
+    (``app/api/permsync.py``), pushing one key per dataset registered in
+    ``neubit_reporting.dashboard_datasets`` — which is what makes "registration is
+    data, not code" hold all the way through to the role editor. (This named "the
+    dashboard builder" until 2026-09-03; that service is retired, the registry it
+    read is not, and the reading-writer owns it.)
     """
     source = str(body.get("source") or "unknown")
     perms = body.get("permissions") or []

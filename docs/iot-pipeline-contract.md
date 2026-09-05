@@ -179,8 +179,10 @@ replay contract: an alert buffered before these fields existed replays from an
 Origin that has none of them and publishes none of them.
 
 Alerts remain events, not measurements: no row in `readings`, and the
-reading-writer's filter still excludes them. `reporting-projector` consumes them
-into `neubit_reporting.iot_alerts`.
+reading-writer's readings filter still excludes them. The PROJECTIONS half of the
+reading-writer (`backend/reading-writer/app/projections`) consumes them into
+`neubit_reporting.iot_alerts` — this said `reporting-projector` until 2026-09-05,
+when that container was folded in. Two writers, one process; see §22.
 
 **Known gap, both halves named.** `conn_id` is NOT `omitempty`, so a
 pre-Phase-C outbox row — which has only the wire slug — marshals it as `""`, and
@@ -251,9 +253,11 @@ steady state at ~530 B an envelope, so 1 GiB is on the order of two million dead
 letters: unreachable for a working system and a hard stop for a poison storm.
 AGE is the limit that will bind.
 
-**The DLQ is watched now (2026-09-01).** The projector runs a durable consumer
-on it (`backend/projector/app/dlq_watch.py`, durable `projector-dlq-watch`):
-counts by origin subject and refusal reason on the projector's `/stats`/`/metrics`
+**The DLQ is watched now (2026-09-01).** The projections half of the
+reading-writer runs a durable consumer on it
+(`backend/reading-writer/app/projections/dlq_watch.py`, durable
+`projector-dlq-watch` — the durable name is deliberately NOT renamed, see §22):
+counts by origin subject and refusal reason on the `projector_*` `/stats`/`/metrics`
 (`dlq_*` keys), the stream's live message count, and a `DEAD LETTER:` warning
 line per new arrival. Observation only — `EVENTS_DLQ` is limits-retention, so
 the watch's acks remove nothing; replay/purge stays a deliberate `nats` CLI
@@ -754,8 +758,10 @@ slightly wrong until it has one.
 > table above still describes exactly what each writes. See §22 for what was kept
 > and what one process had to be made to hold.
 
-The projector (`backend/projector`) is a sibling, not an extension: it copies this
-contract's §4 and §6 behaviours verbatim — durable pull consumer, batch on N rows
+The projections code (`backend/reading-writer/app/projections`, its own
+container `backend/projector` until 2026-09-05) is a sibling BOUNDARY, not an
+extension of the readings path: it copies this contract's §4 and §6 behaviours
+verbatim — durable pull consumer, batch on N rows
 or T ms, one INSERT per batch, `ON CONFLICT DO NOTHING` on a natural key, ack only
 after a durable write, NAK the whole batch on failure, pause the fetcher while the
 database is down, count malformed messages by reason — because those are

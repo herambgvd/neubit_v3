@@ -245,8 +245,10 @@ subject, the target relation and its columns, the rollups, and the
   publish, so using it would make a redelivery look like a new event.
 * **Backpressure is visible and per projection.** A single aggregate number would
   let a healthy access projection hide a fire projection failing every batch.
-  `/readyz` on the projector goes red for a refused projection too: a domain that
-  believes it is being collected and is not is the worst failure available here.
+  `/readyz` goes red for a refused projection too: a domain that believes it is
+  being collected and is not is the worst failure available here. (That readiness
+  endpoint was the projector's own until 2026-09-05; it is the reading-writer's
+  now, and the union reds when EITHER half is wedged.)
 * **DDL is additive only.** The projector creates tables, columns, indexes,
   hypertables and continuous aggregates; it never drops one, never drops a
   column, and never rewrites a column's type. A spec that would need any of those

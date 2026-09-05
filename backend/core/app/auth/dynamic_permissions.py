@@ -2,9 +2,12 @@
 
 `permissions.PERMISSIONS` is a python constant and is the authority on every key
 the code itself enforces. It cannot cover keys that do not exist at build time —
-and the dashboard builder's dataset registry creates exactly those: a domain
-registers a dataset with an INSERT into `neubit_reporting.dashboard_datasets` and
-names the permission needed to read it. If core has never heard of that key,
+and the dataset registry creates exactly those: a domain registers a dataset with
+an INSERT into `neubit_reporting.dashboard_datasets` and names the permission
+needed to read it. (This said "the dashboard builder's dataset registry". The
+builder was retired on 2026-09-03; the registry outlived it and the READING-WRITER
+owns it — `backend/reading-writer/app/api/permsync.py` is what POSTs these keys.
+The mechanism below is unchanged.) If core has never heard of that key,
 `PERMISSIONS.unknown()` refuses it on role create and **no role can grant it**.
 
 That is the bug the builder contract names: `ingest.read` / `ingest.manage` were

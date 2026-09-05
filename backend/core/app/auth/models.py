@@ -189,10 +189,11 @@ class PermissionRegistration(Base):
 
     The static catalog in ``permissions.py`` is the authority on anything the
     code itself enforces. This table is for keys the code cannot know at build
-    time — today, the per-dataset read permissions the dashboard builder's
-    registry declares: a dataset is registered with an INSERT into
-    ``neubit_reporting.dashboard_datasets`` and it names the permission required
-    to read it.
+    time — today, the per-dataset read permissions declared by the dataset
+    registry the READING-WRITER owns (it said "the dashboard builder's registry"
+    until 2026-09-03; the builder is retired, the registry outlived it): a dataset
+    is registered with an INSERT into ``neubit_reporting.dashboard_datasets`` and
+    it names the permission required to read it.
 
     Without this, such a key fails ``PERMISSIONS.unknown()`` on role create and no
     role can ever grant it — which is precisely the ``ingest.read`` bug the

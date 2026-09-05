@@ -1237,11 +1237,16 @@ async def dataset_values(
 async def query(db: Db, scope: Caller, who: Who, body: dict) -> QueryResult:
     """Execute ONE widget's BUILDER STATE and return its data.
 
-    This is the read path behind every dashboard widget. It lives here, not in the
-    dashboards service, for the same reason the rest of this router does: pipeline
-    contract §7 gives the readings schema one owner, and the owner serves its own
-    reads. The dashboards service stores widget definitions and never opens this
-    database.
+    This is the read path behind every widget that charts readings. It lives here
+    for the same reason the rest of this router does: pipeline contract §7 gives
+    the readings schema one owner, and the owner serves its own reads.
+
+    (Until 2026-09-03 that sentence read "it lives here, not in the dashboards
+    service … the dashboards service stores widget definitions and never opens
+    this database". There is no dashboards service now — NeuBit's own builder was
+    retired and DashForge is the authoring surface — but the argument is unchanged
+    and is what still keeps a second reader off this database: whoever holds a
+    widget's definition sends the SPEC here and does not query the store itself.)
 
     The body is a widget SPEC — a structured description of a dataset, some
     columns, an aggregate, a window and a resolution. **It is not SQL and there is
