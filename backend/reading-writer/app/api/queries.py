@@ -155,8 +155,10 @@ _EXTENT_SQL = text(
 # classified and unclassified points — this deployment has exactly one
 # (`4F-5F Light DB`: six energy points and one the gateway never classified).
 #
-# The true last reading time comes from `points.last_seen_at` (the writer touches
-# it on ingest) rather than from a bucket start, which would round backwards.
+# The true last reading time comes from `points.last_seen_at` rather than from a
+# bucket start, which would round backwards. That column is the ts of a reading
+# the writer actually STORED — it used to be the arrival time of any message,
+# including a replayed one that stored nothing.
 _TOTALS_SQL = text(
     """
     SELECT count(DISTINCT coalesce(p.device_id::text, p.device_tag)) AS devices,

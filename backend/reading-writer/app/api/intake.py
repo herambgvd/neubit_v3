@@ -17,27 +17,36 @@ that answered "what arrived this week and still means nothing to us".
 So: one read that ranks the unconfirmed backlog by whether the work is worth
 doing, and one guard that stops the assertion that cannot be true.
 
-`last_seen_at` IS NOT EVIDENCE OF A READING, AND THAT IS THE WHOLE TRAP
-----------------------------------------------------------------------
-`store.py` upserts the `points` row for every message in a batch and THEN
-inserts the readings with `ON CONFLICT DO NOTHING`. A message whose `(point_id,
-ts)` is already stored — a retained MQTT message replayed on every gateway
-reconnect, a source stuck republishing one timestamp — therefore moves
-`points.last_seen_at` to now() while inserting no reading and clearing
-`retired_at` on the way past.
+EVERYTHING HERE IS KEYED ON `max(readings.ts)`, AND STAYS THAT WAY
+------------------------------------------------------------------
+It was written that way because `points.last_seen_at` was not evidence of a
+reading at all: the writer upserted the dimension row for every message and THEN
+inserted the readings `ON CONFLICT DO NOTHING`, so a retained MQTT message
+replayed on reconnect — storing nothing, by design — dragged `last_seen_at` to
+now() and cleared `retired_at` on the way past. `4F Khem Chiller02 / IWT` carried
+`last_seen_at = 2026-09-05 08:27` against `max(readings.ts) = 2026-09-02 07:37`,
+which is how `inlet_water_temp` came to be bound to a tag the device had stopped
+publishing under.
 
-Measured on this estate the day this was written: `4F Khem Chiller02 / IWT` had
-`last_seen_at = 2026-09-05 08:27` and `max(readings.ts) = 2026-09-02 07:37`.
-Three days of "live" with no data behind it. `LIVE_POINT` reads `last_seen_at`,
-so that address counts as live, survives the retirement horizon, and offers
-itself for confirmation exactly like a working one — which is how a role gets
-bound to a tag the device stopped publishing under, and the metric then refuses
-`no_data` for a chiller that is running perfectly.
+THE WRITER WAS FIXED. `last_seen_at` is now the ts of a reading the writer
+actually stored, and only a reading that landed clears `retired_at`. This module
+still does not read that column, and the choice is deliberate:
 
-Everything here is therefore keyed on `max(readings.ts)`, the only fact that
-says a point CARRIED a value. It is read through the `readings` primary key
-`(point_id, ts)` as a backwards index scan per point — bounded by the number of
-points asked about, never by the number of readings.
+* The rows that were already inflated do not heal. Nothing can write a truthful
+  timestamp for a point that never reports again, so the three superseded Khem
+  addresses still carry their old `08:27` — the exact rows this surface exists to
+  expose. Keying on the column would hide them again.
+* `last_seen_at` is a DENORMALISATION, lagging by up to the writer's point-touch
+  interval and true only as long as one service keeps its promise.
+  `max(readings.ts)` cannot drift from the data because it IS the data, and a
+  surface whose entire job is to catch drift should not be the one place that
+  trusts a copy.
+* The guard refuses an assertion about a point with no data. That is a statement
+  about readings, so it reads readings.
+
+It is read through the `readings` primary key `(point_id, ts)` as a backwards
+index scan per point — bounded by the number of points asked about, never by the
+number of readings.
 
 THE FOUR STATES, AND WHY THE GRACE WINDOW EXISTS
 ------------------------------------------------
@@ -61,11 +70,13 @@ WHAT THIS MODULE DELIBERATELY DOES NOT DO
   device that are actually reporting, listed so the operator can see the
   spelling they may have meant — the same discipline as `units.suggest()`: read
   time, labelled, never stored, never chosen on their behalf.
-* It retires nothing. A dead address whose retained message still arrives has
-  its `retired_at` cleared by the next batch (`store.py`), so retiring it writes
-  a fact the writer erases minutes later. Being visible here is the honest
-  remedy; retirement is a statement about a point that has genuinely stopped
-  arriving.
+* It retires nothing, and now that is a choice rather than a constraint. It used
+  to be impossible — `store.py` cleared `retired_at` for any message, so retiring
+  a dead address wrote a fact the writer erased minutes later, invisibly. Since
+  only a stored reading clears it, retirement STICKS, and the eight addresses
+  listed here as SILENT can be retired for good. Which of them should be is an
+  operator's judgement about their building, not a rule this module gets to
+  apply on its own.
 """
 
 from __future__ import annotations

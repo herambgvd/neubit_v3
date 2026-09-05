@@ -783,10 +783,12 @@ async def intake(
     the addresses that have never carried a reading.
 
     `state` is the distinction that matters and it is keyed on
-    `max(readings.ts)`, NOT on `points.last_seen_at`: the writer touches the
-    dimension row for every message, including one whose `(point_id, ts)` is
-    already stored, so a retained message replayed on reconnect keeps a dead
-    address looking live indefinitely. `never_reported` is not "pending
+    `max(readings.ts)`, NOT on `points.last_seen_at`. The writer no longer
+    touches the dimension row for a message that stored nothing, but the rows it
+    already inflated cannot heal — a point that never reports again has no
+    truthful timestamp to write — and this is the surface those rows must show
+    up on. See `app/api/intake.py` for the rest of the argument.
+    `never_reported` is not "pending
     confirmation" — it is an address that does not exist, and it is the trap
     that turns a correct refusal into a metric nobody can explain.
 
