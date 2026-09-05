@@ -178,6 +178,39 @@ class CorePerm:
     # else. Deliberately SEPARATE from security.manage so the approver is a
     # distinct privileged role, not just whoever configures security.
     DUALAUTH_APPROVE = "dualauth.approve"
+    # --- Access control (doors, cardholders, credentials) ------------------
+    # Enforced by the `access` service (`backend/access/app/access/router.py`) at
+    # 12 route sites, and MISSING from this catalog until now — so no role could
+    # grant them and only a wildcard Administrator could reach access control at
+    # all. That is the same failure the Ingest note above records, and this is the
+    # eleventh time it recurred; `tests/test_permission_catalog.py` now walks every
+    # `require_permission` literal in the repo and fails on a key that is not here,
+    # so it cannot recur a twelfth.
+    ACCESS_READ = "access.read"
+    ACCESS_MANAGE = "access.manage"
+    # --- Workflow (SOPs, triggers, incidents, forms, notifications) --------
+    # Enforced by the `workflow` service across 21 distinct keys. Same story.
+    WORKFLOW_SOP_READ = "workflow.sop.read"
+    WORKFLOW_SOP_CREATE = "workflow.sop.create"
+    WORKFLOW_SOP_UPDATE = "workflow.sop.update"
+    WORKFLOW_SOP_DELETE = "workflow.sop.delete"
+    WORKFLOW_TRIGGER_READ = "workflow.trigger.read"
+    WORKFLOW_TRIGGER_CREATE = "workflow.trigger.create"
+    WORKFLOW_TRIGGER_UPDATE = "workflow.trigger.update"
+    WORKFLOW_TRIGGER_DELETE = "workflow.trigger.delete"
+    WORKFLOW_INSTANCE_READ = "workflow.instance.read"
+    WORKFLOW_INSTANCE_CREATE = "workflow.instance.create"
+    WORKFLOW_INSTANCE_UPDATE = "workflow.instance.update"
+    WORKFLOW_FORM_READ = "workflow.form.read"
+    WORKFLOW_FORM_CREATE = "workflow.form.create"
+    WORKFLOW_FORM_UPDATE = "workflow.form.update"
+    WORKFLOW_FORM_DELETE = "workflow.form.delete"
+    WORKFLOW_NOTIFICATION_READ = "workflow.notification.read"
+    WORKFLOW_NOTIFICATION_CREATE = "workflow.notification.create"
+    WORKFLOW_NOTIFICATION_UPDATE = "workflow.notification.update"
+    WORKFLOW_NOTIFICATION_DELETE = "workflow.notification.delete"
+    WORKFLOW_THREAT_LEVEL_READ = "workflow.threat_level.read"
+    WORKFLOW_THREAT_LEVEL_UPDATE = "workflow.threat_level.update"
     # --- Runtime permission registration (service-to-service) --------------
     # Lets a satellite publish the permission keys IT enforces into this catalog
     # so a role can grant them. Needed because the dashboard builder's datasets
@@ -275,6 +308,56 @@ PERMISSIONS.register(
     # --- Enterprise security ----------------------------------------------
     Permission(CorePerm.SECURITY_MANAGE, "Manage 2FA policy / LDAP / SSO", "Security"),
     Permission(CorePerm.DUALAUTH_APPROVE, "Approve four-eyes requests", "Security"),
+    # --- Access control ----------------------------------------------------
+    Permission(
+        CorePerm.ACCESS_READ,
+        "View doors, cardholders and access events",
+        "Access control",
+        "Read the access-control estate served by the access service — the "
+        "integration layer in front of DDS, IDCube, Spectra and the rest.",
+    ),
+    Permission(
+        CorePerm.ACCESS_MANAGE,
+        "Configure access control",
+        "Access control",
+        "Register controllers, map doors, and issue or revoke cardholder "
+        "credentials. Separate from access.read because opening a door and "
+        "deciding who may open it are different jobs.",
+    ),
+    # --- Workflow ----------------------------------------------------------
+    Permission(CorePerm.WORKFLOW_SOP_READ, "View SOPs", "Workflow"),
+    Permission(CorePerm.WORKFLOW_SOP_CREATE, "Create SOPs", "Workflow"),
+    Permission(CorePerm.WORKFLOW_SOP_UPDATE, "Edit SOPs", "Workflow"),
+    Permission(CorePerm.WORKFLOW_SOP_DELETE, "Delete SOPs", "Workflow"),
+    Permission(CorePerm.WORKFLOW_TRIGGER_READ, "View triggers", "Workflow"),
+    Permission(CorePerm.WORKFLOW_TRIGGER_CREATE, "Create triggers", "Workflow"),
+    Permission(CorePerm.WORKFLOW_TRIGGER_UPDATE, "Edit triggers", "Workflow"),
+    Permission(CorePerm.WORKFLOW_TRIGGER_DELETE, "Delete triggers", "Workflow"),
+    Permission(CorePerm.WORKFLOW_INSTANCE_READ, "View incidents", "Workflow"),
+    Permission(CorePerm.WORKFLOW_INSTANCE_CREATE, "Raise incidents", "Workflow"),
+    Permission(
+        CorePerm.WORKFLOW_INSTANCE_UPDATE,
+        "Act on incidents",
+        "Workflow",
+        "Advance a running incident through its SOP: transition state, complete "
+        "form steps, acknowledge and close.",
+    ),
+    Permission(CorePerm.WORKFLOW_FORM_READ, "View workflow forms", "Workflow"),
+    Permission(CorePerm.WORKFLOW_FORM_CREATE, "Create workflow forms", "Workflow"),
+    Permission(CorePerm.WORKFLOW_FORM_UPDATE, "Edit workflow forms", "Workflow"),
+    Permission(CorePerm.WORKFLOW_FORM_DELETE, "Delete workflow forms", "Workflow"),
+    Permission(CorePerm.WORKFLOW_NOTIFICATION_READ, "View notification config", "Workflow"),
+    Permission(CorePerm.WORKFLOW_NOTIFICATION_CREATE, "Create notification config", "Workflow"),
+    Permission(CorePerm.WORKFLOW_NOTIFICATION_UPDATE, "Edit notification config", "Workflow"),
+    Permission(CorePerm.WORKFLOW_NOTIFICATION_DELETE, "Delete notification config", "Workflow"),
+    Permission(CorePerm.WORKFLOW_THREAT_LEVEL_READ, "View site threat levels", "Workflow"),
+    Permission(
+        CorePerm.WORKFLOW_THREAT_LEVEL_UPDATE,
+        "Change site threat level",
+        "Workflow",
+        "Raise or lower a site's threat posture. It changes which triggers fire, "
+        "so it is a separate key from viewing it.",
+    ),
     # --- Runtime permission registration -----------------------------------
     Permission(
         CorePerm.PERMISSION_REGISTER,

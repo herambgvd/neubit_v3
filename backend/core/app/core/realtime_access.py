@@ -45,6 +45,8 @@ from fastapi.responses import StreamingResponse
 from ..auth.security import decode_token
 from .logging import get_logger
 from .shutdown import SSE_SHUTDOWN_FRAME, next_sse_frame
+from ..auth.permissions import CorePerm
+from .sse_auth import authorize_stream
 
 log = get_logger("edge.realtime.access")
 
@@ -144,6 +146,13 @@ async def access_events_stream(
     frames whose payload ``instance_id`` matches are forwarded.
     """
     claims = _principal_or_401(request, token)
+    # Authentication is not authorization. This stream carries door and cardholder events,
+    # whose REST equivalents are permission-gated; without this line any
+    # authenticated user with no permissions at all received the live feed.
+    # authorize_stream also re-reads the user and the tenant from the
+    # database rather than trusting the token's claims, because a stream
+    # outlives a suspension in a way a single request does not.
+    await authorize_stream(claims, CorePerm.ACCESS_READ)
     tenant_id = claims.get("tenant_id")
     is_superadmin = bool(claims.get("is_superadmin", False))
 

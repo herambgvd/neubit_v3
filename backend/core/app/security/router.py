@@ -202,7 +202,12 @@ async def list_dual_auth(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(get_current_user),
 ) -> Page[DualAuthRequestOut]:
-    stmt = SecurityService(db).list_dual_auth_query(scope_of(actor), status)
+    # An approver sees the tenant's queue; everyone else sees only what they
+    # raised themselves.
+    can_approve = actor.role is not None and actor.role.grants(CorePerm.DUALAUTH_APPROVE)
+    stmt = SecurityService(db).list_dual_auth_query(
+        scope_of(actor), status, only_own_of=None if can_approve else actor.id
+    )
     return await paginate(db, stmt, params, item_model=DualAuthRequestOut)
 
 
@@ -212,7 +217,10 @@ async def get_dual_auth(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(get_current_user),
 ) -> DualAuthRequestOut:
-    req = await SecurityService(db).get_dual_auth(scope_of(actor), req_id)
+    can_approve = actor.role is not None and actor.role.grants(CorePerm.DUALAUTH_APPROVE)
+    req = await SecurityService(db).get_dual_auth(
+        scope_of(actor), req_id, only_own_of=None if can_approve else actor.id
+    )
     return DualAuthRequestOut.model_validate(req)
 
 
@@ -259,8 +267,19 @@ async def consume_dual_auth(
     A satellite service (vision) calls this with the core JWT it verified, passing
     the ``action``/``target_id`` it is about to perform. Returns the consumed row on
     success, or 4xx if not approved / mismatched / already used.
+
+    Restricted to the person who RAISED the request. It used to accept any
+    authenticated user in the tenant, with the ids coming from an equally open
+    listing — so a bystander could BURN an approval granted for someone else's
+    operation, and the real holder would find it already used.
+
+    Not gated on ``dualauth.approve``: the consumer is the operator doing the work,
+    and requiring them to be an approver as well would collapse both halves of
+    four-eyes into one person.
     """
-    req = await SecurityService(db).check_and_consume(scope_of(actor), action, target_id, req_id)
+    req = await SecurityService(db).check_and_consume(
+        scope_of(actor), action, target_id, req_id, actor_id=actor.id
+    )
     await audit_record(
         db, actor=actor, action="dualauth.consume", target_type="dual_auth_request",
         target_id=str(req.id), meta={"action": action, "target_id": target_id},

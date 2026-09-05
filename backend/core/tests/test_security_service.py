@@ -252,10 +252,14 @@ async def test_dual_auth_action_mismatch_rejected(db):
 # --- directory/SSO role resolution is tenant-scoped ---------------------------
 #
 # `_role_by_name(name, tenant_id)` accepted a tenant_id and then queried on name
-# alone. Two failures, both on an ordinary SSO/LDAP login: a tenant's users could
-# be provisioned with ANOTHER tenant's role and permission list, and two tenants
-# naming a role the same thing turned `scalar_one_or_none()` into
-# MultipleResultsFound — a 500 on every sync and every SSO login.
+# alone, so where tenant A's group_role_map named a role only tenant B had, A's
+# LDAP and SSO users were provisioned with B's role and B's permission list.
+#
+# It would also have raised MultipleResultsFound on two tenants sharing a role
+# name — except `roles.name` carried a global UNIQUE, which made that impossible
+# and was itself the other half of the problem: the first tenant to create
+# "Analyst" took the name from everyone else. 0025 made names unique per tenant,
+# which is what the second test below now exercises.
 
 
 async def _role_in(db, name: str, perms: list[str], tenant_id):
@@ -288,7 +292,9 @@ async def test_role_lookup_never_borrows_another_tenants_role(db):
 
 
 async def test_role_lookup_survives_two_tenants_using_the_same_role_name(db):
-    """The 500. Both tenants call it "Analyst"; each must resolve to its own."""
+    """Both tenants call it "Analyst"; each must resolve to its own. Only possible
+    at all since 0025 — before it, the global unique on roles.name made this state
+    unreachable, which is why the borrowing bug above was the one that could fire."""
     from app.tenancy.models import Tenant
 
     ta = Tenant(name="A", slug="rl-c", status="active", features={}, limits={})

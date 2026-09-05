@@ -161,9 +161,12 @@ class SecurityService:
 
           * If tenant A's map named "Analyst" and only tenant B had a role by that
             name, A's users were provisioned with B's role and B's permission list.
-          * If two tenants both named a role "Analyst", `scalar_one_or_none()` raised
-            MultipleResultsFound — a 500 on every directory sync and every SSO login,
-            triggered by nothing more exotic than a common role name.
+          * `scalar_one_or_none()` would ALSO have raised MultipleResultsFound if two
+            tenants named a role the same thing. It could not, because `roles.name`
+            carried a global UNIQUE — and that constraint was itself the defect: the
+            first tenant to create "Analyst" took the name from every other tenant,
+            permanently. 0025 makes names unique per (tenant_id, name), which is
+            what makes this query need the filter rather than merely deserve it.
 
         The candidate set is now the tenant's own roles plus the shared system roles
         (tenant_id NULL), which is the same rule `AuthService._require_role` applies
@@ -394,11 +397,17 @@ class SecurityService:
         await self.db.refresh(req)
         return req
 
-    async def get_dual_auth(self, scope: Scope, req_id: uuid.UUID) -> DualAuthRequest:
+    async def get_dual_auth(
+        self, scope: Scope, req_id: uuid.UUID, *, only_own_of: uuid.UUID | None = None
+    ) -> DualAuthRequest:
         req = await self.db.get(DualAuthRequest, req_id)
         if req is None:
             raise NotFoundError("request not found")
         if not scope.is_platform and req.tenant_id != scope.tenant_id:
+            raise NotFoundError("request not found")
+        if only_own_of is not None and req.requested_by != only_own_of:
+            # NOT_FOUND, not FORBIDDEN — the id must not be confirmable by someone
+            # who cannot act on it, since the id is what `consume` takes.
             raise NotFoundError("request not found")
         return req
 
@@ -429,15 +438,34 @@ class SecurityService:
         return req
 
     async def check_and_consume(
-        self, scope: Scope, action: str, target_id: str | None, req_id: uuid.UUID
+        self,
+        scope: Scope,
+        action: str,
+        target_id: str | None,
+        req_id: uuid.UUID,
+        *,
+        actor_id: uuid.UUID | None = None,
     ) -> DualAuthRequest:
         """Verify a request is APPROVED + matches the action/target, then CONSUME it.
 
         This is the primitive a sensitive endpoint (in core OR vision) calls right
         before performing the action, so an approval can't be replayed for a
         different action or used twice.
+
+        `actor_id` is the caller performing the action, and it must be the person who
+        RAISED the request. Consume used to accept any authenticated user in the
+        tenant, with the ids coming from an equally open listing — so a bystander
+        could burn an approval granted for someone else's operation, and the real
+        holder would find it already used. It is deliberately not gated on
+        `dualauth.approve` instead: the consumer is the operator doing the work, and
+        making them an approver too would collapse the two halves of four-eyes into
+        one person.
         """
         req = await self.get_dual_auth(scope, req_id)
+        if actor_id is not None and req.requested_by != actor_id:
+            # NOT_FOUND for the same reason the tenant check above uses it: the id
+            # must not be confirmable by someone who cannot act on it.
+            raise NotFoundError("request not found")
         if req.status == "consumed":
             raise ConflictError("approval has already been used")
         if req.status != "approved":
@@ -455,10 +483,23 @@ class SecurityService:
         await self.db.refresh(req)
         return req
 
-    def list_dual_auth_query(self, scope: Scope, status: str | None = None):
+    def list_dual_auth_query(
+        self, scope: Scope, status: str | None = None, *, only_own_of: uuid.UUID | None = None
+    ):
+        """Pending four-eyes requests the caller may see.
+
+        `only_own_of` narrows the listing to a single requester's own rows. The
+        router passes it for a caller who cannot approve: the listing was
+        tenant-wide for every authenticated user, which published a running
+        inventory of the privileged operations the tenant is about to perform, and
+        the ids in it were the input to a `consume` that required nothing.
+        A requester still needs to watch their own request, so that stays.
+        """
         stmt = select(DualAuthRequest).order_by(DualAuthRequest.created_at.desc())
         if not scope.is_platform:
             stmt = stmt.where(DualAuthRequest.tenant_id == scope.tenant_id)
+        if only_own_of is not None:
+            stmt = stmt.where(DualAuthRequest.requested_by == only_own_of)
         if status:
             stmt = stmt.where(DualAuthRequest.status == status)
         return stmt
