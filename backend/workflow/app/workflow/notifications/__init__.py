@@ -10,6 +10,9 @@
     push_tokens.py the DB token resolver + pruner the push connector calls
     consumer.py    NATS notify.request / vms.popup → outbox rows
     jobs.py        the outbox dispatch drain (worker beat)
+    backlog.py     how much of the outbox is waiting and how much is LATE, as a
+                   whole-process gauge — the counterpart the drain has no way to
+                   report about itself
 
 BELONGS HERE: the whole path a message takes — composed, queued, delivered,
 retried. Before this package existed that path ran through five flat files, which

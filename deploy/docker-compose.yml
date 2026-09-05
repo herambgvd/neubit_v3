@@ -284,6 +284,21 @@ services:
     command: >
       bash -c "alembic upgrade head &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # Gated on /readyz, NOT /health. /health is liveness and answers 200 while the
+    # process is alive with Postgres, Redis and NATS all down -- which is exactly
+    # what it is for, and exactly why it is useless as a compose gate. /readyz
+    # actually asks the database, the Celery broker and each NATS durable, and
+    # answers 503 naming the one that failed. Before this, `docker compose ps`
+    # said `Up` for all three of these containers no matter what, so nothing could
+    # gate on service_healthy and a wedged service looked like a working one.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      # The API runs `alembic upgrade head` before uvicorn binds, so the grace
+      # period has to cover a migration on a cold database, not just a boot.
+      start_period: 90s
     networks: [neubit]
 
   workflow-worker:
@@ -295,8 +310,29 @@ services:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
     depends_on:
       redis: { condition: service_healthy }
-      workflow: { condition: service_started }
+      # service_HEALTHY, not service_started. The API container is the one that
+      # runs `alembic upgrade head`; "started" only means uvicorn's process
+      # exists, so the worker could begin sweeping against a schema that was
+      # still being migrated. There is now a probe that can express the
+      # difference, so express it.
+      workflow: { condition: service_healthy }
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"]
+    # The worker has no HTTP framework and should not grow one, but it has the
+    # failure mode that most needs a probe: task consumer cancelled or pool
+    # deadlocked, process perfectly alive, nothing executed. `celery inspect ping`
+    # cannot see that -- it is answered by the control consumer on a broadcast
+    # queue, a different consumer on a different queue from the one carrying work,
+    # so it says pong straight through the wedge (verified). So app/worker.py runs
+    # a stdlib probe server on :8000 whose /readyz reds when no task has COMPLETED
+    # within VE_WORKFLOW_WORKER_SILENCE_SEC. That is not a traffic gauge: the beat
+    # schedule publishes two sweeps a minute forever, so an estate with zero
+    # incidents still keeps this green.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks: [neubit]
 
   workflow-beat:
@@ -308,8 +344,19 @@ services:
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
     depends_on:
       redis: { condition: service_healthy }
-      workflow: { condition: service_started }
+      workflow: { condition: service_healthy }
     command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+    # Same server, the other half of the pair: beat's /readyz reds when nothing has
+    # been PUBLISHED within VE_WORKFLOW_BEAT_SILENCE_SEC. Two separate probes
+    # rather than one because a silent worker and a silent beat need different
+    # people looking at different logs, and the worker's reason string quotes
+    # beat's age precisely so it can point at this container instead of itself.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks: [neubit]
 
   # ── access-control (gates) service (Python / neubit kernel) ─────

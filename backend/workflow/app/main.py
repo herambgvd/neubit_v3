@@ -7,6 +7,11 @@ service api_prefix, and connects the event bus. The correlation engine
 the API process can optionally host the correlation consumer in-process by
 setting ``VE_WORKFLOW_INLINE_CORRELATION=1`` (default off).
 
+Three probe endpoints, unauthenticated and outside the api_prefix so an
+orchestrator can reach them: ``/health`` (liveness), ``/readyz`` (readiness — 503
+naming the failed dependency) and ``/metrics`` (Prometheus text). What each one
+means and why the first two are not one endpoint is written in ``app/probes.py``.
+
 Run:   uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
 
@@ -18,6 +23,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from kernel.auth import (
     Principal,
@@ -31,11 +37,19 @@ from kernel.config import get_settings
 from kernel.errors import register_error_handlers
 from kernel.events import subject
 
+from app import logs
+from app.probes import ApiProbes, CONSUMER_LAG_WARN, CONSUMER_SILENCE_SEC
+from app.workflow.runtime.consumers import ConsumerWatch
 from app.workflow.runtime.events import bus
 from app.workflow.router import routers as workflow_routers
 
-logging.basicConfig(level=logging.INFO)
+logs.configure("api")
 log = logging.getLogger("workflow")
+
+# What this process can say about itself. Populated during lifespan with a watch
+# per consumer it actually hosts — see ApiProbes for why "not hosted here" and
+# "hosted and healthy" are reported differently.
+probes = ApiProbes()
 
 # The correlation + notify consumers, when hosted in-process (opt-in). Held so
 # lifespan shutdown can close them cleanly.
@@ -57,20 +71,40 @@ async def lifespan(app: FastAPI):
     await subscribe_tenant_offboard(bus, database, durable="workflow-offboard")
     inline = os.getenv("VE_WORKFLOW_INLINE_CORRELATION", "").lower() in ("1", "true", "yes")
     if inline:
+        from app.workflow.correlation import engine as correlation_engine
         from app.workflow.correlation.engine import CorrelationEngine
 
         _correlation = CorrelationEngine()
         await _correlation.start()
+        # One watch per consumer, each naming its own durables, so /readyz can say
+        # WHICH feed stopped rather than that NATS is unhappy in general.
+        probes.add(ConsumerWatch(
+            _correlation.bus,
+            [f"{correlation_engine.DURABLE}-{p.split('.')[2]}"
+             for p in correlation_engine.SUBSCRIBE_PATTERNS],
+            label="correlation",
+            silence_limit_sec=CONSUMER_SILENCE_SEC, lag_warn=CONSUMER_LAG_WARN,
+        ))
         log.info("inline correlation consumer started")
     # The notify-request/vms.popup → outbox consumer rides the same inline flag (it
     # feeds the same connector framework). Separate opt-out via VE_WORKFLOW_INLINE_NOTIFY=0.
     if inline and os.getenv("VE_WORKFLOW_INLINE_NOTIFY", "1").lower() in ("1", "true", "yes"):
+        from app.workflow.notifications import consumer as notify_consumer
         from app.workflow.notifications.consumer import NotifyConsumer
 
         _notify = NotifyConsumer()
         await _notify.start()
+        probes.add(ConsumerWatch(
+            _notify.bus,
+            [f"{notify_consumer.DURABLE}-{p.split('.')[-1]}"
+             for p in notify_consumer.SUBSCRIBE_PATTERNS],
+            label="notify",
+            silence_limit_sec=CONSUMER_SILENCE_SEC, lag_warn=CONSUMER_LAG_WARN,
+        ))
         log.info("inline notify consumer started")
+    await probes.start_watches()
     yield
+    await probes.close()
     if _notify is not None:
         await _notify.close()
     if _correlation is not None:
@@ -94,9 +128,34 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # LIVENESS. Answers "is this process alive and running its own code", and
+    # touches NOTHING outside it. It must not consult the database, Redis or NATS:
+    # a liveness probe is a RESTART signal, and restarting a healthy API because
+    # Postgres blinked turns one outage into a restart loop on top of it.
     @app.get("/health")
     async def health() -> dict:
-        return {"status": "ok", "service": "workflow", "env": settings.env}
+        return {"status": "ok", "service": "workflow", "env": settings.env, "role": "api"}
+
+    # READINESS. Answers the different question "would work sent here get done",
+    # by actually asking the dependencies this process cannot work without, and
+    # returns 503 with a reason NAMING the one that failed. The old /health
+    # answered ok with all three of them down, which is what this splits apart.
+    # Keep them separate: a readiness failure means stop routing here, a liveness
+    # failure means restart, and one endpoint cannot mean both.
+    @app.get("/readyz")
+    async def readyz() -> JSONResponse:
+        ok, body = await probes.readiness()
+        return JSONResponse(status_code=200 if ok else 503, content=body)
+
+    @app.get("/metrics")
+    async def metrics() -> PlainTextResponse:
+        # One scrape covers all three parts of the service, each distinguishable:
+        # workflow_notifications_* (the outbox), workflow_consumer_*{consumer=,
+        # durable=} (the NATS feeds) and workflow_worker_*/workflow_beat_* (read
+        # back off the shared broker). A reader can tell WHICH is wedged.
+        return PlainTextResponse(
+            await probes.metrics(), media_type="text/plain; version=0.0.4"
+        )
 
     # Sample authed route — proves JWT verification + tenant scope work locally.
     @app.get(f"{settings.api_prefix}/workflow/whoami")
