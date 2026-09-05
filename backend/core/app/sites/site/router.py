@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...auth.deps import get_current_user, require_permission
 from ...auth.models import User
 from ...core.storage import get_storage
-from ...core.uploads import validate_image
+from ...core.uploads import read_capped, validate_image
 from ...db.base import get_db
 from ...tenancy.scope import Scope, get_scope
 from .schemas import (
@@ -259,7 +259,9 @@ async def upload_site_image(
     # This route already had the whitelist and the cap; the shared validator adds
     # the magic-number check, so a payload renamed to .png with a matching header is
     # refused here too, and all three upload routes now answer alike.
-    content = await file.read()
+    # read_capped, not file.read() — this route had the cap first, but it still
+    # measured a body it had already pulled into memory whole. See core/uploads.py.
+    content = await read_capped(file, field="Site image")
     content_type, ext = validate_image(content, file.content_type, field="Site image")
     tenant_seg = str(scope.tenant_id) if scope.tenant_id is not None else "platform"
     key = f"{tenant_seg}/sites/{site_id}/image/{uuid4().hex}{ext}"

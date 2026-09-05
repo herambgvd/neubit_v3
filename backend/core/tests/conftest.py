@@ -33,6 +33,14 @@ import pytest_asyncio
 os.environ.setdefault("VE_SECRETS_KEY", "test-secrets-key")
 os.environ.setdefault("VE_JWT_SECRET", "test-jwt-secret")
 
+# The rate limiter's default backend is Redis, and this suite runs with
+# `--network none`. Selecting the per-process window EXPLICITLY here is the point:
+# it means every other test in this suite gets the same limiter the old code had,
+# rather than each request quietly taking the fail-open path against a Redis that
+# is not there. test_rate_limit.py drives the Redis backend directly, against an
+# in-process double, so the shared-window behaviour is still under test.
+os.environ.setdefault("VE_RATE_LIMIT_BACKEND", "memory")
+
 # --- the shared kernel, for the ONE cross-package test in this suite ----------
 #
 # ``test_token_role_id.py`` asserts a two-sided contract: core MINTS the

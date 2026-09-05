@@ -46,7 +46,7 @@ from ..auth.security import decode_token
 from .logging import get_logger
 from .shutdown import SSE_SHUTDOWN_FRAME, next_sse_frame
 from ..auth.permissions import CorePerm
-from .sse_auth import authorize_stream
+from .sse_auth import StreamGuard, authorize_stream
 
 log = get_logger("edge.realtime.access")
 
@@ -153,6 +153,10 @@ async def access_events_stream(
     # database rather than trusting the token's claims, because a stream
     # outlives a suspension in a way a single request does not.
     await authorize_stream(claims, CorePerm.ACCESS_READ)
+    # …and again while the stream is open. A stream outlives a single request
+    # by design, so a revoked permission, a deactivated user or a suspended
+    # tenant would otherwise keep this feed alive until the token expired.
+    guard = StreamGuard(claims, CorePerm.ACCESS_READ)
     tenant_id = claims.get("tenant_id")
     is_superadmin = bool(claims.get("is_superadmin", False))
 
@@ -199,6 +203,12 @@ async def access_events_stream(
                     yield SSE_SHUTDOWN_FRAME
                     break
                 if kind == "keepalive":
+                    if not await guard.still_allowed():
+                        # The response body is the only thing left to refuse with —
+                        # the 200 was sent when the stream opened. End it; an
+                        # EventSource reconnects and gets a clean 401/403 then.
+                        yield "event: revoked\ndata: {}\n\n"
+                        break
                     yield ": keepalive\n\n"
                     continue
                 yield f"event: {ACCESS_EVENT_NAME}\ndata: {json.dumps(item)}\n\n"

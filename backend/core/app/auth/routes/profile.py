@@ -21,7 +21,7 @@ from ...core.errors import ValidationError
 from ...core.logging import get_logger
 from ...core.storage import get_storage
 from ...db.base import get_db
-from ...core.uploads import validate_image
+from ...core.uploads import read_capped, validate_image
 from ..deps import get_current_sid, get_current_user
 from ..models import User
 from ..schemas import (
@@ -56,7 +56,9 @@ async def upload_avatar(
 
     if not await SettingsService(db, user.tenant_id).get("allow_avatar_uploads"):
         raise ValidationError("Profile photo uploads are disabled by the administrator.")
-    data = await file.read()
+    # read_capped, not file.read(): this route is open to ANY authenticated user, so
+    # a bare read let anyone size core's next allocation. The cap now stops the read.
+    data = await read_capped(file, field="Profile photo")
     # The extension comes from the validated content type, never from the uploaded
     # filename. It used to be os.path.splitext(file.filename), so any authenticated
     # user could store `x.html` under /files — which is served with no auth at all

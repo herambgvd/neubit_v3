@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import User
+from ..core.uploads import read_capped
 from ..core.audit import record as audit_record
 from ..db.base import get_db
 from ..tenancy.deps import require_superadmin
@@ -22,6 +23,10 @@ from .client import OpsAgentClient
 
 # Mounted by create_app under the app's api_prefix, so the full path is
 # {api_prefix}/admin/infra/... (e.g. /api/v1/admin/infra/containers).
+#: Cap on an uploaded SQL dump. Large enough for a real control-plane backup,
+#: finite so a mis-selected file cannot decide the process's memory use.
+MAX_DUMP_BYTES = 512 * 1024 * 1024
+
 router = APIRouter(prefix="/admin/infra", tags=["admin", "infra"])
 
 
@@ -154,7 +159,12 @@ async def db_import(
     Destructive: the dump uses DROP ... IF EXISTS + recreate, so this overwrites
     current control-plane data. The UI gates it behind an explicit confirmation.
     """
-    sql = await file.read()
+    # Capped. A restore is super-admin-only and destructive by design, so the risk
+    # here is not malice but a wrong file: `await file.read()` on an unbounded
+    # upload let one mistaken selection — a disk image instead of a dump — decide
+    # how much memory the control-plane process allocates, on the one endpoint you
+    # least want to fall over mid-operation.
+    sql = await read_capped(file, MAX_DUMP_BYTES, field="SQL backup")
     actor_id = actor.id  # capture before we drop the session's identity map
     # Critical: this very request holds an AccessShareLock on `users` (from the
     # require_superadmin auth check) for the life of its DB transaction. The restore

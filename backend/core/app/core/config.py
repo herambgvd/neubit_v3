@@ -38,6 +38,21 @@ class Settings(BaseSettings):
     # Global per-IP request cap across the whole API (0 disables it). A coarse
     # brute-force / abuse backstop on top of the stricter per-login limit.
     rate_limit_global_per_minute: int = 600
+    # Where the rate-limit windows live: "redis" (shared by every worker and
+    # replica — the only correct answer for a deployment that scales) or "memory"
+    # (per process, so N workers means N times the configured cap). Defaults to
+    # redis; "memory" exists for the offline test suite and for a single-process
+    # install with no Redis, and core/ratelimit.py logs which one is in force at
+    # startup so the choice is never implicit.
+    rate_limit_backend: str = "redis"
+
+    # Networks whose `X-Forwarded-For` header may be believed. EMPTY means trust
+    # nothing and attribute a request to its socket peer — safe by default, and
+    # correct for a core exposed directly. Behind a gateway this must name the
+    # gateway's network or every request shares one rate-limit bucket; see
+    # core/client_ip.py for why the wrong fix (trusting the header from anyone) is
+    # worse than the problem.
+    trusted_proxy_cidrs: list[str] = []
     # Per-ACCOUNT brute-force lockout (complements the per-IP limit). Lock after
     # this many consecutive failed logins, for this many minutes (0 disables).
     lockout_max_attempts: int = 5
@@ -120,6 +135,28 @@ class Settings(BaseSettings):
     storage_backend: str = "local"            # "local" | "s3"
     storage_local_dir: str = "./data/storage"
     storage_base_url: str = "/files"          # public URL prefix for local files
+    # Key prefixes whose /files URLs must carry a SIGNATURE and an expiry.
+    #
+    # `/files/{key}` has no auth dependency and is routed publicly, which is right
+    # for an avatar or a logo: the key is unguessable uuid4 hex and a browser has to
+    # be able to load it from an <img>. It is wrong for a report export, which is
+    # the tenant's data behind a `report.export` permission — the download endpoint
+    # checked that permission and then handed back a PERMANENT url, so anyone who
+    # ever obtained the link kept the data forever and the gate was decorative.
+    #
+    # Keys under these prefixes get `?exp=&sig=` and are refused without a valid,
+    # unexpired signature. Deliberately a prefix rule and not "everything", because
+    # signing avatars would break every <img> the console renders.
+    signed_url_prefixes: list[str] = ["reports/"]
+    # How long a signed link stays valid. Short on purpose: the console fetches the
+    # url and follows it immediately, so this is a hand-off window, not a session.
+    signed_url_ttl_seconds: int = 300
+
+    # How often an OPEN SSE stream re-checks that its caller is still allowed.
+    # A stream outlives a single request by design, so without this a deactivated
+    # user or a suspended tenant keeps their live feed until the token expires.
+    # Polling, so this is the bound on how stale that authorization can be.
+    sse_revalidate_seconds: int = 60
     s3_endpoint: str | None = None            # e.g. http://minio:9000 (None = AWS)
     s3_region: str = "us-east-1"
     s3_bucket: str | None = None

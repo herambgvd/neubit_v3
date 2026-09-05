@@ -29,21 +29,37 @@ The check happens once, at connect, on a session opened and closed for it. It
 deliberately does NOT hold a database session for the life of the stream: these
 connections last hours and the pool does not.
 
-WHAT THIS DOES NOT DO is re-check mid-stream. A permission revoked after connect
-takes effect when the client reconnects or the token expires. Closing live streams
-on revocation needs a signal from the revoking path, which is a bigger change than
-this; it is written down here rather than left to be assumed.
+THE CHECK ALSO RUNS AGAIN WHILE THE STREAM IS OPEN, on the keepalive tick. It used
+to run once at connect, which left the window this whole module exists to close: a
+stream is an open pipe for the life of the token, so deactivating a user or
+suspending a tenant did nothing to the feed they already had. `StreamGuard` below
+re-runs the same check every `VE_SSE_REVALIDATE_SECONDS` and the relay ends the
+response when it fails.
+
+This is polling, not a signal from the revoking path, and the difference is a
+bounded delay: a revocation takes effect within one interval rather than instantly.
+A signal would be better and is a much larger change — it needs every path that
+deactivates a user, changes a role or suspends a tenant to publish something, in a
+process that may not be the one holding the socket. The bounded delay is written
+down here so the next person can see what was chosen and why, rather than finding a
+poll and assuming it was the only option considered.
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 
 from fastapi import HTTPException, status
 
 from ..auth.models import User
 from ..db import base as db_base
+from ..core.config import get_settings
+from ..core.logging import get_logger
 from ..tenancy.models import Tenant, effective_license_state
+
+
+log = get_logger("edge.sse")
 
 
 def _deny(code: str, message: str, status_code: int) -> HTTPException:
@@ -116,3 +132,46 @@ async def authorize_stream(claims: dict, *permissions: str) -> None:
                 f"missing permission(s): {', '.join(missing)}",
                 status.HTTP_403_FORBIDDEN,
             )
+
+
+class StreamGuard:
+    """Re-runs `authorize_stream` periodically for a stream that is already open.
+
+    Constructed after the initial check passes, and asked on each keepalive whether
+    the stream may continue. Returns False rather than raising: by then the response
+    has begun and its status code is long since sent, so the only honest way to
+    refuse is to end the body.
+
+    The interval is deliberately not "every tick" — the keepalive is 20 seconds and
+    a database round-trip per stream per 20 seconds is a cost with no matching
+    benefit. `VE_SSE_REVALIDATE_SECONDS` sets the real bound on how stale an open
+    stream's authorization can be.
+    """
+
+    def __init__(self, claims: dict, *permissions: str) -> None:
+        self._claims = claims
+        self._permissions = permissions
+        self._interval = float(get_settings().sse_revalidate_seconds)
+        self._checked_at = time.monotonic()
+
+    async def still_allowed(self) -> bool:
+        now = time.monotonic()
+        if now - self._checked_at < self._interval:
+            return True
+        self._checked_at = now
+        try:
+            await authorize_stream(self._claims, *self._permissions)
+            return True
+        except HTTPException as exc:
+            log.info(
+                "closing SSE stream for sub=%s: %s",
+                self._claims.get("sub"),
+                (exc.detail or {}).get("code") if isinstance(exc.detail, dict) else exc.detail,
+            )
+            return False
+        except Exception:
+            # A database blip must not silently drop every open stream in the
+            # estate. Keep the stream and try again next interval; the token's own
+            # expiry is still the outer bound.
+            log.warning("SSE revalidation failed to run; keeping the stream", exc_info=True)
+            return True

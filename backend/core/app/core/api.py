@@ -79,8 +79,11 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
     """Coarse per-IP request cap across the whole API (abuse backstop).
 
     Skips health/metrics/static so probes and dashboards are never throttled.
-    Single-process (in-memory window) — good enough as a first line of defence;
-    front with a shared store (Redis / edge proxy) for multi-worker deployments.
+    The window itself lives in Redis and is shared by every worker and replica
+    (core/ratelimit.py) — so this cap means the same number whether core runs one
+    uvicorn worker or eight, which it did not when the window was a per-process
+    dict. `hit` is a coroutine because that store is reached over the network and
+    this middleware is on the path of every single request.
     """
 
     def __init__(self, app, limit: int, skip_prefixes: tuple[str, ...]):
@@ -99,7 +102,7 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
 
         ip = request.client.host if request.client else "unknown"
         try:
-            hit(f"global:{ip}", self.limit, 60.0)
+            await hit(f"global:{ip}", self.limit, 60.0)
         except RateLimitError as exc:
             return JSONResponse(
                 status_code=429,
@@ -189,6 +192,14 @@ def create_app(
     prefix = settings.api_prefix
 
     _enforce_secrets(settings, log)
+
+    # Resolve the rate-limit backend ONCE, here, so which one is in force is a line
+    # in the startup log rather than something a reader has to infer from config.
+    # A per-process window is a legitimate choice for a single-worker install and a
+    # silent security downgrade for any other; it must never be reached by accident.
+    from .ratelimit import configure_rate_limiter
+
+    configure_rate_limiter(settings)
 
     license = load_license(settings)
     log.info("license: client=%s modules=%s", license.client, sorted(license.modules))

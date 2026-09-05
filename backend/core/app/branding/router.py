@@ -17,7 +17,7 @@ from ..auth.deps import require_permission
 from ..auth.models import User
 from ..auth.permissions import CorePerm
 from ..core.storage import get_storage
-from ..core.uploads import validate_image
+from ..core.uploads import read_capped, validate_image
 from ..db.base import get_db
 from ..tenancy.deps import optional_tenant_id
 from . import service
@@ -85,7 +85,9 @@ async def upload_logo(
     The uploaded file's extension is preserved so the served URL keeps a sensible
     content type; a random hex suffix keeps the key unique (cache-busts old logos).
     """
-    data = await file.read()
+    # read_capped, not file.read() — the 8 MiB cap has to stop the read, not report
+    # on it afterwards. See core/uploads.py.
+    data = await read_capped(file, field="Logo")
     # Extension from the validated content type, not from the uploaded filename —
     # see core/uploads.py. The served URL stays clean and cannot be made to end
     # in .html.

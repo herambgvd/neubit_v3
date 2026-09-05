@@ -32,10 +32,14 @@ from ..deps import require_permission
 from ..models import User
 from ..permissions import CorePerm
 from ..schemas import CloneUserIn, ConfirmPasswordIn, CreateUserIn, UpdateUserIn, UserOut
+from ...core.uploads import read_capped
 from ..service import AuthService
-
 from ._shared import _user_out
 from . import admin_router
+
+#: Cap on a user-import CSV. Generous — a real bulk import of tens of thousands of
+#: rows is a few megabytes — and finite, which is the whole point.
+MAX_IMPORT_BYTES = 16 * 1024 * 1024
 
 
 # --- users -------------------------------------------------------------------
@@ -167,7 +171,14 @@ async def import_users(
     the caller's role), ``send_invite`` (default true). When no password column is
     given, a random one is set and the user is invited to choose their own.
     """
-    raw = (await file.read()).decode("utf-8-sig", errors="replace")
+    # Capped, and it had NO cap at all before — `await file.read()` on an unbounded
+    # upload, then `.decode()` on the result, so a single request could allocate the
+    # body twice over. `user.manage` is a privileged permission, but "the caller is
+    # an admin" is not a reason to let one request decide how much memory the
+    # process uses.
+    raw = (await read_capped(file, MAX_IMPORT_BYTES, field="CSV")).decode(
+        "utf-8-sig", errors="replace"
+    )
     reader = csv.DictReader(io.StringIO(raw))
     scope = scope_of(actor)
     # Only offer roles the acting admin can actually assign (own-tenant + shared

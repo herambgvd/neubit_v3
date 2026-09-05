@@ -70,10 +70,13 @@ ALLOWED_UNAUTHENTICATED = {
     # /api/v1/files via base_routers — the same public blob route at a second
     # address, which this inventory is what found.
     ("GET", "/files/{key:path}"): (
-        "public blob serving. Content types come from a whitelist and non-raster "
-        "types are sent as attachments (core/storage.py); the keys are unguessable "
-        "uuid4 hex. Report exports under it are capability URLs — a known and "
-        "accepted weakness, recorded here rather than forgotten."
+        "public blob serving, and it has to be: an avatar or a logo is loaded from "
+        "an <img> with no token. What protects it is on both sides — content types "
+        "come from a whitelist and non-raster types are sent as attachments, keys "
+        "are unguessable uuid4 hex, and anything under `signed_url_prefixes` "
+        "(report exports) additionally requires an unexpired HMAC. That last one "
+        "used to be a permanent capability url: the download endpoint checked "
+        "`report.export` and then handed out a link that outlived the permission."
     ),
     ("GET", "/api/v1/realtime/access-events"): "SSE resolves its own principal; see core/sse_auth.py",
     ("GET", "/api/v1/realtime/incidents"): "SSE resolves its own principal; see core/sse_auth.py",

@@ -8,6 +8,11 @@ passed the client's own `content_type` through to storage. Upload `x.html`, read
 URL out of the response, send the link — script running on the platform origin, with
 the visitor's session.
 
+The size cap had the same shape of hole: it was measured after `await file.read()`
+had already turned the whole request body into one bytes object, so it named a limit
+without imposing one. Upload as much as you like; core allocates all of it and then
+tells you it was too big.
+
 These tests are written as the attack, not as the implementation: each one is a
 thing an assessor would try.
 """
@@ -130,6 +135,100 @@ async def test_empty_upload_is_refused(app, user):
     assert r.status_code in (400, 415), r.text
 
 
+# --- the cap has to STOP the read, not report on it --------------------------
+#
+# The 413 above passed against the broken implementation too, which is the point:
+# every route did `data = await file.read()` and let validate_image measure the
+# result, so the whole body was already one bytes object before the cap was ever
+# consulted. Any authenticated user could pick core's next allocation size. A
+# status-code assertion cannot tell the two implementations apart — these can,
+# because they count what the helper actually asked the file for.
+
+
+class _CountingFile:
+    """Stands in for Starlette's UploadFile and records what was pulled off it.
+
+    `read(-1)` returns everything, exactly as the real one does, so a helper that
+    does not pass a size gets the whole body and this fixture notices.
+    """
+
+    def __init__(self, size: int) -> None:
+        self._remaining = size
+        self.bytes_read = 0
+        self.read_sizes: list[int] = []
+
+    async def read(self, size: int = -1) -> bytes:
+        self.read_sizes.append(size)
+        take = self._remaining if size is None or size < 0 else min(size, self._remaining)
+        self._remaining -= take
+        self.bytes_read += take
+        return b"\x00" * take
+
+
+async def test_read_capped_abandons_an_oversized_upload_instead_of_buffering_it():
+    from app.core.errors import ValidationError
+    from app.core.uploads import MAX_IMAGE_BYTES, READ_CHUNK_BYTES, read_capped
+
+    oversized = _CountingFile(64 * 1024 * 1024)  # 8x the cap
+    with pytest.raises(ValidationError) as exc:
+        await read_capped(oversized, field="Profile photo")
+
+    assert exc.value.status_code == 413
+    # The property under test: it stopped. One chunk of overshoot is the allowance —
+    # the cap can only trip on a chunk that has already been read.
+    assert oversized.bytes_read <= MAX_IMAGE_BYTES + READ_CHUNK_BYTES
+    assert oversized.bytes_read < 64 * 1024 * 1024
+
+
+async def test_read_capped_never_asks_for_the_whole_file_at_once():
+    """`read(-1)` is the bug in one character. Every read must be bounded, or the
+    cap is decided after the allocation it was supposed to prevent."""
+    from app.core.errors import ValidationError
+    from app.core.uploads import READ_CHUNK_BYTES, read_capped
+
+    oversized = _CountingFile(64 * 1024 * 1024)
+    with pytest.raises(ValidationError):
+        await read_capped(oversized)
+
+    assert oversized.read_sizes, "nothing was read at all"
+    assert all(0 < n <= READ_CHUNK_BYTES for n in oversized.read_sizes), oversized.read_sizes[:5]
+
+
+async def test_read_capped_returns_a_body_that_fits_byte_for_byte():
+    """Chunking is only safe if it reassembles. A body spanning several chunks must
+    come back identical, or the fix trades a DoS for silent corruption."""
+    from app.core.uploads import READ_CHUNK_BYTES, read_capped
+
+    body = bytes(range(256)) * ((READ_CHUNK_BYTES * 3) // 256 + 7)  # not a chunk multiple
+
+    class _Body(_CountingFile):
+        async def read(self, size: int = -1) -> bytes:
+            start = self.bytes_read
+            chunk = await super().read(size)
+            return body[start : start + len(chunk)]
+
+    src = _Body(len(body))
+    assert await read_capped(src) == body
+    assert src.bytes_read == len(body)
+
+
+async def test_a_multi_chunk_image_still_round_trips_through_the_route(app, user):
+    """End to end, on the route any authenticated user can reach: an image larger
+    than one read chunk goes in and comes back out of /files unchanged."""
+    from app.core.uploads import READ_CHUNK_BYTES
+
+    png = PNG + bytes(range(256)) * (READ_CHUNK_BYTES * 3 // 256)
+    async with _client(app) as c:
+        r = await _post_avatar(c, user, "big-but-legal.png", png, "image/png")
+        assert r.status_code == 200, r.text
+        url = r.json()["avatar_url"]
+        assert url.endswith(".png"), url
+        served = await c.get(url)
+
+    assert served.status_code == 200, served.text
+    assert served.content == png
+
+
 # --- the serving side --------------------------------------------------------
 #
 # Validating uploads is only half. /files also serves report exports and whatever
@@ -186,3 +285,50 @@ async def test_files_responses_are_sandboxed_by_csp(app, user):
         r = await c.get("/files/does-not-exist.png")
     assert "sandbox" in r.headers["content-security-policy"]
     assert r.headers["x-content-type-options"] == "nosniff"
+
+
+# --- every upload path, not just the three that were audited -----------------
+#
+# The avatar/logo/site-image routes were fixed first because that is where the
+# stored-XSS work had already been done. `read_capped` then made it cheap to check
+# the rest, and there were three more: floor plans (a cap, consulted after the
+# read), the user-import CSV (no cap at all, and it decoded the whole body on top
+# of holding it), and the SQL restore (unbounded, on the one endpoint you least
+# want to fall over mid-operation).
+#
+# Asserted by reading the source rather than by posting a large body to each: the
+# property is "no route calls the unbounded form", and a per-route DoS test would
+# be slow, would only cover the routes someone remembered, and would pass on a
+# route that simply moved its unbounded read somewhere else in the same handler.
+
+
+def test_no_route_reads_an_upload_without_a_cap():
+    import pathlib
+    import re
+
+    app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
+    offenders = []
+    for path in app_dir.rglob("*.py"):
+        if path.name == "uploads.py":
+            continue  # defines read_capped and quotes the old call in its docstring
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            # Comments are skipped because the fixes QUOTE the old call to explain
+            # what was wrong with it, and a guard that flags its own explanation
+            # teaches people to delete the explanation.
+            if line.lstrip().startswith("#"):
+                continue
+            if re.search(r"await\s+file\.read\(\s*\)", line):
+                offenders.append(f"{path.relative_to(app_dir)}:{lineno}")
+    assert not offenders, (
+        "these read an uploaded file with no size cap — use core.uploads.read_capped:\n"
+        + "\n".join(f"  {o}" for o in offenders)
+    )
+
+
+def test_the_scan_can_actually_find_something():
+    """Guards the guard: a regex that matches nothing would make the test above
+    pass forever, which is the failure mode it exists to prevent elsewhere."""
+    import re
+
+    assert re.search(r"await\s+file\.read\(\s*\)", "    content = await file.read()")
+    assert not re.search(r"await\s+file\.read\(\s*\)", "await read_capped(file, LIMIT)")

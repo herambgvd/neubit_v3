@@ -196,3 +196,114 @@ async def test_a_suspended_tenant_cannot_open_a_stream(app, db):
 
     # And over HTTP, so the refusal is what a client actually sees.
     assert await _status(app, "/realtime/vms-events", _auth(user)) == 403
+
+
+# --- the stream is re-checked while it is open -------------------------------
+#
+# The initial check ran once, at connect. A stream is an open pipe for the life of
+# the token, so deactivating a user or suspending a tenant did nothing to the feed
+# they already had — which is the same window `require_tenant_active` closes for
+# REST, left open on the surface where it lasts longest.
+
+
+@pytest_asyncio.fixture
+async def always_revalidate(monkeypatch):
+    """Interval 0, so every call re-checks. The real default is 60s; a test that
+    waited for it would be a test nobody runs."""
+    from app.core import config
+
+    monkeypatch.setenv("VE_SSE_REVALIDATE_SECONDS", "0")
+    config.get_settings.cache_clear()
+    yield
+    config.get_settings.cache_clear()
+
+
+async def test_a_guard_keeps_a_still_valid_stream_open(app, db, always_revalidate):
+    from app.core.sse_auth import StreamGuard
+
+    role = await make_role(db, "Watcher-ok", ["vms.camera.read"])
+    user = await make_user(db, "watch-ok@x.io", role)
+    guard = StreamGuard({"sub": str(user.id)}, "vms.camera.read")
+    assert await guard.still_allowed() is True
+
+
+async def test_a_guard_closes_a_stream_whose_user_was_deactivated(app, db, always_revalidate):
+    from app.core.sse_auth import StreamGuard
+
+    role = await make_role(db, "Watcher-deact", ["vms.camera.read"])
+    user = await make_user(db, "watch-deact@x.io", role)
+    guard = StreamGuard({"sub": str(user.id)}, "vms.camera.read")
+    assert await guard.still_allowed() is True  # control
+
+    user.is_active = False
+    await db.commit()
+    assert await guard.still_allowed() is False
+
+
+async def test_a_guard_closes_a_stream_whose_permission_was_revoked(app, db, always_revalidate):
+    from app.core.sse_auth import StreamGuard
+
+    role = await make_role(db, "Watcher-revoked", ["vms.camera.read"])
+    user = await make_user(db, "watch-rev@x.io", role)
+    guard = StreamGuard({"sub": str(user.id)}, "vms.camera.read")
+    assert await guard.still_allowed() is True
+
+    role.permissions = []
+    await db.commit()
+    assert await guard.still_allowed() is False
+
+
+async def test_a_guard_closes_a_stream_whose_tenant_was_suspended(app, db, always_revalidate):
+    from app.core.sse_auth import StreamGuard
+    from app.tenancy.models import Tenant
+
+    tenant = Tenant(name="S", slug="guard-susp", status="active", features={}, limits={})
+    db.add(tenant)
+    await db.commit()
+    await db.refresh(tenant)
+    role = await make_role(db, "Watcher-susp", ["vms.camera.read"])
+    user = await make_user(db, "watch-susp@x.io", role)
+    user.tenant_id = tenant.id
+    await db.commit()
+
+    guard = StreamGuard({"sub": str(user.id)}, "vms.camera.read")
+    assert await guard.still_allowed() is True
+
+    tenant.status = "suspended"
+    await db.commit()
+    assert await guard.still_allowed() is False
+
+
+async def test_a_guard_does_not_recheck_before_its_interval(app, db, monkeypatch):
+    """A database round-trip per stream per keepalive is a cost with no matching
+    benefit, so the guard only re-checks every VE_SSE_REVALIDATE_SECONDS. Without
+    this test the interval could be silently ignored and everything above would
+    still pass."""
+    from app.core import config
+    from app.core.sse_auth import StreamGuard
+
+    monkeypatch.setenv("VE_SSE_REVALIDATE_SECONDS", "3600")
+    config.get_settings.cache_clear()
+    try:
+        role = await make_role(db, "Watcher-lazy", ["vms.camera.read"])
+        user = await make_user(db, "watch-lazy@x.io", role)
+        guard = StreamGuard({"sub": str(user.id)}, "vms.camera.read")
+        user.is_active = False
+        await db.commit()
+        # Deactivated, but the interval has not elapsed — still allowed, and that
+        # bounded staleness is the documented trade of polling over a signal.
+        assert await guard.still_allowed() is True
+    finally:
+        config.get_settings.cache_clear()
+
+
+async def test_every_relay_uses_the_guard():
+    """Four relays, four copies of the same loop. A guard wired into three of them
+    is the shape of bug this codebase keeps finding."""
+    import pathlib
+
+    core_dir = pathlib.Path(__file__).resolve().parents[1] / "app" / "core"
+    for name in ("realtime_vms.py", "realtime_wall.py", "realtime_access.py", "realtime_incidents.py"):
+        src = (core_dir / name).read_text()
+        assert "StreamGuard(" in src, f"{name} never constructs a guard"
+        assert "await guard.still_allowed()" in src, f"{name} never asks the guard"

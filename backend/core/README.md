@@ -141,8 +141,13 @@ with the extension taken from the whitelist rather than the filename
 images inline, SVG and PDF as `Content-Disposition: attachment`, everything else
 opaque. It used to use `mimetypes.guess_type` on the key, which answers `text/html`
 for a `.html` key, while the avatar route took its extension from the uploaded
-filename. Report exports under `/files` are permanent capability URLs; that is a
-known weakness, recorded in the route inventory rather than forgotten.
+filename.
+
+Report exports are the exception on that route: keys under `signed_url_prefixes`
+carry `?exp=&sig=` and are refused without an unexpired HMAC. They used to be
+permanent capability URLs — `GET /reports/{id}/download` checked `report.export`
+and then returned a link that outlived the permission, so the gate only ever
+covered the first fetch.
 
 **`/health` cannot fail and `/ready` can.** `/health` is a static dict with no
 dependency injected — it answers 200 with Postgres stopped. `/ready` asks the

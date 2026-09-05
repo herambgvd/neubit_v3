@@ -183,6 +183,20 @@ services:
       # Reach the privileged infra sidecar over the internal network (see ops-agent).
       OPS_AGENT_URL: ${OPS_AGENT_URL}
       OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
+      # The compose `neubit` bridge, which is where Traefik sits. Core only believes
+      # `X-Forwarded-For` from an address in here.
+      #
+      # It lives in this file and NOT in `.env`, deliberately: `.env` is gitignored,
+      # so a value set there is absent from every fresh checkout — and the failure is
+      # silent. Without it core attributes every external request to the GATEWAY's
+      # address, so the per-IP login cap applies to the whole deployment at once and
+      # ten requests a minute deny login to every user in the estate.
+      #
+      # Do NOT widen this to 0.0.0.0/0. Trusting the header from anyone lets a caller
+      # send a different value per request and get a fresh rate-limit bucket each
+      # time, which removes the cap instead of sharing it.
+      # See backend/core/app/core/client_ip.py.
+      VE_TRUSTED_PROXY_CIDRS: '["172.19.0.0/16"]'
     depends_on:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }

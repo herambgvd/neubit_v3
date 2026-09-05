@@ -105,3 +105,50 @@ def test_the_unauthenticated_features_fallback_is_not_registered():
         "the legacy signed-licence /features is registered; it is unauthenticated "
         "and returns the licence, limits and module list"
     )
+
+
+# --- the hub is closed by default --------------------------------------------
+#
+# `WS /realtime/{topic}` accepted ANY topic string from any authenticated user with
+# no permission check, behind a docstring calling that something that "can be
+# layered on later". `hub.broadcast` still has no callers, so there is no topic
+# whose meaning anyone has decided — which is exactly why the table is empty and
+# every subscription is refused, rather than every subscription being allowed.
+
+
+def test_no_topic_is_open_by_default():
+    """If this table ever grows an entry, it is because someone wrote a publisher
+    and decided what a subscriber must hold. An entry appearing without that is the
+    regression."""
+    from app.core.realtime import TOPIC_PERMISSIONS
+
+    for topic, permission in TOPIC_PERMISSIONS.items():
+        assert permission, f"topic {topic!r} is registered with no permission"
+
+
+def test_an_unknown_topic_is_refused_before_the_token_is_read():
+    """Closed with 1008 without touching the database. The check must come FIRST —
+    an unknown topic has nothing to authorize against, and doing it after auth
+    would cost two database reads to say no."""
+    import inspect
+
+    from app.core import realtime
+
+    src = inspect.getsource(realtime.realtime_ws)
+    topic_check = src.index("TOPIC_PERMISSIONS.get(topic)")
+    authorize = src.index("authorize_ws(ws, required)")
+    assert topic_check < authorize, "the topic check must run before authorization"
+
+
+def test_a_registered_topic_requires_its_permission():
+    """The wiring: the endpoint passes the table's value to authorize_ws, which
+    closes 4403 on a user whose role does not grant it."""
+    import inspect
+
+    from app.core import realtime
+
+    src = inspect.getsource(realtime.realtime_ws)
+    assert "required = TOPIC_PERMISSIONS.get(topic)" in src
+    assert "await authorize_ws(ws, required)" in src
+    # And it must not fall back to a bare authenticate: that was the bug.
+    assert "authenticate_ws(" not in src

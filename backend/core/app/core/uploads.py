@@ -23,7 +23,11 @@ So the rules live here and all three routes call them:
   * The extension is chosen from the whitelist, never read from the filename. The
     stored key therefore cannot carry ``.html``, ``.php`` or a traversal fragment
     no matter what was sent.
-  * There is a size cap, and it is enforced against the bytes already read.
+  * There is a size cap, and it is enforced WHILE reading — see ``read_capped``.
+    It used to be enforced only after ``await file.read()`` had already returned
+    the whole body as one ``bytes``, which is the one thing a size cap exists to
+    prevent: any authenticated user could make core allocate as much RAM as they
+    were willing to upload, and the 413 arrived after the damage.
 
 SVG is accepted because logos are SVG, and it is XML that can carry script. That is
 handled on the SERVING side (core/storage.py): non-raster types go out as
@@ -33,6 +37,8 @@ image does not execute.
 """
 
 from __future__ import annotations
+
+from typing import Protocol
 
 from .errors import ValidationError
 
@@ -59,6 +65,61 @@ _MAGIC: dict[str, tuple[bytes, ...]] = {
 
 #: 8 MiB, the cap the sites route already used.
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+#: How much is pulled off the upload per step. 64 KiB is a normal read size and it
+#: bounds the overshoot: at the moment the cap trips, at most one chunk beyond the
+#: limit has been handled, and that chunk is dropped rather than accumulated.
+READ_CHUNK_BYTES = 64 * 1024
+
+
+class _AsyncReadable(Protocol):
+    """What ``read_capped`` needs — Starlette's ``UploadFile`` satisfies it."""
+
+    async def read(self, size: int = -1) -> bytes: ...
+
+
+async def read_capped(
+    file: _AsyncReadable,
+    limit: int = MAX_IMAGE_BYTES,
+    *,
+    field: str = "File",
+) -> bytes:
+    """Read an upload into memory, refusing it the moment it passes ``limit``.
+
+    Every route used to do ``data = await file.read()`` and hand the result to
+    ``validate_image``, which then measured it. So the cap was consulted only after
+    the entire body had been materialised as one ``bytes`` object: a caller who
+    posted a 2 GiB "avatar" got their 413, and core got a 2 GiB allocation first.
+    The cheapest denial of service in the service, available to any authenticated
+    user on ``POST /auth/me/avatar``.
+
+    Reading in chunks and raising as soon as the running total exceeds the limit
+    means the process never holds more than ``limit + READ_CHUNK_BYTES``, whatever
+    was sent.
+
+    Deliberately NOT gated on ``Content-Length``. It is a client-supplied hint that
+    can lie or be absent under chunked transfer encoding, so it could never be the
+    only check — and here it would not even be an optimisation: FastAPI's multipart
+    parser has already consumed the request body by the time a route body runs (it
+    spools file parts over 1 MiB to a temp file, which is why the disk, not the
+    heap, absorbed the request until this point). The streaming cap is what stands
+    between an upload and core's memory, so it is the only check.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(READ_CHUNK_BYTES)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise ValidationError(
+                f"{field} must be {limit // (1024 * 1024)} MiB or smaller",
+                code="FILE_TOO_LARGE",
+                status_code=413,
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _looks_like_svg(data: bytes) -> bool:
@@ -87,6 +148,9 @@ def validate_image(data: bytes, content_type: str | None, *, field: str = "File"
         )
     if not data:
         raise ValidationError(f"{field} is empty", code="EMPTY_FILE", status_code=400)
+    # A backstop, not the enforcement point: by the time bytes are in hand the
+    # allocation has happened. The routes use read_capped() so that never gets far.
+    # This stays because it is free and it keeps validate_image correct on its own.
     if len(data) > MAX_IMAGE_BYTES:
         raise ValidationError(
             f"{field} must be {MAX_IMAGE_BYTES // (1024 * 1024)} MiB or smaller",

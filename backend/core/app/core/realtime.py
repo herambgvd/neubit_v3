@@ -26,7 +26,7 @@ from __future__ import annotations
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .logging import get_logger
-from .ws_auth import authenticate_ws
+from .ws_auth import authorize_ws
 
 log = get_logger("edge.realtime")
 
@@ -109,6 +109,20 @@ class RealtimeHub:
 hub = RealtimeHub()
 
 
+#: Topics this hub will accept a subscription for, and the permission each needs.
+#:
+#: EMPTY, and that is the state the endpoint is in: `hub.broadcast` has no callers
+#: anywhere in `backend/`, so there is no topic whose meaning anyone has decided.
+#:
+#: Closed by default rather than open by default, because the alternative is what
+#: was here — any authenticated user could subscribe to any topic string, and the
+#: docstring described the missing authorization as something that "can be layered
+#: on later". Whoever writes the first publisher would have had no reason to think
+#: the hub was not already gated. Now they cannot publish to a topic without first
+#: writing down, here, what a subscriber must hold to see it.
+TOPIC_PERMISSIONS: dict[str, str] = {}
+
+
 realtime_router = APIRouter(prefix="/realtime", tags=["realtime"])
 
 
@@ -121,22 +135,39 @@ async def realtime_ws(ws: WebSocket, topic: str) -> None:
     when the client goes away (WebSocketDisconnect) and can clean up its slot.
     Inbound messages from the client are ignored (this hub is server→client push).
 
-    Authenticated: the client passes its access token as ``?token=<access>`` on the
-    handshake (see edge.core.ws_auth). ``authenticate_ws`` closes the socket with 4401
-    and returns None for a missing/invalid token or an unknown/inactive user — we then
-    return before ``hub.connect``, so an unauthenticated client never joins the topic.
+    Authenticated AND authorized: the client passes its access token as
+    ``?token=<access>`` on the handshake (see edge.core.ws_auth). ``authorize_ws``
+    closes the socket with 4401 for a missing/invalid token or an unknown/inactive
+    user and 4403 for a valid one lacking the topic's permission, returning None in
+    both cases — we return before ``hub.connect``, so neither ever joins the topic.
 
     The socket is filed under the CALLER'S OWN tenant (see :func:`channel`), so the
-    topic string a client sends can never reach another tenant's subscribers. There
-    is still no per-topic PERMISSION check, and that is a real gap rather than a
-    resolved one — it is bounded today by there being no publisher at all
-    (``hub.broadcast`` has no callers in ``backend/``). Whoever writes the first
-    publisher decides what the topic means and should gate this endpoint with
-    ``authorize_ws`` at the same time.
+    topic string a client sends can never reach another tenant's subscribers.
+
+    And the topic must be one this process KNOWS: it has to appear in
+    ``TOPIC_PERMISSIONS`` with the permission a subscriber needs. That table is
+    empty, so every subscription is currently refused — which is correct, because
+    nothing publishes. It used to accept any string from any authenticated user
+    with no permission check at all, behind a docstring calling that something that
+    "can be layered on later"; closed-by-default means the first publisher has to
+    decide what its topic means before anyone can subscribe to it, instead of
+    inheriting an open hub.
     """
-    user = await authenticate_ws(ws)
+    required = TOPIC_PERMISSIONS.get(topic)
+    if required is None:
+        # 1008 POLICY_VIOLATION. Closed before the token is even looked at, because
+        # there is nothing to authorize against. Note this DOES tell an
+        # authenticated caller which topics exist — the set is a small, documented,
+        # non-secret table, so that is a fair trade for refusing an unknown topic
+        # cheaply rather than after two database reads.
+        await ws.close(code=1008)
+        return
+    # authorize_ws authenticates AND checks the permission, closing the socket
+    # itself (4401 / 4403) and returning None. Calling authenticate_ws first as
+    # well would decode the token and load the user twice for one handshake.
+    user = await authorize_ws(ws, required)
     if user is None:
-        return  # authenticate_ws already closed the socket (4401)
+        return
     key = channel(getattr(user, "tenant_id", None), topic)
     await hub.connect(ws, key)
     try:

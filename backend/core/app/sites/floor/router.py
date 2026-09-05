@@ -27,6 +27,7 @@ from ...auth.deps import require_permission
 from ...auth.models import User
 from ...core.errors import ValidationError
 from ...core.storage import get_storage
+from ...core.uploads import read_capped
 from ...db.base import get_db
 from ...tenancy.scope import Scope, get_scope
 from .floorplan_converter import MAX_FILE_SIZE, convert_floorplan, is_supported_format
@@ -181,13 +182,12 @@ async def _process_upload(file: UploadFile, *, scope: Scope, site_id: str) -> st
             code="UNSUPPORTED_FILE_TYPE",
             status_code=400,
         )
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise ValidationError(
-            f"File exceeds {MAX_FILE_SIZE // (1024 * 1024)}MB limit",
-            code="FILE_TOO_LARGE",
-            status_code=413,
-        )
+    # Streamed, not read-then-measured. This used to be `await file.read()` followed
+    # by a length check — a cap that was correct and useless, because the whole
+    # upload had already been materialised as one bytes object before anything
+    # looked at its length, so the 413 arrived after the allocation it existed to
+    # prevent. See core/uploads.read_capped.
+    content = await read_capped(file, MAX_FILE_SIZE, field="File")
     namespace = str(scope.tenant_id) if scope.tenant_id is not None else "platform"
     try:
         result = await convert_floorplan(

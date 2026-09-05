@@ -46,11 +46,22 @@ async def _user_out(user: User, active_sessions: int = 0) -> UserOut:
 
 
 def _client_ip(request: Request) -> str | None:
-    """Best-effort client IP: first X-Forwarded-For hop if proxied, else peer."""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else None
+    """The address recorded against a session, resolved the same way the rate
+    limiter resolves it.
+
+    It used to read `X-Forwarded-For` and believe it unconditionally, taking the
+    LEFTMOST hop — so the IP shown on "your active sessions" was whatever the client
+    said it was. Core's port 8000 is published in dev, and a request reaching the app
+    directly can set that header to anything, which makes a security-facing display
+    into a field the attacker fills in.
+
+    `client_ip` trusts the header only from a configured proxy and takes the
+    rightmost untrusted hop. See core/client_ip.py.
+    """
+    from ...core.client_ip import UNKNOWN, client_ip
+
+    resolved = client_ip(request)
+    return None if resolved == UNKNOWN else resolved
 
 
 async def _user_from_mfa_token(mfa_token: str, db: AsyncSession) -> User:

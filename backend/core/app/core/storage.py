@@ -28,7 +28,10 @@ Two backends ship here:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import time
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
@@ -49,6 +52,61 @@ def _encrypts(key: str) -> bool:
     prefixes = get_settings().encrypt_media_prefixes or []
     k = key.lstrip("/")
     return any(k.startswith(p) for p in prefixes)
+
+
+def _needs_signature(key: str) -> bool:
+    """Whether ``key`` may only be served with a valid, unexpired signature.
+
+    Same prefix shape as `_encrypts` above, and for a related reason: `/files/{key}`
+    has no auth dependency and is routed publicly. That is correct for an avatar or
+    a logo — the key is unguessable uuid4 hex and a browser must be able to load it
+    from an ``<img>`` with no token. It is wrong for a report export, which is the
+    tenant's own data sitting behind a `report.export` permission: the download
+    endpoint checked that permission and then returned a PERMANENT url, so the gate
+    only ever slowed down the FIRST fetch. Anyone who later obtained the link — a
+    chat message, a browser history, a proxy log, a shared screenshot — had the data
+    with no credential and no expiry.
+    """
+    prefixes = get_settings().signed_url_prefixes or []
+    k = key.lstrip("/")
+    return any(k.startswith(p) for p in prefixes)
+
+
+def _signing_key() -> bytes:
+    """A key for URL signatures, derived from — and NOT equal to — the secrets key.
+
+    Domain-separated with HMAC so that a signature and a Fernet token can never be
+    confused for one another, and so that a leaked signing key does not decrypt
+    stored credentials. Rotating `VE_SECRETS_KEY` invalidates outstanding links,
+    which is correct: they are minutes long.
+    """
+    return hmac.new(
+        get_settings().secrets_key.encode(), b"neubit:file-url-signature:v1", hashlib.sha256
+    ).digest()
+
+
+def sign_key(key: str, expires_at: int) -> str:
+    """The signature for ``key`` valid until ``expires_at`` (unix seconds)."""
+    payload = f"{key.lstrip('/')}\n{expires_at}".encode()
+    return hmac.new(_signing_key(), payload, hashlib.sha256).hexdigest()
+
+
+def signature_is_valid(key: str, exp: str | None, sig: str | None, *, now: float | None = None) -> bool:
+    """Whether ``sig`` authorises serving ``key`` right now.
+
+    Compared with `hmac.compare_digest` — a plain `==` on a hex digest leaks its
+    prefix through timing, and an attacker who can guess a signature byte at a time
+    does not need to guess the key at all.
+    """
+    if not exp or not sig:
+        return False
+    try:
+        expires_at = int(exp)
+    except (TypeError, ValueError):
+        return False
+    if (now if now is not None else time.time()) > expires_at:
+        return False
+    return hmac.compare_digest(sign_key(key, expires_at), sig)
 
 
 def _enc(key: str, data: bytes) -> bytes:
@@ -161,9 +219,22 @@ class LocalStorage(Storage):
         return self._path(key).is_file()
 
     async def url(self, key: str, expires: int = 3600) -> str:
-        # Local files are served by this app's files_router; the link is stable
-        # (no expiry concept on disk), so ``expires`` is ignored here.
-        return f"{self._base_url.rstrip('/')}/{key.lstrip('/')}"
+        """A URL a browser can GET.
+
+        For most keys this is a stable app URL: an avatar or a logo is loaded from
+        an ``<img>`` with no credential, and the unguessable key is what protects it.
+
+        For a key under `signed_url_prefixes` it carries an expiry and an HMAC, and
+        `serve_local_file` refuses it without one. ``expires`` is honoured for those
+        — it is a hand-off window, not a session, so the default comes from
+        `signed_url_ttl_seconds` rather than this argument's generic hour.
+        """
+        base = f"{self._base_url.rstrip('/')}/{key.lstrip('/')}"
+        if not _needs_signature(key):
+            return base
+        ttl = expires if expires != 3600 else get_settings().signed_url_ttl_seconds
+        expires_at = int(time.time()) + int(ttl)
+        return f"{base}?exp={expires_at}&sig={sign_key(key, expires_at)}"
 
 
 # --- S3 / S3-compatible backend ----------------------------------------------
@@ -315,7 +386,7 @@ files_router = APIRouter()
 
 
 @files_router.get("/files/{key:path}")
-async def serve_local_file(key: str):
+async def serve_local_file(key: str, exp: str | None = None, sig: str | None = None):
     """Stream a blob stored by the LOCAL backend.
 
     Uses ``{key:path}`` so slashes in the key (``crops/2026/x.jpg``) are captured.
@@ -324,7 +395,17 @@ async def serve_local_file(key: str):
 
     Protected (encrypt-at-rest) keys can't be streamed raw off disk — they're read
     through the backend so they're decrypted in memory before reaching the client.
+
+    Keys under `signed_url_prefixes` additionally require `?exp=&sig=` from
+    `LocalStorage.url`. That is what stops a report export being a PERMANENT
+    capability url: `GET /reports/{id}/download` checks `report.export` and then
+    hands out a link, and before this the link outlived the permission forever.
     """
+    if _needs_signature(key) and not signature_is_valid(key, exp, sig):
+        # NOT_FOUND, not FORBIDDEN, and deliberately the same answer as a missing
+        # file: a 403 here would confirm that this report exists, which is most of
+        # what an attacker holding a stale link wants to learn.
+        raise NotFoundError(f"object not found: {key}")
     storage = get_storage()
     # This route only makes sense for LocalStorage; guard defensively.
     if not isinstance(storage, LocalStorage):
