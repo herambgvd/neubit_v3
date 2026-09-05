@@ -5,7 +5,9 @@
   Claims are minimal — sub (user id), type, iat, exp. Permissions are NOT baked into
   the token; they're loaded fresh from the user's role each request, so a permission
   change takes effect immediately (no stale token).
-- API keys: high-entropy ``vz_...`` string; only its SHA-256 hash is stored.
+- API keys: high-entropy ``nbk_<id>_<secret>`` string; only its SHA-256 hash is
+  stored, and the ``nbk_<id>`` prefix — which carries no secret material — is the
+  handle used to look the row up.
 """
 
 from __future__ import annotations
@@ -220,12 +222,116 @@ def decode_token(token: str) -> dict:
     )
 
 
-# --- API keys --------------------------------------------------------------
+# --- Service API keys ------------------------------------------------------
+# A machine credential, and the reason it exists is worth stating where it is
+# minted: until 2026-09-05 the only credential this platform could give a peer
+# product was a USER'S EMAIL AND PASSWORD. DashForge holds one today
+# (NEUBIT_BI_USER / NEUBIT_BI_PASSWORD) because ``kernel.auth.verify_token``
+# accepts nothing but a login-minted access JWT. A password is the wrong shape
+# for a machine: it opens the console UI, it cannot be narrowed to "read BI",
+# revoking it means disabling a human account, and in the audit trail it is
+# indistinguishable from a person sitting at a keyboard.
+#
+# KEY LAYOUT — ``nbk_<8 hex id>_<43 char secret>``
+#
+# The two segments are separated deliberately. ``prefix`` (``nbk_`` + the id, a
+# fixed 12 characters) is stored in the clear, indexed, and shown in every
+# listing, so it is the handle an operator uses to recognise a key. The SECRET is
+# the rest and appears in no column: only ``sha256(whole key)`` is stored, so a
+# database dump does not yield a working credential.
+#
+# The id is hex on purpose — ``token_urlsafe`` emits ``-`` and ``_``, so a
+# variable-width split on the separator could cut inside a secret that happened
+# to contain one. Both segments are fixed width and the prefix is taken by slice,
+# never by ``split``.
+API_KEY_PREFIX = "nbk_"
+API_KEY_PREFIX_LEN = 12  # len("nbk_") + 8 hex id chars
+
+
 def generate_api_key() -> tuple[str, str, str]:
-    """Return (raw_key, prefix, sha256_hash). Show raw_key once; store the rest."""
-    raw = "vz_" + pysecrets.token_urlsafe(32)
-    return raw, raw[:11], hash_api_key(raw)
+    """Return (raw_key, prefix, sha256_hash). Show raw_key once; store the rest.
+
+    The old format was ``vz_`` + secret with the first 11 characters kept as the
+    prefix, i.e. the lookup handle was CARVED OUT OF THE SECRET and then printed
+    in the key list. It is replaced rather than kept alongside: two live formats
+    would mean two verification paths, and the branch that decides between them is
+    exactly where a fail-open gets written.
+    """
+    raw = f"{API_KEY_PREFIX}{pysecrets.token_hex(4)}_{pysecrets.token_urlsafe(32)}"
+    return raw, raw[:API_KEY_PREFIX_LEN], hash_api_key(raw)
+
+
+def api_key_prefix(raw: str) -> str | None:
+    """The lookup prefix of a presented key, or None if it is not one of ours.
+
+    Refusing an unrecognised shape HERE is what keeps the verifier's query from
+    ever running on attacker-chosen text, and it is the fail-closed half of the
+    contract: a caller that presents something that is not a NeuBit key gets the
+    same 401 as one that presents a wrong key, and no row is looked up at all.
+    """
+    if not raw or not raw.startswith(API_KEY_PREFIX):
+        return None
+    if len(raw) <= API_KEY_PREFIX_LEN or raw[API_KEY_PREFIX_LEN] != "_":
+        return None
+    return raw[:API_KEY_PREFIX_LEN]
 
 
 def hash_api_key(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+# The audience of a key-derived token. It is the TENANT realm and never
+# ``AUD_ADMIN``: a key is always bound to one tenant, so the cross-tenant /admin
+# API is closed to it at the realm level as well as by its scopes.
+def create_api_key_token(
+    key,
+    *,
+    features: dict | None = None,
+    limits: dict | None = None,
+    license_state: str | None = None,
+    tenant_status: str | None = None,
+) -> tuple[str, int]:
+    """Mint the short-lived access token an API key is exchanged for → (token, ttl_s).
+
+    THE SHAPE IS THE POINT. This returns an ordinary access token, claim for
+    claim, so every one of the nine services keeps verifying it with the code it
+    already runs — ``kernel.auth.verify_token`` is not touched, and neither is any
+    satellite. The key is a CORE-SIDE credential that buys a token; it is not a
+    second thing for a satellite to learn how to check. That is what makes this
+    additive: a service that never hears about API keys still enforces their
+    scopes correctly, because the scopes arrive in the claim it already reads.
+
+    Three claims differ from a login token, and each closes something:
+
+      * ``sub`` is the KEY's id, not a user's. Core's ``get_current_user`` loads a
+        ``users`` row by ``sub`` and 401s when there is none, so a key-derived
+        token cannot reach ``/auth/me``, the session endpoints, or anything else
+        on the interactive path. A key cannot sign in to the console because
+        there is no person for it to be.
+      * ``is_superadmin`` is hardcoded False and ``aud`` is hardcoded to the
+        tenant realm. Neither is read off the creating admin, so a super-admin
+        cannot mint a key that inherits their reach.
+      * ``act`` = "apikey" marks the token as machine-driven. Core reads it to
+        decide whether to resolve a key row, and it is what stamps
+        ``actor_type='apikey'`` on an audit entry.
+
+    ``permissions`` is the key's OWN scope list — never the creator's, never a
+    role's live set. A scope removed from the key stops being granted at the next
+    exchange; see ``AuthService.authenticate_api_key`` for the revocation window.
+    """
+    ttl_minutes = get_settings().api_key_token_ttl_minutes
+    ttl = dt.timedelta(minutes=ttl_minutes)
+    extra = {
+        "tenant_id": str(key.tenant_id) if getattr(key, "tenant_id", None) else None,
+        "is_superadmin": False,
+        "permissions": list(getattr(key, "scopes", None) or []),
+        "role_id": None,
+        "site_ids": [],
+        "features": dict(features or {}),
+        "limits": dict(limits or {}),
+        "license_state": license_state or "active",
+        "tenant_status": tenant_status or "active",
+        "aud": AUD_TENANT,
+        "act": "apikey",
+    }
+    return _encode(key.id, "access", ttl, extra=extra), int(ttl.total_seconds())

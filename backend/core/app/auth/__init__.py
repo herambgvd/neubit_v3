@@ -18,7 +18,7 @@ A feature module contributes permissions to the catalog:
     PERMISSIONS.register(Permission("camera.create", "Add cameras", "Cameras"))
 """
 
-from .deps import get_api_key, get_current_user, require_permission, user_has
+from .deps import ApiKeyPrincipal, get_current_user, require_permission, user_has
 from .models import ApiKey, Role, User
 from .permissions import PERMISSIONS, CorePerm, Permission, PermissionRegistry
 from .router import router
@@ -28,7 +28,7 @@ __all__ = [
     "router",
     "AuthService",
     "get_current_user",
-    "get_api_key",
+    "ApiKeyPrincipal",
     "require_permission",
     "user_has",
     "PERMISSIONS",

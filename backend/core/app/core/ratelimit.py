@@ -39,3 +39,22 @@ def login_rate_limit(request: Request) -> None:
     """FastAPI dependency: throttle login by client IP."""
     ip = request.client.host if request.client else "unknown"
     hit(f"login:{ip}", get_settings().rate_limit_login_per_minute, 60.0)
+
+
+def api_key_rate_limit(request: Request) -> None:
+    """FastAPI dependency: throttle the API-key exchange by client IP.
+
+    A SEPARATE BUCKET from login, deliberately. Both endpoints turn a secret into
+    a token and both need a brute-force floor, but sharing one budget makes them
+    each other's denial of service: a peer product re-exchanging on a schedule
+    would eat the login allowance for every human behind the same egress IP, and
+    one person fat-fingering their password would start failing a production
+    integration. Neither is a failure anyone would attribute to a rate limiter.
+
+    The allowance is higher than login's for the same reason it can be: the secret
+    is 256 bits of ``secrets.token_urlsafe`` rather than something a human chose,
+    so the limit exists to stop a flood, not to make guessing infeasible — that is
+    already true at any rate.
+    """
+    ip = request.client.host if request.client else "unknown"
+    hit(f"apikey:{ip}", get_settings().rate_limit_api_key_per_minute, 60.0)

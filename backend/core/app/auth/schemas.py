@@ -240,20 +240,59 @@ class SessionOut(BaseModel):
 
 # --- API keys ----------------------------------------------------------------
 class ApiKeyOut(BaseModel):
+    """A key as an operator sees it. THE SECRET IS NOT IN THIS MODEL and cannot be
+    added to it — ``key_hash`` is the only stored form of it. ``prefix`` is the
+    handle for recognising a key in a list, and it carries no secret material."""
+
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     name: str
+    description: str | None = None
     prefix: str
-    role: RoleOut
+    scopes: list[str] = []
+    # NULL on every key created since 2026-09-05 — a key's authority is ``scopes``.
+    # Kept in the response so a pre-scopes key still shows what it was cut from.
+    role: RoleOut | None = None
     is_active: bool
+    expires_at: dt.datetime | None = None
+    revoked_at: dt.datetime | None = None
+    created_by: uuid.UUID | None = None
     created_at: dt.datetime
     last_used_at: dt.datetime | None
 
 
 class ApiKeyCreateIn(BaseModel):
     name: str
-    role_id: uuid.UUID
+    description: str | None = None
+    # The permissions this key may exercise. Validated against the catalog AND
+    # against the creator's own set (AuthService._resolve_scopes).
+    scopes: list[str] = []
+    # LEGACY, and accepted only so the existing key page keeps working: the named
+    # role's permissions are SNAPSHOTTED into ``scopes`` at creation and the link
+    # is not kept. Ignored when ``scopes`` is given. Naming the Administrator role
+    # here is refused, because it would resolve to the wildcard.
+    role_id: uuid.UUID | None = None
+    expires_at: dt.datetime | None = None
 
 
 class ApiKeyCreatedOut(ApiKeyOut):
     key: str  # the raw key — returned ONCE at creation, never again
+
+
+class ApiKeyTokenIn(BaseModel):
+    """The exchange request: a raw key, and nothing else.
+
+    There is no ``scopes`` field to narrow the token with and no ``ttl``. Both
+    would be attacker-controlled inputs on an unauthenticated endpoint, and
+    neither buys anything the key row cannot already express."""
+
+    api_key: str
+
+
+class ApiKeyTokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    # Echoed so an integrator can see what the credential actually got without
+    # decoding the JWT — the commonest cause of a 403 nobody can explain.
+    scopes: list[str] = []
