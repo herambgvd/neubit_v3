@@ -16,8 +16,11 @@ Provider config is resolved the same way the other connectors resolve it:
 
 Credentials (FCM service-account JSON, APNs ``.p8`` signing key) are read from the
 channel config or env. Following the webhook connector's convention, secrets live
-in the channel ``config`` blob (there is no kernel Fernet helper available to this
-service; core owns secrets-at-rest). Everything provider-specific (``httpx``,
+in the channel ``config`` blob -- ENCRYPTED AT REST since ``kernel.secrets`` exists
+(this used to read "core owns secrets-at-rest", which was true of core's database
+and said nothing about this one, where the values actually sat). The connector sees
+plaintext because the dispatch job decrypts on the way in; it stores nothing.
+Everything provider-specific (``httpx``,
 ``google-auth``, ``PyJWT``, ``cryptography``) is LAZY-imported inside ``send`` so
 the worker boots and degrades gracefully when a credential/SDK is absent — a
 missing credential logs + no-ops (raises a clear ``RuntimeError`` the dispatch

@@ -53,6 +53,15 @@ class NotificationChannel(Base, _TenantTimestamped):
     + headers, WhatsApp API token, mobile-push app key, …). The connector registry
     (``app.workflow.notifications.connectors``) looks up the enabled channel of a given
     ``channel_type`` for the tenant at dispatch time.
+
+    THE COLUMN IS STILL PLAIN ``JSON`` AND THAT IS DELIBERATE: the credential FIELDS
+    inside it are encrypted, the routing fields are not (``secrets.py`` decides
+    which is which), so an encrypted value is just a string where a string already
+    was and no migration was needed to start writing them. Encryption happens in
+    ``service.py`` on write and decryption in ``jobs.py`` at dispatch; a value
+    written before any of that existed has no ``enc:v1:`` marker and is read back
+    as-is, so an upgrade does not orphan a live channel. Never hand this dict to a
+    response model or a log line without ``kernel.secrets.redact_fields``.
     """
 
     __tablename__ = "notification_channels"

@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ValidationError
+from kernel.secrets import encrypt_fields
+
+from .secrets import is_secret_path, restore_redacted
 
 from ..core.actor import actor_id as _actor_id
 from ..core.primitives import utcnow
@@ -75,9 +78,13 @@ class NotificationService:
         return row
 
     async def create_channel(self, body, *, actor) -> NotificationChannel:
+        # Credentials are encrypted BEFORE the row exists, not by a later sweep:
+        # anything that reaches the column in the clear has already been captured by
+        # every WAL segment, replica and nightly dump taken between the two.
+        config = encrypt_fields(self.scope.tenant_id, body.config, is_secret_path)
         row = NotificationChannel(
             tenant_id=self.scope.tenant_id, name=body.name, channel_type=body.channel_type,
-            config=body.config, is_enabled=body.is_enabled, is_default=body.is_default,
+            config=config, is_enabled=body.is_enabled, is_default=body.is_default,
             created_by=_actor_id(actor), updated_by=_actor_id(actor),
         )
         self.db.add(row)
@@ -95,7 +102,15 @@ class NotificationService:
 
     async def update_channel(self, channel_id: str, body, *, actor) -> NotificationChannel:
         row = await self._channel(channel_id)
-        for k, v in body.model_dump(exclude_none=True).items():
+        fields = body.model_dump(exclude_none=True)
+        if "config" in fields:
+            # Encrypt under the ROW's tenant, not the caller's: a super-admin (scope
+            # tenant_id None) editing a tenant's channel must not silently re-key it
+            # to the platform key, which would leave the worker unable to decrypt.
+            fields["config"] = encrypt_fields(
+                row.tenant_id, restore_redacted(fields["config"], row.config), is_secret_path
+            )
+        for k, v in fields.items():
             setattr(row, k, v)
         row.updated_by = _actor_id(actor)
         row.updated_at = utcnow()

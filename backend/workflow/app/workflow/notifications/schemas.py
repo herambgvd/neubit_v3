@@ -1,8 +1,18 @@
 """Notification template / channel / device-token request + response schemas.
 
-``ChannelPublic`` deliberately does not echo ``config`` back: that blob holds SMTP
-passwords and provider API tokens, and a read permission is not a credential-read
-permission.
+``ChannelPublic`` echoes ``config`` back with every CREDENTIAL FIELD REDACTED. The
+docstring here used to claim it did not echo config at all; ``from_row`` passed
+``config=r.config or {}`` straight through, so ``GET /workflow/notifications/channels``
+handed the SMTP password and every provider API token to anyone holding
+``workflow.notification.read`` -- a read permission is not a credential-read
+permission, and that was the widest of the two ways these secrets escaped.
+
+DELIBERATELY NOT dropping ``config`` from the response. The admin UI has to render
+the host, port, URL and TLS flag it is editing, and a channel whose config is
+invisible is a channel nobody can debug. The credential leaves; the routing stays.
+The redaction marker is also accepted BACK on update to mean "unchanged" -- see
+``notifications/secrets.py::restore_redacted``, which is what stops the UI from
+re-submitting the asterisks as the new password.
 """
 
 from __future__ import annotations
@@ -11,6 +21,10 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from kernel.secrets import redact_fields
+
+from .secrets import REDACTED, is_secret_path
 
 # ── Notification template / channel ────────────────────────────────────
 
@@ -93,7 +107,8 @@ class ChannelPublic(BaseModel):
     def from_row(cls, r) -> "ChannelPublic":
         return cls(
             channel_id=r.channel_id, name=r.name, channel_type=r.channel_type,
-            config=r.config or {}, is_enabled=r.is_enabled, is_default=r.is_default,
+            config=redact_fields(r.config or {}, is_secret_path, REDACTED) or {},
+            is_enabled=r.is_enabled, is_default=r.is_default,
             created_at=r.created_at, updated_at=r.updated_at,
         )
 

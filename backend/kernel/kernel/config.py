@@ -60,6 +60,15 @@ class Settings(BaseSettings):
     # minted by core verify here byte-for-byte (HS256).
     jwt_secret: str = "change-me-in-prod"
 
+    # --- Secrets at rest (kernel.secrets) ----------------------------------
+    # Master key for credentials a service stores in its OWN database (SMTP
+    # passwords, provider API tokens). Same env var, name and default as core's
+    # setting of the same name, so one `.env` keys both and neither invents its own
+    # convention. Additive: a service that encrypts nothing never reads it.
+    # ROTATING IT RE-KEYS EVERY TENANT — see kernel/secrets.py, where a value that
+    # no longer decrypts raises rather than being handed back as if it were plaintext.
+    secrets_key: str = "change-me-secret"
+
     # --- CORS (frontend origins) ------------------------------------------
     cors_origins: list[str] = ["http://localhost:3000"]
     # Default allows any http(s) origin so a service opens from the LAN without

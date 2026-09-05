@@ -21,11 +21,14 @@ from datetime import timedelta
 
 from sqlalchemy import or_, select
 
+from kernel.secrets import decrypt_fields
+
 from ..core.primitives import utcnow
 from ..runtime.session import task_session as _task_session
 from .connectors import registry
 from .connectors.base import DeliveryContext
 from .models import Notification, NotificationChannel
+from .secrets import is_secret_path
 
 log = logging.getLogger("workflow.notifications.jobs")
 
@@ -118,7 +121,16 @@ async def dispatch_notifications(limit: int = 50) -> int:
 
 
 async def _resolve_channel_config(session, note) -> dict:
-    """Find the tenant's enabled channel config for this notification's type."""
+    """Find the tenant's enabled channel config for this notification's type.
+
+    Credentials come out of the column encrypted and are decrypted HERE, at the last
+    possible point before a connector needs them, under the key of the tenant that
+    OWNS the row (``row.tenant_id``) -- which is the tenant the value was encrypted
+    under, and is not always the notification's own tenant (a NULL-tenant platform
+    channel serves rows that carry a tenant). The plaintext exists only inside the
+    ``DeliveryContext`` handed to one connector for one send; it is never written
+    back, never returned by the API and never logged.
+    """
     stmt = select(NotificationChannel).where(
         NotificationChannel.channel_type == note.channel_type,
         NotificationChannel.is_enabled.is_(True),
@@ -130,7 +142,9 @@ async def _resolve_channel_config(session, note) -> dict:
     else:
         stmt = stmt.where(NotificationChannel.tenant_id.is_(None))
     row = (await session.execute(stmt.limit(1))).scalars().first()
-    return (row.config or {}) if row else {}
+    if row is None:
+        return {}
+    return decrypt_fields(row.tenant_id, row.config or {}, is_secret_path) or {}
 
 
 # ── Notify consumer (long-running) ─────────────────────────────────────
