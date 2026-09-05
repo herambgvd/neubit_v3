@@ -1,6 +1,6 @@
 """Every route is authenticated unless this file says why not.
 
-Core has 218 API routes and every gate on them is per-route: a `Depends` in one
+Core has 216 API routes and every gate on them is per-route: a `Depends` in one
 handler's signature. Nothing checks that a new route has one. That is how
 `/security/dual-auth/{id}/consume` shipped taking nothing but a session, how four
 SSE streams shipped with authentication and no authorization, and how the legacy
@@ -18,7 +18,7 @@ reaches does not — the same reasoning as workflow's `test_route_permissions.py
 
 Note the router walk: this FastAPI version defers `include_router`, so `app.routes`
 holds `_IncludedRouter` wrappers rather than the routes themselves. Iterating it
-naively sees 43 of the 218 and every assertion below would be about the wrong 43 —
+naively sees 41 of the 216 and every assertion below would be about the wrong 41 —
 which is not hypothetical, it is the bug that let the `/features` fallback register.
 """
 
@@ -127,8 +127,8 @@ def _inventory():
 
 
 def test_the_walk_sees_the_whole_surface():
-    """`app.routes` holds deferred wrappers, so a naive iteration sees 43 of 218 and
-    every assertion below would be about the wrong 43. This is not a hypothetical —
+    """`app.routes` holds deferred wrappers, so a naive iteration sees 41 of 216 and
+    every assertion below would be about the wrong 41. This is not a hypothetical —
     it is the bug that let the unauthenticated /features fallback register."""
     rows = _inventory()
     assert len(rows) > 180, f"only walked {len(rows)} routes; the router walk is broken"
