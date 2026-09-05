@@ -35,7 +35,7 @@ plus two files at this level, both of which exist to be the ONE place something 
 listed:
 
     router.py       assembles the feature routers, in mount order
-    tables.py       imports every model module so Alembic sees all 14 tables
+    tables.py       imports every model module so Alembic sees all 13 tables
 
 The dependency graph is one-directional and must stay that way:
 ``core`` ← features ← ``instances`` ← ``correlation``. Nothing in ``sops``,
