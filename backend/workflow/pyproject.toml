@@ -24,7 +24,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+# aiosqlite is not optional for the suite: tests/conftest.py builds every DB-backed
+# test on an in-memory SQLite engine, so `pip install .[dev]` without it collects
+# fine and then fails every one of them at create_async_engine.
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "aiosqlite>=0.20"]
 # Mobile-push (PushConnector) provider SDKs — LAZY-imported in connectors/push.py so
 # the worker boots + degrades gracefully when absent. Install the `push` extra to
 # enable real delivery:
