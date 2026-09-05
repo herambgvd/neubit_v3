@@ -36,14 +36,14 @@ from kernel.auth import (
 from kernel.config import get_settings
 from kernel.errors import register_error_handlers
 from kernel.events import subject
+from kernel.logging import configure as configure_logging
 
-from app import logs
 from app.probes import ApiProbes, CONSUMER_LAG_WARN, CONSUMER_SILENCE_SEC
 from app.workflow.runtime.consumers import ConsumerWatch
 from app.workflow.runtime.events import bus
 from app.workflow.router import routers as workflow_routers
 
-logs.configure("api")
+configure_logging("workflow", "api")
 log = logging.getLogger("workflow")
 
 # What this process can say about itself. Populated during lifespan with a watch

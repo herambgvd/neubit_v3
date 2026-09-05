@@ -37,8 +37,14 @@ Celery signal:
 
 See app/probes.py and app/workflow/runtime/heartbeat.py for the windows and why.
 
-Run the worker:  celery -A app.worker.celery_app worker --loglevel=info
-Run beat:        celery -A app.worker.celery_app beat --loglevel=info
+LOGGING. Both processes configure ``kernel.logging`` at IMPORT and then claim
+Celery's ``setup_logging`` signal, which stops Celery hijacking the root logger.
+The consequence worth knowing: ``--loglevel`` on the command line (compose passes
+``--loglevel=info``) is now INERT -- verbosity is ``VE_LOG_LEVEL``, the same var
+the API reads, which is the point of having one of them.
+
+Run the worker:  celery -A app.worker.celery_app worker
+Run beat:        celery -A app.worker.celery_app beat
 """
 
 from __future__ import annotations
@@ -46,14 +52,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import beat_init, before_task_publish, task_postrun, worker_ready
+from celery.signals import (
+    beat_init,
+    before_task_publish,
+    setup_logging,
+    task_postrun,
+    worker_ready,
+)
 
 from kernel.config import get_settings
+from kernel.logging import configure as configure_logging
 
-from app import logs
 from app.probes import ProcessProbeServer
 from app.workflow.correlation import jobs as correlation_jobs
 from app.workflow.instances import jobs as instance_jobs
@@ -61,6 +74,38 @@ from app.workflow.notifications import jobs as notification_jobs
 from app.workflow.runtime import heartbeat
 
 log = logging.getLogger("workflow.worker")
+
+
+def _argv_role() -> str:
+    """worker | beat, read off the command line.
+
+    Neither Celery signal that could tell us this fires early enough. The pool
+    forks its children during worker startup, and a forked child inherits the
+    handlers its parent held AT THE FORK -- so configuring logging from
+    ``worker_ready`` (which is after it) reconfigures MainProcess only, and every
+    task line, which is the half anyone reads, keeps whatever Celery installed.
+    That is not hypothetical: it is what this service did until the log config
+    moved to kernel, and the worker's output stayed in Celery's own format while
+    the API's changed. The command line is the earliest thing that knows.
+    """
+    return "beat" if "beat" in sys.argv else "worker"
+
+
+# Configure at IMPORT, before Celery boots anything, so the pool's children fork
+# from a process that already has the right root handler.
+configure_logging("workflow", _argv_role())
+
+
+@setup_logging.connect
+def _keep_our_logging(**_kw) -> None:
+    """Claim Celery's logging setup and do nothing with it.
+
+    Connecting a receiver to ``setup_logging`` is Celery's documented way of
+    saying "I configure logging myself"; without it Celery hijacks the root
+    logger during worker/beat startup and replaces the handler installed above.
+    An empty body is the whole point -- the configuration already happened at
+    import, and this exists to stop it being undone.
+    """
 
 PROBE_PORT = int(os.getenv("VE_WORKFLOW_PROBE_PORT", "8000"))
 
@@ -118,7 +163,6 @@ def _arm(role: str, silence: float) -> None:
     if _probe is not None:
         return
     try:
-        logs.configure(role)
         _role = role
         heartbeat.arm(role)
         _probe = ProcessProbeServer(role, port=PROBE_PORT, silence_limit=silence)
