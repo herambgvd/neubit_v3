@@ -37,7 +37,6 @@ def base_routers() -> list[APIRouter]:
     from .core.realtime_incidents import realtime_incidents_router
     from .core.realtime_vms import realtime_vms_router
     from .core.realtime_wall import realtime_wall_router
-    from .core.storage import files_router
     from .dashforge import router as dashforge_router
     from .device_brands import router as device_brands_router
     from .infra import router as infra_router
@@ -69,7 +68,12 @@ def base_routers() -> list[APIRouter]:
         device_brands_router,
         licensing_router,
         dashforge_router,
-        files_router,
+        # files_router is NOT here. `create_app` already mounts it at the ROOT
+        # (`/files/{key}`), which is the path `LocalStorage.url()` builds and the
+        # only one the gateway routes. Listing it again gave the same public,
+        # unauthenticated blob route a second address under `/api/v1/files/…` —
+        # unused by anything, and a second surface to remember when hardening the
+        # first. Found by the route inventory in tests/test_route_inventory.py.
         audit_router,
         system_router,
         messaging_router,
