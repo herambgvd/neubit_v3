@@ -9,7 +9,7 @@ http:
     # services must sit ABOVE it (110 > 100) to peel off their more-specific
     # prefixes; everything else under `/api/` still falls through to core.
     #   ingest/workflow/access (110) — /api/v1/{ingest,workflow,access} (+ /ingest) FIRST
-    #   core       (100)      — /api/|/health|/metrics|/files ALWAYS win otherwise
+    #   core       (100)      — /api/|/health|/ready|/files ALWAYS win otherwise
     #   admin      (50)       — the admin.localhost host, for what core didn't claim
     #   frontend   (1)        — catch-all operator console (localhost + any host)
     tiles:
@@ -196,7 +196,26 @@ http:
     core:
       # NOTE: `/api/` (trailing slash) — a bare `/api` prefix also swallows frontend
       # routes like `/api-keys`. Backend endpoints are all under `/api/v1/...`.
-      rule: "PathPrefix(`/api/`) || PathPrefix(`/health`) || PathPrefix(`/metrics`) || PathPrefix(`/files`)"
+      #
+      # THIS FILE IS THE ONE THAT DECIDES. The core service also carries
+      # `traefik.http.routers.core.rule` labels in deploy/docker-compose.yml, and
+      # this file-provider router has the same name, so editing only the labels
+      # changes nothing that reaches a request. Keep the two in step; if they ever
+      # need to differ, delete one.
+      #
+      # `/ready` is routed so an external load balancer or orchestrator can probe
+      # the endpoint the docs point at. `/health` is `return {"status": "ok"}` with
+      # no dependency injected — it answers 200 with Postgres stopped, while every
+      # /api/v1 route 500s on get_db; `/ready` asks the database, redis and storage
+      # and answers 503 naming the one that failed. It was written, correct, and
+      # reachable by nothing.
+      #
+      # `/metrics` is NOT routed any more. It was public, unauthenticated and in the
+      # rate-limit skip list, publishing every route template in the platform to the
+      # internet — while nothing scrapes it, because this stack runs no Prometheus.
+      # It is still served on the container port, like the reading-writer's own
+      # probes described above.
+      rule: "PathPrefix(`/api/`) || PathPrefix(`/health`) || PathPrefix(`/ready`) || PathPrefix(`/files`)"
       service: core
       entryPoints: [web]
       priority: 100

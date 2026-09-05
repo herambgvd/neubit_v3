@@ -212,10 +212,34 @@ services:
     volumes:
       # Persist uploaded blobs across rebuilds — see the `corefiles` volume note.
       - corefiles:/app/data
+    # `/ready`, NOT `/health`. `/health` is `return {"status": "ok"}` with no
+    # dependency injected at all — it answers 200 with Postgres stopped, while every
+    # /api/v1 route 500s on get_db. `/ready` asks the database, redis and the storage
+    # backend and answers 503 naming the one that failed. It was written, correct,
+    # and consumed by NOTHING: this service had no healthcheck stanza and Traefik did
+    # not route the path, so every prober reported green through a total outage.
+    #
+    # start_period covers `migrate.sh` on a cold database, the same reason the
+    # workflow API's does.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 90s
     networks: [neubit]
     labels:
       - traefik.enable=true
-      - traefik.http.routers.core.rule=PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/metrics`) || PathPrefix(`/files`)
+      # `/ready` is routed so an external load balancer or orchestrator can probe the
+      # endpoint the docs point at.
+      #
+      # `/metrics` is NOT, and that is the change: it was public, unauthenticated,
+      # and in the rate-limit skip list, publishing every route template in the
+      # platform to the internet — while nothing scrapes it, because this stack has
+      # no Prometheus. It stays served on the container port, reachable from inside
+      # the network and from the dev-published 8000, exactly like the ops-agent's own
+      # probes further down this file.
+      - traefik.http.routers.core.rule=PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/ready`) || PathPrefix(`/files`)
       - traefik.http.routers.core.entrypoints=web
       - traefik.http.services.core.loadbalancer.server.port=8000
 

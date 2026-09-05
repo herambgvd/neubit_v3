@@ -4,6 +4,20 @@
 ``/ready``  = dependencies are actually reachable (DB, Redis, storage). Returns 503
               with a per-dependency breakdown when something is down, so orchestrators
               (k8s) don't route traffic to an instance that can't serve.
+
+THE ABOVE WAS TRUE ABOUT THE CODE AND FALSE ABOUT THE DEPLOYMENT, for a long time.
+`/ready` was correct, and reachable by NOTHING: Traefik's rule listed
+`/api`, `/health`, `/metrics` and `/files` and not `/ready`, and the `core` service
+had no `healthcheck:` stanza at all while its siblings did. So with Postgres stopped
+the only externally probeable endpoint answered `200 {"status":"ok"}` — it is a
+static dict with no dependency injected — while every `/api/v1/*` route 500ed on
+`get_db`. Every prober reported green through a total outage.
+
+Fixed in the deployment, not here: `gateway/dynamic/routes.yml` routes `/ready`
+(that file is the one that decides — the compose labels have the same router name
+and are shadowed by it), and `deploy/docker-compose.yml` gives core a healthcheck
+that consumes it. `/health` is deliberately left as-is: liveness and readiness are
+different questions and one endpoint cannot answer both.
 """
 
 from __future__ import annotations

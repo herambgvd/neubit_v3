@@ -27,6 +27,7 @@ from ..core.ratelimit import api_key_rate_limit, login_rate_limit
 from ..core.storage import get_storage
 from ..db.base import get_db
 from ..core.uploads import validate_image
+from ..tenancy.features import require_tenant_active
 from ..tenancy.scope import scope_of, scoped
 from .cookies import clear_refresh_cookie, set_refresh_cookie
 from .deps import (
@@ -75,6 +76,21 @@ from .schemas import (
 from .service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+#: The ADMIN surface of /auth — permissions, roles, users, API keys — split from the
+#: self-service surface (/me, /login, /logout, /refresh, 2FA) purely so it can carry
+#: `require_tenant_active`.
+#:
+#: A suspended tenant, or one past its licence grace window, must not keep managing
+#: users and minting API keys; but its people must still be able to sign in far
+#: enough to be TOLD they are suspended, and to sign out. One router could not
+#: express both, and app/app.py can only guard whole routers — so the split IS the
+#: distinction rather than a comment describing one.
+#:
+#: `/auth/token` (exchanging a raw API key for a JWT) stays on the self-service
+#: router: the token it returns is refused by every guarded route anyway, and
+#: failing at the point of use gives the caller the reason instead of a bare 401.
+admin_router = APIRouter(dependencies=[Depends(require_tenant_active())])
 
 
 def _now_utc() -> _dtmod.datetime:
@@ -493,7 +509,7 @@ async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_d
 
 
 # --- permission catalog (for the role editor UI) -----------------------------
-@router.get("/permissions")
+@admin_router.get("/permissions")
 async def permissions(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission(CorePerm.ROLE_READ)),
@@ -505,7 +521,7 @@ async def permissions(
     return {"groups": await dynamic_permissions.grouped(db)}
 
 
-@router.post("/permissions/registrations")
+@admin_router.post("/permissions/registrations")
 async def register_permissions(
     body: dict,
     db: AsyncSession = Depends(get_db),
@@ -531,7 +547,7 @@ async def register_permissions(
 
 
 # --- roles (dynamic RBAC) ----------------------------------------------------
-@router.post("/roles", response_model=RoleOut, status_code=201)
+@admin_router.post("/roles", response_model=RoleOut, status_code=201)
 async def create_role(
     data: CreateRoleIn,
     db: AsyncSession = Depends(get_db),
@@ -545,7 +561,7 @@ async def create_role(
     return role
 
 
-@router.get("/roles", response_model=Page[RoleOut])
+@admin_router.get("/roles", response_model=Page[RoleOut])
 async def list_roles(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),
@@ -558,7 +574,7 @@ async def list_roles(
     )
 
 
-@router.patch("/roles/{role_id}", response_model=RoleOut)
+@admin_router.patch("/roles/{role_id}", response_model=RoleOut)
 async def update_role(
     role_id: uuid.UUID,
     data: UpdateRoleIn,
@@ -573,7 +589,7 @@ async def update_role(
     return role
 
 
-@router.delete("/roles/{role_id}", status_code=204)
+@admin_router.delete("/roles/{role_id}", status_code=204)
 async def delete_role(
     role_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -586,7 +602,7 @@ async def delete_role(
 
 
 # --- users -------------------------------------------------------------------
-@router.post("/users", response_model=UserOut, status_code=201)
+@admin_router.post("/users", response_model=UserOut, status_code=201)
 async def create_user(
     data: CreateUserIn,
     db: AsyncSession = Depends(get_db),
@@ -643,7 +659,7 @@ async def _send_invite_email(db: AsyncSession, user: User) -> None:
         get_logger("auth").warning("invite email failed for %s", user.email, exc_info=True)
 
 
-@router.get("/users", response_model=Page[UserOut])
+@admin_router.get("/users", response_model=Page[UserOut])
 async def list_users(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),
@@ -661,7 +677,7 @@ async def list_users(
     return page
 
 
-@router.get("/users/export")
+@admin_router.get("/users/export")
 async def export_users(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.USER_READ)),
@@ -702,7 +718,7 @@ def _truthy(value: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-@router.post("/users/import")
+@admin_router.post("/users/import")
 async def import_users(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -758,7 +774,7 @@ async def import_users(
     return {"created": created, "skipped": skipped, "errors": errors[:20]}
 
 
-@router.get("/users/{user_id}", response_model=UserOut)
+@admin_router.get("/users/{user_id}", response_model=UserOut)
 async def get_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -772,7 +788,7 @@ async def get_user(
     return await _user_out(user, counts.get(user.id, 0))
 
 
-@router.patch("/users/{user_id}", response_model=UserOut)
+@admin_router.patch("/users/{user_id}", response_model=UserOut)
 async def update_user(
     user_id: uuid.UUID,
     data: UpdateUserIn,
@@ -793,7 +809,7 @@ async def update_user(
     return await _user_out(user)
 
 
-@router.delete("/users/{user_id}", status_code=204)
+@admin_router.delete("/users/{user_id}", status_code=204)
 async def delete_user(
     user_id: uuid.UUID,
     data: ConfirmPasswordIn,
@@ -815,7 +831,7 @@ async def delete_user(
 
 
 # --- admin account actions ---------------------------------------------------
-@router.post("/users/{user_id}/lock", response_model=UserOut)
+@admin_router.post("/users/{user_id}/lock", response_model=UserOut)
 async def lock_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -832,7 +848,7 @@ async def lock_user(
     return await _user_out(user)
 
 
-@router.post("/users/{user_id}/unlock", response_model=UserOut)
+@admin_router.post("/users/{user_id}/unlock", response_model=UserOut)
 async def unlock_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -847,7 +863,7 @@ async def unlock_user(
     return await _user_out(user)
 
 
-@router.post("/users/{user_id}/reset-mfa", response_model=UserOut)
+@admin_router.post("/users/{user_id}/reset-mfa", response_model=UserOut)
 async def reset_user_mfa(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -862,7 +878,7 @@ async def reset_user_mfa(
     return await _user_out(user)
 
 
-@router.post("/users/{user_id}/revoke-sessions", response_model=UserOut)
+@admin_router.post("/users/{user_id}/revoke-sessions", response_model=UserOut)
 async def force_sign_out_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -877,7 +893,7 @@ async def force_sign_out_user(
     return await _user_out(user, 0)
 
 
-@router.post("/users/{user_id}/clone", response_model=UserOut, status_code=201)
+@admin_router.post("/users/{user_id}/clone", response_model=UserOut, status_code=201)
 async def clone_user(
     user_id: uuid.UUID,
     data: CloneUserIn,
@@ -897,7 +913,7 @@ async def clone_user(
     return await _user_out(user)
 
 
-@router.post("/roles/{role_id}/clone", response_model=RoleOut, status_code=201)
+@admin_router.post("/roles/{role_id}/clone", response_model=RoleOut, status_code=201)
 async def clone_role(
     role_id: uuid.UUID,
     data: CloneRoleIn,
@@ -925,7 +941,7 @@ async def clone_role(
 # one, moving the peer onto it, and revoking the old one — three explicit steps,
 # each of which is auditable, instead of one that silently invalidates whatever
 # was already deployed.
-@router.post("/api-keys", response_model=ApiKeyCreatedOut, status_code=201)
+@admin_router.post("/api-keys", response_model=ApiKeyCreatedOut, status_code=201)
 async def create_api_key(
     data: ApiKeyCreateIn,
     db: AsyncSession = Depends(get_db),
@@ -949,7 +965,7 @@ async def create_api_key(
     return ApiKeyCreatedOut(**ApiKeyOut.model_validate(key).model_dump(), key=raw)
 
 
-@router.get("/api-keys", response_model=Page[ApiKeyOut])
+@admin_router.get("/api-keys", response_model=Page[ApiKeyOut])
 async def list_api_keys(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),
@@ -961,7 +977,7 @@ async def list_api_keys(
     )
 
 
-@router.delete("/api-keys/{key_id}", status_code=204)
+@admin_router.delete("/api-keys/{key_id}", status_code=204)
 async def revoke_api_key(
     key_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -1021,3 +1037,8 @@ async def exchange_api_key(
     return ApiKeyTokenOut(
         access_token=token, expires_in=ttl, scopes=list(key.scopes or [])
     )
+
+
+# Mounted last so the self-service paths above keep their declaration order; the two
+# sets do not overlap (`/me…` vs `/users…`, `/roles…`, `/api-keys…`).
+router.include_router(admin_router)

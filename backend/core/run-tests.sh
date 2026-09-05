@@ -85,10 +85,19 @@ if ! "$DOCKER" build -q \
   fi
 fi
 
+# `gateway/` and `deploy/` are mounted because two assertions in the suite are ABOUT
+# the deployment, not about the code: tests/test_health_probes.py checks that the
+# gateway routes /ready and that core's healthcheck consumes it. `/ready` was
+# written, correct, and reachable by nothing for months precisely because no test
+# could see those files. Read-only, and separate from /src so nothing on the import
+# path changes.
 exec "$DOCKER" run --rm --network none \
   -v "$REPO/backend:/src:ro" \
+  -v "$REPO/gateway:/repo/gateway:ro" \
+  -v "$REPO/deploy:/repo/deploy:ro" \
   -w /src/core \
   -e VE_KERNEL_PATH=/src/kernel \
+  -e VE_REPO_ROOT=/repo \
   -e PYTHONDONTWRITEBYTECODE=1 \
   "$TEST_IMAGE" \
   python -m pytest -p no:cacheprovider "$@"

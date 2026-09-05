@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.errors import ForbiddenError
 from ..db.base import get_db
 from .models import Tenant, effective_license_state
-from .scope import Scope, get_scope
+from .scope import Scope, get_scope, scope_of
 
 
 async def feature_enabled(db: AsyncSession, scope: Scope, key: str) -> bool:
@@ -94,10 +94,22 @@ def require_tenant_active():
     callers bypass, matching ``feature_enabled``.
     """
 
+    from ..auth.deps import _bearer, _resolve_actor
+
     async def _dep(
         db: AsyncSession = Depends(get_db),
-        scope: Scope = Depends(get_scope),
+        cred=Depends(_bearer),
     ) -> None:
+        # Resolves a PERSON OR A SERVICE KEY, not `get_scope`.
+        #
+        # `get_scope` goes through `get_current_user`, which refuses an api-key token
+        # on purpose ("a service credential cannot open the UI"). So this dependency
+        # could only ever be attached to a router no key needs to reach — which is
+        # why it lived on exactly one, and why applying it more widely 401ed every
+        # key on /audit the first time it was tried. Suspension applies to a
+        # tenant's machine credentials at least as much as to its people.
+        actor = await _resolve_actor(cred, db)
+        scope = scope_of(actor)
         if scope.is_platform or scope.tenant_id is None:
             return
         tenant = await db.get(Tenant, scope.tenant_id)
