@@ -151,6 +151,29 @@ async def upsert_channel(
     return row
 
 
+async def get_channel_exact(
+    db: AsyncSession, channel: str, tenant_id: uuid.UUID | None = None
+) -> ChannelConfig | None:
+    """The caller's OWN row for `channel`, with NO platform-default fallback.
+
+    `get_channel` falls back on purpose — a tenant that has not configured SMTP
+    inherits the platform's, which is what makes the platform default useful. This
+    is for the surfaces where inheriting is wrong: the "send a test" button, where
+    falling back lets a tenant admin exercise the platform's webhook URL and its
+    HMAC secret on demand.
+    """
+    return await _row_exact(db, channel, tenant_id)
+
+
+def decrypt_config(row: ChannelConfig) -> dict:
+    """A single row's config with its secret fields decrypted, under ITS tenant key."""
+    out = dict(row.config or {})
+    for field in SECRET_FIELDS.get(row.channel, []):
+        if out.get(field):
+            out[field] = decrypt_secret_for(row.tenant_id, str(out[field]))
+    return out
+
+
 async def get_config_decrypted(
     db: AsyncSession, channel: str, tenant_id: uuid.UUID | None = None
 ) -> dict | None:

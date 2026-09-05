@@ -189,9 +189,22 @@ async def test_channel(
             select(DeviceToken.token).where(DeviceToken.user_id == user.id)
         )
         tokens = [t for (t,) in result.all()]
-        ok = await send_push(db, tokens, "Test notification", "This is a test push.")
+        ok = await send_push(
+            db, tokens, "Test notification", "This is a test push.", tenant_id=user.tenant_id
+        )
     elif channel == "webhook":
-        cfg = await channel_config.get_config_decrypted(db, channel, user.tenant_id) or {}
+        # The caller's OWN row, with no platform-default fallback — unlike a real
+        # send, where inheriting the default is the intended behaviour. A tenant
+        # admin with no webhook of their own could otherwise make the PLATFORM's
+        # webhook URL be hit with a payload HMAC-signed by the platform's secret,
+        # on demand: the secret is never disclosed, but a lower-privileged caller
+        # gets to exercise it as an oracle.
+        row = await channel_config.get_channel_exact(db, channel, user.tenant_id)
+        if row is None:
+            raise ValidationError(
+                "no webhook is configured for this tenant", code="NOT_CONFIGURED"
+            )
+        cfg = channel_config.decrypt_config(row)
         ok = await send_webhook(
             cfg.get("url", ""), {"test": True, "message": "edge messaging test"},
             secret=cfg.get("secret"),

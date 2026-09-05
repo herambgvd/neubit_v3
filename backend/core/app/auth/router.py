@@ -498,7 +498,7 @@ async def forgot_password(data: ForgotPasswordIn, db: AsyncSession = Depends(get
             "<p>You requested a password reset. Use this token to set a new password "
             f"(valid 1 hour):</p><p><code>{raw}</code></p>"
         )
-        await send_email(db, [user.email], "Reset your password", html)
+        await send_email(db, [user.email], "Reset your password", html, user.tenant_id)
     # Always 200 — never reveal whether the email is registered.
     return {"status": "ok"}
 
@@ -654,7 +654,7 @@ async def _send_invite_email(db: AsyncSession, user: User) -> None:
             db, "welcome", ctx, tenant_id=user.tenant_id
         )
         html = email_templates.wrap_email(branding.app_name, body)
-        await send_email(db, [user.email], subject, html)
+        await send_email(db, [user.email], subject, html, user.tenant_id)
     except Exception:  # pragma: no cover - invites are best-effort
         get_logger("auth").warning("invite email failed for %s", user.email, exc_info=True)
 

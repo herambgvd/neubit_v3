@@ -40,9 +40,15 @@ async def notify(
     template_ctx: dict = None,
     email_to: list[str] = None,
     push_data: dict = None,
+    tenant_id=None,
 ) -> None:
     """Fan a notification out across in-app + the requested extra ``channels``.
 
+    - ``tenant_id``    : WHOSE channel config to send through. Omitted means the
+                         platform default, which is right for platform mail and
+                         silently wrong for a tenant that configured its own SMTP,
+                         FCM project or webhook — the state every send was in before
+                         this parameter existed.
     - ``user_ids``     : recipients — each gets an in-app record + (for push) their tokens.
     - ``channels``     : any of "email" | "push" | "webhook" (in-app is always sent).
     - ``template``     : optional named template for the email subject/body.
@@ -67,7 +73,7 @@ async def notify(
                 subject, html = render(template, template_ctx or {})
             else:
                 subject, html = title, f"<p>{body or ''}</p>"
-            await send_email(db, email_to, subject, html)
+            await send_email(db, email_to, subject, html, tenant_id)
         except Exception:
             log.exception("email channel failed during notify")
 
@@ -79,16 +85,16 @@ async def notify(
             )
             tokens = [t for (t,) in result.all()]
             if tokens:
-                await send_push(db, tokens, title, body or "", push_data)
+                await send_push(db, tokens, title, body or "", push_data, tenant_id)
         except Exception:
             log.exception("push channel failed during notify")
 
     # 4) Webhook — POST the event to the configured URL (with its decrypted secret).
     if "webhook" in channels:
         try:
-            row = await get_channel(db, "webhook")
+            row = await get_channel(db, "webhook", tenant_id)
             if row is not None and row.enabled:
-                cfg = await get_config_decrypted(db, "webhook") or {}
+                cfg = await get_config_decrypted(db, "webhook", tenant_id) or {}
                 url = cfg.get("url")
                 if url:
                     payload = {"title": title, "body": body, "user_ids": [str(u) for u in user_ids]}

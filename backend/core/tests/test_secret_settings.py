@@ -141,3 +141,69 @@ async def test_a_channel_password_is_encrypted_under_its_own_tenants_key(db):
     assert decrypt_secret_for(tenant_a, stored) == "a-pass"
     with pytest.raises(SecretDecryptionError):
         decrypt_secret_for(tenant_b, stored)
+
+
+# --- who a message actually goes through -------------------------------------
+#
+# `send_email`, `send_push` and the dispatcher's webhook branch took no tenant_id
+# at all, so every send resolved the PLATFORM-DEFAULT channel row. A tenant that
+# configured its own SMTP had it stored, masked and encrypted correctly — and never
+# used. Their mail went out through the platform's server, from the platform's
+# address, which is both a misdelivery and a data-residency problem.
+
+
+async def test_a_tenant_with_its_own_smtp_is_not_sent_through_the_platforms(db):
+    import uuid
+
+    from app.messaging.config import get_config_decrypted, upsert_channel
+
+    tenant = uuid.uuid4()
+    await upsert_channel(db, "email", True, {"host": "smtp.platform", "password": "p"}, None)
+    await upsert_channel(db, "email", True, {"host": "smtp.tenant", "password": "t"}, tenant)
+
+    assert (await get_config_decrypted(db, "email", tenant))["host"] == "smtp.tenant"
+    assert (await get_config_decrypted(db, "email", None))["host"] == "smtp.platform"
+
+
+async def test_a_tenant_without_its_own_channel_still_inherits_the_default(db):
+    """The fallback is deliberate and must survive the fix — it is what makes the
+    platform default useful."""
+    import uuid
+
+    from app.messaging.config import get_config_decrypted, upsert_channel
+
+    await upsert_channel(db, "email", True, {"host": "smtp.platform", "password": "p"}, None)
+    assert (await get_config_decrypted(db, "email", uuid.uuid4()))["host"] == "smtp.platform"
+
+
+async def test_the_test_button_does_not_fall_back_to_the_platform_webhook(db):
+    """`get_channel_exact` exists for the surfaces where inheriting is wrong. A
+    tenant admin with no webhook of their own could otherwise make the PLATFORM's
+    webhook URL be hit with a payload HMAC-signed by the platform's secret, on
+    demand — the secret is never disclosed, but a lower-privileged caller gets to
+    exercise it as an oracle."""
+    import uuid
+
+    from app.messaging.config import get_channel, get_channel_exact, upsert_channel
+
+    await upsert_channel(db, "webhook", True, {"url": "https://platform.example/hook"}, None)
+    stranger = uuid.uuid4()
+    assert await get_channel_exact(db, "webhook", stranger) is None
+    # …while an ordinary send still inherits it.
+    assert await get_channel(db, "webhook", stranger) is not None
+
+
+def test_a_webhook_url_is_not_logged_with_its_query_string():
+    """Query-string bearer tokens are a common receiver pattern and SECRET_FIELDS
+    does not cover the URL, so the full URL at INFO put the credential into logs —
+    which are shipped and retained differently from the column it was encrypted in.
+    """
+    from app.messaging.webhook import _loggable
+
+    assert _loggable("https://hooks.example/x?token=s3cret") == "https://hooks.example/x"
+    assert "s3cret" not in _loggable("https://hooks.example/x?token=s3cret")
+    assert "hunter2" not in _loggable("https://user:hunter2@hooks.example/x")
+    # The endpoint must still be identifiable — an operator debugging a failed
+    # delivery needs to know WHICH one failed.
+    assert _loggable("https://hooks.example:8443/a/b") == "https://hooks.example:8443/a/b"
+    assert _loggable("not a url at all") == "not a url at all"

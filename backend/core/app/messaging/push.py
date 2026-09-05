@@ -71,6 +71,7 @@ async def send_push(
     title: str,
     body: str,
     data: dict | None = None,
+    tenant_id: uuid.UUID | None = None,
 ) -> bool:
     """Send a push notification to ``tokens`` via FCM.
 
@@ -81,11 +82,13 @@ async def send_push(
         log.info("send_push called with no tokens; skipping")
         return False
 
-    row = await get_channel(db, "push")
+    row = await get_channel(db, "push", tenant_id)
     if row is None or not row.enabled:
         log.info("push channel not configured or disabled; skipping send")
         return False
-    cfg = await get_config_decrypted(db, "push") or {}
+    # See send_email: without tenant_id every push went through the
+    # platform-default FCM project, ignoring a tenant's own server key.
+    cfg = await get_config_decrypted(db, "push", tenant_id) or {}
     server_key = cfg.get("server_key")
     if not server_key:
         log.warning("push channel missing server_key; skipping send")

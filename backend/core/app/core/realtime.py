@@ -31,18 +31,43 @@ from .ws_auth import authenticate_ws
 log = get_logger("edge.realtime")
 
 
-class RealtimeHub:
-    """In-memory registry of connected WebSockets, grouped by topic.
+def channel(tenant_id, topic: str) -> str:
+    """The key a socket is actually filed under: the tenant AND the topic.
 
-    ``_topics`` maps a topic name to the set of live sockets subscribed to it.
-    A set gives O(1) add/remove and natural de-duplication.
+    The hub used to key on the caller-supplied topic string alone — a process-global
+    `dict[str, set[WebSocket]]` shared by every tenant. Any authenticated user could
+    join any topic name, and a `broadcast("alerts", …)` would have gone to every
+    socket on "alerts" regardless of who they belonged to.
+
+    That was not a live leak, and only because nothing publishes: `hub.broadcast` has
+    no callers anywhere in `backend/`. It was a cross-tenant leak waiting for the
+    first one, behind a docstring that called the missing authorization something
+    that "can be layered on later" — and the person writing that first publisher
+    would have had no reason to think the hub was not already partitioned.
+
+    Partitioning the KEY is what makes it impossible to get wrong from the publish
+    side: there is no way to broadcast to "every tenant's alerts" by accident,
+    because that string does not name anything.
+    """
+    return f"{tenant_id if tenant_id is not None else '__platform__'}:{topic}"
+
+
+class RealtimeHub:
+    """In-memory registry of connected WebSockets, grouped by (tenant, topic).
+
+    ``_topics`` maps a channel key — see :func:`channel` — to the set of live
+    sockets subscribed to it. A set gives O(1) add/remove and de-duplication.
     """
 
     def __init__(self) -> None:
         self._topics: dict[str, set[WebSocket]] = {}
 
     async def connect(self, ws: WebSocket, topic: str) -> None:
-        """Accept the handshake and register the socket under ``topic``."""
+        """Accept the handshake and register the socket under ``topic``.
+
+        ``topic`` is a CHANNEL KEY, not a bare topic name — build it with
+        :func:`channel` so a socket can only ever land in its own tenant's set.
+        """
         await ws.accept()
         self._topics.setdefault(topic, set()).add(ws)
         log.debug("ws connect topic=%s (n=%d)", topic, len(self._topics[topic]))
@@ -59,21 +84,25 @@ class RealtimeHub:
             self._topics.pop(topic, None)
         log.debug("ws disconnect topic=%s", topic)
 
-    async def broadcast(self, topic: str, message: dict) -> None:
-        """Send ``message`` (as JSON) to every socket subscribed to ``topic``.
+    async def broadcast(self, tenant_id, topic: str, message: dict) -> None:
+        """Send ``message`` (as JSON) to every socket of ONE TENANT on ``topic``.
+
+        ``tenant_id`` is required, and ``None`` means the platform — it is not a
+        wildcard. Fanning out to every tenant is deliberately not expressible here.
 
         Sockets that error on send are assumed dead and pruned, so a broken client
         never blocks or breaks delivery to the others. Iterate over a COPY of the
         set because we mutate it while dropping dead sockets.
         """
+        key = channel(tenant_id, topic)
         dead: list[WebSocket] = []
-        for ws in list(self._topics.get(topic, ())):
+        for ws in list(self._topics.get(key, ())):
             try:
                 await ws.send_json(message)
             except Exception:  # noqa: BLE001 — a dead/closing socket; drop it
                 dead.append(ws)
         for ws in dead:
-            self.disconnect(ws, topic)
+            self.disconnect(ws, key)
 
 
 # The single shared hub for the whole process.
@@ -96,13 +125,20 @@ async def realtime_ws(ws: WebSocket, topic: str) -> None:
     handshake (see edge.core.ws_auth). ``authenticate_ws`` closes the socket with 4401
     and returns None for a missing/invalid token or an unknown/inactive user — we then
     return before ``hub.connect``, so an unauthenticated client never joins the topic.
-    Any authenticated user may subscribe; per-topic authorization can be layered on
-    later via ``authorize_ws`` if a topic needs a specific permission.
+
+    The socket is filed under the CALLER'S OWN tenant (see :func:`channel`), so the
+    topic string a client sends can never reach another tenant's subscribers. There
+    is still no per-topic PERMISSION check, and that is a real gap rather than a
+    resolved one — it is bounded today by there being no publisher at all
+    (``hub.broadcast`` has no callers in ``backend/``). Whoever writes the first
+    publisher decides what the topic means and should gate this endpoint with
+    ``authorize_ws`` at the same time.
     """
     user = await authenticate_ws(ws)
     if user is None:
         return  # authenticate_ws already closed the socket (4401)
-    await hub.connect(ws, topic)
+    key = channel(getattr(user, "tenant_id", None), topic)
+    await hub.connect(ws, key)
     try:
         while True:
             # We don't act on client messages; this call parks the coroutine and
@@ -111,4 +147,4 @@ async def realtime_ws(ws: WebSocket, topic: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        hub.disconnect(ws, topic)
+        hub.disconnect(ws, key)

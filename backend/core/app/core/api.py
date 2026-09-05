@@ -287,10 +287,27 @@ def create_app(
     # Legacy signed-license /features — the FALLBACK for on-prem/single-tenant
     # scenario apps that carry no tenant-aware endpoint. The multi-tenant core
     # registers its own tenant-aware /features (tenancy.entitlements.router) via
-    # extra_routers, which is included BEFORE this and therefore wins; so only add
-    # this signed-license version when nothing has claimed the path yet.
+    # extra_routers, so this signed-license version is only added when nothing has
+    # claimed the path.
+    #
+    # THE CLAIM CHECK LOOKS AT extra_routers, NOT app.routes, AND THAT IS THE FIX.
+    # This FastAPI version defers `include_router`: an included router appears in
+    # `app.routes` as an `_IncludedRouter` wrapper with no `.path`, so scanning
+    # `app.routes` for the path found NOTHING and this route was registered every
+    # time. It was harmless only because the tenant-aware router had been included
+    # first and matched first — an ordering accident, not a check. Reorder the
+    # includes, or drop the tenancy router from base_routers, and an
+    # UNAUTHENTICATED licence and module dump appears at the same path.
     features_path = f"{prefix}/features"
-    if not any(getattr(r, "path", None) == features_path for r in app.routes):
+
+    def _claims_features(router) -> bool:
+        router_prefix = getattr(router, "prefix", "") or ""
+        return any(
+            f"{prefix}{router_prefix}{getattr(r, 'path', '')}" == features_path
+            for r in getattr(router, "routes", ())
+        )
+
+    if not any(_claims_features(r) for r in extra_routers):
 
         @app.get(features_path, tags=["platform"])
         def features() -> dict:
