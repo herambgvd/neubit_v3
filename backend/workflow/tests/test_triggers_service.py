@@ -443,12 +443,6 @@ def test_a_trigger_cannot_be_created_against_another_tenants_sop():
     _run(go())
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG (found, not fixed): TriggerService.create checks the target SOP with "
-    "assert_owned but TriggerService.update does not, so a tenant can re-point an "
-    "existing trigger at ANOTHER tenant's SOP. The simulator/correlation path then "
-    "builds incidents from it, copying that SOP's name and description into the "
-    "attacker's tenant. AlertFormatService.create/update never check sop_id at all."))
 def test_a_trigger_cannot_be_repointed_at_another_tenants_sop():
     async def go():
         engine, sm = await _session()
@@ -465,6 +459,97 @@ def test_a_trigger_cannot_be_repointed_at_another_tenants_sop():
                 with pytest.raises(NotFoundError):
                     await svc.update(trig.trigger_id,
                                      T.UpdateTriggerRequest(sop_id=b_sop.sop_id), actor=ACTOR)
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
+def test_a_trigger_can_still_be_repointed_at_another_sop_of_its_own_tenant():
+    """The refusal above must be about OWNERSHIP, not about sop_id being immutable:
+    re-pointing a trigger is a normal operator edit and has to keep working."""
+
+    async def go():
+        engine, sm = await _session()
+        try:
+            async with sm() as session:
+                first = await _sop(session, name="Intrusion")
+                second = await _sop(session, name="Fire")
+                await session.flush()
+                await session.commit()
+                svc = TriggerService(session, SCOPE_A)
+                trig = await svc.create(
+                    T.CreateTriggerRequest(name="Mine", sop_id=first.sop_id, event_type="x"),
+                    actor=ACTOR)
+                await svc.update(trig.trigger_id,
+                                 T.UpdateTriggerRequest(sop_id=second.sop_id), actor=ACTOR)
+                trig_id, second_id = trig.trigger_id, second.sop_id
+            async with sm() as check:
+                assert (await check.get(Trigger, trig_id)).sop_id == second_id
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
+def test_an_alert_format_cannot_be_pointed_at_another_tenants_sop():
+    """The same hole on the other launcher: an AlertFormat's ``sop_id`` is the
+    second way an event becomes an incident, and it was never checked at all."""
+
+    async def go():
+        engine, sm = await _session()
+        try:
+            async with sm() as session:
+                a_sop = await _sop(session, name="A's SOP")
+                b_sop = await _sop(session, tenant=TENANT_B, name="B's SOP")
+                await session.flush()
+                await session.commit()
+                svc = AlertFormatService(session, SCOPE_A)
+                with pytest.raises(NotFoundError):
+                    await svc.create(T.CreateAlertFormatRequest(
+                        alert_code="STEAL", name="Steal", sop_id=b_sop.sop_id), actor=ACTOR)
+                fmt = await svc.create(T.CreateAlertFormatRequest(
+                    alert_code="MINE", name="Mine", sop_id=a_sop.sop_id), actor=ACTOR)
+                with pytest.raises(NotFoundError):
+                    await svc.update(fmt.format_id,
+                                     T.UpdateAlertFormatRequest(sop_id=b_sop.sop_id), actor=ACTOR)
+                fmt_id, a_id = fmt.format_id, a_sop.sop_id
+            async with sm() as check:
+                # The refused create left nothing behind, and the refused update
+                # left the row on its own tenant's SOP.
+                rows = (await check.execute(select(AlertFormat))).scalars().all()
+                assert [r.alert_code for r in rows] == ["MINE"]
+                assert (await check.get(AlertFormat, fmt_id)).sop_id == a_id
+        finally:
+            await engine.dispose()
+
+    _run(go())
+
+
+def test_the_simulator_will_not_read_a_sop_the_caller_does_not_own():
+    """Defence in depth for rows written BEFORE the write side was closed: a
+    trigger already holding a foreign ``sop_id`` must read as "SOP missing",
+    never as an incident carrying the other tenant's SOP name."""
+
+    async def go():
+        engine, sm = await _session()
+        try:
+            async with sm() as session:
+                b_sop = await _sop(session, tenant=TENANT_B, name="B's SOP")
+                await session.flush()
+                # Straight to the table — this is the legacy row, not a new write.
+                trig = _trigger(session, b_sop, name="legacy")
+                await session.commit()
+                trig_id = trig.trigger_id
+
+                out = await SimulatorService(session, SCOPE_A).simulate(
+                    _sim(dry_run=False), actor=ACTOR)
+                assert [m["trigger_id"] for m in out["matched_triggers"]] == [trig_id]
+                assert out["matched_triggers"][0]["would_create"] is False
+                assert out["skipped"] == [{"trigger_id": trig_id, "reason": "SOP missing"}]
+                assert out["created_instance_ids"] == []
+            async with sm() as check:
+                assert (await check.execute(select(WorkflowInstance))).scalars().all() == []
         finally:
             await engine.dispose()
 

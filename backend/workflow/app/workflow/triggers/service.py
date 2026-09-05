@@ -12,13 +12,14 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kernel.auth import Scope, assert_owned, scoped
+from kernel.auth import Scope, assert_owned, owns, scoped
 from kernel.errors import ConflictError
 
 from ..core.actor import actor_id as _actor_id
 from ..core.enums import InstancePriority, InstanceStatus
 from ..core.matching import matches_conditions
 from ..core.primitives import utcnow
+from ..core.references import ChecksReferences
 from ..runtime.events import emit
 from ..sops.models import SOP
 from .models import AlertFormat, Trigger
@@ -27,7 +28,11 @@ from .models import AlertFormat, Trigger
 # ── Trigger ────────────────────────────────────────────────────────────
 
 
-class TriggerService:
+class TriggerService(ChecksReferences):
+    # A trigger names the SOP it starts. Checked on EVERY write path, not just
+    # create — see ``core.references``.
+    REFERENCES = {"sop_id": (SOP, "SOP not found")}
+
     def __init__(self, db: AsyncSession, scope: Scope) -> None:
         self.db = db
         self.scope = scope
@@ -38,8 +43,7 @@ class TriggerService:
         return row
 
     async def create(self, body, *, actor) -> Trigger:
-        sop = await self.db.get(SOP, body.sop_id)
-        assert_owned(sop, self.scope, message="SOP not found")
+        await self._check_references(body.model_dump())
         row = Trigger(
             tenant_id=self.scope.tenant_id,
             name=body.name,
@@ -82,6 +86,7 @@ class TriggerService:
     async def update(self, trigger_id: str, body, *, actor) -> Trigger:
         row = await self._row(trigger_id)
         data = body.model_dump(exclude_none=True)
+        await self._check_references(data)
         if "priority" in data:
             data["priority"] = body.priority.value
         if "conditions" in data and body.conditions is not None:
@@ -120,8 +125,11 @@ class TriggerService:
 # ── Alert format (alert_code → SOP mapping) ────────────────────────────
 
 
-class AlertFormatService:
+class AlertFormatService(ChecksReferences):
     """CRUD for AlertFormats + ``find_by_code`` used by the correlation/simulate path."""
+
+    # An alert format may map to a SOP (nullable). Same rule as a trigger's.
+    REFERENCES = {"sop_id": (SOP, "SOP not found")}
 
     def __init__(self, db: AsyncSession, scope: Scope) -> None:
         self.db = db
@@ -144,6 +152,7 @@ class AlertFormatService:
         return False
 
     async def create(self, body, *, actor) -> AlertFormat:
+        await self._check_references(body.model_dump())
         if await self._code_taken(body.alert_code):
             raise ConflictError(f"alert_code '{body.alert_code}' already exists")
         row = AlertFormat(
@@ -187,6 +196,7 @@ class AlertFormatService:
     async def update(self, format_id: str, body, *, actor) -> AlertFormat:
         row = await self._row(format_id)
         data = body.model_dump(exclude_none=True)
+        await self._check_references(data)
         if "alert_code" in data and await self._code_taken(data["alert_code"], exclude_id=format_id):
             raise ConflictError(f"alert_code '{data['alert_code']}' already exists")
         for k, v in data.items():
@@ -224,6 +234,20 @@ class SimulatorService:
     def _tenant_id(self):
         return self.scope.tenant_id
 
+    async def _owned_sop(self, sop_id: str | None) -> SOP | None:
+        """The referenced SOP, or None when the caller may not see it.
+
+        The write side now refuses a foreign ``sop_id``, but rows stored before it
+        did still exist, and a bare ``db.get`` on a tenant-owned table would read
+        one straight into this tenant's simulate output (and, when dry_run is off,
+        into an incident carrying that SOP's name). Unreadable is reported as
+        "SOP missing", which is what it is from here.
+        """
+        if not sop_id:
+            return None
+        sop = await self.db.get(SOP, sop_id)
+        return sop if sop is not None and owns(sop, self.scope) else None
+
     async def simulate(self, body, *, actor) -> dict:
         from ..correlation.engine import (
             build_incident_from_sop,
@@ -259,7 +283,7 @@ class SimulatorService:
         for trig in triggers:
             if not matches_conditions(envelope, trig.conditions or []):
                 continue
-            sop = await self.db.get(SOP, trig.sop_id)
+            sop = await self._owned_sop(trig.sop_id)
             initial = await initial_state(self.db, trig.sop_id) if sop else None
             would_create = bool(sop and sop.is_active and initial)
             matched_triggers.append({
@@ -293,7 +317,7 @@ class SimulatorService:
         if alert_code:
             fmt = await find_alert_format(self.db, tenant_id, alert_code)
             if fmt:
-                sop = await self.db.get(SOP, fmt.sop_id) if fmt.sop_id else None
+                sop = await self._owned_sop(fmt.sop_id)
                 initial = await initial_state(self.db, fmt.sop_id) if sop else None
                 would_create = bool(fmt.sop_id and sop and sop.is_active and initial)
                 matched_format = {

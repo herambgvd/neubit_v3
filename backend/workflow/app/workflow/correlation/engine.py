@@ -125,6 +125,20 @@ async def find_alert_format(
     return None
 
 
+def sop_reachable_from(sop: SOP, owner_tenant_id: Any) -> bool:
+    """Whether a launcher owned by ``owner_tenant_id`` may build incidents from ``sop``.
+
+    A NULL-tenant SOP is platform-shared and reachable by everyone; anything else
+    must belong to the launcher's own tenant. The engine runs with no Scope (it is
+    a consumer, not a request), so this is the check ``assert_owned`` would have
+    made — without it a trigger row pointing at another tenant's SOP copies that
+    SOP's name and description into an incident stamped with the launcher's tenant.
+    """
+    if sop.tenant_id is None:
+        return True
+    return sop.tenant_id == owner_tenant_id
+
+
 async def initial_state(session: AsyncSession, sop_id: str) -> State | None:
     stmt = select(State).where(State.sop_id == sop_id, State.is_initial.is_(True)).limit(1)
     return (await session.execute(stmt)).scalars().first()
@@ -269,6 +283,10 @@ class CorrelationEngine:
         sop = await session.get(SOP, trigger.sop_id)
         if not sop or not sop.is_active:
             return False
+        if not sop_reachable_from(sop, trigger.tenant_id):
+            log.warning("trigger %s points at SOP %s owned by another tenant — refused",
+                        trigger.trigger_id, sop.sop_id)
+            return False
         initial = await self._initial_state(session, sop.sop_id)
         if not initial:
             log.warning("trigger %s would fire but SOP %s has no initial state",
@@ -346,6 +364,10 @@ class CorrelationEngine:
             return False
         sop = await session.get(SOP, fmt.sop_id)
         if not sop or not sop.is_active:
+            return False
+        if not sop_reachable_from(sop, fmt.tenant_id):
+            log.warning("alert format %s points at SOP %s owned by another tenant — refused",
+                        fmt.format_id, sop.sop_id)
             return False
         initial = await initial_state(session, sop.sop_id)
         if not initial:
