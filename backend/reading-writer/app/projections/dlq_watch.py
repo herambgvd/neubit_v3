@@ -12,17 +12,18 @@ a triage UI:
 * a ``log.warning`` the moment a NEW dead letter arrives, carrying the origin
   subject, the refusing consumer, the delivery count and the reason from the
   ``Nbt-Dlq-*`` headers both buses write;
-* counters by origin subject and by reason on the projector's ``/stats``
-  (``dlq_*`` keys) and ``/metrics``, plus the stream's own message count, so
+* counters by origin subject and by reason on ``/stats`` (``dlq_*`` keys)
+  and ``/metrics``, plus the stream's own message count, so
   "is anything parked?" is one curl.
 
 WHY IT LIVES HERE
 -----------------
-The projector is the platform's standing events-spine consumer: always deployed,
-already carrying the ``/stats``-style surface an operator watches, and language-
-neutral about what it observes (the DLQ holds Go refusals as readily as Python
-ones). The kernel is a library and has no process; a dedicated service would be
-a container for one fetch loop.
+It rides with the projection consumers because they are the platform's standing
+events-spine reader: always deployed, already carrying the ``/stats``-style
+surface an operator watches, and language-neutral about what they observe (the
+DLQ holds Go refusals as readily as Python ones). The kernel is a library and has
+no process; a dedicated service would be a container for one fetch loop — which
+is the same argument that folded the projector itself into this one.
 
 WHAT CONSUMING DOES NOT DO
 --------------------------

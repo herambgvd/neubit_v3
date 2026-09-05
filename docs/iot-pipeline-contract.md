@@ -386,7 +386,8 @@ turnaround times and the platform cannot assume any of them.
 | | owns |
 |---|---|
 | conflux | devices, points, normalisation, publishing. NOT reading history. |
-| reading-writer | the readings schema. The only thing that writes it. |
+| reading-writer (`app/`) | the readings schema. The only thing that writes it. |
+| reading-writer (`app/projections/`) | the relations declared in `reporting_projections`. The only thing that writes them. Same process since 2026-09-05, still a different owner — §22. |
 | analytics engine | reads rollups. Never writes. |
 
 Schema changes happen in the writer, in one place.
@@ -747,6 +748,11 @@ slightly wrong until it has one.
 |---|---|
 | `reading-writer` | `readings` / `points` and their rollups. Unchanged; §7 still holds. |
 | `reporting-projector` | the relations declared in `reporting_projections` — domain events, starting with access control. |
+
+> **2026-09-05.** `reporting-projector` is no longer a container. Both writers are
+> `backend/reading-writer` now — `app/` and `app/projections/` — and the two-owner
+> table above still describes exactly what each writes. See §22 for what was kept
+> and what one process had to be made to hold.
 
 The projector (`backend/projector`) is a sibling, not an extension: it copies this
 contract's §4 and §6 behaviours verbatim — durable pull consumer, batch on N rows
@@ -1790,3 +1796,127 @@ frozen (that discipline is untouched). Found while wiring this in and fixed:
 `PUT /bi/rating/benchmark-config` had been decorating the
 `_withhold_band_if_frozen` helper instead of its handler, so the config
 route was unreachable.
+
+---
+
+## 22. The projector is a module of the reading-writer now (2026-09-05)
+
+`backend/projector` was 2,520 lines in its own container. It is
+`backend/reading-writer/app/projections` and there is no `reporting-projector`
+service. This is the second and last of the consolidations; the first folded the
+dashforge satellite into core.
+
+### What the split was actually arguing, and why it survives
+
+The projector's `main.py` argued it was *"deliberately a sibling of reading-writer
+rather than part of it"* because *"the reading-writer owns the readings schema and
+serves its reads (§7, one owner); this owns the relations declared in
+`reporting_projections`. Two consumers, two ownership boundaries, one store."*
+
+That argument is correct and it is about OWNERSHIP OF RELATIONS. Ownership of
+relations is a code boundary, and a code boundary does not need a second process.
+It is unchanged and stated in both directions:
+
+* nothing in `app/projections` writes `readings`, `points` or their rollups, and
+  nothing there declares them in `reporting.models`;
+* nothing in `app/` writes a projected relation. The BI read API reads
+  `iot_alerts`; it has never written it and still does not. `app/api/router.py`
+  and `queries.py` say so in the module/PROCESS terms the fold-in made necessary,
+  because the old wording ("this service does not write it") stopped being true
+  the moment the containers merged and would have read as a false assurance.
+* `app/projections` has no `/api/...` and must not acquire one. One read path
+  over this store, §8 rule 2 — and the fact that the read path now lives in the
+  same process makes reaching for a second EASIER, not more acceptable.
+
+### The constraint that decided the design
+
+The reading-writer is on the hot path: every device reading in the estate flows
+through it and it is the only writer of the readings hypertable. Projections
+handle domain events at a completely different rate and shape. The failure a
+merge creates is a projection backlog, or one slow or wedged projection, stalling
+reading ingestion. Four things stop it, and only the last one was new:
+
+1. **A NATS connection each.** Both call `nats.connect` themselves, so a hung pull
+   consumes its own client's inflight budget. Four connections from this process,
+   named apart (`neubit-reading-writer`, `-projections`, `-placement`,
+   `-site-facts`, plus the DLQ watch).
+2. **Separate durables.** `reading-writer` on IOT_READINGS versus one durable per
+   projection. Unchanged: those durable names live in `reporting_projections`
+   ROWS and still read `reporting-projector-*`. Renaming them would abandon a live
+   cursor and replay the whole stream to rediscover rows already stored — a
+   cosmetic rename buying a real outage.
+3. **Separate asyncio tasks and bounded queues.** Every wait is an `await`. The
+   one shared resource left is the event loop, and the only synchronous work on it
+   is building one batch's parameter dict — bounded by `batch_rows` (200 for
+   projections).
+4. **Separate connection pools.** THE ONE THE MERGE EXPOSED. `reporting.db`'s
+   engine is a single pool (SQLAlchemy's default 5+10). Shared, a projection
+   holding connections — a lock wait, a `CREATE MATERIALIZED VIEW` in `ensure`,
+   batches piling up across projections — could take all of them, and the readings
+   write loop would then block in the pool CHECKOUT. That is the worst possible
+   place for it to block: no `statement_timeout` covers a checkout, `db_healthy`
+   is never flipped because nothing failed, and the stall watchdog is not armed
+   because `begin_write` has not run. Readings stop, silently, because of a
+   projection. So `app/projections/db.py` builds its OWN engine on the same
+   database (`VE_PROJECTOR_POOL_SIZE` 4 + `VE_PROJECTOR_POOL_OVERFLOW` 4). Two
+   pools, two owners, one store.
+
+   Proven, not asserted: with all 8 projection connections held and a 9th checkout
+   blocking for the full timeout, the readings pool served
+   `select count(*) from readings` in 0.06s.
+
+### Health: two of everything, and a union
+
+`Metrics` and `ProjectorMetrics` are separate objects — separate `db_healthy`,
+separate lag, separate stall clocks. `/metrics` carries both exposition blocks,
+`reading_writer_*` and `projector_*`, the latter per-projection
+(`{projection="access_events"}`), so neither half's number can stand in for the
+other's and a healthy access feed cannot hide a wedged alerts feed. `/stats`
+nests the projection block rather than merging it, because the two halves have
+counters of the same NAME measuring different things and a flat merge would
+silently overwrite one.
+
+`/readyz` is the union: 503 when EITHER is wedged, every reason prefixed
+`readings:` or `projections:` so a page names the consumer.
+
+The two readiness definitions disagreed and the projector's is strictly the
+stronger — it goes red for a REFUSED projection (a domain that believes it is
+being collected and is not; this pipeline has produced two of those) and for a
+consumer whose pulls keep failing while it receives nothing. Both are KEPT,
+applied to the half that has them. Neither was weakened. The readings half did
+NOT gain a `consuming` flag here: its fetch loop has the same blind spot, and
+that is a change to the hot path deserving its own commit and its own proof, not
+a rider on a move.
+
+### Verified on the live stack (2026-09-05)
+
+16 containers, no `reporting-projector` among them. With `reporting-projector-access`
+deleted out of band and re-deleted every 500 ms for seven minutes, `/readyz` held
+503 with the single reason `projections: projection 'access_events' is not
+consuming (pulls failing; rebinding)`, `projector_consuming{projection="access_events"}`
+read 0 while `{projection="iot_alerts"}` read 1 — and in the middle of that window
+the readings burst landed: `reading_writer_rows_inserted_total` 640 → 960,
+`select count(*) from readings` 216,926 → 217,246, `reading_writer_db_healthy` 1
+throughout. When the wedge was released the worker rebound itself and JetStream
+replayed EVENTS from the start: 189 messages, 3 batches, 117 rows absorbed as
+`rows_duplicate`, `access_events` still exactly 39 rows. `ON CONFLICT DO NOTHING`
+on the natural key is what made that a no-op instead of an incident, which is why
+it is in this contract and not in a comment.
+
+Nothing was injected to prove any of this. The replay re-delivered events already
+in the store, so the live store is byte-identical to before.
+
+### `reporting-migrate` did not move
+
+It is the `reporting` package's one-shot migrator
+(`build: { dockerfile: reporting/Dockerfile }`), it owns the IoT schema and the
+two registry tables, and it was never the projector's. It still runs and exits,
+everything still gates on `service_completed_successfully`, and the split it
+documents is unchanged — a migration cannot know which relations a projection
+declares, so `app/projections/ensure.py` creates those, additively, at runtime.
+
+`neubit_reporting` is unchanged and `deploy/postgres/init-service-dbs.sh` is
+untouched: no database left the list, so the healthcheck's completion marker
+(`dashforge`) is unchanged. Checked against a FRESH volume in a throwaway compose
+project rather than by reading the list, because reading the list is what failed
+on 2026-09-01.

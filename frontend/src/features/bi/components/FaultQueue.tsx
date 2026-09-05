@@ -4,10 +4,10 @@
 //
 // Every row here is an alert the GATEWAY raised — a rule tripping, a poll
 // failing, a point going stale — projected onto `neubit_reporting.iot_alerts` by
-// the reporting-projector and read back through `/api/v1/bi/alerts`. Nothing on
-// this panel is computed by the console: the severity, the type, the device and
-// the message are the gateway's own words, including the number that tripped the
-// rule.
+// the reading-writer's projection consumers and read back through
+// `/api/v1/bi/alerts`. Nothing on this panel is computed by the console: the
+// severity, the type, the device and the message are the gateway's own words,
+// including the number that tripped the rule.
 //
 // WHAT THIS PANEL DELIBERATELY DOES NOT SAY, and why each absence is correct:
 //

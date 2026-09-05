@@ -300,7 +300,7 @@ class SeriesResponse(BaseModel):
 
 # ── Faults & alerts ──────────────────────────────────────────────────────────
 #
-# Projected from the gateway's own alert feed by the reporting-projector; see
+# Projected from the gateway's own alert feed by `app.projections`; see
 # `reporting/migrations/versions/0007_iot_alerts_projection.py` for the recipe and
 # for the two facts that are on the wire and deliberately NOT here:
 #

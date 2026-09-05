@@ -184,10 +184,15 @@ services:
       - ../admin-frontend/package-lock.json:/app/package-lock.json
 
   # ── reading-writer: DEV hot-reload. Same pattern as the other Python services.
-  # The pipeline lives in the lifespan, so a reload tears the JetStream consumer
-  # down and rebuilds it — which is safe (durable consumer, nothing acked that was
-  # not written) but does mean an edit costs a few seconds of consumption. The
-  # `reporting` package is mounted too: it owns the schema this service imports.
+  # Every consumer lives in the lifespan, so a reload tears down and rebuilds the
+  # readings consumer, all the projection consumers, both sites mirrors and the
+  # DLQ watch — safe (durable consumers, nothing acked that was not written) but
+  # an edit costs a few seconds of consumption on all of them. The `reporting`
+  # package is mounted too: it owns the schema this service imports.
+  #
+  # 8021 was `reporting-projector`'s port until 2026-09-05. There is one
+  # operational surface now and it is 8020: /readyz there is red when EITHER
+  # consumer is wedged and /metrics carries both, prefixed apart.
   reading-writer:
     # /health, /readyz, /metrics, /stats. Development only: the base file is what
     # an appliance runs alone, and an unauthed operational surface does not belong
@@ -197,20 +202,6 @@ services:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ../backend/reading-writer/app:/app/app
-      - ../backend/reporting:/opt/reporting
-      - ../backend/kernel:/opt/kernel
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/reporting/reporting
-
-  # ── reporting-projector: DEV hot-reload. Same pattern as the reading-writer.
-  # The consumers live in the lifespan, so a reload tears every durable consumer
-  # down and rebuilds it — safe (nothing is acked that was not written) but it
-  # costs a few seconds of consumption per edit.
-  reporting-projector:
-    ports: ["8021:8000"]        # development only - see reading-writer
-    environment:
-      WATCHFILES_FORCE_POLLING: "true"
-    volumes:
-      - ../backend/projector/app:/app/app
       - ../backend/reporting:/opt/reporting
       - ../backend/kernel:/opt/kernel
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app --reload-dir /opt/reporting/reporting

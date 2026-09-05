@@ -9,7 +9,7 @@ so a migration cannot know which relations a projection needs. If it had to, the
 still wait on a release. The ownership split is therefore:
 
     reporting-migrate   → the IoT schema, `dashboard_datasets`, `reporting_projections`
-    reporting-projector → every relation declared inside `reporting_projections`
+    this package        → every relation declared inside `reporting_projections`
 
 WHAT IT WILL AND WILL NOT DO
 ----------------------------

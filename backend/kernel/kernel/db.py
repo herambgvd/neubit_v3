@@ -49,10 +49,24 @@ class Database:
     exactly as before; the per-tenant path only engages once the flag is flipped.
     """
 
-    def __init__(self, database_url: str, statement_timeout_ms: int | None = None) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        statement_timeout_ms: int | None = None,
+        pool_size: int | None = None,
+        max_overflow: int | None = None,
+    ) -> None:
         self.database_url = database_url
         # None → read the shared setting; an explicit value overrides it. 0 = off.
         self.statement_timeout_ms = statement_timeout_ms
+        # Both None → SQLAlchemy's defaults, which is every existing caller. They
+        # exist for a process that runs TWO independent writers against one store
+        # and must not let either exhaust the other's connections; a shared pool
+        # turns "the projections are slow" into "readings stopped", because the
+        # blocking happens in the pool checkout where no health flag is watching.
+        # Not applied to sqlite, which pools on entirely different classes.
+        self.pool_size = pool_size
+        self.max_overflow = max_overflow
         self._engine: AsyncEngine | None = None
         self._sessionmaker: async_sessionmaker[AsyncSession] | None = None
         # Per-tenant sessionmakers, built lazily and pooled for the process lifetime.
@@ -75,10 +89,17 @@ class Database:
         hung write must become a FAILED write, because a failed write is retried,
         NAK'd and reported, and a hung one is silent.
         """
+        kwargs: dict = {}
+        if "sqlite" not in self.database_url:
+            if self.pool_size is not None:
+                kwargs["pool_size"] = int(self.pool_size)
+            if self.max_overflow is not None:
+                kwargs["max_overflow"] = int(self.max_overflow)
         ms = self._statement_timeout_ms()
         if ms <= 0 or "asyncpg" not in self.database_url:
-            return {}
-        return {"connect_args": {"server_settings": {"statement_timeout": str(ms)}}}
+            return kwargs
+        kwargs["connect_args"] = {"server_settings": {"statement_timeout": str(ms)}}
+        return kwargs
 
     def get_engine(self) -> AsyncEngine:
         if self._engine is None:

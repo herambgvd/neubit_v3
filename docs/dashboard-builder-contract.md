@@ -199,14 +199,19 @@ dashboard. It has been dropped.
 
 The one legal way in follows directly from §1. A domain owns its database and
 nothing may read it, so a domain **publishes** and something consumes the bus and
-writes the reporting store. That something is `backend/projector` —
-**reporting-projector** — and what a domain must declare in order to be projected
-is data, exactly like a dataset.
+writes the reporting store. That something is
+`backend/reading-writer/app/projections` — and what a domain must declare in
+order to be projected is data, exactly like a dataset.
+
+It was its own container, `reporting-projector`, until 2026-09-05. The OWNER did
+not change and neither did anything in this section: the projection consumers are
+still the only writer of these relations, still open one database, still serve no
+tenant API. Only the process boundary went. See pipeline contract §22.
 
 ### 9.1 The shape
 
 ```
-access service ──publish──► NATS EVENTS ──durable pull consumer──► projector
+access service ──publish──► NATS EVENTS ──durable pull consumer──► projections
                             tenant.<t>.access.<cat>.<type>            │
                                                                       ▼
                              neubit_reporting.access_events (hypertable)
@@ -223,8 +228,10 @@ subject, the target relation and its columns, the rollups, and the
 
 ### 9.2 What is not negotiable, and why
 
-* **The projector opens ONE database.** `neubit_reporting`, never
+* **The projection consumers open ONE database.** `neubit_reporting`, never
   `neubit_access` or `neubit_vision`. That ban is why the reporting store exists.
+  They also open their own POOL onto it, which is a different rule and is about
+  not starving the readings writer — pipeline contract §22.
 * **Ack only after a durable write.** A batch is one transaction; nothing is
   acked until it commits, and a failed batch is NAK'd whole. Verified by stopping
   Postgres mid-flight: six write failures, two NAK'd batches, twelve messages
@@ -291,8 +298,8 @@ Nothing below is a code change. In order:
 |---|---|
 | a domain service | its own database, and publishing its events with the labels on them |
 | reporting-migrate | the IoT schema, `dashboard_datasets`, `reporting_projections` |
-| reporting-projector | every relation declared in `reporting_projections`. The only thing that writes them. |
-| reading-writer | the readings schema, and the ONE read path (`/api/v1/bi/...`) over the whole store |
+| reading-writer `app/projections` | every relation declared in `reporting_projections`. The only thing that writes them. |
+| reading-writer `app/` | the readings schema, and the ONE read path (`/api/v1/bi/...`) over the whole store |
 
 A migration cannot own the projected relations: a projection is inserted at any
 time with no deploy, so a migration cannot know which relations exist. If it had

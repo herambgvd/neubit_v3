@@ -192,7 +192,9 @@ $OwnServices = @(
     'core', 'ingest', 'workflow', 'access', 'vision', 'ops-agent',
     'frontend', 'admin-frontend', 'tiles',
     # the reporting / BI plane, added with feat/vms
-    'dashboards', 'reading-writer', 'reporting-projector', 'reporting-migrate'
+    # reporting-projector was folded into reading-writer on 2026-09-05; its
+    # image no longer exists and asking for it here would fail the payload build.
+    'dashboards', 'reading-writer', 'reporting-migrate'
 )
 $ThirdParty = @(
     'traefik:v3.1',

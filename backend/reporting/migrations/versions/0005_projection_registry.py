@@ -49,7 +49,9 @@ half that matters. So the split is:
 The projector's DDL is additive-only and every identifier in a spec is checked
 against `^[A-Za-z_][A-Za-z0-9_]*$` before it is quoted — the same allowlist the
 SQL generator uses. It creates, it adds columns and indexes, it never drops and
-never rewrites a column's type. See `backend/projector/app/ensure.py`.
+never rewrites a column's type. See `backend/reading-writer/app/projections/
+ensure.py` (`backend/projector/app/ensure.py` when this revision was written;
+the projector became a module of the reading-writer on 2026-09-05).
 
 THE SYNTHETIC FIXTURE GOES
 --------------------------

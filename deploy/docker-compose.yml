@@ -443,13 +443,26 @@ services:
   # `tenant.*.iot.reading.>` — alerts are events, not measurements, and have no
   # row here.
   #
+  # ALSO, since 2026-09-05, the ONLY thing that writes the relations declared in
+  # `neubit_reporting.reporting_projections` — one durable pull consumer per row,
+  # which was the `reporting-projector` container until this file stopped
+  # describing one. The two owners did not merge; the two PROCESSES did. Nothing
+  # in `app/projections` writes the readings schema and nothing in `app/` writes a
+  # projected relation, and the four things that stop a projection backlog
+  # stalling reading ingestion are listed in backend/reading-writer/app/main.py
+  # — separate NATS connections, separate durables, separate tasks, and a
+  # separate connection pool, which is the one that used to be free.
+  #
   # REDUNDANCY: scale it. `docker compose up -d --scale reading-writer=2` and NATS
   # distributes messages between the replicas, because every replica binds the
-  # SAME durable name. No leader election, nothing to configure per replica. (Drop
-  # the host port binding below if you scale beyond one.)
+  # SAME durable name — readings and each projection alike. No leader election,
+  # nothing to configure per replica. (Drop the host port binding below if you
+  # scale beyond one.)
   #
   # It imports the schema from the `reporting` package and never redeclares it; it
-  # does not run migrations — `reporting-migrate` owns that.
+  # does not run migrations — `reporting-migrate` owns that. It DOES create the
+  # relations a projection declares, because those are declared as data and no
+  # migration can know them (see app/projections/ensure.py).
   reading-writer:
     build:
       context: ../backend
@@ -508,6 +521,50 @@ services:
       # without it only a wildcard admin could ever open the dataset (the
       # ingest.read bug). Best-effort — core being down never fails a chart.
       VE_CORE_URL: ${VE_CORE_URL:-http://core:8000}
+      # ── the projection consumers (app/projections) ─────────────────────────
+      # Every knob below was `reporting-projector`'s and is deliberately still
+      # named VE_PROJECTOR_*: they configure the projection half and nothing
+      # else, and a rename would silently reset a deployment that had tuned them
+      # in deploy/.env. They stay SEPARATE from the VE_READINGS_* pair above —
+      # sharing one lag threshold or one batch size between a sensor feed and a
+      # door swipe is how one consumer's health starts standing in for the
+      # other's.
+      #
+      # Batching: flush on N rows or T ms, whichever comes first. Smaller than
+      # the reading-writer's 500 on purpose — domain events arrive at human
+      # rates, so the timer is what fires and a bigger row threshold would only
+      # delay a swipe reaching the store.
+      VE_PROJECTOR_BATCH_ROWS: ${VE_PROJECTOR_BATCH_ROWS:-200}
+      VE_PROJECTOR_BATCH_MS: ${VE_PROJECTOR_BATCH_MS:-1000}
+      VE_PROJECTOR_QUEUE_BATCHES: ${VE_PROJECTOR_QUEUE_BATCHES:-4}
+      # Ack only after the batch is durably written.
+      VE_PROJECTOR_ACK_WAIT_SEC: ${VE_PROJECTOR_ACK_WAIT_SEC:-120}
+      VE_PROJECTOR_MAX_ACK_PENDING: ${VE_PROJECTOR_MAX_ACK_PENDING:-2000}
+      # How fast a newly-inserted projection starts being collected.
+      VE_PROJECTOR_RELOAD_SEC: ${VE_PROJECTOR_RELOAD_SEC:-30}
+      # Set to 0 in a deployment where the projected relations are managed out of
+      # band; the projections then write only into relations that already exist.
+      VE_PROJECTOR_ENSURE_RELATIONS: ${VE_PROJECTOR_ENSURE_RELATIONS:-1}
+      # A system-scoped event's subject segment is the literal `platform`, which
+      # is not a uuid, and the projected relations declare `tenant_id uuid NOT
+      # NULL`. Map it, or unmapped keys get a stable synthetic UUID and a loud
+      # warning. Same three rules (and the same namespace) as the readings half,
+      # and unset it falls back to VE_READINGS_TENANT_MAP — see app/projections/
+      # config.py for why that fallback is deliberate rather than lazy.
+      VE_PROJECTOR_TENANT_MAP: ${VE_PROJECTOR_TENANT_MAP:-}
+      VE_PROJECTOR_DEFAULT_TENANT_ID: ${VE_PROJECTOR_DEFAULT_TENANT_ID:-}
+      # Its own stall watchdog and its own lag threshold, reported and paged on
+      # separately from the readings ones. VE_DB_STATEMENT_TIMEOUT_MS above is
+      # the server-side half and covers both halves' queries.
+      VE_PROJECTOR_WRITE_STALL_SEC: ${VE_PROJECTOR_WRITE_STALL_SEC:-20}
+      VE_PROJECTOR_LAG_WARN: ${VE_PROJECTOR_LAG_WARN:-5000}
+      # ── the projections' OWN connection pool ───────────────────────────────
+      # NOT tuning. This is what stops a projection holding connections from
+      # blocking the readings write loop in the pool checkout, where no
+      # statement_timeout applies and no health flag is armed — the one thing
+      # two separate containers gave for free. See app/projections/db.py.
+      VE_PROJECTOR_POOL_SIZE: ${VE_PROJECTOR_POOL_SIZE:-4}
+      VE_PROJECTOR_POOL_OVERFLOW: ${VE_PROJECTOR_POOL_OVERFLOW:-4}
     depends_on:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
@@ -518,85 +575,6 @@ services:
     # published for DEVELOPMENT ONLY, from docker-compose.override.yml. An
     # appliance runs this file alone, where publishing it would put an unauthed
     # operational surface on the customer's LAN.
-    restart: unless-stopped
-    networks: [neubit]
-
-  # ── reporting-projector (domain events → the reporting store) ───
-  # The ONLY thing that writes the relations declared in
-  # `neubit_reporting.reporting_projections`. One durable pull consumer per
-  # projection; access control is the first, on EVENTS / `tenant.*.access.>`.
-  #
-  # WHY IT EXISTS: the platform bans services from reading each other's
-  # databases, and `neubit_reporting` is the documented exception FOR QUERYING —
-  # not a licence to open `neubit_access`. So a domain publishes on the spine and
-  # this consumes the spine. It opens one database and never another.
-  #
-  # ADDING A DOMAIN IS AN INSERT, NOT A RELEASE. A row in `reporting_projections`
-  # declares the subject, the target relation and its columns, the rollups and the
-  # `dashboard_datasets` row to publish. This service re-reads that table every
-  # VE_PROJECTOR_RELOAD_SEC, creates what the spec declares (additively — see
-  # backend/projector/app/ensure.py) and starts consuming. No rebuild, no
-  # migration, no builder release.
-  #
-  # REDUNDANCY: scale it. Every replica binds the SAME durable name per
-  # projection, so NATS distributes messages between them.
-  reporting-projector:
-    build:
-      context: ../backend
-      dockerfile: projector/Dockerfile
-    env_file: .env
-    environment:
-      VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_reporting
-      # ── batching: flush on N rows or T ms, whichever comes first ────────────
-      # Smaller than the reading-writer's 500 on purpose: domain events arrive at
-      # human rates, so the timer is what fires and a bigger row threshold would
-      # only delay a swipe reaching the store.
-      VE_PROJECTOR_BATCH_ROWS: ${VE_PROJECTOR_BATCH_ROWS:-200}
-      VE_PROJECTOR_BATCH_MS: ${VE_PROJECTOR_BATCH_MS:-1000}
-      VE_PROJECTOR_QUEUE_BATCHES: ${VE_PROJECTOR_QUEUE_BATCHES:-4}
-      # ── ack: only after the batch is durably written ────────────────────────
-      VE_PROJECTOR_ACK_WAIT_SEC: ${VE_PROJECTOR_ACK_WAIT_SEC:-120}
-      VE_PROJECTOR_MAX_ACK_PENDING: ${VE_PROJECTOR_MAX_ACK_PENDING:-2000}
-      # ── how fast a newly-inserted projection starts being collected ─────────
-      VE_PROJECTOR_RELOAD_SEC: ${VE_PROJECTOR_RELOAD_SEC:-30}
-      # Set to 0 in a deployment where the projected relations are managed out of
-      # band; the projector then writes only into relations that already exist.
-      VE_PROJECTOR_ENSURE_RELATIONS: ${VE_PROJECTOR_ENSURE_RELATIONS:-1}
-      # ── tenant resolution ──────────────────────────────────────────────────
-      # A system-scoped event's subject segment is the literal `platform`, which
-      # is not a uuid, and the projected relations declare `tenant_id uuid NOT
-      # NULL`. Map it, or unmapped keys get a stable synthetic UUID and a loud
-      # warning. Same three rules (and the same namespace) as the reading-writer.
-      VE_PROJECTOR_TENANT_MAP: ${VE_PROJECTOR_TENANT_MAP:-}
-      VE_PROJECTOR_DEFAULT_TENANT_ID: ${VE_PROJECTOR_DEFAULT_TENANT_ID:-}
-      # ── observability ──────────────────────────────────────────────────────
-      # ── a hung database must not look healthy ──────────────────────────────
-      # Two halves of the same failure, because neither covers the other:
-      #
-      #   VE_DB_STATEMENT_TIMEOUT_MS — a server-side ceiling on every query this
-      #     service runs. A write blocked on a lock used to hang indefinitely;
-      #     now it RAISES, which the existing retry/NAK path already handles and
-      #     the health flag already reflects. Generous (60s) because the same
-      #     engine serves the BI query API.
-      #   VE_PROJECTOR_WRITE_STALL_SEC — a client-side watchdog. `docker
-      #     compose pause postgres` SIGSTOPs the server, so its own statement
-      #     timeout is frozen and never fires; only the client can notice that a
-      #     write has been in flight far too long. It does not cancel anything
-      #     (nothing is acked, so nothing is lost) — it turns /readyz red so the
-      #     silence is visible. Deliberately well under the statement timeout.
-      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS:-60000}
-      VE_PROJECTOR_WRITE_STALL_SEC: ${VE_PROJECTOR_WRITE_STALL_SEC:-20}
-      VE_PROJECTOR_LAG_WARN: ${VE_PROJECTOR_LAG_WARN:-5000}
-    depends_on:
-      postgres: { condition: service_healthy }
-      db-init: { condition: service_completed_successfully }
-      nats: { condition: service_started }
-      reporting-migrate: { condition: service_completed_successfully }
-    # /health, /readyz, /metrics, /stats. Deliberately NOT behind Traefik: this is
-    # an operational surface, not a tenant API. The builder reads the datasets it
-    # registers through the reading-writer's /api/v1/bi/... — one query path.
-    # Published for DEVELOPMENT ONLY, from docker-compose.override.yml — see the
-    # note on reading-writer.
     restart: unless-stopped
     networks: [neubit]
 

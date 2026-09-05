@@ -161,11 +161,13 @@ async def alerts(
 ) -> AlertListResponse:
     """The fault queue — every alert the gateway raised in a bounded window.
 
-    Reads `iot_alerts`, which this service does NOT write: the reporting-projector
-    fills it from `tenant.*.iot.alert.*` (builder contract §9). Reading it here is
-    the rule, not an exception — the reading-writer is the one read path over the
-    whole reporting store, and a second one is exactly the drift that rule exists
-    to prevent.
+    Reads `iot_alerts`, which this MODULE does not write and this PROCESS now
+    does: `app.projections` fills it from `tenant.*.iot.alert.*` (builder contract
+    §9). That distinction is the whole of the ownership rule since the projector
+    was folded in — the readings half still declares nothing about this relation
+    and still issues no write against it. Reading it here is the rule, not an
+    exception: the reading-writer is the one read path over the whole reporting
+    store, and a second one is exactly the drift that rule exists to prevent.
 
     Bounded to `ALERTS_MAX_HOURS` because this reads RAW, for the same reason
     `/bi/points` does: the queue needs each alert's own message, and the hourly

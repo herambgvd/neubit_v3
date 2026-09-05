@@ -80,10 +80,10 @@ import nats
 from kernel.events import dead_letter, ensure_dlq_stream
 from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.api import AckPolicy, ConsumerConfig
-from reporting.db import database
 from sqlalchemy import text
 
 from .config import ProjectorConfig
+from .db import projections_db as database
 from .ensure import SchemaRefused, ensure
 from .extract import Malformed, extract
 from .metrics import Metrics
@@ -163,8 +163,11 @@ class Worker:
         await self._converge_consumer(js, src)
         # A DURABLE PULL consumer. Every replica of this service binds the SAME
         # durable name per projection, so NATS distributes messages between them.
-        # That is the redundancy story: `--scale reporting-projector=2`, no leader
-        # election, nothing per-replica.
+        # That is the redundancy story: `--scale reading-writer=2`, no leader
+        # election, nothing per-replica. Unchanged by the fold-in: the durable
+        # names live in `reporting_projections` rows, not in this code, and they
+        # still read `reporting-projector-*`. Renaming them would abandon a live
+        # cursor and replay the stream to rediscover rows that are already there.
         self._psub = await js.pull_subscribe(
             src.subject, durable=src.durable, stream=src.stream,
             config=self._consumer_config(),
@@ -466,7 +469,10 @@ class Projector:
 
         self._nc = await nats.connect(
             nats_url,
-            name="neubit-reporting-projector",
+            # Its OWN connection, named apart from the readings one so two
+            # consumers in one process stay two lines in `nats server report
+            # connections` — see app/main.py on why they must not share.
+            name="neubit-reading-writer-projections",
             max_reconnect_attempts=-1,     # never give up; the backlog is durable
             disconnected_cb=_disconnected,
             reconnected_cb=_reconnected,

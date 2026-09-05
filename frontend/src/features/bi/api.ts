@@ -74,10 +74,11 @@ export const bi = {
   activity: (hours = 24) => unwrap(api.get(`${BI}/activity${qs({ hours })}`)),
 
   // The FAULT QUEUE — alerts the gateway raised, projected into the reporting
-  // store by the reporting-projector and read back here. Bounded to 48 hours by
-  // the server because it reads RAW: the queue needs each alert's own message,
-  // and the hourly rollup deliberately does not carry it (the message is unique
-  // per alert, so grouping by it would make the rollup a copy of the table).
+  // store by the reading-writer's projection consumers and read back here.
+  // Bounded to 48 hours by the server because it reads RAW: the queue needs
+  // each alert's own message, and the hourly rollup deliberately does not carry
+  // it (the message is unique per alert, so grouping by it would make the rollup
+  // a copy of the table).
   // A wider question is a chart, and the `iot_alerts` DATASET answers it.
   //
   // `available: false` means nothing is COLLECTING alerts, which is not the same
