@@ -140,6 +140,31 @@ class WriterConfig:
     # ── observability ─────────────────────────────────────────────────────────
     # Consumer lag above this is logged as a warning and turns /readyz degraded.
     lag_warn: int = field(default_factory=lambda: _int("VE_READINGS_LAG_WARN", 10000))
+    # How long the fetch loop may go without an ANSWER from JetStream — messages
+    # OR a clean idle timeout — before /readyz calls the readings consumer wedged.
+    #
+    # THIS IS NOT A "NO READINGS ARRIVED" THRESHOLD and must never be tuned as
+    # one. A pull that expires server-side is an answer, and nats-py expires one
+    # every `batch_ms` (1s), so a live loop refreshes this about once a second on
+    # a completely silent bus. This estate polls roughly every five minutes and
+    # lands in bursts; a quiet night is normal operation and reads green here,
+    # because what is being measured is the loop asking, not the estate talking.
+    # A flag that reds on an idle window is worse than no flag — somebody turns
+    # it off, and then the real wedge is invisible too.
+    #
+    # 60s is therefore ~60 consecutive missed heartbeats. It also governs the
+    # SECOND proof — `consumer_unconfirmed_sec`, refreshed by the stats loop
+    # every `stats_every_sec` (15s), so four consecutive checks must fail before
+    # a missing durable reds. One window for both, because an operator tuning
+    # "how long may this look wedged before I am paged" is asking one question.
+    #
+    # It buys immunity to a single failed pull, a NATS reconnect, and a container
+    # that lost the CPU for a while, and it costs at most a minute of detection
+    # latency on a signal whose remedy (a rebind, or a human) takes longer than
+    # that anyway. Set to 0 to disable the check.
+    fetch_silence_sec: float = field(
+        default_factory=lambda: float(_int("VE_READINGS_FETCH_SILENCE_SEC", 60))
+    )
     stats_every_sec: int = field(default_factory=lambda: _int("VE_READINGS_STATS_SEC", 15))
 
     def __post_init__(self) -> None:

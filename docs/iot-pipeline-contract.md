@@ -522,8 +522,8 @@ lives in data rather than in configuration that someone has to remember.
   can never become a row would block the stream behind it. This is the only place
   the writer discards anything, and it is never silent.
 * **Observability**: `:8020/health` (liveness), `/readyz` (503 on database down,
-  NATS disconnected, or lag over `VE_READINGS_LAG_WARN`), `/metrics`
-  (Prometheus), `/stats` (the same as JSON).
+  NATS disconnected, lag over `VE_READINGS_LAG_WARN`, or the consumer NOT
+  CONSUMING — see §21), `/metrics` (Prometheus), `/stats` (the same as JSON).
 
 ---
 
@@ -1889,10 +1889,37 @@ The two readiness definitions disagreed and the projector's is strictly the
 stronger — it goes red for a REFUSED projection (a domain that believes it is
 being collected and is not; this pipeline has produced two of those) and for a
 consumer whose pulls keep failing while it receives nothing. Both are KEPT,
-applied to the half that has them. Neither was weakened. The readings half did
-NOT gain a `consuming` flag here: its fetch loop has the same blind spot, and
-that is a change to the hot path deserving its own commit and its own proof, not
-a rider on a move.
+applied to the half that has them. Neither was weakened.
+
+**The readings half now has a `consuming` signal of its own** (2026-09-05,
+`reading_writer_consuming`; the fold-in commit deliberately deferred it). Before
+it, `/readyz` reported `db_healthy`, the NATS connection and `consumer_pending`,
+and all three read healthy for a process consuming nothing — `consumer_pending`
+worst of all, because 0 means "caught up" and also means "not fetching at all".
+
+It is DERIVED from two clocks rather than assigned from a failure branch, because
+one proof is not enough:
+
+* **the fetch loop's heartbeat**, stamped on every ANSWERED pull. Catches a task
+  that died or stopped iterating, which an assigned flag structurally cannot.
+* **an out-of-band `consumer_info` check**, on the stats task that already made
+  that call for the lag numbers, now also checking SHAPE (pull, and our filter).
+  Necessary because nats-py maps the server's 409 onto `nats.errors.TimeoutError`
+  (`JetStreamContext._is_temporary_error` treats CONFLICT as temporary) and 409
+  is the answer to a pull against a deleted or push-based consumer — so at the
+  fetch call a vanished durable is byte-for-byte an idle feed.
+
+`VE_READINGS_FETCH_SILENCE_SEC` (60s) is the window for both. **It is not a
+"no readings arrived" threshold**: an expired pull is an answer, so a live loop
+refreshes the heartbeat every `batch_ms` on a silent bus, and the estate's ~5
+minute poll interval never trips it. A flag that reds on a quiet night gets
+switched off, and then the real wedge is invisible too.
+
+A durable found ABSENT requests a rebind (the fetch loop performs it, so `_psub`
+has one owner); a durable found present but NOT OURS deliberately does not — a
+rebind would bind to the impostor again and report success. That case stays red
+and loud for a human, because this service's filter comes from
+`VE_READINGS_SUBJECT` and not from a table an operator edits.
 
 ### Verified on the live stack (2026-09-05)
 

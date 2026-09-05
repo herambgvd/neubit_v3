@@ -69,14 +69,35 @@ codebase spends its comments preventing.
 
 WHERE THE TWO READINESS DEFINITIONS DISAGREED
 ----------------------------------------------
-They were written a day apart and the projector's is strictly the stronger. It
-goes red for two conditions the readings pipeline has no concept of: a projection
+They were written a day apart and the projector's was strictly the stronger. It
+went red for two conditions the readings pipeline had no concept of: a projection
 REFUSED at startup (a domain that believes it is being collected and is not), and
 a consumer whose pulls keep failing while it receives nothing (`consuming`). Both
-are KEPT, applied to the half that has them. Neither was weakened to match, and
-the readings half did NOT gain a `consuming` flag here — its fetch loop has the
-same blind spot, and fixing that is a change to the hot path that deserves its
-own commit and its own proof, not a rider on a move.
+are KEPT, applied to the half that has them, neither weakened to match.
+
+The readings half now has the second of those too, which is what closed the gap
+5b69d72 left open in writing. It is the same idea and NOT the same mechanism. The
+projections flag is ASSIGNED from the failure branch of each projection's fetch
+loop; the readings flag is DERIVED from two clocks, and it has to be, because a
+failing pull is not actually observable here:
+
+  * the loop stamps a heartbeat on every ANSWERED pull, so a task that died or
+    stopped iterating goes stale — something an assigned flag cannot notice,
+    since a dead task assigns nothing;
+  * the stats loop stamps a second clock when `consumer_info` confirms the
+    durable exists and is OUR pull consumer. Necessary because nats-py reports
+    the server's 409 — its answer to a pull against a deleted or push-based
+    consumer — as a plain `TimeoutError`, identical to an idle feed. Without this
+    second proof a durable deleted out of band is invisible at the fetch call,
+    which is exactly the wedge this commit had to be able to see.
+
+A refused-projection equivalent is still not here and should not be: the readings
+consumer is one durable named in config, not a table of them, so there is no such
+thing as a readings projection that believes it is being collected.
+
+Both flags are exposed apart — `reading_writer_consuming` against
+`projector_consuming{projection="..."}` — so a reader can tell WHICH consumer is
+wedged rather than only that one of them is.
 """
 
 from __future__ import annotations
@@ -231,6 +252,28 @@ def _readings_reasons() -> list[str]:
         reasons.append("readings: database unavailable")
     if not metrics.nats_connected:
         reasons.append("readings: NATS disconnected")
+    # The states none of the three above can see. A connected client, a healthy
+    # database and `consumer_pending` at 0 is ALSO what a deleted durable, a dead
+    # fetch task and a loop that stopped iterating look like — and this is the hot
+    # path, so it is the one place where reading success into silence costs the
+    # estate its readings.
+    #
+    # TWO reasons, not one, because they are two different faults with two
+    # different fixes: the loop stopped answering (restart it, look at the task)
+    # versus the durable is gone or is not ours (look at who else is using the
+    # name). Neither is a traffic gauge — a live loop and a live durable both
+    # report fine through a completely idle night.
+    if not metrics.fetch_loop_alive:
+        reasons.append(
+            f"readings: consumer is not consuming: no answer from the fetch loop for "
+            f"{metrics.fetch_silence_sec()}s (limit {config.fetch_silence_sec}s)"
+        )
+    if not metrics.consumer_confirmed:
+        reasons.append(
+            f"readings: consumer is not consuming: durable {config.stream}/"
+            f"{config.durable} unconfirmed for {metrics.consumer_unconfirmed_sec()}s "
+            f"(limit {config.fetch_silence_sec}s): {metrics.consumer_missing}"
+        )
     if metrics.consumer_pending > config.lag_warn:
         reasons.append(
             f"readings: consumer lag {metrics.consumer_pending} > {config.lag_warn}"

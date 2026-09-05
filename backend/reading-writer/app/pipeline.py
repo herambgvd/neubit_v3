@@ -114,12 +114,23 @@ def _delivery_count(msg) -> int:
 
 log = logging.getLogger("reading-writer.pipeline")
 
+# Consecutive failed pulls before the fetch loop recreates its own consumer.
+# Same number as the projections half uses, and for the same reason: two or three
+# failures in a row is a hiccup you wait out, a fourth is a durable that is not
+# coming back on its own. Deliberately NOT 1 — a rebind can cost a full stream
+# replay (see `_rebind`), which is far too expensive to spend on a blip.
+REBIND_AFTER_FAILURES = 3
+
 
 class Pipeline:
     def __init__(self, cfg: WriterConfig, metrics: Metrics) -> None:
         self.cfg = cfg
         self.m = metrics
         self.m.queue_capacity = cfg.queue_batches
+        # Arm the fetch-liveness check. Metrics defaults it to 0 (disabled) so
+        # that a Metrics object nobody is driving — a test, or /stats before the
+        # pipeline has started — cannot report itself wedged.
+        self.m.silence_limit_sec = cfg.fetch_silence_sec
         self.tenants = TenantResolver.from_env()
         self.cache = PointCache(cfg.point_touch_sec)
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=cfg.queue_batches)
@@ -128,6 +139,11 @@ class Pipeline:
         self._js = None
         self._psub = None
         self._running = False
+        # Set by the stats loop when `consumer_info` says the durable is gone,
+        # and acted on by the FETCH loop. The rebind stays in the one task that
+        # owns `_psub`: swapping the subscription out from under a fetch in
+        # flight is a race nobody would ever reproduce on purpose.
+        self._rebind_requested = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
     async def start(self, nats_url: str) -> None:
@@ -236,12 +252,12 @@ class Pipeline:
             await self._js.update_stream(want)
             log.info("converged stream %s onto configured limits", want.name)
 
-    async def _bind_consumer(self) -> None:
+    def _consumer_config(self) -> ConsumerConfig:
         c = self.cfg
         # A DURABLE PULL consumer. Every replica binds the SAME durable name, so
         # NATS distributes messages between them — that is the redundancy story
         # with no coordination code, no leader election, nothing per-replica.
-        cfg = ConsumerConfig(
+        return ConsumerConfig(
             durable_name=c.durable,
             filter_subject=c.subject,
             ack_policy=AckPolicy.EXPLICIT,
@@ -249,24 +265,162 @@ class Pipeline:
             max_ack_pending=c.max_ack_pending,
             max_deliver=-1,       # never give up on a reading
         )
+
+    async def _bind_consumer(self) -> None:
+        c = self.cfg
         self._psub = await self._js.pull_subscribe(
-            c.subject, durable=c.durable, stream=c.stream, config=cfg
+            c.subject, durable=c.durable, stream=c.stream, config=self._consumer_config()
         )
+        # START THE CLOCK, then ask. The stamp is not a claim that the consumer is
+        # healthy — it is the grace window: `consumer_unconfirmed_sec` measures
+        # from here, so a durable that is NEVER confirmed still reds after
+        # `fetch_silence_sec` instead of sitting at an unset clock forever. Then
+        # ask, because a successful subscribe proves nothing: nats-py's
+        # `pull_subscribe` binds happily to whatever holds the durable name,
+        # including a PUSH consumer whose every pull comes back as an idle
+        # timeout. Measured, not reasoned about — an impostor consumer accepted
+        # the subscribe and then answered minutes of pulls with silence.
         log.info(
             "bound durable pull consumer %s on %s (filter=%s, ack_wait=%ss, "
             "max_ack_pending=%s)",
             c.durable, c.stream, c.subject, c.ack_wait_sec, c.max_ack_pending,
         )
+        self.m.note_consumer_seen()
+        # Ordered AFTER the line above so that when the durable turns out to be
+        # someone else's, the ERROR is the last word rather than the reassurance.
+        await self._confirm_consumer()
+
+    async def _confirm_consumer(self):
+        """Ask JetStream whether our durable exists and is OUR pull consumer.
+
+        The second of the two proofs behind `consuming`, and the only one that
+        can see a durable deleted or taken over out of band: nats-py maps the
+        server's 409 onto `nats.errors.TimeoutError`
+        (`JetStreamContext._is_temporary_error` treats CONFLICT as temporary),
+        so at the fetch call a vanished consumer is byte-for-byte an idle feed.
+
+        Runs on the stats task, never on the write path. Returns the ConsumerInfo
+        when it is ours, else None — and requests a rebind, because the fetch
+        loop will never ask for one on its own.
+        """
+        c = self.cfg
+        try:
+            info = await self._js.consumer_info(c.stream, c.durable)
+        except Exception as exc:  # noqa: BLE001
+            self.m.note_consumer_missing(f"{type(exc).__name__}: {exc}"[:200])
+            self._rebind_requested = True
+            log.warning(
+                "consumer %s/%s could not be read (%s) — the fetch loop cannot see "
+                "this, its pulls just look idle; asking it to re-bind",
+                c.stream, c.durable, exc,
+            )
+            return None
+
+        # PRESENT IS NOT ENOUGH. A durable of the right name can be the wrong
+        # consumer — push, or pull on a different filter — and then every pull is
+        # a 409 the client reports as a timeout. Deliberately NOT auto-repaired by
+        # deleting it: this service's filter comes from VE_READINGS_SUBJECT, not
+        # from a table an operator edits, so a mismatch means something else is
+        # using this durable name and silently destroying its consumer is not a
+        # decision this loop should make. Stay red, say exactly what is wrong, let
+        # a human choose. (app/projections DOES converge its durables, because
+        # there the filter genuinely changes underneath it — `_converge_consumer`.)
+        wrong = None
+        if getattr(info.config, "deliver_subject", None):
+            wrong = "it is a PUSH consumer; this service pulls"
+        elif (info.config.filter_subject or "") != c.subject:
+            wrong = f"its filter is {info.config.filter_subject!r}, not {c.subject!r}"
+        if wrong:
+            # No rebind requested, unlike the absent case: `pull_subscribe` would
+            # simply bind to the impostor again and report success, so asking for
+            # one would spin a counter and fix nothing. Red and loud is the whole
+            # remedy this loop is entitled to.
+            self.m.note_consumer_missing(wrong)
+            log.error(
+                "durable %s/%s IS NOT OUR CONSUMER: %s — every pull will read as an "
+                "idle timeout while nothing is consumed",
+                c.stream, c.durable, wrong,
+            )
+            return None
+
+        self.m.note_consumer_seen()
+        return info
+
+    async def _rebind(self) -> None:
+        """Recreate the readings consumer and re-bind the pull subscription.
+
+        The only exit from the deleted-durable wedge: `pull_subscribe` with the
+        full ConsumerConfig CREATES the durable when it is missing, exactly as
+        the first bind at start does.
+
+        WHAT IT COSTS, because it is not free. A durable that was genuinely
+        deleted left no cursor to inherit, so the new one starts at the head of
+        IOT_READINGS and REPLAYS it — on this stream that is a week of readings.
+        It is correct rather than merely tolerable: every row goes in through the
+        natural key with ON CONFLICT DO NOTHING (`app.store.write_batch`), so a
+        replay stores nothing twice and shows up only as `rows_duplicate`, and
+        anything the deleted durable had not yet delivered is redelivered instead
+        of being lost. But it is real work for the writer, which is why nothing
+        reaches here on a single bad pull: either REBIND_AFTER_FAILURES
+        consecutive pull failures, or `_confirm_consumer` finding the durable
+        actually gone.
+
+        Failure here is fine — NATS itself may be down. The loop keeps failing,
+        the heartbeat keeps going stale, /readyz stays red, and the next streak
+        lands back here.
+        """
+        c = self.cfg
+        if self._psub is not None:
+            # Drop the dead subscription's inbox first, or every rebind leaks one
+            # core subscription for the life of the process.
+            with contextlib.suppress(Exception):
+                await self._psub.unsubscribe()
+        try:
+            self._psub = await self._js.pull_subscribe(
+                c.subject, durable=c.durable, stream=c.stream,
+                config=self._consumer_config(),
+            )
+        except Exception as exc:  # noqa: BLE001 — keep failing visibly, retry next streak
+            self.m.note_error(exc)
+            log.error("could not re-bind durable %s on %s: %s", c.durable, c.stream, exc)
+            return
+        self.m.consumer_rebinds += 1
+        # Deliberately NOT `note_consumer_seen()`. A subscribe that returned
+        # without raising is not evidence the right consumer is there — it binds
+        # to whatever holds the name. Only `_confirm_consumer` may clear this,
+        # and it runs on the next stats tick; a rebind that fixed nothing leaves
+        # /readyz red, which is the entire point.
+        log.warning(
+            "re-bound durable %s on %s after repeated fetch failures — if the durable "
+            "had been deleted, %s REPLAYS from the start (idempotent: duplicates are "
+            "absorbed by ON CONFLICT DO NOTHING and counted as rows_duplicate)",
+            c.durable, c.stream, c.stream,
+        )
 
     # ── fetcher ───────────────────────────────────────────────────────────────
     async def _fetch_loop(self) -> None:
         timeout = max(self.cfg.batch_ms, 1) / 1000.0
+        failures = 0  # CONSECUTIVE failed pulls; any answered pull resets it
+        self.m.note_fetch_answer()
         while self._running:
             if not self.m.db_healthy:
                 # Nothing to gain from pulling messages we cannot write; the
                 # backlog is safe in the stream and the prober will wake us.
+                #
+                # Still a heartbeat, on purpose. The loop is alive and the reason
+                # it is not pulling already has its own /readyz line. Letting the
+                # silence accumulate here would report a paused Postgres as a
+                # SECOND and wrong fault — "the consumer is not consuming" — and
+                # send whoever is paged at the bus instead of the database.
+                self.m.note_fetch_answer()
                 await asyncio.sleep(self.cfg.db_retry_sec)
                 continue
+            if self._rebind_requested:
+                # The stats loop found the durable gone. Nothing here will ever
+                # raise to tell us that (see the 409 note below), so this is the
+                # only path back.
+                self._rebind_requested = False
+                await self._rebind()
             try:
                 msgs = await self._psub.fetch(self.cfg.batch_rows, timeout=timeout)
             except (NatsTimeoutError, asyncio.TimeoutError):
@@ -276,15 +430,47 @@ class Pipeline:
                 # does. Only the first was caught, so a quiet gateway logged
                 # "fetch failed:" with an empty message every second and left a
                 # spurious `last_error` on /stats and /readyz.
+                #
+                # An expired pull proves the LOOP is alive — it asked and it came
+                # back — and that is exactly why a quiet estate, this one polls
+                # about every five minutes, keeps `consuming` at 1.
+                #
+                # It proves NOTHING about the consumer. nats-py's
+                # `_is_temporary_error` treats the server's 409 as a timeout, and
+                # 409 is what a pull against a DELETED or hijacked durable
+                # answers — same exception, same branch, same silence as an idle
+                # feed. That is why `consuming` also requires the stats loop's
+                # `consumer_info` proof, and why this branch must not be read as
+                # "everything is fine".
+                failures = 0
+                self.m.note_fetch_answer()
                 continue
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — a bad pull must not kill the loop
+                # This branch used to log, sleep a second, and retry FOREVER.
+                # Delete the `reading-writer` durable out of band and that is a
+                # permanent wedge that reports success: every pull raises here,
+                # not one reading is consumed, and /readyz answers 200 throughout
+                # because the connection is up, the database answers, and
+                # `consumer_pending` — last read from a consumer that no longer
+                # exists — sits at 0, which is indistinguishable from caught-up.
+                #
+                # Two changes. The heartbeat is deliberately NOT stamped, so the
+                # silence accumulates and `consuming` turns /readyz red on its
+                # own. And a streak recreates the consumer, which is the only
+                # exit when the durable is really gone.
                 self.m.note_error(exc)
-                log.warning("fetch failed: %s", exc)
+                self.m.fetch_failures += 1
+                failures += 1
+                log.warning("fetch failed (%d in a row): %s", failures, exc)
+                if failures >= REBIND_AFTER_FAILURES:
+                    await self._rebind()
                 await asyncio.sleep(1.0)
                 continue
 
+            failures = 0
+            self.m.note_fetch_answer()
             self.m.messages_received += len(msgs)
             keep, rows = [], []
             for msg in msgs:
@@ -318,6 +504,13 @@ class Pipeline:
                 # Blocks when the buffer is full. That block IS the backpressure:
                 # we stop pulling, the stream holds the backlog, lag becomes
                 # visible. Nothing is dropped.
+                #
+                # A block long enough to outlast `fetch_silence_sec` also reads as
+                # not consuming, and that is not a false positive: the loop really
+                # has stopped taking readings off the bus. In practice the stall
+                # watchdog names the real cause first — `write_stall_sec` (20s) is
+                # under the silence limit (60s) by design, so the page says
+                # "database stuck" before it says "not consuming".
                 await self._queue.put((keep, rows))
                 self.m.queue_depth = self._queue.qsize()
 
@@ -448,14 +641,19 @@ class Pipeline:
     async def _stats_loop(self) -> None:
         while self._running:
             await asyncio.sleep(self.cfg.stats_every_sec)
-            try:
-                info = await self._js.consumer_info(self.cfg.stream, self.cfg.durable)
-                self.m.consumer_pending = info.num_pending or 0
-                self.m.consumer_ack_pending = info.num_ack_pending or 0
-                self.m.consumer_redelivered = info.num_redelivered or 0
-            except Exception as exc:  # noqa: BLE001
-                log.debug("consumer_info unavailable: %s", exc)
+            # This call was already here for the lag numbers. It is now also the
+            # only thing in the process that can tell a deleted durable from a
+            # quiet one, so its failure is no longer a debug line.
+            info = await self._confirm_consumer()
+            if info is None:
+                # Leave the lag numbers at their last values rather than zeroing
+                # them: 0 pending is the reading "everything is fine", and this is
+                # precisely the moment it would be a lie.
                 continue
+
+            self.m.consumer_pending = info.num_pending or 0
+            self.m.consumer_ack_pending = info.num_ack_pending or 0
+            self.m.consumer_redelivered = info.num_redelivered or 0
 
             if self.m.consumer_pending > self.cfg.lag_warn:
                 log.warning(
