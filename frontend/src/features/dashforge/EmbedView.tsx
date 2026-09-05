@@ -114,10 +114,25 @@ export default function EmbedView({ id, name }: { id: string; name?: string }) {
         src={session.iframe_url}
         title={name || "DashForge dashboard"}
         className="min-h-0 w-full flex-1 rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.7)]"
-        // No allow-same-origin: the embed page is on the DashForge origin and
-        // has no business reaching this one. Scripts and forms are what the
-        // dashboard itself needs to run.
-        sandbox="allow-scripts allow-forms allow-popups"
+        // `allow-same-origin` is REQUIRED here, and the comment that used to sit
+        // in its place had the flag backwards. It does not grant the frame THIS
+        // origin — it lets the frame keep ITS OWN. Without it the embed document
+        // is forced into an opaque origin, and two things break immediately: its
+        // `fetch("/api/...")` leaves with `Origin: null` and is refused as
+        // cross-origin by its own backend, and any storage access throws rather
+        // than returning empty. The dashboard rendered as a blank frame with no
+        // error anywhere on this side, which is how it reached a user.
+        //
+        // It is safe precisely because the two are NOT same-origin: the embed
+        // page is served from the DashForge origin and this console from its
+        // own, so the frame keeping its origin gives it nothing of ours. The
+        // escape this flag is famous for needs the framed document to already
+        // BE same-origin with its parent; a cross-origin frame cannot reach in.
+        //
+        // What actually keeps this frame in its box is not the sandbox: it is
+        // the server's `frame-ancestors` allowlist deciding who may embed it,
+        // and the token's own scope deciding what it may show.
+        sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
         // The token is in the URL. Sending it on as a Referer to anything the
         // embed page loads would hand the credential to a third origin for free.
         referrerPolicy="no-referrer"
