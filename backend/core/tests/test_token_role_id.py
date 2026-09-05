@@ -12,7 +12,7 @@ import datetime as dt
 import jwt
 import pytest
 
-from app.auth.security import create_access_token, _encode
+from app.auth.security import AUD_TENANT, create_access_token, _encode
 from app.core.config import get_settings
 
 from kernel.auth import verify_token
@@ -29,7 +29,18 @@ async def test_token_carries_role_id_and_subjects(db):
     token = create_access_token(user)
 
     # Core minted the claim as a plain string id.
-    payload = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
+    #
+    # ``audience=`` is not optional here. create_access_token started stamping an
+    # ``aud`` realm claim (Phase 8 realm isolation) after this test was written,
+    # and PyJWT REFUSES a token carrying an aud when the caller names none —
+    # InvalidAudienceError, from a decode that has nothing to do with role_id.
+    # A non-superadmin gets the tenant realm. Asserted rather than switched off
+    # with verify_aud=False, so this test now also pins the realm the claim
+    # carries instead of quietly ignoring it.
+    payload = jwt.decode(
+        token, get_settings().jwt_secret, algorithms=["HS256"], audience=AUD_TENANT
+    )
+    assert payload["aud"] == AUD_TENANT
     assert payload["role_id"] == str(role.id)
 
     # Kernel parses it onto the Principal + exposes both subjects.
