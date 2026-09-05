@@ -78,31 +78,66 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
     """Coarse per-IP request cap across the whole API (abuse backstop).
 
-    Skips health/metrics/static so probes and dashboards are never throttled.
-    The window itself lives in Redis and is shared by every worker and replica
-    (core/ratelimit.py) — so this cap means the same number whether core runs one
-    uvicorn worker or eight, which it did not when the window was a per-process
+    The window lives in Redis and is shared by every worker and replica
+    (core/ratelimit.py), so this cap means the same number whether core runs one
+    uvicorn worker or eight — which it did not when the window was a per-process
     dict. `hit` is a coroutine because that store is reached over the network and
-    this middleware is on the path of every single request.
+    this middleware is on the path of every request.
+
+    WHAT IS EXEMPT, and why the list is shorter than it was:
+
+      * `/health`, `/ready`, `/metrics` — a throttled probe reads as an outage, and
+        a throttled scrape loses the data you need to see the throttling. Matched
+        EXACTLY, not by prefix: `startswith` also exempted `/health-bypass` and
+        `/metrics-anything`, which is a prefix match doing the job of a route match.
+
+      * `/files` is NOT exempt any more. It was, for an obvious reason — a page
+        loading fifty crops would burn the global budget — and the answer to that is
+        a bigger budget, not no budget. It is the highest-bandwidth route in the
+        product and it serves blobs to anyone with a key, so exempting it from the
+        only per-IP cap meant unthrottled bulk media download. It gets its own
+        multiplier instead.
+
+      * `/docs`, `/redoc`, `/openapi.json` are NOT exempt any more. They are not
+        high-frequency legitimate traffic and they are the first thing an attacker
+        enumerates; exempting them had no upside at all.
     """
 
-    def __init__(self, app, limit: int, skip_prefixes: tuple[str, ...]):
+    #: Exact paths that are never counted.
+    EXEMPT_PATHS = frozenset({"/health", "/ready", "/metrics"})
+
+    #: `/files` is bandwidth, not API calls, so it gets a wider budget under its own
+    #: bucket rather than sharing (or escaping) the API one.
+    FILES_PREFIX = "/files"
+    FILES_MULTIPLIER = 10
+
+    def __init__(self, app, limit: int, skip_prefixes: tuple[str, ...] = ()):
         super().__init__(app)
         self.limit = limit
+        # Kept for callers that still pass it; the class decides the policy now.
         self.skip_prefixes = skip_prefixes
 
     async def dispatch(self, request, call_next):
+        path = request.url.path
         if (
             self.limit <= 0
             or request.method == "OPTIONS"
-            or request.url.path.startswith(self.skip_prefixes)
+            or path in self.EXEMPT_PATHS
         ):
             return await call_next(request)
+        from .client_ip import client_ip
         from .ratelimit import RateLimitError, hit
 
-        ip = request.client.host if request.client else "unknown"
+        # `client_ip`, not `request.client.host`. Behind a gateway the peer is the
+        # GATEWAY, so this cap counted the whole estate into one bucket — the same
+        # defect the login limiter had, on the surface that sees every request.
+        ip = client_ip(request)
+        if path.startswith(self.FILES_PREFIX):
+            bucket, limit = f"files:{ip}", self.limit * self.FILES_MULTIPLIER
+        else:
+            bucket, limit = f"global:{ip}", self.limit
         try:
-            await hit(f"global:{ip}", self.limit, 60.0)
+            await hit(bucket, limit, 60.0)
         except RateLimitError as exc:
             return JSONResponse(
                 status_code=429,
@@ -242,7 +277,8 @@ def create_app(
     app.add_middleware(
         GlobalRateLimitMiddleware,
         limit=settings.rate_limit_global_per_minute,
-        skip_prefixes=("/health", "/ready", "/metrics", "/files", "/docs", "/redoc", "/openapi.json"),
+        # The policy lives on the class now — see GlobalRateLimitMiddleware.
+        skip_prefixes=(),
     )
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestLoggingMiddleware)

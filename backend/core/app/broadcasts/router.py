@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.models import User
 from ..core.audit import record as audit_record
 from ..core.errors import NotFoundError, ValidationError
+from ..core.patching import apply_patch
 from ..db.base import get_db
 from ..tenancy.deps import optional_tenant_id, require_superadmin
 from .models import BROADCAST_SEVERITIES, BROADCAST_TARGETS, Broadcast
@@ -98,8 +99,11 @@ async def update_broadcast(
     fields = data.model_dump(exclude_unset=True)
     if "target_tenant_ids" in fields and fields["target_tenant_ids"] is not None:
         fields["target_tenant_ids"] = [str(t) for t in fields["target_tenant_ids"]]
-    for k, v in fields.items():
-        setattr(b, k, v)
+    # Same as billing: an explicit `null` survives `exclude_unset` and used to hit a
+    # NOT NULL column as a 500. `starts_at`/`ends_at` ARE nullable and clearing a
+    # schedule window is legitimate, which is why the row's own columns decide rather
+    # than a blanket "skip None".
+    apply_patch(b, fields)
     b.updated_at = _now()
     await db.commit()
     await db.refresh(b)

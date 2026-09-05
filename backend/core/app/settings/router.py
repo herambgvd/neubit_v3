@@ -23,8 +23,13 @@ from .service import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
+#: `GET /settings/public` must answer without a credential — the login page and the
+#: other unauthenticated screens read it. Separate router for the same reason as
+#: branding's: app/app.py guards whole routers, and the guard resolves an actor.
+public_router = APIRouter(prefix="/settings", tags=["settings"])
 
-@router.get("/public")
+
+@public_router.get("/public")
 async def public_settings(
     db: AsyncSession = Depends(get_db),
     tenant_id=Depends(optional_tenant_id),

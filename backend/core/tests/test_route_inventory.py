@@ -162,3 +162,54 @@ def test_the_allowlist_has_no_stale_entries():
 def test_every_allowlist_entry_states_why():
     for key, reason in ALLOWED_UNAUTHENTICATED.items():
         assert reason and len(reason) > 15, f"{key} has no real reason recorded"
+
+
+# ---------------------------------------------------------------------------
+# The other direction: routes that MUST answer without a credential.
+#
+# Everything above asks "is this route gated". This asks "is this route still
+# ungated", and it exists because the inventory above cannot answer it. Guarding
+# every base router with `require_tenant_active` turned `GET /branding` and
+# `GET /settings/public` into 401s — the login page could no longer fetch its own
+# logo — and the inventory stayed green, because `require_tenant_active` IS in
+# _AUTHENTICATORS. Adding the guard SATISFIED the test that was supposed to be
+# watching. A gate in the wrong place looks identical to a gate in the right one
+# unless something asserts the route still works without a token.
+#
+# Asserted over HTTP rather than by reading dependencies, because that is the
+# property: an anonymous GET returns content.
+# ---------------------------------------------------------------------------
+
+PUBLIC_ROUTES = {
+    "/api/v1/branding": "the login page themes itself before anyone has signed in",
+    "/api/v1/settings/public": "the unauthenticated screens read their settings here",
+    "/api/v1/broadcasts/active": "a maintenance notice has to reach the login page",
+    "/health": "liveness for a load balancer",
+    # /ready is deliberately absent: it answers 503 in this harness because there is
+    # no database or redis, which is it working correctly. test_health_probes.py
+    # covers it, including that its 503 names the failing dependency.
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", sorted(PUBLIC_ROUTES))
+async def test_a_public_route_answers_without_a_token(sessionmaker_, path):
+    import httpx
+
+    from app.db.base import get_db
+
+    app = create_base_app(title="test")
+
+    async def _override_db():
+        async with sessionmaker_() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _override_db
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        r = await c.get(path)
+    assert r.status_code != 401, (
+        f"{path} now requires a credential — {PUBLIC_ROUTES[path]}. "
+        f"Got {r.status_code}: {r.text[:200]}"
+    )
+    assert r.status_code < 500, f"{path} -> {r.status_code}: {r.text[:200]}"

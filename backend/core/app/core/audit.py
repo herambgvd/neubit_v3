@@ -123,11 +123,22 @@ async def record(
 
 
 class AuditLogOut(BaseModel):
-    """API representation of one audit entry."""
+    """API representation of one audit entry.
+
+    `tenant_id` is here because the CROSS-TENANT view needs it and did not have it.
+    `GET /admin/audit` advertises itself as returning "EVERY tenant's entries (plus
+    the platform/system tenant_id NULL rows)", and it did — with no attribution on
+    any of them. The `?tenant_id=` filter worked, so an investigator could page one
+    tenant at a time, which is exactly the limitation that route exists to remove.
+
+    It leaks nothing to a tenant admin: their own listing is already scoped to their
+    tenant, so the only value they can see is their own.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    tenant_id: uuid.UUID | None
     actor_id: uuid.UUID | None
     actor_email: str | None
     actor_name: str | None

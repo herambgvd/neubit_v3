@@ -26,6 +26,17 @@ from .schemas import BrandingOut, UpdateBrandingIn
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
+#: The one route here that must answer WITHOUT a credential: the login page has to
+#: theme itself before anyone has signed in.
+#:
+#: It is a separate router because `app/app.py` guards whole routers with
+#: `require_tenant_active`, and that dependency resolves an actor — so guarding
+#: `branding` as one unit turned this route into a 401 and left the login page
+#: unable to load its own logo. Found by the first HTTP test this router ever had.
+#: `optional_tenant_id` already handles the anonymous case correctly; the mistake
+#: was upstream of it.
+public_router = APIRouter(prefix="/branding", tags=["branding"])
+
 
 async def _to_out(branding: Branding) -> BrandingOut:
     """Serialise a Branding row into BrandingOut, resolving logo_key → logo_url.
@@ -45,7 +56,7 @@ async def _to_out(branding: Branding) -> BrandingOut:
     )
 
 
-@router.get("", response_model=BrandingOut)
+@public_router.get("", response_model=BrandingOut)
 async def get_branding(
     db: AsyncSession = Depends(get_db),
     tenant_id=Depends(optional_tenant_id),
@@ -96,3 +107,7 @@ async def upload_logo(
     await get_storage().put(key, data, ctype)
     branding = await service.set_logo(db, key, actor.tenant_id)
     return await _to_out(branding)
+
+
+# Mounted by app/app.py alongside `router`; kept separate so the tenant-active
+# guard applies to the writes and not to the public read.

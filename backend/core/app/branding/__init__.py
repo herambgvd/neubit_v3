@@ -10,6 +10,6 @@ Wire into a scenario app:
 """
 
 from .models import Branding
-from .router import router
+from .router import public_router, router
 
-__all__ = ["router", "Branding"]
+__all__ = ["router", "Branding", "public_router"]

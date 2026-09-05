@@ -28,7 +28,9 @@ def base_routers() -> list[APIRouter]:
     from .alerts import router as alerts_router
     from .auth import router as auth_router
     from .billing import router as billing_router
+    from .branding import public_router as branding_public_router
     from .branding import router as branding_router
+    from .branding import public_router as branding_public_router
     from .broadcasts import public_router as broadcasts_public_router
     from .broadcasts import router as broadcasts_router
     from .core.audit import audit_router
@@ -41,6 +43,7 @@ def base_routers() -> list[APIRouter]:
     from .device_brands import router as device_brands_router
     from .infra import router as infra_router
     from .licensing import router as licensing_router
+    from .settings import public_router as settings_public_router
     from .security.router import sso_router
     from .messaging import router as messaging_router
     from .module_catalog import router as module_catalog_router
@@ -48,6 +51,7 @@ def base_routers() -> list[APIRouter]:
     from .reports import router as reports_router
     from .search import router as search_router
     from .security import routers as security_routers
+    from .settings import public_router as settings_public_router
     from .settings import router as settings_router
     from .sites import routers as sites_routers
     from .system import system_router
@@ -78,8 +82,10 @@ def base_routers() -> list[APIRouter]:
         system_router,
         messaging_router,
         branding_router,
+        branding_public_router,
         reports_router,
         settings_router,
+        settings_public_router,
         search_router,
         realtime_router,
         realtime_incidents_router,
@@ -111,6 +117,7 @@ def _tenant_active_exempt() -> set[int]:
     disappears from this list is an import error, not a quiet loss of an exemption.
     """
     from .auth import router as auth_router
+    from .branding import public_router as branding_public_router
     from .broadcasts import public_router as broadcasts_public_router
     from .core.realtime import realtime_router
     from .core.realtime_access import realtime_access_router
@@ -119,6 +126,7 @@ def _tenant_active_exempt() -> set[int]:
     from .core.realtime_wall import realtime_wall_router
     from .core.storage import files_router
     from .licensing import router as licensing_router
+    from .settings import public_router as settings_public_router
     from .security.router import sso_router
     from .tenancy.entitlements import router as features_router
 
@@ -140,6 +148,14 @@ def _tenant_active_exempt() -> set[int]:
             # Unauthenticated by design.
             files_router,
             broadcasts_public_router,
+            # The login page reads both of these BEFORE anyone has signed in — its
+            # own logo and colours, and the public settings the unauthenticated
+            # screens need. Guarding their parent routers turned them into 401s and
+            # left the login page unable to theme itself; they are separate router
+            # objects now precisely so the guard can apply to the writes and not to
+            # them. `optional_tenant_id` handles the anonymous caller correctly.
+            branding_public_router,
+            settings_public_router,
             # `/auth/sso/login` and `/auth/sso/callback` are the OIDC authorization-
             # code flow and run BEFORE there is a session at all — the guard resolves
             # a user, so it would turn the login flow into a 401. Its sibling

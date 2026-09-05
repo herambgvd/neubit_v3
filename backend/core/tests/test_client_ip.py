@@ -135,3 +135,53 @@ def test_the_rate_limiter_and_the_session_recorder_agree():
     # And neither reaches for the raw peer or the raw header any more.
     assert "request.client.host" not in code(ratelimit.login_rate_limit)
     assert "x-forwarded-for" not in code(_shared._client_ip).lower()
+
+
+# --- the global middleware counted the whole estate into one bucket ----------
+#
+# The two rate-limit DEPENDENCIES were fixed to use `client_ip`; the MIDDLEWARE was
+# not, and it is on the path of every request. So the coarse cap stayed
+# per-deployment after the login cap stopped being. Two of three is the shape of
+# fix this codebase keeps producing, which is why this asserts on all three.
+
+
+def test_the_global_middleware_uses_the_shared_resolver():
+    import ast
+    import inspect
+    import textwrap
+
+    from app.core.api import GlobalRateLimitMiddleware
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(GlobalRateLimitMiddleware.dispatch)))
+    fn = tree.body[0]
+    if fn.body and isinstance(fn.body[0], ast.Expr) and isinstance(fn.body[0].value, ast.Constant):
+        fn.body = fn.body[1:]
+    src = ast.unparse(fn)
+    assert "client_ip(request)" in src
+    assert "request.client.host" not in src
+
+
+def test_probes_are_exempt_by_exact_path_not_by_prefix():
+    """`startswith` also exempted `/health-bypass` and `/metrics-anything` — a
+    prefix match doing the job of a route match. Nothing served those today, which
+    is exactly why it would have gone unnoticed."""
+    from app.core.api import GlobalRateLimitMiddleware as M
+
+    assert "/health" in M.EXEMPT_PATHS
+    assert "/ready" in M.EXEMPT_PATHS
+    assert "/metrics" in M.EXEMPT_PATHS
+    assert "/health-bypass" not in M.EXEMPT_PATHS
+    # And the exemption set must not have quietly grown to cover the API.
+    assert not any(p.startswith("/api") for p in M.EXEMPT_PATHS)
+
+
+def test_files_and_docs_are_no_longer_uncapped():
+    """`/files` is the highest-bandwidth route in the product and served blobs with
+    no cap at all; `/docs` and `/openapi.json` are what an attacker enumerates
+    first. Neither exemption had an upside that a bigger budget does not cover."""
+    from app.core.api import GlobalRateLimitMiddleware as M
+
+    for path in ("/files", "/files/avatars/x.png", "/docs", "/redoc", "/openapi.json"):
+        assert path not in M.EXEMPT_PATHS, path
+    # /files still gets room to load a page full of images — a budget, not a ban.
+    assert M.FILES_MULTIPLIER > 1

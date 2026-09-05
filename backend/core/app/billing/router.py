@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.models import User
 from ..core.audit import record as audit_record
 from ..core.errors import ConflictError, NotFoundError, ValidationError
+from ..core.patching import apply_patch
 from ..db.base import get_db
 from ..tenancy.deps import require_superadmin
 from ..tenancy.models import Tenant
@@ -96,8 +97,10 @@ async def update_plan(
     fields = data.model_dump(exclude_unset=True)
     if "interval" in fields and fields["interval"] not in PLAN_INTERVALS:
         raise ValidationError(f"interval must be one of {PLAN_INTERVALS}")
-    for k, v in fields.items():
-        setattr(plan, k, v)
+    # apply_patch, not a bare setattr loop: `exclude_unset` drops what the client
+    # did not send, but an explicit `null` IS sent, so it used to reach a NOT NULL
+    # column and escape as an unhandled 500 with the session left in a failed state.
+    apply_patch(plan, fields)
     await db.commit()
     await db.refresh(plan)
     await audit_record(
