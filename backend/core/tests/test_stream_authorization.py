@@ -106,7 +106,7 @@ async def test_the_right_permission_passes_the_guard(app, db, perm, sessionmaker
     await authorize_stream({"sub": str(user.id)}, perm)  # must not raise
 
 
-def test_every_stream_is_wired_to_its_permission():
+async def test_every_stream_is_wired_to_its_permission():
     """Each route calls authorize_stream with the key STREAMS names for it.
 
     Read from the source, because opening each stream needs a broker and hangs

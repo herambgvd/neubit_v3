@@ -175,7 +175,7 @@ async def test_access_token_audience_matches_realm(db, admin_role):
     assert decode_token(create_access_token(tenant_user))["aud"] == "neubit-tenant"
 
 
-def test_per_tenant_encryption_is_key_isolated():
+async def test_per_tenant_encryption_is_key_isolated():
     """A tenant's secret is encrypted under its own key; another tenant's key cannot
     recover it.
 
@@ -202,7 +202,7 @@ def test_per_tenant_encryption_is_key_isolated():
         decrypt_secret_for(tenant_b, cipher)
 
 
-def test_a_secret_that_will_not_decrypt_raises_instead_of_being_returned():
+async def test_a_secret_that_will_not_decrypt_raises_instead_of_being_returned():
     """The rotation case: handing back the ciphertext sends `gAAAAAB…` to a mail
     server as a password, turning a key-rotation incident into "authentication
     failed"."""
@@ -214,7 +214,7 @@ def test_a_secret_that_will_not_decrypt_raises_instead_of_being_returned():
         decrypt_secret(MARKER + "not-a-valid-fernet-token")
 
 
-def test_a_value_that_was_never_encrypted_is_returned_unchanged():
+async def test_a_value_that_was_never_encrypted_is_returned_unchanged():
     """The only leniency that is wanted: deployments hold rows written before
     encryption existed. Scoped to values carrying no ciphertext marker at all."""
     from app.core.secrets import decrypt_secret, decrypt_secret_for
@@ -223,7 +223,7 @@ def test_a_value_that_was_never_encrypted_is_returned_unchanged():
     assert decrypt_secret_for("some-tenant", "plain-old-password") == "plain-old-password"
 
 
-def test_a_pre_marker_fernet_token_still_decrypts():
+async def test_a_pre_marker_fernet_token_still_decrypts():
     """Rows written before the enc:v1 tag are bare Fernet tokens under the platform
     key. They must keep working, and must not be mistaken for plaintext — which is
     what happens if the marker check is the only branch."""

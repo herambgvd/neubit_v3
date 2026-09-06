@@ -227,7 +227,7 @@ async def test_a_multi_chunk_image_still_round_trips_through_the_route(app, user
 # inferred from the key — mimetypes.guess_type answers text/html for a .html key.
 
 
-def test_serving_never_infers_a_dangerous_content_type():
+async def test_serving_never_infers_a_dangerous_content_type():
     from app.core.storage import _serving_headers
 
     ctype, headers = _serving_headers("avatars/legacy.html")
@@ -239,7 +239,7 @@ def test_serving_never_infers_a_dangerous_content_type():
     assert "attachment" in headers["Content-Disposition"]
 
 
-def test_svg_is_served_as_a_download_not_a_document():
+async def test_svg_is_served_as_a_download_not_a_document():
     """SVG is XML that can carry script, but logos are SVG, so it is accepted and
     served as an attachment rather than banned. `<img src>` still renders it, a
     direct navigation downloads it, and script never runs either way."""
@@ -250,7 +250,7 @@ def test_svg_is_served_as_a_download_not_a_document():
     assert headers["Content-Disposition"].startswith("attachment")
 
 
-def test_raster_images_are_still_rendered_inline():
+async def test_raster_images_are_still_rendered_inline():
     from app.core.storage import _serving_headers
 
     for key in ("a.png", "b.JPG", "c.webp", "d.gif"):
@@ -259,7 +259,7 @@ def test_raster_images_are_still_rendered_inline():
         assert headers == {}, key
 
 
-def test_a_quote_in_a_key_cannot_break_out_of_the_disposition_header():
+async def test_a_quote_in_a_key_cannot_break_out_of_the_disposition_header():
     """Header injection through the filename — the other thing an assessor tries."""
     from app.core.storage import _serving_headers
 
@@ -289,7 +289,7 @@ async def test_files_responses_are_sandboxed_by_csp(app, user):
 # slow and would only cover the routes someone remembered.
 
 
-def test_no_route_reads_an_upload_without_a_cap():
+async def test_no_route_reads_an_upload_without_a_cap():
     import pathlib
     import re
 
@@ -311,7 +311,7 @@ def test_no_route_reads_an_upload_without_a_cap():
     )
 
 
-def test_the_scan_can_actually_find_something():
+async def test_the_scan_can_actually_find_something():
     """Guards the guard: a regex matching nothing would make the test above pass
     forever."""
     import re

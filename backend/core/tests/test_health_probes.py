@@ -93,7 +93,7 @@ async def test_health_is_liveness_and_says_nothing_about_dependencies(app, monke
     assert r.json() == {"status": "ok"}
 
 
-def test_the_deployment_actually_probes_readiness():
+async def test_the_deployment_actually_probes_readiness():
     """The two deployment files: the gateway must route /readyz and core must have a
     healthcheck that uses it, or the endpoint is silently unreachable.
     """

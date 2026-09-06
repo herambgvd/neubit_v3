@@ -20,8 +20,16 @@ import pytest
 import pytest_asyncio
 
 # Deterministic secrets so Fernet encryption is stable across the test process.
-os.environ.setdefault("VE_SECRETS_KEY", "test-secrets-key")
-os.environ.setdefault("VE_JWT_SECRET", "test-jwt-secret")
+#
+# The JWT secret is >=32 bytes because that is what `_enforce_secrets` requires of
+# a real deployment (RFC 7518 §3.2 for HS256) and because PyJWT warns below it —
+# the old 15-byte value produced an InsecureKeyLengthWarning on every token this
+# suite minted. A test key that a production boot would refuse is a test key that
+# is not exercising the shipped configuration.
+os.environ.setdefault("VE_SECRETS_KEY", "test-secrets-key-deterministic")
+os.environ.setdefault(
+    "VE_JWT_SECRET", "test-jwt-secret-deterministic-and-long-enough-for-hs256"
+)
 
 # The rate limiter defaults to Redis and this suite runs with `--network none`, so
 # select the per-process window explicitly rather than letting every request take
@@ -98,7 +106,16 @@ async def sessionmaker_() -> async_sessionmaker[AsyncSession]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    try:
+        yield async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    finally:
+        # Dispose, or aiosqlite's connection worker THREAD outlives the event loop
+        # this fixture ran on. The thread then calls call_soon_threadsafe on a
+        # closed loop and dies, which pytest reports as
+        # PytestUnhandledThreadExceptionWarning — 50 of them in this suite. None
+        # was a bug in the code under test, and that is the problem: 50 warnings
+        # of a kind that is USUALLY worth reading is where a real one hides.
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture

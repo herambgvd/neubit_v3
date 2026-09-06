@@ -72,7 +72,7 @@ async def test_a_super_admin_reaches_a_platform_category(app, session):
 
 
 @pytest.mark.parametrize("bad", ["access", "vms.camera", "a.b", "*", ">", "Access", "1abc", ""])
-def test_a_rule_cannot_name_another_modules_domain(bad):
+async def test_a_rule_cannot_name_another_modules_domain(bad):
     """target_domain is interpolated into the NATS subject. 'access' would publish
     into the access module's namespace; a dot changes the subject's shape entirely."""
     from app.ingest.schemas import EventRuleCreate
@@ -86,7 +86,7 @@ def test_a_rule_cannot_name_another_modules_domain(bad):
         EventRuleCreate(name="r", target_domain=bad)
 
 
-def test_a_rule_and_a_category_reject_the_same_values():
+async def test_a_rule_and_a_category_reject_the_same_values():
     """They disagreed: the category was validated, the rule was not — and the
     rule's value OVERRIDES the category's, so the checked one was the one that did
     not matter. Asserted on behaviour, because the two use different mechanisms

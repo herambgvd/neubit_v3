@@ -24,6 +24,7 @@ from app.auth.security import create_access_token, decode_token
 from app.auth.service import AuthService
 from app.core.audit import AuditLog
 from app.db.base import get_db
+from app.core.config import get_settings
 from conftest import make_role, make_user
 from sqlalchemy import select
 
@@ -303,12 +304,28 @@ async def test_a_token_carrying_an_unknown_credential_kind_is_refused(app, db):
     """``act`` is a closed set: an unrecognised value must not fall through to the
     user branch, which has more reach."""
     actor = await _admin(db)
+    # Signed with the SECRET THE APP ACTUALLY USES, read from settings rather than
+    # repeated here. A hardcoded copy silently turned this into a bad-signature
+    # test the moment the conftest secret changed — still 401, still green, no
+    # longer testing that `act` is a closed set.
     forged = jwt.encode(
         {**decode_token(create_access_token(actor, sid="t")), "act": "something-new"},
-        "test-jwt-secret",
+        get_settings().jwt_secret,
         algorithm="HS256",
     )
     async with _client(app) as c:
+        # The control: the SAME claims re-signed the same way, with `act` left
+        # alone, must be accepted. Without it a broken signature would make the
+        # assertion below pass for the wrong reason — which is exactly what a
+        # hardcoded copy of the secret did here once already.
+        control = jwt.encode(
+            decode_token(create_access_token(actor, sid="t")),
+            get_settings().jwt_secret,
+            algorithm="HS256",
+        )
+        ok = await c.get(f"{PREFIX}/audit", headers=_bearer(control))
+        assert ok.status_code == 200, ok.text
+
         r = await c.get(f"{PREFIX}/audit", headers=_bearer(forged))
         assert r.status_code == 401
 

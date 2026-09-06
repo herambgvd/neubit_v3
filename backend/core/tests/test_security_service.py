@@ -143,7 +143,10 @@ class _MockIdp:
 def _unsigned_jwt(claims: dict) -> str:
     import jwt
 
-    return jwt.encode(claims, "unused", algorithm="HS256")
+    # The IdP's signature is not what this test is about — the SSO path verifies
+    # against the provider's JWKS, which the mock replaces. Long enough only to
+    # keep PyJWT from warning about an under-length HMAC key.
+    return jwt.encode(claims, "unused-idp-signing-key-for-this-mock", algorithm="HS256")
 
 
 async def test_sso_exchange_provisions_and_maps_role(db):

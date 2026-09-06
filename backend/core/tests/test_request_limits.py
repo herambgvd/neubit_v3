@@ -76,7 +76,7 @@ async def test_a_body_under_the_limit_reaches_the_app(app):
     assert r.status_code != 413, r.text
 
 
-def test_the_database_restore_gets_its_own_larger_limit():
+async def test_the_database_restore_gets_its_own_larger_limit():
     """One number cannot serve both an avatar and a 512 MiB control-plane dump."""
     from app.infra.router import MAX_DUMP_BYTES
 
@@ -85,7 +85,7 @@ def test_the_database_restore_gets_its_own_larger_limit():
     assert mw.limit_for("/api/v1/auth/me/avatar") == DEFAULT_MAX_BYTES
 
 
-def test_the_default_is_above_every_handler_cap_that_is_not_the_restore():
+async def test_the_default_is_above_every_handler_cap_that_is_not_the_restore():
     """A middleware limit below a handler's own cap would make that cap
     unreachable, and the handler's error message unreachable with it."""
     from app.auth.routes.users import MAX_IMPORT_BYTES
@@ -95,7 +95,7 @@ def test_the_default_is_above_every_handler_cap_that_is_not_the_restore():
     assert DEFAULT_MAX_BYTES > MAX_IMAGE_BYTES
 
 
-def test_the_longest_matching_prefix_wins():
+async def test_the_longest_matching_prefix_wins():
     mw = RequestSizeLimitMiddleware(None, default_max_bytes=100,
                                     path_limits={"/a": 200, "/a/b": 300})
     assert mw.limit_for("/a/x") == 200

@@ -57,7 +57,7 @@ def _client(app) -> httpx.AsyncClient:
 # --- the signature itself ----------------------------------------------------
 
 
-def test_a_valid_signature_verifies_and_a_tampered_one_does_not():
+async def test_a_valid_signature_verifies_and_a_tampered_one_does_not():
     key = "reports/abc.csv"
     exp = int(time.time()) + 60
     sig = sign_key(key, exp)
@@ -70,13 +70,13 @@ def test_a_valid_signature_verifies_and_a_tampered_one_does_not():
     assert not signature_is_valid(key, str(exp), sig[:-1] + ("0" if sig[-1] != "0" else "1"))
 
 
-def test_an_expired_signature_is_refused():
+async def test_an_expired_signature_is_refused():
     key = "reports/abc.csv"
     exp = int(time.time()) - 1
     assert not signature_is_valid(key, str(exp), sign_key(key, exp))
 
 
-def test_a_missing_or_malformed_signature_is_refused():
+async def test_a_missing_or_malformed_signature_is_refused():
     key = "reports/abc.csv"
     exp = int(time.time()) + 60
     assert not signature_is_valid(key, None, None)

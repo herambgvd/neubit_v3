@@ -16,7 +16,7 @@ from app.settings.service import MASK, SettingsService
 pytestmark = pytest.mark.asyncio
 
 
-def test_the_catalog_declares_at_least_one_secret():
+async def test_the_catalog_declares_at_least_one_secret():
     """If nothing is flagged, every assertion below is vacuous."""
     assert catalog.secret_keys(), "no setting is marked secret — the tests below prove nothing"
     assert "google_maps_api_key" in catalog.secret_keys()
@@ -181,7 +181,7 @@ async def test_the_test_button_does_not_fall_back_to_the_platform_webhook(db):
     assert await get_channel(db, "webhook", stranger) is not None
 
 
-def test_a_webhook_url_is_not_logged_with_its_query_string():
+async def test_a_webhook_url_is_not_logged_with_its_query_string():
     """Query-string bearer tokens are a common receiver pattern and SECRET_FIELDS
     does not cover the URL, so logging the full URL leaks the credential into logs.
     """

@@ -186,7 +186,7 @@ async def test_site_list_is_tenant_scoped(app, world):
 # schemas do refuse the field at the HTTP edge today.
 
 
-def test_apply_update_refuses_a_structural_move():
+async def test_apply_update_refuses_a_structural_move():
     from app.core.errors import ValidationError
     from app.sites.mutation import apply_update
 
@@ -202,7 +202,7 @@ def test_apply_update_refuses_a_structural_move():
     assert row.name == "before"
 
 
-def test_apply_update_writes_everything_else():
+async def test_apply_update_writes_everything_else():
     from app.sites.mutation import apply_update
 
     class Row:

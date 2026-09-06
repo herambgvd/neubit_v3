@@ -34,7 +34,7 @@ class _FakeSocket:
         self.sent.append(message)
 
 
-def test_the_channel_key_carries_the_tenant():
+async def test_the_channel_key_carries_the_tenant():
     from app.core.realtime import channel
 
     a, b = uuid.uuid4(), uuid.uuid4()
@@ -88,7 +88,7 @@ async def test_a_dead_socket_is_pruned_from_the_right_channel():
     assert hub._topics.get(channel(tenant, "alerts")) in (None, set())
 
 
-def test_the_unauthenticated_features_fallback_is_not_registered():
+async def test_the_unauthenticated_features_fallback_is_not_registered():
     """Asserted on the built app rather than on the claim check, so a refactor of
     either is still caught."""
     from app.app import create_base_app
@@ -108,7 +108,7 @@ def test_the_unauthenticated_features_fallback_is_not_registered():
 # what any topic means: the table is empty and every subscription is refused.
 
 
-def test_no_topic_is_open_by_default():
+async def test_no_topic_is_open_by_default():
     """An entry belongs here only once a publisher exists and someone has decided
     what a subscriber must hold."""
     from app.core.realtime import TOPIC_PERMISSIONS
@@ -117,7 +117,7 @@ def test_no_topic_is_open_by_default():
         assert permission, f"topic {topic!r} is registered with no permission"
 
 
-def test_an_unknown_topic_is_refused_before_the_token_is_read():
+async def test_an_unknown_topic_is_refused_before_the_token_is_read():
     """Closed with 1008 without touching the database. An unknown topic has nothing
     to authorize against, so checking after auth costs two reads to say no."""
     import inspect
@@ -130,7 +130,7 @@ def test_an_unknown_topic_is_refused_before_the_token_is_read():
     assert topic_check < authorize, "the topic check must run before authorization"
 
 
-def test_a_registered_topic_requires_its_permission():
+async def test_a_registered_topic_requires_its_permission():
     """The wiring: the endpoint passes the table's value to authorize_ws, which
     closes 4403 on a user whose role does not grant it."""
     import inspect

@@ -17,7 +17,7 @@ from app.core.patching import apply_patch
 pytestmark = pytest.mark.asyncio
 
 
-def test_a_null_is_refused_for_a_not_null_column():
+async def test_a_null_is_refused_for_a_not_null_column():
     from app.billing.models import Plan
 
     plan = Plan(key="pro", name="Pro", price_cents=100, currency="usd", interval="month")
@@ -27,7 +27,7 @@ def test_a_null_is_refused_for_a_not_null_column():
     assert plan.name == "Pro", "the row was mutated before the refusal"
 
 
-def test_a_null_is_ALLOWED_for_a_nullable_column():
+async def test_a_null_is_ALLOWED_for_a_nullable_column():
     """Why this is a helper and not "skip every None": `starts_at` and `ends_at` are
     nullable, and clearing a broadcast's schedule window is legitimate. A blanket
     skip would silently make it impossible."""
@@ -39,7 +39,7 @@ def test_a_null_is_ALLOWED_for_a_nullable_column():
     assert b.starts_at is None
 
 
-def test_the_refusal_names_every_offending_field_at_once():
+async def test_the_refusal_names_every_offending_field_at_once():
     """One round trip names everything wrong, not one 422 per field."""
     from app.billing.models import Plan
 
@@ -50,7 +50,7 @@ def test_the_refusal_names_every_offending_field_at_once():
     assert "name" in message and "currency" in message
 
 
-def test_ordinary_values_still_land():
+async def test_ordinary_values_still_land():
     from app.billing.models import Plan
 
     plan = Plan(key="pro", name="Pro", price_cents=100, currency="usd", interval="month")
@@ -59,7 +59,7 @@ def test_ordinary_values_still_land():
     assert plan.price_cents == 250
 
 
-def test_an_unknown_key_is_written_like_any_other():
+async def test_an_unknown_key_is_written_like_any_other():
     """The helper is about nullability, not about which fields are writable — that
     is app/sites/mutation.py's job. Do not merge the two."""
     from app.billing.models import Plan
@@ -69,7 +69,7 @@ def test_an_unknown_key_is_written_like_any_other():
     assert plan.sort_order == 5
 
 
-def test_both_routers_go_through_the_helper():
+async def test_both_routers_go_through_the_helper():
     """Both routers had the same three lines, so both have to keep using the helper."""
     import pathlib
 

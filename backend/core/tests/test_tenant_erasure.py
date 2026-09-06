@@ -54,13 +54,13 @@ def _metadata_of_every_module():
     return Base.metadata
 
 
-def test_every_table_core_owns_is_classified():
+async def test_every_table_core_owns_is_classified():
     """If this fails, a table was added without deciding what happens to a tenant's
     rows in it on offboard."""
     check_classification(_metadata_of_every_module())
 
 
-def test_the_guard_actually_fails_on_an_unclassified_table():
+async def test_the_guard_actually_fails_on_an_unclassified_table():
     """Proves the check bites, using a table it has never seen rather than mutating
     the real registry."""
     import sqlalchemy as sa
@@ -79,7 +79,7 @@ def test_the_guard_actually_fails_on_an_unclassified_table():
     assert "erasure.py" in str(exc.value)
 
 
-def test_the_guard_refuses_the_cheap_way_out():
+async def test_the_guard_refuses_the_cheap_way_out():
     """Relabelling a tenant table as PLATFORM must not silence the check."""
     import sqlalchemy as sa
 
@@ -101,7 +101,7 @@ def test_the_guard_refuses_the_cheap_way_out():
         DISPOSITIONS.pop("pretend_platform")
 
 
-def test_the_guard_verifies_a_cascade_claim_rather_than_trusting_it():
+async def test_the_guard_verifies_a_cascade_claim_rather_than_trusting_it():
     """"The FK cascade handles it" is a claim that goes silently false, so a table
     that says CASCADE and has no such constraint must fail."""
     import sqlalchemy as sa
@@ -126,7 +126,7 @@ def test_the_guard_verifies_a_cascade_claim_rather_than_trusting_it():
         DISPOSITIONS.pop("claims_cascade")
 
 
-def test_every_retained_table_states_a_reason():
+async def test_every_retained_table_states_a_reason():
     """Keeping personal data with no stated basis is the violation; the absence of a
     DELETE statement is not."""
     retained = {n: d for n, d in DISPOSITIONS.items() if d.how == RETAIN}
@@ -135,7 +135,7 @@ def test_every_retained_table_states_a_reason():
         assert len(d.why) > 80, f"{name} is retained with a one-liner for a reason"
 
 
-def test_the_set_null_tables_are_erased_explicitly():
+async def test_the_set_null_tables_are_erased_explicitly():
     """The four where the existing constraint is worse than none: SET NULL promotes
     the row to a platform default rather than removing it."""
     for name in ("branding", "app_settings", "channel_configs", "email_templates"):
@@ -143,7 +143,7 @@ def test_the_set_null_tables_are_erased_explicitly():
         assert "platform default" in DISPOSITIONS[name].why
 
 
-def test_the_tables_no_sweep_can_reach_are_reached():
+async def test_the_tables_no_sweep_can_reach_are_reached():
     """notifications and device_tokens reach the tenant's people through a user_id
     that is not a foreign key, and alert_states holds the tenant uuid inside a
     string. A tenant_id sweep sees none of the three."""
@@ -397,7 +397,7 @@ async def _row_exists(session, table, row_id) -> bool:
     return int(await session.scalar(stmt) or 0) > 0
 
 
-def test_every_cascade_table_has_a_row_to_probe_with():
+async def test_every_cascade_table_has_a_row_to_probe_with():
     """A CASCADE table added later must be observed, not just declared."""
     assert set(_CASCADE_TABLES) == set(_CASCADE_ROWS)
 
