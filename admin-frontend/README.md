@@ -95,14 +95,25 @@ is the single place that difference is handled.
 
 ## Testing
 
-Tests live beside what they cover (`src/lib/*.test.ts`, `src/components/ui/*.test.tsx`) plus
-`src/test/structure.test.ts` for tree-level guards. They are written to fail for a reason:
+295 tests. They live beside what they cover (`src/lib/*.test.ts`, `src/app/**/page.test.tsx`,
+`src/components/**/*.test.tsx`) plus `src/test/` for the tree-level and cross-repo guards. Each is
+written to fail for a reason, and each was verified by breaking the thing it guards:
 
 - the token model (storage, refresh, retry, single-flight) — `src/lib/api.test.ts`
 - the super-admin gate, including the signed-in-but-not-super-admin case — `src/lib/useRequireSuperadmin.test.tsx`
 - `DataTable`'s loading / empty / error states, which are easy to conflate — `src/components/ui/data-table.test.tsx`
 - kit behaviour that prevents real mistakes (a loading button cannot double-submit; an error hides
   the hint) — `src/components/ui/kit.test.tsx`
+- every route component renders, with the emphasis on gates: a restore needs the word typed, a
+  stop/void/delete/logout needs a confirm, disabling a user needs one and re-enabling does not, and
+  validation runs before anything reaches the network
+- **the wire contract** — `src/test/contract.test.ts` reads the Pydantic models out of `backend/`
+  and compares them to `src/lib/types.ts`: no invented field, no missing required field, and `null`
+  admitted wherever the model admits `None`. The infrastructure payloads are checked against the
+  dict literals `ops-agent` actually builds. This is the test that would have caught the two bugs
+  the conversion found by hand, and it fails when the backend changes under it
+- the SVG chart geometry — arc lengths and offsets, bar scaling, axis spans — because a chart can
+  be visibly wrong while rendering perfectly well
 
 ## Known gaps
 
@@ -110,8 +121,9 @@ Recorded rather than implied, so nobody has to rediscover them:
 
 - **No CI.** Nothing runs `npm run check` automatically — the repo has no `.github/workflows`. Run
   it by hand before pushing.
-- **Page-level tests are thin.** The kit, the API layer and the gate are covered (50 tests); the 15
-  route components are not rendered in tests. A page can still break without a test failing.
+- **Nothing here talks to a real backend.** Every test mocks `adminApi`, so the contract test above
+  is what stands between a backend field rename and a silent `undefined` on screen — and it compares
+  against the models *in this repo*, not against whatever a deployed core is serving.
 - **No end-to-end test.** Nothing exercises a real login against a running `core`.
 - **The infrastructure page polls** every 4s (logs every 3s) whenever it is open. That is by design
   for a fleet view but it is not free.
