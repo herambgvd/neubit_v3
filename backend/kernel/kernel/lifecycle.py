@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .events import Unprocessable
@@ -68,7 +69,13 @@ async def erase_tenant_data(database: Any, tenant_id: str) -> int:
     return total
 
 
-async def subscribe_tenant_offboard(bus: Any, database: Any, *, durable: str) -> None:
+async def subscribe_tenant_offboard(
+    bus: Any,
+    database: Any,
+    *,
+    durable: str,
+    erase: Callable[[Any, str], Awaitable[Any]] | None = None,
+) -> None:
     """Wire a durable consumer that erases a tenant's data when core offboards it.
 
     Call once in the service's startup lifespan (after ``bus.connect()``):
@@ -79,6 +86,15 @@ async def subscribe_tenant_offboard(bus: Any, database: Any, *, durable: str) ->
 
     Durable, so an offboard arriving while the service is down is still processed
     on restart.
+
+    ``erase`` replaces the default metadata walk for a service whose database
+    holds tenant rows its models do not declare. Only the reporting store does:
+    its projection relations are created from a registry row and its rollups are
+    continuous aggregates, so ``Base.metadata`` is not the full list and an erase
+    driven by it reports success having missed most of the data. See
+    ``reporting/erasure.py``. Everything else — the failure contract below, the
+    durable, the tenant-id refusal — is unchanged, which is why this is a
+    parameter rather than a second subscription somewhere else.
 
     Failures propagate on purpose — do not wrap this in a try/except. A failed
     erasure that gets acked is a right-to-erase silently not honoured, so a
@@ -100,8 +116,8 @@ async def subscribe_tenant_offboard(bus: Any, database: Any, *, durable: str) ->
             await drop_tenant_db(database.database_url, tid)
             log.info("tenant offboard: dropped database for tenant %s", tid)
         else:
-            removed = await erase_tenant_data(database, tid)
-            log.info("tenant offboard: erased %d rows for tenant %s", removed, tid)
+            removed = await (erase or erase_tenant_data)(database, tid)
+            log.info("tenant offboard: erased %s for tenant %s", removed, tid)
 
     await bus.subscribe(OFFBOARD_PATTERN, _handler, durable=durable)
 

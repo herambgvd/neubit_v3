@@ -23,9 +23,9 @@ every other satellite, and it is SELECT-only — this service is still the only
 thing that WRITES the schema. ``app.projections`` adds no route to it and must
 not: one query path over this store, contract §8 rule 2.
 
-FIVE CONSUMERS, ONE PROCESS, AND THE ONE THAT MUST NEVER WAIT
+SIX CONSUMERS, ONE PROCESS, AND THE ONE THAT MUST NEVER WAIT
 --------------------------------------------------------------
-This process runs five independent JetStream consumers::
+This process runs six independent JetStream consumers::
 
     pipeline        IOT_READINGS  tenant.*.iot.reading.>   → readings / points
     projections     EVENTS + IOT_READINGS, one durable per
@@ -33,9 +33,10 @@ This process runs five independent JetStream consumers::
     placement_sync  EVENTS      tenant.*.sites.device_placement.>
     site_facts_sync EVENTS      tenant.*.sites.site.>
     dlq_watch       EVENTS_DLQ  dlq.>                      (observes; writes nothing)
+    offboard        EVENTS      tenant.*.tenant.offboarded → deletes, everywhere
 
 `pipeline` is the hot path: every device reading in the estate goes through it
-and it is the only writer of the readings hypertable. The other four handle
+and it is the only writer of the readings hypertable. The other five handle
 domain events at a completely different rate and shape. The rule is one-way — a
 projection backlog, a slow projection, or a projection wedged outright must not
 delay a reading being written — and it is held by four things, none of which is
@@ -43,7 +44,7 @@ delay a reading being written — and it is held by four things, none of which i
 
 1. **A separate NATS connection each.** Every one of them calls `nats.connect`
    itself, so a pull request that hangs consumes its own client's inflight
-   budget and nothing else's. Visible as five rows in `nats server report
+   budget and nothing else's. Visible as six rows in `nats server report
    connections`, named apart on purpose.
 2. **Separate durables.** `reading-writer` on IOT_READINGS versus one durable per
    projection; the ack/redelivery state of one is not the other's. Unchanged by
@@ -126,6 +127,10 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from kernel.auth import require_active_license, require_feature
 from kernel.config import get_settings
 from kernel.errors import register_error_handlers
+from kernel.events import EventBus
+from kernel.lifecycle import subscribe_tenant_offboard
+from reporting.db import database
+from reporting.erasure import erase_tenant_data
 
 from .api import bi_router
 from .config import WriterConfig
@@ -164,6 +169,17 @@ projector = Projector(projector_config, projector_metrics)
 # watch can never stall a projection or a reading.
 dlq_stats = DlqWatchStats()
 dlq_watch = DlqWatch(dlq_stats)
+# A SIXTH consumer: core's tenant offboard, the DPDP right-to-erase. Its own
+# EventBus, so it gets its own NATS connection like every other consumer here.
+#
+# This store had none until now, which meant a tenant offboarded by a super-admin
+# kept every reading, point, door event and alert it ever produced — five other
+# services wiped themselves and the one holding the most data did not.
+offboard_bus = EventBus(source="reading-writer")
+# Why the subscription is not live, if it is not. Read by /readyz: a right-to-erase
+# consumer that failed to start is exactly the kind of silence this file exists to
+# break, and it has no counters of its own to go stale.
+_offboard_error: str | None = None
 
 
 @asynccontextmanager
@@ -210,7 +226,29 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — a broken watch must not stop anything
         projector_metrics.note_error(exc)
         log.exception("DLQ watch failed to start — dead letters will not be visible here")
+    global _offboard_error
+    try:
+        await offboard_bus.connect()
+        # `erase=` because Base.metadata is not the full list of relations in this
+        # database — see reporting/erasure.py. Provisioning is deliberately NOT
+        # wired alongside it: per-tenant provisioning of this store would have to
+        # build the projection relations too, and metadata.create_all cannot.
+        await subscribe_tenant_offboard(
+            offboard_bus,
+            database,
+            durable="reporting-offboard",
+            erase=erase_tenant_data,
+        )
+        _offboard_error = None
+    except Exception as exc:  # noqa: BLE001
+        # Same rule as every consumer above — do not take the readings path down
+        # with it — but LOUD, and red on /readyz until it is fixed. An offboard
+        # that arrives while this is unsubscribed is not queued for us: the
+        # durable does not exist, so there is nothing holding the message.
+        _offboard_error = f"{type(exc).__name__}: {exc}"
+        log.exception("tenant offboard consumer failed to start — RIGHT-TO-ERASE IS OFF")
     yield
+    await offboard_bus.close()
     await dlq_watch.stop()
     await projector.stop()
     await placement_sync.stop()
@@ -347,6 +385,8 @@ async def readyz() -> JSONResponse:
     names the consumer rather than the container.
     """
     reasons = _readings_reasons() + _projection_reasons()
+    if _offboard_error is not None:
+        reasons.append(f"offboard: right-to-erase consumer not subscribed: {_offboard_error}")
     return JSONResponse(
         status_code=200 if not reasons else 503,
         content={
