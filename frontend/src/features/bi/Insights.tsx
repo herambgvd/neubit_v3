@@ -99,18 +99,19 @@ export default function Insights() {
     return devices.filter((d: any) => !term || (d.device_tag || "").toLowerCase().includes(term));
   }, [devices, search]);
 
-  useEffect(() => {
-    if (!deviceId && filtered.length) setDeviceId(filtered[0].device_id);
-  }, [filtered, deviceId]);
+
+  // The explicit choice, or the first row once the list lands. Derived rather
+  // than synced in an effect, which rendered one empty frame first.
+  const effectiveDeviceId = deviceId ?? filtered[0]?.device_id ?? null;
 
   const pointsQ = useQuery<any>({
-    queryKey: ["bi-points", deviceId],
-    queryFn: () => bi.points({ device_id: deviceId, with_latest: true, limit: 500 }),
-    enabled: !!deviceId,
+    queryKey: ["bi-points", effectiveDeviceId],
+    queryFn: () => bi.points({ device_id: effectiveDeviceId, with_latest: true, limit: 500 }),
+    enabled: !!effectiveDeviceId,
     refetchInterval: 60_000,
   });
   const points = pointsQ.data?.items || [];
-  const device = devices.find((d: any) => d.device_id === deviceId) || null;
+  const device = devices.find((d: any) => d.device_id === effectiveDeviceId) || null;
 
   const ids = selected.map((s) => s.point_id);
   const idsKey = ids.join(",");
@@ -188,7 +189,7 @@ export default function Insights() {
             emptyText="No device has reported"
           >
             {filtered.map((d: any) => {
-              const on = d.device_id === deviceId;
+              const on = d.device_id === effectiveDeviceId;
               const meta = categoryMeta(d.category);
               const chosen = selected.filter((s) => s.device_tag === d.device_tag).length;
               return (

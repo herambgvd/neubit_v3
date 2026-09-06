@@ -71,14 +71,15 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
   const [img, setImg] = useState<any>({ w: DEFAULT_W, h: DEFAULT_H, ok: false });
 
   // Default to the first site once sites load.
-  useEffect(() => {
-    if (!siteId && sites.length) setSiteId(sites[0].site_id);
-  }, [sites, siteId]);
+
+  // The explicit choice, or the first row once the list lands. Derived rather
+  // than synced in an effect, which rendered one empty frame first.
+  const effectiveSiteId = siteId ?? sites[0]?.site_id ?? null;
 
   const floorsQ = useQuery<any>({
-    queryKey: ["map-floors", siteId],
-    queryFn: () => sitesApi.floors.list({ site_id: siteId, limit: 100 }),
-    enabled: !!siteId,
+    queryKey: ["map-floors", effectiveSiteId],
+    queryFn: () => sitesApi.floors.list({ site_id: effectiveSiteId, limit: 100 }),
+    enabled: !!effectiveSiteId,
   });
   const floors = asItems(floorsQ.data);
 
@@ -112,7 +113,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
   // Split the site's incidents into placed (clustered by zone) + unplaced.
   const { clusters, unplaced, siteCount, unmappedNoSite } = useMemo(() => {
     const unmappedNoSite = incidents.filter((it) => !incSiteRef(it)).length;
-    const forSite = incidents.filter((it) => incSiteRef(it) === siteId);
+    const forSite = incidents.filter((it) => incSiteRef(it) === effectiveSiteId);
     const byZone = new Map<any, any>(); // zoneId -> { zone, items }
     const unplaced: any[] = [];
     for (const it of forSite) {
@@ -137,7 +138,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
       clusters.push({ zone, items, x: ctr[0], y: ctr[1], priority: top.priority });
     }
     return { clusters, unplaced, siteCount: forSite.length, unmappedNoSite };
-  }, [incidents, siteId, zones]);
+  }, [incidents, effectiveSiteId, zones]);
 
   const openIncident = (it) => router.push(`/events/${incId(it)}`);
 
@@ -150,7 +151,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
       <div className="flex flex-wrap items-center gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-3">
         <Icon icon="heroicons-outline:map-pin" className="text-base text-[#67e8f9]" />
         <select
-          value={siteId}
+          value={effectiveSiteId}
           onChange={(e) => { setSiteId(e.target.value); setFloorId(""); }}
           className={mapSelCls}
         >

@@ -23,7 +23,7 @@
 // and a stuttering one. It lives in a subscribable clock object instead: the
 // master tile writes it, the transport bar and the follower tiles subscribe, and
 // nothing else in the tree hears about it at all.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const DAY_MS = 86_400_000;
 
@@ -109,10 +109,10 @@ export function useWallPlayback() {
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
 
-  // One clock for the life of the component.
-  const clockRef = useRef<any>(null);
-  if (!clockRef.current) clockRef.current = createClock();
-  const clock = clockRef.current;
+  // One clock for the life of the component. A lazy useState initialiser gives
+  // the same create-exactly-once guarantee as the `if (!ref.current)` idiom
+  // without writing a ref during render.
+  const [clock] = useState(createClock);
 
   // Enter playback at an instant (from the timeline, a span step, a skip). Also
   // the seek: in playback this re-anchors, which is the only operation the node's

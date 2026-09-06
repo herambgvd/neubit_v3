@@ -6,7 +6,7 @@
 // RIGHT = RecorderDetail with full info + Edit / Drain / Delete). Mirrors the NVR page
 // exactly (MasterDetail + ListPanel + EmptyDetail, TanStack Query + invalidation,
 // StatusBadge, sonner, ConfirmDialog). Add / edit reuse AddRecorderModal.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -48,12 +48,14 @@ export default function RecordersPage() {
     );
   }, [nodes, search]);
 
-  const selected = useMemo(() => nodes.find((n) => n.id === selectedId) || null, [nodes, selectedId]);
+  // The explicit choice, or the first row when there is none. Derived here
+  // rather than synced by an effect, which rendered one frame with nothing
+  // selected before correcting itself.
+  const effectiveId = selectedId ?? filtered[0]?.id ?? null;
+
+  const selected = useMemo(() => nodes.find((n) => n.id === effectiveId) || null, [nodes, effectiveId]);
 
   // Auto-select first (mirrors NVR): keep selection across refetches; clear when gone.
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
 
   const onlineCount = nodes.filter((n) => n.status === "online").length;
 
@@ -67,7 +69,7 @@ export default function RecordersPage() {
     mutationFn: (id: any) => vms.mediaNodes.remove(id),
     onSuccess: (_d, id) => {
       toast.success("Recorder removed");
-      if (selectedId === id) setSelectedId(null);
+      if (effectiveId === id) setSelectedId(null);
       invalidate();
     },
     // The backend blocks deletion while cameras are still assigned — surface it.
@@ -130,7 +132,7 @@ export default function RecordersPage() {
             ) : (
               <div className="space-y-1.5 px-3 py-2">
                 {filtered.map((n) => {
-                  const isSel = selectedId === n.id;
+                  const isSel = effectiveId === n.id;
                   const used = n.used_channels ?? 0;
                   const cap = n.capacity_channels;
                   const pct = cap != null && cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : null;

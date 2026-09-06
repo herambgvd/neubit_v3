@@ -81,11 +81,12 @@ export default function Ratings() {
   });
   const sites = sitesQ.data?.items || [];
 
-  useEffect(() => {
-    if (!siteId && sites.length) setSiteId(sites[0].site_id);
-  }, [sites, siteId]);
 
-  const site = sites.find((s: any) => s.site_id === siteId) || null;
+  // The explicit choice, or the first row once the list lands. Derived rather
+  // than synced in an effect, which rendered one empty frame first.
+  const effectiveSiteId = siteId ?? sites[0]?.site_id ?? null;
+
+  const site = sites.find((s: any) => s.site_id === effectiveSiteId) || null;
 
   // Candidate meters: points AT THIS SITE that an operator has confirmed are
   // kWh registers. Read from the units surface — same source of truth, so a unit
@@ -98,22 +99,22 @@ export default function Ratings() {
     () =>
       (confirmedQ.data?.items || []).filter(
         (r: any) =>
-          r.site_id === siteId &&
+          r.site_id === effectiveSiteId &&
           r.type === "num" &&
           String(r.unit || "").trim().toLowerCase() === "kwh",
       ),
-    [confirmedQ.data, siteId],
+    [confirmedQ.data, effectiveSiteId],
   );
 
   // A site change drops a selection that belonged to the previous site.
   useEffect(() => {
     setMeters([]);
-  }, [siteId]);
+  }, [effectiveSiteId]);
 
   const ratingQ = useQuery<any>({
-    queryKey: ["bi-rating", siteId, days, meters.join(",")],
-    queryFn: () => bi.rating({ site_id: siteId, point_id: meters, days }),
-    enabled: !!siteId,
+    queryKey: ["bi-rating", effectiveSiteId, days, meters.join(",")],
+    queryFn: () => bi.rating({ site_id: effectiveSiteId, point_id: meters, days }),
+    enabled: !!effectiveSiteId,
   });
   const r = ratingQ.data;
 
@@ -134,7 +135,7 @@ export default function Ratings() {
             emptyText="No site has reached this store yet"
           >
             {sites.map((s: any) => {
-              const on = s.site_id === siteId;
+              const on = s.site_id === effectiveSiteId;
               const rated = s.gross_floor_area_sqm != null;
               return (
                 <button

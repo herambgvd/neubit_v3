@@ -170,11 +170,15 @@ export default function OfflineMapView({
   // Latest callbacks, without making them dependencies of effects that must not
   // re-run: the map is built once per tiles URL, markers once per `sites` change.
   const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const selectedRef = useRef(selected);
-  selectedRef.current = selected;
+  // Refreshed after each commit rather than during render — a render that React
+  // discards must not hand its callbacks to the live map listeners.
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+    onCloseRef.current = onClose;
+    selectedRef.current = selected;
+  });
 
   // ── map lifecycle ────────────────────────────────────────────────────────
   useEffect(() => {

@@ -3,7 +3,7 @@
 // SOPs tab — master (SOP list) / detail (metadata + the visual state-machine
 // canvas). Built on the shared console primitives (components/console) so it wears
 // the same frame as Users / Sites / Ingest; SOP rows + canvas stay bespoke.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -43,11 +43,13 @@ export default function SopsTab() {
     return sops.filter((x) => (x.name || "").toLowerCase().includes(s) || (x.description || "").toLowerCase().includes(s));
   }, [sops, q]);
 
-  const selected = useMemo(() => sops.find((s) => sopId(s) === selectedId) || null, [sops, selectedId]);
+  // The explicit choice, or — while browsing — the first row. Derived rather
+  // than synced in an effect, which rendered an empty detail pane for one frame.
+  // In create/edit mode there is deliberately no fallback.
+  const effectiveId = selectedId ?? (mode === "view" && filtered[0] ? sopId(filtered[0]) : null);
 
-  useEffect(() => {
-    if (mode === "view" && !selected && filtered[0]) setSelectedId(sopId(filtered[0]));
-  }, [filtered, selected, mode]);
+  const selected = useMemo(() => sops.find((s) => sopId(s) === effectiveId) || null, [sops, effectiveId]);
+
 
   const remove = useMutation<any>({
     mutationFn: (id: any) => wfApi.sops.remove(id),
@@ -69,7 +71,7 @@ export default function SopsTab() {
         emptyText={q.trim() ? "No SOPs match your search" : "No SOPs yet"}
       >
         {filtered.map((s) => {
-          const isSel = sopId(s) === selectedId && mode !== "create";
+          const isSel = sopId(s) === effectiveId && mode !== "create";
           return (
             <button
               key={sopId(s)}

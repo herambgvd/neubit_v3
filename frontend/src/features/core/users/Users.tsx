@@ -6,7 +6,7 @@
 // through modals (same shape as the Roles console); status changes and admin
 // actions hit the backend directly from the detail pane.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -126,10 +126,12 @@ export default function UsersPage() {
     );
   }, [items, search]);
 
-  const selected = useMemo(() => items.find((u) => u.id === selectedId) || null, [items, selectedId]);
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
+  // The explicit choice, or the first row when there is none. Derived here
+  // rather than synced by an effect, which rendered one frame with nothing
+  // selected before correcting itself.
+  const effectiveId = selectedId ?? filtered[0]?.id ?? null;
+
+  const selected = useMemo(() => items.find((u) => u.id === effectiveId) || null, [items, effectiveId]);
 
   const create = useMutation<any, any, any>({
     mutationFn: (body: any) => api.post("/auth/users", body),
@@ -163,7 +165,7 @@ export default function UsersPage() {
     onSuccess: (_d, vars) => {
       toast.success("User deleted");
       qc.invalidateQueries({ queryKey: ["users"] });
-      if (selectedId === vars.id) setSelectedId(null);
+      if (effectiveId === vars.id) setSelectedId(null);
       setDeleting(null);
       setDelPassword("");
     },
@@ -258,7 +260,7 @@ export default function UsersPage() {
             emptyText={search.trim() ? "No users match your search" : "No users yet"}
           >
             {filtered.map((u) => (
-              <UserListItem key={u.id} user={u} selected={u.id === selectedId} onSelect={() => setSelectedId(u.id)} />
+              <UserListItem key={u.id} user={u} selected={u.id === effectiveId} onSelect={() => setSelectedId(u.id)} />
             ))}
           </PanelList>
 

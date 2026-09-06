@@ -120,16 +120,17 @@ function CategoryConsoleInner({ category }: { category: string }) {
   }, [devices, search, typeFilter]);
 
   // Select the first device once, so the detail pane is never empty on arrival.
-  useEffect(() => {
-    if (!deviceId && filtered.length) setDeviceId(filtered[0].device_id);
-  }, [filtered, deviceId]);
 
-  const selected = devices.find((d: any) => d.device_id === deviceId) || null;
+  // The explicit choice, or the first row once the list lands. Derived rather
+  // than synced in an effect, which rendered one empty frame first.
+  const effectiveDeviceId = deviceId ?? filtered[0]?.device_id ?? null;
+
+  const selected = devices.find((d: any) => d.device_id === effectiveDeviceId) || null;
 
   const pointsQ = useQuery<any>({
-    queryKey: ["bi-points", deviceId],
-    queryFn: () => bi.points({ device_id: deviceId, with_latest: true, limit: 500 }),
-    enabled: !!deviceId,
+    queryKey: ["bi-points", effectiveDeviceId],
+    queryFn: () => bi.points({ device_id: effectiveDeviceId, with_latest: true, limit: 500 }),
+    enabled: !!effectiveDeviceId,
     // Values are LIVE — the API reads raw for these, so polling them is the point.
     refetchInterval: 20_000,
   });
@@ -217,7 +218,7 @@ function CategoryConsoleInner({ category }: { category: string }) {
             }
           >
             {filtered.map((d: any) => {
-              const on = d.device_id === deviceId;
+              const on = d.device_id === effectiveDeviceId;
               const quiet = d.points - d.points_reporting;
               return (
                 <button
@@ -302,7 +303,7 @@ function CategoryConsoleInner({ category }: { category: string }) {
               {hasDeltaT(points) ? (
                 <div className="px-5 pb-3">
                   <DeltaT
-                    deviceId={selected.device_id}
+                    effectiveDeviceId={selected.device_id}
                     deviceTag={selected.device_tag}
                     hours={hours}
                     accent={meta.accent}

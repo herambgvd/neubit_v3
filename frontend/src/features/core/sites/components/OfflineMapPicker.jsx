@@ -42,7 +42,10 @@ export default function OfflineMapPicker({
   const [status, setStatus] = useState({ state: "probing" });
 
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  // Refreshed after each commit, never during render (see OfflineMapView).
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
 
   // The pin the picker opens on, captured once — later `value` changes come from
   // this map's own clicks and must not re-centre it under the user.

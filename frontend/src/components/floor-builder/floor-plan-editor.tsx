@@ -379,12 +379,20 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: any) 
   }, [floor, zones, placements, deletedDeviceIds, onSaved]);
 
   // ── Mode/tool sync (render-phase) ──────────────────────────────────
+  // This is React's documented "adjusting state when a prop changes" pattern:
+  // compare against the previous value during render and set the new one
+  // immediately, so the tool never renders one frame out of step with the mode.
+  // The compiler's rules cannot express it, hence the two disables.
+  /* eslint-disable react-hooks/refs -- the previous-value ref IS this pattern: it
+     has to be readable and writable inside the same render for the comparison to
+     be one-shot. There is no other place to keep it that satisfies both. */
   const lastModeRef = useRef(editorMode);
   if (lastModeRef.current !== editorMode) {
     lastModeRef.current = editorMode;
     if (editorMode === EDITOR_MODES.ZONE_DRAW) setActiveTool(TOOL_TYPES.ZONE_POLYGON);
     else setActiveTool(TOOL_TYPES.SELECT);
   }
+  /* eslint-enable react-hooks/refs */
 
   // ── Device placement handlers ──────────────────────────────────────
   const onDevicePaletteDrop = useCallback(

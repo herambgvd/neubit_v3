@@ -33,14 +33,15 @@ export default function MapView({ cameras = [], onPick }: any) {
   const siteList = asItems(sitesQ.data);
 
   // Default to the first site once loaded.
-  useEffect(() => {
-    if (!siteId && siteList.length) setSiteId(siteList[0].site_id);
-  }, [siteList, siteId]);
+
+  // The explicit choice, or the first row once the list lands. Derived rather
+  // than synced in an effect, which rendered one empty frame first.
+  const effectiveSiteId = siteId ?? siteList[0]?.site_id ?? null;
 
   const floorsQ = useQuery<any>({
-    queryKey: ["map-floors", siteId],
-    queryFn: () => sitesApi.floors.list({ site_id: siteId, limit: 100 }),
-    enabled: !!siteId,
+    queryKey: ["map-floors", effectiveSiteId],
+    queryFn: () => sitesApi.floors.list({ site_id: effectiveSiteId, limit: 100 }),
+    enabled: !!effectiveSiteId,
   });
   const floorList = asItems(floorsQ.data);
 
@@ -79,7 +80,7 @@ export default function MapView({ cameras = [], onPick }: any) {
       <div className="flex flex-wrap items-center gap-2 border-b border-[rgba(150,180,245,.15)] px-3 py-2 font-mono text-[11px] tracking-[.6px] text-[#aec2e8]">
         <Icon icon="heroicons-solid:map-pin" className="text-sm text-[#22d3ee]" />
         <Picker
-          value={siteId || ""}
+          value={effectiveSiteId || ""}
           onChange={setSiteId}
           options={siteList.map((s) => ({ value: s.site_id, label: s.name }))}
           placeholder={sitesQ.isLoading ? "loading…" : "No sites"}

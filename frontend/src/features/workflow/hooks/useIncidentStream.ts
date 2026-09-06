@@ -12,10 +12,15 @@ import { api, tokens } from "@/lib/api";
 const EVENTS = ["incident.created", "trigger.fired"];
 
 export function useIncidentStream(onEvent, { enabled = true, onStatus }: any = {}) {
+  // Seeded with the current callbacks and refreshed after each commit, so the
+  // long-lived EventSource handlers below never need re-subscribing to see a new
+  // one — and no ref is written during render.
   const cbRef = useRef(onEvent);
-  cbRef.current = onEvent;
   const statusRef = useRef(onStatus);
-  statusRef.current = onStatus;
+  useEffect(() => {
+    cbRef.current = onEvent;
+    statusRef.current = onStatus;
+  });
 
   useEffect(() => {
     if (!enabled || typeof window === "undefined" || typeof EventSource === "undefined") return;

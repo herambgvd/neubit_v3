@@ -228,16 +228,15 @@ function TilePlayback({
   // Everything here is read from a listener (the clock subscription, the progress
   // watchdog) that must NOT be torn down and rebuilt every time one of these
   // changes — rebuilding them mid-stream is itself a source of churn.
+  // Each is seeded with the value it mirrors and refreshed after every commit by
+  // the single sync effect below — never during render, because a render can be
+  // discarded and a ref written from a discarded one would leak that value into
+  // listeners that are still live.
   const sessionRef = useRef<any>(null);
-  sessionRef.current = session;
   const loadingRef = useRef(true);
-  loadingRef.current = loading;
   const transcodedRef = useRef(false);
-  transcodedRef.current = transcoded;
   const masterRef = useRef(master);
-  masterRef.current = master;
   const onReachedEndRef = useRef<any>(onReachedEnd);
-  onReachedEndRef.current = onReachedEnd;
   const lastRemintRef = useRef(0);
   // The window's far edge is read through a ref, NOT captured in `openAt`'s deps.
   // It changes whenever the operator re-frames the timeline (the range ladder,
@@ -245,13 +244,10 @@ function TilePlayback({
   // video that is playing perfectly well — for a change that only affects where
   // the NEXT session may run to.
   const windowToRef = useRef(windowToMs);
-  windowToRef.current = windowToMs;
   // Read inside the clock subscription, which must not re-subscribe on a
   // play/pause toggle.
   const playingRef = useRef(playing);
-  playingRef.current = playing;
   const speedRef = useRef(speed);
-  speedRef.current = speed;
 
   // Corrections are suppressed until this instant after every open.
   const settleUntilRef = useRef(0);
@@ -470,7 +466,19 @@ function TilePlayback({
     },
     [federated, nodeId, realId, freeze, takeGate, dropGate, markProgress],
   );
-  openAtRef.current = openAt;
+  // The one place the listener-facing refs are refreshed: after every commit,
+  // so a listener that outlives this render still reads current values.
+  useEffect(() => {
+    sessionRef.current = session;
+    loadingRef.current = loading;
+    transcodedRef.current = transcoded;
+    masterRef.current = master;
+    onReachedEndRef.current = onReachedEnd;
+    windowToRef.current = windowToMs;
+    playingRef.current = playing;
+    speedRef.current = speed;
+    openAtRef.current = openAt;
+  });
 
   // Re-anchor whenever the wall seeks (anchorSeq), or the camera changes.
   useEffect(() => {

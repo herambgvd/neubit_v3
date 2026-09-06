@@ -668,6 +668,7 @@ export default function PlaybackPlayer({
   // (seekable window); an NVR replay is a LINEAR stream whose anchor moves on each
   // re-request (reloadFrom), so its base is the current anchor. A rebuild always follows
   // an anchor change (new hlsUrl → H265WebPlayer remounts), so this is fresh at render.
+  // eslint-disable-next-line react-hooks/refs -- an anchor change always remounts H265WebPlayer via a new hlsUrl, so the ref is fresh at this render by construction; holding it in state instead would add a render on every re-request of a linear stream.
   const h265Base = sourceFn && anchorRef.current != null ? anchorRef.current : windowStart;
 
   // ── Standalone controls ──────────────────────────────────────────────────

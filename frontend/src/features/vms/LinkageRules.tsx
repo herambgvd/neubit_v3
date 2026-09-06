@@ -5,7 +5,7 @@
 // LEFT a searchable rule list (Add + active/inactive counts in the header), RIGHT
 // LinkageRuleDetail (trigger/scope/actions + active toggle). Editing runs through
 // LinkageRuleModal. Mirrors the Sites config layout. Lives under Config → Linkage.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -42,11 +42,13 @@ export default function LinkageRulesPage() {
     return rules.filter((r) => r.name?.toLowerCase().includes(term));
   }, [rules, search]);
 
-  const selected = useMemo(() => rules.find((r) => r.id === selectedId) || null, [rules, selectedId]);
+  // The explicit choice, or the first row when there is none. Derived here
+  // rather than synced by an effect, which rendered one frame with nothing
+  // selected before correcting itself.
+  const effectiveId = selectedId ?? filtered[0]?.id ?? null;
 
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
+  const selected = useMemo(() => rules.find((r) => r.id === effectiveId) || null, [rules, effectiveId]);
+
 
   const saveMut = useMutation<any, any, any>({
     mutationFn: ({ id, body }: any) => (id ? vms.linkage.update(id, body) : vms.linkage.create(body)),
@@ -70,7 +72,7 @@ export default function LinkageRulesPage() {
     onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ["vms-linkage-rules"] });
       toast.success("Rule deleted");
-      if (selectedId === id) setSelectedId(null);
+      if (effectiveId === id) setSelectedId(null);
       setConfirm(null);
     },
     onError: (e) => toast.error(apiError(e, "Failed to delete rule")),
@@ -142,7 +144,7 @@ export default function LinkageRulesPage() {
                   <LinkageRuleListItem
                     key={r.id}
                     rule={r}
-                    selected={r.id === selectedId}
+                    selected={r.id === effectiveId}
                     onSelect={() => setSelectedId(r.id)}
                   />
                 ))}

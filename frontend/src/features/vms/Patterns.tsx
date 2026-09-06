@@ -80,12 +80,14 @@ export default function Patterns() {
     );
   }, [items, search]);
 
-  const selected = useMemo(() => items.find((i) => i.id === selectedId) || null, [items, selectedId]);
+  // The explicit choice, or the first row when there is none. Derived here
+  // rather than synced by an effect, which rendered one frame with nothing
+  // selected before correcting itself.
+  const effectiveId = selectedId ?? filtered[0]?.id ?? null;
+
+  const selected = useMemo(() => items.find((i) => i.id === effectiveId) || null, [items, effectiveId]);
 
   // Auto-select the first row when nothing is selected on the current tab.
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
 
   // Selection needs no reset — the other tab's id is simply not in `items`, so
   // `selected` goes null and the auto-select above picks that tab's first row. The
@@ -108,7 +110,7 @@ export default function Patterns() {
     mutationFn: (id: any) => (isPatternTab ? vms.patterns.remove(id) : vms.groups.remove(id)),
     onSuccess: (_d, id) => {
       toast.success(`${isPatternTab ? "Pattern" : "Camera group"} deleted`);
-      if (selectedId === id) setSelectedId(null);
+      if (effectiveId === id) setSelectedId(null);
       invalidateActive();
     },
     onError: (e) => toast.error(apiError(e, "Delete failed")),
@@ -220,7 +222,7 @@ export default function Patterns() {
                     key={i.id}
                     item={i}
                     isPattern={isPatternTab}
-                    isSelected={selectedId === i.id}
+                    isSelected={effectiveId === i.id}
                     onSelect={(d) => setSelectedId(d.id)}
                     onToggleActive={(d) => toggleActive.mutate({ id: d.id, is_active: d.is_active === false })}
                     onEdit={openEdit}

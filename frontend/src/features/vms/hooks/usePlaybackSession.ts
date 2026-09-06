@@ -128,6 +128,11 @@ export function usePlaybackSession(
     };
   }, [cameraId, enabled]);
 
+  /* eslint-disable react-hooks/refs -- `windowRef` holds the window the caller
+     ASKED for, which is set inside the async load and is deliberately not state:
+     making it state would re-render every consumer at request time rather than
+     when the session lands. It is read here only as the fallback that keeps
+     from/to populated during that gap. */
   return {
     session,
     hlsUrl: session?.hls_url || null,
@@ -143,6 +148,7 @@ export function usePlaybackSession(
     load,
     clear,
   };
+  /* eslint-enable react-hooks/refs */
 }
 
 export default usePlaybackSession;

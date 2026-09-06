@@ -4,7 +4,7 @@
 // create/edit FormatForm). Each format maps an alert_code to presentation
 // (severity/priority/colour/icon/sound) and an optional target SOP. A duplicate
 // alert_code returns 409 → surfaced as a friendly toast. v2 master-detail layout.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -52,11 +52,13 @@ export default function FormatsTab() {
       (f.category || "").toLowerCase().includes(s));
   }, [formats, search]);
 
-  const selected = useMemo(() => (mode === "create" ? null : formats.find((f) => fmtId(f) === selectedId) || null), [formats, selectedId, mode]);
+  // The explicit choice, or — while browsing — the first row. Derived rather
+  // than synced in an effect, which rendered an empty detail pane for one frame.
+  // In create/edit mode there is deliberately no fallback.
+  const effectiveId = selectedId ?? (mode === "view" && filtered[0] ? fmtId(filtered[0]) : null);
 
-  useEffect(() => {
-    if (mode === "view" && !selected && filtered[0]) setSelectedId(fmtId(filtered[0]));
-  }, [filtered, selected, mode]);
+  const selected = useMemo(() => (mode === "create" ? null : formats.find((f) => fmtId(f) === effectiveId) || null), [formats, effectiveId, mode]);
+
 
   function onSaveError(e) {
     if (e?.response?.status === 409) toast.error("That alert code is already in use — pick a unique code.");
@@ -88,7 +90,7 @@ export default function FormatsTab() {
         emptyText={search.trim() ? "No formats match your search" : "No alert formats yet"}
       >
           {filtered.map((f) => {
-            const isSel = fmtId(f) === selectedId && mode !== "create";
+            const isSel = fmtId(f) === effectiveId && mode !== "create";
             const sn = sopName(f.sop_id);
             return (
               <button key={fmtId(f)}

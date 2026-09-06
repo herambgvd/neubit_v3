@@ -3,7 +3,7 @@
 // VMS → NVR. Recorder estate as a master/detail: LEFT = onboarded NVRs (search +
 // Add + Discover + online counts), RIGHT = NvrDetail (health + mapped channels +
 // map/edit/delete). Mirrors the Access-Control master/detail structure, rethemed.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -51,11 +51,13 @@ export default function NvrPage() {
     return nvrs.filter((n) => n.name?.toLowerCase().includes(term) || n.host?.toLowerCase().includes(term));
   }, [nvrs, search]);
 
-  const selected = useMemo(() => nvrs.find((n) => n.id === selectedId) || null, [nvrs, selectedId]);
+  // The explicit choice, or the first row when there is none. Derived here
+  // rather than synced by an effect, which rendered one frame with nothing
+  // selected before correcting itself.
+  const effectiveId = selectedId ?? filtered[0]?.id ?? null;
 
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
+  const selected = useMemo(() => nvrs.find((n) => n.id === effectiveId) || null, [nvrs, effectiveId]);
+
 
   const onlineCount = nvrs.filter((n) => n.status === "online").length;
 
@@ -63,7 +65,7 @@ export default function NvrPage() {
     mutationFn: (id: any) => vms.nvrs.remove(id),
     onSuccess: (_d, id) => {
       toast.success("NVR removed");
-      if (selectedId === id) setSelectedId(null);
+      if (effectiveId === id) setSelectedId(null);
       qc.invalidateQueries({ queryKey: ["vms-nvrs"] });
     },
     onError: (e) => toast.error(apiError(e, "Delete failed")),
@@ -119,7 +121,7 @@ export default function NvrPage() {
             ) : (
               <div className="space-y-1.5 px-3 py-2">
                 {filtered.map((n) => {
-                  const isSel = selectedId === n.id;
+                  const isSel = effectiveId === n.id;
                   return (
                     <button
                       key={n.id}

@@ -441,7 +441,11 @@ export default function Streaming() {
   // switch has no connecting state. See PatternStage for the whole argument.
   const [stage, setStage] = useState<any>({ slots: [null, null], front: 0 });
   const stageRef = useRef(stage);
-  stageRef.current = stage;
+  // The dwell timer reads the stage through this ref; refreshed after commit so
+  // no discarded render can leak into a timer that is already scheduled.
+  useEffect(() => {
+    stageRef.current = stage;
+  });
 
   // Preload — put a stop in the back slot without changing what is on screen.
   const preloadStop = useCallback((stop) => {

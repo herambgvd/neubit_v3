@@ -8,7 +8,7 @@
 // v3 note: v2's drag-reorder + bulk-delete were device-list extras (from
 // components/devices/*) that aren't part of the shared v3 layer; this port keeps the
 // core master/detail + per-row kebab (Edit/Delete) faithfully and omits those extras.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -54,11 +54,13 @@ export default function AccessControlPage() {
     return instances.filter((i) => i.name?.toLowerCase().includes(term) || i.base_url?.toLowerCase().includes(term));
   }, [instances, search]);
 
-  const selected = useMemo(() => instances.find((i) => i.id === selectedId) || null, [instances, selectedId]);
+  // The explicit choice, or the first row when there is none. Derived here
+  // rather than synced by an effect, which rendered one frame with nothing
+  // selected before correcting itself.
+  const effectiveId = selectedId ?? filtered[0]?.id ?? null;
 
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
+  const selected = useMemo(() => instances.find((i) => i.id === effectiveId) || null, [instances, effectiveId]);
+
 
   const onlineCount = instances.filter((i) => i.status === "online" || i.status === "active").length;
 
@@ -66,7 +68,7 @@ export default function AccessControlPage() {
     mutationFn: (id: any) => gates.instances.remove(id),
     onSuccess: (_d, id) => {
       toast.success("Instance removed");
-      if (selectedId === id) setSelectedId(null);
+      if (effectiveId === id) setSelectedId(null);
       qc.invalidateQueries({ queryKey: ["ac-instances"] });
     },
     onError: (e) => toast.error(apiError(e, "Delete failed")),
@@ -133,7 +135,7 @@ export default function AccessControlPage() {
                     key={i.id}
                     instance={i}
                     siteName={sites.find((s) => s.site_id === i.site_id)?.name}
-                    isSelected={selectedId === i.id}
+                    isSelected={effectiveId === i.id}
                     onSelect={(d) => setSelectedId(d.id)}
                     onEdit={(d) => setEditTarget(d)}
                     onDelete={(d) =>

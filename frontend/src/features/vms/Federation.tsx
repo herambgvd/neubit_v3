@@ -12,7 +12,7 @@
 // Reached from Configurations → System & Policy, so it wears the shared console
 // frame (components/console) and the blue Configurations accent — same shell as
 // Users & Roles / Sites, not the teal Surveillance look it used to carry.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
@@ -83,14 +83,16 @@ export default function FederationPage() {
     );
   }, [nodes, search]);
 
+  // The explicit choice, or the first row when there is none. Derived here
+  // rather than synced by an effect, which rendered one frame with nothing
+  // selected before correcting itself.
+  const effectiveId = selectedId ?? filtered[0]?.id ?? null;
+
   const selected = useMemo(
-    () => nodes.find((n) => n.id === selectedId) || null,
-    [nodes, selectedId],
+    () => nodes.find((n) => n.id === effectiveId) || null,
+    [nodes, effectiveId],
   );
 
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
 
   const reachableCount = nodes.filter(
     (n) => n.status === "online" && !unreachableIds.has(n.id),
@@ -129,7 +131,7 @@ export default function FederationPage() {
             }
           >
             {filtered.map((n) => {
-              const isSel = selectedId === n.id;
+              const isSel = effectiveId === n.id;
               const nodeCams = camsByNode.get(n.id) || [];
               const nodeOnline = nodeCams.filter((c) => c.status === "online").length;
               const isUnreachable = unreachableIds.has(n.id) || n.status !== "online";

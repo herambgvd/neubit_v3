@@ -215,6 +215,11 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
     [federated, from, span, spans, pb],
   );
 
+  /* eslint-disable react-hooks/refs -- `useScrub` returns a ref (for `ref=`)
+     alongside ordinary state (hover, drag). The compiler flags every property
+     read on that object, including handing the ref to `ref=`, which is exactly
+     what a ref is for. Scoped to this component so a genuine ref read elsewhere
+     still fails. */
   const scrub = useScrub(seekFrac);
 
   // Step to the neighbouring recorded span.
@@ -505,3 +510,4 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
     </div>
   );
 }
+/* eslint-enable react-hooks/refs */

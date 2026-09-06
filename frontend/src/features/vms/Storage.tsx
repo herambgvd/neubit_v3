@@ -7,7 +7,7 @@
 // any upstream 3rd-party NVR storage on the right. There is NO CRUD here — pools,
 // tiering and formatting live on the recorder. Wears the shared console frame + the
 // blue Configurations accent, exactly like its sibling federation lens (Federation).
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
@@ -108,11 +108,13 @@ export default function StoragePage() {
     );
   }, [nodes, search]);
 
-  const selected = useMemo(() => nodes.find((n) => n.id === selectedId) || null, [nodes, selectedId]);
+  // The explicit choice, or the first row when there is none. Derived here
+  // rather than synced by an effect, which rendered one frame with nothing
+  // selected before correcting itself.
+  const effectiveId = selectedId ?? filtered[0]?.id ?? null;
 
-  useEffect(() => {
-    if (!selected && filtered.length > 0) setSelectedId(filtered[0].id);
-  }, [selected, filtered]);
+  const selected = useMemo(() => nodes.find((n) => n.id === effectiveId) || null, [nodes, effectiveId]);
+
 
   const onlineCount = nodes.filter((n) => n.status === "online").length;
 
@@ -147,7 +149,7 @@ export default function StoragePage() {
             }
           >
             {filtered.map((n) => {
-              const isSel = selectedId === n.id;
+              const isSel = effectiveId === n.id;
               const online = n.status === "online";
               return (
                 <button

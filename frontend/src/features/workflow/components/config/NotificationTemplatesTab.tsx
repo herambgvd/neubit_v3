@@ -3,7 +3,7 @@
 // Notification templates tab — master (template list) / detail (read-only
 // detail, or the create/edit TemplateForm). v2 master-detail layout: 360px
 // console list panel on the left, detail/editor/empty on the right.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -41,11 +41,13 @@ export default function NotificationTemplatesTab() {
     return templates.filter((t) => (t.name || "").toLowerCase().includes(s) || (t.channel_type || "").toLowerCase().includes(s));
   }, [templates, search]);
 
-  const selected = useMemo(() => (mode === "create" ? null : templates.find((t) => t.template_id === selectedId) || null), [templates, selectedId, mode]);
+  // The explicit choice, or — while browsing — the first row. Derived rather
+  // than synced in an effect, which rendered an empty detail pane for one frame.
+  // In create/edit mode there is deliberately no fallback.
+  const effectiveId = selectedId ?? (mode === "view" && filtered[0] ? filtered[0].template_id : null);
 
-  useEffect(() => {
-    if (mode === "view" && !selected && filtered[0]) setSelectedId(filtered[0].template_id);
-  }, [filtered, selected, mode]);
+  const selected = useMemo(() => (mode === "create" ? null : templates.find((t) => t.template_id === effectiveId) || null), [templates, effectiveId, mode]);
+
 
   const remove = useMutation<any>({
     mutationFn: (id: any) => wfApi.notifications.templates.remove(id),
@@ -67,7 +69,7 @@ export default function NotificationTemplatesTab() {
         emptyText={search.trim() ? "No templates match your search" : "No templates yet"}
       >
           {filtered.map((t) => {
-            const isSel = t.template_id === selectedId && mode !== "create";
+            const isSel = t.template_id === effectiveId && mode !== "create";
             return (
               <button key={t.template_id}
                   onClick={() => { setSelectedId(t.template_id); setMode("view"); }}

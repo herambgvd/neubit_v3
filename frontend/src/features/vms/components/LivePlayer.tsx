@@ -166,8 +166,6 @@ function LivePlayer({
   // renew never re-runs it, but when it DOES run it reads the live token here.
   const hlsUrlRef = useRef(hlsUrl);
   const webrtcUrlRef = useRef(webrtcUrl);
-  hlsUrlRef.current = hlsUrl;
-  webrtcUrlRef.current = webrtcUrl;
   const hlsKey = streamKey(hlsUrl);
   const webrtcKey = streamKey(webrtcUrl);
 
@@ -206,9 +204,16 @@ function LivePlayer({
   // Live refs so the wheel listener — registered ONCE, non-passive — reads the
   // current zoom/pan without being torn down and re-added on every zoom step.
   const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
   const panRef = useRef(pan);
-  panRef.current = pan;
+
+  // Refreshed after every commit rather than during render: a discarded render
+  // must not leak its values into the listeners that read these.
+  useEffect(() => {
+    hlsUrlRef.current = hlsUrl;
+    webrtcUrlRef.current = webrtcUrl;
+    zoomRef.current = zoom;
+    panRef.current = pan;
+  });
 
   // Pan is clamped to the frame: at scale z the picture overhangs its box by
   // (z-1)/2 per side, so translating further than that just drags black in.

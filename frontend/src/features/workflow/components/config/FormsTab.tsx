@@ -3,7 +3,7 @@
 // Forms tab — master (dynamic-form list) / detail (read-only detail, or the
 // create/edit FormBuilder). Shared console master/detail: 300px list panel on the
 // left, detail/editor/empty on the right.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -41,11 +41,13 @@ export default function FormsTab() {
     return forms.filter((f) => (f.name || "").toLowerCase().includes(s) || (f.description || "").toLowerCase().includes(s));
   }, [forms, search]);
 
-  const selected = useMemo(() => (mode === "create" ? null : forms.find((f) => f.form_id === selectedId) || null), [forms, selectedId, mode]);
+  // The explicit choice, or — while browsing — the first row. Derived rather
+  // than synced in an effect, which rendered an empty detail pane for one frame.
+  // In create/edit mode there is deliberately no fallback.
+  const effectiveId = selectedId ?? (mode === "view" && filtered[0] ? filtered[0].form_id : null);
 
-  useEffect(() => {
-    if (mode === "view" && !selected && filtered[0]) setSelectedId(filtered[0].form_id);
-  }, [filtered, selected, mode]);
+  const selected = useMemo(() => (mode === "create" ? null : forms.find((f) => f.form_id === effectiveId) || null), [forms, effectiveId, mode]);
+
 
   const remove = useMutation<any>({
     mutationFn: (id: any) => wfApi.forms.remove(id),
@@ -67,7 +69,7 @@ export default function FormsTab() {
         emptyText={search.trim() ? "No forms match your search" : "No forms yet"}
       >
           {filtered.map((f) => {
-            const isSel = f.form_id === selectedId && mode !== "create";
+            const isSel = f.form_id === effectiveId && mode !== "create";
             return (
               <button key={f.form_id}
                   onClick={() => { setSelectedId(f.form_id); setMode("view"); }}

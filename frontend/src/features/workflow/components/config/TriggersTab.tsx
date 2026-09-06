@@ -3,7 +3,7 @@
 // Triggers tab — master (trigger list) / detail (read-only detail, or the
 // create/edit TriggerForm). Matches the v2 master-detail layout: a fixed 360px
 // console list panel on the left, the detail/editor/empty pane on the right.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -52,11 +52,13 @@ export default function TriggersTab() {
       (t.event_source || "").toLowerCase().includes(s));
   }, [triggers, search]);
 
-  const selected = useMemo(() => (mode === "create" ? null : triggers.find((t) => trigId(t) === selectedId) || null), [triggers, selectedId, mode]);
+  // The explicit choice, or — while browsing — the first row. Derived rather
+  // than synced in an effect, which rendered an empty detail pane for one frame.
+  // In create/edit mode there is deliberately no fallback.
+  const effectiveId = selectedId ?? (mode === "view" && filtered[0] ? trigId(filtered[0]) : null);
 
-  useEffect(() => {
-    if (mode === "view" && !selected && filtered[0]) setSelectedId(trigId(filtered[0]));
-  }, [filtered, selected, mode]);
+  const selected = useMemo(() => (mode === "create" ? null : triggers.find((t) => trigId(t) === effectiveId) || null), [triggers, effectiveId, mode]);
+
 
   const save = useMutation<any, any, any>({
     mutationFn: ({ id, body }: any) => (id ? wfApi.triggers.update(id, body) : wfApi.triggers.create(body)),
@@ -88,7 +90,7 @@ export default function TriggersTab() {
         emptyText={search.trim() ? "No triggers match your search" : "No triggers yet"}
       >
           {filtered.map((t) => {
-            const isSel = trigId(t) === selectedId && mode !== "create";
+            const isSel = trigId(t) === effectiveId && mode !== "create";
             const enabled = t.enabled !== false;
             return (
               <button key={trigId(t)}
