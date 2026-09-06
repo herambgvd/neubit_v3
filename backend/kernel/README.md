@@ -56,8 +56,12 @@ publish as `vms`, and `reading-writer`, which only consumes, may publish no doma
 event at all. The conflux edge collector is a separate deployment and has its own
 user, restricted to `tenant.*.iot.>`.
 
-**No service can destroy a stream.** `$JS.API.STREAM.DELETE.>` and
-`$JS.API.STREAM.PURGE.>` are denied to every user. Nothing in the estate calls
+**JetStream's API is scoped per stream, and no service can destroy one.** Each
+user is granted the API subjects for the streams it actually uses: core ensures
+and publishes to EVENTS, the four satellites ensure EVENTS and EVENTS_DLQ and
+consume EVENTS, reading-writer consumes all three, the edge collector publishes
+readings. `$JS.API.STREAM.DELETE.>` and `$JS.API.STREAM.PURGE.>` are denied to
+every user on top of that. Nothing in the estate calls
 either — checked, including vision's `purge()`, which sweeps database rows — so
 denying them costs nothing and takes "a compromised service drops the readings
 stream" off the table.
@@ -152,7 +156,12 @@ at work that is already done. Checked against the code, not from memory:
 
 ## Known gaps
 
-* `$JS.API.>` is granted whole to every service. Stream DELETE and PURGE are
-  denied, which is the part that can be split without guesswork; scoping consumer
-  operations per durable is not expressible, because a durable name is one subject
-  token and NATS has no partial-token wildcard.
+* Consumer operations are scoped per STREAM, not per durable. A durable name is
+  one subject token and NATS has no partial-token wildcard, so scoping a service
+  to its own durables would mean naming every durable in the estate at the broker
+  and having a new one fail silently. Per-stream is where the line falls cleanly:
+  a compromised `access` cannot touch IOT_READINGS at all, but it could delete
+  another service's durable on EVENTS, which it shares.
+* `$JS.API.STREAM.NAMES` is granted unscoped because it carries no stream token.
+  nats-py calls it to resolve a subject to its stream before binding a consumer.
+  It returns names, not data.

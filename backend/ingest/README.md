@@ -124,11 +124,13 @@ All three, and one of them was worse than it says here.
 
 ## Known gaps
 
-* ingest's NATS grant is `tenant.*.*.>`, and it has to be: `target_domain` is
-  tenant-configured, so a fixed list at the broker would break a legitimate rule.
-  The ownership check is at the edge instead (above), which means it holds for
-  rules saved through the API and not for anything that writes the column
-  directly.
+* ingest's NATS *allow* is `tenant.*.*.>`, and it has to be: `target_domain` is
+  tenant-configured, so a fixed allow-list would break a legitimate rule. The ten
+  domains another service owns are DENIED at the broker as well as refused at the
+  edge, so a row written straight to the column — or a bug that skips the schema —
+  still cannot emit as access control. The two lists must stay in step;
+  `test_target_domain_ownership.py` derives its set from the kernel's stream
+  subjects, so a new domain fails the suite rather than shipping.
 
 ## Configuration
 
