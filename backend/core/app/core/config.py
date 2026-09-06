@@ -140,10 +140,26 @@ class Settings(BaseSettings):
 
     # --- CORS (frontend origins) ------------------------------------------
     cors_origins: list[str] = ["http://localhost:3000"]
-    # Regex of allowed origins. The default allows any http(s) origin so the app
-    # opens from any machine on the LAN. Tighten it in production via
-    # VE_CORS_ORIGIN_REGEX or cors_origins.
-    cors_origin_regex: str = r"https?://.*"
+    # Which ORIGINS may make credentialed cross-origin calls. This is a security
+    # boundary, not a convenience setting: the middleware is mounted with
+    # allow_credentials=True, so whatever matches here gets the browser's cookies
+    # attached AND gets the response echoed back to it.
+    #
+    # It used to be `https?://.*`, which matches every website on the internet.
+    # Verified against the running stack: a request carrying
+    # `Origin: https://evil.example` came back with
+    # `access-control-allow-origin: https://evil.example` and
+    # `access-control-allow-credentials: true` — on /api/v1/auth/refresh, which
+    # reads the httpOnly refresh cookie and returns a fresh access token in the
+    # body. Any page an operator visited while signed in could take the session.
+    #
+    # The stated intent of the loose default was "the app opens from any machine
+    # on the LAN", and that intent is kept: loopback, the three RFC 1918 ranges
+    # and `*.local`. What is gone is the public internet. A deployment served from
+    # a real hostname sets VE_CORS_ORIGINS (or this regex) to that hostname.
+    cors_origin_regex: str = (
+        r"^https?://(localhost|127\.0\.0\.1|\[::1\]|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|[A-Za-z0-9-]+\.local)(:\d+)?$"
+    )
 
 
 @lru_cache
