@@ -32,6 +32,12 @@ that exist, and "why did my integration stop" is the question the log is for.
 Both answer the caller identically, so the response cannot be used to tell a real
 slug from an invented one.
 
+**Secrets are per-tenant Fernet** (`kernel.secrets`). The cipher here used to be a
+hand-rolled HMAC keystream keyed from `VE_JWT_SECRET`: unauthenticated, so anyone
+who could write the column could flip bits in a stored secret, and rotating the
+token secret silently broke every HMAC webhook. Rows in the old format still
+decrypt and re-encrypt on the next write.
+
 **HMAC requests expire.** The signature used to cover the body alone — no
 timestamp, no nonce — so a captured request replayed forever and each replay
 produced a fresh accepted event. Set `hmac_max_age_seconds` on a webhook and the
@@ -56,10 +62,10 @@ pattern-validated now — it was not, while the same field on a category was, an
 rule's value overrides the category's. A dot or a wildcard there changes the
 subject's shape and reaches another module's consumers.
 
-Note the pattern stops the *shape* attacks, not cross-module naming: a holder of
-`ingest.manage` can still set `target_domain` to another module's own word. Subject
-authorisation belongs on the bus, and NATS currently has none — see the kernel's
-README.
+`kernel.events.subject()` validates the domain too, so a value carrying `.`, `*` or
+`>` cannot change the subject's shape. What neither stops is a holder of
+`ingest.manage` naming another module's own word — `access`, say. That needs
+authorisation on the bus, and NATS currently has none; see the kernel's README.
 
 **Platform rows are not everyone's.** The Lumina seeds carry `tenant_id NULL`, and
 `kernel.auth.owns()` treats such a row as readable by all while `scoped()` hides it
@@ -77,10 +83,6 @@ snapshot.
 
 ## Known gaps
 
-* The secret cipher is an unauthenticated HMAC-CTR keystream keyed from
-  `VE_JWT_SECRET` (`security.py`). Anyone who can write the column can flip bits in
-  a stored secret, and rotating the token secret silently breaks every HMAC
-  webhook. `kernel.secrets` is the platform's answer and this has not moved to it.
 * `source_ip` takes the first `X-Forwarded-For` hop unconditionally. Safe behind
   this gateway, which overwrites the header, but not by its own construction.
 * An unresolvable `$ref` in a tenant-supplied JSON schema raises past the handler

@@ -85,3 +85,46 @@ def test_the_envelope_shape_is_stable():
     """Consumers in five services read these keys."""
     body = envelope(tenant_id="t1", type="a.b", source="test", payload={"x": 1})
     assert set(body) == {"event_id", "tenant_id", "type", "occurred_at", "source", "payload"}
+
+
+# --- subject construction ---------------------------------------------------
+#
+# `domain` reaches subject() from tenant-editable configuration (ingest's category
+# and rule target_domain) and was interpolated unchecked. NATS gives `.`, `*` and
+# `>` structural meaning, so a token carrying one changes the subject's SHAPE and
+# reaches consumers in another module's namespace.
+
+
+def test_a_well_formed_subject_is_built():
+    from kernel.events import subject
+
+    assert subject("t1", "access", "door_opened") == "tenant.t1.access.door_opened"
+    assert subject(None, "ingest", "event.received") == "tenant.platform.ingest.event.received"
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("domain", ["a.b", "*", ">", "vms.camera", "", "Access", "1abc", "a b"])
+def test_a_domain_that_would_change_the_subject_shape_is_refused(domain):
+    from kernel.events import InvalidSubject, subject
+
+    with pytest.raises(InvalidSubject):
+        subject("t1", domain, "event")
+
+
+def test_the_event_token_is_left_to_the_caller():
+    """Only `domain` is validated. `event` is chosen by code at every site, and
+    several publishers document themselves as never raising — a raise on their path
+    would trade a real guarantee for no security gain."""
+    from kernel.events import subject
+
+    assert subject("t1", "device", "camera.registered").endswith("device.camera.registered")
+
+
+def test_a_dotted_event_is_allowed():
+    """Publishers use dots as a sub-path inside their OWN domain, which is not a
+    move across namespaces."""
+    from kernel.events import subject
+
+    assert subject("t1", "ingest", "event.received").endswith("ingest.event.received")

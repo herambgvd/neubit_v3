@@ -18,6 +18,8 @@ request. Any mismatch returns a generic failure that the route turns into a bare
 
 from __future__ import annotations
 
+import logging
+
 import time
 from collections import OrderedDict
 
@@ -27,6 +29,8 @@ import os
 from dataclasses import dataclass
 
 from starlette.requests import Request
+
+log = logging.getLogger("ingest.security")
 
 
 # --- secret hashing (config side) ------------------------------------------
@@ -53,64 +57,96 @@ def verify_secret(plain: str, stored: str | None) -> bool:
 
 
 # --- reversible secret encryption (HMAC shared secrets need the raw value) -----
+#
+# HMAC secrets are stored reversibly because verifying a signature means
+# recomputing it. Everything else is hashed, which is stronger — do not "unify"
+# that away.
+#
+# WHAT THIS REPLACED. This module used to be its own cipher: an HMAC-SHA256
+# keystream XORed over the plaintext, keyed from VE_JWT_SECRET, stored as
+# `enc:<nonce>:<ct>`. Two problems:
+#
+#   * Unauthenticated. A stream cipher with no MAC is malleable — flipping a bit
+#     of ciphertext flips the same bit of the recovered secret, so anyone who can
+#     write the column can steer what signature the receiver expects.
+#   * Keyed from the JWT secret. Rotating the token secret is routine and it
+#     silently broke every HMAC webhook, with the failure showing up as "bad
+#     signature" from senders that had changed nothing.
+#
+# kernel.secrets gives per-tenant Fernet (AES-CBC + HMAC) keyed from
+# VE_SECRETS_KEY. Rows written by the old cipher still decrypt, so an existing
+# deployment keeps working; they re-encrypt in the new format on the next write.
 
-_ENC_PREFIX = "enc:"
+_LEGACY_PREFIX = "enc:"
+_NEW_PREFIX = "enc:v1:"
 
 
-def _cipher_key() -> bytes:
-    """Derive a 32-byte key from the kernel JWT secret (lazy — avoids import cycles)."""
+def _legacy_key() -> bytes:
     from kernel.config import get_settings
 
     return hashlib.sha256(get_settings().jwt_secret.encode("utf-8")).digest()
 
 
-def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
-    """HMAC-SHA256 counter-mode keystream (stdlib only, no cryptography dep)."""
+def _legacy_keystream(key: bytes, nonce: bytes, length: int) -> bytes:
     out = bytearray()
     counter = 0
     while len(out) < length:
-        block = hmac.new(
-            key, nonce + counter.to_bytes(4, "big"), hashlib.sha256
-        ).digest()
-        out.extend(block)
+        out.extend(hmac.new(key, nonce + counter.to_bytes(4, "big"), hashlib.sha256).digest())
         counter += 1
     return bytes(out[:length])
 
 
-def encrypt_secret(plain: str) -> str:
-    """Reversibly encrypt a secret → ``"enc:<nonce_hex>:<ct_hex>"`` for storage."""
-    key = _cipher_key()
-    nonce = os.urandom(16)
-    data = plain.encode("utf-8")
-    ct = bytes(a ^ b for a, b in zip(data, _keystream(key, nonce, len(data))))
-    return f"{_ENC_PREFIX}{nonce.hex()}:{ct.hex()}"
-
-
-def decrypt_secret(stored: str | None) -> str | None:
-    """Recover a plaintext from an ``encrypt_secret`` value (None if not encrypted)."""
-    if not stored or not stored.startswith(_ENC_PREFIX):
-        return None
-    body = stored[len(_ENC_PREFIX):]
-    if ":" not in body:
-        return None
+def _decrypt_legacy(stored: str) -> str | None:
+    """Recover a value written by the old keystream cipher. None if undecodable."""
+    body = stored[len(_LEGACY_PREFIX):]
     nonce_hex, _, ct_hex = body.partition(":")
+    if not ct_hex:
+        return None
     try:
-        nonce = bytes.fromhex(nonce_hex)
-        ct = bytes.fromhex(ct_hex)
+        nonce, ct = bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex)
     except ValueError:
         return None
-    key = _cipher_key()
-    data = bytes(a ^ b for a, b in zip(ct, _keystream(key, nonce, len(ct))))
+    data = bytes(a ^ b for a, b in zip(ct, _legacy_keystream(_legacy_key(), nonce, len(ct))))
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         return None
 
 
-def store_secret(auth_type: str, plain: str) -> str:
-    """Encode a secret for storage per auth_type: hmac reversibly encrypted, since
-    it needs the raw value back to recompute signatures, everything else hashed."""
-    return encrypt_secret(plain) if auth_type == "hmac" else hash_secret(plain)
+def encrypt_secret(tenant_id, plain: str) -> str:
+    """Encrypt an HMAC secret under the owning tenant's key."""
+    from kernel.secrets import encrypt_secret_for
+
+    return encrypt_secret_for(str(tenant_id) if tenant_id else None, plain)
+
+
+def decrypt_secret(tenant_id, stored: str | None) -> str | None:
+    """Recover an HMAC secret. None when there is nothing usable stored.
+
+    Returns None rather than raising: the caller is the inbound auth path, and a
+    secret it cannot read means the request fails closed with a bare 401. A
+    rotated VE_SECRETS_KEY is logged so the cause is visible rather than looking
+    like every sender suddenly sending bad signatures.
+    """
+    if not stored:
+        return None
+    if stored.startswith(_NEW_PREFIX):
+        from kernel.secrets import SecretDecryptError, decrypt_secret_for
+
+        try:
+            return decrypt_secret_for(str(tenant_id) if tenant_id else None, stored)
+        except SecretDecryptError as exc:
+            log.error("webhook secret will not decrypt (%s) — requests will fail 401", exc)
+            return None
+    if stored.startswith(_LEGACY_PREFIX):
+        return _decrypt_legacy(stored)
+    return None
+
+
+def store_secret(tenant_id, auth_type: str, plain: str) -> str:
+    """Encode a secret for storage: hmac reversibly encrypted, everything else
+    hashed. Hashing where a one-way value suffices is the stronger choice."""
+    return encrypt_secret(tenant_id, plain) if auth_type == "hmac" else hash_secret(plain)
 
 
 # --- inbound auth verification (receiver side) -----------------------------
@@ -208,6 +244,7 @@ def _verify_hmac(
     secret_enc: str | None,
     raw_body: bytes,
     max_age_seconds: int | None = None,
+    tenant_id=None,
 ) -> AuthResult:
     """HMAC-SHA256 over the body, or over "<timestamp>.<body>" when a window is set.
 
@@ -220,7 +257,7 @@ def _verify_hmac(
     refusing a signature we have already seen, which is also a correct dedup for a
     genuine retry.
     """
-    secret = decrypt_secret(secret_enc)
+    secret = decrypt_secret(tenant_id, secret_enc)
     if not secret:
         return _fail("webhook has no HMAC secret configured")
     sent = (
@@ -271,6 +308,7 @@ def verify_inbound(
     auth_secret_hash: str | None,
     raw_body: bytes = b"",
     hmac_max_age_seconds: int | None = None,
+    tenant_id=None,
 ) -> AuthResult:
     """Dispatch to the right verifier based on the webhook's ``auth_type``.
     ``auth_secret_hash`` holds a salted hash for api_key/basic/bearer, and a
@@ -284,5 +322,7 @@ def verify_inbound(
     if auth_type == "bearer":
         return _verify_bearer(request, auth_secret_hash)
     if auth_type == "hmac":
-        return _verify_hmac(request, auth_secret_hash, raw_body, hmac_max_age_seconds)
+        return _verify_hmac(
+            request, auth_secret_hash, raw_body, hmac_max_age_seconds, tenant_id
+        )
     return _fail(f"unknown auth_type: {auth_type}")

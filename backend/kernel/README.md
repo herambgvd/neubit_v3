@@ -51,6 +51,12 @@ with no authentication**, so anything on the network can still publish a
 well-formed offboard. Turning on NATS accounts is a deployment change and it also
 touches the conflux edge collector, which connects to the same server.
 
+**A subject's domain is validated.** `subject()` interpolated all three tokens
+unchecked, and `domain` reaches it from tenant-editable configuration (ingest's
+`target_domain`) — so a `.` or a `>` there published into a namespace the caller
+does not own. Only `domain` is checked: `event` is chosen by code everywhere, and
+several publishers document themselves as never raising.
+
 **`owns()` treats a NULL `tenant_id` as readable by everyone**, and `scoped()`
 excludes NULL rows from listings — so such a row is invisible in a list and
 reachable by id. It takes `allow_shared`, defaulting to the old permissive

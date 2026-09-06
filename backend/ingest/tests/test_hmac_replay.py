@@ -35,7 +35,7 @@ async def _hmac_webhook(session, *, max_age=None):
         slug=f"s-{uuid.uuid4().hex[:8]}",
         request_method="post",
         auth_type="hmac",
-        auth_secret_hash=encrypt_secret(SECRET),
+        auth_secret_hash=encrypt_secret(TENANT, SECRET),
         hmac_max_age_seconds=max_age,
         is_active=True,
     )

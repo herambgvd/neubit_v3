@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import logging
 import os
 import uuid
@@ -316,9 +317,34 @@ async def ensure_events_stream(js) -> None:
 
 
 
+#: A subject token: lowercase, no dots, no wildcards. NATS gives `.` `*` and `>`
+#: structural meaning, so a token carrying one changes the subject's SHAPE — which
+#: is how a tenant-configured value reached another module's consumers.
+_TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+class InvalidSubject(ValueError):
+    """A subject token that would change the subject's shape."""
+
+
 def subject(tenant_id: str | None, domain: str, event: str) -> str:
-    """Build a JetStream subject. ``tenant_id`` None → the ``platform`` namespace."""
+    """Build a JetStream subject. ``tenant_id`` None → the ``platform`` namespace.
+
+    Every token is validated. `domain` in particular reaches here from
+    tenant-editable configuration (ingest's category and rule `target_domain`), and
+    was interpolated unchecked — so a `.` or a `>` in it published into a namespace
+    the caller does not own.
+
+    Only `domain` is validated, deliberately. It is the token that reaches here
+    from tenant-editable configuration. `event` is chosen by the calling code at
+    every site in the estate and may contain dots as a sub-path
+    ("device", "camera.registered") — and several publishers document themselves as
+    never raising, so adding a raise on their path would trade a real guarantee for
+    no security gain.
+    """
     tid = tenant_id if tenant_id else "platform"
+    if not _TOKEN_RE.match(domain or ""):
+        raise InvalidSubject(f"invalid subject domain: {domain!r}")
     return f"tenant.{tid}.{domain}.{event}"
 
 

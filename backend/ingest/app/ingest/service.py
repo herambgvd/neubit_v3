@@ -276,7 +276,10 @@ class WebhookService:
             raise ConflictError("slug already in use")
         at = body.auth_type.value
         _validate_auth_inputs(at, body.auth_username, body.auth_secret, on_create=True)
-        secret_stored = store_secret(at, body.auth_secret) if body.auth_secret else None
+        secret_stored = (
+            store_secret(self.scope.tenant_id, at, body.auth_secret)
+            if body.auth_secret else None
+        )
         # bearer/hmac never carry a username.
         auth_username = body.auth_username if at == "basic" else None
         actor_id = _actor_id(actor)
@@ -369,7 +372,9 @@ class WebhookService:
                         "requires a new auth_secret"
                     )
             else:
-                update["auth_secret_hash"] = store_secret(effective_auth, new_secret)
+                update["auth_secret_hash"] = store_secret(
+                    row.tenant_id, effective_auth, new_secret
+                )
 
         # Canonicalize auth fields when the type changes.
         if effective_auth == "none":
@@ -471,7 +476,7 @@ class WebhookService:
             )
 
         new_secret = secrets.token_urlsafe(24)
-        row.auth_secret_hash = store_secret(row.auth_type, new_secret)
+        row.auth_secret_hash = store_secret(row.tenant_id, row.auth_type, new_secret)
 
         actor_id = _actor_id(actor)
         if actor_id:
@@ -788,6 +793,7 @@ class ReceiverService:
             auth_secret_hash=webhook.auth_secret_hash,
             raw_body=raw_body,
             hmac_max_age_seconds=webhook.hmac_max_age_seconds,
+            tenant_id=webhook.tenant_id,
         )
         if not auth.ok:
             if auth.reason in ("replayed request", "stale request"):
