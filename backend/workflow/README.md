@@ -84,21 +84,55 @@ sub-dependency counts and a gate on a dependency FastAPI never reaches does not.
 
 ## Tests
 
-172, all offline: no Postgres, no NATS, no SMTP server. DB-backed tests build an
-in-memory SQLite engine holding only the tables they name (`tests/conftest.py`),
-which is why the models use portable column types.
-
 ```bash
-docker cp backend/workflow/tests neubit-v3-workflow-1:/app/
-docker exec neubit-v3-workflow-1 sh -c \
-  'pip install -q pytest pytest-asyncio aiosqlite && cd /app && python -m pytest tests -q -rxs'
+./backend/workflow/run-tests.sh          # 290, offline
+./backend/workflow/run-tests.sh --pg     # 294, nothing skipped
 ```
 
-Locally: `pip install -e .[dev]` (which pulls `aiosqlite` — without it the suite
-collects fine and then fails every DB-backed test at `create_async_engine`), then
-`python -m pytest tests -q`.
+A throwaway container from the shipped image plus a runner, tree mounted
+read-only, no network, kernel from the working tree rather than the image's
+build-time snapshot. There was no runner at all until recently: 143 test functions
+existed and the README told you to `docker cp` them into the running container by
+hand, so no CI job and no new developer could run them.
+
+`--pg` exists because four tests SKIP without a real Postgres and they are the ones
+that needed it most. The notification outbox claim is
+`SELECT ... FOR UPDATE SKIP LOCKED`; SQLite has no row locks, so those tests would
+pass against broken code and are skipped rather than lie. `--pg` joins the compose
+network and points at `neubit_workflow`; each test builds its own throwaway SCHEMA
+and drops it, so it never touches the service's tables.
+
+Two shapes of test, deliberately:
+
+* **pure** — most of them. Async code driven from synchronous tests via
+  `conftest.run_async`, with an in-memory SQLite engine holding only the tables a
+  test names, which is why the models use portable column types.
+* **HTTP** — `test_route_inventory.py` and the behaviour tests. These build the
+  real app with `get_db` overridden and the WHOLE metadata created, because a route
+  can touch any table. `test_route_inventory.py` calls all 55 routes: no
+  Authorization header must be 401, and a valid token with no permissions must be
+  403. Until it existed, `test_route_permissions.py` walked `route.dependant` and
+  asserted a gate was *declared* — the right check for "somebody forgot the gate",
+  and not the same question as "the gate answers".
 
 ## Things that will surprise you
+
+**A platform row is readable by everyone and editable by nobody but the
+platform.** `kernel.auth.owns()` treats a NULL `tenant_id` as belonging to nobody
+and therefore readable by all, and a NULL `tenant_id` is a real thing here —
+`sops/models.py` says so, and uses `NULLS NOT DISTINCT` because of it.
+
+Every ownership check used that default: 14 `assert_owned` calls, not one passing
+`allow_shared=False`, in the same helpers `update` and `delete` go through.
+`SOPService._row` served `get`, `update` AND `delete`. So any tenant holding
+`workflow.sop.update` could rewrite — or deactivate — a platform SOP every other
+tenant runs on, by naming its id. Reproduced before it was fixed: a tenant's PATCH
+of a platform notification template returned 200 OK.
+
+The helpers now take `for_write`, and the write paths pass it. Reading a shared
+procedure still works, because that is what a shared procedure is for; the two
+checks that stay shared-readable are annotated where they are, and both are reads.
+
 
 **The notification outbox is drained by a CLAIM, not a SELECT.** Every worker
 replica runs the same sweep on the same minute, so a plain "select pending, send,

@@ -1,8 +1,11 @@
 # Test-only deps. Kept out of the image — a test runner has no business in an
 # artifact that ships to a customer.
 #
-# No pytest-asyncio: the suite drives async code from synchronous tests via
-# conftest.run_async, deliberately (see tests/conftest.py).
+# The original suite drives async code from SYNCHRONOUS tests via
+# conftest.run_async, deliberately (see tests/conftest.py). pytest-asyncio is here
+# for the HTTP-level tests added later, which need async fixtures; the pure tests
+# are untouched and still take no marker.
 pytest>=8.0
+pytest-asyncio>=0.23
 aiosqlite>=0.20
 httpx>=0.27
