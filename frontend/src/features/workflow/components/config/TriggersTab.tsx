@@ -65,7 +65,7 @@ export default function TriggersTab() {
     onSuccess: (saved) => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["wf-triggers"] }); const id = trigId(saved); if (id) setSelectedId(id); setMode("view"); },
     onError: (e) => toast.error(apiError(e)),
   });
-  const remove = useMutation<any>({
+  const remove = useMutation({
     mutationFn: (id: any) => wfApi.triggers.remove(id),
     onSuccess: () => { toast.success("Trigger removed"); qc.invalidateQueries({ queryKey: ["wf-triggers"] }); setSelectedId(null); },
     onError: (e) => toast.error(apiError(e)),

@@ -2,16 +2,18 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
+import type { ReactNode } from "react";
 
 import { Badge, Card } from "@/components/ui/kit";
 import { api } from "@/lib/api";
+import type { GpuSample, SystemResourcesSnapshot } from "@/lib/types";
 
-function toGB(bytes) {
+function toGB(bytes: number | null | undefined): string {
   if (bytes == null) return "0";
   return (bytes / 1024 ** 3).toFixed(1);
 }
 
-function ringColor(percent) {
+function ringColor(percent: number): string {
   if (percent >= 90) return "#ef4444"; // red-500
   if (percent >= 70) return "#f59e0b"; // amber-500
   return "#22c55e"; // green-500
@@ -19,7 +21,7 @@ function ringColor(percent) {
 
 // Compact radial gauge: a track ring + a colored progress arc with the % in the
 // middle. Pure SVG so it stays crisp and theme-agnostic.
-function Ring({ percent, size = 58, stroke = 6 }: any) {
+function Ring({ percent, size = 58, stroke = 6 }: { percent?: number | null; size?: number; stroke?: number }) {
   const p = Math.min(100, Math.max(0, Math.round(percent ?? 0)));
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
@@ -48,7 +50,15 @@ function Ring({ percent, size = 58, stroke = 6 }: any) {
   );
 }
 
-function ResourceTile({ icon, label, percent, name, sub }: any) {
+interface ResourceTileProps {
+  icon: string;
+  label: string;
+  percent?: number | null;
+  name?: string | null;
+  sub?: ReactNode;
+}
+
+function ResourceTile({ icon, label, percent, name, sub }: ResourceTileProps) {
   return (
     <Card className="p-4 flex items-center gap-3">
       <Ring percent={percent} />
@@ -68,7 +78,7 @@ function ResourceTile({ icon, label, percent, name, sub }: any) {
   );
 }
 
-function GpuTile({ gpus }: any) {
+function GpuTile({ gpus }: { gpus: GpuSample[] }) {
   if (!gpus.length) {
     return (
       <Card className="p-4 flex items-center gap-3">
@@ -123,9 +133,9 @@ function SkeletonTile() {
 // FRAGMENT of tiles (no wrapper) so the caller can lay them out in its own grid —
 // e.g. sharing a single row with the Users metric on the dashboard.
 export default function SystemResources() {
-  const res = useQuery<any>({
+  const res = useQuery<SystemResourcesSnapshot>({
     queryKey: ["system-resources"],
-    queryFn: () => api.get("/system/resources").then((r) => r.data),
+    queryFn: () => api.get<SystemResourcesSnapshot>("/system/resources").then((r) => r.data),
     refetchInterval: 3000,
   });
 

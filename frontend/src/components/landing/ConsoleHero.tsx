@@ -9,7 +9,7 @@
  * transforms/opacity to stay performant.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   motion,
   AnimatePresence,
@@ -26,7 +26,7 @@ const ACCENT = "#22d3ee"; // teal — NeuBit command-console accent
 function useClock() {
   // Start null so SSR + first client render agree (no wall-clock in the HTML) —
   // the real time is set only AFTER mount, avoiding a hydration mismatch.
-  const [now, setNow] = useState<any>(null);
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -35,7 +35,7 @@ function useClock() {
   return now;
 }
 
-function fmtTime(d) {
+function fmtTime(d: Date | null): string {
   if (!d) return "--:--:--"; // pre-mount placeholder (matches server render)
   return d.toLocaleTimeString("en-GB", { hour12: false });
 }
@@ -49,7 +49,7 @@ const CAM_TILES = [
   "ROOF-01", "CAM-22", "GATE-01", "BAY-09",
 ];
 
-function VideoTile({ label, index, time }: any) {
+function VideoTile({ label, index, time }: { label: string; index: number; time: string }) {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.92 }}
@@ -110,7 +110,7 @@ function VideoTile({ label, index, time }: any) {
   );
 }
 
-function VideoWall({ time }: any) {
+function VideoWall({ time }: { time: Date | null }) {
   return (
     <div className="rounded-md border border-white/[0.07] bg-white/[0.015] p-2">
       <div className="mb-2 flex items-center justify-between px-0.5">
@@ -134,7 +134,7 @@ function VideoWall({ time }: any) {
 /* ------------------------------------------------------------------ */
 /* Live event feed                                                     */
 /* ------------------------------------------------------------------ */
-const EVENT_POOL = [
+const EVENT_POOL: { sev: Severity; tag: string; loc: string }[] = [
   { sev: "amber", tag: "MOTION", loc: "Gate 3" },
   { sev: "emerald", tag: "ACCESS GRANTED", loc: "Lobby" },
   { sev: "emerald", tag: "FIRE PANEL", loc: "OK" },
@@ -153,7 +153,9 @@ const SEV_COLOR = {
   emerald: "#22d3ee", // "ok/nominal" severity — teal on this console
 };
 
-function EventFeed({ time }: any) {
+type Severity = keyof typeof SEV_COLOR;
+
+function EventFeed({ time }: { time: Date | null }) {
   const [events, setEvents] = useState(() =>
     EVENT_POOL.slice(0, 5).map((e, i) => ({ ...e, id: i, t: fmtTime(time) }))
   );
@@ -161,7 +163,7 @@ function EventFeed({ time }: any) {
 
   useEffect(() => {
     let mounted = true;
-    let timer;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const push = () => {
       if (!mounted) return;
       const pick = EVENT_POOL[Math.floor(Math.random() * EVENT_POOL.length)];
@@ -225,8 +227,8 @@ function EventFeed({ time }: any) {
 /* ------------------------------------------------------------------ */
 /* KPI counters — count up on view                                     */
 /* ------------------------------------------------------------------ */
-function CountUp({ to, format }: any) {
-  const ref = useRef<any>(null);
+function CountUp({ to, format }: { to: number; format?: (v: number) => ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: "-40px" });
   const mv = useMotionValue(0);
   const [val, setVal] = useState(0);
@@ -244,7 +246,7 @@ function CountUp({ to, format }: any) {
   return <span ref={ref}>{format ? format(val) : Math.round(val)}</span>;
 }
 
-const KPIS = [
+const KPIS: { label: string; to: number; format: (v: number) => ReactNode }[] = [
   { label: "Cameras", to: 512, format: (v) => Math.round(v).toLocaleString() },
   { label: "Events / min", to: 1240, format: (v) => Math.round(v).toLocaleString() },
   { label: "Sites", to: 24, format: (v) => Math.round(v) },
@@ -274,7 +276,7 @@ function KpiRow() {
 /* ------------------------------------------------------------------ */
 /* Radar / site map                                                    */
 /* ------------------------------------------------------------------ */
-const BLIPS = [
+const BLIPS: { x: number; y: number; sev: Severity; d: number }[] = [
   { x: 34, y: 40, sev: "emerald", d: 0 },
   { x: 68, y: 30, sev: "amber", d: 0.6 },
   { x: 78, y: 66, sev: "emerald", d: 1.1 },
@@ -363,7 +365,7 @@ function Radar() {
 /* ------------------------------------------------------------------ */
 /* Status bar                                                          */
 /* ------------------------------------------------------------------ */
-function StatusBar({ time }: any) {
+function StatusBar({ time }: { time: Date | null }) {
   return (
     <div className="flex items-center justify-between border-b border-white/[0.07] px-3 py-2">
       <div className="flex items-center gap-2.5">

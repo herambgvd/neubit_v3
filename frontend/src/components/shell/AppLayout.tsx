@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { api } from "@/lib/api";
 import CommandPalette from "@/components/CommandPalette";
@@ -12,12 +12,13 @@ import Footer from "@/components/shell/Footer";
 import GlobalNavDock from "@/components/shell/GlobalNavDock";
 import VmsPopupHost from "@/features/vms/components/VmsPopupHost";
 import { useAuth } from "@/lib/auth";
+import type { PublicSettings } from "@/lib/types";
 
 // A banner shown to every signed-in user when an admin sets an announcement.
 function AnnouncementBanner() {
-  const { data } = useQuery<any>({
+  const { data } = useQuery<PublicSettings>({
     queryKey: ["public-settings"],
-    queryFn: () => api.get("/settings/public").then((r) => r.data),
+    queryFn: () => api.get<PublicSettings>("/settings/public").then((r) => r.data),
     staleTime: 30_000,
   });
   const text = data?.announcement?.trim();
@@ -65,7 +66,7 @@ function LicenseBanner() {
 }
 
 // Auth-guarded application shell: horizontal top nav + full-width content.
-export default function AppLayout({ children }: any) {
+export default function AppLayout({ children }: { children?: ReactNode }) {
   const { status } = useAuth();
   const router = useRouter();
   const pathname = usePathname();

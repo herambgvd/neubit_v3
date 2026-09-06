@@ -171,7 +171,7 @@ export default function SimulatorTab() {
             label="Site"
             value={siteId}
             onChange={(e) => setSiteId(e.target.value)}
-            options={[{ value: "", label: sitesQ.isLoading ? "Loading sites…" : "No site" }, ...sites.map((s) => ({ value: idOf(s, "site_id", "id"), label: s.name }))]}
+            options={[{ value: "", label: sitesQ.isLoading ? "Loading sites…" : "No site" }, ...sites.map((s) => ({ value: idOf(s, "site_id", "id") ?? "", label: s.name }))]}
           />
 
           <Field

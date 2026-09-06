@@ -5,13 +5,21 @@
 import { Icon } from "@iconify/react";
 
 import { TOOL_TYPES } from "@/components/floor-builder/constants";
+import type { ToolType } from "@/components/floor-builder/types";
 
-const TOOLS = [
+const TOOLS: { type: ToolType; icon: string; short: string; label: string }[] = [
   { type: TOOL_TYPES.SELECT, icon: "heroicons-outline:cursor-arrow-rays", short: "Pick", label: "Select" },
   { type: TOOL_TYPES.ZONE_POLYGON, icon: "heroicons-outline:sparkles", short: "Poly", label: "Polygon Zone" },
 ];
 
-export function CanvasToolControls({ activeTool, onToolSelect, canvasScale = 1, onScaleChange }: any) {
+export interface CanvasToolControlsProps {
+  activeTool: ToolType;
+  onToolSelect?: (tool: ToolType) => void;
+  canvasScale?: number;
+  onScaleChange?: (scale: number) => void;
+}
+
+export function CanvasToolControls({ activeTool, onToolSelect, canvasScale = 1, onScaleChange }: CanvasToolControlsProps) {
   const zoomIn = () => onScaleChange?.(Math.min(canvasScale * 1.2, 5));
   const zoomOut = () => onScaleChange?.(Math.max(canvasScale / 1.2, 0.1));
   const reset = () => onScaleChange?.(1);

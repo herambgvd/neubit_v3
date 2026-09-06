@@ -18,8 +18,9 @@
 // faking one. Nothing here defaults a number.
 import Link from "next/link";
 import { Icon } from "@iconify/react";
+import type { MouseEvent, ReactNode } from "react";
 
-const TONES: Record<string, string> = {
+const TONES = {
   ink: "text-nb-ink",
   good: "text-nb-good",
   warn: "text-nb-warn",
@@ -28,13 +29,22 @@ const TONES: Record<string, string> = {
   faint: "text-nb-faint",
 };
 
-const tone = (t?: string) => TONES[t || "ink"] || TONES.ink;
+/** The value / trend tones the estate primitives colour by. */
+export type EstateTone = keyof typeof TONES;
+
+const tone = (t?: EstateTone) => TONES[t || "ink"] || TONES.ink;
+
+/** The two props the layout frames here take. */
+export interface EstateFrameProps {
+  className?: string;
+  children?: ReactNode;
+}
 
 // ── KPI strip ────────────────────────────────────────────────────────────────
 
 /** The 5-slot strip across the top of an estate page (mockup `.pkpis`).
  *  It does not enforce exactly five children, but five is the rhythm. */
-export function KpiStrip({ className = "", children }: any) {
+export function KpiStrip({ className = "", children }: EstateFrameProps) {
   return (
     <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 ${className}`}>
       {children}
@@ -45,7 +55,17 @@ export function KpiStrip({ className = "", children }: any) {
 /** One KPI slot: icon + uppercase label, big mono value, one line of subtext.
  *  `value == null` renders "—" faint — the ABSENT state, with `sub` carrying
  *  the reason. `title` puts the same reason on hover. */
-export function Kpi({ icon, label, value, sub, tone: t = "ink", title }: any) {
+export interface KpiProps {
+  icon?: string;
+  label?: ReactNode;
+  /** null/undefined is the ABSENT state — rendered as "—" with `sub` as the reason. */
+  value?: ReactNode;
+  sub?: string;
+  tone?: EstateTone;
+  title?: string;
+}
+
+export function Kpi({ icon, label, value, sub, tone: t = "ink", title }: KpiProps) {
   const absent = value === null || value === undefined;
   return (
     <div
@@ -68,7 +88,13 @@ export function Kpi({ icon, label, value, sub, tone: t = "ink", title }: any) {
 
 /** The estate page's main split (mockup `.pmain`): leaderboard-weight left
  *  column, charts-and-actions right column. Stacks on small screens. */
-export function EstateMain({ left, right, className = "" }: any) {
+export interface EstateMainProps {
+  left?: ReactNode;
+  right?: ReactNode;
+  className?: string;
+}
+
+export function EstateMain({ left, right, className = "" }: EstateMainProps) {
   return (
     <div className={`grid grid-cols-1 items-start gap-3 xl:grid-cols-[1.52fr_1fr] ${className}`}>
       <div className="min-w-0 space-y-3">{left}</div>
@@ -79,13 +105,20 @@ export function EstateMain({ left, right, className = "" }: any) {
 
 // ── Leaderboard ──────────────────────────────────────────────────────────────
 
-export function Leaderboard({ className = "", children }: any) {
+export function Leaderboard({ className = "", children }: EstateFrameProps) {
   return <div className={`flex flex-col gap-2 ${className}`}>{children}</div>;
 }
 
 /** One chip on a leaderboard row's meta strip. `value == null` renders "—";
  *  `title` states why (shown on hover). */
-export function LeaderChip({ label, value, tone: t = "faint", title }: any) {
+export interface LeaderChipProps {
+  label?: ReactNode;
+  value?: ReactNode;
+  tone?: EstateTone;
+  title?: string;
+}
+
+export function LeaderChip({ label, value, tone: t = "faint", title }: LeaderChipProps) {
   const absent = value === null || value === undefined;
   const border =
     t === "crit"
@@ -113,6 +146,24 @@ export function LeaderChip({ label, value, tone: t = "faint", title }: any) {
  *  stated reason under it — never a placeholder number. `trend == null` renders
  *  "—" with `trendTitle` as the hover reason. `href` makes the whole row a link
  *  and shows the OPEN › affordance; without it the row is inert. */
+export interface LeaderRowProps {
+  icon?: string;
+  /** null/undefined renders the honest slot: "—" with `scoreSub` as the reason. */
+  score?: ReactNode;
+  scoreSub?: string;
+  title?: ReactNode;
+  meta?: string;
+  metaTitle?: string;
+  chips?: ReactNode;
+  trend?: ReactNode;
+  trendTone?: EstateTone;
+  trendTitle?: string;
+  /** Makes the whole row a link and shows the OPEN › affordance. */
+  href?: string;
+  openLabel?: ReactNode;
+  muted?: boolean;
+}
+
 export function LeaderRow({
   icon = "heroicons:building-office-2",
   score,
@@ -127,7 +178,7 @@ export function LeaderRow({
   href,
   openLabel = "OPEN ›",
   muted = false,
-}: any) {
+}: LeaderRowProps) {
   const body = (
     <>
       {/* score slot — fixed width so rows align whether or not a score exists */}
@@ -195,12 +246,27 @@ export function LeaderRow({
 
 // ── Action list ──────────────────────────────────────────────────────────────
 
-export function ActionList({ className = "", children }: any) {
+export function ActionList({ className = "", children }: EstateFrameProps) {
   return <div className={`space-y-1.5 ${className}`}>{children}</div>;
 }
 
 /** One ranked action row (mockup `.act`): icon, title, sub, right-side value,
  *  open affordance. `value == null` renders "—" with `valueTitle` as reason. */
+export interface ActionRowProps {
+  icon?: string;
+  iconTone?: "warn" | "crit" | "good";
+  title?: ReactNode;
+  sub?: ReactNode;
+  /** null/undefined renders "—" with `valueTitle` as the reason. */
+  value?: ReactNode;
+  valueTone?: EstateTone;
+  valueTitle?: string;
+  href?: string;
+  /** The open affordance as a button, when there is no `href`. */
+  onOpen?: (e: MouseEvent<HTMLButtonElement>) => void;
+  openLabel?: ReactNode;
+}
+
 export function ActionRow({
   icon = "heroicons:exclamation-triangle",
   iconTone = "warn",
@@ -212,7 +278,7 @@ export function ActionRow({
   href,
   onOpen,
   openLabel = "Open →",
-}: any) {
+}: ActionRowProps) {
   const iconCls =
     iconTone === "crit"
       ? "border-nb-crit/40 bg-nb-crit/10 text-nb-crit"
@@ -264,12 +330,26 @@ export function ActionRow({
 /** The estate page header: breadcrumb-capable title + description, with a
  *  right-hand slot for freshness / spinners. `crumbs` is an ordered list of
  *  `{label, href?}` — the last one is the current page and renders plain. */
-export function EstateHeader({ crumbs = [], desc, right, className = "" }: any) {
+/** One breadcrumb: the last one is the current page and renders plain. */
+export interface EstateCrumb {
+  label: ReactNode;
+  href?: string;
+}
+
+export interface EstateHeaderProps {
+  crumbs?: EstateCrumb[];
+  desc?: ReactNode;
+  /** Right-hand slot for freshness / spinners. */
+  right?: ReactNode;
+  className?: string;
+}
+
+export function EstateHeader({ crumbs = [], desc, right, className = "" }: EstateHeaderProps) {
   return (
     <div className={`mb-3 flex flex-wrap items-end justify-between gap-3 ${className}`}>
       <div className="min-w-0">
         <h1 className="flex items-center gap-1.5 text-[17px] font-semibold text-nb-ink">
-          {crumbs.map((c: any, i: number) => (
+          {crumbs.map((c, i) => (
             <span key={`${c.label}-${i}`} className="flex items-center gap-1.5">
               {i > 0 && <span className="text-nb-faint">/</span>}
               {c.href ? (

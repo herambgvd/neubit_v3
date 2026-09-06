@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
 // SIDE EFFECT, and it must run before the first <Icon> mounts: it registers the
@@ -23,7 +23,7 @@ function ThemedToaster() {
 }
 
 // App-wide client providers: theme + TanStack Query + Auth + sonner toasts.
-export default function Providers({ children }: any) {
+export default function Providers({ children }: { children?: ReactNode }) {
   const [client] = useState(
     () =>
       new QueryClient({

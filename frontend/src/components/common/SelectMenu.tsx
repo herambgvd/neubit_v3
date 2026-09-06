@@ -11,11 +11,50 @@
 //
 // Drop-in compatible with a native select: emits `onChange({ target: { value } })`.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 
 import { fieldClass } from "./Field";
+
+/** One row of the picker. `value` is compared as a string, like a native select. */
+export interface SelectOption {
+  value: string;
+  label: ReactNode;
+}
+
+/** What `onChange` receives — the native-select subset (`e.target.value`), so a
+ *  handler written for an <input> works unchanged. */
+export interface SelectChangeEvent {
+  target: { value: string };
+}
+
+export interface SelectMenuProps {
+  options?: SelectOption[];
+  value?: string | number | null;
+  onChange?: (e: SelectChangeEvent) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  className?: string;
+  id?: string;
+  name?: string;
+}
+
+/** Where the portalled panel sits — below the trigger, or above it when dropping up. */
+interface PanelPosition {
+  left: number;
+  width: number;
+  top?: number;
+  bottom?: number;
+}
 
 export default function SelectMenu({
   options = [],
@@ -26,12 +65,12 @@ export default function SelectMenu({
   className = "",
   id,
   name,
-}: any) {
+}: SelectMenuProps) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<any>(null); // { left, top?, bottom?, width }
+  const [pos, setPos] = useState<PanelPosition | null>(null);
   const [activeIdx, setActiveIdx] = useState(-1);
-  const btnRef = useRef<any>(null);
-  const panelRef = useRef<any>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const selected = options.find((o) => String(o.value) === String(value ?? ""));
   const isPlaceholder = !selected || selected.value === "" || selected.value == null;
@@ -55,16 +94,17 @@ export default function SelectMenu({
 
   useEffect(() => {
     if (!open) return undefined;
-    function onDoc(e) {
-      if (btnRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
+    function onDoc(e: MouseEvent) {
+      const target = e.target as Node | null;
+      if (btnRef.current?.contains(target) || panelRef.current?.contains(target)) return;
       setOpen(false);
     }
     // The fixed panel can't follow ancestor scroll → close on page/container
     // scroll. But NOT when the scroll originates inside the panel itself (the
     // options list is scrollable); capture-phase would otherwise close a long
     // list the instant you try to scroll it.
-    function onScroll(e) {
-      if (panelRef.current && panelRef.current.contains(e.target)) return;
+    function onScroll(e: Event) {
+      if (panelRef.current && panelRef.current.contains(e.target as Node | null)) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
@@ -86,13 +126,13 @@ export default function SelectMenu({
     });
   }
 
-  function pick(v) {
+  function pick(v: string) {
     onChange?.({ target: { value: v } });
     setOpen(false);
     btnRef.current?.focus();
   }
 
-  function onKeyDown(e) {
+  function onKeyDown(e: ReactKeyboardEvent<HTMLButtonElement>) {
     if (disabled) return;
     if (!open && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) {
       e.preventDefault();

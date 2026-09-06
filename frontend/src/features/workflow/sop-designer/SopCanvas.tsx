@@ -27,7 +27,7 @@ import StateModal from "./StateModal";
 import TransitionModal from "./TransitionModal";
 import SopSidePanel from "./SopSidePanel";
 
-const sid = (s) => idOf(s, "state_id", "id");
+const sid = (s) => idOf(s, "state_id", "id") ?? "";
 const tid = (t) => idOf(t, "transition_id", "id");
 
 export default function SopCanvas({ sopId }: any) {

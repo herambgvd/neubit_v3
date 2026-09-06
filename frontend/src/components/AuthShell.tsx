@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { Eye, Fingerprint, Radar, Flame, Sparkles, Workflow } from "lucide-react";
+import { Eye, Fingerprint, Radar, Flame, Sparkles, Workflow, type LucideIcon } from "lucide-react";
 
 /* Shared accent with the landing page — restrained emerald. */
 const ACCENT = "#10b981";
 
-const PILLARS = [
+const PILLARS: { icon: LucideIcon; label: string }[] = [
   { icon: Eye, label: "Video" },
   { icon: Fingerprint, label: "Access" },
   { icon: Radar, label: "Intrusion" },
@@ -22,7 +22,7 @@ const PILLARS = [
 /* hero. Pure divs/SVG + Framer Motion. Vertical, fits a narrow aside. */
 /* ------------------------------------------------------------------ */
 function useClock() {
-  const [now, setNow] = useState<any>(null);
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -31,7 +31,7 @@ function useClock() {
   return now;
 }
 
-const fmt = (d) => (d ? d.toLocaleTimeString("en-GB", { hour12: false }) : "--:--:--");
+const fmt = (d: Date | null) => (d ? d.toLocaleTimeString("en-GB", { hour12: false }) : "--:--:--");
 
 const MINI_TILES = ["CAM-01", "GATE-03", "LOBBY-2", "PERIM-W", "ATRIUM", "DOCK-07"];
 
@@ -181,7 +181,15 @@ function MiniConsole() {
 /* ------------------------------------------------------------------ */
 /* AuthShell — two-panel branded shell (brand console left, form right) */
 /* ------------------------------------------------------------------ */
-export default function AuthShell({ eyebrow, title, subtitle, productName = "Neubit", children }: any) {
+export interface AuthShellProps {
+  eyebrow?: ReactNode;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  productName?: string;
+  children?: ReactNode;
+}
+
+export default function AuthShell({ eyebrow, title, subtitle, productName = "Neubit", children }: AuthShellProps) {
   return (
     <div className="relative h-screen w-full overflow-hidden bg-[#0a0a0a] text-white antialiased selection:bg-emerald-500/20">
       {/* line grid */}
@@ -240,7 +248,7 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
             </div>
 
             <div className="mt-6 flex flex-wrap items-center gap-2">
-              {PILLARS.map(({ icon: Icon, label }: any) => (
+              {PILLARS.map(({ icon: Icon, label }) => (
                 <span
                   key={label}
                   className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-white/[0.025] px-3 py-1 font-mono text-[11px] text-white/60"
@@ -300,7 +308,7 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
 /* ------------------------------------------------------------------ */
 /* Reusable styled inputs/buttons — emerald focus                      */
 /* ------------------------------------------------------------------ */
-export function AuthInput({ className = "", ...props }: any) {
+export function AuthInput({ className = "", ...props }: ComponentPropsWithoutRef<"input">) {
   return (
     <input
       {...props}
@@ -312,7 +320,7 @@ export function AuthInput({ className = "", ...props }: any) {
   );
 }
 
-export function AuthLabel({ children, htmlFor, action }: any) {
+export function AuthLabel({ children, htmlFor, action }: { children?: ReactNode; htmlFor?: string; action?: ReactNode }) {
   return (
     <div className="flex items-center justify-between">
       <label htmlFor={htmlFor} className="text-sm font-medium text-white/70">
@@ -323,7 +331,7 @@ export function AuthLabel({ children, htmlFor, action }: any) {
   );
 }
 
-export function AuthSubmit({ children, loading, disabled }: any) {
+export function AuthSubmit({ children, loading, disabled }: { children?: ReactNode; loading?: boolean; disabled?: boolean }) {
   return (
     <button
       type="submit"
@@ -336,7 +344,7 @@ export function AuthSubmit({ children, loading, disabled }: any) {
   );
 }
 
-export function AuthError({ children }: any) {
+export function AuthError({ children }: { children?: ReactNode }) {
   if (!children) return null;
   return (
     <div role="alert" className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">

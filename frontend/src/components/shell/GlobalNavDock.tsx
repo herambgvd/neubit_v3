@@ -17,7 +17,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
@@ -26,6 +26,7 @@ import MenuNavigator from "@/components/shell/MenuNavigator";
 import GlobalBrand from "@/components/shell/GlobalBrand";
 import HeaderSectionNav from "@/components/shell/HeaderSectionNav";
 import { useAuth } from "@/lib/auth";
+import type { NotificationOut, Page } from "@/lib/types";
 
 /* HOME status strip — mode label + live clock + lock + fullscreen. Shown only on
    the launcher. Inline SVGs so the chrome renders even offline. Honest: BASELINE
@@ -68,7 +69,7 @@ function HomeStatusStrip() {
   );
 }
 
-function fmtTs(ts) {
+function fmtTs(ts: string | null | undefined): string {
   if (!ts) return "";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "";
@@ -86,11 +87,11 @@ function NotificationsBell() {
   const qc = useQueryClient();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const ref = useRef<any>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
-  const { data } = useQuery<any>({
+  const { data } = useQuery<Page<NotificationOut>>({
     queryKey: ["notifications-bell"],
-    queryFn: () => api.get("/messaging/notifications", { params: { page_size: 8 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<NotificationOut>>("/messaging/notifications", { params: { page_size: 8 } }).then((r) => r.data),
     refetchInterval: 30000,
   });
   const items = data?.items || [];
@@ -99,8 +100,8 @@ function NotificationsBell() {
   // Same dismissal contract as the account menu: outside click, Escape, navigation.
   useEffect(() => {
     if (!open) return;
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    function onKey(e) { if (e.key === "Escape") setOpen(false); }
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node | null)) setOpen(false); }
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setOpen(false); }
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -112,8 +113,8 @@ function NotificationsBell() {
   useEffect(() => setOpen(false), [pathname]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["notifications-bell"] });
-  const markRead = useMutation<any>({ mutationFn: (id: any) => api.post(`/messaging/notifications/${id}/read`), onSuccess: invalidate });
-  const markAll = useMutation<any>({ mutationFn: () => Promise.all(unread.map((n) => api.post(`/messaging/notifications/${n.id}/read`))), onSuccess: invalidate });
+  const markRead = useMutation({ mutationFn: (id: string) => api.post(`/messaging/notifications/${id}/read`), onSuccess: invalidate });
+  const markAll = useMutation({ mutationFn: () => Promise.all(unread.map((n) => api.post(`/messaging/notifications/${n.id}/read`))), onSuccess: invalidate });
 
   return (
     <div className="relative" ref={ref}>
@@ -180,17 +181,17 @@ function AccountMenu() {
   const pathname = usePathname();
   const [openUser, setOpenUser] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<any>(null);
-  const userRef = useRef<any>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const userRef = useRef<HTMLDivElement>(null);
   const displayName = user?.full_name || user?.email;
 
   // Close the account menu on an outside click or Escape.
   useEffect(() => {
     if (!openUser) return;
-    function onDoc(e) {
-      if (userRef.current && !userRef.current.contains(e.target)) setOpenUser(false);
+    function onDoc(e: MouseEvent) {
+      if (userRef.current && !userRef.current.contains(e.target as Node | null)) setOpenUser(false);
     }
-    function onKey(e) {
+    function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpenUser(false);
     }
     document.addEventListener("mousedown", onDoc);
@@ -204,7 +205,7 @@ function AccountMenu() {
   // Close it on navigation.
   useEffect(() => setOpenUser(false), [pathname]);
 
-  async function onPickAvatar(e) {
+  async function onPickAvatar(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file later
     if (!file) return;
@@ -311,7 +312,7 @@ function AccountMenu() {
 // lives here so each page carries exactly one row of chrome. Right: (Home) status
 // strip, Search ⌘K, notifications, account. Slim + navy to match the immersive
 // aesthetic.
-export default function GlobalNavDock({ home = false }: any) {
+export default function GlobalNavDock({ home = false }: { home?: boolean }) {
   return (
     // z-50: the header's notification + account dropdowns must paint OVER every page
     // chrome on EVERY route. They once shared a stacking level with the section-nav

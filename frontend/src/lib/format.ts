@@ -1,19 +1,43 @@
 // Shared formatting + data helpers. Previously copy-pasted into many views
 // (titleize ×2, asItems ×4, idOf, date formatters). Import from here instead.
 
+/** Anything `new Date()` accepts, plus the nothing-values the backend sends. */
+export type DateInput = string | number | Date | null | undefined;
+
 // "fire_alarm" → "Fire Alarm"; null/"" → "—".
-export const titleize = (s) =>
+export const titleize = (s: string | number | null | undefined): string =>
   s ? String(s).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "—";
 
+/** True only for `any` itself (the classic `0 extends 1 & T` probe). */
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+/** What `asItems` yields for a given input. A typed list or envelope keeps its
+ *  element type; a caller still holding an untyped `any` gets its `any` back
+ *  rather than `unknown` — inference from `any` into `T[]` would otherwise
+ *  collapse every not-yet-typed screen to `unknown[]`. No `any` originates here. */
+export type ItemsOf<D> = IsAny<D> extends true
+  ? any[] // eslint-disable-line @typescript-eslint/no-explicit-any -- passes the caller's own `any` through
+  : D extends readonly (infer T)[]
+    ? T[]
+    : D extends { items?: readonly (infer T)[] | null }
+      ? T[]
+      : unknown[];
+
 // List endpoints return either a bare array or { items, total }. Normalise to array.
-export const asItems = (d) => (Array.isArray(d) ? d : d?.items || []);
+export const asItems = <D>(d: D): ItemsOf<D> =>
+  (Array.isArray(d) ? d : (d as { items?: unknown[] | null } | null | undefined)?.items || []) as ItemsOf<D>;
 
 // First non-null value among the given keys — handles backends that vary the id
 // field name (id vs sop_id vs state_id …). idOf(obj, "id", "sop_id").
-export const idOf = (o, ...keys) => keys.map((k) => o?.[k]).find((v) => v != null);
+export const idOf = (o: object | null | undefined, ...keys: string[]): string | undefined =>
+  // Every identifier on the wire is a string (uuid / slug); the lookup is by
+  // name, so the value is asserted rather than inferred.
+  keys.map((k) => (o as Record<string, unknown> | null | undefined)?.[k]).find((v) => v != null) as
+    | string
+    | undefined;
 
 // "Just now" / "5m ago" / "3h ago" / locale date for older.
-export function fmtRelative(ts) {
+export function fmtRelative(ts: DateInput): string {
   if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "—";
@@ -25,7 +49,7 @@ export function fmtRelative(ts) {
 }
 
 // Human byte size: 1536 → "1.5 KB". null/0 → "0 B".
-export function fmtBytes(bytes) {
+export function fmtBytes(bytes: number | string | null | undefined): string {
   const b = Number(bytes);
   if (!b || b <= 0 || Number.isNaN(b)) return "0 B";
   const k = 1024;
@@ -35,7 +59,7 @@ export function fmtBytes(bytes) {
 }
 
 // Duration in seconds → "1h 5m 3s" / "5m 3s" / "3s". null → "—".
-export function fmtDuration(seconds) {
+export function fmtDuration(seconds: number | string | null | undefined): string {
   const s = Number(seconds);
   if (!s || s <= 0 || Number.isNaN(s)) return "—";
   const h = Math.floor(s / 3600);
@@ -47,7 +71,7 @@ export function fmtDuration(seconds) {
 }
 
 // Fixed, unambiguous date-time (e.g. incident timestamps).
-export function fmtDateTime(ts) {
+export function fmtDateTime(ts: DateInput): string {
   if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "—";

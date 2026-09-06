@@ -17,25 +17,32 @@ import { toast } from "sonner";
 import { apiError } from "@/lib/api";
 import { tags as tagsApi } from "@/lib/api/tags";
 
-export default function TagPicker({ entityType, entityId, size = "sm" }: any) {
+export interface TagPickerProps {
+  /** e.g. "site" | "zone". */
+  entityType: string;
+  entityId: string;
+  size?: "sm" | "xs";
+}
+
+export default function TagPicker({ entityType, entityId, size = "sm" }: TagPickerProps) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<any>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const attachedKey = ["tags-for", entityType, entityId];
-  const attachedQ = useQuery<any>({
+  const attachedQ = useQuery({
     queryKey: attachedKey,
     queryFn: () => tagsApi.forEntity(entityType, entityId),
     enabled: !!entityType && !!entityId,
   });
-  const allQ = useQuery<any>({
+  const allQ = useQuery({
     queryKey: ["tags-list"],
     queryFn: () => tagsApi.list({ limit: 200, is_active: true }),
     enabled: open,
   });
 
   const attached = attachedQ.data || [];
-  const attachedIds = useMemo(() => new Set<any>(attached.map((t) => t.tag_id)), [attached]);
+  const attachedIds = useMemo(() => new Set<string>(attached.map((t) => t.tag_id)), [attached]);
   const available = (allQ.data?.items || []).filter((t) => !attachedIds.has(t.tag_id));
 
   const invalidate = () => {
@@ -43,8 +50,8 @@ export default function TagPicker({ entityType, entityId, size = "sm" }: any) {
     qc.invalidateQueries({ queryKey: ["tags-list"] });
   };
 
-  const assign = useMutation<any>({
-    mutationFn: (tagId: any) => tagsApi.assign(tagId, { entity_type: entityType, entity_id: entityId }),
+  const assign = useMutation({
+    mutationFn: (tagId: string) => tagsApi.assign(tagId, { entity_type: entityType, entity_id: entityId }),
     onSuccess: () => {
       invalidate();
       setOpen(false);
@@ -52,8 +59,8 @@ export default function TagPicker({ entityType, entityId, size = "sm" }: any) {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const unassign = useMutation<any>({
-    mutationFn: (tagId: any) => tagsApi.unassign(tagId, { entity_type: entityType, entity_id: entityId }),
+  const unassign = useMutation({
+    mutationFn: (tagId: string) => tagsApi.unassign(tagId, { entity_type: entityType, entity_id: entityId }),
     onSuccess: invalidate,
     onError: (e) => toast.error(apiError(e)),
   });

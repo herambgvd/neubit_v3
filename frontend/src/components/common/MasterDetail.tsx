@@ -13,11 +13,20 @@
 // NOTE: pass `gridCols` as a STATIC class string (Tailwind JIT can't read a
 // runtime-built arbitrary value). Defaults to a 22rem list column.
 import { Icon } from "@iconify/react";
+import type { ReactNode } from "react";
+
+export interface MasterDetailProps {
+  aside?: ReactNode;
+  children?: ReactNode;
+  gridCols?: string;
+  className?: string;
+  fill?: boolean;
+}
 
 // `fill` = fill the parent's height and scroll INTERNALLY (no page scroll): the grid
 // takes h-full, the list-aside scrolls its own body, and the detail pane gets its own
 // themed scroll container. Used by the contained device pages (NVR / Access Control).
-export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_1fr]", className = "", fill = false }: any) {
+export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_1fr]", className = "", fill = false }: MasterDetailProps) {
   return (
     <div
       className={`grid grid-cols-1 gap-3 ${
@@ -34,6 +43,19 @@ export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_
   );
 }
 
+export interface ListPanelProps {
+  title?: ReactNode;
+  icon?: string;
+  count?: number | null;
+  action?: ReactNode;
+  search?: string;
+  /** Rendering the search box is keyed on this being present. */
+  onSearch?: (value: string) => void;
+  searchPlaceholder?: string;
+  children?: ReactNode;
+  className?: string;
+}
+
 export function ListPanel({
   title,
   icon,
@@ -44,7 +66,7 @@ export function ListPanel({
   searchPlaceholder = "Search…",
   children,
   className = "",
-}: any) {
+}: ListPanelProps) {
   return (
     <aside className={`flex min-h-0 flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] ${className}`}>
       <header className="flex shrink-0 items-center justify-between border-b border-nb-line px-3 py-2">
@@ -80,8 +102,14 @@ export function ListPanel({
   );
 }
 
+export interface EmptyDetailProps {
+  icon?: string;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+}
+
 // Right-hand empty placeholder for when nothing is selected.
-export function EmptyDetail({ icon = "heroicons-outline:cursor-arrow-rays", title = "Nothing selected", subtitle }: any) {
+export function EmptyDetail({ icon = "heroicons-outline:cursor-arrow-rays", title = "Nothing selected", subtitle }: EmptyDetailProps) {
   return (
     <section className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] py-20 text-center">
       <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-nb-teal/10 text-nb-teal">

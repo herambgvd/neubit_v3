@@ -20,7 +20,37 @@
 // Labels get a white halo + dark fill so they stay legible over dark floorplans
 // (mirrors the zone-label treatment in floor-plan-canvas.jsx).
 
-export function drawCameraPlacement({ ctx, device, isSelected, scale, worldToScreen }: any) {
+/** What the renderer reads off a device. Every field is optional so a saved
+ *  placement, a palette ghost and a legacy row all draw through one path. */
+export interface RenderableDevice {
+  device_id?: string;
+  device_type?: string;
+  /** Older rows named the placement enum `type`. */
+  type?: string;
+  x?: number;
+  y?: number;
+  /** Degrees; 0 = up. */
+  rotation?: number;
+  fov?: number;
+  coverage_radius?: number;
+  color?: string | null;
+  label?: string | null;
+  name?: string | null;
+  metadata?: Record<string, unknown> | null;
+  iot_category?: string | null;
+  iot_type?: string | null;
+}
+
+/** The canvas calls its `deviceRenderer` with this, once per device per frame. */
+export interface DeviceRendererArgs {
+  ctx: CanvasRenderingContext2D;
+  device: RenderableDevice;
+  isSelected: boolean;
+  scale: number;
+  worldToScreen: (wx: number, wy: number) => [number, number];
+}
+
+export function drawCameraPlacement({ ctx, device, isSelected, scale, worldToScreen }: DeviceRendererArgs) {
   const x = device.x ?? 0;
   const y = device.y ?? 0;
   const rotationDeg = device.rotation ?? 0;
@@ -213,7 +243,7 @@ const CATEGORY_ACCENT: Record<string, string> = {
   fire: "#f87171",
 };
 
-function categoryAccent(device: any) {
+function categoryAccent(device: RenderableDevice): string {
   const meta = device?.metadata || {};
   const cat = String(meta.iot_category ?? device?.iot_category ?? "").toLowerCase();
   // An unclassified device gets the "unclassified" violet rather than being
@@ -225,7 +255,14 @@ function categoryAccent(device: any) {
 // gateway supplied one (a chiller and a UPS are not the same box); the category is
 // the fallback, and an unclassified device draws a question mark instead of being
 // dressed as something it was never classified as.
-function drawSensorGlyph(ctx, sx, sy, iconColor, category, type) {
+function drawSensorGlyph(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  iconColor: string,
+  category: string,
+  type: string,
+) {
   ctx.strokeStyle = iconColor;
   ctx.fillStyle = iconColor;
   ctx.lineWidth = 1.3;
@@ -349,7 +386,7 @@ function drawSensorGlyph(ctx, sx, sy, iconColor, category, type) {
   ctx.textBaseline = "alphabetic";
 }
 
-function hexToRgba(hex, alpha) {
+function hexToRgba(hex: string | null | undefined, alpha: number): string {
   const m = /^#([0-9a-f]{6})$/i.exec(hex || "#2563eb");
   if (!m) return `rgba(37,99,235,${alpha})`;
   const n = parseInt(m[1], 16);

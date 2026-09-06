@@ -10,11 +10,12 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { api } from "@/lib/api";
+import type { BrandingOut } from "@/lib/types";
 
 export default function GlobalBrand() {
-  const { data } = useQuery<any>({
+  const { data } = useQuery<BrandingOut>({
     queryKey: ["branding"],
-    queryFn: () => api.get("/branding").then((r) => r.data),
+    queryFn: () => api.get<BrandingOut>("/branding").then((r) => r.data),
     staleTime: 60_000,
   });
   // Only trust logo_url while it actually loads. A stale/deleted upload URL would

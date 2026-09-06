@@ -8,7 +8,7 @@
 // entrance timeline, ScrollTrigger.batch reveals, count-ups, and a gentle console
 // drift. The live console keeps its own Framer loops inside ConsoleHero.
 import Link from "next/link";
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -50,7 +50,7 @@ const NAV = [
   ["#why", "Why Neubit"],
 ];
 
-const PILLARS = [
+const PILLARS: { icon: LucideIcon; label: string; body: string }[] = [
   { icon: Eye, label: "Video Surveillance", body: "Unified live + recorded video across every site and NVR." },
   { icon: Fingerprint, label: "Access Control", body: "Doors, cardholders and schedules on one control plane." },
   { icon: Radar, label: "Intrusion Detection", body: "Sensors and perimeter events correlated in real time." },
@@ -95,7 +95,7 @@ const FEATURES = [
   },
 ];
 
-const STATS = [
+const STATS: { to: number; label: string; fmt: (v: number) => string | number }[] = [
   { to: 512, label: "Cameras per node", fmt: (v) => Math.round(v).toLocaleString() },
   { to: 24, label: "Sites unified", fmt: (v) => Math.round(v) },
   { to: 1.8, label: "Avg response (s)", fmt: (v) => v.toFixed(1) },
@@ -111,7 +111,7 @@ const INDUSTRIES: [title: string, body: string, Icon: LucideIcon][] = [
   ["Critical Infrastructure", "Utilities, energy and regulated environments.", Cpu],
 ];
 
-const SECURITY = [
+const SECURITY: { icon: LucideIcon; label: string }[] = [
   { icon: Lock, label: "Encryption at rest & in transit" },
   { icon: KeyRound, label: "RBAC + 2FA / SSO / LDAP" },
   { icon: ScrollText, label: "Append-only audit trail" },
@@ -138,7 +138,7 @@ const FOOTER: [title: string, links: [label: string, href: string][]][] = [
 /* ------------------------------------------------------------------ */
 /* Shared bits                                                         */
 /* ------------------------------------------------------------------ */
-function Eyebrow({ children, className = "" }: any) {
+function Eyebrow({ children, className = "" }: { children?: ReactNode; className?: string }) {
   return (
     <div className={`inline-flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-white/45 ${className}`}>
       <span className="h-1 w-1 rounded-full" style={{ background: ACCENT }} />
@@ -151,7 +151,7 @@ const cardBase =
   "rounded-2xl border border-white/[0.08] bg-white/[0.02] transition-[transform,border-color,background-color] duration-300 hover:-translate-y-1 hover:border-white/[0.16]";
 
 // Browser/app chrome frame around the live console — makes the product feel real.
-function AppWindow({ children }: any) {
+function AppWindow({ children }: { children?: ReactNode }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#0b1228] shadow-[0_50px_140px_-40px_rgba(0,0,0,0.95)]">
       <div className="flex items-center gap-3 border-b border-white/[0.07] bg-white/[0.02] px-4 py-2.5">
@@ -172,7 +172,7 @@ function AppWindow({ children }: any) {
 }
 
 /* Feature-row visuals — lightweight framed panels (CSS/SVG, no framer). */
-function FeatureVisual({ kind }: any) {
+function FeatureVisual({ kind }: { kind: string }) {
   if (kind === "wall") {
     return (
       <div className="rounded-xl border border-white/[0.08] bg-[#08080a] p-3">
@@ -242,7 +242,7 @@ function FeatureVisual({ kind }: any) {
 
 /* ------------------------------------------------------------------ */
 export default function LandingPage() {
-  const root = useRef<any>(null);
+  const root = useRef<HTMLDivElement>(null);
 
   useGSAP(
     () => {
@@ -374,7 +374,7 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
-            {PILLARS.map(({ icon: Icon, label }: any) => (
+            {PILLARS.map(({ icon: Icon, label }) => (
               <span key={label} className="hero-badge inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.025] px-3 py-1.5 font-mono text-[11px] text-white/60 backdrop-blur-sm">
                 <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} />
                 {label}
@@ -419,7 +419,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {PILLARS.map(({ icon: Icon, label, body }: any) => (
+            {PILLARS.map(({ icon: Icon, label, body }) => (
               <div key={label} className={`reveal ${cardBase} p-6`}>
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03]" style={{ color: ACCENT }}>
                   <Icon className="h-5 w-5" />
@@ -518,7 +518,7 @@ export default function LandingPage() {
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {SECURITY.map(({ icon: Icon, label }: any) => (
+              {SECURITY.map(({ icon: Icon, label }) => (
                 <div key={label} className="reveal flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3.5">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-black/40" style={{ color: ACCENT }}>
                     <Icon className="h-4 w-4" />

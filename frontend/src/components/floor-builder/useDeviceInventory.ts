@@ -24,29 +24,32 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { accessInventory, iotInventory, vmsInventory } from "@/lib/api/deviceInventory";
+import type { BiDeviceRow } from "@/lib/types";
+
+import type { PlaceableDevice } from "./types";
 
 export function useDeviceInventory() {
-  const instancesQ = useQuery<any>({
+  const instancesQ = useQuery({
     queryKey: ["floor-builder", "access-instances"],
     queryFn: () => accessInventory.instances(),
   });
-  const doorsQ = useQuery<any>({
+  const doorsQ = useQuery({
     queryKey: ["floor-builder", "access-doors"],
     queryFn: () => accessInventory.doors(),
   });
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["floor-builder", "vms-cameras"],
     queryFn: () => vmsInventory.cameras(),
   });
-  const nvrsQ = useQuery<any>({
+  const nvrsQ = useQuery({
     queryKey: ["floor-builder", "vms-nvrs"],
     queryFn: () => vmsInventory.nvrs(),
   });
   // Placeable only where the analytics module + bi.read are granted; a 403 must
   // leave the palette working for the other three sources rather than blanking it.
-  const iotQ = useQuery<any>({
+  const iotQ = useQuery({
     queryKey: ["floor-builder", "iot-devices"],
-    queryFn: () => iotInventory.devices().catch(() => ({ items: [] })),
+    queryFn: () => iotInventory.devices().catch((): { items: BiDeviceRow[] } => ({ items: [] })),
   });
 
   const instances = instancesQ.data?.items ?? [];
@@ -55,9 +58,9 @@ export function useDeviceInventory() {
   const nvrDevices = nvrsQ.data?.items ?? [];
   const iotDevices = iotQ.data?.items ?? [];
 
-  const inventory = useMemo(() => {
+  const inventory = useMemo((): PlaceableDevice[] => {
     // Access controllers/panels → placeable devices. Identifier field is `id`.
-    const instanceItems = instances.map((a) => ({
+    const instanceItems = instances.map((a): PlaceableDevice => ({
       device_id: a.id,
       name: a.name,
       device_type: "access_control",
@@ -65,7 +68,7 @@ export function useDeviceInventory() {
       search_ip: a.base_url || "",
     }));
     // Doors → placeable devices. Identifier field is `id`.
-    const doorItems = doors.map((d) => ({
+    const doorItems = doors.map((d): PlaceableDevice => ({
       device_id: d.id,
       name: d.name,
       device_type: "door",
@@ -73,7 +76,7 @@ export function useDeviceInventory() {
       search_ip: "",
     }));
     // Cameras → placeable devices with a FoV cone on the floor plan.
-    const cameraItems = cameras.map((c) => ({
+    const cameraItems = cameras.map((c): PlaceableDevice => ({
       device_id: c.id,
       name: c.name,
       device_type: "camera",
@@ -81,7 +84,7 @@ export function useDeviceInventory() {
       search_ip: c.network_info?.ip || c.onvif?.host || "",
     }));
     // NVRs → placeable server-glyph devices.
-    const nvrItems = nvrDevices.map((n) => ({
+    const nvrItems = nvrDevices.map((n): PlaceableDevice => ({
       device_id: n.id,
       name: n.name,
       device_type: "nvr",
@@ -95,8 +98,8 @@ export function useDeviceInventory() {
     // points the gateway never attributed to one. Those are real and they are
     // simply not placeable — there is nothing to place.
     const iotItems = iotDevices
-      .filter((d) => d.device_id)
-      .map((d) => ({
+      .filter((d): d is BiDeviceRow & { device_id: string } => !!d.device_id)
+      .map((d): PlaceableDevice => ({
         device_id: d.device_id,
         // The device TAG as the reading store received it. Not composed here and
         // not prettified — the label an operator recognises is the one on the
@@ -122,7 +125,7 @@ export function useDeviceInventory() {
   }, [instances, doors, cameras, nvrDevices, iotDevices]);
 
   const inventoryById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, PlaceableDevice>();
     for (const d of inventory) m.set(d.device_id, d);
     return m;
   }, [inventory]);

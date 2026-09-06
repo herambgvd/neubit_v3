@@ -11,19 +11,37 @@
 // islands in an otherwise blurred page whenever a modal opened. Only the overlays
 // below blur, and they paint on top.
 import { Icon } from "@iconify/react";
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type ComponentPropsWithoutRef,
+  type ElementType,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { areaClass, fieldClass, FieldLabel } from "@/components/common/Field";
-import SelectMenu from "@/components/common/SelectMenu";
+import SelectMenu, { type SelectMenuProps } from "@/components/common/SelectMenu";
 
-export function Card({ className = "", children }: any) {
+export interface CardProps {
+  className?: string;
+  children?: ReactNode;
+}
+
+export function Card({ className = "", children }: CardProps) {
   return (
     <div className={`rounded-lg bg-[rgba(8,15,34,.5)] border border-nb-line ${className}`}>{children}</div>
   );
 }
 
-export function PageHeader({ title, subtitle, actions }: any) {
+export interface PageHeaderProps {
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+}
+
+export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
       <div>
@@ -52,6 +70,22 @@ const VARIANTS = {
   ghost: "bg-transparent text-nb-muted hover:text-nb-ink hover:bg-white/5",
 };
 
+export type ButtonVariant = keyof typeof VARIANTS;
+
+/** Button props. `as` swaps the element (a next/link `Link` for a button that
+ *  navigates); `href` rides along for that case. Everything else is passed to
+ *  the rendered element, so a DOM button gets the full <button> attribute set. */
+export interface ButtonProps extends ComponentPropsWithoutRef<"button"> {
+  as?: ElementType;
+  variant?: ButtonVariant;
+  /** Iconify name, rendered before the children. */
+  icon?: string;
+  /** Only meaningful with `as={Link}` / `as="a"`. */
+  href?: string;
+  target?: string;
+  rel?: string;
+}
+
 // DEFAULT VARIANT is `action` (the console blue). A bare <Button> is the primary
 // confirm on its surface, and ~28 of them were falling through to `primary` — the
 // theme-inverting black-on-white chip — which is why "Create webhook" rendered as a
@@ -60,7 +94,7 @@ const VARIANTS = {
 // `as` lets a button that navigates render as a <Link>/<a>. Wrapping a <button>
 // in a <Link> nests interactive elements — invalid HTML, and it breaks keyboard
 // and assistive-tech navigation.
-export function Button({ as: As = "button", variant = "action", icon, className = "", children, ...props }: any) {
+export function Button({ as: As = "button", variant = "action", icon, className = "", children, ...props }: ButtonProps) {
   const extra = As === "button" ? { type: props.type || "button" } : {};
   return (
     <As
@@ -85,19 +119,30 @@ const AREA = `${areaClass} !mt-0`;
 // Kit field label — the same uppercase micro-label as common's FieldLabel, with the
 // kit's own bottom spacing (the kit stacks label-over-control; common relies on the
 // control's mt-1).
-function Label({ children, required }: any) {
+function Label({ children, required }: { children?: ReactNode; required?: boolean }) {
   return <FieldLabel className="mb-1.5 block" required={required}>{children}</FieldLabel>;
 }
 
 // `error` mirrors common/Field: a red border and a red message that takes the
 // hint's place, so a kit modal reports a bad field exactly like a pane form does.
-function FieldNote({ error, hint }: any) {
+function FieldNote({ error, hint }: { error?: ReactNode; hint?: ReactNode }) {
   if (error) return <span className="mt-1 block text-xs text-nb-crit">{error}</span>;
   if (hint) return <span className="mt-1 block text-xs text-nb-muted">{hint}</span>;
   return null;
 }
 
-export function Input({ label, hint, error, required, className = "", ...props }: any) {
+/** The label / hint / error trio every kit field wraps its control in. */
+export interface FieldChrome {
+  label?: ReactNode;
+  hint?: ReactNode;
+  error?: ReactNode;
+  /** Marks the label and sets aria-required; not forwarded as the DOM attribute. */
+  required?: boolean;
+}
+
+export interface InputProps extends FieldChrome, Omit<ComponentPropsWithoutRef<"input">, "required"> {}
+
+export function Input({ label, hint, error, required, className = "", ...props }: InputProps) {
   return (
     <label className="block">
       {label && <Label required={required}>{label}</Label>}
@@ -112,9 +157,11 @@ export function Input({ label, hint, error, required, className = "", ...props }
   );
 }
 
+export interface PasswordInputProps extends FieldChrome, Omit<ComponentPropsWithoutRef<"input">, "required" | "type"> {}
+
 // Password field with the same show/hide eye affordance as the sign-in form —
 // so an admin can verify what they typed before creating an account.
-export function PasswordInput({ label, hint, error, required, className = "", ...props }: any) {
+export function PasswordInput({ label, hint, error, required, className = "", ...props }: PasswordInputProps) {
   const [show, setShow] = useState(false);
   return (
     <label className="block">
@@ -142,11 +189,13 @@ export function PasswordInput({ label, hint, error, required, className = "", ..
   );
 }
 
+export interface SelectProps extends FieldChrome, SelectMenuProps {}
+
 // Select — delegates to the shared SelectMenu so a picker looks and behaves the
 // same whether the screen was built on this kit or on components/common. The kit
 // used to carry its own near-duplicate (no keyboard nav, different active colour);
 // this wrapper only adds the kit's label.
-export function Select({ label, required, error, hint, className = "", ...props }: any) {
+export function Select({ label, required, error, hint, className = "", ...props }: SelectProps) {
   return (
     <div className="block">
       {label && <Label required={required}>{label}</Label>}
@@ -161,9 +210,18 @@ export function Select({ label, required, error, hint, className = "", ...props 
 // the same size and accent as <Checkbox> so the two never look like two controls.
 export const checkboxClass = "h-4 w-4 shrink-0 cursor-pointer accent-nb-blue";
 
+export interface CheckboxProps extends Omit<ComponentPropsWithoutRef<"input">, "onChange" | "checked" | "type" | "className"> {
+  label?: ReactNode;
+  checked?: boolean;
+  /** Called with the new checked state first; the native event second. */
+  onChange?: (checked: boolean, e: ChangeEvent<HTMLInputElement>) => void;
+  disabled?: boolean;
+  className?: string;
+}
+
 // Themed checkbox — replaces the native box, whose blue accent and sizing did not
 // match anything else in the console. Renders label + box as one clickable row.
-export function Checkbox({ label, checked, onChange, disabled, className = "", ...props }: any) {
+export function Checkbox({ label, checked, onChange, disabled, className = "", ...props }: CheckboxProps) {
   return (
     <label className={`inline-flex cursor-pointer select-none items-center gap-2 ${disabled ? "opacity-50" : ""} ${className}`}>
       <span
@@ -186,7 +244,12 @@ export function Checkbox({ label, checked, onChange, disabled, className = "", .
   );
 }
 
-export function Textarea({ label, required, className = "", ...props }: any) {
+export interface TextareaProps extends Omit<ComponentPropsWithoutRef<"textarea">, "required"> {
+  label?: ReactNode;
+  required?: boolean;
+}
+
+export function Textarea({ label, required, className = "", ...props }: TextareaProps) {
   return (
     <label className="block">
       {label && <Label required={required}>{label}</Label>}
@@ -205,19 +268,35 @@ const BADGE = {
   amber: "bg-amber-500/10 text-amber-400 border-amber-500/20",
 };
 
-export function Badge({ color = "neutral", children }: any) {
+export type BadgeColor = keyof typeof BADGE;
+
+export interface BadgeProps {
+  /** One of the named tones. Callers often map a status string through a lookup
+   *  that may miss, so any string is accepted and an unknown one renders neutral. */
+  color?: BadgeColor | (string & {});
+  children?: ReactNode;
+}
+
+export function Badge({ color = "neutral", children }: BadgeProps) {
+  const cls = (BADGE as Record<string, string | undefined>)[color] || BADGE.neutral;
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${BADGE[color] || BADGE.neutral}`}
-    >
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>
       {children}
     </span>
   );
 }
 
+export interface AvatarProps {
+  src?: string | null;
+  name?: string | null;
+  /** Diameter in px. */
+  size?: number;
+  className?: string;
+}
+
 // Round profile picture: shows the image when a URL is given, otherwise the
 // first initial on a neutral chip. `size` is the diameter in px.
-export function Avatar({ src, name, size = 28, className = "" }: any) {
+export function Avatar({ src, name, size = 28, className = "" }: AvatarProps) {
   const initials = (name || "?").trim().charAt(0).toUpperCase() || "?";
   const dim = { width: size, height: size };
   if (src) {
@@ -241,7 +320,7 @@ export function Avatar({ src, name, size = 28, className = "" }: any) {
   );
 }
 
-export function Spinner({ className = "" }: any) {
+export function Spinner({ className = "" }: { className?: string }) {
   return (
     <div className={`h-6 w-6 rounded-full border-2 border-nb-line border-t-nb-teal animate-spin ${className}`} />
   );
@@ -249,7 +328,7 @@ export function Spinner({ className = "" }: any) {
 
 // Branded full-screen loader: the "N" mark inside a spinning ring. Used for the
 // initial auth check and route-level loading fallbacks.
-export function FullPageLoader({ label = "Loading" }: any) {
+export function FullPageLoader({ label = "Loading" }: { label?: ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-nb-bg">
       <div className="relative h-14 w-14">
@@ -265,7 +344,14 @@ export function FullPageLoader({ label = "Loading" }: any) {
   );
 }
 
-export function EmptyState({ icon = "heroicons-outline:inbox", title, subtitle, action }: any) {
+export interface EmptyStateProps {
+  icon?: string;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  action?: ReactNode;
+}
+
+export function EmptyState({ icon = "heroicons-outline:inbox", title, subtitle, action }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <Icon icon={icon} className="text-4xl text-nb-teal mb-3 opacity-70" />
@@ -289,21 +375,36 @@ const _METRIC_TONE = {
   info: "text-nb-teal bg-nb-teal/10",
   neutral: "text-nb-muted bg-white/5",
 };
-const _METRIC_BAR = {
+const _METRIC_BAR: Record<MetricTone, string> = {
   ok: "bg-nb-good/70",
   warn: "bg-nb-warn/70",
   bad: "bg-nb-crit/70",
   info: "bg-nb-teal/70",
   neutral: "bg-nb-line",
 };
-export function MetricCard({ label, value, icon, tone = "info", hint, className = "" }: any) {
+
+export type MetricTone = keyof typeof _METRIC_TONE;
+
+export interface MetricCardProps {
+  label?: ReactNode;
+  value?: ReactNode;
+  icon?: string;
+  /** An unknown tone falls back to `info`, so a computed string is accepted. */
+  tone?: MetricTone | (string & {});
+  hint?: ReactNode;
+  className?: string;
+}
+
+export function MetricCard({ label, value, icon, tone = "info", hint, className = "" }: MetricCardProps) {
+  const toneCls = (_METRIC_TONE as Record<string, string | undefined>)[tone] || _METRIC_TONE.info;
+  const barCls = (_METRIC_BAR as Record<string, string | undefined>)[tone] || _METRIC_BAR.info;
   return (
     <div
       className={`relative flex items-center gap-3 overflow-hidden rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] px-4 py-3.5 ${className}`}
     >
-      <span className={`absolute inset-y-0 left-0 w-1 ${_METRIC_BAR[tone] || _METRIC_BAR.info}`} />
+      <span className={`absolute inset-y-0 left-0 w-1 ${barCls}`} />
       {icon && (
-        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${_METRIC_TONE[tone] || _METRIC_TONE.info}`}>
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${toneCls}`}>
           <Icon icon={icon} className="text-lg" />
         </span>
       )}
@@ -315,19 +416,31 @@ export function MetricCard({ label, value, icon, tone = "info", hint, className 
     </div>
   );
 }
-const _METRIC_COLS = { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5", 6: "sm:grid-cols-6" };
-export function MetricRow({ items = [], className = "" }: any) {
+const _METRIC_COLS: Record<number, string> = { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5", 6: "sm:grid-cols-6" };
+
+export interface MetricRowProps {
+  items?: MetricCardProps[];
+  className?: string;
+}
+
+export function MetricRow({ items = [], className = "" }: MetricRowProps) {
   const cols = _METRIC_COLS[Math.min(items.length, 6)] || "sm:grid-cols-4";
   return (
     <div className={`grid grid-cols-2 gap-2.5 ${cols} ${className}`}>
       {items.map((m, i) => (
-        <MetricCard key={m.label || i} {...m} />
+        <MetricCard key={typeof m.label === "string" ? m.label : i} {...m} />
       ))}
     </div>
   );
 }
 
-export function Toggle({ checked, onChange, disabled }: any) {
+export interface ToggleProps {
+  checked?: boolean;
+  onChange?: (checked: boolean) => void;
+  disabled?: boolean;
+}
+
+export function Toggle({ checked, onChange, disabled }: ToggleProps) {
   return (
     <button
       type="button"
@@ -369,7 +482,16 @@ export function Toggle({ checked, onChange, disabled }: any) {
 // refuse the push below.
 const overlayStack: object[] = [];
 
-export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justify-center p-4", children }: any) {
+export interface OverlayProps {
+  onClose?: () => void;
+  /** A click on the dim backdrop no longer dismisses. */
+  staticBackdrop?: boolean;
+  /** Flex classes for the full-viewport wrapper (where the panel sits). */
+  wrapper?: string;
+  children?: ReactNode;
+}
+
+export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justify-center p-4", children }: OverlayProps) {
   // document is undefined during SSR/prerender; portal only once mounted.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -381,7 +503,7 @@ export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justi
   useEffect(() => {
     const token = {};
     overlayStack.push(token);
-    function onKey(e) {
+    function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       if (overlayStack[overlayStack.length - 1] !== token) return;
       onClose?.();
@@ -418,9 +540,25 @@ export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justi
 // get these two things, which is how it ended up with its own header and footer.
 const MODAL_WIDTH = { md: "max-w-md", wide: "max-w-2xl", xl: "max-w-3xl" };
 
-export function Modal({ open, onClose, title, subtitle, children, footer, wide, size, hideScroll, staticBackdrop }: any) {
+export type ModalSize = keyof typeof MODAL_WIDTH;
+
+export interface ModalProps {
+  open?: boolean;
+  onClose?: () => void;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  children?: ReactNode;
+  footer?: ReactNode;
+  /** The older boolean form of `size="wide"`. */
+  wide?: boolean;
+  size?: ModalSize;
+  hideScroll?: boolean;
+  staticBackdrop?: boolean;
+}
+
+export function Modal({ open, onClose, title, subtitle, children, footer, wide, size, hideScroll, staticBackdrop }: ModalProps) {
   if (!open) return null;
-  const width = MODAL_WIDTH[size] || (wide ? MODAL_WIDTH.wide : MODAL_WIDTH.md);
+  const width = (size && MODAL_WIDTH[size]) || (wide ? MODAL_WIDTH.wide : MODAL_WIDTH.md);
   return (
     <Overlay onClose={onClose} staticBackdrop={staticBackdrop}>
       <div
@@ -444,8 +582,18 @@ export function Modal({ open, onClose, title, subtitle, children, footer, wide, 
   );
 }
 
+export interface DrawerProps {
+  open?: boolean;
+  onClose?: () => void;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  children?: ReactNode;
+  /** A max-width class for the sheet. */
+  width?: string;
+}
+
 // Right-side sliding sheet for detail views (person detail, investigation history…).
-export function Drawer({ open, onClose, title, subtitle, children, width = "max-w-md" }: any) {
+export function Drawer({ open, onClose, title, subtitle, children, width = "max-w-md" }: DrawerProps) {
   if (!open) return null;
   return (
     <Overlay onClose={onClose} wrapper="justify-end">
@@ -465,11 +613,32 @@ export function Drawer({ open, onClose, title, subtitle, children, width = "max-
   );
 }
 
+/** What drives a <ConfirmDialog>: the piece of state a screen sets to open it. */
+export interface ConfirmState {
+  title?: ReactNode;
+  message?: ReactNode;
+  confirmLabel?: ReactNode;
+  cancelLabel?: ReactNode;
+  /** `false` renders a neutral (non-destructive) confirmation. Default: destructive. */
+  danger?: boolean;
+  icon?: string;
+  onConfirm?: () => void;
+}
+
+export interface ConfirmDialogProps {
+  /** Null/undefined = closed. */
+  state?: ConfirmState | null;
+  onClose?: () => void;
+  /** Disables both buttons and relabels the confirm while the action runs. */
+  pending?: boolean;
+  staticBackdrop?: boolean;
+}
+
 // A themed confirmation modal (replaces window.confirm). Drive it with a piece of
 // state: setConfirm({ title, message, confirmLabel, danger, onConfirm }) to open,
 // and render one <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />.
-export function ConfirmDialog({ state, onClose, pending, staticBackdrop }: any) {
-  const cfg = state || {};
+export function ConfirmDialog({ state, onClose, pending, staticBackdrop }: ConfirmDialogProps) {
+  const cfg: ConfirmState = state || {};
   return (
     <Modal
       open={!!state}
@@ -504,10 +673,28 @@ export function ConfirmDialog({ state, onClose, pending, staticBackdrop }: any) 
   );
 }
 
+export interface TableColumn<Row> {
+  /** Also the fallback field read off the row when there is no `render`. */
+  key: string;
+  label?: ReactNode;
+  render?: (row: Row) => ReactNode;
+  align?: "left" | "right" | "center";
+  className?: string;
+}
+
+export interface TableProps<Row extends object> {
+  columns: TableColumn<Row>[];
+  rows?: Row[] | null;
+  /** Rendered instead of the table when there are no rows. */
+  empty?: ReactNode;
+}
+
+const alignCls = (a?: "left" | "right" | "center") =>
+  a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left";
+
 // columns: [{ key, label, render?, align? ("right"|"center"), className? }]
-export function Table({ columns, rows, empty }: any) {
+export function Table<Row extends object>({ columns, rows, empty }: TableProps<Row>) {
   if (!rows?.length) return empty || <EmptyState title="Nothing here yet" />;
-  const alignCls = (a) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -524,21 +711,26 @@ export function Table({ columns, rows, empty }: any) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
-            <tr
-              key={row.id || i}
-              className="border-b border-nb-line/60 transition last:border-0 hover:bg-white/5"
-            >
-              {columns.map((c) => (
-                <td
-                  key={c.key}
-                  className={`px-4 py-3 text-nb-ink ${alignCls(c.align)} ${c.align === "right" ? "tabular-nums" : ""} ${c.className || ""}`}
-                >
-                  {c.render ? c.render(row) : row[c.key]}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row, i) => {
+            // A row without `render` is read by key; rows are plain wire objects,
+            // so the value is whatever the backend sent and React renders it as-is.
+            const cell = row as Record<string, ReactNode>;
+            return (
+              <tr
+                key={typeof cell.id === "string" || typeof cell.id === "number" ? cell.id : i}
+                className="border-b border-nb-line/60 transition last:border-0 hover:bg-white/5"
+              >
+                {columns.map((c) => (
+                  <td
+                    key={c.key}
+                    className={`px-4 py-3 text-nb-ink ${alignCls(c.align)} ${c.align === "right" ? "tabular-nums" : ""} ${c.className || ""}`}
+                  >
+                    {c.render ? c.render(row) : cell[c.key]}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

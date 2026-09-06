@@ -26,8 +26,15 @@
 // surfaces accent BLUE (nb-blue / nb-blueb) to match their launcher tone and the
 // ConsoleStrip modtab; teal stays reserved for Surveillance.
 import { Icon } from "@iconify/react";
+import type { ComponentPropsWithoutRef, FormEvent, MouseEvent, ReactNode } from "react";
 
-import { Button } from "@/components/ui/kit";
+import { Button, type ButtonProps } from "@/components/ui/kit";
+
+/** The two props nearly every frame here takes. */
+export interface FrameProps {
+  className?: string;
+  children?: ReactNode;
+}
 
 // The navy radial backdrop every console page sits on. Kept as one constant so a
 // page can spread it onto a custom wrapper instead of nesting another div.
@@ -43,7 +50,7 @@ export const CONSOLE_BG = {
 // and nothing at the top. calc(100% + 1.5rem) makes the bleed symmetric, then
 // pt-3/pb-2 keeps the inner gutter tight at the bottom where the footer already
 // supplies visual separation.
-export function ConsolePage({ className = "", children }: any) {
+export function ConsolePage({ className = "", children }: FrameProps) {
   return (
     <div
       className={`flex h-[calc(100%+1.5rem)] min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 pt-3 pb-2 text-nb-ink ${className}`}
@@ -56,13 +63,18 @@ export function ConsolePage({ className = "", children }: any) {
 
 // Scrolling body for consoles whose content is a stack of cards rather than a
 // master/detail grid (Security policy, Platform views, System settings).
-export function ConsoleScroll({ className = "", children }: any) {
+export function ConsoleScroll({ className = "", children }: FrameProps) {
   return <div className={`min-h-0 flex-1 overflow-y-auto px-1 ${className}`}>{children}</div>;
+}
+
+export interface ConsoleGridProps extends FrameProps {
+  /** A STATIC grid-cols class string. */
+  cols?: string;
 }
 
 // The master/detail grid. `cols` is a STATIC class string — Tailwind's JIT can't
 // read a runtime-built arbitrary value.
-export function ConsoleGrid({ cols = "lg:grid-cols-[300px_1fr]", className = "", children }: any) {
+export function ConsoleGrid({ cols = "lg:grid-cols-[300px_1fr]", className = "", children }: ConsoleGridProps) {
   return (
     <div className={`grid min-h-0 flex-1 grid-cols-1 gap-3 ${cols} ${className}`}>{children}</div>
   );
@@ -72,12 +84,21 @@ export function ConsoleGrid({ cols = "lg:grid-cols-[300px_1fr]", className = "",
 export const PANEL_CLS =
   "rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] min-h-0 flex flex-col overflow-hidden";
 
-export function ConsolePanel({ className = "", children }: any) {
+export function ConsolePanel({ className = "", children }: FrameProps) {
   return <div className={`${PANEL_CLS} ${className}`}>{children}</div>;
 }
 
+export interface PanelHeaderProps {
+  icon?: string;
+  title?: ReactNode;
+  count?: ReactNode;
+  actions?: ReactNode;
+  /** Same slot as `actions`, for callers that nest instead. */
+  children?: ReactNode;
+}
+
 // Panel header: icon + uppercase title + optional count, with room for actions.
-export function PanelHeader({ icon, title, count, actions, children }: any) {
+export function PanelHeader({ icon, title, count, actions, children }: PanelHeaderProps) {
   return (
     <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
       <div className="flex items-center gap-2">
@@ -90,9 +111,16 @@ export function PanelHeader({ icon, title, count, actions, children }: any) {
   );
 }
 
+export interface PanelCount {
+  label?: string;
+  value: ReactNode;
+  /** green (good) / red (crit); `idle` is the grey dot. */
+  tone?: "good" | "crit" | "idle";
+}
+
 // The active/idle count dots Sites shows next to its header (green = active,
 // grey = inactive). Shared so every list that reports a split renders it alike.
-export function PanelCounts({ items = [] }: any) {
+export function PanelCounts({ items = [] }: { items?: PanelCount[] }) {
   return (
     <div className="flex items-center gap-2 text-[11px]">
       {items.map((it, i) => (
@@ -109,8 +137,14 @@ export function PanelCounts({ items = [] }: any) {
   );
 }
 
+export interface PanelSearchProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
 // Boxed search row that sits under the panel header.
-export function PanelSearch({ value, onChange, placeholder = "Search…" }: any) {
+export function PanelSearch({ value, onChange, placeholder = "Search…" }: PanelSearchProps) {
   return (
     <div className="px-3 pb-2">
       <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
@@ -126,9 +160,17 @@ export function PanelSearch({ value, onChange, placeholder = "Search…" }: any)
   );
 }
 
+export interface PanelListProps {
+  loading?: boolean;
+  error?: ReactNode;
+  empty?: boolean;
+  emptyText?: ReactNode;
+  children?: ReactNode;
+}
+
 // Scrolling list body with the three standard states, so "Loading…" / "no match" /
 // "nothing yet" read identically on every console.
-export function PanelList({ loading, error, empty, emptyText = "Nothing here yet", children }: any) {
+export function PanelList({ loading, error, empty, emptyText = "Nothing here yet", children }: PanelListProps) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-3">
       {loading ? (
@@ -147,13 +189,21 @@ export function PanelList({ loading, error, empty, emptyText = "Nothing here yet
 }
 
 // Panel footer — the dashed create CTA plus an optional explanatory note.
-export function PanelFooter({ children }: any) {
+export function PanelFooter({ children }: { children?: ReactNode }) {
   return <div className="border-t border-nb-line/50 p-3">{children}</div>;
+}
+
+export interface CreateButtonProps {
+  /** The bare noun ("SITE"); the component owns the ＋ and the wording. */
+  label: ReactNode;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
+  disabled?: boolean;
+  className?: string;
 }
 
 // The dashed "＋ NEW X" create button. `label` is the bare noun ("SITE"); the
 // component owns the ＋ and the wording so no console can drift its copy.
-export function CreateButton({ label, onClick, disabled, className = "" }: any) {
+export function CreateButton({ label, onClick, disabled, className = "" }: CreateButtonProps) {
   return (
     <button
       type="button"
@@ -166,10 +216,20 @@ export function CreateButton({ label, onClick, disabled, className = "" }: any) 
   );
 }
 
+export interface IconActionProps extends Omit<ComponentPropsWithoutRef<"button">, "title"> {
+  icon: string;
+  /** Doubles as the aria-label. */
+  title?: string;
+}
+
+export interface RowActionProps extends IconActionProps {
+  tone?: "default" | "danger";
+}
+
 // Borderless icon action for a LIST ROW (view / edit / delete on a webhook, rule,
 // event…). Distinct from IconButton, which is the bordered chip a panel header
 // uses. Rows were hand-rolling this at h-7 and h-8, with and without borders.
-export function RowAction({ icon, title, onClick, disabled, tone = "default", className = "", ...props }: any) {
+export function RowAction({ icon, title, onClick, disabled, tone = "default", className = "", ...props }: RowActionProps) {
   return (
     <button
       type="button"
@@ -188,7 +248,7 @@ export function RowAction({ icon, title, onClick, disabled, tone = "default", cl
 }
 
 // Small square icon button used in panel headers (export / import / refresh).
-export function IconButton({ icon, title, onClick, disabled, className = "", ...props }: any) {
+export function IconButton({ icon, title, onClick, disabled, className = "", ...props }: IconActionProps) {
   return (
     <button
       type="button"
@@ -208,20 +268,35 @@ export function IconButton({ icon, title, onClick, disabled, className = "", ...
 // second button implementation. An inline "Save changes" and a modal footer's
 // "Create" are then literally the same component, which is what stops the two
 // from drifting apart again. `as` (from Button) renders one as a <Link>.
-export function ActionButton(props) {
+export function ActionButton(props: ButtonProps) {
   return <Button variant="action" {...props} />;
 }
 
 // Quiet secondary action (Cancel, Manage, Back).
-export function QuietButton(props) {
+export function QuietButton(props: ButtonProps) {
   return <Button variant="secondary" {...props} />;
+}
+
+export interface SegmentedOption<V extends string | number = string> {
+  value: V;
+  label: ReactNode;
+  icon?: string;
+}
+
+export interface SegmentedProps<V extends string | number = string> {
+  value?: V | null;
+  // NoInfer: `V` comes from `value`/`options`, never from a setState handler,
+  // whose `SetStateAction<V>` parameter would otherwise widen it to the constraint.
+  onChange?: (value: NoInfer<V>) => void;
+  options?: SegmentedOption<V>[];
+  className?: string;
 }
 
 // Segmented toggle — the same pill-in-a-box the header's console strip uses for
 // ?view= navigation, but driven by state instead of links. Anywhere a form offers
 // two or three modes (Raw JSON / Guided, list / map) this is the control.
 //   <Segmented value={mode} onChange={setMode} options={[{value,label,icon}]} />
-export function Segmented({ value, onChange, options = [], className = "" }: any) {
+export function Segmented<V extends string | number = string>({ value, onChange, options = [], className = "" }: SegmentedProps<V>) {
   return (
     <div className={`flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px] ${className}`}>
       {options.map((o) => {
@@ -249,12 +324,12 @@ export function Segmented({ value, onChange, options = [], className = "" }: any
 // The right-aligned action row a console view puts above its content (Save
 // changes, Create key, Upload…). One definition so the gap above the content is
 // the same on every view.
-export function ViewActions({ className = "", children }: any) {
+export function ViewActions({ className = "", children }: FrameProps) {
   return <div className={`mb-3 flex items-center justify-end gap-2 ${className}`}>{children}</div>;
 }
 
 // Centred loading block for a whole view (as opposed to PanelList's inline one).
-export function LoadingBlock({ label = "Loading…", className = "" }: any) {
+export function LoadingBlock({ label = "Loading…", className = "" }: { label?: ReactNode; className?: string }) {
   return (
     <div className={`flex items-center justify-center gap-2 py-16 text-sm text-nb-muted ${className}`}>
       <Icon icon="svg-spinners:180-ring" className="text-base text-nb-blueb" /> {label}
@@ -263,7 +338,7 @@ export function LoadingBlock({ label = "Loading…", className = "" }: any) {
 }
 
 // Destructive action (Delete, Revoke) — red is reserved for actions that lose data.
-export function DangerButton(props) {
+export function DangerButton(props: ButtonProps) {
   return <Button variant="danger" {...props} />;
 }
 
@@ -272,16 +347,26 @@ export function DangerButton(props) {
 // (one grew a busy spinner and tones, the other stayed a hand-rolled <button>).
 // One definition each, so a stat row and a panel action look the same everywhere.
 
+const STAT_TONES = {
+  ink: "text-nb-ink",
+  good: "text-nb-good",
+  warn: "text-nb-warn",
+  crit: "text-nb-crit",
+  blue: "text-nb-blueb",
+  faint: "text-nb-faint",
+};
+
+export type StatTone = keyof typeof STAT_TONES;
+
+export interface PanelStatProps {
+  label?: ReactNode;
+  value?: ReactNode;
+  tone?: StatTone;
+}
+
 // One "label ······ value" row inside a context panel's stat card.
-export function PanelStat({ label, value, tone = "ink" }: any) {
-  const c = {
-    ink: "text-nb-ink",
-    good: "text-nb-good",
-    warn: "text-nb-warn",
-    crit: "text-nb-crit",
-    blue: "text-nb-blueb",
-    faint: "text-nb-faint",
-  }[tone];
+export function PanelStat({ label, value, tone = "ink" }: PanelStatProps) {
+  const c = STAT_TONES[tone];
   return (
     <div className="flex items-center justify-between border-b border-nb-line/40 py-1.5 last:border-b-0">
       <span className="text-[11.5px] text-nb-faint">{label}</span>
@@ -290,13 +375,25 @@ export function PanelStat({ label, value, tone = "ink" }: any) {
   );
 }
 
+const PANEL_ACTION_TONES = {
+  blue: "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb hover:bg-[rgba(96,165,250,.16)]",
+  warn: "border-nb-warn/50 bg-nb-warn/10 text-nb-warn hover:bg-nb-warn/20",
+  good: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good hover:bg-[rgba(52,211,153,.16)]",
+};
+
+export interface PanelActionProps {
+  icon?: string;
+  children?: ReactNode;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
+  tone?: keyof typeof PANEL_ACTION_TONES;
+  disabled?: boolean;
+  /** Swaps the icon for a spinner and disables the button. */
+  busy?: boolean;
+}
+
 // Full-width action button inside a context panel (CLONE THIS USER ▸, UNLOCK ▸).
-export function PanelAction({ icon, children, onClick, tone = "blue", disabled, busy }: any) {
-  const cls = {
-    blue: "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb hover:bg-[rgba(96,165,250,.16)]",
-    warn: "border-nb-warn/50 bg-nb-warn/10 text-nb-warn hover:bg-nb-warn/20",
-    good: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good hover:bg-[rgba(52,211,153,.16)]",
-  }[tone];
+export function PanelAction({ icon, children, onClick, tone = "blue", disabled, busy }: PanelActionProps) {
+  const cls = PANEL_ACTION_TONES[tone];
   return (
     <button
       type="button"
@@ -304,16 +401,23 @@ export function PanelAction({ icon, children, onClick, tone = "blue", disabled, 
       disabled={disabled || busy}
       className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-[8px] border px-3 py-2 text-[11.5px] tracking-[.5px] transition disabled:opacity-50 ${cls}`}
     >
-      <Icon icon={busy ? "svg-spinners:180-ring" : icon} className="text-[13px]" />
+      <Icon icon={busy ? "svg-spinners:180-ring" : icon ?? ""} className="text-[13px]" />
       {children}
     </button>
   );
 }
 
+export interface PaneActionProps {
+  icon: string;
+  title?: string;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
+  children?: ReactNode;
+}
+
 // Header action inside a detail pane (Edit) and its destructive icon-only sibling
 // (Delete). RoleDetail and UserDetail each hand-rolled these; the Delete buttons
 // had already diverged (one labelled, one a bare icon chip).
-export function PaneAction({ icon, title, onClick, children }: any) {
+export function PaneAction({ icon, title, onClick, children }: PaneActionProps) {
   return (
     <button
       type="button"
@@ -327,7 +431,7 @@ export function PaneAction({ icon, title, onClick, children }: any) {
   );
 }
 
-export function PaneDeleteAction({ title = "Delete", onClick }: any) {
+export function PaneDeleteAction({ title = "Delete", onClick }: { title?: string; onClick?: (e: MouseEvent<HTMLButtonElement>) => void }) {
   return (
     <button
       type="button"
@@ -341,12 +445,23 @@ export function PaneDeleteAction({ title = "Delete", onClick }: any) {
   );
 }
 
+export interface PaneFormProps {
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  /** Header-right slot (Edit / Delete actions). */
+  action?: ReactNode;
+  onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
+  footer?: ReactNode;
+  className?: string;
+  children?: ReactNode;
+}
+
 // A create/edit form that FILLS a detail pane (as opposed to one in a modal).
 // Chrome deliberately mirrors kit's <Modal>: same header padding, same divider
 // rules, same footer — so "Create SOP" in a pane and "Add user" in a dialog read
 // as the same form. Half the workflow tabs used to render a tinted card floating
 // inside the pane instead, which is why they looked like a different product.
-export function PaneForm({ title, subtitle, action, onSubmit, footer, className = "", children }: any) {
+export function PaneForm({ title, subtitle, action, onSubmit, footer, className = "", children }: PaneFormProps) {
   return (
     <form noValidate onSubmit={onSubmit} className={`flex min-h-0 flex-1 flex-col ${className}`}>
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-nb-line px-5 py-4">
@@ -366,10 +481,20 @@ export function PaneForm({ title, subtitle, action, onSubmit, footer, className 
 
 // Card frame for stacked-form consoles (Security sections, Settings groups,
 // Platform panels). Same surface as ConsolePanel but padded and non-flex.
-export function SectionCard({ className = "", children }: any) {
+export function SectionCard({ className = "", children }: FrameProps) {
   return (
     <div className={`rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 ${className}`}>{children}</div>
   );
+}
+
+export interface SectionHeadProps {
+  icon?: string;
+  title?: ReactNode;
+  desc?: ReactNode;
+  /** A hover-only `desc` (the wrapper's title attribute). */
+  hint?: string;
+  action?: ReactNode;
+  className?: string;
 }
 
 // Uppercase micro-heading used at the top of a SectionCard.
@@ -378,7 +503,7 @@ export function SectionCard({ className = "", children }: any) {
 // — what a chart counts, what a queue does not infer — that is the right trade
 // in a panel whose height is contested. `desc` stays for anything a reader needs
 // every time they look.
-export function SectionHead({ icon, title, desc, hint, action, className = "" }: any) {
+export function SectionHead({ icon, title, desc, hint, action, className = "" }: SectionHeadProps) {
   return (
     <div className={`mb-3 flex items-start gap-2 ${className}`} title={hint}>
       {icon && <Icon icon={icon} className="mt-0.5 text-sm text-nb-blueb" />}
@@ -391,8 +516,14 @@ export function SectionHead({ icon, title, desc, hint, action, className = "" }:
   );
 }
 
+export interface EmptyPaneProps {
+  icon?: string;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+}
+
 // Centred "nothing selected" placeholder for a detail pane.
-export function EmptyPane({ icon = "heroicons-outline:cursor-arrow-rays", title, subtitle }: any) {
+export function EmptyPane({ icon = "heroicons-outline:cursor-arrow-rays", title, subtitle }: EmptyPaneProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-4 py-20 text-center">
       <span className="grid h-12 w-12 place-items-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
@@ -404,8 +535,16 @@ export function EmptyPane({ icon = "heroicons-outline:cursor-arrow-rays", title,
   );
 }
 
+export interface InfoCellProps {
+  label?: ReactNode;
+  value?: ReactNode;
+  mono?: boolean;
+  /** Hover text; defaults to the value when it is a string. */
+  title?: string;
+}
+
 // Read-only label/value cell used inside detail panes.
-export function InfoCell({ label, value, mono = false, title }: any) {
+export function InfoCell({ label, value, mono = false, title }: InfoCellProps) {
   return (
     <div className="min-w-0 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-1.5">
       <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">{label}</p>

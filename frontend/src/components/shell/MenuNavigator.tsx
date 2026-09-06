@@ -14,15 +14,15 @@
 
 import { Icon } from "@iconify/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { launcherGroups } from "@/config/launcher";
-import { menuItems } from "@/config/menu";
+import { menuItems, type NavItem } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 
 // One IA group in the overlay grid.
-function Group({ title, accent, children }: any) {
+function Group({ title, accent, children }: { title: string; accent: string; children?: ReactNode }) {
   return (
     <div>
       <h4
@@ -40,12 +40,19 @@ function Group({ title, accent, children }: any) {
   );
 }
 
+/** What a cell speaks: a gated or unbuilt destination arrives with no `link`. */
+interface NavCell {
+  title: string;
+  icon: string;
+  link?: string;
+}
+
 // A single navigable cell. Renders dimmed + non-clickable when `soon` (no destination yet).
-function Cell({ item, onGo }: any) {
-  const soon = !item.link;
+function Cell({ item, onGo }: { item: NavCell; onGo: (link: string) => void }) {
+  const link = item.link;
   const base =
     "group flex items-center gap-2.5 rounded-[10px] border px-3 py-2.5 text-[13px] transition";
-  if (soon) {
+  if (!link) {
     return (
       <span
         aria-disabled="true"
@@ -63,7 +70,7 @@ function Cell({ item, onGo }: any) {
   return (
     <button
       type="button"
-      onClick={() => onGo(item.link)}
+      onClick={() => onGo(link)}
       className={`${base} border-[rgba(160,150,245,.2)] bg-[linear-gradient(155deg,rgba(34,211,238,.10),rgba(150,180,245,.04)_65%)] text-[#cfd0f2] hover:border-[rgba(34,211,238,.6)] hover:text-[#f2f6ff] hover:shadow-[0_0_22px_rgba(34,211,238,.22)]`}
     >
       <Icon icon={item.icon} className="text-[17px] shrink-0 text-[#67e8f9]" />
@@ -83,24 +90,24 @@ export default function MenuNavigator() {
   // Close on Escape.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const allowed = (t) =>
+  const allowed = (t: NavItem) =>
     !t.disabled &&
     (!t.superadmin || user?.is_superadmin) &&
     (!t.perm || can(t.perm)) &&
     (!t.module || hasModule(t.module));
 
-  const go = (link) => {
+  const go = (link: string) => {
     setOpen(false);
     router.push(link);
   };
 
   // Home + the section landing links (first reachable tab of each section).
-  const topLinks = [
+  const topLinks: NavCell[] = [
     { title: "Home", icon: "heroicons-outline:home", link: "/home" },
     ...menuItems
       .filter((m) => m.link && allowed(m))
@@ -115,7 +122,7 @@ export default function MenuNavigator() {
     ...g,
     // Cell speaks {title, icon, link}; a gated or unbuilt tile arrives with no href
     // and renders as the dimmed "Soon" cell, just as it renders a SOON tile on Home.
-    items: g.tiles.map((t) => ({ title: t.label, icon: t.icon, link: t.href })),
+    items: g.tiles.map((t): NavCell => ({ title: t.label, icon: t.icon, link: t.href })),
   }));
 
   const launcher = (

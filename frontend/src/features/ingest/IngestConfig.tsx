@@ -62,7 +62,7 @@ export default function IngestConfigPage() {
     }
   }, [filtered, selected, mode, closed]);
 
-  const removeCat = useMutation<any>({
+  const removeCat = useMutation({
     mutationFn: (id: any) => ingestApi.categories.remove(id),
     onSuccess: () => {
       toast.success("Category removed");

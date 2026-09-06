@@ -6,6 +6,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/lib/auth";
+import type { NavItem } from "@/config/menu";
 
 // Generic second-level section nav (Devices / Streaming). It used to render as its own
 // full-width underlined tab bar under the header; it now renders INLINE INSIDE the
@@ -19,7 +20,14 @@ const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rg
 const segBase =
   "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition";
 
-export default function SectionTabs({ tabs, label, icon }: any) {
+export interface SectionTabsProps {
+  tabs: NavItem[];
+  /** The section modtab text; omitted = no modtab. */
+  label?: string;
+  icon?: string;
+}
+
+export default function SectionTabs({ tabs, label, icon }: SectionTabsProps) {
   const pathname = usePathname();
   const { can, user, hasModule } = useAuth();
 
@@ -75,11 +83,13 @@ export default function SectionTabs({ tabs, label, icon }: any) {
               </button>
             );
           }
-          const active = pathname === t.link || pathname.startsWith(`${t.link}/`);
+          // `visible` keeps a disabled tab without a link, but that branch returned above.
+          const link = t.link ?? "";
+          const active = pathname === link || pathname.startsWith(`${link}/`);
           return (
             <Link
               key={t.title}
-              href={t.link}
+              href={link}
               className={`${segBase} ${
                 active
                   ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb"

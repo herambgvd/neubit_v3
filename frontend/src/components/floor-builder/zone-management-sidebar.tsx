@@ -5,14 +5,28 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { Badge, Button, ConfirmDialog, Input, Modal, Select, Textarea, Toggle } from "@/components/ui/kit";
+import { Badge, Button, ConfirmDialog, Input, Modal, Select, Textarea, Toggle, type ConfirmState } from "@/components/ui/kit";
 import {
   THREAT_LEVELS,
   ZONE_PRESET_COLORS,
   ZONE_TYPES,
 } from "@/components/floor-builder/constants";
+import type { EditorZone, ZonePatch } from "@/components/floor-builder/types";
+import type { ThreatLevel, ZoneType } from "@/lib/types";
 
-function buildZoneForm(zone) {
+/** The properties form's state. `max_occupancy` is "" while empty. */
+interface ZoneForm {
+  name: string;
+  description: string;
+  zone_type: ZoneType;
+  threat_level: ThreatLevel;
+  color: string;
+  max_occupancy: number | string;
+  alert_on_entry: boolean;
+  alert_on_exit: boolean;
+}
+
+function buildZoneForm(zone: EditorZone | null): ZoneForm {
   return {
     name: zone?.name || "",
     description: zone?.description || "",
@@ -25,7 +39,17 @@ function buildZoneForm(zone) {
   };
 }
 
-function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDelete }: any) {
+interface ZoneRowProps {
+  zone: EditorZone;
+  isSelected: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onSelect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDelete }: ZoneRowProps) {
   const threat = THREAT_LEVELS.find((t) => t.value === zone.threat_level);
   return (
     <div
@@ -101,8 +125,15 @@ function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDel
   );
 }
 
-function ZonePropertiesModal({ open, onClose, zone, onSave }: any) {
-  const [form, setForm] = useState(() => buildZoneForm(zone));
+interface ZonePropertiesModalProps {
+  open: boolean;
+  onClose?: () => void;
+  zone: EditorZone | null;
+  onSave?: (patch: ZonePatch) => void | Promise<void>;
+}
+
+function ZonePropertiesModal({ open, onClose, zone, onSave }: ZonePropertiesModalProps) {
+  const [form, setForm] = useState<ZoneForm>(() => buildZoneForm(zone));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -111,7 +142,7 @@ function ZonePropertiesModal({ open, onClose, zone, onSave }: any) {
 
   if (!zone) return null;
 
-  const update = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const update = (patch: Partial<ZoneForm>) => setForm((f) => ({ ...f, ...patch }));
 
   const submit = async () => {
     setSaving(true);
@@ -151,17 +182,19 @@ function ZonePropertiesModal({ open, onClose, zone, onSave }: any) {
       <div className="space-y-4">
         <Input label="Name" value={form.name} onChange={(e) => update({ name: e.target.value })} />
         <div className="grid grid-cols-2 gap-3">
+          {/* The options ARE the typed lists, so a picked value is one of them —
+              the picker itself only knows strings. */}
           <Select
             label="Type"
             value={form.zone_type}
             options={ZONE_TYPES.map((t) => ({ value: t.value, label: t.label }))}
-            onChange={(e) => update({ zone_type: e.target.value })}
+            onChange={(e) => update({ zone_type: e.target.value as ZoneType })}
           />
           <Select
             label="Threat level"
             value={form.threat_level}
             options={THREAT_LEVELS.map((t) => ({ value: t.value, label: t.label }))}
-            onChange={(e) => update({ threat_level: e.target.value })}
+            onChange={(e) => update({ threat_level: e.target.value as ThreatLevel })}
           />
         </div>
         <div>
@@ -213,6 +246,15 @@ function ZonePropertiesModal({ open, onClose, zone, onSave }: any) {
   );
 }
 
+export interface ZoneManagementSidebarProps {
+  zones?: EditorZone[];
+  selectedZoneId?: string | null;
+  onSelectZone?: (zone: EditorZone) => void;
+  onZoneUpdate?: (zone: EditorZone, patch: ZonePatch) => void | Promise<void>;
+  onZoneDelete?: (zone: EditorZone) => void;
+  onStartDrawing?: () => void;
+}
+
 export function ZoneManagementSidebar({
   zones = [],
   selectedZoneId,
@@ -220,14 +262,14 @@ export function ZoneManagementSidebar({
   onZoneUpdate,
   onZoneDelete,
   onStartDrawing,
-}: any) {
-  const [expanded, setExpanded] = useState(() => new Set<any>());
-  const [editing, setEditing] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+}: ZoneManagementSidebarProps) {
+  const [expanded, setExpanded] = useState(() => new Set<string>());
+  const [editing, setEditing] = useState<EditorZone | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const toggle = (id) => {
+  const toggle = (id: string) => {
     setExpanded((prev) => {
-      const next = new Set<any>(prev);
+      const next = new Set<string>(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
@@ -284,7 +326,9 @@ export function ZoneManagementSidebar({
         open={!!editing}
         onClose={() => setEditing(null)}
         zone={editing}
-        onSave={(patch) => onZoneUpdate?.(editing, patch)}
+        // The modal renders nothing without a zone, so `editing` is set whenever
+        // it can save; the guard only satisfies the type.
+        onSave={(patch) => (editing ? onZoneUpdate?.(editing, patch) : undefined)}
       />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </aside>

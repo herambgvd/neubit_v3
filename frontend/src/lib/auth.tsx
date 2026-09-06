@@ -6,37 +6,11 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { api, bootstrapSession, tokens } from "./api";
+import type { AuthUser, Entitlements, LoginResponse, ModuleEntitlement } from "./types";
 
-/** The signed-in operator, as this console reads them. */
-export interface AuthUser {
-  id: string;
-  email: string;
-  full_name: string | null;
-  avatar_url?: string | null;
-  email_verified?: boolean;
-  is_superadmin?: boolean;
-  preferences?: Record<string, unknown>;
-  role?: { id?: string; name?: string; permissions?: string[] };
-}
-
-/** One module's entitlement, as /features reports it. */
-export interface ModuleEntitlement {
-  key: string;
-  enabled: boolean;
-  name?: string;
-}
-
-/** GET /features — `effective_entitlements` in backend/core/app/tenancy/entitlements.py. */
-export interface Entitlements {
-  /** The tenant's plan name; null for a super-admin (no tenant). */
-  plan?: string | null;
-  modules?: ModuleEntitlement[];
-  limits?: Record<string, number>;
-  /** `effective_license_state` in backend/core/app/tenancy/models.py. */
-  license_state?: "active" | "grace" | "expired";
-  /** ISO timestamp; null when the license has no expiry. */
-  expires_at?: string | null;
-}
+// The wire shapes live in lib/types (one interface per Pydantic model); they are
+// re-exported here so `import type { AuthUser } from "@/lib/auth"` keeps working.
+export type { AuthUser, Entitlements, ModuleEntitlement } from "./types";
 
 export type AuthStatus = "loading" | "authed" | "anon";
 
@@ -78,13 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const { data } = await api.get("/auth/me");
+      const { data } = await api.get<AuthUser>("/auth/me");
       setUser(data);
       setStatus("authed");
       // Load entitlements alongside identity; a failure here must not break auth,
       // so it degrades to null (permissive nav, no license banner).
       try {
-        const feat = await api.get("/features");
+        const feat = await api.get<Entitlements>("/features");
         setEntitlements(feat.data);
       } catch {
         setEntitlements(null);
@@ -103,10 +77,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const { data } = await api.post("/auth/login", { email, password });
+      const { data } = await api.post<LoginResponse>("/auth/login", { email, password });
       // When 2FA is on, the backend withholds tokens and returns a challenge —
       // surface it so the caller can prompt for the authenticator code.
-      if (data.mfa_required) return { mfaRequired: true, mfaToken: data.mfa_token };
+      if (data.mfa_required) return { mfaRequired: true, mfaToken: data.mfa_token ?? undefined };
       // Only the access token: the refresh token came back as an httpOnly cookie
       // the browser stores itself, invisible to this code.
       tokens.set(data.access_token);
@@ -120,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // code for real tokens.
   const loginMfa = useCallback(
     async (mfaToken: string, code: string) => {
-      const { data } = await api.post("/auth/login/mfa", { mfa_token: mfaToken, code });
+      const { data } = await api.post<LoginResponse>("/auth/login/mfa", { mfa_token: mfaToken, code });
       tokens.set(data.access_token);
       await loadMe();
     },

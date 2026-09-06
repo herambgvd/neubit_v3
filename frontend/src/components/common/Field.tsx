@@ -9,7 +9,9 @@
 //   <Field label="Notes" as="textarea" rows={3} value={notes} onChange={...} />
 //   <Field label="Priority" as="select" value={p} onChange={...} options={[{value,label}]} />
 
-import SelectMenu from "./SelectMenu";
+import type { ChangeEvent, ComponentPropsWithoutRef, ReactNode } from "react";
+
+import SelectMenu, { type SelectChangeEvent, type SelectOption } from "./SelectMenu";
 
 // Base control classes (shared so raw inputs match Field visually).
 export const fieldClass =
@@ -17,13 +19,44 @@ export const fieldClass =
 export const areaClass =
   "mt-1 w-full rounded-lg border border-nb-line bg-nb-field px-3 py-2 text-sm text-nb-ink placeholder:text-nb-faint outline-hidden transition focus:border-nb-teal focus:ring-1 focus:ring-nb-teal/40";
 
-export function FieldLabel({ children, required, className = "" }: any) {
+export interface FieldLabelProps {
+  children?: ReactNode;
+  required?: boolean;
+  className?: string;
+}
+
+export function FieldLabel({ children, required, className = "" }: FieldLabelProps) {
   return (
     <label className={`font-mono text-xs font-medium uppercase tracking-wide text-nb-muted ${className}`}>
       {children}
       {required && <span className="ml-1 text-nb-crit">*</span>}
     </label>
   );
+}
+
+/** What a Field's `onChange` receives: the native event for an input/textarea,
+ *  or SelectMenu's `{ target: { value } }` for `as="select"`. `e.target.value` is
+ *  a string on every branch; anything beyond that needs the native event. */
+export type FieldChangeEvent = ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent;
+
+/** The DOM attributes shared by the three controls, minus the ones Field owns. */
+type FieldControlProps = Omit<
+  ComponentPropsWithoutRef<"input"> & ComponentPropsWithoutRef<"textarea">,
+  "onChange" | "className" | "value" | "as"
+>;
+
+export interface FieldProps extends FieldControlProps {
+  label?: ReactNode;
+  required?: boolean;
+  error?: ReactNode;
+  hint?: ReactNode;
+  as?: "input" | "textarea" | "select";
+  /** `as="select"` only. */
+  options?: SelectOption[];
+  className?: string;
+  containerClassName?: string;
+  value?: string | number | null;
+  onChange?: (e: FieldChangeEvent) => void;
 }
 
 export function Field({
@@ -36,7 +69,7 @@ export function Field({
   className = "",
   containerClassName = "",
   ...control
-}: any) {
+}: FieldProps) {
   const errCls = error ? "!border-nb-crit" : "";
   // Keep controlled inputs controlled. For a value-controlled input/textarea, force
   // a defined value ("") whenever the caller's value is null/undefined — even a
@@ -48,24 +81,27 @@ export function Field({
   } else if (as !== "select" && control.value == null) {
     control.value = "";
   }
+  // A null value is only ever coerced for input/textarea above; SelectMenu takes
+  // it as "nothing selected". `value ?? undefined` keeps the DOM attribute typed.
+  const { value, onChange, ...rest } = control;
   return (
     <div className={containerClassName}>
       {label && <FieldLabel required={required}>{label}</FieldLabel>}
       {as === "textarea" ? (
-        <textarea {...control} className={`${areaClass} ${errCls} ${className}`} />
+        <textarea {...rest} value={value ?? undefined} onChange={onChange} className={`${areaClass} ${errCls} ${className}`} />
       ) : as === "select" ? (
         <SelectMenu
           options={options}
-          value={control.value}
-          onChange={control.onChange}
-          disabled={control.disabled}
-          placeholder={control.placeholder}
-          id={control.id}
-          name={control.name}
+          value={value}
+          onChange={onChange}
+          disabled={rest.disabled}
+          placeholder={rest.placeholder}
+          id={rest.id}
+          name={rest.name}
           className={`${errCls} ${className}`}
         />
       ) : (
-        <input {...control} className={`${fieldClass} ${errCls} ${className}`} />
+        <input {...rest} value={value ?? undefined} onChange={onChange} className={`${fieldClass} ${errCls} ${className}`} />
       )}
       {error ? (
         <p className="mt-1 text-xs text-nb-crit">{error}</p>

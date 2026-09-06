@@ -70,7 +70,7 @@ export default function FormatsTab() {
     onSuccess: (saved) => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["wf-alert-formats"] }); const id = fmtId(saved); if (id) setSelectedId(id); setMode("view"); },
     onError: onSaveError,
   });
-  const remove = useMutation<any>({
+  const remove = useMutation({
     mutationFn: (id: any) => wfApi.alertFormats.remove(id),
     onSuccess: () => { toast.success("Format removed"); qc.invalidateQueries({ queryKey: ["wf-alert-formats"] }); setSelectedId(null); },
     onError: (e) => toast.error(apiError(e)),

@@ -1,6 +1,8 @@
 "use client";
 
 // Floor-builder shared constants — ported from neubit_v2.
+import type { ThreatLevel, ZoneType } from "@/lib/types";
+
 export const EDITOR_MODES = {
   VIEW: "view",
   ZONE_DRAW: "zone_draw",
@@ -9,7 +11,7 @@ export const EDITOR_MODES = {
   // backend yet in neubit_v3). The Devices toolbar button is disabled — see toolbar.
   DEVICE_PLACE: "device_place",
   DEVICE_MOVE: "device_move",
-};
+} as const;
 
 export const TOOL_TYPES = {
   SELECT: "select",
@@ -19,12 +21,12 @@ export const TOOL_TYPES = {
   PAN: "pan",
   ZOOM_IN: "zoom_in",
   ZOOM_OUT: "zoom_out",
-};
+} as const;
 
 export const DEFAULT_ZONE_COLOR = "#2563eb";
 
 // Backend canonical zone types (mirrors the sites config page enum).
-export const ZONE_TYPES = [
+export const ZONE_TYPES: { value: ZoneType; label: string }[] = [
   { value: "entrance", label: "Entrance" },
   { value: "parking", label: "Parking" },
   { value: "office", label: "Office" },
@@ -38,7 +40,7 @@ export const ZONE_TYPES = [
   { value: "other", label: "Other" },
 ];
 
-export const THREAT_LEVELS = [
+export const THREAT_LEVELS: { value: ThreatLevel; label: string; dot: string }[] = [
   { value: "normal", label: "Normal", dot: "bg-green-500" },
   { value: "elevated", label: "Elevated", dot: "bg-amber-500" },
   { value: "high", label: "High", dot: "bg-orange-500" },

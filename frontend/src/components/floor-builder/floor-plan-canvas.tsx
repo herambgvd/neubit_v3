@@ -17,16 +17,30 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 
 import { fileUrl } from "@/lib/api";
 import { EDITOR_MODES, TOOL_TYPES } from "@/components/floor-builder/constants";
+import type { DeviceRendererArgs, RenderableDevice } from "@/components/floor-builder/cameraRenderer";
+import type {
+  DevicePayload,
+  EditorMode,
+  EditorPlacement,
+  EditorZone,
+  FloorPoint,
+  PlaceableDevice,
+  ToolType,
+} from "@/components/floor-builder/types";
 
 const HIT_RADIUS = 8; // px in screen space
 
 // ── Geometry helpers ──────────────────────────────────────────────────
+// Points are `[x, y]` in WORLD coords (image-space pixels) — the same `number[]`
+// shape a zone's polygon comes off the wire as.
 
-function pointInPolygon(pt, points) {
+function pointInPolygon(pt: number[], points: number[][]): boolean {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     const [xi, yi] = points[i];
@@ -39,18 +53,18 @@ function pointInPolygon(pt, points) {
   return inside;
 }
 
-function distance(a, b) {
+function distance(a: number[], b: number[]): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
 
-function normalizeAngleRad(a) {
+function normalizeAngleRad(a: number): number {
   let v = a;
   while (v > Math.PI) v -= Math.PI * 2;
   while (v < -Math.PI) v += Math.PI * 2;
   return v;
 }
 
-function isPointInDeviceFov(device, worldPt) {
+function isPointInDeviceFov(device: RenderableDevice, worldPt: number[]): boolean {
   const cx = device.x ?? 0;
   const cy = device.y ?? 0;
   const dx = worldPt[0] - cx;
@@ -68,16 +82,64 @@ function isPointInDeviceFov(device, worldPt) {
   return Math.abs(delta) <= half;
 }
 
-function pointInAnyZone(worldPt: number[], zones: { polygon?: number[][] }[] = []) {
+function pointInAnyZone(worldPt: number[], zones: EditorZone[] = []): boolean {
   if (!zones.length) return false;
   return zones.some(
-    (z) => z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon as number[][]),
+    (z) => z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon),
   );
 }
 
 // ── Component ─────────────────────────────────────────────────────────
 
-export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
+/** What the parent drives through the ref. */
+export interface FloorPlanCanvasHandle {
+  setScale: (scale: number) => void;
+  resetView: () => void;
+  cancelDraft: () => void;
+  finishDraft: () => void;
+}
+
+export interface FloorPlanCanvasProps {
+  floorplanUrl?: string | null;
+  zones?: EditorZone[];
+  devices?: EditorPlacement[];
+  editorMode?: EditorMode;
+  activeTool?: ToolType;
+  selectedZoneId?: string | null;
+  selectedDeviceId?: string | null;
+  onSelectZone?: (zone: EditorZone) => void;
+  onSelectDevice?: (device: EditorPlacement) => void;
+  /** The closed polygon, `[[x,y],...]`. */
+  onZoneCreate?: (points: number[][]) => void;
+  onDeviceCreate?: (point: FloorPoint) => void;
+  /** Palette drag-drop. */
+  onDeviceDrop?: (drop: { payload: DevicePayload; point: FloorPoint }) => void;
+  /** Dropped outside every zone. */
+  onInvalidDrop?: () => void;
+  /** The device currently dragged from the palette — drawn as a ghost at the cursor. */
+  dragPreview?: PlaceableDevice | null;
+  onDeviceMove?: (device: EditorPlacement, point: FloorPoint) => void;
+  onDeviceRotate?: (device: EditorPlacement, rotation: number) => void;
+  /** Single click without drag. */
+  onDeviceClick?: (device: EditorPlacement) => void;
+  /** Optional per-device renderer; the default draws a plain dot. */
+  deviceRenderer?: (args: DeviceRendererArgs) => void;
+}
+
+/** An in-progress pointer drag on a device. `move` tracks the world offset from
+ *  where the drag began; `rotate` only needs the starting angle. */
+type DragState =
+  | { device: EditorPlacement; mode: "move"; origWorld: number[]; startWorld: number[]; moved: boolean; changed: boolean }
+  | { device: EditorPlacement; mode: "rotate"; origRotation: number; moved: boolean; changed: boolean };
+
+/** Where a palette drag is over the canvas, and whether it is a legal drop. */
+interface DropHover {
+  world: number[];
+  zoneId: string | null;
+  valid: boolean;
+}
+
+export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvasProps>(function FloorPlanCanvas(
   {
     floorplanUrl,
     zones = [],
@@ -88,42 +150,42 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
     selectedDeviceId = null,
     onSelectZone,
     onSelectDevice,
-    onZoneCreate, // (points: [[x,y],...]) => void
-    onDeviceCreate, // (worldPt) => void
-    onDeviceDrop, // ({ payload, point }) => void  — palette drag-drop
-    onInvalidDrop, // () => void — dropped outside every zone
-    dragPreview = null, // { device_id, device_type, name } — device currently dragged from the palette
-    onDeviceMove, // (device, { x, y }) => void
-    onDeviceRotate, // (device, rotation) => void
-    onDeviceClick, // (device) => void  — single click without drag
-    deviceRenderer, // optional — ({ ctx, device, isSelected, scale, worldToScreen }) => void
-  }: any,
+    onZoneCreate,
+    onDeviceCreate,
+    onDeviceDrop,
+    onInvalidDrop,
+    dragPreview = null,
+    onDeviceMove,
+    onDeviceRotate,
+    onDeviceClick,
+    deviceRenderer,
+  },
   ref,) {
-  const containerRef = useRef<any>(null);
-  const canvasRef = useRef<any>(null);
-  const [imgEl, setImgEl] = useState<any>(null);
-  const [imgSize, setImgSize] = useState<any>({ w: 0, h: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
+  const [imgSize, setImgSize] = useState({ w: 0, h: 0 });
 
   // View transform: translate (px) + scale.
   const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState<any>({ x: 0, y: 0 });
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
-  const panStartRef = useRef<any>(null);
+  const panStartRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
   // Drawing state — points in WORLD coords (image-space pixels).
-  const [draftPoints, setDraftPoints] = useState<any[]>([]);
-  const [hoverWorld, setHoverWorld] = useState<any>(null);
+  const [draftPoints, setDraftPoints] = useState<number[][]>([]);
+  const [hoverWorld, setHoverWorld] = useState<number[] | null>(null);
 
   // Device drag state
-  const dragRef = useRef<any>(null); // { device, mode: "move"|"rotate", origWorld, origRotation, moved, changed }
+  const dragRef = useRef<DragState | null>(null);
   const [hoverRotationHandle, setHoverRotationHandle] = useState(false);
   const [hoverRotationFov, setHoverRotationFov] = useState(false);
-  const [hoverDeviceId, setHoverDeviceId] = useState<any>(null);
+  const [hoverDeviceId, setHoverDeviceId] = useState<string | null>(null);
 
   // Palette drag-drop feedback: where the cursor is, and whether that point is a
   // legal drop (inside a zone). Drives the ghost glyph + the hovered-zone highlight.
   // `null` whenever no palette drag is over the canvas.
-  const [dropHover, setDropHover] = useState<any>(null); // { world: [x,y], zoneId, valid }
+  const [dropHover, setDropHover] = useState<DropHover | null>(null);
 
   // ── Imperative API ────────────────────────────────────────────────
   useImperativeHandle(
@@ -191,11 +253,11 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   // ── Coordinate conversions ────────────────────────────────────────
 
   const screenToWorld = useCallback(
-    (sx, sy) => [(sx - offset.x) / scale, (sy - offset.y) / scale],
+    (sx: number, sy: number): [number, number] => [(sx - offset.x) / scale, (sy - offset.y) / scale],
     [offset, scale],
   );
   const worldToScreen = useCallback(
-    (wx, wy) => [wx * scale + offset.x, wy * scale + offset.y],
+    (wx: number, wy: number): [number, number] => [wx * scale + offset.x, wy * scale + offset.y],
     [offset, scale],
   );
 
@@ -215,6 +277,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
       canvas.style.height = `${ch}px`;
     }
     const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
 
@@ -259,7 +322,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
       const isSelected = zone.zone_id === selectedZoneId;
       // While dragging a device from the palette, the zone under the cursor lights up
       // (stronger fill + dashed outline) so the legal drop target is unmistakable.
-      const isDropTarget = dropHover?.zoneId && zone.zone_id === dropHover.zoneId;
+      const isDropTarget = !!dropHover?.zoneId && zone.zone_id === dropHover.zoneId;
       ctx.fillStyle = (zone.color || "#2563eb") + (isDropTarget ? "55" : "33");
       ctx.fill();
       ctx.lineWidth = isDropTarget ? 3 : isSelected ? 3 : 2;
@@ -410,7 +473,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   ]);
 
   useEffect(() => {
-    let frame;
+    let frame = 0;
     const loop = () => {
       draw();
       frame = requestAnimationFrame(loop);
@@ -422,7 +485,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   // ── Hit testing ───────────────────────────────────────────────────
 
   const hitDevice = useCallback(
-    (worldPt) => {
+    (worldPt: number[]): EditorPlacement | null => {
       for (const d of devices) {
         if (distance([d.x ?? 0, d.y ?? 0], worldPt) <= HIT_RADIUS / scale + 8) return d;
       }
@@ -432,9 +495,9 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   );
 
   const hitZone = useCallback(
-    (worldPt) => {
+    (worldPt: number[]): EditorZone | null => {
       for (const z of zones) {
-        if (z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon as number[][])) return z;
+        if (z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon)) return z;
       }
       return null;
     },
@@ -446,7 +509,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const onWheel = (e) => {
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const mx = e.clientX - rect.left;
@@ -467,8 +530,9 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   }, []);
 
   const onMouseDown = useCallback(
-    (e) => {
-      const rect = containerRef.current.getBoundingClientRect();
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const world = screenToWorld(sx, sy);
@@ -581,7 +645,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   );
 
   const onMouseMove = useCallback(
-    (e) => {
+    (e: ReactMouseEvent<HTMLDivElement>) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const sx = e.clientX - rect.left;
@@ -657,10 +721,12 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
     if (dragRef.current) {
       const drag = dragRef.current;
       if (drag.changed) {
+        // `changed` is only ever set after x/y (or rotation) were assigned above,
+        // so the fallbacks never fire; they satisfy the point's non-optional shape.
         if (drag.mode === "move") {
-          onDeviceMove?.(drag.device, { x: drag.device.x, y: drag.device.y });
+          onDeviceMove?.(drag.device, { x: drag.device.x ?? 0, y: drag.device.y ?? 0 });
         } else if (drag.mode === "rotate") {
-          onDeviceRotate?.(drag.device, drag.device.rotation);
+          onDeviceRotate?.(drag.device, drag.device.rotation ?? 0);
         }
       } else if (drag.mode === "move") {
         onDeviceClick?.(drag.device);
@@ -678,14 +744,15 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   // payload can't be inspected here — only its presence via `types`. The device
   // itself arrives out-of-band as the `dragPreview` prop.
   const onDragOver = useCallback(
-    (e) => {
+    (e: DragEvent<HTMLDivElement>) => {
       if (
         !e.dataTransfer.types.includes("application/x-neubit-device") &&
         !e.dataTransfer.types.includes("application/x-neubit-camera")
       )
         return;
       e.preventDefault();
-      const rect = containerRef.current.getBoundingClientRect();
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
       const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       const zone = hitZone(world);
       e.dataTransfer.dropEffect = zone ? "copy" : "none";
@@ -696,29 +763,32 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
 
   // Only clear when the pointer actually leaves the container — dragleave also fires
   // when crossing onto the child <canvas>, which would flicker the ghost off.
-  const onDragLeave = useCallback((e) => {
-    if (e.relatedTarget && containerRef.current?.contains(e.relatedTarget)) return;
+  const onDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    if (e.relatedTarget && containerRef.current?.contains(e.relatedTarget as Node)) return;
     setDropHover(null);
   }, []);
 
   const onDrop = useCallback(
-    (e) => {
+    (e: DragEvent<HTMLDivElement>) => {
       const data =
         e.dataTransfer.getData("application/x-neubit-device") ||
         e.dataTransfer.getData("application/x-neubit-camera");
       if (!data) return;
       e.preventDefault();
       setDropHover(null);
-      const rect = containerRef.current.getBoundingClientRect();
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
       const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       // Devices must land in a zone. Say so rather than swallowing the drop.
       if (!pointInAnyZone(world, zones)) {
         onInvalidDrop?.();
         return;
       }
-      let payload;
+      let payload: DevicePayload | null;
       try {
-        payload = JSON.parse(data);
+        // The only writer of these mime types is our own PaletteRow, which
+        // serialises a DevicePayload — so the parse is trusted to that shape.
+        payload = JSON.parse(data) as DevicePayload;
       } catch {
         payload = null;
       }
@@ -730,7 +800,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   );
 
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setDraftPoints([]);
       if (e.key === "Enter" && draftPoints.length >= 3) {
         onZoneCreate?.(draftPoints);

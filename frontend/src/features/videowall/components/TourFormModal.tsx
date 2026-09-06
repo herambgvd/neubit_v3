@@ -10,7 +10,7 @@ import { Button, Input, Modal } from "@/components/ui/kit";
 export default function TourFormModal({ open, tour, presets = [], onClose, onSubmit, busy }: any) {
   const editing = !!tour;
   const [name, setName] = useState("");
-  const [dwell, setDwell] = useState(10);
+  const [dwell, setDwell] = useState<number | string>(10);
   const [selected, setSelected] = useState<any[]>([]); // ordered preset ids
 
   useEffect(() => {

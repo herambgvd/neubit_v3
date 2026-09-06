@@ -7,7 +7,25 @@
 //     stats={[{key:"", label:"Total", count:42}, {key:"active", label:"Active", count:5}]}
 //     active={status} onSelect={setStatus} />
 
-export function StatsStrip({ stats = [], active, onSelect, className = "" }: any) {
+import type { ReactNode } from "react";
+
+export interface StatItem<K extends string = string> {
+  key: K;
+  label: ReactNode;
+  count?: number | null;
+  /** A text-colour class for the count (e.g. "text-nb-crit"). */
+  color?: string;
+}
+
+export interface StatsStripProps<K extends string = string> {
+  stats?: StatItem<K>[];
+  active?: K | null;
+  /** NoInfer: `K` is fixed by `stats`/`active`, not by a setState handler. */
+  onSelect?: (key: NoInfer<K>) => void;
+  className?: string;
+}
+
+export function StatsStrip<K extends string = string>({ stats = [], active, onSelect, className = "" }: StatsStripProps<K>) {
   return (
     <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 ${className}`}>
       {stats.map((s) => {

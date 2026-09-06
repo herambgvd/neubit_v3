@@ -5,8 +5,23 @@
 //
 //   <TabBar tabs={[{key,label,icon}]} active={tab} onChange={setTab} />
 import { Icon } from "@iconify/react";
+import type { ReactNode } from "react";
 
-export function TabBar({ tabs = [], active, onChange, className = "" }: any) {
+export interface TabItem<K extends string = string> {
+  key: K;
+  label: ReactNode;
+  icon?: string;
+}
+
+export interface TabBarProps<K extends string = string> {
+  tabs?: TabItem<K>[];
+  active?: K | null;
+  /** NoInfer: `K` is fixed by `tabs`/`active`, not by a setState handler. */
+  onChange?: (key: NoInfer<K>) => void;
+  className?: string;
+}
+
+export function TabBar<K extends string = string>({ tabs = [], active, onChange, className = "" }: TabBarProps<K>) {
   // The tabs deliberately carry NO negative bottom margin. Setting overflow-x makes the
   // browser compute overflow-y from `visible` up to `auto`, so a `-mb-px` here (to lap the
   // active underline over the strip's border) left each tab 1px taller than the content

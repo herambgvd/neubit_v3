@@ -21,7 +21,7 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [seconds, setSeconds] = useState(10);
+  const [seconds, setSeconds] = useState<number | string>(10);
   const [groupIds, setGroupIds] = useState<any[]>([]);
   const [isActive, setIsActive] = useState(true);
   const [errors, setErrors] = useState<any>({});

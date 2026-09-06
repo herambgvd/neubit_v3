@@ -21,7 +21,7 @@ import { useAuth } from "@/lib/auth";
 
 // Routes that render a console strip (must match AppLayout's minimalConsole set,
 // minus /home which has no strip).
-const STRIP_ROUTES = new Set<any>([
+const STRIP_ROUTES = new Set<string>([
   "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config",
   "/ingest", "/config/security", "/platform", "/config/video-wall",
   "/config/linkage", "/config/onvif-server", "/federation", "/storage",
@@ -33,13 +33,13 @@ const STRIP_ROUTES = new Set<any>([
   "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water", "/bi/insights", "/bi/ratings",
 ]);
 
-export function hasConsoleStrip(pathname) {
-  return STRIP_ROUTES.has(pathname);
+export function hasConsoleStrip(pathname: string | null | undefined): boolean {
+  return pathname != null && STRIP_ROUTES.has(pathname);
 }
 
 const modtab =
   "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb";
-const seg = (on) =>
+const seg = (on: boolean) =>
   `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${
     on ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"
   }`;

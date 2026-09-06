@@ -13,8 +13,9 @@
 import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { ConfirmDialog, Input } from "@/components/ui/kit";
+import { ConfirmDialog, Input, type ConfirmState } from "@/components/ui/kit";
 import { useDeviceInventory } from "@/components/floor-builder/useDeviceInventory";
+import type { EditorPlacement, PlaceableDevice } from "@/components/floor-builder/types";
 
 // Device-type → icon (heroicons via iconify).
 //
@@ -29,7 +30,14 @@ const IOT_CATEGORY_ICON: Record<string, string> = {
   fire: "heroicons-outline:fire",
 };
 
-function iconForType(type, device?: any) {
+/** The classification a sensor icon is chosen from — on the palette entry, or
+ *  persisted in a placement's metadata. */
+interface IotClassified {
+  iot_category?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+function iconForType(type: string | undefined, device?: IotClassified): string {
   if (type === "sensor") {
     const cat = String(
       device?.iot_category ?? device?.metadata?.iot_category ?? "",
@@ -65,7 +73,14 @@ const EMPTY_DRAG_IMAGE =
       })
     : null;
 
-function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: any) {
+interface PaletteRowProps {
+  device: PlaceableDevice;
+  isDragging: boolean;
+  onDragStart?: (device: PlaceableDevice) => void;
+  onDragEnd?: () => void;
+}
+
+function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: PaletteRowProps) {
   return (
     <div
       draggable
@@ -110,7 +125,15 @@ function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: any) {
   );
 }
 
-function PlacedRow({ placement, inventory, isSelected, onSelect, onDelete }: any) {
+interface PlacedRowProps {
+  placement: EditorPlacement;
+  inventory?: PlaceableDevice;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDelete?: (placement: EditorPlacement, name: string) => void;
+}
+
+function PlacedRow({ placement, inventory, isSelected, onSelect, onDelete }: PlacedRowProps) {
   const name =
     inventory?.name || placement.name || placement.label || placement.device_id;
   return (
@@ -142,6 +165,16 @@ function PlacedRow({ placement, inventory, isSelected, onSelect, onDelete }: any
   );
 }
 
+export interface DeviceManagementSidebarProps {
+  placements?: EditorPlacement[];
+  selectedDeviceId?: string | null;
+  onSelectDevice?: (placement: EditorPlacement) => void;
+  onPaletteDragStart?: (device: PlaceableDevice) => void;
+  onPaletteDragEnd?: () => void;
+  draggingDeviceId?: string | null;
+  onDeleteDevice?: (placement: EditorPlacement) => void;
+}
+
 export function DeviceManagementSidebar({
   placements = [],
   selectedDeviceId,
@@ -150,17 +183,17 @@ export function DeviceManagementSidebar({
   onPaletteDragEnd,
   draggingDeviceId = null,
   onDeleteDevice,
-}: any) {
+}: DeviceManagementSidebarProps) {
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState("available"); // available | placed
+  const [tab, setTab] = useState<"available" | "placed">("available");
   const [deviceTypeFilter, setDeviceTypeFilter] = useState("all");
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   // ── Inventory sources (vms + access-control + iot) ───────────────────
   const { inventory, inventoryById, loading } = useDeviceInventory();
 
   const placedIds = useMemo(() => {
-    const set = new Set<any>();
+    const set = new Set<string>();
     for (const p of placements) if (p.device_id) set.add(p.device_id);
     return set;
   }, [placements]);

@@ -1,21 +1,29 @@
 "use client";
 
 // Floorplan upload modal for the floor-plan editor. Ported from neubit_v2 → kit + tokens.
-import { useRef, useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { Button, Modal } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { sites } from "@/lib/api/sites";
+import type { FloorPublic } from "@/lib/types";
 
 const ACCEPT = "image/png,image/jpeg,image/svg+xml,image/webp";
 const ACCEPT_DISPLAY = "PNG · JPG · SVG · WEBP";
 const MAX_BYTES = 8 * 1024 * 1024;
 
-export function FloorUploadModal({ open, onClose, floor, onUploaded }: any) {
-  const inputRef = useRef<any>(null);
-  const [file, setFile] = useState<any>(null);
+export interface FloorUploadModalProps {
+  open: boolean;
+  onClose?: () => void;
+  floor: FloorPublic | null | undefined;
+  onUploaded?: (floor: FloorPublic) => void;
+}
+
+export function FloorUploadModal({ open, onClose, floor, onUploaded }: FloorUploadModalProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -31,7 +39,7 @@ export function FloorUploadModal({ open, onClose, floor, onUploaded }: any) {
     onClose?.();
   };
 
-  const onPick = (f) => {
+  const onPick = (f: File | undefined) => {
     if (!f) return;
     if (f.size > MAX_BYTES) {
       toast.error(`File exceeds ${Math.round(MAX_BYTES / (1024 * 1024))} MB`);
@@ -40,7 +48,7 @@ export function FloorUploadModal({ open, onClose, floor, onUploaded }: any) {
     setFile(f);
   };
 
-  const onDrop = (e) => {
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragOver(false);
     onPick(e.dataTransfer.files?.[0]);

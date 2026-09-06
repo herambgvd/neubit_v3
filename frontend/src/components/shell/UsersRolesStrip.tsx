@@ -5,8 +5,9 @@
 // the global header bar; the AUDIT link sits beside it (see ConsoleStrip).
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
+import type { ReactNode } from "react";
 
-function Seg({ active, onClick, icon, children }: any) {
+function Seg({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: string; children?: ReactNode }) {
   return (
     <button
       type="button"
@@ -23,7 +24,7 @@ function Seg({ active, onClick, icon, children }: any) {
   );
 }
 
-export default function UsersRolesStrip({ active }: any) {
+export default function UsersRolesStrip({ active }: { active: "users" | "roles" }) {
   const router = useRouter();
 
   return (

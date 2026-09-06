@@ -13,18 +13,30 @@
 // Wraps the shared `api` axios instance (baseURL already "/api/v1") and unwraps
 // `.data` — same convention as sites.js / tags.js. The gateway routes
 // "/api/v1/access/*" → the access service and "/api/v1/vms/*" → the vision service.
+import type { AxiosResponse } from "axios";
+
 import { api } from "@/lib/api";
+import type {
+  AccessDoorPublic,
+  AccessInstancePublic,
+  BiDeviceListResponse,
+  CameraPublic,
+  FederatedCameraList,
+  NvrPublic,
+  Paged,
+  QueryParams,
+} from "@/lib/types";
 
 const ACCESS = "/access";
 const VMS = "/vms";
 const BI = "/bi";
 
-const unwrap = (p: Promise<any>): Promise<any> => p.then((r) => r.data);
+const unwrap = <T>(p: Promise<AxiosResponse<T>>): Promise<T> => p.then((r) => r.data);
 
-function qs(params: any = {}) {
-  const clean: any = {};
-  for (const [k, v] of Object.entries<any>(params)) {
-    if (v !== undefined && v !== null && v !== "") clean[k] = v;
+function qs(params: QueryParams = {}): string {
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") clean[k] = String(v);
   }
   const s = new URLSearchParams(clean).toString();
   return s ? `?${s}` : "";
@@ -34,12 +46,19 @@ function qs(params: any = {}) {
 export const accessInventory = {
   // Controllers/panels — GET /access/instances → { items, total, skip, limit }.
   // Note: an instance's identifier field is `id` (not `instance_id`).
-  instances: (params = {}) =>
-    unwrap(api.get(`${ACCESS}/instances${qs({ limit: 500, ...params })}`)),
+  instances: (params: QueryParams = {}) =>
+    unwrap(api.get<Paged<AccessInstancePublic>>(`${ACCESS}/instances${qs({ limit: 500, ...params })}`)),
   // Doors — GET /access/doors?instance_id= → { items, total, skip, limit }.
   // A door's identifier field is `id` (not `door_id`).
-  doors: (params: any = {}) => unwrap(api.get(`${ACCESS}/doors${qs({ limit: 500, ...params })}`)),
+  doors: (params: QueryParams = {}) =>
+    unwrap(api.get<Paged<AccessDoorPublic>>(`${ACCESS}/doors${qs({ limit: 500, ...params })}`)),
 };
+
+/** One placeable camera: a local `CameraPublic`, or a federated recorder channel
+ *  reduced to the three fields the palette needs (its composite id is the key). */
+export type InventoryCamera =
+  | CameraPublic
+  | { id: string; name: string; status?: string; network_info?: undefined; onvif?: undefined };
 
 // ── VMS (cameras + NVR) source ─────────────────────────────────────────────
 // Feeds the floor-builder palette + the Events Map with camera / NVR devices.
@@ -51,13 +70,15 @@ export const vmsInventory = {
   // cameras (GET /vms/federation/cameras), so an NVR's channels are placeable on a
   // floor plan too. Federated cameras carry a composite id (`fed:<node>:<cam>`) —
   // the same id the wall/DevicePlacement key on — and their node name as a suffix.
-  cameras: async (params = {}) => {
+  cameras: async (params: QueryParams = {}): Promise<{ items: InventoryCamera[]; total: number }> => {
     const [local, fed] = await Promise.all([
-      unwrap(api.get(`${VMS}/cameras${qs({ limit: 500, ...params })}`)),
-      unwrap(api.get(`${VMS}/federation/cameras`)).catch(() => ({ items: [] })),
+      unwrap(api.get<Paged<CameraPublic>>(`${VMS}/cameras${qs({ limit: 500, ...params })}`)),
+      unwrap(api.get<FederatedCameraList>(`${VMS}/federation/cameras`)).catch(
+        (): Pick<FederatedCameraList, "items"> => ({ items: [] }),
+      ),
     ]);
-    const localItems = local?.items ?? [];
-    const fedItems = (fed?.items ?? []).map((c) => ({
+    const localItems: InventoryCamera[] = local?.items ?? [];
+    const fedItems: InventoryCamera[] = (fed?.items ?? []).map((c) => ({
       id: `fed:${c.node_id}:${c.id}`,
       name: c.node_name ? `${c.name} · ${c.node_name}` : c.name,
       status: c.status,
@@ -65,7 +86,8 @@ export const vmsInventory = {
     return { items: [...localItems, ...fedItems], total: localItems.length + fedItems.length };
   },
   // NVRs — GET /vms/nvrs → { items, total, skip, limit }.
-  nvrs: (params = {}) => unwrap(api.get(`${VMS}/nvrs${qs({ limit: 500, ...params })}`)),
+  nvrs: (params: QueryParams = {}) =>
+    unwrap(api.get<Paged<NvrPublic>>(`${VMS}/nvrs${qs({ limit: 500, ...params })}`)),
 };
 
 // ── IoT source ─────────────────────────────────────────────────────────────
@@ -84,7 +106,8 @@ export const vmsInventory = {
 // `sensor`, and the equipment kind + category ride along in `metadata` so the
 // canvas can tell a chiller from a meter instead of drawing 29 identical dots.
 export const iotInventory = {
-  devices: (params = {}) => unwrap(api.get(`${BI}/devices${qs({ limit: 500, ...params })}`)),
+  devices: (params: QueryParams = {}) =>
+    unwrap(api.get<BiDeviceListResponse>(`${BI}/devices${qs({ limit: 500, ...params })}`)),
 };
 
 export default accessInventory;

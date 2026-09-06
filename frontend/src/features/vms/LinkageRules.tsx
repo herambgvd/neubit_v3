@@ -199,7 +199,6 @@ export default function LinkageRulesPage() {
                 title: "Delete linkage rule",
                 message: `Delete "${confirm.rule.name}"? This can't be undone.`,
                 confirmLabel: "Delete",
-                tone: "danger",
                 onConfirm: () => delMut.mutate(confirm.rule.id),
               }
             : null

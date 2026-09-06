@@ -55,7 +55,7 @@ export default function CardsTab({ instanceId }: any) {
     [chQ.data],
   );
 
-  const remove = useMutation<any>({
+  const remove = useMutation({
     mutationFn: (id: any) => gates.cards.remove(instanceId, id),
     onSuccess: () => {
       toast.success("Card removed");

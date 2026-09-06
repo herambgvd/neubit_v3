@@ -4,15 +4,31 @@
 import { Icon } from "@iconify/react";
 
 import { EDITOR_MODES } from "@/components/floor-builder/constants";
+import type { EditorMode } from "@/components/floor-builder/types";
 
 // `disabled` marks an editor mode that is not built yet — the button renders
 // greyed with a "Soon" pill. None are disabled today; the flag stays so a mode
 // can be parked without changing this component.
-const MODES: { mode: string; label: string; disabled?: boolean }[] = [
+const MODES: { mode: EditorMode; label: string; disabled?: boolean }[] = [
   { mode: EDITOR_MODES.VIEW, label: "View" },
   { mode: EDITOR_MODES.ZONE_DRAW, label: "Zones" },
   { mode: EDITOR_MODES.DEVICE_PLACE, label: "Devices" },
 ];
+
+export interface FloorPlanToolbarProps {
+  editorMode: EditorMode;
+  onModeChange?: (mode: EditorMode) => void;
+  zoneCount?: number;
+  deviceCount?: number;
+  unsavedChanges?: boolean;
+  /** ISO timestamp of the last successful save. */
+  lastSavedAt?: string | null;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onSave?: () => void;
+}
 
 export function FloorPlanToolbar({
   editorMode,
@@ -26,7 +42,7 @@ export function FloorPlanToolbar({
   onUndo,
   onRedo,
   onSave,
-}: any) {
+}: FloorPlanToolbarProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-card-border bg-card px-4 py-2.5">
       <div className="flex items-center gap-3">

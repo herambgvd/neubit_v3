@@ -2,28 +2,37 @@
 
 import { Icon } from "@iconify/react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { api } from "@/lib/api";
-import { menuItems, configConsoles, deviceTabs, streamTabs } from "@/config/menu";
+import { menuItems, configConsoles, deviceTabs, streamTabs, type NavItem } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
+import type { SearchResponse, SearchResult } from "@/lib/types";
 
 // Human labels for the entity groups the /search endpoint returns (keyed by its
 // `type`). Anything unmapped falls back to a capitalised, pluralised type.
-const ENTITY_GROUPS = {
+const ENTITY_GROUPS: Record<string, string> = {
   user: "Users",
   role: "Roles",
 };
 
-function groupLabel(type) {
+function groupLabel(type: string): string {
   return ENTITY_GROUPS[type] || `${type.charAt(0).toUpperCase()}${type.slice(1)}s`;
 }
 
 // Flatten the nav into a list of {title, link, icon, perm} entries the palette can offer
 // as "Pages". Disabled placeholders (unbuilt features) and section entries (no own link)
 // are dropped; the Config + Devices sub-tabs are hoisted so their pages are searchable too.
-function navPages() {
-  const out: any[] = [];
+function navPages(): NavItem[] {
+  const out: NavItem[] = [];
   for (const item of menuItems) {
     if (item.disabled || item.section || !item.link) continue;
     out.push(item);
@@ -36,20 +45,36 @@ function navPages() {
   return out;
 }
 
+/** One runnable row: a page or a search hit, flattened for keyboard navigation. */
+interface PaletteItem {
+  id: string;
+  kind: string;
+  label: string;
+  sublabel?: string | null;
+  icon?: string;
+  href: string;
+}
+
+interface PaletteGroup {
+  key: string;
+  label: string;
+  items: PaletteItem[];
+}
+
 export default function CommandPalette() {
   const router = useRouter();
   const { can } = useAuth();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
-  const inputRef = useRef<any>(null);
-  const listRef = useRef<any>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   // Global ⌘K / Ctrl-K toggle.
   useEffect(() => {
-    function onKey(e) {
+    function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((o) => !o);
@@ -96,7 +121,7 @@ export default function CommandPalette() {
     setLoading(true);
     const t = setTimeout(async () => {
       try {
-        const { data } = await api.get("/search", { params: { q: term } });
+        const { data } = await api.get<SearchResponse>("/search", { params: { q: term } });
         setResults(data.results || []);
       } catch {
         setResults([]);
@@ -116,33 +141,34 @@ export default function CommandPalette() {
   // Build the ordered, grouped list of runnable items: Pages first, then one group
   // per entity type the search returned (Users, Roles, …).
   const groups = useMemo(() => {
-    const gs: any[] = [];
+    const gs: PaletteGroup[] = [];
 
     if (pageMatches.length) {
       gs.push({
         key: "pages",
         label: "Pages",
-        items: pageMatches.map((p) => ({
+        // navPages() drops entries without a link, so `p.link` is set here.
+        items: pageMatches.map((p): PaletteItem => ({
           id: `page:${p.link}`,
           kind: "page",
           label: p.title,
           icon: p.icon,
-          href: p.link,
+          href: p.link ?? "",
         })),
       });
     }
 
     // Preserve the server's ordering while bucketing entities by type.
-    const byType = new Map<any, any>();
+    const byType = new Map<string, SearchResult[]>();
     for (const r of results) {
       if (!byType.has(r.type)) byType.set(r.type, []);
-      byType.get(r.type).push(r);
+      byType.get(r.type)?.push(r);
     }
     for (const [type, rows] of byType) {
       gs.push({
         key: type,
         label: groupLabel(type),
-        items: rows.map((r, i) => ({
+        items: rows.map((r, i): PaletteItem => ({
           id: `${type}:${r.id ?? i}`,
           kind: type,
           label: r.label,
@@ -171,7 +197,7 @@ export default function CommandPalette() {
   }, [active]);
 
   const go = useCallback(
-    (item) => {
+    (item: PaletteItem | undefined) => {
       if (!item) return;
       setOpen(false);
       router.push(item.href);
@@ -179,7 +205,7 @@ export default function CommandPalette() {
     [router]
   );
 
-  function onInputKey(e) {
+  function onInputKey(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((a) => (flat.length ? (a + 1) % flat.length : 0));
@@ -291,7 +317,7 @@ export default function CommandPalette() {
   );
 }
 
-function Kbd({ children }: any) {
+function Kbd({ children }: { children?: ReactNode }) {
   return (
     <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm border border-card-border bg-hover px-1 font-mono text-[10px] text-muted">
       {children}

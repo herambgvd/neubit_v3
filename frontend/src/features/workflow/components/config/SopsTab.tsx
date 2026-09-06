@@ -51,7 +51,7 @@ export default function SopsTab() {
   const selected = useMemo(() => sops.find((s) => sopId(s) === effectiveId) || null, [sops, effectiveId]);
 
 
-  const remove = useMutation<any>({
+  const remove = useMutation({
     mutationFn: (id: any) => wfApi.sops.remove(id),
     onSuccess: () => {
       toast.success("SOP removed");

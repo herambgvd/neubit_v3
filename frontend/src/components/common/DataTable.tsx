@@ -21,8 +21,14 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
+  type ColumnDef,
+  type OnChangeFn,
+  type Row,
+  type RowSelectionState,
+  type SortDirection,
+  type SortingState,
 } from "@tanstack/react-table";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 // The `meta` fields this table reads off a column def. TanStack types `meta` as an
@@ -38,8 +44,7 @@ declare module "@tanstack/react-table" {
   }
 }
 
-function SortCaret({ dir }: any) {
-  // dir: "asc" | "desc" | false
+function SortCaret({ dir }: { dir: SortDirection | false }) {
   if (!dir) return <Icon icon="heroicons-outline:chevron-up-down" className="text-xs opacity-40" />;
   return (
     <Icon
@@ -49,9 +54,26 @@ function SortCaret({ dir }: any) {
   );
 }
 
-const alignCls = (a) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
+const alignCls = (a?: "left" | "right" | "center") =>
+  a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left";
 
-export default function DataTable({
+export interface DataTableProps<TData> {
+  // `ColumnDef<TData, any>` is TanStack's own recommended element type: each
+  // column's TValue differs, and a `ColumnDef<T, string>` is not assignable to
+  // `ColumnDef<T, unknown>` because of the accessor's variance.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  columns: ColumnDef<TData, any>[];
+  data: TData[];
+  getRowId?: (row: TData, index: number, parent?: Row<TData>) => string;
+  onRowClick?: (row: TData) => void;
+  emptyState?: ReactNode;
+  initialSorting?: SortingState;
+  enableRowSelection?: boolean;
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>;
+}
+
+export default function DataTable<TData>({
   columns,
   data,
   getRowId,
@@ -61,10 +83,10 @@ export default function DataTable({
   enableRowSelection = false,
   rowSelection,
   onRowSelectionChange,
-}: any) {
+}: DataTableProps<TData>) {
   // Uncontrolled sorting lives here; selection is controlled by the caller when
   // enableRowSelection is set.
-  const [sorting, setSorting] = useState(initialSorting);
+  const [sorting, setSorting] = useState<SortingState>(initialSorting);
 
   const table = useReactTable({
     data,

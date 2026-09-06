@@ -25,6 +25,7 @@ import { FInput } from "./FormControls";
 import { ActionButton, RowAction } from "@/components/console";
 import { apiError } from "@/lib/api";
 import sitesApi from "@/lib/api/sites";
+import type { TariffSlabIn } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 
 /** "22", "22:00", "22:30", "24:00" → minutes since midnight; null = unparseable. */
@@ -143,7 +144,9 @@ export default function TariffSlabsEditor({ site }: any) {
           rate_per_kwh: Number(r.rate),
           currency: r.currency.trim().toUpperCase(),
           effective_from: r.effective_from,
-        })),
+          // Save is disabled while `firstError` is set, and rowError() rejects
+          // any row whose times do not parse — so no null reaches the wire.
+        })) as TariffSlabIn[],
       ),
     onSuccess: () => {
       setErr(null);

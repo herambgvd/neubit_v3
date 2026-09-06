@@ -3,13 +3,14 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
+import type { BrandingOut } from "@/lib/types";
 
 // Static footer pinned to the bottom of the app shell (only the main content
 // between the header and this footer scrolls). Uses the white-label app name.
 export default function Footer() {
-  const { data } = useQuery<any>({
+  const { data } = useQuery<BrandingOut>({
     queryKey: ["branding"],
-    queryFn: () => api.get("/branding").then((r) => r.data),
+    queryFn: () => api.get<BrandingOut>("/branding").then((r) => r.data),
     staleTime: 60_000,
   });
   const name = data?.app_name || "Neubit";
