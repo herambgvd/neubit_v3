@@ -112,6 +112,12 @@ class Webhook(Base):
     )
 
     # "none" | "api_key" | "basic" | "bearer" | "hmac".
+    # HMAC replay window, in seconds. When set, the sender must send X-Timestamp
+    # and the signature covers "<timestamp>.<body>" — so a captured request stops
+    # working once the window passes. NULL keeps the body-only signature that
+    # GitHub-style senders produce, which cannot be replay-protected this way.
+    hmac_max_age_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     auth_type: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'none'")
     )

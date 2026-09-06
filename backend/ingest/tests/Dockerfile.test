@@ -1,0 +1,7 @@
+# The shipped ingest image plus a test runner. One networked build, then the suite
+# runs offline. Local only — never pushed, never in the appliance.
+ARG INGEST_IMAGE=neubit-v3-ingest:latest
+FROM ${INGEST_IMAGE}
+
+COPY requirements-test.txt /tmp/requirements-test.txt
+RUN pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements-test.txt

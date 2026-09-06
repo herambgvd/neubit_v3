@@ -18,6 +18,9 @@ request. Any mismatch returns a generic failure that the route turns into a bare
 
 from __future__ import annotations
 
+import time
+from collections import OrderedDict
+
 import hashlib
 import hmac
 import os
@@ -174,11 +177,49 @@ def _verify_bearer(request: Request, secret_hash: str | None) -> AuthResult:
     return _OK if verify_secret(sent, secret_hash) else _fail("bad token")
 
 
+#: Signatures seen recently, so an identical request is not accepted twice.
+#: Per process, which is what this service runs; a second worker would each keep
+#: their own. The timestamp window below is the protection that does not depend on
+#: shared state, and it is the one to configure.
+_SEEN: "OrderedDict[str, float]" = OrderedDict()
+_SEEN_MAX = 10_000
+
+
+def _already_seen(signature: str, window: float) -> bool:
+    """True if this exact signature arrived within `window` seconds."""
+    now = time.time()
+    while _SEEN and next(iter(_SEEN.values())) < now - window:
+        _SEEN.popitem(last=False)
+    if signature in _SEEN:
+        return True
+    _SEEN[signature] = now
+    while len(_SEEN) > _SEEN_MAX:
+        _SEEN.popitem(last=False)
+    return False
+
+
+#: Dedup window when the webhook sets no explicit one. Long enough to catch a
+#: retry storm, short enough that the cache stays small.
+_DEFAULT_REPLAY_WINDOW_SEC = 300
+
+
 def _verify_hmac(
-    request: Request, secret_enc: str | None, raw_body: bytes
+    request: Request,
+    secret_enc: str | None,
+    raw_body: bytes,
+    max_age_seconds: int | None = None,
 ) -> AuthResult:
-    """GitHub-style HMAC-SHA256 of the raw body vs the ``X-Signature`` header.
-    Needs the original secret, reversibly encrypted at rest, not a hash."""
+    """HMAC-SHA256 over the body, or over "<timestamp>.<body>" when a window is set.
+
+    The signature used to cover the body alone, so a captured request replayed
+    forever and each replay produced a fresh accepted event.
+
+    With `max_age_seconds` the sender must send X-Timestamp and sign it with the
+    body, so a capture stops working once the window passes. Without it — the
+    GitHub-style shape, which sends no timestamp — the best available protection is
+    refusing a signature we have already seen, which is also a correct dedup for a
+    genuine retry.
+    """
     secret = decrypt_secret(secret_enc)
     if not secret:
         return _fail("webhook has no HMAC secret configured")
@@ -195,8 +236,31 @@ def _verify_hmac(
         if algo.lower() != "sha256":
             return _fail(f"unsupported sig algo: {algo}")
         sent = hexsig
-    expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
-    return _OK if hmac.compare_digest(sent.lower(), expected.lower()) else _fail("bad signature")
+    sent = sent.lower()
+
+    signed = raw_body
+    if max_age_seconds:
+        stamp = (request.headers.get("x-timestamp") or "").strip()
+        if not stamp:
+            return _fail("missing X-Timestamp header")
+        try:
+            sent_at = float(stamp)
+        except ValueError:
+            return _fail("bad X-Timestamp")
+        drift = abs(time.time() - sent_at)
+        if drift > max_age_seconds:
+            return _fail("stale request")
+        signed = stamp.encode("utf-8") + b"." + raw_body
+
+    expected = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sent, expected.lower()):
+        return _fail("bad signature")
+
+    # Only after the signature is valid: an attacker must not be able to fill the
+    # cache with guesses, and a wrong signature is already refused.
+    if _already_seen(sent, float(max_age_seconds or _DEFAULT_REPLAY_WINDOW_SEC)):
+        return _fail("replayed request")
+    return _OK
 
 
 def verify_inbound(
@@ -206,6 +270,7 @@ def verify_inbound(
     auth_username: str | None,
     auth_secret_hash: str | None,
     raw_body: bytes = b"",
+    hmac_max_age_seconds: int | None = None,
 ) -> AuthResult:
     """Dispatch to the right verifier based on the webhook's ``auth_type``.
     ``auth_secret_hash`` holds a salted hash for api_key/basic/bearer, and a
@@ -219,5 +284,5 @@ def verify_inbound(
     if auth_type == "bearer":
         return _verify_bearer(request, auth_secret_hash)
     if auth_type == "hmac":
-        return _verify_hmac(request, auth_secret_hash, raw_body)
+        return _verify_hmac(request, auth_secret_hash, raw_body, hmac_max_age_seconds)
     return _fail(f"unknown auth_type: {auth_type}")

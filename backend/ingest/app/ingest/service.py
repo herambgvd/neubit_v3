@@ -16,6 +16,8 @@ Two responsibilities, split by trust boundary:
 
 from __future__ import annotations
 
+import logging
+
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -30,6 +32,12 @@ from kernel.errors import ConflictError, NotFoundError, UnauthorizedError, Valid
 from kernel.events import EventBus, subject
 
 from .matcher import evaluate_rule, match_first
+from .metrics import (
+    auth_failures,
+    publish_failures,
+    replays_rejected,
+    unknown_slug_attempts,
+)
 from .models import (
     MAX_RAW_PAYLOAD_CHARS,
     IngestCategory,
@@ -57,6 +65,8 @@ from .schemas import (
 )
 from .security import store_secret, verify_inbound
 from .transform import apply_transform, evaluate_lookup_expr, validate_payload
+
+log = logging.getLogger("ingest")
 
 
 def _utcnow() -> datetime:
@@ -146,7 +156,7 @@ class CategoryService:
 
     async def _get_row(self, category_id: str) -> IngestCategory:
         row = await self.db.get(IngestCategory, category_id)
-        assert_owned(row, self.scope, message="Category not found")
+        assert_owned(row, self.scope, message="Category not found", allow_shared=False)
         return row
 
     async def _webhook_count(self, category_id: str) -> int:
@@ -245,7 +255,7 @@ class WebhookService:
 
     async def _get_row(self, webhook_id: str) -> Webhook:
         row = await self.db.get(Webhook, webhook_id)
-        assert_owned(row, self.scope, message="Webhook not found")
+        assert_owned(row, self.scope, message="Webhook not found", allow_shared=False)
         return row
 
     async def _assert_category(self, category_id: str) -> IngestCategory:
@@ -495,12 +505,12 @@ class RuleService:
 
     async def _get_webhook(self, webhook_id: str) -> Webhook:
         row = await self.db.get(Webhook, webhook_id)
-        assert_owned(row, self.scope, message="Webhook not found")
+        assert_owned(row, self.scope, message="Webhook not found", allow_shared=False)
         return row
 
     async def _get_rule(self, rule_id: str) -> IngestEventRule:
         rule = await self.db.get(IngestEventRule, rule_id)
-        assert_owned(rule, self.scope, message="Rule not found")
+        assert_owned(rule, self.scope, message="Rule not found", allow_shared=False)
         return rule
 
     async def list_for_webhook(self, webhook_id: str) -> list[EventRulePublic]:
@@ -600,7 +610,7 @@ class EventLogService:
 
     async def _get_row(self, log_id: str) -> IngestEventLog:
         row = await self.db.get(IngestEventLog, log_id)
-        assert_owned(row, self.scope, message="Event log not found")
+        assert_owned(row, self.scope, message="Event log not found", allow_shared=False)
         return row
 
     async def list_(
@@ -713,19 +723,33 @@ class ReceiverService:
         webhook = await self.db.scalar(select(Webhook).where(Webhook.slug == slug))
         # Unknown OR disabled → 401, indistinguishable: a caller can't use the
         # response to tell a real-but-disabled webhook from one that never existed.
-        if webhook is None or not webhook.is_active:
+        if webhook is None:
+            # NO DATABASE ROW. This endpoint is unauthenticated and internet-facing,
+            # and writing here meant any anonymous caller could fill the table with
+            # 64 KB of their own text per request, tagged tenant_id NULL, with no
+            # retention anywhere in the service. The attempt is still visible — it
+            # is logged and counted — but an attacker no longer chooses how much of
+            # our disk it costs.
+            unknown_slug_attempts.inc()
+            log.warning("ingest: unknown slug %r from %s", slug[:64], source_ip)
+            raise UnauthorizedError("invalid webhook")
+
+        if not webhook.is_active:
+            # A real webhook that an operator disabled. This one IS worth a row:
+            # it is bounded by the number of webhooks that exist, and "why did my
+            # integration stop" is the question the log is for.
             await self._record(
                 IngestEventLog(
-                    tenant_id=webhook.tenant_id if webhook else None,
-                    webhook_id=webhook.id if webhook else None,
-                    category_id=webhook.category_id if webhook else None,
+                    tenant_id=webhook.tenant_id,
+                    webhook_id=webhook.id,
+                    category_id=webhook.category_id,
                     source_ip=source_ip,
                     status=EventStatus.REJECTED_AUTH.value,
                     auth_outcome="failed",
                     schema_outcome="skipped",
                     transform_outcome="skipped",
                     published=False,
-                    error="unknown or disabled webhook slug",
+                    error="webhook is disabled",
                     raw_payload=raw_stored,
                     raw_truncated=raw_truncated,
                 )
@@ -763,8 +787,13 @@ class ReceiverService:
             auth_username=webhook.auth_username,
             auth_secret_hash=webhook.auth_secret_hash,
             raw_body=raw_body,
+            hmac_max_age_seconds=webhook.hmac_max_age_seconds,
         )
         if not auth.ok:
+            if auth.reason in ("replayed request", "stale request"):
+                replays_rejected.inc()
+            else:
+                auth_failures.inc()
             await self._record(
                 IngestEventLog(
                     tenant_id=webhook.tenant_id,

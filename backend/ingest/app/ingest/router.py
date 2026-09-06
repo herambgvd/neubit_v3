@@ -13,6 +13,8 @@ Two router objects, split by trust boundary:
 
 from __future__ import annotations
 
+import os
+
 from datetime import datetime
 from typing import Annotated, Optional
 
@@ -20,6 +22,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
+from kernel.errors import ValidationError
 from kernel.events import EventBus
 
 from app.db import get_db
@@ -49,6 +52,7 @@ from .schemas import (
     WebhookTestResponse,
     WebhookUpdate,
 )
+from .metrics import bodies_too_large
 from .service import (
     CategoryService,
     EventLogService,
@@ -418,6 +422,10 @@ async def replay_event_log(
 
 # ── Public receiver ────────────────────────────────────────────────────
 
+#: Cap on an inbound webhook body. Generous for a real event, finite so an
+#: anonymous caller cannot decide how much memory this process uses.
+MAX_INBOUND_BODY_BYTES = int(os.getenv("VE_INGEST_MAX_BODY_BYTES", 1 * 1024 * 1024))
+
 public_router = APIRouter(prefix="/ingest", tags=["Ingest (public)"])
 
 
@@ -428,6 +436,27 @@ def build_public_router(bus: EventBus) -> APIRouter:
     ``request_method``. GET reads the payload from query params (repeated keys
     become arrays), POST from the JSON body.
     """
+
+    async def _read_capped(request: Request) -> bytes:
+        """Read the body in chunks, refusing it once it passes the cap.
+
+        This endpoint is unauthenticated and internet-facing, and it used to read
+        the whole body before anything else ran. MAX_RAW_PAYLOAD_CHARS caps what is
+        STORED, not what is read.
+        """
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > MAX_INBOUND_BODY_BYTES:
+            bodies_too_large.inc()
+            raise ValidationError("request body too large", code="BODY_TOO_LARGE", status_code=413)
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > MAX_INBOUND_BODY_BYTES:
+                bodies_too_large.inc()
+                raise ValidationError("request body too large", code="BODY_TOO_LARGE", status_code=413)
+            chunks.append(chunk)
+        return b"".join(chunks)
 
     @public_router.api_route(
         "/hooks/{slug}",
@@ -440,7 +469,7 @@ def build_public_router(bus: EventBus) -> APIRouter:
         request: Request,
         db: Annotated[AsyncSession, Depends(get_db)],
     ) -> IngestResponse:
-        raw_body = await request.body()
+        raw_body = await _read_capped(request)
         if request.method.upper() == "GET":
             # Query params → payload. Repeated keys become arrays.
             payload: dict = {}

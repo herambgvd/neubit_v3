@@ -408,7 +408,11 @@ class EventRuleCreate(BaseModel):
     # The event type this rule EMITS when it wins.
     event_type: str = Field(default="ingest.event", max_length=128)
     # Optional per-rule override of the category's routing domain.
-    target_domain: Optional[str] = Field(default=None, max_length=64)
+    # Same pattern as CategoryCreate. Without it a rule's value — which overrides
+    # the category's — went straight into the NATS subject, so a holder of
+    # ingest.manage could publish into another module's namespace by setting it to
+    # "access" or "vms.camera".
+    target_domain: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     enabled: bool = True
 
 
@@ -420,7 +424,11 @@ class EventRuleUpdate(BaseModel):
     match_conditions: Optional[list[MatchCondition]] = None
     field_map: Optional[dict[str, str]] = None
     event_type: Optional[str] = Field(default=None, max_length=128)
-    target_domain: Optional[str] = Field(default=None, max_length=64)
+    # Same pattern as CategoryCreate. Without it a rule's value — which overrides
+    # the category's — went straight into the NATS subject, so a holder of
+    # ingest.manage could publish into another module's namespace by setting it to
+    # "access" or "vms.camera".
+    target_domain: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     enabled: Optional[bool] = None
 
 

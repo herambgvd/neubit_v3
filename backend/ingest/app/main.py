@@ -46,9 +46,10 @@ Run:   uvicorn app.main:app --host 0.0.0.0 --port 8000
 from __future__ import annotations
 
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from kernel.auth import (
@@ -91,7 +92,15 @@ async def lifespan(app: FastAPI):
     async with database.get_sessionmaker()() as db:
         await bootstrap_ingest_seeds(db)
 
+    # Prune old delivery logs. The table grew one row per delivery with nothing
+    # ever removing them, and the rows hold verbatim customer payloads.
+    from app.retention import sweep_forever
+
+    retention_task = asyncio.create_task(sweep_forever(database.get_sessionmaker()))
+
     yield
+
+    retention_task.cancel()
     await bus.close()
 
 
@@ -113,7 +122,26 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
+        """Liveness only — see app/probes.py."""
         return {"status": "ok", "service": "ingest", "env": settings.env}
+
+    @app.get("/readyz")
+    async def ready():
+        """Readiness: 503 naming the dependency that failed."""
+        from app.probes import readyz
+
+        return await readyz()
+
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        """Counters for the rejections that deliberately leave no database row.
+
+        The public receiver used to record every unknown-slug attempt as a row,
+        which is how an unauthenticated endpoint became an unbounded write.
+        """
+        from app.ingest.metrics import render
+
+        return Response(content=render(), media_type="text/plain; version=0.0.4")
 
     # Sample authed route — proves JWT verification + tenant scope work locally.
     @app.get(f"{settings.api_prefix}/ingest/whoami")

@@ -301,6 +301,15 @@ services:
     command: >
       bash -c "alembic upgrade head &&
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # /readyz, not /health. /health is a static dict; /readyz asks the database and
+    # the event bus. An accepted webhook that never reaches the bus is an event
+    # the platform silently lost, so a dead bus is a readiness failure here.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
     networks: [neubit]
 
   # ── dashforge: NOT A SERVICE ANY MORE ───────────────────────────
