@@ -1,0 +1,391 @@
+"use client";
+
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Bell,
+  Blocks,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  Database,
+  LayoutDashboard,
+  Lock,
+  LogOut,
+  Megaphone,
+  Menu,
+  Moon,
+  Search,
+  ScrollText,
+  ServerCog,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sun,
+  UserCircle,
+  Users,
+} from "lucide-react";
+
+import { adminApi } from "@/lib/api";
+import { useTheme } from "@/components/theme";
+import { useRequireSuperadmin } from "@/lib/useRequireSuperadmin";
+import { ConfirmDialog } from "@/components/ui";
+import { CommandPalette, type PaletteAction, type PaletteNavItem } from "@/components/command-palette";
+
+/** A lucide icon, as the nav entries carry it. */
+type IconComponent = ComponentType<{ className?: string }>;
+
+interface NavGroup {
+  label: string;
+  items: PaletteNavItem[];
+}
+
+// Grouped nav — a proper admin sidebar instead of a crowded top bar.
+const GROUPS: NavGroup[] = [
+  {
+    label: "Overview",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/alerts", label: "Alerts", icon: Bell },
+    ],
+  },
+  {
+    label: "Tenancy",
+    items: [
+      { href: "/tenants", label: "Tenants", icon: Building2 },
+      { href: "/users", label: "Users", icon: Users },
+    ],
+  },
+  {
+    label: "Platform",
+    items: [
+      { href: "/modules", label: "Modules", icon: Blocks },
+      { href: "/broadcasts", label: "Broadcasts", icon: Megaphone },
+      { href: "/platform-settings", label: "Platform Settings", icon: SlidersHorizontal },
+      { href: "/audit", label: "Audit", icon: ScrollText },
+    ],
+  },
+  {
+    label: "Commercial",
+    items: [{ href: "/billing", label: "Billing", icon: CreditCard }],
+  },
+  {
+    label: "System",
+    items: [
+      { href: "/infrastructure", label: "Infrastructure", icon: ServerCog },
+      { href: "/database", label: "Database", icon: Database },
+    ],
+  },
+];
+
+// Flat nav (incl. account pages) the command palette can jump to.
+const PALETTE_NAV: PaletteNavItem[] = [
+  ...GROUPS.flatMap((g) => g.items),
+  { href: "/profile", label: "Profile", icon: UserCircle },
+  { href: "/security", label: "Security", icon: Lock },
+];
+
+export default function PanelLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const { theme, toggle: toggleTheme } = useTheme();
+  const { status } = useRequireSuperadmin();
+  const [collapsed, setCollapsed] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
+  // Unread alert count for the sidebar/topbar badge (polls in the background).
+  const { data: alertData } = useQuery({
+    queryKey: ["alerts"],
+    queryFn: () => adminApi.listAlerts(),
+    enabled: status === "ready",
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const unreadAlerts = alertData?.unread ?? 0;
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is unreadable during the server render, so the stored preference can only be applied after mount.
+    setCollapsed(localStorage.getItem("neubit.admin.sidebar") === "1");
+  }, []);
+
+  // Track the lg breakpoint so the icon-only collapse only applies on desktop —
+  // the mobile drawer always shows full labels.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // ⌘K / Ctrl+K toggles the command palette anywhere in the panel.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Close the mobile drawer whenever the route changes. Keyed off the pathname
+  // rather than off each link's onClick so it also covers programmatic
+  // navigation (the command palette, the 401 bounce).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the route IS the external system being synchronised from; there is nothing to derive it from during render.
+    setMobileOpen(false);
+  }, [pathname]);
+
+  function toggle() {
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem("neubit.admin.sidebar", next ? "1" : "0");
+      return next;
+    });
+  }
+  async function logout() {
+    // Revoke the refresh token + clear the httpOnly cookie server-side, drop the
+    // in-memory access token, then hard-navigate so all in-memory/query state is
+    // wiped (a fresh /login has no stale cached session).
+    await adminApi.logout();
+    window.location.href = "/login";
+  }
+
+  if (status !== "ready") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-muted">
+        Loading…
+      </div>
+    );
+  }
+
+  // Effective collapse: icon-only only on desktop.
+  const c = collapsed && isDesktop;
+
+  const paletteActions: PaletteAction[] = [
+    {
+      id: "theme",
+      label: theme === "dark" ? "Switch to light mode" : "Switch to dark mode",
+      icon: theme === "dark" ? Sun : Moon,
+      run: toggleTheme,
+    },
+    { id: "logout", label: "Log out", icon: LogOut, run: () => setConfirmLogout(true) },
+  ];
+
+  const navLink = (href: string, label: string, Icon: IconComponent) => {
+    const active = pathname === href || pathname.startsWith(`${href}/`);
+    const badge = href === "/alerts" && unreadAlerts > 0 ? unreadAlerts : 0;
+    return (
+      <Link
+        key={href}
+        href={href}
+        title={c ? label : undefined}
+        aria-current={active ? "page" : undefined}
+        className={
+          "flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition " +
+          (c ? "justify-center " : "") +
+          (active
+            ? "bg-hover font-medium text-foreground"
+            : "text-muted hover:bg-hover hover:text-foreground")
+        }
+      >
+        <span className="relative shrink-0">
+          <Icon className="h-[18px] w-[18px]" />
+          {badge > 0 && c && (
+            <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-danger ring-2 ring-background" />
+          )}
+        </span>
+        {!c && <span className="truncate">{label}</span>}
+        {!c && badge > 0 && (
+          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-semibold text-white">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
+      </Link>
+    );
+  };
+
+  return (
+    <div className="flex min-h-screen bg-background text-foreground">
+      {/* Mobile drawer backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={
+          "fixed inset-y-0 left-0 z-50 flex h-screen w-60 shrink-0 flex-col border-r border-card-border bg-background backdrop-blur-xl transition-transform duration-200 " +
+          "lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 " +
+          (mobileOpen ? "translate-x-0 " : "-translate-x-full lg:translate-x-0 ") +
+          (c ? "lg:w-[68px] " : "lg:w-60 ")
+        }
+      >
+        {/* Brand */}
+        <div className="flex h-14 items-center gap-2 border-b border-card-border px-4">
+          <Link href="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-6 w-auto shrink-0 brightness-0 dark:invert dark:brightness-0" />
+            {!c && (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                <ShieldCheck className="h-3 w-3" />
+                Super-admin
+              </span>
+            )}
+          </Link>
+        </div>
+
+        {/* Search launcher */}
+        <div className="px-2 pt-3">
+          <button
+            onClick={() => setPaletteOpen(true)}
+            title={c ? "Search (⌘K)" : undefined}
+            className={
+              "flex w-full items-center gap-3 rounded-lg border border-card-border bg-card px-3 py-2 text-[13px] text-muted transition hover:text-foreground " +
+              (c ? "justify-center" : "")
+            }
+          >
+            <Search className="h-[18px] w-[18px] shrink-0" />
+            {!c && (
+              <>
+                <span className="flex-1 text-left">Search…</span>
+                <kbd className="rounded border border-card-border bg-hover px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Grouped nav */}
+        <nav className="flex-1 overflow-y-auto px-2 py-3">
+          {GROUPS.map((g) => (
+            <div key={g.label} className="mb-2">
+              {!c && (
+                <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                  {g.label}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {g.items.map((it) => navLink(it.href, it.label, it.icon as IconComponent))}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer: account + theme + collapse */}
+        <div className="space-y-0.5 border-t border-card-border p-2">
+          {navLink("/profile", "Profile", UserCircle)}
+          {navLink("/security", "Security", Lock)}
+          <button
+            onClick={toggleTheme}
+            title={c ? (theme === "dark" ? "Light mode" : "Dark mode") : undefined}
+            className={
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-muted transition hover:bg-hover hover:text-foreground " +
+              (c ? "justify-center" : "")
+            }
+          >
+            {theme === "dark" ? (
+              <Sun className="h-[18px] w-[18px] shrink-0" />
+            ) : (
+              <Moon className="h-[18px] w-[18px] shrink-0" />
+            )}
+            {!c && (theme === "dark" ? "Light mode" : "Dark mode")}
+          </button>
+          <button
+            onClick={() => setConfirmLogout(true)}
+            title={c ? "Log out" : undefined}
+            className={
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-muted transition hover:bg-hover hover:text-foreground " +
+              (c ? "justify-center" : "")
+            }
+          >
+            <LogOut className="h-[18px] w-[18px] shrink-0" />
+            {!c && "Log out"}
+          </button>
+          {/* Collapse is a desktop-only affordance. */}
+          <button
+            onClick={toggle}
+            title={c ? "Expand" : "Collapse"}
+            className={
+              "hidden w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-muted transition hover:bg-hover hover:text-foreground lg:flex " +
+              (c ? "justify-center" : "")
+            }
+          >
+            {c ? (
+              <ChevronRight className="h-[18px] w-[18px] shrink-0" />
+            ) : (
+              <>
+                <ChevronLeft className="h-[18px] w-[18px] shrink-0" />
+                Collapse
+              </>
+            )}
+          </button>
+        </div>
+      </aside>
+
+      {/* Content */}
+      <main className="min-w-0 flex-1">
+        {/* Mobile top bar */}
+        <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-card-border bg-background/80 px-4 backdrop-blur lg:hidden">
+          <button
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+            className="rounded-lg p-1.5 text-muted transition hover:bg-hover hover:text-foreground"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo/neubit_logo.svg" alt="Neubit" className="h-5 w-auto brightness-0 dark:invert dark:brightness-0" />
+          <div className="flex-1" />
+          <Link
+            href="/alerts"
+            aria-label="Alerts"
+            className="relative rounded-lg p-1.5 text-muted transition hover:bg-hover hover:text-foreground"
+          >
+            <Bell className="h-5 w-5" />
+            {unreadAlerts > 0 && (
+              <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-danger ring-2 ring-background" />
+            )}
+          </Link>
+          <button
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search"
+            className="rounded-lg p-1.5 text-muted transition hover:bg-hover hover:text-foreground"
+          >
+            <Search className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-4 py-6 lg:px-8 lg:py-8">{children}</div>
+      </main>
+
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        navItems={PALETTE_NAV}
+        actions={paletteActions}
+      />
+
+      <ConfirmDialog
+        open={confirmLogout}
+        onOpenChange={setConfirmLogout}
+        title="Log out?"
+        description="You'll need to sign in again to access the super-admin console."
+        confirmLabel="Log out"
+        variant="primary"
+        onConfirm={() => {
+          setConfirmLogout(false);
+          logout();
+        }}
+      />
+    </div>
+  );
+}
