@@ -34,21 +34,87 @@ class ValidationResult:
     errors: list[str] = field(default_factory=list)
 
 
+#: `$ref` values that would send the validator out to the network. jsonschema 4.x
+#: resolves these through `referencing`, which WILL fetch on a host with egress —
+#: so a tenant who can save a webhook schema could make this service issue
+#: requests of their choosing, from inside the network. It has been safe here only
+#: because the test sandbox has no network, which is not a control.
+_REMOTE_REF_PREFIXES = ("http://", "https://", "//", "file:", "ftp:")
+
+
+def _remote_refs(node: Any, found: list[str] | None = None) -> list[str]:
+    """Every `$ref` in the schema that names somewhere other than this document."""
+    found = [] if found is None else found
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.lower().startswith(_REMOTE_REF_PREFIXES):
+            found.append(ref)
+        for value in node.values():
+            _remote_refs(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _remote_refs(value, found)
+    return found
+
+
 def validate_payload(payload: Any, schema: dict[str, Any] | None) -> ValidationResult:
     """Validate ``payload`` against an optional JSON Schema. An empty schema
     accepts anything; an invalid one is a webhook misconfiguration, surfaced as an
-    error rather than crashing the handler."""
+    error rather than crashing the handler.
+
+    THE SCHEMA IS TENANT-SUPPLIED and this receiver is unauthenticated and
+    internet-facing, so "surfaced rather than crashing" has to hold for every
+    malformed schema, not just the one shape that was handled. It did not. The
+    `except SchemaError` below used to sit on the CONSTRUCTOR, which does not
+    check the schema at all — measured against jsonschema 4.26, four kinds of
+    saved schema escaped this function and became a 500 with no log line:
+
+        {"type": 123}                       TypeError at iter_errors
+        {"$ref": "#/definitions/nope"}      _WrappedReferencingError
+        {"$ref": "https://..."}             _WrappedReferencingError, or a FETCH
+                                            on any host with egress
+        {"$ref": "#"}                       RecursionError — stack blown on EVERY
+                                            delivery, for as long as the webhook
+                                            exists
+
+    So: check the schema against its metaschema (which is what actually raises
+    SchemaError), refuse a `$ref` that leaves the document, and treat anything
+    still escaping the validation run as a bad schema rather than letting it reach
+    the handler. Each one is logged, because a webhook that rejects every delivery
+    with no explanation anywhere is the failure this whole path is for.
+    """
     if not schema:
         return ValidationResult(True, [])
+
+    remote = _remote_refs(schema)
+    if remote:
+        logger.warning("webhook schema refused: remote $ref %s", remote[:3])
+        return ValidationResult(
+            False,
+            [f"invalid schema: $ref must stay within the document ({remote[0]!r})"],
+        )
+
     try:
+        Draft202012Validator.check_schema(schema)
         validator = Draft202012Validator(schema)
     except SchemaError as exc:
         return ValidationResult(False, [f"invalid schema: {exc.message}"])
 
-    errors = [
-        f"{'.'.join(str(p) for p in err.absolute_path) or '<root>'}: {err.message}"
-        for err in sorted(validator.iter_errors(payload), key=lambda e: list(e.path))
-    ]
+    try:
+        errors = [
+            f"{'.'.join(str(p) for p in err.absolute_path) or '<root>'}: {err.message}"
+            for err in sorted(validator.iter_errors(payload), key=lambda e: list(e.path))
+        ]
+    except RecursionError:
+        # A self-referential `$ref` blows the stack. Caught by name as well as by
+        # the branch below, because it is the one that is a denial of service
+        # rather than a broken webhook: it costs the whole worker, every delivery.
+        logger.warning("webhook schema refused: $ref recursion")
+        return ValidationResult(False, ["invalid schema: $ref recursion"])
+    except Exception as exc:  # noqa: BLE001 — a saved schema must not reach the handler
+        logger.warning("webhook schema refused: %s: %s", type(exc).__name__, exc)
+        return ValidationResult(False, [f"invalid schema: {type(exc).__name__}"])
+
     return ValidationResult(not errors, errors)
 
 
