@@ -18,6 +18,10 @@ module never needs a live database.
 
 from __future__ import annotations
 
+import logging
+import os
+from collections import OrderedDict
+
 from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
@@ -27,6 +31,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+
+
+log = logging.getLogger("kernel.db")
 
 
 def make_base() -> type[DeclarativeBase]:
@@ -53,8 +60,17 @@ class Database:
         statement_timeout_ms: int | None = None,
         pool_size: int | None = None,
         max_overflow: int | None = None,
+        max_tenant_pools: int | None = None,
     ) -> None:
         self.database_url = database_url
+        # How many per-tenant pools to keep. Each is a live connection pool, so an
+        # unbounded cache exhausts Postgres's max_connections as tenants arrive.
+        # Only used in db-per-tenant mode.
+        self.max_tenant_pools = int(
+            max_tenant_pools
+            if max_tenant_pools is not None
+            else os.getenv("VE_MAX_TENANT_POOLS", "32")
+        )
         # None → read the shared setting; an explicit value overrides it. 0 = off.
         self.statement_timeout_ms = statement_timeout_ms
         # Both None → SQLAlchemy's defaults. Set them when a process runs two
@@ -66,7 +82,10 @@ class Database:
         self._engine: AsyncEngine | None = None
         self._sessionmaker: async_sessionmaker[AsyncSession] | None = None
         # Per-tenant sessionmakers, built lazily and pooled for the process lifetime.
-        self._tenant_sessionmakers: dict[str, async_sessionmaker[AsyncSession]] = {}
+        # Ordered so the eviction below is least-recently-used.
+        self._tenant_sessionmakers: OrderedDict[str, async_sessionmaker[AsyncSession]] = (
+            OrderedDict()
+        )
         self.Base: type[DeclarativeBase] = make_base()
 
     def _statement_timeout_ms(self) -> int:
@@ -135,12 +154,42 @@ class Database:
         if sm is None:
             from .provisioning import tenant_url
 
+            # Each entry owns a connection pool, so an unbounded cache is N tenants
+            # x pool_size connections against Postgres's max_connections. Evict the
+            # least recently used and dispose its engine, or the pool leaks.
+            if len(self._tenant_sessionmakers) >= self.max_tenant_pools:
+                self._evict_oldest_tenant_pool()
+
             engine = create_async_engine(
                 tenant_url(self.database_url, key), pool_pre_ping=True, **self._engine_kwargs()
             )
             sm = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
             self._tenant_sessionmakers[key] = sm
+        else:
+            # Move to the end so the eviction above is least-recently-used.
+            self._tenant_sessionmakers.move_to_end(key)
         return sm
+
+    def _evict_oldest_tenant_pool(self) -> None:
+        """Drop the least recently used tenant pool and close its connections."""
+        key, sm = self._tenant_sessionmakers.popitem(last=False)
+        engine = getattr(sm.kw.get("bind", None), "sync_engine", None)
+        log.info("evicting tenant pool %s (cache full at %d)", key, self.max_tenant_pools)
+        if engine is not None:
+            engine.dispose()
+
+    def forget_tenant(self, tenant_id: str) -> None:
+        """Drop a tenant's cached pool — call after dropping its database.
+
+        Without this the pool keeps reconnecting to a database that no longer
+        exists, forever.
+        """
+        sm = self._tenant_sessionmakers.pop(str(tenant_id), None)
+        if sm is None:
+            return
+        engine = getattr(sm.kw.get("bind", None), "sync_engine", None)
+        if engine is not None:
+            engine.dispose()
 
     async def get_db_for(self, tenant_id: str | None) -> AsyncIterator[AsyncSession]:
         """Yield a session bound to ``tenant_id``'s database (shared if flag off/None)."""

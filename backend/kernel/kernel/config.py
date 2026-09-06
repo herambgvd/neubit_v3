@@ -10,9 +10,14 @@ db factory.
 
 from __future__ import annotations
 
+import logging
+
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+log = logging.getLogger("kernel.config")
 
 
 class Settings(BaseSettings):
@@ -66,7 +71,45 @@ class Settings(BaseSettings):
     cors_origin_regex: str = r"https?://.*"
 
 
+#: The shipped placeholders. A deployment left on one of these signs tokens and
+#: encrypts tenant credentials with a value that is in the public repository.
+_PLACEHOLDERS = {
+    "jwt_secret": "change-me-in-prod",
+    "secrets_key": "change-me-secret",
+}
+
+
+def _check_secrets(settings: "Settings") -> None:
+    """Refuse to boot outside dev on a placeholder secret; warn loudly in dev.
+
+    There was no guard at all. A service started without the env file silently
+    accepted tokens anyone could forge and encrypted credentials under a key
+    anyone could derive — and nothing said so, because pydantic-settings happily
+    uses the default.
+
+    Dev warns rather than refuses: a developer running one service by hand should
+    not have to set up secrets first, and they are not protecting anything.
+    """
+    left = [name for name, value in _PLACEHOLDERS.items() if getattr(settings, name) == value]
+    if not left:
+        return
+    names = ", ".join(f"VE_{n.upper()}" for n in sorted(left))
+    if settings.env.lower() in ("dev", "test", "local"):
+        log.warning(
+            "%s left at the shipped placeholder — fine for env=%s, fatal anywhere else",
+            names, settings.env,
+        )
+        return
+    raise RuntimeError(
+        f"{names} still at the shipped placeholder with VE_ENV={settings.env!r}. "
+        "Tokens would be forgeable and stored credentials readable by anyone with "
+        "the source. Set them, or set VE_ENV=dev."
+    )
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Cached singleton so we parse the environment only once."""
-    return Settings()
+    settings = Settings()
+    _check_secrets(settings)
+    return settings

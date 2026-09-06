@@ -336,6 +336,12 @@ def envelope(
     }
 
 
+#: How long to wait between reconnect attempts, and how long a single connect
+#: attempt may take. Both deliberately short: a service should not sit at boot.
+RECONNECT_WAIT_SEC = _env_int("VE_NATS_RECONNECT_WAIT_SEC", 2)
+CONNECT_TIMEOUT_SEC = _env_int("VE_NATS_CONNECT_TIMEOUT_SEC", 5)
+
+
 class EventBus:
     """A thin JetStream client. One per service; connect at startup, close at shutdown."""
 
@@ -354,16 +360,45 @@ class EventBus:
         try:
             import nats
 
-            self._nc = await nats.connect(url, name=f"neubit-{self.source}")
+            # nats-py reconnects on its own after a drop, but only once it has
+            # connected. A service that booted while NATS was down used to publish
+            # nothing and subscribe to nothing for the rest of its life, silently.
+            # These options make the FIRST connect keep trying in the background.
+            self._nc = await nats.connect(
+                url,
+                name=f"neubit-{self.source}",
+                allow_reconnect=True,
+                max_reconnect_attempts=-1,  # forever
+                reconnect_time_wait=RECONNECT_WAIT_SEC,
+                connect_timeout=CONNECT_TIMEOUT_SEC,
+                error_cb=self._on_error,
+                reconnected_cb=self._on_reconnected,
+                disconnected_cb=self._on_disconnected,
+            )
             self._js = self._nc.jetstream()
             await ensure_events_stream(self._js)
             # Where `term()` parks a poisoned message instead of dropping it.
             await ensure_dlq_stream(self._js)
             log.info("NATS connected: %s", url)
-        except Exception as e:  # broker down / lib missing → degrade gracefully
-            log.warning("NATS connect failed (%s) — events are no-ops", e)
+        except Exception as e:
+            # Degrade rather than block boot, but say so at ERROR: with no bus this
+            # service emits no events and consumes none, and that used to be a
+            # single WARNING at startup and nothing afterwards.
+            log.error(
+                "NATS connect FAILED (%s) — this service will emit and consume no "
+                "events until it is restarted with the broker reachable", e,
+            )
             self._nc = None
             self._js = None
+
+    async def _on_error(self, e: Exception) -> None:
+        log.error("NATS error: %s", e)
+
+    async def _on_disconnected(self) -> None:
+        log.warning("NATS disconnected — reconnecting")
+
+    async def _on_reconnected(self) -> None:
+        log.info("NATS reconnected")
 
     async def close(self) -> None:
         if self._nc is not None:
