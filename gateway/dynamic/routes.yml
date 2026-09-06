@@ -9,7 +9,7 @@ http:
     # services must sit ABOVE it (110 > 100) to peel off their more-specific
     # prefixes; everything else under `/api/` still falls through to core.
     #   ingest/workflow/access (110) — /api/v1/{ingest,workflow,access} (+ /ingest) FIRST
-    #   core       (100)      — /api/|/health|/ready|/files ALWAYS win otherwise
+    #   core       (100)      — /api/|/health|/readyz|/files ALWAYS win otherwise
     #   admin      (50)       — the admin.localhost host, for what core didn't claim
     #   frontend   (1)        — catch-all operator console (localhost + any host)
     tiles:
@@ -203,10 +203,10 @@ http:
       # changes nothing that reaches a request. Keep the two in step; if they ever
       # need to differ, delete one.
       #
-      # `/ready` is routed so an external load balancer or orchestrator can probe
+      # `/readyz` is routed so an external load balancer or orchestrator can probe
       # the endpoint the docs point at. `/health` is `return {"status": "ok"}` with
       # no dependency injected — it answers 200 with Postgres stopped, while every
-      # /api/v1 route 500s on get_db; `/ready` asks the database, redis and storage
+      # /api/v1 route 500s on get_db; `/readyz` asks the database, redis and storage
       # and answers 503 naming the one that failed. It was written, correct, and
       # reachable by nothing.
       #
@@ -215,7 +215,7 @@ http:
       # internet — while nothing scrapes it, because this stack runs no Prometheus.
       # It is still served on the container port, like the reading-writer's own
       # probes described above.
-      rule: "PathPrefix(`/api/`) || PathPrefix(`/health`) || PathPrefix(`/ready`) || PathPrefix(`/files`)"
+      rule: "PathPrefix(`/api/`) || PathPrefix(`/health`) || PathPrefix(`/readyz`) || PathPrefix(`/files`)"
       service: core
       entryPoints: [web]
       priority: 100

@@ -34,7 +34,7 @@ async def get_resources(_user=Depends(require_permission(CorePerm.SYSTEM_READ)))
 @system_router.get("/health")
 async def get_health(_user=Depends(require_permission(CorePerm.SYSTEM_READ))) -> dict:
     """Authenticated dependency health (DB / Redis / storage) for the admin status
-    page. Same probes as the public ``/ready``, but gated by ``system.read``."""
+    page. Same probes as the public ``/readyz``, but gated by ``system.read``."""
     from ..core.health import run_checks
 
     healthy, checks = await run_checks()

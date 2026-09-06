@@ -49,7 +49,7 @@ ALLOWED_UNAUTHENTICATED = {
     ("POST", "/api/v1/auth/token"): "exchanges a raw API key for a JWT; the key is the credential",
     # --- infrastructure ---------------------------------------------------
     ("GET", "/health"): "liveness for a load balancer",
-    ("GET", "/ready"): "readiness for an orchestrator; names which dependency is down",
+    ("GET", "/readyz"): "readiness for an orchestrator; names which dependency is down",
     ("GET", "/metrics"): "no longer routed publicly by the gateway (routes.yml)",
     ("GET", "/"): "the landing page",
     ("GET", "/internal/auth/verify"): "Traefik ForwardAuth; reachable only on the internal network",
@@ -161,7 +161,7 @@ PUBLIC_ROUTES = {
     "/api/v1/settings/public": "the unauthenticated screens read their settings here",
     "/api/v1/broadcasts/active": "a maintenance notice has to reach the login page",
     "/health": "liveness for a load balancer",
-    # /ready is deliberately absent: with no database or redis it correctly answers
+    # /readyz is deliberately absent: with no database or redis it correctly answers
     # 503 here. test_health_probes.py covers it.
 }
 

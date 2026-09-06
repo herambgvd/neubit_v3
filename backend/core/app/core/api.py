@@ -10,7 +10,7 @@ What it wires up (so every scenario gets the same production baseline):
   2. Uniform error envelope + stable codes
   3. License verification + expiry gate, then license-gated feature modules
   4. Versioned API: everything mounts under settings.api_prefix (default /api/v1);
-     health/ready/metrics/files stay unversioned at the root.
+     health/readyz/metrics/files stay unversioned at the root.
 """
 
 from __future__ import annotations
@@ -72,14 +72,14 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
     The window lives in Redis (core/ratelimit.py) so the cap means the same number
     whether core runs one uvicorn worker or eight.
 
-    Only `/health`, `/ready` and `/metrics` are exempt — a throttled probe reads as
+    Only `/health`, `/readyz` and `/metrics` are exempt — a throttled probe reads as
     an outage. Matched exactly, not by prefix: `startswith` would also exempt
     `/health-bypass`. `/files` gets a wider budget rather than an exemption; `/docs`
     and `/openapi.json` get neither.
     """
 
     #: Exact paths that are never counted.
-    EXEMPT_PATHS = frozenset({"/health", "/ready", "/metrics"})
+    EXEMPT_PATHS = frozenset({"/health", "/readyz", "/metrics"})
 
     #: `/files` is bandwidth, not API calls: its own bucket, wider budget.
     FILES_PREFIX = "/files"
@@ -214,7 +214,7 @@ def create_app(
     # Endpoints reachable even under an expired license (so the app can be renewed).
     allow_prefixes = (
         "/health",
-        "/ready",
+        "/readyz",
         "/metrics",
         "/files",
         "/docs",
@@ -256,7 +256,7 @@ def create_app(
     register_error_handlers(app)
 
     # --- Unversioned root endpoints ---------------------------------------
-    app.include_router(health_router)  # /health, /ready
+    app.include_router(health_router)  # /health, /readyz
 
     from .storage import files_router  # public object serving (/files/{key})
 

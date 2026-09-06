@@ -1,8 +1,8 @@
 """Liveness and readiness answer different questions, and readiness must be able to fail.
 
-`/health` is a static dict and answers 200 with Postgres stopped; `/ready` reflects
+`/health` is a static dict and answers 200 with Postgres stopped; `/readyz` reflects
 its dependencies. Both halves are asserted, plus that the deployment actually routes
-and probes `/ready` — written correctly and consumed by nothing is the failure this
+and probes `/readyz` — written correctly and consumed by nothing is the failure this
 file watches for.
 """
 
@@ -40,7 +40,7 @@ async def test_ready_reports_503_and_names_the_broken_dependency(app, monkeypatc
 
     monkeypatch.setattr(health, "_check_database", _broken)
     async with _client(app) as c:
-        r = await c.get("/ready")
+        r = await c.get("/readyz")
     assert r.status_code == 503
     body = r.json()
     assert body["status"] == "not_ready"
@@ -61,7 +61,7 @@ async def test_one_broken_dependency_does_not_hide_the_others(app, monkeypatch):
     monkeypatch.setattr(health, "_check_redis", _fine)
     monkeypatch.setattr(health, "_check_storage", _fine)
     async with _client(app) as c:
-        body = (await c.get("/ready")).json()
+        body = (await c.get("/readyz")).json()
     assert set(body["checks"]) == {"database", "redis", "storage"}
     assert body["checks"]["redis"] == "ok"
 
@@ -73,7 +73,7 @@ async def test_ready_is_200_when_everything_answers(app, monkeypatch):
     for name in ("_check_database", "_check_redis", "_check_storage"):
         monkeypatch.setattr(health, name, _fine)
     async with _client(app) as c:
-        r = await c.get("/ready")
+        r = await c.get("/readyz")
     assert r.status_code == 200
     assert r.json()["status"] == "ready"
 
@@ -94,7 +94,7 @@ async def test_health_is_liveness_and_says_nothing_about_dependencies(app, monke
 
 
 def test_the_deployment_actually_probes_readiness():
-    """The two deployment files: the gateway must route /ready and core must have a
+    """The two deployment files: the gateway must route /readyz and core must have a
     healthcheck that uses it, or the endpoint is silently unreachable.
     """
     import os
@@ -113,7 +113,7 @@ def test_the_deployment_actually_probes_readiness():
     core_rule = next(
         line for line in routes.splitlines() if "rule:" in line and "/health" in line
     )
-    assert "/ready" in core_rule, core_rule
+    assert "/readyz" in core_rule, core_rule
     # /metrics is unauthenticated and nothing scrapes it; it must not be public.
     assert "/metrics" not in core_rule, core_rule
-    assert "http://localhost:8000/ready" in compose, "core has no healthcheck on /ready"
+    assert "http://localhost:8000/readyz" in compose, "core has no healthcheck on /ready"

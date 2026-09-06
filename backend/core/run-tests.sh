@@ -72,7 +72,7 @@ fi
 
 # `gateway/` and `deploy/` are mounted because two assertions are about the
 # deployment rather than the code: tests/test_health_probes.py checks that the
-# gateway routes /ready and that core's healthcheck consumes it. Read-only, and
+# gateway routes /readyz and that core's healthcheck consumes it. Read-only, and
 # separate from /src so nothing on the import path changes.
 exec "$DOCKER" run --rm --network none \
   -v "$REPO/backend:/src:ro" \

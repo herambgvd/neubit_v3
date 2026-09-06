@@ -97,7 +97,7 @@ Four guard invariants rather than behaviour:
   names a key core can grant.
 * `test_tenant_erasure.py` — every table core owns is classified for tenant erasure,
   and a cascade claim is verified rather than trusted.
-* `test_health_probes.py` — the gateway routes `/ready` and core's healthcheck
+* `test_health_probes.py` — the gateway routes `/readyz` and core's healthcheck
   consumes it. It reads `gateway/` and `deploy/`, which `run-tests.sh` mounts for it.
 
 ## Things that will surprise you
@@ -129,8 +129,8 @@ Report exports are the exception: keys under `signed_url_prefixes` carry `?exp=&
 and are refused without an unexpired HMAC. Without it a download link outlives the
 `report.export` permission that produced it.
 
-**`/health` cannot fail and `/ready` can.** `/health` is a static dict with no
-dependency injected — it answers 200 with Postgres stopped. `/ready` asks the
+**`/health` cannot fail and `/readyz` can.** `/health` is a static dict with no
+dependency injected — it answers 200 with Postgres stopped. `/readyz` asks the
 database, redis and storage and answers 503 naming the one that failed. `/metrics` is
 served but not routed by the gateway: nothing scrapes it, and it is an
 unauthenticated inventory of every route in the platform.

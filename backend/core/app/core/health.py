@@ -1,11 +1,11 @@
 """Liveness / readiness endpoints.
 
 ``/health`` = process is up (for load balancers).
-``/ready``  = dependencies are actually reachable (DB, Redis, storage). Returns 503
+``/readyz`` = dependencies are actually reachable (DB, Redis, storage). Returns 503
               with a per-dependency breakdown when something is down, so orchestrators
               (k8s) don't route traffic to an instance that can't serve.
 
-`/ready` only helps if something probes it: `gateway/dynamic/routes.yml` must route
+`/readyz` only helps if something probes it: `gateway/dynamic/routes.yml` must route
 it (that file wins over the compose labels, which share a router name) and
 `deploy/docker-compose.yml` gives core a healthcheck that consumes it. Without
 those, `/health` answers 200 from a static dict through a total outage.
@@ -78,7 +78,7 @@ async def run_checks() -> tuple[bool, dict[str, str]]:
     return healthy, checks
 
 
-@router.get("/ready")
+@router.get("/readyz")
 async def ready():
     healthy, checks = await run_checks()
     return JSONResponse(

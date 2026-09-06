@@ -154,7 +154,7 @@ def test_probes_are_exempt_by_exact_path_not_by_prefix():
     from app.core.api import GlobalRateLimitMiddleware as M
 
     assert "/health" in M.EXEMPT_PATHS
-    assert "/ready" in M.EXEMPT_PATHS
+    assert "/readyz" in M.EXEMPT_PATHS
     assert "/metrics" in M.EXEMPT_PATHS
     assert "/health-bypass" not in M.EXEMPT_PATHS
     # And the exemption set must not have quietly grown to cover the API.
