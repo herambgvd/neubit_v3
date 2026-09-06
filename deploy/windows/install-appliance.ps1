@@ -783,6 +783,17 @@ VE_BOOTSTRAP_ADMIN_EMAIL=${ADMIN_EMAIL}
 VE_BOOTSTRAP_ADMIN_PASSWORD=${ADMIN_PASS}
 OPS_AGENT_TOKEN=$(rand 32)
 OPS_AGENT_URL=http://ops-agent:9000
+# One broker credential per service. The bus authenticates every client
+# (deploy/nats/nats.conf) and has NO anonymous fallback, so a missing value here
+# is a service that cannot connect — compose refuses to start at all, because the
+# nats service declares these with ${VAR:?}.
+NATS_PASS_CORE=$(rand 32)
+NATS_PASS_ACCESS=$(rand 32)
+NATS_PASS_INGEST=$(rand 32)
+NATS_PASS_VISION=$(rand 32)
+NATS_PASS_WORKFLOW=$(rand 32)
+NATS_PASS_READING_WRITER=$(rand 32)
+NATS_PASS_CONFLUX=$(rand 32)
 EOF
   chmod 600 "$ENVFILE"
   echo "created $ENVFILE with per-install secrets"
@@ -800,8 +811,20 @@ set_kv() {
 set_kv NEUBIT_VERSION "$VERSION"
 set_kv NEUBIT_BULK "$BULK"
 
+# ADD IF MISSING, never overwrite. An appliance installed before the bus
+# authenticated has an .env with no NATS_PASS_* in it, and compose will refuse to
+# start until they exist. set_kv would mint a NEW value on every re-install, which
+# rotates the password out from under a running broker and disconnects every
+# service — so this is a separate helper on purpose.
+add_kv_if_missing() {
+  grep -q "^$1=" "$ENVFILE" || printf '%s=%s\n' "$1" "$2" >> "$ENVFILE"
+}
+for n in CORE ACCESS INGEST VISION WORKFLOW READING_WRITER CONFLUX; do
+  add_kv_if_missing "NATS_PASS_$n" "$(rand 32)"
+done
+
 echo "--- /opt/neubit/.env (secrets masked) ---"
-sed -E 's/^(POSTGRES_PASSWORD|VE_JWT_SECRET|VE_SECRETS_KEY|OPS_AGENT_TOKEN|VE_DATABASE_URL|VE_BOOTSTRAP_ADMIN_PASSWORD)=.*/\1=********/' "$ENVFILE"
+sed -E 's/^(POSTGRES_PASSWORD|VE_JWT_SECRET|VE_SECRETS_KEY|OPS_AGENT_TOKEN|VE_DATABASE_URL|VE_BOOTSTRAP_ADMIN_PASSWORD|NATS_PASS_[A-Z_]+)=.*/\1=********/' "$ENVFILE"
 '@ -replace "`r`n", "`n"
 
 $envShPath = Join-Path $env:ProgramData 'Neubit\VMS\install\write-env.sh'

@@ -324,8 +324,14 @@ cp '$(( '/mnt/' + $DeployDir.Substring(0,1).ToLower() + ($DeployDir.Substring(2)
 #
 # Verified with `docker compose ... --project-directory <dir> config`, which
 # resolved the source to <dir>/../gateway.
-mkdir -p /opt/neubit/postgres /opt/gateway
+mkdir -p /opt/neubit/postgres /opt/neubit/nats /opt/gateway
 cp -r '$(( '/mnt/' + $DeployDir.Substring(0,1).ToLower() + ($DeployDir.Substring(2) -replace '\\','/') ))/postgres/.' /opt/neubit/postgres/
+# nats/nats.conf, for the same reason the gateway note above exists. The broker
+# now runs `-c /etc/nats/nats.conf` and the compose file bind-mounts
+# ./nats/nats.conf; if that path is not in the payload Docker CREATES IT AS A
+# DIRECTORY and nats exits, taking the whole event spine with it — and the boot
+# log says a container restarted, not 'nats.conf'.
+cp -r '$(( '/mnt/' + $DeployDir.Substring(0,1).ToLower() + ($DeployDir.Substring(2) -replace '\\','/') ))/nats/.' /opt/neubit/nats/
 cp -r '$(( '/mnt/' + $RepoRoot.Substring(0,1).ToLower() + ($RepoRoot.Substring(2) -replace '\\','/') ))/gateway/.' /opt/gateway/
 sed -i 's/\r$//' /opt/neubit/boot.sh /opt/neubit/migrate.sh /etc/wsl.conf /opt/neubit/postgres/*.sh
 chmod +x /opt/neubit/boot.sh /opt/neubit/migrate.sh
