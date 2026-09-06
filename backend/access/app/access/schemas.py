@@ -31,7 +31,14 @@ class InstanceCreate(BaseModel):
     username: str = Field(default="", max_length=255)
     # Plaintext on create; server encrypts (reversibly) before storing.
     secret: Optional[str] = Field(default=None, max_length=1024)
-    verify_tls: bool = False
+    # TRUE by default. It was False, so an operator who never thought about TLS
+    # created an instance whose connection to the controller was encrypted but
+    # UNAUTHENTICATED — anything that can intercept it presents its own certificate
+    # and reads the Basic-auth password. Existing rows keep whatever they were set
+    # to (no data migration): flipping them would break a working deployment
+    # against a self-signed controller, which is the common case on a building LAN.
+    # The connector logs a warning whenever it builds an unprotected link.
+    verify_tls: bool = True
     site_id: Optional[str] = Field(default=None, max_length=36)
     is_active: bool = True
     reconciler_cron: Optional[str] = Field(default="0 3 * * *", max_length=64)

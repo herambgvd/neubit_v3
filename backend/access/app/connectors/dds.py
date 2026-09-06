@@ -147,7 +147,7 @@ class DDSConnector(ControllerConnector):
         auth_type: str,
         username: str,
         secret: str,
-        verify_tls: bool = False,
+        verify_tls: bool = True,
         reconnect_max_seconds: int = 300,
     ) -> None:
         self.base_url = base_url.rstrip("/")

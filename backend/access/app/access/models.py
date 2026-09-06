@@ -81,8 +81,13 @@ class Instance(Base):
     username: Mapped[str] = mapped_column(String(255), nullable=False, server_default=text("''"))
     # Reversibly-encrypted secret (enc:...); decrypted only to build a connector.
     secret_enc: Mapped[str | None] = mapped_column(String(1024))
+    # TRUE. This said false while the API schema said true — two places describing
+    # one column, disagreeing. The server_default only decides what a row inserted
+    # WITHOUT the column gets (the service always sets it explicitly), so this is
+    # about the two descriptions matching, not about changing a code path.
+    # Existing rows are deliberately not touched by 0003; see that migration.
     verify_tls: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
+        Boolean, nullable=False, server_default=text("true")
     )
 
     # online | offline | unknown (v2 InstanceStatus subset; string, no enum).
