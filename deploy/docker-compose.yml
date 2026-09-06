@@ -671,6 +671,16 @@ services:
     # appliance runs this file alone, where publishing it would put an unauthed
     # operational surface on the customer's LAN.
     restart: unless-stopped
+    # /readyz, not /health. /health is 200 while the process is up; /readyz turns
+    # 503 when either NATS consumer is wedged — which is the failure that matters
+    # here, because a wedged consumer silently stops storing readings while the
+    # container still looks fine. It was written and nothing consumed it.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
     networks: [neubit]
 
   # ── operator console (Next.js) ──────────────────────────────────
