@@ -16,7 +16,6 @@ import {
   ArrowRight,
   Activity,
   Boxes,
-  Cable,
   Check,
   Cloud,
   Cpu,

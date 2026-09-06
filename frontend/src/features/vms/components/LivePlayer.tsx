@@ -178,7 +178,9 @@ function LivePlayer({
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<any>(null);
-  const [mode, setMode] = useState(preferWebrtc ? "webrtc" : "hls");
+  // Which transport won (webrtc | hls). Recorded on every switch; nothing reads
+  // it yet — the player chrome does not show the active transport.
+  const [_mode, setMode] = useState(preferWebrtc ? "webrtc" : "hls");
   const [isMuted, setIsMuted] = useState(muted);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showChrome, setShowChrome] = useState(!minimal);

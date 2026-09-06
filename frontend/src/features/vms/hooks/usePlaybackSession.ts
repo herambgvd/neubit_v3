@@ -50,6 +50,11 @@ export function usePlaybackSession(
     }
   };
 
+  // `scheduleRenew` re-arms itself, which means referring to a `const` from
+  // inside its own initialiser. The ref holds the latest one instead, so nothing
+  // reads a binding before it exists. Written in an effect, never during render.
+  const scheduleRenewRef = useRef<((sess: any) => void) | null>(null);
+
   const scheduleRenew = useCallback(
     (sess) => {
       clearRenew();
@@ -64,7 +69,7 @@ export function usePlaybackSession(
           if (disposedRef.current) return;
           sessionRef.current = next;
           setSession(next);
-          scheduleRenew(next);
+          scheduleRenewRef.current?.(next);
         } catch {
           // Let the player's own retry loop recover; nothing terminal here.
         }
@@ -98,6 +103,11 @@ export function usePlaybackSession(
     },
     [cameraId, issue, scheduleRenew],
   );
+
+  // Keep the cycle-breaking ref pointing at the current callback.
+  useEffect(() => {
+    scheduleRenewRef.current = scheduleRenew;
+  }, [scheduleRenew]);
 
   const clear = useCallback(() => {
     clearRenew();

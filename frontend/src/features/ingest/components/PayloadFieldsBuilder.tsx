@@ -39,21 +39,17 @@ export default function PayloadFieldsBuilder({
   fields, // [{ path, name, checked }]
   onFieldsChange,
 }: any) {
-  const [parseError, setParseError] = useState<any>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<any>({});
 
-  const sample = useMemo(() => {
-    if (!sampleText || !sampleText.trim()) {
-      setParseError(null);
-      return null;
-    }
+  // Parse result AND its error come out of the same memo. They used to be state
+  // written from inside it, which is a setState during render — React can (and
+  // the compiler says will) loop on that.
+  const { sample, parseError } = useMemo<{ sample: any; parseError: string | null }>(() => {
+    if (!sampleText || !sampleText.trim()) return { sample: null, parseError: null };
     try {
-      const parsed = JSON.parse(sampleText);
-      setParseError(null);
-      return parsed;
+      return { sample: JSON.parse(sampleText), parseError: null };
     } catch (e) {
-      setParseError(e.message);
-      return null;
+      return { sample: null, parseError: (e as Error).message };
     }
   }, [sampleText]);
 

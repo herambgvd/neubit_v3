@@ -243,7 +243,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
         <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
           <div>
             <h4 className="text-sm font-semibold text-nb-ink">When should this rule fire?</h4>
-            <p className="text-[11px] text-nb-faint">ALL conditions must hold. Most rules just need one: "this field is present."</p>
+            <p className="text-[11px] text-nb-faint">ALL conditions must hold. Most rules just need one: &quot;this field is present.&quot;</p>
           </div>
           {conditions.length === 0 ? (
             <p className="text-[11px] text-nb-faint">No conditions — this rule matches any payload. Add one to make it specific.</p>

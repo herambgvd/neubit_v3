@@ -13,7 +13,6 @@
 // caller can't reach: it is a shortcut row, not a catalogue.
 
 import { Icon } from "@iconify/react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";

@@ -47,7 +47,10 @@ export default function WallConsole({ wallId }: any) {
   const screens = useScreens();
 
   const [railOpen, setRailOpen] = useState(true);
-  const [railDragging, setRailDragging] = useState(false);
+  // Written by the rail's drag callback, read by nothing yet — the console does
+  // not currently change while a camera is being dragged. Kept (rather than
+  // dropped) so the signal is still there when the drop affordance lands.
+  const [_railDragging, setRailDragging] = useState(false);
   const [picker, setPicker] = useState<any>(null); // { monitorId, cellIndex }
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
@@ -347,7 +350,7 @@ export default function WallConsole({ wallId }: any) {
           onKeyDown={(e) => e.key === "Enter" && savePreset()}
         />
         <p className="mt-2 text-xs text-[#9a92c8]">
-          Snapshots the wall's current live state ({liveCount} camera{liveCount === 1 ? "" : "s"}). Recall it in one click, or add it to a tour.
+          Snapshots the wall&apos;s current live state ({liveCount} camera{liveCount === 1 ? "" : "s"}). Recall it in one click, or add it to a tour.
         </p>
       </Modal>
     </div>

@@ -8,7 +8,6 @@
 //   add [start,end] pairs. Emits the canonical dict via onChange.
 import { Icon } from "@iconify/react";
 
-import { Input } from "@/components/ui/kit";
 
 const DAYS = [
   ["mon", "Mon"],

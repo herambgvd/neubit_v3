@@ -47,6 +47,13 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
   const readyPollRef = useRef<any>(null);
   const disposedRef = useRef(false);
   const attemptRef = useRef(0);
+  // `scheduleRenew` re-arms itself and, when a renew fails, restarts the session
+  // — but `start` is defined below it and depends on it, so the two form a cycle.
+  // These refs break it: each holds the latest callback, so neither reads a
+  // binding that is not initialised yet nor captures a stale closure. Assigned in
+  // an effect (never during render) so the ref write stays a side effect.
+  const scheduleRenewRef = useRef<((sess: any) => void) | null>(null);
+  const startRef = useRef<(() => void) | null>(null);
 
   const clearTimers = () => {
     if (renewTimerRef.current) {
@@ -75,16 +82,15 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
           if (disposedRef.current) return;
           sessionRef.current = next;
           setSession(next);
-          scheduleRenew(next);
+          scheduleRenewRef.current?.(next);
         } catch {
           // Renew failed (session reaped server-side) — start a fresh one so
           // playback recovers rather than freezing on a stale token.
-          if (!disposedRef.current) start();
+          if (!disposedRef.current) startRef.current?.();
         }
       }, delay);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cameraId, src],
+    [],
   );
 
   const start = useCallback(async () => {
@@ -133,6 +139,12 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
     }
   }, [cameraId, profile, src, scheduleRenew]);
 
+  // Keep the cycle-breaking refs pointing at the current callbacks.
+  useEffect(() => {
+    scheduleRenewRef.current = scheduleRenew;
+    startRef.current = start;
+  }, [scheduleRenew, start]);
+
   const retry = useCallback(() => {
     clearTimers();
     start();
@@ -157,6 +169,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
       clearTimers();
       const cur = sessionRef.current;
       sessionRef.current = null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this is the CLEANUP path: the session is being torn down, so clearing it is the teardown itself, not a render-time sync.
       setSession(null);
       // Fire-and-forget release so the MediaMTX path is reaped once nobody's
       // watching. Never awaited — unmount must not block.

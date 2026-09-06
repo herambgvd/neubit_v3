@@ -44,7 +44,7 @@ function useSnapshotThumb(camera) {
   return url;
 }
 
-function Tile({ camera, health, siteName, selected, onToggleSelect, onLive, onSnapshot, onEdit, onDelete }: any) {
+function Tile({ camera, siteName, selected, onToggleSelect, onLive, onSnapshot, onEdit, onDelete }: any) {
   const rec = RECORDING_MODES.find((m) => m.value === camera.recording?.mode);
   const thumb = useSnapshotThumb(camera);
   return (

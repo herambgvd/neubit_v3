@@ -14,7 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
 
-export default function IoPanel({ cameraId, cameraName }: any) {
+export default function IoPanel({ cameraId }: any) {
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
   const qc = useQueryClient();

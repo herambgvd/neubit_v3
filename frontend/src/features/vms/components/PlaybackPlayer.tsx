@@ -322,13 +322,9 @@ export default function PlaybackPlayer({
       setUseH265(true); // → render <H265WebPlayer>, this effect early-returns (hls.js off)
       return true;
     };
-    // Final fallback (only reached if the WASM decoder itself can't init).
-    const fallbackToH264 = () => {
-      if (transcodedRef.current || !toH264Hls(hlsUrl)) return false;
-      transcodedRef.current = true;
-      setTranscoded(true); // → effHls flips to /h264 → this effect re-runs on the variant
-      return true;
-    };
+    // The /h264 transcode fallback is NOT here: it hangs off the WASM player's
+    // onWasmError below, which is the only place that can know the decoder failed
+    // to init. A copy lived here and was never called.
 
     const cleanup = () => {
       if (hlsRef.current) {

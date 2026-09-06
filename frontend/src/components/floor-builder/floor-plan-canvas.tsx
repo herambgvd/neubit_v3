@@ -79,7 +79,6 @@ function pointInAnyZone(worldPt, zones = []) {
 
 export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   {
-    floor,
     floorplanUrl,
     zones = [],
     devices = [],
@@ -90,7 +89,6 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
     onSelectZone,
     onSelectDevice,
     onZoneCreate, // (points: [[x,y],...]) => void
-    onZoneUpdate, // (zoneId, { polygon }) => void
     onDeviceCreate, // (worldPt) => void
     onDeviceDrop, // ({ payload, point }) => void  — palette drag-drop
     onInvalidDrop, // () => void — dropped outside every zone

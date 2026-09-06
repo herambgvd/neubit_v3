@@ -29,7 +29,7 @@ import { Icon } from "@iconify/react";
 // empty interface on purpose, so consumers declare their own shape here.
 declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface ColumnMeta<TData extends unknown, TValue> {
+  interface ColumnMeta<TData, TValue> {
     /** "right" switches the cell to right-aligned tabular-nums (numeric columns). */
     align?: "left" | "right" | "center";
     headClassName?: string;

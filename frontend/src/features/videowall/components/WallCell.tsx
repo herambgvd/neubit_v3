@@ -20,7 +20,6 @@ import LivePlayer from "@/features/vms/components/LivePlayer";
 export default function WallCell({
   cameraId,
   camera,
-  cellIndex,
   profile = "sub",
   control = false,
   onAssign, // (cameraId) — from a rail drag (control only)

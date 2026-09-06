@@ -108,10 +108,13 @@ export function slaFor(it, now = Date.now()) {
     return `${Math.floor(a / 1440)}d ${Math.floor((a % 1440) / 60)}h`;
   };
 
-  if (done) return { deadline, remainingMin, breached: false, overdue, label: `SLA ${abs(remainingMin)}`, tone: "done" };
+  // `breached` carries the SERVER's is_sla_breached as well as the local clock
+  // check; the four returns used to hardcode it from `overdue` alone, so an
+  // incident the backend had marked breached read as on-time here.
+  if (done) return { deadline, remainingMin, breached, overdue, label: `SLA ${abs(remainingMin)}`, tone: "done" };
   if (overdue) return { deadline, remainingMin, breached: true, overdue, label: `Overdue ${abs(remainingMin)}`, tone: "breach" };
-  if (remainingMin < 60) return { deadline, remainingMin, breached: false, overdue, label: `${abs(remainingMin)} left`, tone: "warn" };
-  return { deadline, remainingMin, breached: false, overdue, label: `${abs(remainingMin)} left`, tone: "ok" };
+  if (remainingMin < 60) return { deadline, remainingMin, breached, overdue, label: `${abs(remainingMin)} left`, tone: "warn" };
+  return { deadline, remainingMin, breached, overdue, label: `${abs(remainingMin)} left`, tone: "ok" };
 }
 
 // Is this incident breaching its SLA right now (open + past-deadline, or the

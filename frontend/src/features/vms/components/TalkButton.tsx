@@ -207,8 +207,6 @@ export default function TalkButton({ cameraId, disabled = false }: any) {
     onPointerCancel: () => stop(),
   };
 
-  const active = talking || connecting;
-
   return (
     <button
       type="button"

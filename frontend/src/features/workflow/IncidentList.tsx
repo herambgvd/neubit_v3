@@ -15,7 +15,7 @@
 // Live/Reconnecting badge (onStatus), and NEW-highlighting of just-arrived
 // incidents; a slow poll is the safety-net.
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -117,10 +117,17 @@ export default function WorkflowPage() {
     { onStatus: setConnected },
   );
 
+  // The clock the "new" glow is measured against. Held in state and advanced by
+  // the interval below rather than read during render: reading Date.now() while
+  // rendering makes the render impure, and the value has to move on a timer
+  // anyway for the glow to expire.
+  const [now, setNow] = useState(() => Date.now());
+
   // Prune expired NEW stamps roughly once the window passes so the glow clears.
   useEffect(() => {
     if (newSeen.size === 0) return undefined;
     const t = setInterval(() => {
+      setNow(Date.now());
       setNewSeen((m) => {
         const now = Date.now();
         let changed = false;
@@ -137,7 +144,6 @@ export default function WorkflowPage() {
 
   // Set of ids currently "new" (fresh SSE stamp OR created within the window).
   const newIds = useMemo(() => {
-    const now = Date.now();
     const s = new Set<any>();
     for (const [k, v] of newSeen) if (now - v < NEW_WINDOW_MS) s.add(k);
     for (const it of instances) {
@@ -145,7 +151,7 @@ export default function WorkflowPage() {
       if (c && now - c < NEW_WINDOW_MS) s.add(String(rowId(it)));
     }
     return s;
-  }, [newSeen, instances]);
+  }, [newSeen, instances, now]);
 
   // Stats strip (defensive: if the /stats endpoint isn't live, retry:false hides it).
   const statsQ = useQuery<any>({

@@ -117,7 +117,6 @@ export default function UsersPage() {
 
   const items = users.data?.items || [];
   const total = users.data?.total ?? items.length;
-  const activeCount = items.filter((u) => u.is_active).length;
 
   const filtered = useMemo(() => {
     const f = search.trim().toLowerCase();

@@ -25,7 +25,7 @@ export default function Error({ error, reset }: any) {
           {status ? `Request failed (${status})` : "Something went wrong"}
         </h1>
         <p className="mt-2 text-sm text-muted">
-          We couldn't load this page. You can try again, or head back to the dashboard.
+          We couldn&apos;t load this page. You can try again, or head back to the dashboard.
         </p>
 
         <div className="mt-4 rounded-lg border border-card-border bg-card px-3 py-2.5 text-left">

@@ -57,7 +57,6 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }: any)
     initialData: camera,
     staleTime: 15_000,
   });
-  const cam = cameraQ.data || camera || {};
 
   const [ntpServer, setNtpServer] = useState("");
   const [pwUser, setPwUser] = useState("");

@@ -165,6 +165,9 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
 
   // "Now" for the live edge marker; a quarter-minute's resolution is plenty.
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // The day picker cannot offer a future date. Derived from the same ticking
+  // clock rather than a fresh Date.now() in the JSX, which made render impure.
+  const todayMax = useMemo(() => dayValue(nowMs), [nowMs]);
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 15_000);
     return () => clearInterval(id);
@@ -380,7 +383,7 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
           <input
             type="date"
             value={dayValue(win.fromMs)}
-            max={dayValue(Date.now())}
+            max={todayMax}
             onChange={(e) => e.target.value && pb.pickDay(e.target.value)}
             className="w-[112px] bg-transparent font-mono text-[11px] tabular-nums text-[#d7f7e9] outline-none [color-scheme:dark]"
           />

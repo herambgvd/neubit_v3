@@ -10,7 +10,7 @@
 // Data source mirrors the access EventsFeed: an INITIAL history fetch via
 // GET /vms/events (one request) + LIVE appends over SSE. Both are normalized to
 // one shape and de-duped by event id so every renderer works across sources.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";

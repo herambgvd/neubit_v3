@@ -22,7 +22,6 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import vms from "../api";
 import PatrolEditorModal from "./PatrolEditorModal";

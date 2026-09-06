@@ -63,7 +63,7 @@ function matchZone(hint, zones) {
   );
 }
 
-export default function IncidentMap({ incidents = [], sites = [], siteName = {}, sopName = {} }: any) {
+export default function IncidentMap({ incidents = [], sites = [], sopName = {} }: any) {
   const router = useRouter();
   const [siteId, setSiteId] = useState("");
   const [floorId, setFloorId] = useState("");
@@ -308,7 +308,7 @@ export default function IncidentMap({ incidents = [], sites = [], siteName = {},
   );
 }
 
-function IncidentRow({ it, onOpen, zoneName, sopName = {} }: any) {
+function IncidentRow({ it, onOpen, zoneName }: any) {
   const s = sev(it.priority);
   return (
     <button

@@ -90,7 +90,7 @@ export default function MonitorFormModal({ open, monitor, decoders = [], default
           <div className="space-y-3 rounded-[9px] border border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.06)] p-3">
             <p className="text-[11px] text-nb-warn">
               Decoder monitors push camera streams to a hardware video decoder output (VW-B). The console preview still plays
-              live so you can see what's routed.
+              live so you can see what&apos;s routed.
             </p>
             <Select
               label="Decoder"

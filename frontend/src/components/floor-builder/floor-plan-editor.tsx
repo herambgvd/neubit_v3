@@ -116,7 +116,9 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: any) 
   const [redoStack, setRedoStack] = useState<any[]>([]);
   const [unsaved, setUnsaved] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<any>(null);
-  const [saving, setSaving] = useState(false);
+  // Tracked around the save call but not surfaced: the Save control shows no
+  // in-flight state yet.
+  const [_saving, setSaving] = useState(false);
   const savedPlacementsRef = useRef([]);
   const [deletedDeviceIds, setDeletedDeviceIds] = useState(() => new Set<any>());
 

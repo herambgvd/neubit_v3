@@ -314,7 +314,7 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }: 
             <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0 text-sm" />
             <span>
               Enumerate a multi-channel encoder / DVR to onboard all its channels at once. A single
-              camera returns one channel — that's fine.
+              camera returns one channel — that&apos;s fine.
             </span>
           </div>
         </div>
