@@ -141,9 +141,16 @@ erase reaching the projection relations and aggregates.
 * `metric_definitions.tenant_id` is nullable and NULL means PLATFORM: the listing
   is `tenant_id IS NULL OR tenant_id = :tenant`, so such a row is visible to every
   tenant and a tenant erase correctly leaves it alone. That is the design, and the
-  8 seeded definitions are what it is for. The limitation is the other direction —
-  a super-admin cannot author a definition scoped to ONE tenant, because the
-  registration takes the tenant from the caller's own token.
+  8 seeded definitions are what it is for.
+
+  A super-admin therefore cannot author a definition scoped to ONE tenant, and
+  that is a CONSEQUENCE OF AN INVARIANT rather than an oversight. `_tenant()` in
+  `reading-writer/app/api/router.py` says it plainly: the tenant every query is
+  filtered by is never taken from the request, so a request cannot widen its own
+  scope. Adding a `tenant_id` to the body — even gated on super-admin — would
+  introduce exactly the shape that rule exists to forbid, on the service that
+  reads the estate's telemetry. A per-tenant definition is authored by that
+  tenant's own admin.
 * `benchmark_site_config` is keyed on `site_id` alone, so it holds one config per
   site across all tenants. Sound while site ids are globally unique uuids minted by
   core, but it is not enforced here. Its `tenant_id` now comes from the SITE rather
