@@ -94,7 +94,7 @@ listener count alongside the database and event-bus checks.
 ./backend/access/run-tests.sh
 ```
 
-227, offline: a throwaway container from the shipped image, tree mounted
+237, offline: a throwaway container from the shipped image, tree mounted
 read-only, no network. In-memory SQLite built from the real `Base.metadata`, with
 `get_db` overridden — routes run their real scope and ownership code, and nothing
 below the HTTP edge is mocked.
