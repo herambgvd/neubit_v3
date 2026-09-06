@@ -217,7 +217,20 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
+        """Liveness only — never touches a dependency. See app/probes.py."""
         return {"status": "ok", "service": "vision", "env": settings.env}
+
+    @app.get("/readyz")
+    async def ready():
+        """Readiness: 503 naming the dependency that failed.
+
+        There was none until now, so an orchestrator watching /health could not
+        tell this service from one whose database had gone — on the service
+        holding every camera, recording and evidence lock.
+        """
+        from app.probes import readyz
+
+        return await readyz()
 
     # Sample authed route — proves JWT verification + tenant scope work locally
     # (a core-minted token verifies here identically to the Go nvr service).

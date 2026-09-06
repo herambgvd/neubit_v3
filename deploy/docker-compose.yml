@@ -563,6 +563,17 @@ services:
       # so browsers play live with no transcode (main stays H.265 for recording). The
       # H.265→H.264 transcode fallback stays as a safety net for non-reconfigurable devices.
       VE_ENFORCE_H264_WEB: ${VE_ENFORCE_H264_WEB:-true}
+    # Vision had NO healthcheck: `docker compose ps` never said healthy or
+    # unhealthy for the service holding every camera, recording and evidence
+    # lock, because there was nothing to ask. It consumes /readyz — added with
+    # app/probes.py — so an unreachable database takes it out of the load
+    # balancer instead of quietly answering 200 from /health.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
     depends_on:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
