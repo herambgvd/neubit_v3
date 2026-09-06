@@ -94,16 +94,20 @@ listener count alongside the database and event-bus checks.
 ./backend/access/run-tests.sh
 ```
 
-211, offline: a throwaway container from the shipped image, tree mounted
+227, offline: a throwaway container from the shipped image, tree mounted
 read-only, no network. In-memory SQLite built from the real `Base.metadata`, with
 `get_db` overridden — routes run their real scope and ownership code, and nothing
 below the HTTP edge is mocked.
 
 The one exception is the controller itself. `get_connector` is monkeypatched in
-`test_write_through.py`, which is what makes the cardholder and card routes
-testable at all — and what lets the suite assert that the DECRYPTED secret is
-what reaches the connector, and that another tenant's request never causes a
-connector to be built in the first place.
+`test_write_through.py` and `test_commands.py`, which is what makes the credential
+and command surfaces testable at all — and what lets the suite assert what
+actually goes on the wire: the DECRYPTED secret reaches the connector, another
+tenant's request never causes a connector to be built, and each command sends its
+own action key and body. Those last are wrong-in-a-way-that-looks-right by nature:
+`alarm_zone.disarm` sent where `arm` was meant answers `{"ok": true}` either way,
+and a `period` dropped from an activate turns a timed unlock into a permanent one
+with an identical response.
 
 ## Known gaps
 
