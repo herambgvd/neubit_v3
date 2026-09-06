@@ -1,72 +1,95 @@
-"""Reversible secret encryption for controller credentials.
+"""Controller credentials at rest — per-tenant Fernet via kernel.secrets.
 
-An access controller's password / API key MUST be recoverable in plaintext at
-call time (to auth the OData REST + SignalR connections), so — unlike ingest's
-one-way-hashed webhook secrets — instance secrets are stored REVERSIBLY encrypted.
+The connector needs the plaintext to authenticate, so these are reversibly
+encrypted rather than hashed.
 
-The exact stream-cipher construction is ported verbatim from ingest's
-``security.py`` (``encrypt_secret`` / ``decrypt_secret``): an HMAC-SHA256
-counter-mode keystream keyed off the kernel ``jwt_secret``. Stdlib only, no
-``cryptography`` dependency, no plaintext at rest. Stored form: ``enc:<nonce>:<ct>``.
+WHAT THIS REPLACED. This module used to be its own cipher: an HMAC-SHA256
+keystream XORed over the plaintext, keyed from VE_JWT_SECRET, stored as
+`enc:<nonce>:<ct>`. Three problems, none exotic:
 
-(v2 used a separate ``ACCESS_CONTROL_DDS_ENCRYPTION_KEY`` + a nonce/ciphertext/
-key_version struct; v3 reuses the platform's existing jwt-secret-derived cipher so
-no new env var is introduced — same approach the ingest service already uses for
-its HMAC secrets.)
+  * Unauthenticated. A stream cipher with no MAC is malleable — flip a bit of
+    ciphertext and the same bit of the recovered password flips.
+  * Keyed from the JWT secret. Rotating the token secret, which is routine,
+    silently re-keyed every stored controller credential.
+  * A failed decrypt returned "". After a rotation every connector would
+    authenticate with an empty password and the log would say "401".
+
+kernel.secrets gives per-tenant keys derived from VE_SECRETS_KEY, Fernet
+(AES-CBC + HMAC), and a decrypt that RAISES rather than guessing.
+
+Legacy `enc:<nonce>:<ct>` rows still decrypt, under the old jwt-secret keystream,
+so an existing deployment keeps working. They are re-encrypted in the new format
+on the next write.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
-import os
+import uuid
 
-_ENC_PREFIX = "enc:"
+from kernel.secrets import decrypt_secret_for, encrypt_secret_for
+
+_LEGACY_PREFIX = "enc:"
+_NEW_PREFIX = "enc:v1:"
 
 
-def _cipher_key() -> bytes:
-    """Derive a 32-byte key from the kernel JWT secret (lazy — avoids import cycles)."""
+def _tid(tenant_id: uuid.UUID | str | None) -> str | None:
+    return str(tenant_id) if tenant_id else None
+
+
+def _legacy_key() -> bytes:
     from kernel.config import get_settings
 
     return hashlib.sha256(get_settings().jwt_secret.encode("utf-8")).digest()
 
 
-def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
-    """HMAC-SHA256 counter-mode keystream (stdlib only)."""
+def _legacy_keystream(key: bytes, nonce: bytes, length: int) -> bytes:
     out = bytearray()
     counter = 0
     while len(out) < length:
-        block = hmac.new(key, nonce + counter.to_bytes(4, "big"), hashlib.sha256).digest()
-        out.extend(block)
+        out.extend(hmac.new(key, nonce + counter.to_bytes(4, "big"), hashlib.sha256).digest())
         counter += 1
     return bytes(out[:length])
 
 
-def encrypt_secret(plain: str) -> str:
-    """Reversibly encrypt → ``"enc:<nonce_hex>:<ct_hex>"``."""
-    key = _cipher_key()
-    nonce = os.urandom(16)
-    data = plain.encode("utf-8")
-    ct = bytes(a ^ b for a, b in zip(data, _keystream(key, nonce, len(data))))
-    return f"{_ENC_PREFIX}{nonce.hex()}:{ct.hex()}"
+def _decrypt_legacy(stored: str) -> str:
+    """Recover a value written by the old keystream cipher. "" if undecodable.
 
-
-def decrypt_secret(stored: str | None) -> str:
-    """Recover plaintext from an ``encrypt_secret`` value ("" if not decodable)."""
-    if not stored or not stored.startswith(_ENC_PREFIX):
-        return ""
-    body = stored[len(_ENC_PREFIX):]
-    if ":" not in body:
-        return ""
+    Kept lenient on purpose: this path only ever sees rows that predate the
+    change, and there is nothing an operator can do about a corrupt one.
+    """
+    body = stored[len(_LEGACY_PREFIX):]
     nonce_hex, _, ct_hex = body.partition(":")
+    if not ct_hex:
+        return ""
     try:
-        nonce = bytes.fromhex(nonce_hex)
-        ct = bytes.fromhex(ct_hex)
+        nonce, ct = bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex)
     except ValueError:
         return ""
-    key = _cipher_key()
-    data = bytes(a ^ b for a, b in zip(ct, _keystream(key, nonce, len(ct))))
+    data = bytes(a ^ b for a, b in zip(ct, _legacy_keystream(_legacy_key(), nonce, len(ct))))
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         return ""
+
+
+def encrypt_secret(tenant_id: uuid.UUID | str | None, plain: str) -> str:
+    """Encrypt under the owning tenant's key."""
+    return encrypt_secret_for(_tid(tenant_id), plain)
+
+
+def decrypt_secret(tenant_id: uuid.UUID | str | None, stored: str | None) -> str:
+    """Decrypt a stored credential.
+
+    Raises SecretDecryptError for a current-format value that will not decrypt —
+    an operator rotated VE_SECRETS_KEY, and that must be visible rather than
+    becoming a mystery 401 from the controller.
+    """
+    if not stored:
+        return ""
+    if stored.startswith(_NEW_PREFIX):
+        return decrypt_secret_for(_tid(tenant_id), stored)
+    if stored.startswith(_LEGACY_PREFIX):
+        return _decrypt_legacy(stored)
+    return stored

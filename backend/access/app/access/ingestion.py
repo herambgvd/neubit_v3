@@ -153,7 +153,8 @@ class SignalRSupervisor:
             try:
                 # Build a lightweight object exposing the attrs the factory reads.
                 connector = get_connector(
-                    _InstanceView(inst), secret=decrypt_secret(inst["secret_enc"])
+                    _InstanceView(inst),
+                    secret=decrypt_secret(inst["tenant_id"], inst["secret_enc"]),
                 )
 
                 async def _on_event(ev: ControllerEvent, _inst=inst) -> None:
