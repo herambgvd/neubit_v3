@@ -46,10 +46,22 @@ a satellite authorising without a round-trip; it is not a bug, but it is a windo
 arrived on. `_deliver` now refuses a mismatch on the first delivery. Every kernel
 publisher derives the envelope from the subject, so agreement is the normal case.
 
-This closes the *inconsistency*. It does not make the bus trustworthy: **NATS runs
-with no authentication**, so anything on the network can still publish a
-well-formed offboard. Turning on NATS accounts is a deployment change and it also
-touches the conflux edge collector, which connects to the same server.
+This closes the *inconsistency*. It used to be all the bus had: NATS ran with no
+authentication, so anything that could reach 4222 could publish a well-formed
+offboard.
+
+**The bus authenticates now** (`deploy/nats/nats.conf`). One user per service, no
+anonymous fallback, and publish permissions scoped per service — `access` cannot
+publish as `vms`, and `reading-writer`, which only consumes, may publish no domain
+event at all. The conflux edge collector is a separate deployment and has its own
+user, restricted to `tenant.*.iot.>`.
+
+Two things it does not do, both deliberate and both recorded here rather than in a
+backlog. `ingest`'s grant is `tenant.*.*.>`, because a rule's `target_domain` is
+tenant-configured and interpolated into the subject — scoping it to a fixed list
+would break a legitimate rule, so "an ingest rule naming another module's word"
+stays a permission-model question, not a broker one. And `$JS.API.>` is granted
+whole: splitting JetStream's API per stream is its own piece of work.
 
 **A subject's domain is validated.** `subject()` interpolated all three tokens
 unchecked, and `domain` reaches it from tenant-editable configuration (ingest's

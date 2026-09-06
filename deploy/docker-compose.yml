@@ -163,12 +163,26 @@ services:
     # (no publish, no admin), so exposing it costs nothing and answers:
     #   curl -s localhost:8222/jsz?streams=1 | jq
     #   curl -s localhost:8222/varz | jq .
-    command: ["-js", "-sd", "/data", "-m", "8222"]
+    # `-c` replaces the flags: the config file carries jetstream, the monitoring
+    # port and — the point of it — the per-service users. Without a config there
+    # was no authentication at all, so anything that could reach 4222 could publish
+    # any subject on any tenant and delete any durable consumer.
+    command: ["-c", "/etc/nats/nats.conf"]
+    environment:
+      # NATS expands $VAR when it parses the config, so the file names no secret.
+      NATS_PASS_CORE: ${NATS_PASS_CORE:?set NATS_PASS_CORE in deploy/.env}
+      NATS_PASS_ACCESS: ${NATS_PASS_ACCESS:?set NATS_PASS_ACCESS in deploy/.env}
+      NATS_PASS_INGEST: ${NATS_PASS_INGEST:?set NATS_PASS_INGEST in deploy/.env}
+      NATS_PASS_VISION: ${NATS_PASS_VISION:?set NATS_PASS_VISION in deploy/.env}
+      NATS_PASS_WORKFLOW: ${NATS_PASS_WORKFLOW:?set NATS_PASS_WORKFLOW in deploy/.env}
+      NATS_PASS_READING_WRITER: ${NATS_PASS_READING_WRITER:?set NATS_PASS_READING_WRITER in deploy/.env}
+      NATS_PASS_CONFLUX: ${NATS_PASS_CONFLUX:?set NATS_PASS_CONFLUX in deploy/.env}
     # 4222 + 8222 published for DEVELOPMENT ONLY, from docker-compose.override.yml.
     # An appliance install runs THIS file alone, and publishing the event bus put
     # it on the customer's LAN.
     volumes:
       - natsdata:/data
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
       interval: 10s
@@ -213,6 +227,10 @@ services:
     build: ../backend/core
     env_file: .env
     environment:
+      # Its OWN broker credential. `.env`'s VE_NATS_URL is anonymous and the
+      # broker no longer accepts that; the user here is what deploy/nats/nats.conf
+      # scopes this service's publish permissions to.
+      VE_NATS_URL: nats://core:${NATS_PASS_CORE}@nats:4222
       # Reach the privileged infra sidecar over the internal network (see ops-agent).
       OPS_AGENT_URL: ${OPS_AGENT_URL}
       OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
@@ -299,6 +317,10 @@ services:
       dockerfile: ingest/Dockerfile
     env_file: .env
     environment:
+      # Its OWN broker credential. `.env`'s VE_NATS_URL is anonymous and the
+      # broker no longer accepts that; the user here is what deploy/nats/nats.conf
+      # scopes this service's publish permissions to.
+      VE_NATS_URL: nats://ingest:${NATS_PASS_INGEST}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_ingest
       # The origin integrators point their devices at, used to build the webhook's
       # copy-pasteable receiver URL. This is the GATEWAY (Traefik routes
@@ -359,6 +381,10 @@ services:
       dockerfile: workflow/Dockerfile
     env_file: .env
     environment:
+      # Its OWN broker credential. `.env`'s VE_NATS_URL is anonymous and the
+      # broker no longer accepts that; the user here is what deploy/nats/nats.conf
+      # scopes this service's publish permissions to.
+      VE_NATS_URL: nats://workflow:${NATS_PASS_WORKFLOW}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
       # Host the NATS→incident correlation consumer in this API process (v1 simple).
       VE_WORKFLOW_INLINE_CORRELATION: "1"
@@ -393,6 +419,10 @@ services:
       dockerfile: workflow/Dockerfile
     env_file: .env
     environment:
+      # Its OWN broker credential. `.env`'s VE_NATS_URL is anonymous and the
+      # broker no longer accepts that; the user here is what deploy/nats/nats.conf
+      # scopes this service's publish permissions to.
+      VE_NATS_URL: nats://workflow:${NATS_PASS_WORKFLOW}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
     depends_on:
       redis: { condition: service_healthy }
@@ -427,6 +457,10 @@ services:
       dockerfile: workflow/Dockerfile
     env_file: .env
     environment:
+      # Its OWN broker credential. `.env`'s VE_NATS_URL is anonymous and the
+      # broker no longer accepts that; the user here is what deploy/nats/nats.conf
+      # scopes this service's publish permissions to.
+      VE_NATS_URL: nats://workflow:${NATS_PASS_WORKFLOW}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
     depends_on:
       redis: { condition: service_healthy }
@@ -456,6 +490,10 @@ services:
       dockerfile: access/Dockerfile
     env_file: .env
     environment:
+      # Its OWN broker credential. `.env`'s VE_NATS_URL is anonymous and the
+      # broker no longer accepts that; the user here is what deploy/nats/nats.conf
+      # scopes this service's publish permissions to.
+      VE_NATS_URL: nats://access:${NATS_PASS_ACCESS}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_access
     depends_on:
       postgres: { condition: service_healthy }
@@ -490,6 +528,10 @@ services:
       dockerfile: vision/Dockerfile
     env_file: .env
     environment:
+      # Its OWN broker credential. `.env`'s VE_NATS_URL is anonymous and the
+      # broker no longer accepts that; the user here is what deploy/nats/nats.conf
+      # scopes this service's publish permissions to.
+      VE_NATS_URL: nats://vision:${NATS_PASS_VISION}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_vision
       # P2-B live streaming: where vision reaches the Go nvr data-plane (internal
       # docker DNS) + the media-token TTL (browser HLS/WHEP token; renewable).
@@ -612,6 +654,10 @@ services:
       dockerfile: reading-writer/Dockerfile
     env_file: .env
     environment:
+      # Its OWN broker credential. `.env`'s VE_NATS_URL is anonymous and the
+      # broker no longer accepts that; the user here is what deploy/nats/nats.conf
+      # scopes this service's publish permissions to.
+      VE_NATS_URL: nats://reading-writer:${NATS_PASS_READING_WRITER}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_reporting
       # ── the stream this service OWNS (created/converged at startup) ─────────
       # Bounded on BOTH size and age; whichever binds first wins. See
