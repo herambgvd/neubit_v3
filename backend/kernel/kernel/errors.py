@@ -140,7 +140,18 @@ def register_error_handlers(app: FastAPI) -> None:
     """Attach the four handlers that produce the uniform error envelope."""
 
     @app.exception_handler(AppError)
-    async def _handle_app_error(_request: Request, exc: AppError) -> JSONResponse:
+    async def _handle_app_error(request: Request, exc: AppError) -> JSONResponse:
+        # Log the refusals. Nothing recorded a 401 or a 403 in any of the seven
+        # services on this kernel, so brute-force attempts, permission probing and
+        # the NOT_FOUND that assert_owned returns for a cross-tenant id were all
+        # invisible. WARNING for a refusal, INFO for the ordinary 4xx (a 404 or a
+        # validation failure is traffic, not a signal).
+        if exc.status_code in (401, 403, 404, 409):
+            level = logging.WARNING if exc.status_code in (401, 403) else logging.INFO
+            log.log(
+                level, "%s %s -> %s %s",
+                request.method, request.url.path, exc.status_code, exc.code,
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(exc.code, exc.message, exc.details),
@@ -155,8 +166,12 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def _handle_http(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def _handle_http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = _HTTP_CODE_MAP.get(exc.status_code, "HTTP_ERROR")
+        if exc.status_code in (401, 403):
+            log.warning(
+                "%s %s -> %s %s", request.method, request.url.path, exc.status_code, code
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(code, str(exc.detail)),

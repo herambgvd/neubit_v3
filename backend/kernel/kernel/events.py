@@ -214,6 +214,14 @@ async def dead_letter(js, msg, *, consumer: str, reason: str, delivery: int) -> 
     return True
 
 
+#: EVENTS was created unbounded while the DLQ beside it was carefully limited, so
+#: it grew forever — unbounded disk on an appliance, and a permanent replay archive
+#: of every event ever published, including every tenant offboard. 7 days is well
+#: past any consumer's redelivery budget.
+EVENTS_MAX_AGE_SEC = _env_int("VE_EVENTS_MAX_AGE_SEC", 7 * 24 * 3600)
+EVENTS_MAX_BYTES = _env_int("VE_EVENTS_MAX_BYTES", 4 * 1024 * 1024 * 1024)
+
+
 async def ensure_dlq_stream(js) -> None:
     """Create EVENTS_DLQ bounded, or converge an existing one onto the limits.
 
@@ -273,22 +281,38 @@ async def ensure_events_stream(js) -> None:
 
     Never raises: a service must still boot when JetStream is unhappy.
     """
+    want = dict(max_age=float(EVENTS_MAX_AGE_SEC), max_bytes=EVENTS_MAX_BYTES)
     try:
         info = await js.stream_info(EVENTS_STREAM)
     except Exception:
         try:
-            await js.add_stream(name=EVENTS_STREAM, subjects=list(EVENTS_SUBJECTS))
+            await js.add_stream(
+                name=EVENTS_STREAM, subjects=list(EVENTS_SUBJECTS), **want
+            )
+            log.info(
+                "EVENTS created bounded (max_age=%ss max_bytes=%s)",
+                EVENTS_MAX_AGE_SEC, EVENTS_MAX_BYTES,
+            )
         except Exception as e:  # concurrent create by another service — fine
             log.info("EVENTS stream ensure note: %s", e)
         return
 
-    if sorted(info.config.subjects or []) != sorted(EVENTS_SUBJECTS):
-        try:
-            info.config.subjects = list(EVENTS_SUBJECTS)
-            await js.update_stream(config=info.config)
-            log.info("EVENTS stream subjects converged to %s", EVENTS_SUBJECTS)
-        except Exception as e:  # e.g. it would overlap another stream
-            log.warning("EVENTS stream subject update failed: %s", e)
+    cfg = info.config
+    changed = []
+    if sorted(cfg.subjects or []) != sorted(EVENTS_SUBJECTS):
+        cfg.subjects = list(EVENTS_SUBJECTS)
+        changed.append("subjects")
+    for k, v in want.items():
+        if float(getattr(cfg, k, 0) or 0) != float(v):
+            setattr(cfg, k, v)
+            changed.append(k)
+    if not changed:
+        return
+    try:
+        await js.update_stream(config=cfg)
+        log.info("EVENTS stream converged (%s)", ", ".join(changed))
+    except Exception as e:  # e.g. it would overlap another stream
+        log.warning("EVENTS stream update failed: %s", e)
 
 
 
@@ -349,22 +373,36 @@ class EventBus:
                 pass
         self._nc = self._js = None
 
-    async def publish(self, subj: str, payload: dict | None = None) -> None:
-        """Publish an enveloped event to ``subj``. No-op if NATS is unavailable.
+    async def publish(self, subj: str, payload: dict | None = None) -> bool:
+        """Publish an enveloped event. Returns whether it reached JetStream.
 
         The subject encodes tenant/domain/event; the envelope re-derives tenant_id
-        and type (``<domain>.<event>``) from the subject for consumers.
+        and type from it, so a publisher cannot disagree with its own subject.
+
+        Returns False rather than raising — a failed event must not roll back the
+        caller's committed transaction — but it says so, and logs at ERROR. It used
+        to return None on every path, so a dropped event was indistinguishable from
+        a delivered one.
         """
         if self._js is None:
-            return
+            log.warning("event NOT published on %s: no JetStream connection", subj)
+            return False
         tenant_id, type_ = _parse_subject(subj)
         body = envelope(
             tenant_id=tenant_id, type=type_, source=self.source, payload=payload
         )
         try:
-            await self._js.publish(subj, json.dumps(body).encode())
+            # Nats-Msg-Id turns on JetStream dedup, so a retry after a timeout that
+            # actually succeeded does not deliver the event twice.
+            await self._js.publish(
+                subj,
+                json.dumps(body).encode(),
+                headers={"Nats-Msg-Id": body["event_id"]},
+            )
+            return True
         except Exception as e:
-            log.warning("event publish failed on %s: %s", subj, e)
+            log.error("event publish FAILED on %s: %s", subj, e)
+            return False
 
     async def subscribe(
         self,
@@ -390,7 +428,12 @@ class EventBus:
             # Core NATS is at-most-once with no acks, so a failure can only be logged.
             async def _ephemeral_cb(msg):
                 try:
-                    await handler(json.loads(msg.data.decode()))
+                    env = json.loads(msg.data.decode())
+                    mismatch = _tenant_mismatch(msg.subject, env)
+                    if mismatch:
+                        log.error("event on %s: %s — dropped", pattern, mismatch)
+                        return
+                    await handler(env)
                 except Exception as e:
                     log.exception("event handler error on %s (ephemeral, dropped): %s", pattern, e)
 
@@ -484,6 +527,19 @@ class EventBus:
             await _quiet(msg.term())
             return
 
+        mismatch = _tenant_mismatch(msg.subject, env)
+        if mismatch:
+            # The SUBJECT is authoritative. A handler that reads tenant_id from the
+            # body — kernel.lifecycle's erase does — would otherwise act on whatever
+            # the publisher wrote there, on a bus where nothing checks the two agree.
+            # Refuse on delivery 1: redelivery cannot make them agree.
+            log.error(
+                "event on %s (%s): %s — refusing, dead-lettering", pattern, durable, mismatch
+            )
+            await self._dead_letter(msg, durable, f"tenant mismatch: {mismatch}", delivery)
+            await _quiet(msg.term())
+            return
+
         try:
             await handler(env)
         except Unprocessable as e:
@@ -535,6 +591,23 @@ async def _quiet(awaitable) -> None:
         await awaitable
     except Exception as e:
         log.warning("ack/nak/term failed: %s", e)
+
+
+def _tenant_mismatch(subject: str, env: Any) -> str | None:
+    """A description of how the subject and body disagree about the tenant, else None.
+
+    Every publisher builds both from one id (see `subject` and `envelope`), so
+    agreement is the normal case and a mismatch means the body was written by
+    something other than the thing that chose the subject.
+    """
+    if not isinstance(env, dict):
+        return None
+    subject_tenant, _ = _parse_subject(subject or "")
+    body_tenant = env.get("tenant_id")
+    body_tenant = None if body_tenant in (None, "", "platform") else str(body_tenant)
+    if subject_tenant == body_tenant:
+        return None
+    return f"subject says {subject_tenant!r}, body says {body_tenant!r}"
 
 
 def _parse_subject(subj: str) -> tuple[str | None, str]:
