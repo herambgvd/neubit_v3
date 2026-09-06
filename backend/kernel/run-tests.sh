@@ -25,6 +25,8 @@ fi
 
 exec "$DOCKER" run --rm --network none \
   -v "$REPO/backend:/src:ro" \
+  -v "$REPO/deploy:/repo/deploy:ro" \
+  -e VE_REPO_ROOT=/repo \
   -w /src/kernel \
   -e PYTHONPATH=/src/kernel \
   -e PYTHONDONTWRITEBYTECODE=1 \

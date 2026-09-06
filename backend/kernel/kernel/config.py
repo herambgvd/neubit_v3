@@ -64,23 +64,100 @@ class Settings(BaseSettings):
     # no longer decrypts raises — see kernel/secrets.py.
     secrets_key: str = "change-me-secret"
 
+    # --- Trusted proxies (kernel.client_ip) --------------------------------
+    # Networks whose `X-Forwarded-For` may be believed. EMPTY MEANS TRUST
+    # NOTHING, which is the safe direction: the socket peer is used instead, so
+    # an unset value under-attributes rather than letting a caller-set header
+    # decide who they are. Same name and meaning as core's, so one `.env` sets
+    # both. `deploy/docker-compose.yml` carries the value for this stack.
+    trusted_proxy_cidrs: list[str] = []
+
     # --- CORS (frontend origins) ------------------------------------------
     cors_origins: list[str] = ["http://localhost:3000"]
-    # Any http(s) origin by default so a service opens from the LAN; the specific
-    # origin is echoed back, which keeps credentialed requests working.
-    cors_origin_regex: str = r"https?://.*"
+    # Which ORIGINS may make credentialed cross-origin calls. This is a security
+    # boundary, not a convenience setting: the middleware is mounted with
+    # allow_credentials=True, so whatever matches here gets the browser's cookies
+    # attached AND gets the response echoed back to it.
+    #
+    # It used to be `https?://.*`, which matches every website on the internet.
+    # Verified against the running stack: a request carrying
+    # `Origin: https://evil.example` came back with
+    # `access-control-allow-origin: https://evil.example` and
+    # `access-control-allow-credentials: true` — on /api/v1/auth/refresh, which
+    # reads the httpOnly refresh cookie and returns a fresh access token in the
+    # body. Any page an operator visited while signed in could take the session.
+    #
+    # The stated intent of the loose default was "the app opens from any machine
+    # on the LAN", and that intent is kept: loopback, the three RFC 1918 ranges
+    # and `*.local`. What is gone is the public internet. A deployment served from
+    # a real hostname sets VE_CORS_ORIGINS (or this regex) to that hostname.
+    cors_origin_regex: str = (
+        r"^https?://(localhost|127\.0\.0\.1|\[::1\]|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|[A-Za-z0-9-]+\.local)(:\d+)?$"
+    )
 
 
-#: The shipped placeholders. A deployment left on one of these signs tokens and
-#: encrypts tenant credentials with a value that is in the public repository.
-_PLACEHOLDERS = {
-    "jwt_secret": "change-me-in-prod",
-    "secrets_key": "change-me-secret",
+#: Every shipped default and .env.example placeholder. A deployment left on one of
+#: these signs tokens and encrypts tenant credentials with a value that is in the
+#: public repository. The empty string is here because an unset env var reaches
+#: pydantic as "" rather than as the default, and an empty HMAC key makes every
+#: token in the estate forgeable by anyone.
+#:
+#: KEPT IN STEP WITH core/app/core/api.py's _WEAK_SECRETS AND ITS LENGTH FLOORS.
+#: They were not, and the weaker half was this one — which is the wrong way round.
+#: Core MINTS the tokens and refused to boot on a short or empty secret; the six
+#: satellites VERIFY them and accepted anything that was not one of two exact
+#: strings. A deployment with VE_JWT_SECRET="" would have stopped core and left
+#: access, ingest, vision, workflow and the reporting writer verifying tokens
+#: signed with an empty key.
+_WEAK_SECRETS = {
+    "change-me-in-prod",
+    "change-me-secret",
+    "change-me-to-a-long-random-string-min-32-bytes",
+    "change-me-another-long-random-string",
+    "",
 }
+
+#: RFC 7518 §3.2: an HMAC key for HS256 must be at least as long as the hash
+#: output. PyJWT warns below this and signs anyway. `secrets_key` is a KDF input
+#: rather than a raw HMAC key, so it carries core's lower floor, not this one.
+_MIN_JWT_SECRET = 32
+_MIN_SECRETS_KEY = 16
+
+#: Every placeholder this repository has ever shipped begins "change-me". The
+#: exact-match set above did not actually cover the two values in
+#: `deploy/.env.example` — it listed two near-miss variants that appear nowhere,
+#: so copying the example and setting VE_ENV=prod booted the whole estate on a
+#: secret that is in the public repository, with both guards reading as though
+#: they had checked. A list is the wrong shape for this; a rule cannot drift.
+_PLACEHOLDER_MARKER = "change-me"
+
+
+def _is_placeholder(value: str) -> bool:
+    return value in _WEAK_SECRETS or _PLACEHOLDER_MARKER in value.lower()
+
+
+def _weak_secrets(settings: "Settings") -> list[str]:
+    """Which secrets are unusable, and why. Empty means both are fine."""
+    weak: list[str] = []
+    if _is_placeholder(settings.jwt_secret):
+        weak.append("VE_JWT_SECRET (shipped placeholder or empty)")
+    elif len(settings.jwt_secret) < _MIN_JWT_SECRET:
+        weak.append(
+            f"VE_JWT_SECRET (needs >={_MIN_JWT_SECRET} chars for HS256, "
+            f"has {len(settings.jwt_secret)})"
+        )
+    if _is_placeholder(settings.secrets_key):
+        weak.append("VE_SECRETS_KEY (shipped placeholder or empty)")
+    elif len(settings.secrets_key) < _MIN_SECRETS_KEY:
+        weak.append(
+            f"VE_SECRETS_KEY (needs >={_MIN_SECRETS_KEY} chars, "
+            f"has {len(settings.secrets_key)})"
+        )
+    return weak
 
 
 def _check_secrets(settings: "Settings") -> None:
-    """Refuse to boot outside dev on a placeholder secret; warn loudly in dev.
+    """Refuse to boot outside dev on a weak secret; warn loudly in dev.
 
     There was no guard at all. A service started without the env file silently
     accepted tokens anyone could forge and encrypted credentials under a key
@@ -90,18 +167,18 @@ def _check_secrets(settings: "Settings") -> None:
     Dev warns rather than refuses: a developer running one service by hand should
     not have to set up secrets first, and they are not protecting anything.
     """
-    left = [name for name, value in _PLACEHOLDERS.items() if getattr(settings, name) == value]
-    if not left:
+    weak = _weak_secrets(settings)
+    if not weak:
         return
-    names = ", ".join(f"VE_{n.upper()}" for n in sorted(left))
+    detail = "; ".join(weak)
     if settings.env.lower() in ("dev", "test", "local"):
         log.warning(
-            "%s left at the shipped placeholder — fine for env=%s, fatal anywhere else",
-            names, settings.env,
+            "weak secret(s): %s — fine for env=%s, fatal anywhere else",
+            detail, settings.env,
         )
         return
     raise RuntimeError(
-        f"{names} still at the shipped placeholder with VE_ENV={settings.env!r}. "
+        f"refusing to start in env={settings.env!r}: weak/default secret(s): {detail}. "
         "Tokens would be forgeable and stored credentials readable by anyone with "
         "the source. Set them, or set VE_ENV=dev."
     )

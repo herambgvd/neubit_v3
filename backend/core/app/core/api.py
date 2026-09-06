@@ -154,6 +154,18 @@ class LicenseEnforcementMiddleware(BaseHTTPMiddleware):
 
 # Shipped defaults and .env.example placeholders. Boot is refused if any of these
 # survive outside dev/test.
+#
+# The exact-match list did NOT cover the two values actually in
+# deploy/.env.example — it named two near-miss variants that appear nowhere in the
+# repository. Copying the example, setting VE_ENV=prod and leaving the secrets
+# alone therefore booted core and every satellite on a string anyone can read in
+# the source, with this function reading as though it had checked. Every
+# placeholder this repository ships begins "change-me", so that is the rule now;
+# the list stays for the empty string and for anything that ever does not.
+#
+# Kept in step with kernel/kernel/config.py, which had the same list and no length
+# floor at all. backend/kernel/tests/test_boot_guard.py asserts they agree, and
+# asserts both refuse whatever deploy/.env.example currently ships.
 _WEAK_SECRETS = {
     "change-me-in-prod",
     "change-me-secret",
@@ -161,18 +173,23 @@ _WEAK_SECRETS = {
     "change-me-another-long-random-string",
     "",
 }
+_PLACEHOLDER_MARKER = "change-me"
+
+
+def _is_placeholder(value: str) -> bool:
+    return value in _WEAK_SECRETS or _PLACEHOLDER_MARKER in value.lower()
 
 
 def _enforce_secrets(settings: Settings, log) -> None:
     """Refuse to start outside dev/test with default or too-short crypto secrets."""
     if settings.env in ("dev", "test", "local"):
-        if settings.jwt_secret in _WEAK_SECRETS or settings.secrets_key in _WEAK_SECRETS:
+        if _is_placeholder(settings.jwt_secret) or _is_placeholder(settings.secrets_key):
             log.warning("running with DEFAULT secrets — fine for dev, NEVER for production")
         return
     weak = []
-    if settings.jwt_secret in _WEAK_SECRETS or len(settings.jwt_secret) < 32:
+    if _is_placeholder(settings.jwt_secret) or len(settings.jwt_secret) < 32:
         weak.append("VE_JWT_SECRET (needs a strong random value, >=32 chars)")
-    if settings.secrets_key in _WEAK_SECRETS or len(settings.secrets_key) < 16:
+    if _is_placeholder(settings.secrets_key) or len(settings.secrets_key) < 16:
         weak.append("VE_SECRETS_KEY (needs a strong random value)")
     if weak:
         raise RuntimeError(
