@@ -14,17 +14,46 @@ import pytest
 import main
 from conftest import TOKEN, auth
 
-ROUTES = [
-    ("GET", "/containers"),
-    ("GET", "/containers/neubit-v3-core-1/logs"),
-    ("POST", "/containers/neubit-v3-core-1/restart"),
-    ("POST", "/containers/neubit-v3-core-1/stop"),
-    ("POST", "/containers/neubit-v3-core-1/start"),
-    ("POST", "/services/core/scale"),
-    ("GET", "/host"),
-    ("GET", "/db/export"),
-    ("POST", "/db/import"),
-]
+#: Public by design: an orchestrator has no token. Everything else on this app
+#: controls the docker socket and must not be reachable without one.
+PUBLIC = {"/health", "/readyz", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+
+#: A concrete URL per privileged route, DERIVED FROM THE APP rather than listed.
+#: The list used to be written out by hand, so a new route added to a container
+#: that holds the docker socket would simply not have been covered — and nothing
+#: would have said so. `test_the_inventory_covers_every_route` is what keeps this
+#: honest if the derivation ever stops matching.
+def _privileged_routes():
+    from fastapi.routing import APIRoute
+
+    out = []
+    for route in main.app.routes:
+        if not isinstance(route, APIRoute) or route.path in PUBLIC:
+            continue
+        # A real container name and service, so the request gets past routing and
+        # into the auth dependency rather than 404-ing on the project whitelist.
+        path = route.path.replace("{name}", "neubit-v3-core-1")
+        for method in sorted(set(route.methods) - {"HEAD", "OPTIONS"}):
+            out.append((method, path))
+    return sorted(set(out))
+
+
+ROUTES = _privileged_routes()
+
+
+def test_the_inventory_covers_every_route():
+    """A walk that finds nothing makes every test below pass over an empty list,
+    and a route that slips out of PUBLIC by accident must be noticed."""
+    from fastapi.routing import APIRoute
+
+    all_paths = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
+    covered = {p for _, p in ROUTES}
+    unaccounted = {
+        p for p in all_paths
+        if p not in PUBLIC and p.replace("{name}", "neubit-v3-core-1") not in covered
+    }
+    assert not unaccounted, unaccounted
+    assert len(ROUTES) >= 9, ROUTES
 
 
 @pytest.mark.parametrize("method,path", ROUTES)

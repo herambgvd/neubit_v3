@@ -67,7 +67,7 @@ credential it has no use for.
 ./backend/ops-agent/run-tests.sh
 ```
 
-67 tests, offline: a throwaway container from the shipped image, tree mounted
+68 tests, offline: a throwaway container from the shipped image, tree mounted
 read-only, **no network and no docker socket**. A fake docker client stands in, so
 nothing in the suite can reach a real daemon.
 
@@ -75,6 +75,13 @@ The two that matter most: the auth matrix (every privileged route × missing, em
 and wrong token), and the sanitizer — a real pg_dump survives intact while shell
 and file meta-commands are refused, including indented ones and any that follow a
 COPY block.
+
+The auth matrix's route list is DERIVED FROM THE APP, not written out. It used to
+be a hand-maintained list of nine, so a route added later to the container that
+holds the docker socket would simply not have been covered, and nothing would have
+said so. Everything not in `PUBLIC` (the two probes and the docs) has to refuse a
+missing, empty and wrong token; adding an ungated route now fails three tests
+instead of none.
 
 ## Configuration
 
