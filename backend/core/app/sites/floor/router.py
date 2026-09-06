@@ -182,11 +182,8 @@ async def _process_upload(file: UploadFile, *, scope: Scope, site_id: str) -> st
             code="UNSUPPORTED_FILE_TYPE",
             status_code=400,
         )
-    # Streamed, not read-then-measured. This used to be `await file.read()` followed
-    # by a length check — a cap that was correct and useless, because the whole
-    # upload had already been materialised as one bytes object before anything
-    # looked at its length, so the 413 arrived after the allocation it existed to
-    # prevent. See core/uploads.read_capped.
+    # Streamed, not read-then-measured: a length check after `file.read()` 413s
+    # only once the whole upload is already in memory. See core/uploads.read_capped.
     content = await read_capped(file, MAX_FILE_SIZE, field="File")
     namespace = str(scope.tenant_id) if scope.tenant_id is not None else "platform"
     try:

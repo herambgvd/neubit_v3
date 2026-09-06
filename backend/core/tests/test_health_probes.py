@@ -1,12 +1,9 @@
-"""Liveness and readiness answer DIFFERENT questions, and readiness must be able to fail.
+"""Liveness and readiness answer different questions, and readiness must be able to fail.
 
-`/ready` was written correctly and consumed by nothing: Traefik did not route the
-path and the core service had no healthcheck, so the only reachable probe was
-`/health` — `return {"status": "ok"}`, a static dict with no dependency injected. It
-answers 200 with Postgres stopped while every `/api/v1/*` route 500s on `get_db`.
-
-These tests assert the property (readiness reflects a dependency, liveness does not)
-rather than restarting Postgres to prove it.
+`/health` is a static dict and answers 200 with Postgres stopped; `/ready` reflects
+its dependencies. Both halves are asserted, plus that the deployment actually routes
+and probes `/ready` — written correctly and consumed by nothing is the failure this
+file watches for.
 """
 
 from __future__ import annotations
@@ -48,7 +45,7 @@ async def test_ready_reports_503_and_names_the_broken_dependency(app, monkeypatc
     body = r.json()
     assert body["status"] == "not_ready"
     assert body["checks"]["database"].startswith("error:")
-    # It must name WHICH one — a 503 saying only "not ready" sends an operator
+    # It must name which one: a 503 saying only "not ready" sends an operator
     # looking at three systems instead of one.
     assert "connection refused" in body["checks"]["database"]
 
@@ -82,10 +79,9 @@ async def test_ready_is_200_when_everything_answers(app, monkeypatch):
 
 
 async def test_health_is_liveness_and_says_nothing_about_dependencies(app, monkeypatch):
-    """Not a defect — a deliberate split. This test exists so that nobody "fixes"
-    /health by giving it a database check: an instance that is alive but not ready
-    must still be distinguishable from one that is dead, or a restart loop and a
-    dependency outage look identical to the orchestrator."""
+    """Do not "fix" /health by giving it a database check. Alive-but-not-ready has to
+    stay distinguishable from dead, or a restart loop and a dependency outage look
+    the same to the orchestrator."""
 
     async def _broken() -> str:
         raise RuntimeError("down")
@@ -98,17 +94,15 @@ async def test_health_is_liveness_and_says_nothing_about_dependencies(app, monke
 
 
 def test_the_deployment_actually_probes_readiness():
-    """The code was never the problem. This asserts the two deployment files that
-    were: the gateway must route /ready, and core must have a healthcheck that uses
-    it. Without this, /ready can silently become unreachable again — which is the
-    state it was in.
+    """The two deployment files: the gateway must route /ready and core must have a
+    healthcheck that uses it, or the endpoint is silently unreachable.
     """
     import os
     import pathlib
 
     # run-tests.sh mounts gateway/ and deploy/ at VE_REPO_ROOT; locally they are
-    # three levels up. Deliberately NOT a skip-if-absent: a test that quietly skips
-    # itself is how this endpoint became unreachable in the first place.
+    # three levels up. Deliberately not skip-if-absent — a test that quietly skips
+    # itself is how this endpoint became unreachable.
     repo = pathlib.Path(os.environ.get("VE_REPO_ROOT") or pathlib.Path(__file__).resolve().parents[3])
     routes_path = repo / "gateway" / "dynamic" / "routes.yml"
     compose_path = repo / "deploy" / "docker-compose.yml"

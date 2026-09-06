@@ -1,11 +1,10 @@
-"""Reference scenario app = the platform base with no feature modules yet.
+"""Core service entrypoint.
 
-Run locally:   uvicorn example.main:app --reload
-In Docker:     see ../docker-compose.yml (migrations run first, then this app).
+Run locally:   uvicorn app.main:app --reload
+In Docker:     see deploy/docker-compose.yml (migrations run first, then this app).
 
-The lifespan bootstraps the first admin from VE_BOOTSTRAP_ADMIN_EMAIL/PASSWORD
-(only if the users table is empty). Copy this file into a real scenario, register
-its feature modules, and you have a full app.
+The lifespan bootstraps the first admin from VE_BOOTSTRAP_ADMIN_EMAIL/PASSWORD (only
+if the users table is empty), then seeds tenancy and the platform catalogs.
 """
 
 from contextlib import asynccontextmanager
@@ -42,11 +41,10 @@ async def lifespan(app):
     async with get_sessionmaker()() as db:
         await seed_modules(db)
         await seed_brands(db)
-    # Chain `shutting_down` onto uvicorn's SIGTERM/SIGINT handlers so the SSE
-    # relays can end their responses when the process is asked to exit. It has to
-    # happen HERE and not in the shutdown half below: uvicorn waits for open
-    # connections BEFORE it runs lifespan shutdown, so code down there never runs
-    # in the case that hangs. See app/core/shutdown.py.
+    # Chain `shutting_down` onto uvicorn's SIGTERM/SIGINT handlers so the SSE relays
+    # can end their responses on exit. Must be here, not in the shutdown half below:
+    # uvicorn waits for open connections before running lifespan shutdown, so code
+    # down there never runs in the case that hangs. See app/core/shutdown.py.
     install_signal_handlers()
     await events_nats.connect()
     await events_nats.publish("system", "core", "startup", {"service": "core"})

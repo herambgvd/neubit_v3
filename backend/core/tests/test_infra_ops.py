@@ -1,21 +1,18 @@
 """Infrastructure control — the nine routes that can stop the platform.
 
 Core does not touch the Docker socket; it forwards to a privileged ops-agent
-sidecar on the internal network. So the router is a proxy, and the things worth
-testing about a proxy are the things it adds and the things it must not swallow:
+sidecar. So this router is a proxy, and what matters is what it adds and what it
+must not swallow:
 
-  * every destructive action leaves an audit entry naming WHO and WHAT, because
-    "the platform went down at 14:02" is only answerable afterwards if the restart
-    that did it was written down at the time;
-  * a sidecar that is down is reported as a sidecar being down (503), not as core
+  * every destructive action leaves an audit entry naming who and what;
+  * a sidecar that is down is reported as the sidecar being down (503), not as core
     being broken (500) and not as the container being fine;
   * the agent's own refusal reaches the operator with its own status, so "no such
     container" does not arrive as a generic failure.
 
-The agent is replaced with a recorder rather than reached over the network — the
-suite runs with no network at all, and the point here is core's half of the
-exchange. One test deliberately keeps the real client, pointed at a closed port,
-because "unreachable becomes 503" is a property of the real transport handling.
+The agent is a recorder rather than a network call, since the suite has no network.
+One test keeps the real client pointed at a closed port, because "unreachable
+becomes 503" is a property of the real transport handling.
 """
 
 from __future__ import annotations
@@ -42,8 +39,8 @@ INFRA = f"{PREFIX}/admin/infra"
 
 
 class RecordingAgent:
-    """Stands in for the ops-agent. Records what core asked it to do, so the tests
-    can assert the request core BUILT, not just the answer it relayed."""
+    """Stands in for the ops-agent, recording what core asked it to do so the tests
+    can assert the request core built, not just the answer it relayed."""
 
     calls: list[tuple] = []
     raises: HTTPException | None = None
@@ -94,9 +91,9 @@ class RecordingAgent:
 def agent(monkeypatch):
     RecordingAgent.calls = []
     RecordingAgent.raises = None
-    # The MODULE, not `app.infra.router` the attribute — the package re-exports the
-    # APIRouter object under that name, and patching an attribute onto it would
-    # succeed silently while the handler kept calling the real client.
+    # The module, not the `app.infra.router` attribute: the package re-exports the
+    # APIRouter under that name, so patching it succeeds silently while the handler
+    # keeps calling the real client.
     module = importlib.import_module("app.infra.router")
     monkeypatch.setattr(module, "_agent", lambda: RecordingAgent())
     return RecordingAgent
@@ -157,8 +154,8 @@ async def _audit_actions(db) -> list[str]:
 
 # --- reads -------------------------------------------------------------------
 async def test_the_container_list_reaches_the_operator_as_the_agent_reported_it(app, world):
-    """The console's whole infrastructure page is this payload. A router that
-    re-shaped it would silently drop whichever field the agent adds next."""
+    """The console's whole infrastructure page is this payload, so a router that
+    re-shaped it would drop whichever field the agent adds next."""
     async with _client(app) as c:
         r = await c.get(f"{INFRA}/containers", headers=_auth(world["sa"]))
     assert r.status_code == 200, r.text
@@ -167,9 +164,8 @@ async def test_the_container_list_reaches_the_operator_as_the_agent_reported_it(
 
 
 async def test_a_log_tail_is_passed_through_and_bounded(app, world):
-    """`tail` goes straight to a docker logs call on the host. Unbounded, one
-    request pulls an entire log file through core's event loop; the cap is the only
-    thing standing between a curious operator and a stalled control plane."""
+    """`tail` goes straight to a docker logs call on the host, so unbounded it pulls
+    an entire log file through core's event loop."""
     async with _client(app) as c:
         ok = await c.get(
             f"{INFRA}/containers/core/logs", headers=_auth(world["sa"]), params={"tail": 500}
@@ -188,7 +184,7 @@ async def test_a_log_tail_is_passed_through_and_bounded(app, world):
 
 async def test_reading_containers_and_the_host_is_not_written_to_the_audit_trail(app, world):
     """An audit trail that records every page view buries the one restart that
-    matters. Reads are deliberately not audited; the destructive actions below are.
+    matters, so reads are deliberately not audited.
     """
     async with _client(app) as c:
         await c.get(f"{INFRA}/containers", headers=_auth(world["sa"]))
@@ -210,9 +206,9 @@ async def test_reading_containers_and_the_host_is_not_written_to_the_audit_trail
 async def test_every_lifecycle_action_names_its_actor_in_the_audit_trail(
     app, world, verb, path, body, action
 ):
-    """The reason this router exists at all rather than handing operators a shell:
-    a restart taken through core is attributable. An action that reaches the agent
-    without an audit entry is indistinguishable, afterwards, from one nobody took.
+    """Why this router exists rather than a shell: a restart taken through core is
+    attributable. An action that reaches the agent without an audit entry is, later,
+    indistinguishable from one nobody took.
     """
     async with _client(app) as c:
         r = await c.request(verb, f"{INFRA}{path}", headers=_auth(world["sa"]), json=body)
@@ -225,9 +221,8 @@ async def test_every_lifecycle_action_names_its_actor_in_the_audit_trail(
 
 
 async def test_a_scale_request_carries_the_replica_count_the_operator_asked_for(app, world):
-    """Scale is currently a recorded intent — the agent answers ok=false until real
-    worker services exist. That makes the recorded number the only thing there is,
-    so it has to be the number that was typed."""
+    """Scale is a recorded intent for now — the agent answers ok=false until real
+    worker services exist — so the recorded number is all there is."""
     async with _client(app) as c:
         r = await c.post(
             f"{INFRA}/services/worker/scale", headers=_auth(world["sa"]), json={"replicas": 4}
@@ -243,9 +238,8 @@ async def test_a_scale_request_carries_the_replica_count_the_operator_asked_for(
 
 # --- database backup / restore ----------------------------------------------
 async def test_a_database_export_comes_back_as_a_downloadable_sql_file(app, world):
-    """This is the operator's backup. Returned as an attachment with a filename,
-    not as JSON: a browser that renders a control-plane dump into a tab instead of
-    saving it has produced a very large screenful of credentials."""
+    """The operator's backup, returned as a named attachment rather than JSON: a
+    browser that renders a control-plane dump into a tab is showing credentials."""
     async with _client(app) as c:
         r = await c.get(f"{INFRA}/db/export", headers=_auth(world["sa"]))
     assert r.status_code == 200
@@ -257,11 +251,10 @@ async def test_a_database_export_comes_back_as_a_downloadable_sql_file(app, worl
 
 
 async def test_a_database_restore_records_that_it_happened(app, world):
-    """The single most destructive call on the platform: it drops and rebuilds the
-    control database, including the audit table this entry lands in. The handler
-    has to release its own transaction before handing off — otherwise the restore
-    waits on the very request that asked for it — and then write the entry back
-    onto the rebuilt schema.
+    """The most destructive call on the platform: it drops and rebuilds the control
+    database, including the audit table this entry lands in. The handler must release
+    its own transaction before handing off, or the restore waits on the request that
+    asked for it, and then write the entry onto the rebuilt schema.
     """
     async with _client(app) as c:
         r = await c.post(
@@ -277,7 +270,7 @@ async def test_a_database_restore_records_that_it_happened(app, world):
 
 # --- when the sidecar misbehaves ---------------------------------------------
 async def test_the_agents_own_refusal_reaches_the_operator_with_its_own_status(app, world):
-    """"No such container" is a 404 the operator can act on. Flattening it to a 500
+    """"No such container" is a 404 the operator can act on; flattening it to a 500
     turns a typo into an incident."""
     RecordingAgent.raises = HTTPException(status_code=404, detail="no such container: typo")
     async with _client(app) as c:
@@ -289,12 +282,11 @@ async def test_the_agents_own_refusal_reaches_the_operator_with_its_own_status(a
 
 
 async def test_an_unreachable_sidecar_is_reported_as_the_sidecar_being_down(app, world, monkeypatch):
-    """503, not 500. The distinction is the whole on-call triage: one says the
-    infrastructure control plane is unavailable, the other says core is broken —
-    and core answering this request at all proves it is not.
+    """503, not 500 — one says the infrastructure control plane is unavailable, the
+    other says core is broken, and core answering at all proves it is not.
 
-    The real client is used here on purpose; the recorder above cannot produce a
-    transport failure.
+    The real client is used here because the recorder cannot produce a transport
+    failure.
     """
     from app.infra.client import OpsAgentClient
 
@@ -310,10 +302,9 @@ async def test_an_unreachable_sidecar_is_reported_as_the_sidecar_being_down(app,
 
 # --- who may ask -------------------------------------------------------------
 async def test_a_tenant_admin_cannot_reach_the_agent_at_all(app, world):
-    """Stated for the whole /admin table in test_admin_realm_boundary.py; repeated
-    here for one route because of what is behind it. The refusal must happen in
-    core, BEFORE the forward — a 403 produced after the container was already
-    restarted is not a refusal."""
+    """Stated for the whole /admin table in test_admin_realm_boundary.py, repeated
+    here because of what is behind this route: the refusal has to happen in core,
+    before the forward. A 403 after the container restarted is not a refusal."""
     async with _client(app) as c:
         r = await c.post(f"{INFRA}/containers/core/stop", headers=_auth(world["tenant_admin"]))
     assert r.status_code == 403

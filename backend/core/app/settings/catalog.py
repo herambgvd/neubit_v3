@@ -76,13 +76,12 @@ CATALOG: list[dict] = [
         "public": False,
     },
     # --- Google Maps ---------------------------------------------------------
-    # Opt-in ONLY: with the toggle off (the default) the Sites Map runs on the
-    # offline basemap above, which needs no key and no internet.
+    # Opt-in: with the toggle off (the default) the Sites Map runs on the offline
+    # basemap above, which needs no key and no internet.
     #
-    # The browser JS loader needs the api_key in-browser, so it is exposed to any
-    # authenticated user via GET /settings/maps (NOT the unauthenticated /public
-    # subset). The real security boundary is the HTTP-referrer restriction on the
-    # key in Google Cloud Console, not hiding it from logged-in operators.
+    # The browser JS loader needs the api_key, so GET /settings/maps exposes it to
+    # any authenticated user (not to the unauthenticated /public subset). The real
+    # boundary is the HTTP-referrer restriction on the key in Cloud Console.
     {
         "key": "google_maps_enabled",
         "type": "bool",
@@ -152,12 +151,10 @@ def public_keys() -> set[str]:
 
 
 def secret_keys() -> set[str]:
-    """Keys whose stored value is a CREDENTIAL.
+    """Keys whose stored value is a credential.
 
-    `"secret": True` sat on `google_maps_api_key` from the day it was added and
-    nothing read it: the value was written to `app_settings.value` in plaintext and
-    returned unmasked by `GET /settings`. A declared-but-unenforced flag is worse
-    than an absent one — it reads as a control in review. This is what makes it one.
+    This is what enforces the catalog's `"secret": True` flag — such values are
+    encrypted at rest and masked in responses.
     """
     return {row["key"] for row in CATALOG if row.get("secret")}
 

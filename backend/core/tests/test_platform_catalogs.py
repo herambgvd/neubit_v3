@@ -1,19 +1,18 @@
 """The two platform catalogs — modules and device brands.
 
-These are the only routes under ``/admin`` a tenant user may call, and they are
-the only pair on the platform with a SPLIT gate: the list is readable by anyone
-signed in (the console renders a tenant's feature toggles and the add-device brand
-picker from them) while every mutation is super-admin. A split gate is worth its
-own file because it is the one shape where "the route is protected" is half true,
-and where a copy-paste of the read dependency onto a write is invisible in review.
+The only routes under ``/admin`` a tenant user may call, and the only pair with a
+split gate: the list is readable by anyone signed in (the console renders feature
+toggles and the add-device brand picker from them) while every mutation is
+super-admin. A split gate gets its own file because it is the shape where "the route
+is protected" is half true and a read dependency copy-pasted onto a write is
+invisible in review.
 
-Both catalogs are platform-GLOBAL — one set of rows for the whole deployment, no
-tenant_id anywhere. So the property to assert is the opposite of tenant isolation:
-two different tenants must see the SAME catalog, because a module key a tenant
-cannot see is a feature its operator cannot be granted.
+Both catalogs are platform-global, with no tenant_id anywhere, so the property is
+the opposite of tenant isolation: two tenants must see the same catalog, because a
+module key a tenant cannot see is a feature its operator cannot be granted.
 
-Rows are inserted through the super-admin routes here, because the catalogs are
-small enough that the create path is part of what the console does with them.
+Rows go in through the super-admin routes, because the create path is part of what
+the console does with these.
 """
 
 from __future__ import annotations
@@ -61,9 +60,9 @@ def _auth(user) -> dict:
 
 @pytest_asyncio.fixture
 async def world(db):
-    """A super-admin, and two tenant users in DIFFERENT tenants — one of them
-    holding no permissions at all, because "any authenticated user" is a claim
-    about the weakest credential, not the strongest."""
+    """A super-admin and two tenant users in different tenants, one holding no
+    permissions at all — "any authenticated user" is a claim about the weakest
+    credential."""
     sa_role = await make_role(db, "Platform", ["*"])
     admin_role = await make_role(db, "TenantAdmin", ["*"])
     nobody_role = await make_role(db, "Viewer", [])
@@ -99,10 +98,9 @@ async def world(db):
 
 # --- the split gate, both directions -----------------------------------------
 async def test_any_signed_in_user_can_read_both_catalogs(app, world):
-    """The read side of the split, asserted with a role holding NO permissions.
-    The console cannot render a tenant's feature toggles without the module keys,
-    nor the add-device form without the brands, so gating these on a permission
-    would break the UI for every non-administrator."""
+    """The read side, asserted with a role holding no permissions: the console cannot
+    render feature toggles without the module keys, nor the add-device form without
+    the brands, so a permission gate here breaks the UI for non-administrators."""
     world["db"].add(Module(key="vms", name="Video", description="", category="Video"))
     world["db"].add(DeviceBrand(brand_id="hikvision", name="Hikvision", sdk_type="hikvision"))
     await world["db"].commit()
@@ -129,14 +127,12 @@ async def test_any_signed_in_user_can_read_both_catalogs(app, world):
     ],
 )
 async def test_a_tenant_admin_may_read_the_catalogs_but_never_write_them(app, world, verb, url, body):
-    """The write side. A tenant administrator holds the wildcard inside their own
-    tenancy and is allowed to READ these rows, which is exactly the situation in
-    which a missing gate on the write is easiest to miss: the surface already
-    answers this caller.
+    """The write side. A tenant administrator holds the wildcard in their own tenancy
+    and may read these rows, so the surface already answers this caller and a missing
+    write gate is easy to miss.
 
-    Editing the module catalog is a platform act — the keys here become the feature
-    flags every tenant's licence is written against, so a tenant that could add one
-    could grant itself a capability nobody sold it.
+    The keys here become the feature flags every tenant's licence is written against,
+    so a tenant that could add one could grant itself a capability nobody sold it.
     """
     async with _client(app) as c:
         r = await c.request(
@@ -148,8 +144,7 @@ async def test_a_tenant_admin_may_read_the_catalogs_but_never_write_them(app, wo
 
 async def test_the_same_catalog_is_served_to_every_tenant(app, world):
     """The inverse of tenant isolation, and deliberate: these tables have no
-    tenant_id. A per-tenant view would mean a module key an operator cannot see and
-    therefore cannot be granted."""
+    tenant_id, and a per-tenant view would hide module keys operators must grant."""
     async with _client(app) as c:
         await c.post(MODULES, headers=_auth(world["sa"]), json={"key": "anpr", "name": "ANPR"})
         for_a = await c.get(MODULES, headers=_auth(world["admin_a"]))
@@ -160,10 +155,9 @@ async def test_the_same_catalog_is_served_to_every_tenant(app, world):
 
 # --- the module catalog ------------------------------------------------------
 async def test_a_module_added_by_an_operator_is_never_a_system_module(app, world):
-    """`is_system` is what protects the modules the platform itself ships from
-    being deleted. If the create route honoured a client-supplied flag, anyone
-    creating a module could mint an undeletable row — or, worse, the field would
-    become the client's to claim."""
+    """`is_system` protects the modules the platform ships from being deleted, so the
+    create route must not honour a client-supplied flag — that would let anyone mint
+    an undeletable row."""
     async with _client(app) as c:
         r = await c.post(
             MODULES, headers=_auth(world["sa"]),
@@ -174,9 +168,8 @@ async def test_a_module_added_by_an_operator_is_never_a_system_module(app, world
 
 
 async def test_a_system_module_cannot_be_deleted(app, world):
-    """The seeded modules (vms, access, analytics…) are the keys every tenant's
-    features dict is written against. Deleting one orphans that flag on every
-    tenant at once, with nothing left to re-enable it from."""
+    """The seeded modules are the keys every tenant's features dict is written
+    against, so deleting one orphans that flag on every tenant at once."""
     seeded = Module(key="vms", name="Video", description="", category="Video", is_system=True)
     custom = Module(key="anpr", name="ANPR", description="", category="Video", is_system=False)
     world["db"].add_all([seeded, custom])
@@ -190,14 +183,14 @@ async def test_a_system_module_cannot_be_deleted(app, world):
         left = await c.get(MODULES, headers=_auth(world["sa"]))
 
     assert protected.status_code == 422, protected.text
-    # Not a dead route — the same call on a non-system module works.
+    # Not a dead route: the same call on a non-system module works.
     assert removable.status_code == 204, removable.text
     assert [m["key"] for m in left.json()] == ["vms"]
 
 
 async def test_a_module_key_cannot_be_taken_twice(app, world):
-    """The key IS the feature flag. Two rows claiming one would make "is this
-    module enabled" ambiguous for every tenant."""
+    """The key is the feature flag, so two rows claiming one make "is this module
+    enabled" ambiguous for every tenant."""
     async with _client(app) as c:
         await c.post(MODULES, headers=_auth(world["sa"]), json={"key": "anpr", "name": "ANPR"})
         dup = await c.post(
@@ -209,8 +202,8 @@ async def test_a_module_key_cannot_be_taken_twice(app, world):
 
 
 async def test_editing_a_module_changes_only_the_fields_that_were_sent(app, world):
-    """PATCH semantics. A partial edit that nulled the untouched fields would erase
-    a module's description and category every time someone renamed it."""
+    """PATCH semantics: an edit that nulled untouched fields would erase a module's
+    description and category on every rename."""
     async with _client(app) as c:
         created = await c.post(
             MODULES, headers=_auth(world["sa"]),
@@ -241,9 +234,9 @@ async def test_a_module_that_does_not_exist_is_a_404_on_edit_and_on_delete(app, 
 
 # --- the device-brand catalog ------------------------------------------------
 async def test_a_device_brand_round_trips_its_protocol_and_capability_lists(app, world):
-    """These lists drive what the add-device form offers — which protocol to speak
-    and which capabilities to show. Dropped or reordered into a string, the form
-    offers the wrong things for a real camera."""
+    """These lists drive what the add-device form offers — which protocol to speak,
+    which capabilities to show — so dropping or flattening them misconfigures a real
+    camera."""
     async with _client(app) as c:
         created = await c.post(
             BRANDS, headers=_auth(world["sa"]),
@@ -262,8 +255,8 @@ async def test_a_device_brand_round_trips_its_protocol_and_capability_lists(app,
 
 
 async def test_a_brand_id_cannot_be_taken_twice(app, world):
-    """brand_id selects the driver. Two rows claiming one is a coin flip over which
-    SDK a camera is talked to with."""
+    """brand_id selects the driver, so two rows claiming one is a coin flip over
+    which SDK a camera is talked to with."""
     async with _client(app) as c:
         await c.post(BRANDS, headers=_auth(world["sa"]),
                      json={"brand_id": "dahua", "name": "Dahua"})
@@ -276,9 +269,9 @@ async def test_a_brand_id_cannot_be_taken_twice(app, world):
 
 
 async def test_marking_a_brands_driver_installed_is_a_partial_edit(app, world):
-    """`is_installed` is the field an operator actually toggles — it says this
-    deployment has the SDK. Flipping it must not disturb the protocol lists the
-    form is built from."""
+    """`is_installed` says this deployment has the SDK and is the field an operator
+    toggles; flipping it must not disturb the protocol lists the form is built
+    from."""
     async with _client(app) as c:
         created = await c.post(
             BRANDS, headers=_auth(world["sa"]),
@@ -296,8 +289,8 @@ async def test_marking_a_brands_driver_installed_is_a_partial_edit(app, world):
 
 
 async def test_a_device_brand_that_does_not_exist_is_a_404_on_every_verb(app, world):
-    """Including the READ, which any signed-in user may call — so this is the one
-    404 here that an unprivileged caller can observe."""
+    """Including the read, which any signed-in user may call — the one 404 here an
+    unprivileged caller can observe."""
     missing = uuid.uuid4()
     async with _client(app) as c:
         got = await c.get(f"{BRANDS}/{missing}", headers=_auth(world["viewer_b"]))

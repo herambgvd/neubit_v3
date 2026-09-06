@@ -1,10 +1,8 @@
 """Signing in, issuing and revoking tokens, and changing a password.
 
-Everything that decides WHETHER someone is who they say they are, and everything
-that ends that decision. `_set_password` lives here rather than with the user
-admin because the policy it enforces — strength, reuse history, the timestamp
-that invalidates older sessions — is the same whether a person changes their own
-password or an admin resets it, and two copies of that would drift.
+`_set_password` lives here rather than with the user admin: strength, reuse
+history and the timestamp are the same policy whether a person changes their own
+password or an admin resets it, and two copies would drift.
 """
 
 
@@ -62,9 +60,8 @@ class SessionMixin:
                 user.locked_until = _now() + dt.timedelta(minutes=settings.lockout_minutes)
             await self.db.commit()
             raise UnauthorizedError("invalid email or password")
-        # Tenant gate: a tenant-scoped user cannot sign in while their organization
-        # is suspended or its license has fully expired (super-admins bypass — they
-        # have no tenant). Checked only after the password is verified.
+        # A tenant-scoped user cannot sign in while their organization is suspended
+        # or its license has expired. Checked only after the password is verified.
         if user.tenant_id is not None and not user.is_superadmin:
             from ...tenancy.models import Tenant, effective_license_state
 

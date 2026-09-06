@@ -1,27 +1,16 @@
 """WebSocket authentication/authorization helpers.
 
-HTTP dependencies (``Depends(require_permission(...))``) do NOT run on a WebSocket
-handshake — Starlette only invokes the endpoint coroutine, so a WS route is OPEN
-unless it authenticates itself. These two helpers close that gap by validating the
-same HS256 access token the REST API uses, reusing ``decode_token`` and the ``User``
-role model so a WS connection enforces the exact same RBAC as an HTTP request.
+``Depends(require_permission(...))`` does not run on a WebSocket handshake —
+Starlette only invokes the endpoint coroutine — so a WS route is open unless it
+authenticates itself. These helpers validate the same HS256 access token the REST
+API uses, so a socket enforces the same RBAC.
 
-HOW THE FRONTEND PASSES THE TOKEN
----------------------------------
-The browser ``WebSocket`` constructor cannot set an ``Authorization`` header, so the
-canonical transport is a QUERY-STRING param:
+The browser ``WebSocket`` constructor cannot set headers, so ``?token=<access>`` is
+the canonical transport, with ``Authorization: Bearer`` and
+``Sec-WebSocket-Protocol`` as fallbacks for native clients. Always the short-lived
+access token, never the refresh token, so a leaked WS URL expires quickly.
 
-    const ws = new WebSocket(`ws://host/api/system/resources/stream?token=${accessToken}`)
-
-We therefore read ``?token=<access>`` first. As fallbacks (native clients, proxies)
-we also accept an ``Authorization: Bearer <access>`` header and the
-``Sec-WebSocket-Protocol`` subprotocol (some clients smuggle the token there when a
-query string is undesirable). The access token is the SHORT-lived one — never the
-refresh token — so a leaked WS URL expires quickly.
-
-Close codes (application range 4000-4999):
-  * 4401 — unauthenticated (missing/invalid/expired token, or inactive/unknown user).
-  * 4403 — authenticated but the role lacks the required permission.
+Close codes: 4401 unauthenticated, 4403 authenticated but not permitted.
 """
 
 from __future__ import annotations
@@ -39,21 +28,20 @@ log = get_logger("edge.ws_auth")
 
 
 def _extract_token(websocket: WebSocket) -> str | None:
-    """Pull the access token off the handshake: ?token= first, then Authorization
-    header (Bearer), then the Sec-WebSocket-Protocol subprotocol. Returns None if
-    no token is present anywhere."""
-    # 1) Query string — the browser-friendly path (WebSocket can't set headers).
+    """Pull the access token off the handshake: ?token=, then Bearer, then the
+    Sec-WebSocket-Protocol subprotocol. None if there is no token anywhere."""
+    # Query string — the browser path; WebSocket cannot set headers.
     token = websocket.query_params.get("token")
     if token:
         return token
-    # 2) Authorization header — "Bearer <token>" (native clients / proxies).
+    # Authorization header — native clients and proxies.
     auth = websocket.headers.get("authorization")
     if auth and auth.lower().startswith("bearer "):
         return auth[7:].strip() or None
-    # 3) Subprotocol — some clients pass the token as the requested subprotocol.
+    # Subprotocol — some clients pass the token as the requested subprotocol.
     proto = websocket.headers.get("sec-websocket-protocol")
     if proto:
-        # A comma-separated list; take the first non-empty entry as the token.
+        # Comma-separated; the first non-empty entry is the token.
         first = proto.split(",")[0].strip()
         return first or None
     return None
@@ -62,11 +50,10 @@ def _extract_token(websocket: WebSocket) -> str | None:
 async def authenticate_ws(websocket: WebSocket):
     """Authenticate a WebSocket from its access token.
 
-    Returns the live ``User`` on success. On any failure (no token, bad signature /
-    expiry, wrong token type, unknown or inactive user) it closes the socket with
-    code 4401 and returns None — the caller must ``return`` immediately when None.
+    Returns the live ``User``, or closes the socket with 4401 and returns None. The
+    caller must ``return`` immediately on None.
     """
-    # Imported lazily to avoid an import cycle (auth.models -> db.base -> ... -> core).
+    # Lazy: auth.models -> db.base -> ... -> core is an import cycle.
     from ..auth.models import User
 
     token = _extract_token(websocket)
@@ -82,7 +69,7 @@ async def authenticate_ws(websocket: WebSocket):
         await websocket.close(code=4401)
         return None
 
-    # Only ACCESS tokens grant access; a refresh token must never open a socket.
+    # A refresh token must never open a socket.
     if claims.get("type") != "access":
         log.debug("ws auth: non-access token type=%s", claims.get("type"))
         await websocket.close(code=4401)
@@ -96,7 +83,7 @@ async def authenticate_ws(websocket: WebSocket):
         await websocket.close(code=4401)
         return None
 
-    # Load the user fresh so a deactivation takes effect immediately (like HTTP).
+    # Load fresh so a deactivation takes effect immediately, as on HTTP.
     async with get_sessionmaker()() as db:
         user = await db.get(User, user_id)
 
@@ -111,13 +98,12 @@ async def authenticate_ws(websocket: WebSocket):
 async def authorize_ws(websocket: WebSocket, permission: str):
     """Authenticate, then require the user's role to grant ``permission``.
 
-    Returns the ``User`` on success. Closes with 4401 if unauthenticated (delegated
-    to ``authenticate_ws``) or 4403 if authenticated but not permitted, returning
-    None in either case — the caller must ``return`` on None.
+    Returns the ``User``, or closes with 4401 (unauthenticated) or 4403 (not
+    permitted) and returns None. The caller must ``return`` on None.
     """
     user = await authenticate_ws(websocket)
     if user is None:
-        # authenticate_ws already closed with 4401.
+        # Already closed with 4401.
         return None
     if not user.role.grants(permission):
         log.debug("ws auth: user %s lacks permission %s", user.id, permission)

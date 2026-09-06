@@ -1,15 +1,12 @@
 """Tags domain-event publishing on the NATS spine.
 
-Subjects follow the platform convention ``tenant.<tenant_id>.tags.<entity>.<event>``
-(built by ``events_nats.publish(tenant_id, domain, event, payload)``). We use the
-domain ``tags`` and the entity ``tag`` (e.g. ``tag.created``, ``tag.updated``,
-``tag.deleted``, plus ``tag.assigned`` / ``tag.unassigned`` for link changes) so a
-subscriber can match ``tenant.*.tags.>`` or ``tenant.<id>.tags.tag.>``.
+Subjects follow the platform convention
+``tenant.<tenant_id>.tags.tag.<event>`` — ``created``, ``updated``, ``deleted``,
+``assigned``, ``unassigned`` — so a subscriber can match ``tenant.*.tags.>``.
 
-Publish-only, best-effort, and a no-op when NATS is disabled (``VE_NATS_URL``
-unset) — it never breaks a request. ``tenant_id`` NULL (a platform/super-admin
-action) is published under the reserved ``platform`` tenant segment so the subject
-is always well-formed.
+Publish-only and best-effort: a no-op when NATS is disabled (``VE_NATS_URL`` unset),
+never breaking a request. A NULL ``tenant_id`` (a platform action) publishes under
+the reserved ``platform`` segment so the subject is always well-formed.
 """
 
 from __future__ import annotations

@@ -1,11 +1,9 @@
 """Creating, editing and administering user accounts, plus the bootstrap admin.
 
-The highest-risk surface in core: every method here takes a user id, and every one
-needs an explicit ownership check. `scope.owns()` treating a NULL tenant_id as
-"owned by everyone" turned exactly these into a tenant-to-platform privilege
-escalation, because on `users` a NULL tenant_id is the SUPER-ADMIN. The `scope`
-argument is not optional in spirit — passing None means "no isolation", which is
-correct only on the bootstrap path.
+Every method takes a user id and needs an explicit ownership check — on `users` a
+NULL tenant_id is the super-admin, so treating it as "owned by everyone" is a
+tenant-to-platform privilege escalation. Passing `scope=None` means no isolation
+and is correct only on the bootstrap path.
 """
 
 
@@ -96,11 +94,10 @@ class UsersMixin:
             if taken is not None:
                 raise ConflictError("email already registered")
             user.email = data.email
-            # A new address is an unproven inbox again — re-verification is the only
-            # thing that says this person can actually receive mail there.
+            # A new address is an unproven inbox: require re-verification.
             user.email_verified = False
         # An admin-set password goes through the same gate as a self-service change
-        # (policy + reuse history + timestamp); an empty/absent value changes nothing.
+        # (policy + reuse history + timestamp); an empty value changes nothing.
         password_set = bool(data.password)
         if password_set:
             self._set_password(user, data.password)
@@ -124,9 +121,9 @@ class UsersMixin:
         return user
 
     async def admin_lock_user(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
-        """Manually lock an account: block sign-in until an admin unlocks it. Encoded
-        as a far-future ``locked_until`` (the same field auto-lockout uses), so the
-        existing login check enforces it with no new code path."""
+        """Manually lock an account until an admin unlocks it. Encoded as a
+        far-future ``locked_until`` — the field auto-lockout uses — so the existing
+        login check enforces it with no new code path."""
         user = await self._admin_target(user_id, scope)
         user.locked_until = _now() + dt.timedelta(days=3650)
         await self.db.commit()
@@ -160,9 +157,9 @@ class UsersMixin:
         return user
 
     async def clone_user(self, user_id: uuid.UUID, data, scope: Scope | None = None) -> User:
-        """Create a new user inheriting the source's role, status and site scope.
-        Identity is fresh (new email/name); a random password is set — the new user
-        chooses their own via the emailed invite, so no credential is ever copied."""
+        """Create a new user inheriting the source's role, status and site scope,
+        with a fresh email/name and a random password. The new user chooses their
+        own via the invite; no credential is copied."""
         src = await self._admin_target(user_id, scope)
         if (await self.db.execute(select(User).where(User.email == data.email))).scalar_one_or_none():
             raise ConflictError("email already registered")
@@ -203,15 +200,10 @@ class UsersMixin:
     def users_query(self, scope: Scope):
         """Users list, optionally scoped to a single tenant.
 
-        Takes the caller's Scope, not a bare tenant_id, and delegates to
-        ``scoped()``. The bare-tenant_id version could not express the difference
-        between "super-admin, no filter" and "a caller whose own tenant_id is NULL",
-        because both arrived as None — so a non-superadmin platform user got the
-        whole platform's directory. Scope carries ``is_superadmin`` separately and
-        cannot be flattened that way.
-
-        (v1 shared-DB row-scoping; DB-per-tenant would drop the filter since each
-        tenant DB only holds its own users.)
+        Takes the whole Scope, not a bare tenant_id: flattened to one, "super-admin,
+        no filter" and "a caller whose own tenant_id is NULL" both arrive as None
+        and a platform user gets the whole directory. Scope carries
+        ``is_superadmin`` separately.
         """
         return scoped(select(User).order_by(User.created_at.desc()), User, scope)
 

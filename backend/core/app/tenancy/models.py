@@ -1,14 +1,10 @@
 """Tenant ORM model (multi-tenancy control plane).
 
-v1 = tenant_id row-scoping in a SHARED control DB. Every tenant-owned row carries a
-tenant_id; super-admins (tenant_id NULL, is_superadmin True) manage tenants via the
-/admin API. This is the testable first cut.
-
-PRODUCTION HARDENING TARGET: DB-per-tenant — each tenant gets its own physical
-database (hard isolation, easy per-tenant backup/restore/delete). When that lands,
-the Tenant row would additionally hold a connection descriptor and get_db would
-route by tenant; the tenant_id columns become the fallback for the shared control
-DB only. Keeping the model here makes that migration incremental.
+tenant_id row-scoping in a shared control DB: every tenant-owned row carries a
+tenant_id, and super-admins (tenant_id NULL, is_superadmin True) manage tenants via
+the /admin API. The intended hardening is DB-per-tenant, where the Tenant row also
+holds a connection descriptor and get_db routes by tenant; keeping the model here
+makes that migration incremental.
 
 Uuid/JSON use SQLAlchemy's portable generic types so the same model runs on
 Postgres and on SQLite (tests).

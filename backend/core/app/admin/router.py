@@ -271,18 +271,14 @@ async def delete_tenant(
     await audit_record(
         db, actor=actor, action="tenant.delete", target_type="tenant",
         target_id=str(tenant_id),
-        # The per-table counts go in the trail because this entry is the evidence
-        # the erasure happened, and it is the only thing that survives it. "Deleted
-        # tenant X" cannot be checked against anything; "deleted tenant X, and
-        # these 14 tables gave up these rows" can.
+        # Per-table counts go in the trail: this entry is the only evidence of the
+        # erasure that survives it.
         meta={"name": tenant.name, "erased": {k: v for k, v in removed.items() if v}},
     )
-    # Right-to-erase: every service wipes this tenant's data from its own DB on receipt
-    # (kernel.lifecycle.subscribe_tenant_offboard). Core does NOT consume its own
-    # event — it erased its own tables synchronously, above, inside the same
-    # transaction as the delete (app/tenancy/erasure.py). That used to read "Core's
-    # own rows cascaded via the FK", which was true only of the eight tables that
-    # had one; eleven others had a bare tenant_id and were erased by nothing.
+    # Right-to-erase: every service wipes this tenant's data from its own DB on
+    # receipt (kernel.lifecycle.subscribe_tenant_offboard). Core does not consume its
+    # own event — it erased its own tables synchronously above, in the same
+    # transaction as the delete (app/tenancy/erasure.py).
     await events_nats.publish(str(tenant_id), "tenant", "offboarded", {"name": tenant.name})
 
 

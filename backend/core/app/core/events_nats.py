@@ -22,20 +22,15 @@ _nc: Any = None  # nats.aio.client.Client
 _js: Any = None  # JetStream context
 
 # ── the EVENTS stream's subject list ─────────────────────────────────────────
-# MUST stay identical to ``kernel.events.EVENTS_SUBJECTS`` (backend/kernel) and to
-# gokernel's list, because whichever service connects first is the one that
-# creates the stream. Core cannot import the kernel package (it does not ship in
-# core's image), so this is a deliberate copy — change both, or a service will
-# quietly converge the stream back to the other list.
+# Must stay identical to ``kernel.events.EVENTS_SUBJECTS`` and gokernel's list:
+# whichever service connects first creates the stream, and the others converge it
+# back. Core cannot import the kernel package, so this is a deliberate copy.
 #
-# EVENTS used to be ``tenant.>``. It was narrowed so the live IoT sensor feed
-# could get its OWN bounded stream (``IOT_READINGS``, subjects ``tenant.*.iot.>``):
-# NATS refuses overlapping subjects between streams on one account, and EVENTS is
-# unbounded on purpose because it carries low-volume domain events worth keeping.
+# Not ``tenant.>``, because the IoT feed needs its own bounded stream
+# (``IOT_READINGS``, ``tenant.*.iot.>``) and NATS refuses overlapping subjects.
 #
-# ⚠ ADDING A NEW DOMAIN? Add it here AND in kernel.events, or its events land on a
-# subject no stream captures — the realtime SSE relays (core NATS, at-most-once)
-# still work, but there is no persistence and no durable consumer is possible.
+# Adding a domain? Add it here AND in kernel.events, or its events land on a
+# subject no stream captures — the SSE relays still work, but nothing persists.
 EVENTS_STREAM = "EVENTS"
 EVENTS_SUBJECTS = [
     "tenant.*.access.>",
@@ -56,9 +51,9 @@ EVENTS_SUBJECTS = [
 async def _ensure_events_stream(js) -> None:
     """Create EVENTS, or converge an existing one onto EVENTS_SUBJECTS.
 
-    ``add_stream`` only CREATES; on an existing stream it raises, and this used to
-    be swallowed — so a subject-list change would never reach a running stack.
-    Update explicitly, only when it differs. Never raises: core must still boot.
+    ``add_stream`` only creates and raises on an existing stream, so the update has
+    to be explicit or a subject-list change never reaches a running stack. Never
+    raises: core must still boot.
     """
     try:
         info = await js.stream_info(EVENTS_STREAM)
@@ -92,8 +87,7 @@ async def connect() -> None:
 
         _nc = await nats.connect(url, name="neubit-core")
         _js = _nc.jetstream()
-        # One durable stream capturing the platform's domain events for replay/audit.
-        # NOT the IoT sensor feed — that has its own bounded stream. See above.
+        # One durable stream for domain events. Not the IoT feed, which has its own.
         await _ensure_events_stream(_js)
         log.info("NATS connected: %s", url)
     except Exception as e:  # broker down / lib missing → degrade gracefully
@@ -145,15 +139,12 @@ async def subscribe(pattern: str, handler: Callable[[dict], Awaitable[None]]) ->
 async def ephemeral_subscribe(
     pattern: str, handler: Callable[[dict], Awaitable[None]]
 ) -> Any:
-    """Create a NON-durable, per-caller core NATS subscription and RETURN it.
+    """Create a non-durable, per-caller core NATS subscription and return it.
 
-    Unlike ``subscribe`` (fire-and-forget, process-lifetime), this hands the raw
-    ``nats.aio.subscription.Subscription`` back so the caller can ``await sub.unsubscribe()``
-    when it's done — the shape an SSE connection needs: one ephemeral subscription
-    per open stream, torn down the moment the client disconnects. At-most-once live
-    delivery (no JetStream, no history) which is exactly right for live UI fan-out.
-
-    Returns ``None`` if NATS is unavailable (client degrades to no-op).
+    Unlike ``subscribe``, which is fire-and-forget for the process lifetime, this
+    hands back the ``Subscription`` so the caller can ``await sub.unsubscribe()`` —
+    the shape an SSE connection needs, one per open stream. At-most-once, no
+    JetStream, no history. Returns ``None`` if NATS is unavailable.
     """
     if _nc is None:
         return None

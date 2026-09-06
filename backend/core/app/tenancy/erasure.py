@@ -1,61 +1,25 @@
-"""Tenant offboard erasure — what core does to its OWN tables, and what it keeps.
+"""Tenant offboard erasure — what core does to its own tables, and what it keeps.
 
-WHY THIS FILE EXISTS
+Satellites erase a tenant with the kernel's generic "delete every row whose table
+has a tenant_id" sweep. Core cannot use that: some of its tables link to a tenant
+by something other than a tenant_id column (a user_id, a uuid inside a string
+key, an id inside a JSON array), and some must survive an erase for legal
+reasons. So every table core owns is classified by hand below with a reason, and
+``check_classification`` enforces it — an unclassified table fails a test and
+refuses the offboard rather than being silently swept or silently skipped.
 
-Core publishes ``tenant.<id>.tenant.offboarded`` when a super-admin deletes a
-tenant, and every satellite reacts by wiping that tenant's rows from its own
-database (``kernel.lifecycle.subscribe_tenant_offboard``, which walks every table
-carrying a ``tenant_id``). Core does not consume its own event, so its own tables
-were covered by exactly one mechanism: an ``ON DELETE CASCADE`` on a foreign key
-to ``tenants``. 0022 noticed the hole while adding such a constraint to
-``dashforge_embeds`` and wrote it down rather than hiding it:
+The dispositions:
 
-    "core's own `sites` and `tags` carry a bare `tenant_id` and are erased by
-     neither mechanism"
-
-That was the service that OWNS tenancy exempting itself from the erase it demands
-of everyone else, which is a DPDP right-to-erase failure in the worst possible
-place. It was also an undercount. Enumerating the live schema rather than reading
-the comment found **eleven** tables with a bare ``tenant_id``, four more that
-carried an ``ON DELETE SET NULL`` (worse than no erase — see below), and three
-that hold a tenant's people through a ``user_id`` with no foreign key at all and
-are therefore invisible to a tenant_id sweep. sites and tags were two of the two
-that happened to be visible from where 0022 was standing.
-
-WHY A REGISTRY AND NOT A SWEEP
-
-kernel's generic "delete every row whose table has a tenant_id" is right for a
-satellite, whose tables are all one tenant's operational data. It is wrong here,
-because core holds the two categories that a blanket delete gets wrong in
-opposite directions:
-
-  * data that a sweep MISSES because the tenant link is not a column named
-    tenant_id — a user_id, or a uuid inside a string key, or an id inside a JSON
-    array; and
-  * data that MUST SURVIVE. Deleting a financial record or an audit trail because
-    a script could not tell it apart from a preference blob is not compliance, it
-    is a different violation, and it is one that destroys the evidence that the
-    erasure itself was performed correctly.
-
-So every table core owns is classified BY HAND with a written reason, and the
-classification is enforced (see ``check_classification``): a table that appears
-without one fails a test and refuses an offboard, rather than being silently
-swept or silently skipped depending on which mechanism happened to see it.
-
-THE DISPOSITIONS
-
-  CASCADE        an FK to tenants with ON DELETE CASCADE already erases it. Not a
-                 no-op classification: the check ASSERTS the constraint is really
-                 there and really CASCADE, so a table cannot claim this and drift.
-  ERASE          explicitly deleted, WHERE tenant_id = the tenant.
-  ERASE_BY_USER  explicitly deleted by the tenant's user ids. These have no
-                 tenant_id and no FK to users, so nothing else reaches them.
-  ERASE_CUSTOM   the tenant reference is not a column value — it is inside a
-                 string key or a JSON array — and a handler removes it.
-  RETAIN         deliberately kept. A reason is mandatory and the reason has to be
-                 a legal or evidential one, not "it seemed useful".
-  PLATFORM       holds no tenant data at all. The check refuses this label on any
-                 table that HAS a tenant_id, so it cannot be used to look away.
+  CASCADE        an FK to tenants with ON DELETE CASCADE already erases it. The
+                 check asserts the constraint is really there and really CASCADE.
+  ERASE          deleted explicitly, WHERE tenant_id = the tenant.
+  ERASE_BY_USER  deleted by the tenant's user ids; these have no tenant_id and no
+                 FK to users, so nothing else reaches them.
+  ERASE_CUSTOM   the tenant reference is inside a string key or a JSON array, and
+                 a handler removes it.
+  RETAIN         deliberately kept. A legal or evidential reason is mandatory.
+  PLATFORM       holds no tenant data. The check refuses this label on a table
+                 that has a tenant_id, so it cannot be used to look away.
   SUBJECT        the ``tenants`` row itself, deleted last by the caller.
 """
 
@@ -90,14 +54,9 @@ class Disposition:
 async def _erase_alert_states(session: AsyncSession, tid: uuid.UUID) -> int:
     """``alert_states.alert_key`` is "license-expired:<tenant_id>" and friends.
 
-    The tenant id is INSIDE a string, so no column-level sweep can see it and no
-    constraint can reference it. What is left behind is a super-admin's
-    read/dismissed flag on an alert about a tenant that no longer exists — not
-    personal data of the tenant's people, but a dangling reference that will never
-    match anything again, and precisely the kind of leftover that a generic
-    mechanism is structurally incapable of finding. Erased for hygiene, and listed
-    here so the next person to encode an id into a key knows this file is where
-    the consequence gets handled.
+    The id is inside a string, so no column sweep sees it and no constraint
+    reaches it. Erased for hygiene: what is left otherwise is a super-admin's
+    dismissed flag pointing at a tenant that no longer exists.
     """
     from ..alerts.models import AlertState
 
@@ -110,15 +69,10 @@ async def _erase_alert_states(session: AsyncSession, tid: uuid.UUID) -> int:
 async def _scrub_broadcast_targets(session: AsyncSession, tid: uuid.UUID) -> int:
     """``broadcasts.target_tenant_ids`` is a JSON array of tenant ids.
 
-    The broadcast itself is a PLATFORM record — a super-admin's message, not the
-    tenant's data — so it is not deleted. But leaving the id in its target list
-    keeps a reference to an erased tenant in a row that outlives it, and a
-    re-issued uuid would silently address the wrong audience. The id is removed
-    from the array and the broadcast survives.
-
-    Read-modify-write rather than a JSON operator: the column is SQLAlchemy's
-    portable ``JSON`` so the same code has to run on Postgres and on the SQLite the
-    tests use, and the row count here is a handful.
+    The broadcast is a platform record and survives; only the id is dropped from
+    its target list, so a re-issued uuid cannot silently address the wrong
+    audience. Read-modify-write rather than a JSON operator because the column is
+    SQLAlchemy's portable ``JSON`` and has to run on the SQLite the tests use.
     """
     from ..broadcasts.models import Broadcast
 
@@ -134,17 +88,12 @@ async def _scrub_broadcast_targets(session: AsyncSession, tid: uuid.UUID) -> int
 
 
 async def _snapshot_and_retain_invoices(session: AsyncSession, tid: uuid.UUID) -> int:
-    """Detach the retained invoices from the tenant about to be deleted.
+    """Snapshot the tenant's name onto the invoices that will outlive it.
 
-    An invoice is kept (see RETENTION below) and its FK to ``tenants`` is gone as
-    of 0024, so nothing removes it. But a retained financial record naming only a
-    uuid that no longer resolves is not a usable record, so the tenant's NAME is
-    snapshotted onto it here — at the one moment it is still readable — exactly as
-    ``audit_log`` snapshots an actor's email so the trail survives the user.
-
-    Done at erase time rather than at invoice creation on purpose: the invoice
-    service is not touched by this commit, and the snapshot is only ever needed for
-    a tenant that is going away.
+    Invoices are RETAIN and have no FK to ``tenants``, so a retained financial
+    record would name only a uuid that no longer resolves. Same trick as
+    ``audit_log`` snapshotting an actor's email. Done at erase time because it is
+    only ever needed for a tenant that is going away.
     """
     from ..billing.models import Invoice
     from .models import Tenant
@@ -187,8 +136,7 @@ DISPOSITIONS: dict[str, Disposition] = {
 
     # --- erased because nothing else reaches them -------------------------
     # These carry a bare tenant_id: no FK, so no cascade, and core does not consume
-    # its own offboard event, so no kernel sweep either. This is the set 0022's
-    # comment named two members of.
+    # its own offboard event, so no kernel sweep either.
     "sites": Disposition(ERASE, "the tenant's estate — named in 0022 as uncovered"),
     "floors": Disposition(ERASE, "floors of the tenant's sites; not even FK'd to sites"),
     "zones": Disposition(ERASE, "zones of the tenant's floors; not even FK'd to floors"),
@@ -215,23 +163,20 @@ DISPOSITIONS: dict[str, Disposition] = {
         "actions that were actually taken",
     ),
 
-    # --- erased BECAUSE an ON DELETE SET NULL is worse than nothing --------
-    # A SET NULL here does not orphan the row harmlessly: tenant_id NULL is this
-    # schema's marker for a PLATFORM DEFAULT. So the tenant's branding, its SMTP
-    # and webhook credentials, its integration settings and its customised email
-    # copy would all SURVIVE the offboard and be promoted to the defaults every
-    # other tenant inherits. That is a right-to-erase failure and a cross-tenant
-    # leak in the same row. The explicit DELETE runs BEFORE the tenant row is
-    # removed, so the SET NULL never gets the chance to fire.
+    # --- erased because an ON DELETE SET NULL is worse than nothing --------
+    # tenant_id NULL marks a platform default in this schema, so a SET NULL would
+    # promote the tenant's branding, credentials and email copy to the defaults
+    # every other tenant inherits — a right-to-erase failure and a cross-tenant
+    # leak in one row. The explicit DELETE runs before the tenant row goes, so the
+    # constraint never fires.
     "branding": Disposition(ERASE, "the tenant's logo, colours and product name — SET NULL would promote them to the platform default"),
     "app_settings": Disposition(ERASE, "the tenant's integration settings, including stored secrets — SET NULL would promote them to the platform default"),
     "channel_configs": Disposition(ERASE, "the tenant's SMTP/webhook/push credentials — SET NULL would promote them to the platform default"),
     "email_templates": Disposition(ERASE, "the tenant's customised email copy — SET NULL would promote it to the platform default"),
 
     # --- erased through the tenant's users --------------------------------
-    # No tenant_id, and — despite holding a user_id — no foreign key to users
-    # either, so the cascade that removes the users leaves these behind. Invisible
-    # to every mechanism that existed before this file.
+    # No tenant_id, and no FK to users despite holding a user_id, so the cascade
+    # that removes the users leaves these behind.
     "notifications": Disposition(
         ERASE_BY_USER,
         "in-app notification bodies addressed to the tenant's people — content, "
@@ -306,31 +251,26 @@ DISPOSITIONS: dict[str, Disposition] = {
 class UnclassifiedTable(RuntimeError):
     """A table core owns has no erasure disposition.
 
-    Raised by the offboard path itself, not only by the test, and it ABORTS THE
-    DELETE. That is deliberate and it is the fail-closed direction: refusing to
-    offboard a tenant is loud, reversible and lands on whoever added the table,
-    whereas erasing "everything the code happens to know about" quietly leaves the
-    new table's rows behind forever and nobody finds out.
+    Raised by the offboard path, not only by the test, and it aborts the delete.
+    Fail closed on purpose: refusing to offboard is loud and reversible, whereas
+    erasing only what the code happens to know about leaves the new table's rows
+    behind forever and nobody finds out.
     """
 
 
 def check_classification(metadata) -> None:
-    """Assert every table core owns is classified, and that each claim is TRUE.
+    """Assert every table core owns is classified, and that each claim is true.
 
     Called by ``erase_tenant_data`` before it deletes anything, and by the test
-    suite against metadata assembled by walking every ``app.*`` module — so a new
-    models file cannot escape by simply not being imported anywhere the check can
-    see it.
+    suite against metadata assembled by walking every ``app.*`` module, so a new
+    models file cannot escape by not being imported anywhere the check can see it.
 
-    The claims are verified, not trusted, because a disposition that is merely a
-    string is a comment with extra steps:
+    The claims are verified, not trusted:
 
-      * CASCADE must have a real FK to tenants with ondelete=CASCADE. A table that
-        says "the cascade handles it" and then loses its constraint in a refactor
-        silently becomes uncovered, which is the exact 0022 failure.
-      * PLATFORM must NOT have a tenant_id column. Without this, the cheapest way
-        past a failing check is to relabel the new table as platform, and the
-        mechanism becomes decorative.
+      * CASCADE must have a real FK to tenants with ondelete=CASCADE, or a table
+        that loses its constraint in a refactor silently becomes uncovered.
+      * PLATFORM must not have a tenant_id column, or relabelling a table is the
+        cheapest way past a failing check.
       * RETAIN must carry a reason. Keeping personal data with no stated basis is
         the violation, not the absence of a delete statement.
     """
@@ -385,18 +325,13 @@ def check_classification(metadata) -> None:
 async def erase_tenant_data(db: AsyncSession, tenant_id: uuid.UUID) -> dict[str, int]:
     """Erase one tenant's rows from core's own tables. Returns {table: rows}.
 
-    Runs INSIDE the caller's transaction and BEFORE the ``tenants`` row is
-    deleted. Both matter:
+    Must run inside the caller's transaction and before the ``tenants`` row is
+    deleted: before, because four tables carry ON DELETE SET NULL and would be
+    promoted to platform defaults rather than removed; inside, so a failure cannot
+    leave a half-erased tenant behind.
 
-      * before, because four tables carry ON DELETE SET NULL and a row that
-        reaches that constraint is promoted to a platform default rather than
-        removed. Deleting first means the constraint never fires;
-      * inside, because a partially erased tenant that still exists is the worst
-        outcome available, and the caller's commit is what makes it all-or-nothing.
-
-    It does not touch the CASCADE tables — the constraint does that when the
-    tenant row goes — and it does not touch the RETAIN tables except to snapshot
-    the tenant's name onto the invoices that are about to lose their parent.
+    It leaves the CASCADE tables to the constraint, and the RETAIN tables alone
+    apart from snapshotting the tenant name onto the invoices.
     """
     from ..auth.models import User
     from ..db.base import Base
@@ -407,9 +342,8 @@ async def erase_tenant_data(db: AsyncSession, tenant_id: uuid.UUID) -> dict[str,
     removed: dict[str, int] = {}
     tables = {t.name: t for t in Base.metadata.sorted_tables}
 
-    # The tenant's user ids, read BEFORE anything is deleted: the ERASE_BY_USER
-    # tables have no FK to users, so once the cascade takes the users away there is
-    # no way left to find their rows.
+    # Read before anything is deleted: the ERASE_BY_USER tables have no FK to
+    # users, so once the cascade takes the users away their rows are unfindable.
     user_ids = list(
         (await db.execute(select(User.id).where(User.tenant_id == tid))).scalars().all()
     )

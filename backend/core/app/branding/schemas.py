@@ -1,10 +1,8 @@
 """Pydantic request/response schemas for the branding API.
 
-Note the asymmetry between storage and API:
-  * The DB stores a ``logo_key`` (a storage path, not directly fetchable).
-  * The API exposes a ``logo_url`` — a browser-fetchable link the router resolves
-    from the key via ``storage.url(...)`` at response time. So there is no
-    ``from_attributes`` round-trip for the logo; the router builds it explicitly.
+Storage and API differ on the logo: the DB stores a ``logo_key`` (a storage path),
+the API exposes a ``logo_url`` the router resolves via ``storage.url(...)`` at
+response time. There is no ``from_attributes`` round-trip for it.
 """
 
 from __future__ import annotations
@@ -15,8 +13,10 @@ from pydantic import BaseModel, ConfigDict
 
 
 class BrandingOut(BaseModel):
-    """What the frontend consumes to theme itself. ``logo_url`` is a resolved,
-    fetchable URL (or None when no logo has been uploaded)."""
+    """What the frontend consumes to theme itself.
+
+    ``logo_url`` is a resolved, fetchable URL, or None when no logo is uploaded.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -29,8 +29,7 @@ class BrandingOut(BaseModel):
 
 
 class UpdateBrandingIn(BaseModel):
-    """Partial update — every field optional so a client can change just one thing
-    (e.g. only the primary colour) without resending the whole object."""
+    """Partial update — every field optional, so a client can change one thing."""
 
     app_name: str | None = None
     primary_color: str | None = None

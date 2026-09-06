@@ -4,19 +4,9 @@ Builds an in-memory SQLite database with the full ORM metadata (create_all), a
 session factory bound to it, and helpers to seed a role + user so the security
 tests can run without Postgres or a Docker network.
 
-HOW TO RUN THIS SUITE
----------------------
-
-    ./backend/core/run-tests.sh
-
-from anywhere in the repo. That script is the supported path and its header
-explains why there is one: a bare `pytest` on the host fails on core's whole
-dependency set (fastapi, pydantic-settings, sqlalchemy, argon2, pyjwt …) and
-there has never been an install step for them, while a bare `pytest` inside the
-running core container is missing the shared kernel that one test needs. The
-script runs a THROWAWAY container from the core image with the working tree
-mounted read-only — the image supplies the dependencies, the tree supplies the
-code, nothing is copied into or installed on a running service.
+Run the suite with `./backend/core/run-tests.sh` from anywhere in the repo. A bare
+`pytest` on the host has none of core's dependencies installed, and a bare `pytest`
+inside the running core container is missing the shared kernel one test needs.
 """
 
 from __future__ import annotations
@@ -33,48 +23,26 @@ import pytest_asyncio
 os.environ.setdefault("VE_SECRETS_KEY", "test-secrets-key")
 os.environ.setdefault("VE_JWT_SECRET", "test-jwt-secret")
 
-# The rate limiter's default backend is Redis, and this suite runs with
-# `--network none`. Selecting the per-process window EXPLICITLY here is the point:
-# it means every other test in this suite gets the same limiter the old code had,
-# rather than each request quietly taking the fail-open path against a Redis that
-# is not there. test_rate_limit.py drives the Redis backend directly, against an
-# in-process double, so the shared-window behaviour is still under test.
+# The rate limiter defaults to Redis and this suite runs with `--network none`, so
+# select the per-process window explicitly rather than letting every request take
+# the fail-open path. test_rate_limit.py drives the Redis backend directly, against
+# an in-process double.
 os.environ.setdefault("VE_RATE_LIMIT_BACKEND", "memory")
 
 # --- the shared kernel, for the ONE cross-package test in this suite ----------
 #
-# ``test_token_role_id.py`` asserts a two-sided contract: core MINTS the
-# ``role_id`` claim and the shared kernel READS it back onto a Principal. It has
-# to import both halves, and core's image installs only one of them — deliberately.
-# Core is the identity provider; ``kernel`` is the SDK the satellites embed
-# (every satellite Dockerfile does `COPY kernel /opt/kernel` + an editable
-# install, core's does not, and core's build context is backend/core so the
-# package is not even reachable). Making core depend on the kernel at runtime
-# would invert that relationship to make a test convenient.
+# `test_token_role_id.py` asserts a two-sided contract: core mints the `role_id`
+# claim and the shared kernel reads it back onto a Principal. Core's image installs
+# only core, deliberately — core is the identity provider and `kernel` is the SDK
+# the satellites embed, so a runtime dependency on it would invert that.
 #
-# The consequence was worse than one unverified contract: an ImportError at
-# COLLECTION aborts the whole run, so `pytest tests` in the core container
-# reported "1 error during collection" and ran NONE of the security suite —
-# tenant isolation, dual-auth, entitlements, all of it silently unrun behind one
-# missing module.
-#
-# So the sibling package is put on sys.path when it is not already importable:
-# backend/kernel relative to this file (which is what run-tests.sh arranges by
-# mounting the whole of backend/ into the container), /opt/kernel where every
-# satellite image installs it, or VE_KERNEL_PATH. Deliberately NOT a
-# try/except-and-skip in the test module — a contract test that quietly skips
-# itself is the same class of lie this comment exists to end. If the kernel is
-# genuinely not on disk the import still fails, loudly.
-#
-# "Loudly" must not mean "instead of the other 49 tests", and for a while it did:
-# this hook was added while the kernel was hand-copied into the live core
-# container, so it was verified in an environment that had been built by hand and
-# then taken away — it proved the hook works when the kernel is present, not that
-# the suite runs where it is actually run. Two things close that. run-tests.sh
-# makes the kernel present from the working tree with no manual step, and
-# `--continue-on-collection-errors` in pyproject.toml means that if this hook ever
-# comes up empty again, the module reports as one named error and the rest of the
-# suite still runs and still reports.
+# So put the sibling package on sys.path when it is not already importable:
+# backend/kernel relative to this file (what run-tests.sh mounts), /opt/kernel where
+# satellite images install it, or VE_KERNEL_PATH. Deliberately not a
+# try/except-and-skip in the test module, because a contract test that skips itself
+# proves nothing; if the kernel is genuinely absent the import fails loudly, and
+# `--continue-on-collection-errors` in pyproject.toml keeps that one module's error
+# from aborting the rest of the suite.
 def _ensure_kernel_importable() -> None:
     try:
         import kernel  # noqa: F401

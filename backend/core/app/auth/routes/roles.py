@@ -1,11 +1,10 @@
 """The permission catalog and the roles built from it.
 
-A role is a name plus a subset of `PERMISSIONS`. The catalog is the authority on
-what is grantable: `create_role` and `update_role` REJECT a key that is not in it,
-which is why a permission enforced by a satellite but missing from
-`app/auth/permissions.py` cannot be granted to anyone at all — see
-`tests/test_permission_catalog.py`, which walks every `require_permission` literal
-in the estate and fails on one the catalog does not hold.
+A role is a name plus a subset of `PERMISSIONS`. `create_role` and `update_role`
+reject a key that is not in the catalog, so a permission enforced by a satellite
+but missing from `app/auth/permissions.py` cannot be granted to anyone.
+`tests/test_permission_catalog.py` walks every `require_permission` literal in the
+estate and fails on one the catalog does not hold.
 """
 
 from __future__ import annotations
@@ -36,10 +35,9 @@ async def permissions(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_permission(CorePerm.ROLE_READ)),
 ) -> dict:
-    """The role editor's catalog: the static keys plus the ones services
-    registered at runtime (see `dynamic_permissions`). A key that is enforced but
-    not listed here can only ever be held by a wildcard admin, which is not a
-    usable permission model — that was the `ingest.read` bug."""
+    """The role editor's catalog: the static keys plus the ones services registered
+    at runtime (see `dynamic_permissions`). A key enforced but not listed here can
+    only be held by a wildcard admin."""
     return {"groups": await dynamic_permissions.grouped(db)}
 
 
@@ -51,14 +49,10 @@ async def register_permissions(
 ) -> dict:
     """Publish the permission keys a satellite enforces, so a role can grant them.
 
-    Service-to-service (a short-lived superadmin service token), idempotent, and
-    additive only: a registration can never redefine a key the static catalog
-    already owns. The caller today is the reading-writer
-    (``app/api/permsync.py``), pushing one key per dataset registered in
-    ``neubit_reporting.dashboard_datasets`` — which is what makes "registration is
-    data, not code" hold all the way through to the role editor. (This named "the
-    dashboard builder" until 2026-09-03; that service is retired, the registry it
-    read is not, and the reading-writer owns it.)
+    Service-to-service (a short-lived superadmin token), idempotent, and additive
+    only: a registration can never redefine a key the static catalog owns. Today's
+    caller is the reading-writer (``app/api/permsync.py``), pushing one key per
+    dataset in ``neubit_reporting.dashboard_datasets``.
     """
     source = str(body.get("source") or "unknown")
     perms = body.get("permissions") or []

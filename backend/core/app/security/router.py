@@ -132,8 +132,8 @@ async def sync_directory(
 ) -> DirectorySyncResult:
     """Sync users/groups from the configured directory into core roles.
 
-    LIVE-VALIDATE: requires the ``ldap3`` extra + a reachable directory. Returns
-    ``live=true`` when a real bind was used.
+    Requires the ``ldap3`` extra and a reachable directory. Returns ``live=true``
+    when a real bind was used.
     """
     result = await SecurityService(db).sync_directory(scope_of(actor))
     await audit_record(
@@ -262,20 +262,16 @@ async def consume_dual_auth(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(get_current_user),
 ) -> DualAuthRequestOut:
-    """Verify + burn an approval right before performing the action.
+    """Verify and burn an approval right before performing the action.
 
     A satellite service (vision) calls this with the core JWT it verified, passing
-    the ``action``/``target_id`` it is about to perform. Returns the consumed row on
-    success, or 4xx if not approved / mismatched / already used.
+    the ``action``/``target_id`` it is about to perform. Returns the consumed row,
+    or 4xx if not approved / mismatched / already used.
 
-    Restricted to the person who RAISED the request. It used to accept any
-    authenticated user in the tenant, with the ids coming from an equally open
-    listing — so a bystander could BURN an approval granted for someone else's
-    operation, and the real holder would find it already used.
-
-    Not gated on ``dualauth.approve``: the consumer is the operator doing the work,
-    and requiring them to be an approver as well would collapse both halves of
-    four-eyes into one person.
+    Restricted to the person who raised the request, so a bystander cannot burn
+    someone else's approval. Do not gate it on ``dualauth.approve`` instead — the
+    consumer is the operator doing the work, and making them an approver too
+    collapses four-eyes into one person.
     """
     req = await SecurityService(db).check_and_consume(
         scope_of(actor), action, target_id, req_id, actor_id=actor.id
@@ -296,22 +292,18 @@ async def ingest_video_audit(
 ) -> dict:
     """Service-to-service ingest: vision reports a playback/export/delete for the trail.
 
-    The satellite verified the acting user's JWT locally and passes their identity so
-    the CORE hash-chain / audit trail is the single tamper-evident record of every
-    sensitive video op (who / what / when / camera / range). Gated by ``audit.write``.
+    The satellite verified the acting user's JWT locally and passes their identity,
+    so core's hash-chained audit trail is the single tamper-evident record of every
+    sensitive video op. Gated by ``audit.write``.
 
-    ``require_service_permission``, NOT ``require_permission``: the only caller is a
-    background one. `vision` mints a superadmin service token with a fixed system
-    ``sub`` that has no `users` row, so ``require_permission`` -> ``get_current_user``
-    rejected every single call with `401 user not found or inactive` and vision
-    swallowed it. No video audit event ever landed. ``caller`` is therefore
-    ``None`` for a service token; the actor snapshot below already falls back
-    through ``getattr``.
+    Must be ``require_service_permission``, not ``require_permission``: vision mints
+    a service token whose ``sub`` has no `users` row, which ``get_current_user``
+    rejects with 401. ``caller`` is ``None`` for a service token, and the actor
+    snapshot below falls back through ``getattr``.
     """
-    # Build a lightweight actor snapshot so the audit row carries the real user, not
-    # the service account, while staying tenant-scoped to the caller's tenant. The
-    # satellite only knows the user's id — core owns the profile, so resolve the
-    # display name here and the trail reads as a person rather than an address.
+    # Actor snapshot so the audit row carries the real user, not the service
+    # account, tenant-scoped to the caller's tenant. The satellite only knows the
+    # user's id, so resolve the display name here from core's own profile.
     actor_name = None
     if data.actor_id:
         actor_name = await db.scalar(select(User.full_name).where(User.id == data.actor_id))
@@ -343,11 +335,9 @@ async def request_erasure(
 ) -> ErasureRequestOut:
     """Request erasure of a subject's video artefacts (recordings/events).
 
-    SCAFFOLD: core records the request in the audit trail and fans it out over NATS
-    to the owning services (vision, workflow) on a ``tenant.<id>.erasure.request``
-    subject. The PHYSICAL deletion is performed by the service that owns the data
-    (vision recordings, workflow events) — documented as its own follow-up wiring.
-    LIVE-VALIDATE: end-to-end erasure once the owning-service consumers are wired.
+    Scaffold: core records the request in the audit trail and fans it out over NATS
+    on ``tenant.<id>.erasure.request``. Physical deletion is done by the service
+    that owns the data (vision recordings, workflow events), not yet wired.
     """
     from ..core import events_nats
 
@@ -384,7 +374,7 @@ async def sso_login(
     tenant_id: uuid.UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> SsoLoginStartOut:
-    """PUBLIC — begin an OIDC login: return the IdP authorization URL to redirect to.
+    """Public: begin an OIDC login, returning the IdP authorization URL.
 
     ``tenant_id`` selects which tenant's SSO config to use (NULL = platform SSO).
     """
@@ -407,11 +397,11 @@ async def sso_callback(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """PUBLIC — the IdP redirect target: exchange the code and issue core tokens.
+    """Public: the IdP redirect target — exchange the code and issue core tokens.
 
-    Verifies the ``state`` (CSRF), exchanges the ``code`` for the id_token, maps the
-    claims to a core user (provisioning if allowed), and mints the core access +
-    refresh tokens. LIVE-VALIDATE against a real IdP; CI mocks the token exchange.
+    Verifies the ``state`` (CSRF), exchanges the ``code`` for the id_token, maps
+    the claims to a core user (provisioning if allowed), and mints the core access
+    and refresh tokens. CI mocks the token exchange.
     """
     from ..auth.service import AuthService
 

@@ -122,15 +122,11 @@ async def set_building_facts(
 ) -> SitePublic:
     """Record area / tariff / occupancy for this site.
 
-    Its own route rather than a field on PATCH /sites/{id}: that path applies
-    `exclude_none=True`, so a null there is indistinguishable from "not
-    mentioned" and a recorded area could never be taken back. Here the four
-    fields are written as a SET, so an explicit null means NOT RECORDED — which
-    is exactly the state Building Intelligence → Ratings renders as "cannot
-    rate — no area recorded for this site".
-
-    Gated by `sites.update`, the same permission that governs every other fact
-    about a site. Nothing on this route infers a value.
+    Its own route rather than a field on PATCH /sites/{id}, which applies
+    `exclude_none=True` and so cannot tell a null from "not mentioned". Here the
+    four fields are written as a set, so an explicit null means "not recorded" and
+    BI Ratings renders "cannot rate — no area recorded". Nothing here infers a
+    value.
     """
     return await svc.set_building_facts(site_id, body, actor=actor)
 
@@ -158,17 +154,13 @@ async def set_tariff_slabs(
     svc: Annotated[SiteService, Depends(_service)],
     actor: User = Depends(require_permission("sites.update")),
 ) -> TariffSlabListResponse:
-    """Replace the site's Time-of-Use tariff slabs — the WHOLE list, every time.
+    """Replace the site's time-of-use tariff slabs — the whole list, every time.
 
-    Full-replace for the same reason `building-facts` is: a PATCH built on
-    `exclude_none=True` cannot say "take this back", and a wrong rate an
-    operator cannot retract is worse than none. An explicit empty list clears
-    the set and the scalar tariff (if recorded) is in effect again.
-
-    PRECEDENCE: when any slab is in effect for a date, the slabs override the
-    scalar ENTIRELY; an hour no slab covers has no price. Coverage is not
-    enforced and no filler slab is invented — the UI warns about gaps/overlaps.
-    Gated by `sites.update`, like every other fact about a site.
+    A full replace, so an empty list clears the set and the scalar tariff, if
+    recorded, is in effect again. When any slab is in effect for a date the slabs
+    override the scalar entirely, and an hour no slab covers has no price.
+    Coverage is not enforced and no filler slab is invented; the UI warns about
+    gaps and overlaps.
     """
     items = await svc.set_tariff_slabs(site_id, body, actor=actor)
     return TariffSlabListResponse(items=items, total=len(items))
@@ -199,10 +191,9 @@ async def set_emission_factors(
 ) -> EmissionFactorListResponse:
     """Replace the site's emission factors (kg CO2/kWh) — full list, every time.
 
-    Every factor carries a REQUIRED `source`: the operator states where the
-    number came from, because a factor with no citation is exactly the
-    fabrication this platform forbids. An explicit empty list clears the set
-    (the retraction property). Nothing here defaults, infers or seeds a value.
+    Every factor carries a required `source`, because a factor with no citation is
+    an invented figure. An empty list clears the set. Nothing here defaults,
+    infers or seeds a value.
     """
     items = await svc.set_emission_factors(site_id, body, actor=actor)
     return EmissionFactorListResponse(items=items, total=len(items))
@@ -256,11 +247,9 @@ async def upload_site_image(
     scope: Annotated[Scope, Depends(get_scope)],
     actor: User = Depends(require_permission("sites.update")),
 ) -> SitePublic:
-    # This route already had the whitelist and the cap; the shared validator adds
-    # the magic-number check, so a payload renamed to .png with a matching header is
-    # refused here too, and all three upload routes now answer alike.
-    # read_capped, not file.read() — this route had the cap first, but it still
-    # measured a body it had already pulled into memory whole. See core/uploads.py.
+    # The shared validator adds a magic-number check on top of the whitelist, and
+    # read_capped enforces the size cap while streaming rather than after the whole
+    # body is in memory. See core/uploads.py.
     content = await read_capped(file, field="Site image")
     content_type, ext = validate_image(content, file.content_type, field="Site image")
     tenant_seg = str(scope.tenant_id) if scope.tenant_id is not None else "platform"

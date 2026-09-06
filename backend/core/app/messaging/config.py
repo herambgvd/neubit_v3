@@ -1,18 +1,14 @@
 """Dynamic per-channel notification config, stored in the DB (secrets encrypted).
 
-Each delivery channel (email / push / webhook) is configured from the admin UI —
-NOT from .env — because credentials differ per deployment and change at runtime.
-So the config lives in one small table (``channel_configs``): one row per channel,
-an ``enabled`` flag, and a free-form JSON ``config`` blob whose shape depends on the
-channel.
+Each delivery channel (email / push / webhook) is configured from the admin UI,
+not from .env, because credentials differ per deployment and change at runtime.
+``channel_configs`` holds one row per channel: an ``enabled`` flag and a free-form
+JSON ``config`` blob whose shape depends on the channel.
 
-Sensitive fields inside that JSON (the SMTP password, the FCM server key, the
-webhook signing secret) MUST NOT sit in the DB as plaintext. We encrypt exactly
-those fields on the way in (``upsert_channel``) and decrypt them on the way out
-(``get_config_decrypted``). For GET responses shown in the UI we ``masked`` them to
-``"***"`` so a secret is never returned over the wire.
-
-Which fields are secret, per channel, is declared once in ``SECRET_FIELDS``.
+Sensitive fields inside that JSON never sit in the DB as plaintext. They are
+encrypted on the way in (``upsert_channel``), decrypted on the way out
+(``get_config_decrypted``), and ``masked`` to ``"***"`` for GET responses. Which
+fields are secret, per channel, is declared once in ``SECRET_FIELDS``.
 """
 
 from __future__ import annotations
@@ -121,14 +117,11 @@ async def upsert_channel(
     for field in SECRET_FIELDS.get(channel, []):
         value = stored.get(field)
         if value in (None, "", MASK):
-            # THE SECRET WAS NOT RE-ENTERED. `GET /messaging/channels/email` returns
-            # the password as "***" (see `masked`), and the admin UI submits the form
-            # it was given — so an ordinary edit, changing a port or toggling
-            # `enabled`, used to arrive with "***" in the password field. This wrote
-            # `encrypt_secret("***")` over the real credential: mail stopped, and the
-            # password was unrecoverable. The stored value is kept instead.
-            # `security/service.py` already got this right for the LDAP bind password
-            # (`if data.bind_password:`); messaging had no equivalent.
+            # The secret was not re-entered. GET returns it as "***" (see `masked`)
+            # and the UI submits the form it was given, so an ordinary edit such as
+            # a port change arrives with "***" in the password field. Storing that
+            # would overwrite the real credential unrecoverably, so keep the stored
+            # value instead.
             if existing.get(field):
                 stored[field] = existing[field]
             else:
@@ -154,13 +147,11 @@ async def upsert_channel(
 async def get_channel_exact(
     db: AsyncSession, channel: str, tenant_id: uuid.UUID | None = None
 ) -> ChannelConfig | None:
-    """The caller's OWN row for `channel`, with NO platform-default fallback.
+    """The caller's own row for `channel`, with no platform-default fallback.
 
-    `get_channel` falls back on purpose — a tenant that has not configured SMTP
-    inherits the platform's, which is what makes the platform default useful. This
-    is for the surfaces where inheriting is wrong: the "send a test" button, where
-    falling back lets a tenant admin exercise the platform's webhook URL and its
-    HMAC secret on demand.
+    For surfaces where inheriting the platform config is wrong — the "send a test"
+    button, where falling back would let a tenant admin fire the platform's webhook
+    URL and HMAC secret on demand.
     """
     return await _row_exact(db, channel, tenant_id)
 
@@ -177,8 +168,8 @@ def decrypt_config(row: ChannelConfig) -> dict:
 async def get_config_decrypted(
     db: AsyncSession, channel: str, tenant_id: uuid.UUID | None = None
 ) -> dict | None:
-    """Return the channel's config (resolved with tenant fallback) with secret fields
-    DECRYPTED — for senders. None if the channel has never been configured."""
+    """The channel's config, resolved with tenant fallback and decrypted, for
+    senders. None if the channel has never been configured."""
     row = await get_channel(db, channel, tenant_id)
     if row is None:
         return None

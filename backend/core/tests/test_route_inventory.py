@@ -1,25 +1,13 @@
 """Every route is authenticated unless this file says why not.
 
-Core has 216 API routes and every gate on them is per-route: a `Depends` in one
-handler's signature. Nothing checks that a new route has one. That is how
-`/security/dual-auth/{id}/consume` shipped taking nothing but a session, how four
-SSE streams shipped with authentication and no authorization, and how the legacy
-`/features` fallback shipped unauthenticated behind a guard that could not see the
-router shadowing it.
+Core has 216 API routes and every gate is a per-route `Depends`; nothing otherwise
+checks that a new route has one. So the surface is pinned here: a new route either
+resolves an actor, or goes in ALLOWED_UNAUTHENTICATED with a written reason.
 
-So the surface is enumerated and pinned. A new route either resolves an actor, or it
-is added to ALLOWED_UNAUTHENTICATED with a reason someone had to write down. The
-test names the offending route and method, so the failure is actionable rather than
-a count that moved.
-
-This walks the RESOLVED FastAPI dependant tree, not the source. A gate hidden behind
-a shared sub-dependency therefore counts, and a gate on a dependency FastAPI never
-reaches does not — the same reasoning as workflow's `test_route_permissions.py`.
-
-Note the router walk: this FastAPI version defers `include_router`, so `app.routes`
-holds `_IncludedRouter` wrappers rather than the routes themselves. Iterating it
-naively sees 41 of the 216 and every assertion below would be about the wrong 41 —
-which is not hypothetical, it is the bug that let the `/features` fallback register.
+The walk is over the resolved FastAPI dependant tree, not the source, so a gate
+behind a shared sub-dependency counts. Always go through `_walk`: this FastAPI
+version defers `include_router`, so `app.routes` holds wrapper objects and a naive
+iteration sees 41 of the 216.
 """
 
 from __future__ import annotations
@@ -66,9 +54,8 @@ ALLOWED_UNAUTHENTICATED = {
     ("GET", "/"): "the landing page",
     ("GET", "/internal/auth/verify"): "Traefik ForwardAuth; reachable only on the internal network",
     # --- deliberate, and each one carries its own protection --------------
-    # Mounted once, at the root, by create_app. It used to ALSO appear under
-    # /api/v1/files via base_routers — the same public blob route at a second
-    # address, which this inventory is what found.
+    # Mount /files once, at the root, in create_app. Adding it to base_routers too
+    # publishes the same public blob route at a second address.
     ("GET", "/files/{key:path}"): (
         "public blob serving, and it has to be: an avatar or a logo is loaded from "
         "an <img> with no token. What protects it is on both sides — content types "
@@ -88,11 +75,9 @@ ALLOWED_UNAUTHENTICATED = {
 def _walk(routes, prefix: str = ""):
     """Flatten deferred `include_router` wrappers into (full_path, route) pairs.
 
-    The prefix has to be accumulated on the way down. A deferred include keeps the
-    mount prefix on the WRAPPER (`include_context.prefix`) and leaves the route's
-    own `.path` unprefixed, so a route mounted at `/api/v1/auth/login` reports
-    `/auth/login` — and an allowlist written with real paths would match nothing
-    while looking entirely correct.
+    A deferred include keeps the mount prefix on the wrapper (`include_context.prefix`)
+    and leaves the route's own `.path` unprefixed, so the prefix must be accumulated
+    on the way down or an allowlist of real paths matches nothing.
     """
     for route in routes:
         original = getattr(route, "original_router", None)
@@ -130,9 +115,8 @@ def _inventory():
 
 
 def test_the_walk_sees_the_whole_surface():
-    """`app.routes` holds deferred wrappers, so a naive iteration sees 41 of 216 and
-    every assertion below would be about the wrong 41. This is not a hypothetical —
-    it is the bug that let the unauthenticated /features fallback register."""
+    """`app.routes` holds deferred wrappers; a naive iteration sees 41 of 216, which
+    would make every other assertion in this file about the wrong 41."""
     rows = _inventory()
     assert len(rows) > 180, f"only walked {len(rows)} routes; the router walk is broken"
 
@@ -150,10 +134,8 @@ def test_every_route_authenticates_or_is_listed_with_a_reason():
 
 
 def test_the_allowlist_has_no_stale_entries():
-    """An entry that no longer matches a real unauthenticated route is either a
-    renamed path or a route that has since been gated. Either way the reason it
-    records is now misleading, which is the failure mode this whole file exists to
-    prevent."""
+    """An entry matching no unauthenticated route was renamed or has since been
+    gated; either way the reason it records is now misleading."""
     actual = {(m, p) for m, p, protected in _inventory() if not protected}
     stale = sorted(set(ALLOWED_UNAUTHENTICATED) - actual, key=lambda x: x[1])
     assert not stale, "\n".join(f"  {m:6} {p}" for m, p in stale)
@@ -167,17 +149,11 @@ def test_every_allowlist_entry_states_why():
 # ---------------------------------------------------------------------------
 # The other direction: routes that MUST answer without a credential.
 #
-# Everything above asks "is this route gated". This asks "is this route still
-# ungated", and it exists because the inventory above cannot answer it. Guarding
-# every base router with `require_tenant_active` turned `GET /branding` and
-# `GET /settings/public` into 401s — the login page could no longer fetch its own
-# logo — and the inventory stayed green, because `require_tenant_active` IS in
-# _AUTHENTICATORS. Adding the guard SATISFIED the test that was supposed to be
-# watching. A gate in the wrong place looks identical to a gate in the right one
-# unless something asserts the route still works without a token.
-#
-# Asserted over HTTP rather than by reading dependencies, because that is the
-# property: an anonymous GET returns content.
+# The inventory above cannot catch this. Guarding every base router with
+# `require_tenant_active` turned `GET /branding` and `GET /settings/public` into
+# 401s while the inventory stayed green, because `require_tenant_active` is in
+# _AUTHENTICATORS — a gate in the wrong place reads the same as one in the right
+# place. Asserted over HTTP because that is the property: an anonymous GET works.
 # ---------------------------------------------------------------------------
 
 PUBLIC_ROUTES = {
@@ -185,9 +161,8 @@ PUBLIC_ROUTES = {
     "/api/v1/settings/public": "the unauthenticated screens read their settings here",
     "/api/v1/broadcasts/active": "a maintenance notice has to reach the login page",
     "/health": "liveness for a load balancer",
-    # /ready is deliberately absent: it answers 503 in this harness because there is
-    # no database or redis, which is it working correctly. test_health_probes.py
-    # covers it, including that its 503 names the failing dependency.
+    # /ready is deliberately absent: with no database or redis it correctly answers
+    # 503 here. test_health_probes.py covers it.
 }
 
 

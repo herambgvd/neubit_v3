@@ -33,8 +33,8 @@ class Permission:
 
 
 class PermissionRegistry:
-    """Holds every permission the app knows about; the frontend reads it to
-    render the role editor (grouped checkboxes)."""
+    """Every permission the app knows about; the frontend renders the role
+    editor (grouped checkboxes) from it."""
 
     def __init__(self) -> None:
         self._perms: dict[str, Permission] = {}
@@ -127,65 +127,38 @@ class CorePerm:
     VMS_WALL_CONTROL = "vms.wall.control"
     VMS_WALL_MANAGE = "vms.wall.manage"
     # --- Building Intelligence --------------------------------------------
-    # The IoT reading store's READ side, enforced by the reading-writer
-    # (`backend/reading-writer/app/api/router.py`) — the schema's owner serves
-    # its own reads (contract §7). Registered HERE, like the VMS keys above, so
-    # a tenant admin can grant it in the role editor and it rides in the JWT
-    # permissions claim. A key that is not in this catalog can only ever be held
-    # by a wildcard admin, which is not a usable permission model.
+    # Read side of the IoT reading store, enforced by the reading-writer
+    # (`backend/reading-writer/app/api/router.py`). Registered here so a tenant
+    # admin can grant it and it rides in the JWT permissions claim.
     BI_READ = "bi.read"
-    # The WRITE key of the Building Intelligence API, and separate from bi.read
-    # on purpose: reading the estate and making a statement ABOUT it are
-    # different jobs. Two things use it and they are the same kind of decision —
-    # RETIRING a point (what is part of the estate) and PLACING a device in a
-    # site / floor / zone (where that part of it is). Neither ever touches a
-    # measurement: both write a dimension row and nothing else.
+    # Write side: retiring a point and placing a device in a site/floor/zone.
+    # Both write a dimension row; neither touches a measurement. Separate from
+    # bi.read because reading the estate and asserting about it differ.
     BI_MANAGE = "bi.manage"
-    # DashForge embeds — the dashboards NeuBit SHOWS but does not build. DashForge
-    # is the single dashboarding surface; this platform registers which of its
-    # dashboards appear here and renders them.
-    #
-    # `dashboards.read` / `dashboards.manage` stood here until 2026-09-03, gating
-    # NeuBit's own builder. Both went with it. A key kept in this catalog after
-    # its enforcer is deleted is worse than no key: the role editor keeps offering
-    # it, an admin grants it believing it restricts something, and it restricts
-    # nothing. See the note in 0021_drop_dashboards_permissions for what happens
-    # to a role that already held one.
-    #
-    # DASHFORGE_READ is load-bearing in a way `dashboards.read` never was.
-    # DashForge's `/public/embed/:token` is UNAUTHENTICATED — the token IS the
-    # credential — so the only check standing in front of that data is the one
-    # NeuBit makes before minting a token
-    # (`backend/core/app/dashforge/router.py`). A caller without this key never
-    # gets a token and therefore never gets the data.
-    # MANAGE decides which dashboards are registered here at all, which is why it
-    # is separate: being allowed to LOOK at an embedded dashboard must not imply
-    # being allowed to point the console at a different one.
+    # DashForge embeds — the dashboards NeuBit shows but does not build.
+    # DASHFORGE_READ is the only gate in front of that data: DashForge's
+    # `/public/embed/:token` is unauthenticated, and this key is what decides
+    # whether NeuBit mints a token at all (`app/dashforge/router.py`).
+    # MANAGE is separate because being allowed to view an embedded dashboard
+    # must not imply being allowed to point the console at a different one.
     DASHFORGE_READ = "dashforge.read"
     DASHFORGE_MANAGE = "dashforge.manage"
     # --- Ingest (external webhooks / event ingestion) ----------------------
-    # Enforced by the ingest service (`backend/ingest/app/ingest/router.py`) and,
-    # until now, MISSING from this catalog — so no role could grant them and only
-    # a wildcard admin could reach Ingest at all. Registering a key here is not
-    # book-keeping: it is what makes the permission grantable.
+    # Enforced by the ingest service (`backend/ingest/app/ingest/router.py`).
+    # A key missing from this catalog is not grantable by any role.
     INGEST_READ = "ingest.read"
     INGEST_MANAGE = "ingest.manage"
     # --- Enterprise security (P6-D) ---------------------------------------
     # Manage the security surface: 2FA-enforcement policy, LDAP/AD directory,
     # OIDC SSO. Held by a tenant's security admin.
     SECURITY_MANAGE = "security.manage"
-    # Approve/deny a four-eyes (dual-authorization) request raised by someone
-    # else. Deliberately SEPARATE from security.manage so the approver is a
-    # distinct privileged role, not just whoever configures security.
+    # Approve/deny a four-eyes request raised by someone else. Separate from
+    # security.manage so the approver is not just whoever configures security.
     DUALAUTH_APPROVE = "dualauth.approve"
     # --- Access control (doors, cardholders, credentials) ------------------
-    # Enforced by the `access` service (`backend/access/app/access/router.py`) at
-    # 12 route sites, and MISSING from this catalog until now — so no role could
-    # grant them and only a wildcard Administrator could reach access control at
-    # all. That is the same failure the Ingest note above records, and this is the
-    # eleventh time it recurred; `tests/test_permission_catalog.py` now walks every
-    # `require_permission` literal in the repo and fails on a key that is not here,
-    # so it cannot recur a twelfth.
+    # Enforced by the `access` service (`backend/access/app/access/router.py`).
+    # `tests/test_permission_catalog.py` walks every `require_permission` literal
+    # in the repo and fails on a key missing from this catalog.
     ACCESS_READ = "access.read"
     ACCESS_MANAGE = "access.manage"
     # --- Workflow (SOPs, triggers, incidents, forms, notifications) --------
@@ -212,11 +185,10 @@ class CorePerm:
     WORKFLOW_THREAT_LEVEL_READ = "workflow.threat_level.read"
     WORKFLOW_THREAT_LEVEL_UPDATE = "workflow.threat_level.update"
     # --- Runtime permission registration (service-to-service) --------------
-    # Lets a satellite publish the permission keys IT enforces into this catalog
-    # so a role can grant them. Needed because the dashboard builder's datasets
-    # are registered as DATA (an INSERT into the reporting store) and each names
-    # the permission required to read it — a key core cannot know at build time.
-    # Held by a service token, never by an operator role.
+    # Lets a satellite publish the permission keys it enforces into this catalog
+    # so a role can grant them — needed for dataset read permissions, which are
+    # registered as data and so cannot be known at build time. Held by a service
+    # token, never by an operator role.
     PERMISSION_REGISTER = "permission.register"
 
 

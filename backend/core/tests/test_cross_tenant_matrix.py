@@ -1,24 +1,15 @@
 """One isolation matrix across every tenant-owned surface core serves.
 
-Two-thirds of core's routers had no HTTP test at all — tags, settings, branding,
-reports, device placements, floors, zones — and that is where the by-id/list
-disagreement in `scope.owns()` lived undetected: `scoped()` excluded NULL rows from
-a listing while `owns()` admitted them by id, so a platform row was invisible in a
-listing and writable by every tenant.
-
-This is deliberately ONE table rather than a file per module. The property is the
-same everywhere and stating it once is what makes a new surface obviously missing:
-adding a tenant-owned resource means adding a row here, and a row that is wrong
-fails on the specific verb.
+Deliberately one table rather than a file per module: the property is the same
+everywhere, so adding a tenant-owned resource means adding a row here, and a
+surface nobody added is obvious.
 
 Each row is (label, create-in-tenant, urls). For every resource we assert:
 
   * tenant A cannot GET, PATCH or DELETE tenant B's row — 404, never 403, so an id
     cannot be probed;
   * tenant A's listing does not contain tenant B's row;
-  * a PLATFORM row (tenant_id NULL) is equally out of reach — the case that was
-    actually broken, and the one a per-module test written by the module's author
-    is least likely to think of;
+  * a platform row (tenant_id NULL) is equally out of reach;
   * a super-admin reaches all of them, so "refuse everyone" cannot pass.
 """
 
@@ -174,9 +165,9 @@ async def test_another_tenants_row_is_404_on_every_verb(app, world, resource):
 
 @pytest.mark.parametrize("resource", sorted(RESOURCES))
 async def test_a_platform_row_is_404_for_a_tenant(app, world, resource):
-    """The case that was actually broken. `scoped()` excluded NULL rows from a
-    listing while `owns()` admitted them by id, so a platform row was invisible in
-    the list and writable by any tenant."""
+    """The by-id/list disagreement in `scope`: `scoped()` excludes NULL rows from a
+    listing while `owns()` admits them by id, making a platform row invisible in the
+    list and writable by any tenant."""
     _id, _list_url, item_url = await RESOURCES[resource](world["db"], None)
     async with _client(app) as c:
         got = await c.get(f"{PREFIX}{item_url}", headers=_auth(world["a"]))
@@ -202,7 +193,7 @@ async def test_a_listing_never_contains_another_tenants_row(app, world, resource
 @pytest.mark.parametrize("resource", sorted(RESOURCES))
 async def test_a_super_admin_reaches_every_row(app, world, resource):
     """Without this, every assertion above would pass against a build that refuses
-    everyone — which is not isolation, it is an outage."""
+    everyone."""
     _id, _list_url, item_url = await RESOURCES[resource](world["db"], world["tb"].id)
     _pid, _, platform_url = await RESOURCES[resource](world["db"], None)
     async with _client(app) as c:
@@ -214,11 +205,9 @@ async def test_a_super_admin_reaches_every_row(app, world, resource):
 
 # --- the per-tenant config singletons ------------------------------------
 #
-# branding and settings are the surfaces the permissive `owns()` was DESIGNED for:
-# a NULL row is a shared default every tenant reads. They resolve that in their own
-# service, deriving the write scope from the caller rather than from the row, which
-# is why they were already correct — and why the fix to owns() had to leave them
-# alone. These assert that they still behave that way.
+# branding and settings are what the permissive `owns()` exists for: a NULL row is a
+# shared default every tenant reads. They derive the write scope from the caller
+# rather than from the row, so tightening owns() must leave them alone.
 
 
 async def test_branding_falls_back_to_the_platform_default_but_writes_its_own(app, world):

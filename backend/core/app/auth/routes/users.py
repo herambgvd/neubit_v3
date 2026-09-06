@@ -1,10 +1,8 @@
-"""Administering OTHER people's accounts.
+"""Administering other people's accounts.
 
-Every route here takes a user id, which is what makes it the highest-risk surface in
-core: each one needs an explicit ownership check, and each one is a place to forget
-it. `scope.owns()` treating a NULL tenant_id as "owned by everyone" turned exactly
-these routes into a tenant-to-platform privilege escalation — a tenant admin could
-fetch the super-admin by id and reset its password.
+Every route takes a user id, so every one needs an explicit ownership check —
+missing one is a tenant-to-platform privilege escalation (a tenant admin fetching
+the super-admin by id and resetting its password).
 
 `tests/test_tenant_isolation.py` points a tenant-admin at the super-admin row on
 every verb in this file.
@@ -37,8 +35,8 @@ from ..service import AuthService
 from ._shared import _user_out
 from . import admin_router
 
-#: Cap on a user-import CSV. Generous — a real bulk import of tens of thousands of
-#: rows is a few megabytes — and finite, which is the whole point.
+#: Cap on a user-import CSV. Generous (tens of thousands of rows is a few MB)
+#: but finite.
 MAX_IMPORT_BYTES = 16 * 1024 * 1024
 
 
@@ -106,11 +104,9 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.USER_READ)),
 ) -> Page[UserOut]:
-    # Tenant scoping lives in scope.py, not here. Super-admins see everyone; every
-    # other caller is filtered to their own tenant_id, NULL being a tenancy like any
-    # other. This used to flatten the Scope to a bare tenant_id, which made a
-    # non-superadmin platform user (tenant_id NULL) indistinguishable from a
-    # super-admin and handed them the whole directory.
+    # Tenant scoping lives in scope.py, not here. Pass the whole Scope, never a
+    # bare tenant_id: NULL is a tenancy like any other, and flattening makes a
+    # platform user (tenant_id NULL) look like a super-admin.
     svc = AuthService(db)
     page = await paginate(db, svc.users_query(scope_of(actor)), params)
     counts = await svc.active_session_counts([u.id for u in page.items])
@@ -125,11 +121,9 @@ async def export_users(
 ) -> StreamingResponse:
     """Download all users as a CSV (email, name, role, status, verified, last login).
 
-    Tenant-scoped through the same helper the listing uses, so the two cannot drift.
-    The hand-rolled filter this replaces read ``if not actor.is_superadmin and
-    actor.tenant_id is not None`` — a caller who was neither (a platform user with
-    ``user.read`` and no tenant) matched no branch, so no filter was applied and the
-    CSV held every user on the platform.
+    Tenant-scoped through the same helper the listing uses. Do not hand-roll the
+    filter here: a platform user with ``user.read`` and no tenant matches neither
+    "is_superadmin" nor "has a tenant", and gets the whole platform's users.
     """
     stmt = scoped(select(User).order_by(User.created_at.desc()), User, scope_of(actor))
     rows = (await db.execute(stmt)).scalars().all()
@@ -171,11 +165,9 @@ async def import_users(
     the caller's role), ``send_invite`` (default true). When no password column is
     given, a random one is set and the user is invited to choose their own.
     """
-    # Capped, and it had NO cap at all before — `await file.read()` on an unbounded
-    # upload, then `.decode()` on the result, so a single request could allocate the
-    # body twice over. `user.manage` is a privileged permission, but "the caller is
-    # an admin" is not a reason to let one request decide how much memory the
-    # process uses.
+    # Read through the cap: an unbounded `file.read()` + `.decode()` lets one
+    # request allocate the body twice over. Being an admin is not a reason to let
+    # a request decide how much memory the process uses.
     raw = (await read_capped(file, MAX_IMPORT_BYTES, field="CSV")).decode(
         "utf-8-sig", errors="replace"
     )
@@ -244,9 +236,8 @@ async def update_user(
     actor: User = Depends(require_permission(CorePerm.USER_MANAGE)),
 ) -> UserOut:
     user = await AuthService(db).update_user(user_id, data, scope_of(actor))
-    # Record WHAT changed, never the secret itself — an audit trail holding plaintext
-    # passwords would be a breach in its own right. mode="json" keeps the UUIDs/emails
-    # storable in the JSON meta column.
+    # Record what changed, never the secret itself. mode="json" keeps the
+    # UUIDs/emails storable in the JSON meta column.
     changed = data.model_dump(exclude_none=True, mode="json")
     if changed.pop("password", None):  # truthy, like the service's "blank = unchanged"
         changed["password_changed"] = True

@@ -1,20 +1,13 @@
-"""Audit log — an append-only record of *who did what, to what, when*.
+"""Audit log — an append-only record of who did what, to what, when.
 
-Security-sensitive and compliance-relevant apps must be able to answer questions
-like "who deleted that user?" or "when was the license replaced?". The audit log
-is the answer: services call ``record(...)`` at the moment a meaningful action
-happens, and admins read the trail through ``GET /api/audit``.
+Services call ``record(...)`` when a meaningful action happens; admins read the
+trail through ``GET /api/audit``.
 
-Design notes:
-  * It is APPEND-ONLY — there is no update/delete endpoint. Tampering with an
-    audit trail defeats its purpose.
-  * ``record`` takes the acting ``User``, an ``ApiKeyPrincipal`` (auth/deps.py),
-    or None for system/anonymous actions, and reads ``actor.id`` / ``actor.email``
-    DEFENSIVELY via getattr, so callers can pass any user-like object (or None)
-    without crashing. ``actor_type`` says WHICH of the three it was — a machine
-    credential's action must not read as a person's.
-  * ``meta`` is a free-form JSON blob for action-specific context (old/new values,
-    request ip, target name) — portable JSON so it works on Postgres and SQLite.
+  * Append-only: there is no update or delete endpoint, by design.
+  * ``record`` accepts a ``User``, an ``ApiKeyPrincipal``, or None for system
+    actions, reading fields via getattr so any user-like object works.
+    ``actor_type`` says which — a machine's action must not read as a person's.
+  * ``meta`` is free-form JSON context, portable across Postgres and SQLite.
 """
 
 from __future__ import annotations
@@ -42,32 +35,24 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    # Actor snapshot: we store BOTH the id and the email at the time of the action.
-    # The email is captured verbatim so the trail stays readable even if the user
-    # is later renamed or deleted (the FK would otherwise dangle). Nullable for
-    # system / anonymous actions.
+    # Actor snapshot: id AND email at the time of the action. The email is stored
+    # verbatim so the trail survives a rename or delete. Nullable for system
+    # actions.
     actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     actor_email: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Display name at the time of the action — snapshotted for the same reason as
-    # the email: the trail must stay readable after a rename or a delete. NULL for
-    # system actions and for users who never set a full name (UI falls back to email).
+    # Display name, snapshotted for the same reason as the email. NULL for system
+    # actions and users with no full name (the UI falls back to email).
     actor_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    # WHAT KIND of actor: "user" | "apikey" | "system". Added 2026-09-05 with the
-    # scoped service credential, because until then the trail had no way to say
-    # that a row was written by a machine. The snapshot columns above cannot carry
-    # it: a key has no email, and a key NAMED "DashForge BI reader" landing in
-    # actor_name next to a person's name is a row that reads like a person with an
-    # odd name. An action taken by a credential and an action taken by a human are
-    # different facts and an audit trail that cannot distinguish them is not an
-    # audit trail. Non-null with a "user" default so every pre-existing row keeps
-    # exactly the meaning it had (the backfill in 0023 corrects the actor-less
-    # ones to "system").
+    # "user" | "apikey" | "system". The snapshot columns above cannot carry this —
+    # a key has no email, and its name in actor_name reads like an oddly-named
+    # person. Non-null with a "user" default so pre-existing rows keep their
+    # meaning; migration 0023 backfills the actor-less ones to "system".
     actor_type: Mapped[str] = mapped_column(
         String(16), nullable=False, default="user", server_default="user"
     )
     # --- multi-tenancy -----------------------------------------------------
-    # The tenant this action belongs to (the actor's tenant at the time). NULL =
-    # a platform/super-admin/system action. Tenant-admins only see their own rows.
+    # The actor's tenant at the time. NULL = a platform/super-admin/system action.
+    # Tenant-admins only see their own rows.
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     # What happened, e.g. "user.delete", "license.replace", "role.update".
     action: Mapped[str] = mapped_column(String, nullable=False)
@@ -93,22 +78,19 @@ async def record(
 ) -> AuditLog:
     """Write one audit entry and commit it.
 
-    ``actor`` is an ``edge.auth.models.User`` (or None). We read its id/email via
-    getattr so any user-like object — or None — is accepted without raising. The
-    entry is committed immediately: an audit record must survive even if the
-    surrounding request later fails.
+    Fields are read via getattr so any user-like object, or None, is accepted.
+    Committed immediately: the record must survive a later failure in the request.
     """
     entry = AuditLog(
         actor_id=getattr(actor, "id", None),
         actor_email=getattr(actor, "email", None),
         actor_name=getattr(actor, "full_name", None) or None,
-        # No actor at all is a system action; anything else declares its own kind
-        # and defaults to "user". A ``User`` never sets ``audit_actor_type``, so
-        # every existing caller of this function keeps writing exactly the row it
-        # wrote before — the classification is additive, not a reinterpretation.
+        # No actor means a system action; anything else declares its own kind and
+        # defaults to "user". A ``User`` never sets ``audit_actor_type``, so
+        # existing callers keep writing the row they always wrote.
         actor_type=("system" if actor is None else str(getattr(actor, "audit_actor_type", "user"))),
-        # Stamp the actor's tenant so the trail is tenant-scoped. Super-admins (and
-        # system/anonymous actions) have no tenant → NULL (platform scope).
+        # Stamp the actor's tenant so the trail is scoped. Super-admins and system
+        # actions have no tenant, so NULL means platform scope.
         tenant_id=getattr(actor, "tenant_id", None),
         action=action,
         target_type=target_type,
@@ -125,14 +107,9 @@ async def record(
 class AuditLogOut(BaseModel):
     """API representation of one audit entry.
 
-    `tenant_id` is here because the CROSS-TENANT view needs it and did not have it.
-    `GET /admin/audit` advertises itself as returning "EVERY tenant's entries (plus
-    the platform/system tenant_id NULL rows)", and it did — with no attribution on
-    any of them. The `?tenant_id=` filter worked, so an investigator could page one
-    tenant at a time, which is exactly the limitation that route exists to remove.
-
-    It leaks nothing to a tenant admin: their own listing is already scoped to their
-    tenant, so the only value they can see is their own.
+    `tenant_id` is exposed for the cross-tenant `GET /admin/audit` view, which
+    otherwise returns every tenant's rows with no attribution. It leaks nothing to
+    a tenant admin: their listing is already scoped, so they only see their own.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -161,13 +138,11 @@ async def list_audit(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission(CorePerm.AUDIT_READ)),
 ) -> Page[AuditLogOut]:
-    """List audit entries, newest first. Requires the ``audit.read`` permission.
+    """List audit entries, newest first. Requires ``audit.read``.
 
-    Tenant-scoped: a tenant-admin only sees actions recorded under their own tenant;
-    a super-admin sees the whole platform trail (incl. tenant_id NULL rows).
-
-    Optional filters: ``action`` matches an action category by PREFIX (e.g. ``user``
-    → ``user.*``); ``q`` is a free-text search over the actor name + email + action key.
+    Tenant-scoped: a tenant-admin sees only their own tenant, a super-admin sees
+    the whole trail. ``action`` matches by prefix (``user`` → ``user.*``); ``q`` is
+    free text over actor name, email and action.
     """
     from ..tenancy.scope import scope_of, scoped
 
@@ -227,10 +202,10 @@ async def purge_audit(
     db: AsyncSession = Depends(get_db),
     actor=Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> dict:
-    """Delete audit entries older than N days now (manual retention enforcement).
+    """Delete audit entries older than N days now.
 
-    Uses ``older_than_days`` if given, else the configured ``audit_retention_days``.
-    Gated by ``settings.manage`` because it destroys records permanently.
+    Uses ``older_than_days`` if given, else ``audit_retention_days``. Gated by
+    ``settings.manage`` because it destroys records permanently.
     """
     days = data.older_than_days if data.older_than_days is not None else await _retention_days(db)
     if not days or days <= 0:

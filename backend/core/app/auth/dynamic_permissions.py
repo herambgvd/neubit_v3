@@ -1,27 +1,18 @@
-"""The DYNAMIC half of the permission catalog.
+"""The dynamic half of the permission catalog.
 
-`permissions.PERMISSIONS` is a python constant and is the authority on every key
-the code itself enforces. It cannot cover keys that do not exist at build time —
-and the dataset registry creates exactly those: a domain registers a dataset with
-an INSERT into `neubit_reporting.dashboard_datasets` and names the permission
-needed to read it. (This said "the dashboard builder's dataset registry". The
-builder was retired on 2026-09-03; the registry outlived it and the READING-WRITER
-owns it — `backend/reading-writer/app/api/permsync.py` is what POSTs these keys.
-The mechanism below is unchanged.) If core has never heard of that key,
-`PERMISSIONS.unknown()` refuses it on role create and **no role can grant it**.
+`permissions.PERMISSIONS` is the authority on every key the code enforces, but it
+cannot cover keys that do not exist at build time — dataset read permissions are
+registered as data (rows in `neubit_reporting.dashboard_datasets`). A key core has
+never heard of is refused by `PERMISSIONS.unknown()` on role create, so no role
+can grant it.
 
-That is the bug the builder contract names: `ingest.read` / `ingest.manage` were
-enforced by the backend and never registered, so only a wildcard admin could
-reach Ingest. Registering a key is not book-keeping; it is what makes the
-permission grantable.
-
-So a satellite POSTs its keys to `/auth/permissions/registrations` and they land
+Satellites POST their keys to `/auth/permissions/registrations`
+(`backend/reading-writer/app/api/permsync.py` is the worked example) and they land
 in `permission_registrations`. This module is the read side: it merges them into
-the grouped catalog the role editor renders, and into the validity check role
-create/update runs.
+the grouped catalog the role editor renders and into the role create/update check.
 
-**Static always wins.** A registration can add a key; it can never redefine one
-the code enforces, and it can never make an unknown key look enforced.
+Static always wins: a registration can add a key, never redefine one the code
+enforces, and never make an unknown key look enforced.
 """
 
 from __future__ import annotations
@@ -58,9 +49,8 @@ async def unknown(db: AsyncSession, perms) -> list[str]:
 async def grouped(db: AsyncSession) -> dict[str, list[dict]]:
     """The role editor's payload: static groups, with registered keys merged in.
 
-    A registered key whose name collides with a static one is DROPPED — the code's
-    own catalog describes what the code enforces, and letting a satellite relabel
-    `user.manage` would be a way to lie to the person editing a role.
+    A registered key colliding with a static one is dropped — a satellite must not
+    be able to relabel `user.manage` for the person editing a role.
     """
     out = PERMISSIONS.grouped()
     static = PERMISSIONS.keys()
@@ -93,10 +83,8 @@ async def register(db: AsyncSession, *, source: str, permissions: list[dict]) ->
         label = (p.get("label") or key)[:200]
         group = (p.get("group") or "Other")[:80]
         desc = p.get("description") or ""
-        # Select-then-write rather than an ON CONFLICT: core's tests run on
-        # SQLite and a postgres-only upsert would make this module untestable
-        # there. The volume is a handful of rows on startup, so the round trip
-        # costs nothing.
+        # Select-then-write rather than ON CONFLICT: a postgres-only upsert would
+        # be untestable on SQLite, and it is a handful of rows on startup.
         row = await db.get(PermissionRegistration, key)
         if row is None:
             db.add(

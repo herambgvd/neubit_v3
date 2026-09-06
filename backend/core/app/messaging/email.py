@@ -36,13 +36,9 @@ async def send_email(
     Returns True on success, False if the channel is off / misconfigured / errored.
     Expected config fields: host, port, username, password, from_addr, use_tls.
 
-    `tenant_id` selects WHOSE SMTP server. It was not a parameter at all, so every
-    send resolved `get_channel(db, "email")` with tenant_id None — the
-    platform-default row. A tenant that configured its own SMTP had it stored,
-    masked and encrypted correctly, and never used: their mail went out through the
-    platform's server, from the platform's address. Omitting it still means the
-    platform default, which is right for platform-level mail and wrong silently for
-    anything else, so the callers pass it.
+    `tenant_id` selects whose SMTP server. Omitting it means the platform default,
+    which is right for platform mail and silently wrong for a tenant that
+    configured its own — so pass it.
     """
     if not to:
         log.warning("send_email called with no recipients; skipping")

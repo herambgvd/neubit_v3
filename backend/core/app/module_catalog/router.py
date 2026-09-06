@@ -1,9 +1,8 @@
 """Module catalog API — full path ``{api_prefix}/admin/modules``.
 
-The catalog is READ by any authenticated user (the frontend needs it to render the
-per-tenant feature toggles and to know what module keys exist). MUTATIONS are gated
-by ``require_superadmin``. Deleting a system module is blocked in the service.
-Actions are audit-logged like the rest of the platform.
+Any authenticated user can read the catalog (the frontend needs it to render the
+per-tenant feature toggles). Mutations are gated by ``require_superadmin`` and
+audit-logged; deleting a system module is blocked in the service.
 """
 
 from __future__ import annotations

@@ -1,15 +1,12 @@
 """The live streams authenticate; they must also authorize.
 
-`/realtime/vms-events`, `/realtime/wall-events`, `/realtime/access-events` and
-`/realtime/incidents` each decoded the caller's token and stopped there. A tenant
-user holding NO permissions at all received a live feed of camera events, operator
-popups, video-wall state, door and cardholder access events and workflow incidents —
-data whose REST equivalents are gated (`vms.camera.read` is enforced at 26 sites in
-the vision service). The stream was the way AROUND the permission model.
+Each of `/realtime/vms-events`, `/realtime/wall-events`, `/realtime/access-events`
+and `/realtime/incidents` carries data whose REST equivalent is permission-gated, so
+decoding the token and stopping there makes the stream a way around the permission
+model. STREAMS below is the route-to-permission map, and it is asserted both ways.
 
-There is no cross-tenant leak in either version: the NATS subject is built from the
-caller's own tenant and fails closed to `tenant.__none__.…`. This is about a
-permission model that two whole surfaces did not participate in.
+Cross-tenant leaks are not the concern here: the NATS subject is built from the
+caller's own tenant and fails closed to `tenant.__none__.…`.
 """
 
 from __future__ import annotations
@@ -43,10 +40,9 @@ def app(sessionmaker_, monkeypatch):
             yield session
 
     application.dependency_overrides[get_db] = _override_db
-    # authorize_stream opens its OWN short-lived session rather than taking one from
+    # authorize_stream opens its own short-lived session rather than taking one from
     # DI, because a StreamingResponse holds its dependencies for the life of the
-    # stream and these streams last hours. So the factory is what gets substituted
-    # here — the code under test is unchanged, only where it gets a connection.
+    # stream. So the substitution here is of the sessionmaker, not the dependency.
     from app.db import base as db_base
 
     monkeypatch.setattr(db_base, "get_sessionmaker", lambda: sessionmaker_)
@@ -64,12 +60,10 @@ def _auth(user) -> dict:
 async def _status(app, path: str, headers: dict | None = None) -> int:
     """Status code of an SSE request, without ever waiting on the stream body.
 
-    A REFUSED request answers and ends. An ACCEPTED one opens a pipe and waits on
-    NATS, and there is no NATS here — a plain `c.get` would buffer the body and the
-    test would HANG rather than fail. That matters: the way this suite reports "the
-    gate was removed" must be a red test, not a stuck one. So the request is raced
-    against a short deadline and a timeout is reported AS 200 — the stream opened,
-    which is exactly the failure the caller is asserting against.
+    A refused request answers and ends; an accepted one opens a pipe and waits on
+    NATS, of which there is none here, so a plain `c.get` would hang instead of
+    failing. The request is raced against a short deadline and a timeout is reported
+    as 200 — the stream opened, which is the failure being asserted against.
     """
     import asyncio
 
@@ -99,14 +93,11 @@ async def test_a_user_with_no_permissions_is_refused(app, nobody, path, db):
 
 @pytest.mark.parametrize("perm", sorted(set(STREAMS.values())))
 async def test_the_right_permission_passes_the_guard(app, db, perm, sessionmaker_):
-    """The guard must not be "refuse everyone" — that would pass every test above
-    while breaking the product.
+    """The guard must not be "refuse everyone" — that would pass every test above.
 
-    This calls the guard rather than opening the stream. A 200 from an SSE route
-    means the pipe is open and waiting on NATS, and there is no NATS here; the
-    request would hang rather than fail, which is worse than a red test. The
-    ROUTE-to-KEY wiring is asserted separately, by reading the source, in
-    test_every_stream_is_wired_to_its_permission.
+    Calls the guard rather than opening the stream, because a 200 from an SSE route
+    means the pipe is open and waiting on a broker that is not here. The route-to-key
+    wiring is asserted separately in test_every_stream_is_wired_to_its_permission.
     """
     from app.core.sse_auth import authorize_stream
 
@@ -118,10 +109,8 @@ async def test_the_right_permission_passes_the_guard(app, db, perm, sessionmaker
 def test_every_stream_is_wired_to_its_permission():
     """Each route calls authorize_stream with the key STREAMS names for it.
 
-    Read from the source, because the alternative — opening each stream and
-    asserting 200 — needs a broker and answers by hanging when there is not one.
-    This catches the failure that matters: a stream gated on the WRONG key, which
-    is a permission check that looks present in review and is not.
+    Read from the source, because opening each stream needs a broker and hangs
+    without one. Catches a stream gated on the wrong key, which reads as present.
     """
     import ast
     import pathlib as _pathlib
@@ -154,9 +143,8 @@ async def test_no_token_is_still_401(app, path):
 
 
 async def test_a_deactivated_user_cannot_open_a_stream(app, db):
-    """The stream reads the LIVE user row, not the token's claims. A stream is where
-    a stale token is most expensive: one REST call with a stale token is one
-    response, a stream is an open pipe for the life of the token."""
+    """The stream reads the live user row, not the token's claims. A stale token on
+    REST costs one response; on a stream it is an open pipe until the token expires."""
     role = await make_role(db, "WasAllowed", ["vms.camera.read"])
     user = await make_user(db, "gone@x.io", role)
     token_headers = _auth(user)  # minted while the account was live
@@ -166,9 +154,8 @@ async def test_a_deactivated_user_cannot_open_a_stream(app, db):
 
 
 async def test_a_suspended_tenant_cannot_open_a_stream(app, db):
-    """`require_tenant_active`'s guarantee, which streams did not have. Core refuses
-    a suspended tenant at LOGIN; without this, a token minted before the suspension
-    keeps a feed of that tenant's data open until it expires."""
+    """Streams need `require_tenant_active`'s guarantee too. Suspension is enforced
+    at login, so a token minted before it would otherwise keep the feed open."""
     from app.tenancy.models import Tenant
 
     tenant = Tenant(name="Susp", slug="susp", status="active", features={}, limits={})
@@ -200,16 +187,14 @@ async def test_a_suspended_tenant_cannot_open_a_stream(app, db):
 
 # --- the stream is re-checked while it is open -------------------------------
 #
-# The initial check ran once, at connect. A stream is an open pipe for the life of
-# the token, so deactivating a user or suspending a tenant did nothing to the feed
-# they already had — which is the same window `require_tenant_active` closes for
-# REST, left open on the surface where it lasts longest.
+# A check that runs only at connect leaves the pipe open for the life of the token,
+# so deactivating a user or suspending a tenant would not touch the feed they
+# already have.
 
 
 @pytest_asyncio.fixture
 async def always_revalidate(monkeypatch):
-    """Interval 0, so every call re-checks. The real default is 60s; a test that
-    waited for it would be a test nobody runs."""
+    """Interval 0, so every call re-checks. The real default is 60s."""
     from app.core import config
 
     monkeypatch.setenv("VE_SSE_REVALIDATE_SECONDS", "0")
@@ -275,10 +260,9 @@ async def test_a_guard_closes_a_stream_whose_tenant_was_suspended(app, db, alway
 
 
 async def test_a_guard_does_not_recheck_before_its_interval(app, db, monkeypatch):
-    """A database round-trip per stream per keepalive is a cost with no matching
-    benefit, so the guard only re-checks every VE_SSE_REVALIDATE_SECONDS. Without
-    this test the interval could be silently ignored and everything above would
-    still pass."""
+    """The guard re-checks only every VE_SSE_REVALIDATE_SECONDS, to avoid a database
+    round-trip per stream per keepalive. Ignoring the interval passes every other
+    test in this file."""
     from app.core import config
     from app.core.sse_auth import StreamGuard
 
@@ -290,16 +274,15 @@ async def test_a_guard_does_not_recheck_before_its_interval(app, db, monkeypatch
         guard = StreamGuard({"sub": str(user.id)}, "vms.camera.read")
         user.is_active = False
         await db.commit()
-        # Deactivated, but the interval has not elapsed — still allowed, and that
-        # bounded staleness is the documented trade of polling over a signal.
+        # Deactivated, but the interval has not elapsed. The bounded staleness is
+        # the deliberate trade of polling over a signal.
         assert await guard.still_allowed() is True
     finally:
         config.get_settings.cache_clear()
 
 
 async def test_every_relay_uses_the_guard():
-    """Four relays, four copies of the same loop. A guard wired into three of them
-    is the shape of bug this codebase keeps finding."""
+    """Four relays, four copies of the same loop — the guard has to be in all four."""
     import pathlib
 
     core_dir = pathlib.Path(__file__).resolve().parents[1] / "app" / "core"

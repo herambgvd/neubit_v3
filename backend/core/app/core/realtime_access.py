@@ -9,21 +9,16 @@ live updates instead of polling every 5s.
 
     GET /api/v1/realtime/access-events        (text/event-stream)
 
-Auth: the same short-lived HS256 access token the REST API uses. Browsers can't set
-headers on ``EventSource``, so we accept the token as ``?token=<jwt>`` first and fall
-back to ``Authorization: Bearer <jwt>`` (native clients / proxies). Invalid/missing →
-401. The caller's ``tenant_id`` is read from the token and used to scope the NATS
-subscription: ``tenant.<tenant_id>.access.>`` — a tenant only ever sees its own
-access events. Super-admins (no tenant) subscribe to ``tenant.*.access.>`` (all
-tenants).
+Auth: the same short-lived HS256 access token the REST API uses, as ``?token=<jwt>``
+(``EventSource`` cannot set headers) or an ``Authorization: Bearer`` fallback. The
+token's ``tenant_id`` scopes the subscription to ``tenant.<id>.access.>``;
+super-admins (no tenant) get ``tenant.*.access.>``.
 
-Since the EventsFeed is per-instance, an optional ``?instance_id=<id>`` narrows the
-stream server-side: only frames whose payload ``instance_id`` matches are forwarded,
-so a client watching one instance isn't pushed every access event in the tenant.
+``?instance_id=<id>`` narrows the stream server-side, so a client watching one
+instance is not pushed every access event in the tenant.
 
-Delivery model: one EPHEMERAL, non-durable core NATS subscription PER open stream
-(via ``events_nats.ephemeral_subscribe``), torn down on client disconnect. Live,
-at-most-once — no history/replay, which is exactly what a live feed wants.
+Delivery: one ephemeral, non-durable NATS subscription per open stream, torn down on
+disconnect. Live and at-most-once — no history or replay.
 
 Client (matches the access ``use-access-event-stream`` hook):
 
@@ -52,8 +47,7 @@ log = get_logger("edge.realtime.access")
 
 realtime_access_router = APIRouter(prefix="/realtime", tags=["realtime"])
 
-# How often to emit an SSE keepalive comment so idle connections survive proxy /
-# Traefik / load-balancer idle timeouts (typically 30-60s).
+# Keepalive cadence, so idle connections survive proxy idle timeouts (30-60s).
 KEEPALIVE_SECONDS = 20.0
 
 # SSE ``event:`` name the UI listens on for every access frame.
@@ -76,7 +70,7 @@ def _principal_or_401(request: Request, token_qs: str | None) -> dict:
     Uses core's ``decode_token`` (same HS256 ``jwt_secret`` the satellite services'
     ``kernel.verify_token`` uses — core is the token issuer, so it validates locally).
     """
-    # 401 envelope matching the platform's error shape.
+    # Matches the platform's error envelope shape.
     from fastapi import HTTPException, status
 
     token = _extract_token(request, token_qs)
@@ -146,28 +140,24 @@ async def access_events_stream(
     frames whose payload ``instance_id`` matches are forwarded.
     """
     claims = _principal_or_401(request, token)
-    # Authentication is not authorization. This stream carries door and cardholder events,
-    # whose REST equivalents are permission-gated; without this line any
-    # authenticated user with no permissions at all received the live feed.
-    # authorize_stream also re-reads the user and the tenant from the
-    # database rather than trusting the token's claims, because a stream
-    # outlives a suspension in a way a single request does not.
+    # Authentication is not authorization: door and cardholder events are
+    # permission-gated on the REST side, so the stream must be gated too.
+    # authorize_stream re-reads the user and tenant from the database rather than
+    # trusting the token's claims: a stream outlives a suspension.
     await authorize_stream(claims, CorePerm.ACCESS_READ)
-    # …and again while the stream is open. A stream outlives a single request
-    # by design, so a revoked permission, a deactivated user or a suspended
-    # tenant would otherwise keep this feed alive until the token expired.
+    # …and again while the stream is open, or a revoked permission would keep
+    # this feed alive until the token expired.
     guard = StreamGuard(claims, CorePerm.ACCESS_READ)
     tenant_id = claims.get("tenant_id")
     is_superadmin = bool(claims.get("is_superadmin", False))
 
-    # Tenant scope: a tenant sees only its own access events; a platform
-    # super-admin (no tenant) may watch every tenant's events.
+    # A tenant sees only its own events; a super-admin (no tenant) sees every one.
     if tenant_id:
         pattern = f"tenant.{tenant_id}.access.>"
     elif is_superadmin:
         pattern = "tenant.*.access.>"
     else:
-        # A non-super-admin token with no tenant has nothing to watch → nothing scoped.
+        # A non-super-admin token with no tenant has nothing to watch.
         pattern = "tenant.__none__.access.>"
 
     async def event_stream():
@@ -177,7 +167,7 @@ async def access_events_stream(
 
         async def _on_event(envelope: dict) -> None:
             data = _compact(envelope)
-            # Per-instance narrowing: drop frames for other instances.
+            # Drop frames for other instances.
             if instance_id and data.get("instance_id") != instance_id:
                 return
             try:
@@ -189,7 +179,7 @@ async def access_events_stream(
         if sub is None:
             log.info("SSE access: NATS unavailable — stream open, keepalive only")
 
-        # Prime the connection so the client's onopen fires and proxies flush.
+        # Prime the connection so onopen fires and proxies flush.
         yield ": connected\n\n"
         try:
             while True:
@@ -197,16 +187,15 @@ async def access_events_stream(
                     break
                 kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
                 if kind == "shutdown":
-                    # The process is going down. END the response instead of
-                    # looping: an open stream here is what used to make every
-                    # reload hang forever. EventSource reconnects on its own.
+                    # Going down: end the response instead of looping, or the
+                    # open stream wedges the shutdown. EventSource reconnects.
                     yield SSE_SHUTDOWN_FRAME
                     break
                 if kind == "keepalive":
                     if not await guard.still_allowed():
-                        # The response body is the only thing left to refuse with —
-                        # the 200 was sent when the stream opened. End it; an
-                        # EventSource reconnects and gets a clean 401/403 then.
+                        # The 200 went out when the stream opened, so ending the
+                        # body is the only way left to refuse. EventSource
+                        # reconnects and gets a clean 401/403 then.
                         yield "event: revoked\ndata: {}\n\n"
                         break
                     yield ": keepalive\n\n"

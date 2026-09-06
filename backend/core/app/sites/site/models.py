@@ -68,21 +68,18 @@ class Site(Base):
     email_address: Mapped[str | None] = mapped_column(String(320))
     image_url: Mapped[str | None] = mapped_column(String(1024))
 
-    # --- BUILDING FACTS (migration 0018) ---------------------------------------
-    # What the building IS, as a physical and commercial thing. These are an
-    # OPERATOR'S ASSERTIONS, not measurements, and every one of them is nullable
-    # because NULL means NOT RECORDED — a fact this platform must be able to
-    # state. Building Intelligence → Ratings divides by `gross_floor_area_sqm`
-    # and refuses to produce a rating without it rather than defaulting,
-    # estimating or substituting a national average.
+    # --- Building facts (migration 0018) ---------------------------------------
+    # Operator assertions about the building, not measurements. All nullable
+    # because NULL means "not recorded": BI Ratings divides by
+    # `gross_floor_area_sqm` and refuses to rate without it rather than
+    # defaulting or estimating one.
     gross_floor_area_sqm: Mapped[float | None] = mapped_column(Float)
     energy_tariff_per_kwh: Mapped[float | None] = mapped_column(Float)
     # Stored beside the tariff rather than assumed: a bare 8.5 is not a price.
     tariff_currency: Mapped[str | None] = mapped_column(String(8))
     occupancy: Mapped[int | None] = mapped_column(Integer)
-    # Who last stood behind these numbers, and when. `updated_at` cannot say —
-    # it moves when anyone edits a phone number, and a figure a rating divides
-    # by deserves its own provenance.
+    # Provenance for the facts above; `updated_at` also moves when someone edits
+    # a phone number, so it cannot say who stood behind these numbers.
     building_facts_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     building_facts_updated_by: Mapped[str | None] = mapped_column(String(36))
 
@@ -100,23 +97,20 @@ class Site(Base):
 
 
 class SiteTariffSlab(Base):
-    """One TIME-OF-USE tariff window for a site (migration 0019).
+    """One time-of-use tariff window for a site (migration 0019).
 
-    The scalar ``Site.energy_tariff_per_kwh`` remains the simple case.
-    PRECEDENCE: if any slab whose ``effective_from`` is on or before the date
-    being priced exists, the slab set overrides the scalar ENTIRELY for that
-    date; an hour no slab covers has NO price — absence, never a fallback into
-    the scalar, because blending two assertions prices an hour nobody stated.
+    The scalar ``Site.energy_tariff_per_kwh`` remains the simple case. If any slab
+    whose ``effective_from`` is on or before the priced date exists, the slab set
+    overrides the scalar entirely for that date, and an hour no slab covers has no
+    price rather than falling back to the scalar.
 
-    Written only by ``PUT /sites/{id}/tariff-slabs`` — a FULL REPLACE of the
-    whole list, so an explicit empty list clears the set (the retraction
-    property building-facts established: a wrong rate an operator cannot take
-    back is worse than none). ``effective_from`` makes a revision a new
-    generation of rows rather than a silent rewrite of history.
+    Written only by ``PUT /sites/{id}/tariff-slabs``, a full replace, so an empty
+    list clears the set. ``effective_from`` makes a revision a new generation of
+    rows rather than a rewrite of history.
 
-    Windows are minutes since midnight: ``end > start`` is ``[start, end)``;
-    ``end < start`` WRAPS midnight (22:00 -> 06:00); ``end == start`` is
-    refused (a full day is ``0 -> 1440``). THIS TABLE SHIPS EMPTY.
+    Windows are minutes since midnight: ``end > start`` is ``[start, end)``,
+    ``end < start`` wraps midnight (22:00 -> 06:00), ``end == start`` is refused
+    (a full day is ``0 -> 1440``). Ships empty.
     """
 
     __tablename__ = "site_tariff_slabs"
@@ -141,15 +135,15 @@ class SiteTariffSlab(Base):
 class SiteEmissionFactor(Base):
     """A site's grid emission factor — kg CO2 per kWh (migration 0019).
 
-    ``source`` is REQUIRED: the operator states where the number came from
-    (e.g. "CEA CO2 Baseline Database v19"). A factor with no citation is an
-    invented figure, which this platform's contracts forbid outright.
+    ``source`` is required: the operator states where the number came from (e.g.
+    "CEA CO2 Baseline Database v19"), because a factor with no citation is an
+    invented figure.
 
-    Scalar per ``effective_from`` today. A later time-of-day variant is an
-    ADDITION — nullable window columns on this table — not a rewrite; hence
-    ``uq(site_id, effective_from)`` rather than a site-wide singleton.
-    Written only by ``PUT /sites/{id}/emission-factors`` (full replace; an
-    empty list clears). THIS TABLE SHIPS EMPTY.
+    Scalar per ``effective_from`` today; a time-of-day variant would add nullable
+    window columns here, which is why the key is ``uq(site_id, effective_from)``
+    and not a site-wide singleton. Written only by
+    ``PUT /sites/{id}/emission-factors`` (full replace; an empty list clears).
+    Ships empty.
     """
 
     __tablename__ = "site_emission_factors"

@@ -1,14 +1,9 @@
 """Device-placement service — CRUD + by-floor/by-zone queries, tenant-scoped.
 
-Ported from neubit_v2's ``module/sites/device/service.py`` + ``repository.py`` and
-adapted to neubit_v3 conventions (single async ORM, ``app.tenancy.scope`` row
-isolation, ``app.core.errors`` + ``app.core.audit``, NATS events via ``sites.events``).
-
-``register`` validates that the referenced floor is visible to the caller (same
-tenant, active) and that ``site_id`` matches the floor's site; if ``zone_id`` is
-supplied it must belong to that site+floor (v2 semantics). Registering an already
-placed ``device_id`` (within the tenant) UPDATES it in place — matching v2's
-upsert-by-device_id behaviour.
+``register`` checks that the referenced floor is visible to the caller (same
+tenant, active) and that ``site_id`` matches the floor's site; a supplied
+``zone_id`` must belong to that site and floor. Registering an already placed
+``device_id`` within the tenant updates it in place.
 """
 
 from __future__ import annotations
@@ -167,9 +162,8 @@ class DevicePlacementService:
 
     async def remove(self, device_id: str, *, actor) -> None:
         row = await self._get_row(device_id)
-        # Everything the event needs is read BEFORE the delete — after it the row
-        # is gone and a consumer would be told a device was unplaced without
-        # being told which kind of device, or from where.
+        # Read what the event needs before the delete; afterwards the row is gone
+        # and the consumer learns only that some device was unplaced.
         placement_id = row.placement_id
         gone = {
             "device_id": row.device_id,
@@ -213,19 +207,14 @@ class DevicePlacementService:
 
     # ── events ───────────────────────────────────────────────────────────────
     #
-    # A placement event is the ONLY thing a consumer gets, so it carries the whole
-    # fact rather than a diff: which device, of what kind, in which service, and
-    # the site / floor / zone it now sits in — ids AND names.
+    # A placement event is all a consumer gets, so it carries the whole fact
+    # rather than a diff: which device, of what kind, in which service, and the
+    # site / floor / zone it now sits in, ids and names. Names are read from
+    # core's own rows here — they come from core, never from the browser.
     #
-    # The names are read from core's own rows here, on the way out. That is the
-    # same rule the reporting store's placement write already followed ("names
-    # come from core, never from the browser"), moved to the only place that can
-    # honour it without a second HTTP hop: the authority publishes the label
-    # beside the id it minted.
-    #
-    # `changed` is the caller's diff and is for the audit log only. A consumer
-    # that reads it instead of the canonical fields would break the moment a
-    # PATCH touches one field — which is exactly what `update` sends.
+    # `changed` is the caller's diff, for the audit log only. A consumer reading
+    # it instead of the canonical fields breaks as soon as a PATCH touches one
+    # field, which is what `update` sends.
 
     async def _location_names(self, site_id, floor_id, zone_id) -> dict:
         site = await self.db.get(Site, site_id) if site_id else None
@@ -278,9 +267,8 @@ class DevicePlacementService:
                 "floor_id": floor_id,
                 "zone_id": zone_id,
                 **names,
-                # Who asserted it. A consumer that keeps its own copy of the
-                # placement can record the same author rather than an anonymous
-                # system write.
+                # Who asserted it, so a consumer keeping its own copy records the
+                # same author rather than an anonymous system write.
                 "actor_id": str(getattr(actor, "id", "")) or None,
                 "changed": changed,
             },

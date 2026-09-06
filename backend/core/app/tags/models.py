@@ -1,20 +1,16 @@
 """Tags ORM — cross-cutting labels + a generic tagging association.
 
-Two tables, both TENANT-SCOPED (nullable ``tenant_id``; NULL = platform/super-admin/
-system row) matching the row-scoping pattern used by 0007/0009:
+Two tables, both tenant-scoped (nullable ``tenant_id``; NULL = platform/system row):
 
   * ``Tag``     — one reusable label (name + hex color + description). Unique per
                   tenant on ``(tenant_id, name)``.
-  * ``TagLink`` — a generic association so ANYTHING can be tagged. It stores a
-                  ``tag_id`` FK plus a free-string ``entity_type`` (``"site"`` /
-                  ``"zone"`` today, ``"device"`` / ``"incident"`` later) and an
-                  ``entity_id``. Unique per tenant on
+  * ``TagLink`` — a generic association so anything can be tagged: a ``tag_id`` FK
+                  plus a free-string ``entity_type`` and an ``entity_id``. Unique on
                   ``(tenant_id, tag_id, entity_type, entity_id)`` and indexed on
                   ``(tenant_id, entity_type, entity_id)`` for the reverse lookup.
 
-Portable generic types (Uuid/String/Boolean/DateTime) keep the same model on
-Postgres and SQLite (tests). Reads and by-id lookups go through
-``app.tenancy.scope`` so isolation lives in one place.
+Portable generic types keep the same model on Postgres and SQLite (tests). Reads and
+by-id lookups go through ``app.tenancy.scope`` so isolation lives in one place.
 """
 
 from __future__ import annotations
@@ -79,9 +75,9 @@ class Tag(Base):
 class TagLink(Base):
     """A generic association: one ``tag`` attached to one ``entity``.
 
-    ``entity_type`` is a free string (``"site"`` / ``"zone"`` today, extensible to
-    ``"device"`` / ``"incident"`` later) — deliberately NOT an FK, so new taggable
-    modules need no migration here. ``entity_id`` is the target's id as a string.
+    ``entity_type`` is a free string (``"site"`` / ``"zone"`` today) and deliberately
+    not an FK, so a new taggable module needs no migration here. ``entity_id`` is the
+    target's id as a string.
     """
 
     __tablename__ = "tag_links"

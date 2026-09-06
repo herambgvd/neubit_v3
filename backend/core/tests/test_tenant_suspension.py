@@ -1,21 +1,17 @@
 """A suspended tenant's token must stop working, not keep working until it expires.
 
-`require_tenant_active` existed, its docstring described exactly this window, and it
-was applied to ONE router (dashforge). Core refuses a suspended tenant at LOGIN and
-then nothing on the request path looks again — so a token minted a minute before the
-suspension kept working across users, sites, settings, messaging and reports for the
-rest of its TTL. Where suspension is a commercial control, that window is the
-control.
+Suspension is enforced at login, so without a check on the request path a token
+minted a minute earlier keeps working for the rest of its TTL — and suspension is a
+commercial control, so that window is the control.
 
-Two things make the fix hold rather than being one more router someone remembers:
+Two things make `require_tenant_active` hold rather than being one more router
+someone remembers:
 
-  * the default is inverted in `app/app.py` — every base router is guarded unless it
-    is named in `_tenant_active_exempt()`, with the reason;
-  * the dependency resolves a PERSON OR A SERVICE KEY. It used to go through
-    `get_scope` → `get_current_user`, which refuses api-key tokens by design, so
-    attaching it to any router a key needs 401ed that key. That is why it could only
-    ever live on one router, and suspension applies to a tenant's machine
-    credentials at least as much as to its people.
+  * `app/app.py` inverts the default — every base router is guarded unless named in
+    `_tenant_active_exempt()`, with a reason;
+  * the dependency resolves a person or a service key. Resolving it through
+    `get_current_user` would 401 every api-key token, which is why it could only
+    live on one router before.
 """
 
 from __future__ import annotations
@@ -100,8 +96,8 @@ async def test_a_suspended_tenants_token_stops_working(app, world, db, path):
 
 @pytest.mark.parametrize("path", EXEMPT)
 async def test_the_user_can_still_be_told_they_are_suspended(app, world, db, path):
-    """If /features and /auth/me were guarded too, the console would get a 403 and
-    have nothing to render the message from, and the user could not log out."""
+    """Guarding /features and /auth/me too would leave the console with a 403 and
+    nothing to render the message from, and the user unable to log out."""
     world["tenant"].status = "suspended"
     await db.commit()
     async with _client(app) as c:
@@ -110,8 +106,8 @@ async def test_the_user_can_still_be_told_they_are_suspended(app, world, db, pat
 
 
 async def test_an_expired_licence_is_refused_and_grace_is_not(app, world, db):
-    """`expired` blocks; `grace` passes, because grace exists to warn rather than to
-    stop work. Asserting both ways is what stops the guard being "refuse everyone"."""
+    """`expired` blocks and `grace` passes, because grace warns rather than stops
+    work. Both directions, so the guard cannot just refuse everyone."""
     import datetime as dt
 
     tenant = world["tenant"]
@@ -154,9 +150,8 @@ async def test_a_super_admin_is_not_locked_out_of_a_suspended_tenant(app, world,
 
 
 async def test_a_service_key_of_a_suspended_tenant_is_refused(app, world, db):
-    """The reason the guard could not be applied widely before: it resolved a USER,
-    and api-key tokens are refused on that path by design — so attaching it to any
-    router a key needs 401ed the key. It now resolves either kind."""
+    """The guard resolves either kind of caller. Resolving a user would 401 every
+    api-key token, which is why it could not be applied widely before."""
     from app.auth.schemas import ApiKeyCreateIn
     from app.auth.service import AuthService
     from app.tenancy.scope import scope_of
@@ -172,9 +167,8 @@ async def test_a_service_key_of_a_suspended_tenant_is_refused(app, world, db):
         exchanged = await c.post(f"{PREFIX}/auth/token", json={"api_key": raw})
     assert exchanged.status_code == 200, exchanged.text
     headers = {"Authorization": f"Bearer {exchanged.json()['access_token']}"}
-    # /audit, not /sites: the sites routes resolve their scope through
-    # `get_current_user`, which refuses a service credential outright, so a key
-    # cannot reach them at all. /audit is a surface keys genuinely use.
+    # /audit, not /sites: sites resolves its scope through `get_current_user`, which
+    # refuses a service credential outright. /audit is a surface keys actually use.
     async with _client(app) as c:
         before = await c.get(f"{PREFIX}/audit", headers=headers)
         assert before.status_code == 200, before.text

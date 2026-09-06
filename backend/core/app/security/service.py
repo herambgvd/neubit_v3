@@ -60,8 +60,8 @@ class SecurityService:
         row = await self._policy_row(tenant_id)
         if row is not None:
             return row
-        # No stored row yet — return a transient default with concrete (non-None)
-        # values so it serialises cleanly (server_defaults only fill on flush).
+        # No stored row yet. Concrete values, not None, so it serialises cleanly —
+        # server_defaults only fill on flush.
         return SecurityPolicy(
             tenant_id=tenant_id, require_2fa=False, require_2fa_roles=[], session_idle_minutes=0
         )
@@ -155,26 +155,14 @@ class SecurityService:
         return default_role
 
     async def _role_by_name(self, name: str, tenant_id: uuid.UUID | None) -> Role | None:
-        """Resolve a group_role_map name to a role THIS tenant may be given.
+        """Resolve a group_role_map name to a role this tenant may be given.
 
-        The `tenant_id` argument was accepted and then not used — the query matched
-        on name alone, across every tenant. Two consequences, both reachable from an
-        ordinary SSO login:
-
-          * If tenant A's map named "Analyst" and only tenant B had a role by that
-            name, A's users were provisioned with B's role and B's permission list.
-          * `scalar_one_or_none()` would ALSO have raised MultipleResultsFound if two
-            tenants named a role the same thing. It could not, because `roles.name`
-            carried a global UNIQUE — and that constraint was itself the defect: the
-            first tenant to create "Analyst" took the name from every other tenant,
-            permanently. 0025 makes names unique per (tenant_id, name), which is
-            what makes this query need the filter rather than merely deserve it.
-
-        The candidate set is now the tenant's own roles plus the shared system roles
-        (tenant_id NULL), which is the same rule `AuthService._require_role` applies
-        when an admin assigns a role by hand. A tenant's own role WINS over a shared
-        one of the same name, so a tenant can override a system role for its own
-        directory users without renaming it.
+        Keep the tenant filter: role names are unique per (tenant_id, name) since
+        0025, so matching on name alone hands one tenant another's role and its
+        permissions. Candidates are the tenant's own roles plus shared system roles
+        (tenant_id NULL) — the same rule `AuthService._require_role` uses. A
+        tenant's own role wins over a shared one of the same name, so a tenant can
+        override a system role for its directory users without renaming it.
         """
         rows = (
             await self.db.execute(
@@ -213,8 +201,8 @@ class SecurityService:
             email=entry.email,
             full_name=entry.display_name,
             role_id=role.id,
-            # Directory-authenticated: no local password is ever used, but the column
-            # is NOT NULL, so store a random unusable hash.
+            # Directory-authenticated: no local password is used, but the column is
+            # NOT NULL, so store a random unusable hash.
             password_hash=hash_password(uuid.uuid4().hex),
             tenant_id=tenant_id,
             email_verified=True,
@@ -226,9 +214,8 @@ class SecurityService:
     async def sync_directory(self, scope: Scope, client: LdapClient | None = None):
         """Sync users/groups from the directory into core roles.
 
-        ``client`` is injectable — tests pass a FakeLdapClient. In production it is
-        built from the stored config (LIVE-VALIDATE: needs the ldap3 extra + a real
-        server). Returns a SyncResult-shaped dict.
+        ``client`` is injectable for tests; production builds it from the stored
+        config (needs the ldap3 extra + a real server). Returns a SyncResult.
         """
         from .schemas import DirectorySyncResult
 
@@ -410,7 +397,7 @@ class SecurityService:
         if not scope.is_platform and req.tenant_id != scope.tenant_id:
             raise NotFoundError("request not found")
         if only_own_of is not None and req.requested_by != only_own_of:
-            # NOT_FOUND, not FORBIDDEN — the id must not be confirmable by someone
+            # NOT_FOUND, not FORBIDDEN: the id must not be confirmable by someone
             # who cannot act on it, since the id is what `consume` takes.
             raise NotFoundError("request not found")
         return req
@@ -450,25 +437,20 @@ class SecurityService:
         *,
         actor_id: uuid.UUID | None = None,
     ) -> DualAuthRequest:
-        """Verify a request is APPROVED + matches the action/target, then CONSUME it.
+        """Verify a request is approved and matches the action/target, then consume it.
 
-        This is the primitive a sensitive endpoint (in core OR vision) calls right
-        before performing the action, so an approval can't be replayed for a
-        different action or used twice.
+        A sensitive endpoint calls this right before acting, so an approval cannot
+        be replayed for a different action or used twice.
 
-        `actor_id` is the caller performing the action, and it must be the person who
-        RAISED the request. Consume used to accept any authenticated user in the
-        tenant, with the ids coming from an equally open listing — so a bystander
-        could burn an approval granted for someone else's operation, and the real
-        holder would find it already used. It is deliberately not gated on
-        `dualauth.approve` instead: the consumer is the operator doing the work, and
-        making them an approver too would collapse the two halves of four-eyes into
-        one person.
+        `actor_id` must be the person who raised the request, otherwise a bystander
+        could burn someone else's approval. Do not gate this on `dualauth.approve`
+        instead — the consumer is the operator doing the work, and making them an
+        approver too collapses four-eyes into one person.
         """
         req = await self.get_dual_auth(scope, req_id)
         if actor_id is not None and req.requested_by != actor_id:
-            # NOT_FOUND for the same reason the tenant check above uses it: the id
-            # must not be confirmable by someone who cannot act on it.
+            # NOT_FOUND for the same reason as the tenant check: the id must not be
+            # confirmable by someone who cannot act on it.
             raise NotFoundError("request not found")
         if req.status == "consumed":
             raise ConflictError("approval has already been used")
@@ -492,12 +474,10 @@ class SecurityService:
     ):
         """Pending four-eyes requests the caller may see.
 
-        `only_own_of` narrows the listing to a single requester's own rows. The
-        router passes it for a caller who cannot approve: the listing was
-        tenant-wide for every authenticated user, which published a running
-        inventory of the privileged operations the tenant is about to perform, and
-        the ids in it were the input to a `consume` that required nothing.
-        A requester still needs to watch their own request, so that stays.
+        `only_own_of` narrows the listing to one requester's own rows; the router
+        passes it for a caller who cannot approve. Keep that narrowing — a
+        tenant-wide listing publishes an inventory of pending privileged
+        operations, and its ids are the input to `consume`.
         """
         stmt = select(DualAuthRequest).order_by(DualAuthRequest.created_at.desc())
         if not scope.is_platform:

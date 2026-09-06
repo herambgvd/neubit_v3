@@ -1,6 +1,6 @@
 """Derive the platform alert list from live data.
 
-Each alert has a DETERMINISTIC ``key`` so its read/dismiss state (stored per admin)
+Each alert has a deterministic ``key`` so its read/dismiss state (stored per admin)
 stays stable across recomputations. Sorted most-urgent first.
 """
 

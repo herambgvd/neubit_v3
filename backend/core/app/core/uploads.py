@@ -1,39 +1,20 @@
 """Validation for every file a client can upload, in one place.
 
-Core accepts uploads on three routes and each of them was written separately:
-
-  * ``POST /auth/me/avatar``   — any authenticated user, no type check, no size cap,
-    and the stored extension came from ``os.path.splitext(file.filename)``, which is
-    attacker-controlled.
-  * ``POST /branding/logo``    — same, behind ``branding.manage``.
-  * ``POST /sites/{id}/image`` — the one that was right: a content-type whitelist,
-    an 8 MiB cap, and the extension taken from the whitelist rather than the name.
-
-The first two combined with ``GET /files/{key:path}`` — which has no auth dependency
-at all and is routed publicly by Traefik — to make stored XSS on the platform origin:
-upload ``x.html``, get back its URL in the response, send someone the link. Session
-cookies and any same-origin data belong to the visitor.
-
-So the rules live here and all three routes call them:
+All three upload routes (avatar, branding logo, site image) call these rules,
+because ``GET /files/{key:path}`` is public and an unchecked upload there is
+stored XSS on the platform origin.
 
   * The declared content type must be on the whitelist.
-  * The BYTES must agree with it. A declared type is a claim by the uploader; the
-    magic number is the file. This is the check a pentest actually runs — rename a
-    payload to .png and set the header to image/png.
-  * The extension is chosen from the whitelist, never read from the filename. The
-    stored key therefore cannot carry ``.html``, ``.php`` or a traversal fragment
-    no matter what was sent.
-  * There is a size cap, and it is enforced WHILE reading — see ``read_capped``.
-    It used to be enforced only after ``await file.read()`` had already returned
-    the whole body as one ``bytes``, which is the one thing a size cap exists to
-    prevent: any authenticated user could make core allocate as much RAM as they
-    were willing to upload, and the 413 arrived after the damage.
+  * The bytes must agree with it — a declared type is the uploader's claim, the
+    magic number is the file.
+  * The extension comes from the whitelist, never from the filename, so a stored
+    key cannot carry ``.html``, ``.php`` or a traversal fragment.
+  * The size cap is enforced while reading, not after — see ``read_capped``.
 
-SVG is accepted because logos are SVG, and it is XML that can carry script. That is
-handled on the SERVING side (core/storage.py): non-raster types go out as
-``Content-Disposition: attachment``, so a direct navigation downloads rather than
-renders, while ``<img src>`` still displays it — and script in an SVG loaded as an
-image does not execute.
+SVG is accepted because logos are SVG, and it is XML that can carry script. The
+serving side handles that (core/storage.py): non-raster types go out as
+``Content-Disposition: attachment``, and script in an SVG loaded via ``<img src>``
+does not execute.
 """
 
 from __future__ import annotations
@@ -66,9 +47,8 @@ _MAGIC: dict[str, tuple[bytes, ...]] = {
 #: 8 MiB, the cap the sites route already used.
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
-#: How much is pulled off the upload per step. 64 KiB is a normal read size and it
-#: bounds the overshoot: at the moment the cap trips, at most one chunk beyond the
-#: limit has been handled, and that chunk is dropped rather than accumulated.
+#: Read size per step. Also bounds the overshoot: when the cap trips, at most one
+#: chunk past the limit has been read, and it is dropped rather than accumulated.
 READ_CHUNK_BYTES = 64 * 1024
 
 
@@ -86,24 +66,13 @@ async def read_capped(
 ) -> bytes:
     """Read an upload into memory, refusing it the moment it passes ``limit``.
 
-    Every route used to do ``data = await file.read()`` and hand the result to
-    ``validate_image``, which then measured it. So the cap was consulted only after
-    the entire body had been materialised as one ``bytes`` object: a caller who
-    posted a 2 GiB "avatar" got their 413, and core got a 2 GiB allocation first.
-    The cheapest denial of service in the service, available to any authenticated
-    user on ``POST /auth/me/avatar``.
+    Chunked so the process never holds more than ``limit + READ_CHUNK_BYTES``,
+    whatever was sent. Measuring after ``await file.read()`` would allocate the
+    whole body first, which is the thing the cap exists to prevent.
 
-    Reading in chunks and raising as soon as the running total exceeds the limit
-    means the process never holds more than ``limit + READ_CHUNK_BYTES``, whatever
-    was sent.
-
-    Deliberately NOT gated on ``Content-Length``. It is a client-supplied hint that
-    can lie or be absent under chunked transfer encoding, so it could never be the
-    only check — and here it would not even be an optimisation: FastAPI's multipart
-    parser has already consumed the request body by the time a route body runs (it
-    spools file parts over 1 MiB to a temp file, which is why the disk, not the
-    heap, absorbed the request until this point). The streaming cap is what stands
-    between an upload and core's memory, so it is the only check.
+    Not gated on ``Content-Length``: it is a client hint that can lie or be absent
+    under chunked encoding, and FastAPI's multipart parser has already consumed the
+    body by the time a route runs, so it would not even save work.
     """
     chunks: list[bytes] = []
     total = 0
@@ -125,9 +94,8 @@ async def read_capped(
 def _looks_like_svg(data: bytes) -> bool:
     """SVG has no magic number, so this is a shape check, not a signature.
 
-    It exists to reject a non-XML payload sent as image/svg+xml — an uploader that
-    wanted to smuggle arbitrary bytes past the whitelist would otherwise pick SVG,
-    because it is the only entry that cannot be sniffed.
+    Rejects a non-XML payload sent as image/svg+xml — SVG is the only whitelist
+    entry that cannot be sniffed, so it is where arbitrary bytes would be smuggled.
     """
     head = data[:512].lstrip()[:512].lower()
     return head.startswith(b"<?xml") or head.startswith(b"<svg") or b"<svg" in head
@@ -136,8 +104,7 @@ def _looks_like_svg(data: bytes) -> bool:
 def validate_image(data: bytes, content_type: str | None, *, field: str = "File") -> tuple[str, str]:
     """Check an uploaded image and return ``(content_type, extension)``.
 
-    Raises ValidationError with the same status codes the sites route already used
-    (415 for a bad type, 413 for a large one) so the three routes answer alike.
+    Raises ValidationError: 415 for a bad type, 413 for a large one.
     """
     ctype = (content_type or "").split(";")[0].strip().lower()
     if ctype not in IMAGE_TYPES:
@@ -148,9 +115,8 @@ def validate_image(data: bytes, content_type: str | None, *, field: str = "File"
         )
     if not data:
         raise ValidationError(f"{field} is empty", code="EMPTY_FILE", status_code=400)
-    # A backstop, not the enforcement point: by the time bytes are in hand the
-    # allocation has happened. The routes use read_capped() so that never gets far.
-    # This stays because it is free and it keeps validate_image correct on its own.
+    # A backstop, not the enforcement point — the routes use read_capped(). Kept so
+    # validate_image is correct on its own.
     if len(data) > MAX_IMAGE_BYTES:
         raise ValidationError(
             f"{field} must be {MAX_IMAGE_BYTES // (1024 * 1024)} MiB or smaller",
@@ -166,8 +132,8 @@ def validate_image(data: bytes, content_type: str | None, *, field: str = "File"
     else:
         ok = any(data.startswith(sig) for sig in signatures)
     if not ok:
-        # Deliberately does not name which check failed. The uploader learns the
-        # file was rejected, not how the sniffing works.
+        # Does not name which check failed: the uploader learns it was rejected,
+        # not how the sniffing works.
         raise ValidationError(
             f"{field} is not a valid {ctype} image",
             code="UNSUPPORTED_MEDIA_TYPE",

@@ -1,9 +1,8 @@
 """Helpers shared by the auth route modules.
 
-Kept in one place rather than duplicated per module: `_user_out` is the single
-shape a user is serialised in, and two copies of it drift the day one grows a
-field. `_user_from_mfa_token` is here rather than in `session.py` because the
-enrolment routes and the login routes both resolve the same challenge token.
+`_user_out` is the single shape a user is serialised in; keep it in one place so
+copies cannot drift. `_user_from_mfa_token` lives here rather than in
+`session.py` because the enrolment and login routes both resolve the same token.
 """
 
 from __future__ import annotations
@@ -29,11 +28,10 @@ async def _user_out(user: User, active_sessions: int = 0) -> UserOut:
     """Serialise a User, resolving its avatar_key → a fetchable avatar_url and
     deriving the ``locked`` flag from ``locked_until``.
 
-    The DB holds a storage *key*; the client needs a *URL*. We resolve it here at
-    response time via the storage backend (a stable local URL or a presigned S3
-    link), exactly like branding does for its logo. No avatar => avatar_url None.
-    The security-posture fields (failed_login_count, locked_until,
-    password_changed_at, site_ids, totp_enabled) map straight off the model.
+    The DB holds a storage key; the client needs a URL, so it is resolved at
+    response time via the storage backend (as branding does for its logo). No
+    avatar => avatar_url None. The security-posture fields map straight off the
+    model.
     """
     out = UserOut.model_validate(user)
     out.avatar_url = await get_storage().url(user.avatar_key) if user.avatar_key else None
@@ -46,17 +44,13 @@ async def _user_out(user: User, active_sessions: int = 0) -> UserOut:
 
 
 def _client_ip(request: Request) -> str | None:
-    """The address recorded against a session, resolved the same way the rate
-    limiter resolves it.
+    """The address recorded against a session, resolved the way the rate limiter
+    resolves it.
 
-    It used to read `X-Forwarded-For` and believe it unconditionally, taking the
-    LEFTMOST hop — so the IP shown on "your active sessions" was whatever the client
-    said it was. Core's port 8000 is published in dev, and a request reaching the app
-    directly can set that header to anything, which makes a security-facing display
-    into a field the attacker fills in.
-
-    `client_ip` trusts the header only from a configured proxy and takes the
-    rightmost untrusted hop. See core/client_ip.py.
+    Do not read `X-Forwarded-For` directly: a request reaching the app without
+    going through the proxy can set it to anything, which turns a security-facing
+    display into a field the attacker fills in. `client_ip` trusts the header only
+    from a configured proxy and takes the rightmost untrusted hop.
     """
     from ...core.client_ip import UNKNOWN, client_ip
 

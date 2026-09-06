@@ -1,11 +1,8 @@
-"""Branding ORM model — the app's white-label identity (single row).
+"""Branding ORM model — white-label identity (name, logo, brand colours).
 
-A deployment can be re-skinned for a client (name, logo, brand colours) without a
-code change. There is exactly ONE branding row for the whole app (single-tenant),
-so the service treats it as a singleton: read-or-create the one row, then update it.
-
-Portable generic types (Uuid/String/Boolean/DateTime) keep the same model running
-on Postgres (prod) and SQLite (tests).
+One row per tenant, plus one platform-default row with ``tenant_id`` NULL that
+tenants fall back to. Portable generic types keep the same model on Postgres and
+SQLite (tests).
 """
 
 from __future__ import annotations
@@ -20,21 +17,21 @@ from ..db.base import Base
 
 
 class Branding(Base):
-    """The single white-label configuration row for this deployment."""
+    """One scope's white-label configuration (a tenant's, or the platform default)."""
 
     __tablename__ = "branding"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     # --- multi-tenancy -----------------------------------------------------
-    # The tenant whose branding this is. NULL = the PLATFORM-DEFAULT branding a
-    # tenant falls back to (and what the login page / unauthenticated screens show).
+    # The tenant whose branding this is. NULL = the platform default a tenant falls
+    # back to, and what the login page / unauthenticated screens show.
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True,
     )
     # Product name shown in the UI (title bar, login page, emails, …).
     app_name: Mapped[str] = mapped_column(String, nullable=False, default="Neubit")
-    # Storage KEY of the uploaded logo (not a URL) — resolved to a URL on read.
-    # None => no custom logo uploaded yet, so the frontend falls back to a default.
+    # Storage key of the uploaded logo (not a URL) — resolved to a URL on read.
+    # None => no custom logo, so the frontend falls back to a default.
     logo_key: Mapped[str | None] = mapped_column(String, nullable=True)
     # Brand colours as CSS hex strings — the frontend maps these to theme tokens.
     primary_color: Mapped[str] = mapped_column(String, nullable=False, default="#4f46e5")

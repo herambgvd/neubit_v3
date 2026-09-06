@@ -99,10 +99,9 @@ async def update_broadcast(
     fields = data.model_dump(exclude_unset=True)
     if "target_tenant_ids" in fields and fields["target_tenant_ids"] is not None:
         fields["target_tenant_ids"] = [str(t) for t in fields["target_tenant_ids"]]
-    # Same as billing: an explicit `null` survives `exclude_unset` and used to hit a
-    # NOT NULL column as a 500. `starts_at`/`ends_at` ARE nullable and clearing a
-    # schedule window is legitimate, which is why the row's own columns decide rather
-    # than a blanket "skip None".
+    # apply_patch, as in billing: an explicit `null` survives `exclude_unset` and
+    # would hit a NOT NULL column as a 500. The row's own columns decide rather than
+    # a blanket "skip None" — clearing `starts_at`/`ends_at` is legitimate.
     apply_patch(b, fields)
     b.updated_at = _now()
     await db.commit()

@@ -1,17 +1,14 @@
-"""Super-admin PLATFORM endpoints — manage the platform-default rows + cross-tenant
-audit view. Full paths under ``{api_prefix}/admin/platform/...`` and
-``{api_prefix}/admin/audit``.
+"""Super-admin platform endpoints — the platform-default rows + cross-tenant audit.
 
-Everything here is gated by ``require_superadmin`` (403 otherwise).
+Full paths under ``{api_prefix}/admin/platform/...`` and ``{api_prefix}/admin/audit``,
+all gated by ``require_superadmin`` (403 otherwise).
 
-  * GET/PATCH /admin/platform/settings — edit the platform-DEFAULT app_settings
-    (tenant_id NULL) row all tenants fall back to. Reuses SettingsService with the
-    platform (None) scope.
-  * GET/PATCH /admin/platform/branding — edit the platform-DEFAULT branding
-    (tenant_id NULL) row. Reuses branding.service with tenant_id=None.
+  * GET/PATCH /admin/platform/settings — the platform-default app_settings
+    (tenant_id NULL) row tenants fall back to, via SettingsService with scope None.
+  * GET/PATCH /admin/platform/branding — the platform-default branding row, via
+    branding.service with tenant_id=None.
   * GET /admin/audit — cross-tenant audit trail with an optional ?tenant_id filter
-    and pagination. (The normal /audit already lets a super-admin see everything;
-    this is the explicit admin view with an EXPLICIT per-tenant filter.)
+    and pagination.
 """
 
 from __future__ import annotations
@@ -46,10 +43,7 @@ async def get_platform_settings(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
 ) -> SettingsOut:
-    """The platform-DEFAULT (tenant_id NULL) settings all tenants fall back to.
-
-    Scope None → the SettingsService reads/writes only the platform-default rows.
-    """
+    """The platform-default (tenant_id NULL) settings all tenants fall back to."""
     return SettingsOut(
         catalog=settings_catalog.CATALOG,
         values=await SettingsService(db, None).all_values(),
@@ -62,7 +56,7 @@ async def update_platform_settings(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_superadmin),
 ) -> SettingsOut:
-    """Update the platform-DEFAULT settings (the fallback for every tenant)."""
+    """Update the platform-default settings (the fallback for every tenant)."""
     values = await SettingsService(db, None).update(data.values)
     await audit_record(
         db, actor=actor, action="platform.settings.update", target_type="settings",
@@ -77,7 +71,7 @@ async def get_platform_branding(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
 ) -> BrandingOut:
-    """The platform-DEFAULT (tenant_id NULL) branding — the default theme."""
+    """The platform-default (tenant_id NULL) branding — the default theme."""
     branding = await branding_service.get_or_create_default(db)
     return await branding_to_out(branding)
 
@@ -88,10 +82,10 @@ async def update_platform_branding(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_superadmin),
 ) -> BrandingOut:
-    """Update the platform-DEFAULT branding (name / colours / header flag).
+    """Update the platform-default branding (name / colours / header flag).
 
-    Logo upload uses the existing POST /branding/logo (as a super-admin, tenant_id
-    None → it targets the platform-default row).
+    Logo upload uses POST /branding/logo, which for a super-admin (tenant_id None)
+    targets the platform-default row.
     """
     branding = await branding_service.update(db, data, tenant_id=None)
     await audit_record(
@@ -113,9 +107,9 @@ async def cross_tenant_audit(
 ) -> Page[AuditLogOut]:
     """Cross-tenant audit trail (super-admin), newest first.
 
-    With no ``tenant_id`` filter this returns EVERY tenant's entries (plus the
-    platform/system tenant_id NULL rows). With ``?tenant_id=<uuid>`` it narrows to
-    that one tenant. Paginated with the standard ``?page=&page_size=`` params.
+    Unfiltered this returns every tenant's entries plus the platform/system
+    (tenant_id NULL) rows; ``?tenant_id=<uuid>`` narrows to one tenant. Paginated
+    with the standard ``?page=&page_size=`` params.
     """
     stmt = select(AuditLog).order_by(AuditLog.ts.desc())
     if tenant_id is not None:

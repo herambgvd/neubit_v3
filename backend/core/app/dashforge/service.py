@@ -46,12 +46,9 @@ class EmbedRegistryService:
     async def create(self, body: EmbedCreate) -> DashForgeEmbed:
         row = DashForgeEmbed(
             # A super-admin registering without a tenant creates a platform row
-            # (tenant_id NULL). That row is visible to super-admins only, on BOTH
-            # the list and the by-id paths. It used to be listed to no one and
-            # fetchable by anyone, because `scoped()` excluded NULL while `owns()`
-            # returned True for it; they now agree. If a platform-wide embed that
-            # every tenant can open is wanted, it needs a real shared flag and a
-            # read path of its own — not an absent tenant_id.
+            # (tenant_id NULL), visible to super-admins only on both the list and
+            # by-id paths. A platform-wide embed every tenant can open would need a
+            # real shared flag and its own read path, not an absent tenant_id.
             tenant_id=self.scope.tenant_id,
             name=body.name.strip(),
             description=(body.description or None),
@@ -64,9 +61,8 @@ class EmbedRegistryService:
         try:
             await self.db.commit()
         except IntegrityError:
-            # The unique index, surfaced as the thing it means. Letting a raw
-            # constraint name reach the operator would be a 500 that reads like a
-            # platform fault instead of a duplicate registration.
+            # The unique index, surfaced as what it means: a raw constraint name
+            # would reach the operator as a 500 that looks like a platform fault.
             await self.db.rollback()
             raise ConflictError(
                 "that DashForge dashboard is already registered in this tenant"

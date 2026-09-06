@@ -1,9 +1,8 @@
 """Tags request/response schemas (pydantic).
 
-Color is validated to a 6-digit hex (``#RRGGBB``); name/description length mirror
-the neubit_v2 contract (name ≤ 100, description ≤ 500). ``entity_type`` on the
-assign/unassign payloads is a free string so new taggable modules need no schema
-change here.
+Color is validated to a 6-digit hex (``#RRGGBB``); name ≤ 100, description ≤ 500.
+``entity_type`` on the assign/unassign payloads is a free string, so a new taggable
+module needs no schema change here.
 """
 
 from __future__ import annotations

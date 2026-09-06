@@ -1,27 +1,18 @@
 """The one way a sites row is mutated from a request body.
 
-Site, Floor, Zone and DevicePlacement all update the same way: dump the request
-model and `setattr` every key onto the loaded row. That loop writes whatever the
-schema happens to carry, which makes the schema — not the service — the thing
-deciding what is mutable. Today `UpdateFloorRequest` omits `site_id` and
-`UpdateZoneRequest` omits `site_id`/`floor_id`, so the loop is safe; it is safe by
-accident, and adding one field to a schema for an unrelated reason would silently
-turn it into a cross-tenant re-parenting bug. That is exactly how `SiteService.update`
-came to accept a `parent_id` it never checked while `create` checked it (36a7798).
-
-So the immutable set is written down HERE, next to the loop, rather than being
-implied by the absence of a field somewhere else. A key in it never reaches the row:
-it is refused loudly, because a request asking to move a floor to another site is a
-request the API does not serve and silently dropping it would report success for
-something that did not happen.
+Site, Floor, Zone and DevicePlacement all update by dumping the request model and
+`setattr`-ing every key onto the loaded row, which leaves the schema deciding what
+is mutable. Adding one field to a schema for an unrelated reason would then quietly
+become a cross-tenant re-parenting bug, so the immutable set is written down here,
+next to the loop. A key in it is refused loudly rather than dropped.
 
 Ownership keys (`tenant_id`) and identity keys (the row's own id) are refused for
 every model. Structural parents (`site_id`, `floor_id`) are refused because
-re-parenting is a move, and a move needs its own validated endpoint — it has to vet
-the destination's tenancy, which a blind field write cannot.
+re-parenting is a move, and a move needs an endpoint that vets the destination's
+tenancy — a blind field write cannot.
 
-`SiteService.parent_id` is deliberately NOT here: re-parenting a site IS supported,
-and it goes through `_require_assignable_parent` before this helper runs.
+`Site.parent_id` is deliberately not here: re-parenting a site is supported and
+goes through `_require_assignable_parent` before this helper runs.
 """
 
 from __future__ import annotations

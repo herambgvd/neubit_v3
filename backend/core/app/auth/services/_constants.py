@@ -1,10 +1,7 @@
 """Constants and datetime helpers shared by the AuthService mixins.
 
-One definition, not five. The split copied the module header into every mixin,
-which duplicated `RESET_TTL`, `ADMIN_ROLE_NAME` and the two datetime coercions —
-and a constant defined five times is a constant that will eventually differ in one
-of them, silently. `_aware` in particular exists because SQLite returns naive
-datetimes and Postgres returns aware ones, so a copy that drifts would fail only in
+Defined once so the mixins cannot drift. `_aware` exists because SQLite returns
+naive datetimes and Postgres aware ones, so a drifted copy would fail only in
 tests or only in production.
 """
 

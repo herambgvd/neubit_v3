@@ -10,12 +10,9 @@ tenant_id; a super-admin (tenant_id None) writes the platform-default (NULL) row
 This keeps one tenant's settings invisible to another while every tenant still
 inherits sane platform defaults.
 
-The service is constructed with the caller's ``tenant_id`` (None for a super-admin
-or an unauthenticated/public caller — both resolve to the platform default). Callers
-that don't care about tenancy (internal lookups like SettingsService(db).get(...))
-default to tenant_id None → the platform default, exactly as before.
-
-Writes commit explicitly (no autocommit), matching the rest of the codebase.
+The service is constructed with the caller's ``tenant_id``; None means the platform
+default, which is what a super-admin, a public caller and an internal lookup like
+``SettingsService(db).get(...)`` all get.
 """
 
 from __future__ import annotations
@@ -44,9 +41,9 @@ class SettingsService:
     async def _rows_for(self, tenant_id: uuid.UUID | None) -> dict:
         """Stored override values for one scope (tenant_id, which may be NULL).
 
-        Secret-flagged keys are decrypted here, under the key of the scope that
-        STORED them — a platform-default row is on the platform key even when the
-        caller is a tenant.
+        Secret-flagged keys are decrypted under the key of the scope that stored
+        them: a platform-default row is on the platform key even when the caller is
+        a tenant.
         """
         if tenant_id is None:
             stmt = select(AppSetting).where(AppSetting.tenant_id.is_(None))
@@ -90,13 +87,11 @@ class SettingsService:
         return (await self.all_values()).get(key)
 
     async def display_values(self) -> dict:
-        """Effective values with credentials MASKED — for the settings screen.
+        """Effective values with credentials masked, for the settings screen.
 
-        `GET /settings` returned the whole effective map unfiltered, so the Maps API
-        key went to every holder of `settings.manage` in plaintext on every page
-        load. The route that legitimately needs the real value (`/settings/maps`,
-        for the Maps JS loader) reads `all_values` instead, which is now the
-        explicit distinction rather than an accident of there being one method.
+        Use this for anything that renders settings; `all_values` hands back
+        plaintext credentials and is only for the routes that need the real value,
+        such as `/settings/maps` for the Maps JS loader.
         """
         secrets = catalog.secret_keys()
         return {
@@ -104,8 +99,8 @@ class SettingsService:
         }
 
     async def update(self, patch: dict) -> dict:
-        """Persist overrides for known keys in the CALLER'S scope. Returns the new
-        effective values.
+        """Persist overrides for known keys in the caller's scope, and return the
+        new effective values.
 
         A tenant-admin writes rows tagged with their tenant_id; a super-admin writes
         the platform-default (tenant_id NULL) rows.
@@ -118,12 +113,10 @@ class SettingsService:
             row = await self._get_row(key, self.tenant_id)
             if key in secrets:
                 if value in (None, "", MASK):
-                    # Not re-entered. `GET /settings` hands secret values back
-                    # masked, and the admin UI submits the form it was given, so an
-                    # ordinary save of an unrelated setting used to arrive with the
-                    # mask in this field. Keep what is stored rather than writing the
-                    # mask over the credential — the same rule messaging's
-                    # `upsert_channel` needs for the SMTP password.
+                    # Not re-entered: GET hands secrets back masked and the UI
+                    # submits the form it was given, so an unrelated save arrives
+                    # with the mask here. Keep the stored value rather than writing
+                    # the mask over the credential.
                     continue
                 value = encrypt_secret_for(self.tenant_id, str(value))
             if row is None:

@@ -1,20 +1,13 @@
 """System resource sampling — CPU, RAM, disk, and (optionally) GPUs.
 
-Operators need to see the health of the box the app runs on: is the CPU pinned,
-is the disk about to fill, are the GPUs hot? ``sample_resources()`` returns a
-single point-in-time snapshot that the ``/api/system/resources`` endpoint and its
-WebSocket stream serve to a monitoring dashboard.
+``sample_resources()`` returns one point-in-time snapshot, served by
+``/api/system/resources`` and its WebSocket stream.
 
-Dependencies:
-  * ``psutil`` — cross-platform CPU/RAM/disk metrics (a normal dependency).
-  * ``pynvml`` (the ``nvidia-ml-py`` package) — NVIDIA GPU metrics. Imported
-    LAZILY inside a try/except so a machine with no NVIDIA GPU (or without the
-    driver/library) simply reports ``"gpus": []`` instead of crashing.
+``psutil`` is a normal dependency. ``pynvml`` (the ``nvidia-ml-py`` package) is
+imported lazily inside a try/except, so a host with no NVIDIA GPU or driver
+reports ``"gpus": []`` instead of crashing.
 
-Byte units: memory and disk totals/used are reported in **bytes** (raw values
-from psutil). GPU memory is reported in **bytes** as well (NVML returns bytes),
-so every size field in the payload is consistently in bytes. Percentages are
-0–100 floats.
+Every size field is in bytes; percentages are 0–100 floats.
 """
 
 from __future__ import annotations
@@ -43,11 +36,10 @@ def _pretty_arch(arch: str | None) -> str:
 def _cpu_name() -> str | None:
     """Best-effort human CPU model name (e.g. "Intel Core i7-9750H", "Apple M2").
 
-    The name never changes at runtime, so it's cached. Sources, in order:
-      * Linux/x86 — the "model name" line in /proc/cpuinfo (rich brand string)
-      * lscpu     — a real "Model name", else "<Vendor> <Arch>" (ARM guests, where
-                    /proc/cpuinfo carries no brand — e.g. Docker on Apple Silicon
-                    reports vendor "Apple" + arch aarch64 → "Apple ARM64")
+    Cached — the name never changes at runtime. Sources, in order:
+      * Linux/x86 — the "model name" line in /proc/cpuinfo
+      * lscpu     — a real "Model name", else "<Vendor> <Arch>" for ARM guests
+                    whose /proc/cpuinfo carries no brand
       * macOS     — sysctl machdep.cpu.brand_string (native, non-containerised)
       * fallback  — a prettified arch label (ARM64 / x86-64)
     """
@@ -94,21 +86,20 @@ def _cpu_name() -> str | None:
 def _sample_gpus() -> list[dict]:
     """Return per-GPU stats via NVML, or an empty list if unavailable.
 
-    Everything NVIDIA-specific lives here and is imported lazily, so importing
-    this module never requires ``pynvml`` or an NVIDIA driver. Any failure
-    (library missing, no GPU, driver mismatch) degrades gracefully to ``[]``.
+    Everything NVIDIA-specific is here and imported lazily, so importing this
+    module never requires ``pynvml`` or a driver. Any failure degrades to ``[]``.
     """
     try:
         import pynvml  # package: nvidia-ml-py — optional, GPU-only
     except ImportError:
-        # No NVML bindings installed — treat as "no GPUs" rather than an error.
+        # No NVML bindings installed — treat as "no GPUs".
         return []
 
     gpus: list[dict] = []
     try:
         pynvml.nvmlInit()
     except Exception:  # pragma: no cover - depends on host having NVIDIA driver
-        # Driver/library not present (e.g. CPU-only host) → no GPUs to report.
+        # Driver not present (CPU-only host) → no GPUs to report.
         return []
 
     try:
@@ -139,7 +130,7 @@ def _sample_gpus() -> list[dict]:
         log.warning("GPU sampling failed: %s", exc)
         gpus = []
     finally:
-        # Always release the NVML handle we initialised above.
+        # Always release the NVML handle initialised above.
         try:
             pynvml.nvmlShutdown()
         except Exception:
@@ -160,12 +151,12 @@ def sample_resources() -> dict:
                      "util_percent", "temp"}, ... ]
         }
     """
-    # interval=0.0 returns the CPU % since the *previous* call without blocking;
-    # the first call after import may read 0.0, which is fine for a live stream.
+    # interval=0.0 returns CPU % since the previous call without blocking; the
+    # first call after import may read 0.0, fine for a live stream.
     cpu_percent = psutil.cpu_percent(interval=0.0)
     cpu_cores = psutil.cpu_count(logical=True)
-    # cpu_freq() is unavailable on some hosts (certain VMs / containers / macOS) —
-    # it may return None or raise; degrade to None rather than failing the snapshot.
+    # cpu_freq() may return None or raise on some VMs/containers/macOS; degrade to
+    # None rather than failing the whole snapshot.
     try:
         freq = psutil.cpu_freq()
         cpu_freq_ghz = round(freq.current / 1000, 1) if freq and freq.current else None

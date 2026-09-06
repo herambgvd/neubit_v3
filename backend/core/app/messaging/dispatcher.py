@@ -44,11 +44,9 @@ async def notify(
 ) -> None:
     """Fan a notification out across in-app + the requested extra ``channels``.
 
-    - ``tenant_id``    : WHOSE channel config to send through. Omitted means the
-                         platform default, which is right for platform mail and
-                         silently wrong for a tenant that configured its own SMTP,
-                         FCM project or webhook — the state every send was in before
-                         this parameter existed.
+    - ``tenant_id``    : whose channel config to send through. Omitted means the
+                         platform default, which is silently wrong for a tenant
+                         that configured its own SMTP, FCM project or webhook.
     - ``user_ids``     : recipients — each gets an in-app record + (for push) their tokens.
     - ``channels``     : any of "email" | "push" | "webhook" (in-app is always sent).
     - ``template``     : optional named template for the email subject/body.

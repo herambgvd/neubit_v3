@@ -1,15 +1,13 @@
 """Structured logging + per-request correlation.
 
-Why this exists: in a real deployment you must be able to answer "what happened
-to request X?". So every log line carries a **request id**, and one line is
-emitted per HTTP request with method, path, status, and latency.
+Every log line carries a request id, and one line is emitted per HTTP request with
+method, path, status and latency, so "what happened to request X?" is answerable.
 
-  configure_logging(env)      one-time setup. Human-readable in dev, JSON in prod
-                              (prod logs are machine-ingestible: ELK/Loki/etc.).
+  configure_logging(env)      one-time setup. Human-readable in dev, JSON in prod.
   get_logger(name)            module logger; use instead of print().
   RequestLoggingMiddleware    assigns/propagates the request id + access log line.
 
-The request id flows via a contextvar so ANY log call during a request is tagged,
+The request id flows via a contextvar, so any log call during a request is tagged
 even deep in a service with no access to the request object.
 """
 

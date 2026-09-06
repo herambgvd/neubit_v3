@@ -1,28 +1,21 @@
 """Tenant-scoped SSE realtime bridge — live Video-Wall shared state (VW-A).
 
-The VMS service (``vision``) keeps each video wall's LIVE state (which camera shows in
-which monitor cell) server-side and, on EVERY mutation (push a camera to a cell, clear,
-apply/save a preset, start/stop a tour), publishes the NEW FULL wall state on the NATS
-spine at ``tenant.<id>.vms.wall.<wall_id>.state`` (see
-``backend/vision/app/vms/common/events.py`` :func:`emit_wall_state`). This module bridges
-that family to the browser over Server-Sent Events so every operator console + every
-display-client (the physical control-room screens) stays in lock-step WITHOUT polling —
-each just REPLACES its local wall state with the broadcast ``state``.
+The vision service holds each wall's live state (which camera is in which cell) and
+publishes the new FULL state on every mutation at
+``tenant.<id>.vms.wall.<wall_id>.state``. This module bridges it to the browser over
+Server-Sent Events, so each operator console and display-client just replaces its
+local state with the broadcast one.
 
     GET /api/v1/realtime/wall-events                 (text/event-stream)
 
-Auth mirrors ``realtime_vms.py``: the same short-lived HS256 access token the REST API
-uses, accepted as ``?token=<jwt>`` (browser ``EventSource`` can't set headers) with a
-``Authorization: Bearer`` fallback. Invalid/missing → 401. The caller's ``tenant_id``
-scopes the NATS subscription ``tenant.<id>.vms.wall.>`` — a tenant only ever sees its own
-walls. Super-admins (no tenant) subscribe to ``tenant.*.vms.wall.>``.
+Auth mirrors ``realtime_vms.py``: the access token as ``?token=<jwt>`` or an
+``Authorization: Bearer`` fallback, with ``tenant_id`` scoping the subscription to
+``tenant.<id>.vms.wall.>``; super-admins get ``tenant.*.vms.wall.>``.
 
-An optional ``?wall_id=<id>`` narrows the stream server-side to one wall (a display-client
-only cares about its own wall).
+``?wall_id=<id>`` narrows the stream to one wall, which is all a display-client wants.
 
-Delivery: one EPHEMERAL, non-durable core NATS subscription PER open stream (via
-``events_nats.ephemeral_subscribe``), torn down on client disconnect. Live, at-most-once —
-which is exactly right for a "latest wall state wins" model.
+Delivery: one ephemeral, non-durable NATS subscription per open stream, torn down on
+disconnect. At-most-once, which suits a "latest wall state wins" model.
 
 One SSE event name is emitted:
   * ``wall.state`` — the new full wall state; payload
@@ -55,7 +48,7 @@ log = get_logger("edge.realtime.wall")
 
 realtime_wall_router = APIRouter(prefix="/realtime", tags=["realtime"])
 
-# Keepalive cadence so idle connections survive proxy / Traefik idle timeouts.
+# Keepalive cadence, so idle connections survive proxy idle timeouts.
 KEEPALIVE_SECONDS = 20.0
 
 # SSE ``event:`` name the wall UI listens on.
@@ -135,16 +128,13 @@ async def wall_events_stream(
     cleans up on disconnect. When ``wall_id`` is given, only that wall's frames pass.
     """
     claims = _principal_or_401(request, token)
-    # Authentication is not authorization. This stream carries shared video-wall state,
-    # whose REST equivalents are permission-gated; without this line any
-    # authenticated user with no permissions at all received the live feed.
-    # authorize_stream also re-reads the user and the tenant from the
-    # database rather than trusting the token's claims, because a stream
-    # outlives a suspension in a way a single request does not.
+    # Authentication is not authorization: wall state is permission-gated on the
+    # REST side, so the stream must be gated too.
+    # authorize_stream re-reads the user and tenant from the database rather than
+    # trusting the token's claims: a stream outlives a suspension.
     await authorize_stream(claims, CorePerm.VMS_WALL_VIEW)
-    # …and again while the stream is open. A stream outlives a single request
-    # by design, so a revoked permission, a deactivated user or a suspended
-    # tenant would otherwise keep this feed alive until the token expired.
+    # …and again while the stream is open, or a revoked permission would keep
+    # this feed alive until the token expired.
     guard = StreamGuard(claims, CorePerm.VMS_WALL_VIEW)
     tenant_id = claims.get("tenant_id")
     is_superadmin = bool(claims.get("is_superadmin", False))
@@ -163,7 +153,7 @@ async def wall_events_stream(
 
         async def _on_event(envelope: dict) -> None:
             data = _compact_wall(envelope)
-            # Per-wall narrowing: drop frames for other walls.
+            # Drop frames for other walls.
             if wall_id and data.get("wall_id") != wall_id:
                 return
             try:
@@ -175,7 +165,7 @@ async def wall_events_stream(
         if sub is None:
             log.info("SSE wall: NATS unavailable — stream open, keepalive only")
 
-        # Prime the connection so the client's onopen fires and proxies flush.
+        # Prime the connection so onopen fires and proxies flush.
         yield ": connected\n\n"
         try:
             while True:
@@ -183,16 +173,15 @@ async def wall_events_stream(
                     break
                 kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
                 if kind == "shutdown":
-                    # The process is going down. END the response instead of
-                    # looping: an open stream here is what used to make every
-                    # reload hang forever. EventSource reconnects on its own.
+                    # Going down: end the response instead of looping, or the
+                    # open stream wedges the shutdown. EventSource reconnects.
                     yield SSE_SHUTDOWN_FRAME
                     break
                 if kind == "keepalive":
                     if not await guard.still_allowed():
-                        # The response body is the only thing left to refuse with —
-                        # the 200 was sent when the stream opened. End it; an
-                        # EventSource reconnects and gets a clean 401/403 then.
+                        # The 200 went out when the stream opened, so ending the
+                        # body is the only way left to refuse. EventSource
+                        # reconnects and gets a clean 401/403 then.
                         yield "event: revoked\ndata: {}\n\n"
                         break
                     yield ": keepalive\n\n"

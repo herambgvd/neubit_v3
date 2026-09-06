@@ -35,8 +35,8 @@ async def search(
     if not term:
         return {"results": results}
     like = f"%{term}%"
-    # Tenant isolation: a tenant-admin must only ever see THEIR tenant's users/roles
-    # here, exactly like the /users and /roles lists. Super-admins see everyone.
+    # Tenant isolation: a tenant-admin sees only their own tenant's users/roles here,
+    # exactly like the /users and /roles lists. Super-admins see everyone.
     scope = scope_of(user)
 
     if user.role.grants(CorePerm.USER_READ):

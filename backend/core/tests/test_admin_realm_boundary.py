@@ -1,28 +1,21 @@
-"""One assertion over EVERY route core serves under ``/admin``.
+"""One assertion over every route core serves under ``/admin``.
 
-The eight routers mounted there — tenants, billing, broadcasts, alerts, infra,
-platform defaults, the module catalog and the device-brand catalog — are the
-cross-tenant control plane. They are not tenant-scoped and they are not meant to
-be: the property that keeps them safe is not isolation but a realm boundary, that
-a tenant's own administrator, however privileged inside their tenancy, cannot
-reach them at all.
+The eight routers mounted there are the cross-tenant control plane. They are not
+tenant-scoped and are not meant to be; what keeps them safe is a realm boundary — a
+tenant's own administrator, however privileged inside their tenancy, cannot reach
+them at all.
 
-That property is stated ONCE here, against the live route table, rather than
-per-router. A per-router test only covers the routes its author remembered; this
-one enumerates what the app actually mounts, so a new ``/admin`` route added
-without ``require_superadmin`` fails the moment it is included — which is the only
-moment anyone would notice, since a missing gate is invisible in every response a
-super-admin ever sees.
+Stated once here against the live route table rather than per-router, because a
+per-router test only covers the routes its author remembered. A new ``/admin`` route
+without ``require_superadmin`` fails the moment it is included, which is the only
+moment anyone would notice — a missing gate is invisible in every response a
+super-admin sees.
 
-Two catalogs are deliberately readable by any signed-in user (the console renders
-the per-tenant feature toggles and the add-device brand picker from them), so they
-are named as exceptions with their reason. Anything else appearing in that
-allowlist should be argued for, not added.
+Two catalogs are deliberately readable by any signed-in user and are named as
+exceptions with their reason; argue for anything else before adding it.
 
-Both directions are asserted. A test that only checks the 403 passes against a
-route that refuses everyone, which is an outage rather than a boundary — so the
-super-admin leg asserts each route is NOT refused, without caring what it returns
-against an empty database.
+Both directions are asserted: a 403-only test passes against a build that refuses
+everyone, which is an outage rather than a boundary.
 """
 
 from __future__ import annotations
@@ -46,11 +39,9 @@ from app.db.base import get_db
 from app.tenancy.models import Tenant
 from conftest import make_role
 
-# Reused rather than re-derived: this FastAPI version defers `include_router`, so
-# `app.routes` holds wrappers and a naive walk sees a fraction of the surface with
-# unprefixed paths — the exact mistake that once hid an unauthenticated route. That
-# flattening is already written down and explained in the route inventory; a second
-# copy here would be a second thing to keep correct.
+# Reused rather than re-derived: this FastAPI version defers `include_router`, so a
+# naive walk of `app.routes` sees a fraction of the surface with unprefixed paths.
+# The flattening is explained in the route inventory; do not write a second copy.
 from test_route_inventory import _walk
 
 pytestmark = pytest.mark.asyncio
@@ -64,7 +55,7 @@ PREFIX = "/api/v1"
 #   GET /admin/device-brands/{id} — the detail behind that picker.
 #
 # Both are platform-global read-only catalogs holding no tenant data. Their
-# mutations are NOT here and are covered by this file like everything else.
+# mutations are not exempt and are covered like everything else.
 TENANT_READABLE = {
     ("GET", "/api/v1/admin/modules"),
     ("GET", "/api/v1/admin/device-brands"),
@@ -74,10 +65,9 @@ TENANT_READABLE = {
 
 @pytest.fixture(autouse=True)
 def _ops_agent_is_local(monkeypatch):
-    """The infra routes forward to the ops-agent sidecar, which is not running and
-    is not reachable at all under `--network none`. Point them at a closed loopback
-    port so they fail FAST with 503 instead of stalling on a name lookup — the
-    status does not matter to this file, only that it is not a 403."""
+    """The infra routes forward to the ops-agent sidecar, which is unreachable under
+    `--network none`. A closed loopback port makes them fail fast with 503 instead of
+    stalling on a name lookup; only "not a 403" matters here."""
     monkeypatch.setenv("OPS_AGENT_URL", "http://127.0.0.1:9")
 
 
@@ -115,9 +105,8 @@ def _admin_routes(app) -> list[tuple[str, str]]:
 def _concrete(path: str) -> str:
     """Fill a path template with syntactically valid values.
 
-    The values are deliberately values that exist nowhere: what is under test is
-    whether the request is refused BEFORE the handler looks anything up, so a real
-    id would weaken the assertion rather than strengthen it.
+    Deliberately values that exist nowhere: what is under test is refusal before the
+    handler looks anything up, so a real id would weaken the assertion.
     """
 
     def sub(m: re.Match) -> str:
@@ -129,9 +118,9 @@ def _concrete(path: str) -> str:
 
 @pytest_asyncio.fixture
 async def actors(db):
-    """A tenant administrator holding the WILDCARD inside an active tenant, and a
-    platform super-admin. The wildcard matters: it is the strongest credential a
-    tenant can ever hold, so a 403 for it is a 403 for every tenant user."""
+    """A tenant administrator holding the wildcard inside an active tenant, and a
+    platform super-admin. The wildcard is the strongest credential a tenant can hold,
+    so a 403 for it is a 403 for every tenant user."""
     tenant_role = await make_role(db, "TenantAdmin", ["*"])
     platform_role = await make_role(db, "Platform", ["*"])
     tenant = Tenant(name="Acme", slug="realm-acme", status="active", features={}, limits={})
@@ -170,22 +159,20 @@ async def _call(c, method: str, path: str, headers: dict) -> httpx.Response:
 
 
 async def test_the_admin_surface_is_the_size_this_file_thinks_it_is(app):
-    """A guard on the guard. Every assertion below is a loop over the route table,
-    so if the table ever came back empty — a renamed prefix, a router dropped from
-    `base_routers()` — the loop would pass by iterating over nothing."""
+    """A guard on the guard: every assertion below loops over the route table, so an
+    empty table would pass by iterating over nothing."""
     routes = _admin_routes(app)
     # 58 at the time of writing, across the eight routers mounted under /admin.
     assert len(routes) >= 55, f"only {len(routes)} /admin routes found: {routes}"
 
 
 async def test_a_tenant_admin_is_refused_by_every_admin_route(app, actors):
-    """The realm boundary. A tenant-scoped credential — even one holding the
-    wildcard permission, which grants everything inside its own tenancy — must not
+    """The realm boundary: a tenant-scoped credential, even a wildcard one, must not
     reach the cross-tenant control plane at all.
 
-    Catches a new /admin route that hangs off `get_current_user` or a permission
-    check instead of `require_superadmin`: that route would hand every tenant
-    administrator on the platform another tenant's billing, licences or containers.
+    Catches a new /admin route hung off `get_current_user` or a permission check
+    instead of `require_superadmin`, which would hand every tenant administrator
+    another tenant's billing, licences or containers.
     """
     reached = []
     async with _client(app) as c:
@@ -199,12 +186,11 @@ async def test_a_tenant_admin_is_refused_by_every_admin_route(app, actors):
 
 
 async def test_a_super_admin_is_refused_by_no_admin_route(app, actors):
-    """The other half. Without this, the test above would pass against a build that
-    403s everyone, which is not a boundary — it is the admin console being down.
+    """The other half: without it, the test above passes against a build that 403s
+    everyone, which is the admin console being down.
 
-    The status is not asserted (against an empty database most of these are 404 or
-    422, and the infra routes are 503 with no sidecar); only that the caller got
-    past the gate.
+    Only "got past the gate" is asserted — against an empty database most of these
+    are 404 or 422, and the infra routes are 503 with no sidecar.
     """
     refused = []
     async with _client(app) as c:
@@ -228,12 +214,9 @@ async def test_an_unauthenticated_caller_is_refused_by_every_admin_route(app):
 
 
 async def test_an_impersonation_token_cannot_re_enter_the_admin_api(app, actors, db):
-    """Impersonation mints a token FOR the tenant's own administrator so a
-    super-admin can see what the customer sees. That token is a tenant-realm
-    credential and must not walk back into the cross-tenant console — otherwise
-    "view as customer" would be a way to keep platform powers while wearing a
-    tenant's identity, and every audit entry written from it would name the wrong
-    person.
+    """Impersonation mints a tenant-realm token, which must not walk back into the
+    cross-tenant console: that would keep platform powers while wearing a tenant's
+    identity, and every audit entry written from it would name the wrong person.
     """
     tenant_id = actors["tenant"].id
     async with _client(app) as c:

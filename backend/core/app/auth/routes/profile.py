@@ -1,12 +1,11 @@
-"""What a signed-in person can do to their OWN account.
+"""What a signed-in person can do to their own account.
 
-Self-service only — every route here resolves the caller and acts on that user. It
-never takes a user id, which is what keeps it structurally incapable of the
-cross-tenant mistakes the admin surfaces have to guard against by hand.
+Self-service only: every route resolves the caller and acts on that user. None
+takes a user id, so the cross-tenant mistakes the admin surfaces guard against by
+hand cannot happen here.
 
-The 2FA routes here are the self-service half (enrol when you choose to); the
-enforced-at-login half lives in `session.py`, because it runs on an MFA challenge
-token before an access token exists.
+The 2FA routes here are the self-service half; the enforced-at-login half lives in
+`session.py` because it runs on an MFA challenge token before an access token.
 """
 
 from __future__ import annotations
@@ -56,14 +55,12 @@ async def upload_avatar(
 
     if not await SettingsService(db, user.tenant_id).get("allow_avatar_uploads"):
         raise ValidationError("Profile photo uploads are disabled by the administrator.")
-    # read_capped, not file.read(): this route is open to ANY authenticated user, so
-    # a bare read let anyone size core's next allocation. The cap now stops the read.
+    # read_capped, not file.read(): this route is open to any authenticated user,
+    # so a bare read lets anyone size core's next allocation.
     data = await read_capped(file, field="Profile photo")
     # The extension comes from the validated content type, never from the uploaded
-    # filename. It used to be os.path.splitext(file.filename), so any authenticated
-    # user could store `x.html` under /files — which is served with no auth at all
-    # and routed publicly — and be handed the URL in this response. Stored XSS on
-    # the platform origin, self-service.
+    # filename: /files is served publicly with no auth, so a filename-derived
+    # `x.html` would be stored XSS on the platform origin.
     ctype, ext = validate_image(data, file.content_type, field="Profile photo")
     key = f"avatars/{user.id}_{uuid.uuid4().hex}{ext}"
     await get_storage().put(key, data, ctype)

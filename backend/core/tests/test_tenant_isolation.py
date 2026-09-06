@@ -1,10 +1,8 @@
-"""Phase 4 — cross-tenant isolation matrix.
+"""Phase 4 — cross-tenant isolation matrix, on the user surface.
 
-Proves the scope.py enforcement is airtight on the user surface (the most
-leak-prone one, per the isolation audit): a tenant-A admin can never LIST or
-FETCH another tenant's users (``scoped()`` on the list, ``assert_owned()`` on the
-by-id fetch → 404, not 403, so existence can't be probed), while a super-admin
-bypasses and sees everyone.
+A tenant-A admin can never list or fetch another tenant's users: ``scoped()`` on
+the list, ``assert_owned()`` on the by-id fetch, and 404 rather than 403 so an id
+cannot be probed. A super-admin sees everyone.
 
 Runs the full base app against in-memory SQLite with get_db overridden — no
 Docker/Postgres — the same harness as test_security_endpoints.py.
@@ -86,10 +84,9 @@ async def world(db):
         "b_admin": await _user(db, "b-admin@x.io", role, tb.id),
         "b_user": await _user(db, "b-user@x.io", role, tb.id),
         "sa": await _user(db, "sa@x.io", role, None, superadmin=True),
-        # tenant_id NULL and is_superadmin False. Not a hypothetical: create_user
-        # mints exactly this whenever a super-admin POSTs /auth/users without a
-        # tenant_id, and it is the shape both hand-rolled user filters used to
-        # fall through.
+        # tenant_id NULL and is_superadmin False — what create_user mints when a
+        # super-admin POSTs /auth/users with no tenant_id, and the shape hand-rolled
+        # user filters fall through.
         "rootless": await _user(db, "rootless@x.io", role, None),
     }
 
@@ -122,8 +119,7 @@ async def test_superadmin_sees_every_tenant(app, world):
 
 
 async def test_global_search_is_tenant_scoped(app, world):
-    """The ⌘K global search must not leak another tenant's users (regression for the
-    one cross-tenant leak the Phase-4 audit found in search/router.py)."""
+    """The ⌘K global search must not leak another tenant's users."""
     async with _client(app) as c:
         # A-admin searching for tenant-B's user gets nothing.
         r = await c.get(f"{PREFIX}/search?q=b-user", headers=_auth(world["a_admin"]))
@@ -174,18 +170,12 @@ async def test_admin_api_requires_admin_realm(app, world):
 
 
 async def test_user_create_is_forced_into_actor_tenant(app, world, db):
-    """A tenant-admin passing another tenant's id is IGNORED — the new user lands
-    in the admin's own tenant (never cross-tenant provisioning).
+    """A tenant-admin passing another tenant's id is ignored — the new user lands in
+    the admin's own tenant.
 
-    ``full_name`` is in the body because create_user made it MANDATORY on
-    2026-08-07 (55e744c: "a name is mandatory when an admin creates an account by
-    hand"). Without it this POST is a 422 at the router's own guard, the request
-    never reaches AuthService.create_user, and the assertion below — the only
-    thing this test exists for — is never evaluated. That is the dangerous shape
-    of a stale test: it goes red for a reason that has nothing to do with tenant
-    isolation, and while it is red it is also no longer WATCHING tenant
-    isolation. The forcing itself was never broken (auth/service.py: a
-    non-platform scope overrides data.tenant_id outright).
+    ``full_name`` is mandatory on create_user; leave it out and the POST is a 422 at
+    the router's guard, so the assertion below never runs and the test goes red for
+    a reason that has nothing to do with tenant isolation.
     """
     from sqlalchemy import select
 
@@ -209,12 +199,10 @@ async def test_user_create_is_forced_into_actor_tenant(app, world, db):
 # ---------------------------------------------------------------------------
 # A NULL tenant_id is a tenancy, not a wildcard.
 #
-# scope.owns() used to return True for every row whose tenant_id was NULL, on the
-# reading that NULL means "shared platform default". On the users table NULL means
-# the platform super-admin, so that rule let any tenant-admin holding user.read
-# fetch the super-admin row and, with user.manage, reset its password and revoke
-# its sessions. The fixture for this has existed since Phase 4 — `sa` — and the
-# matrix simply never pointed a tenant-admin at it.
+# Reading NULL as "shared platform default" in scope.owns() is wrong on the users
+# table, where NULL means the platform super-admin: it lets any tenant-admin with
+# user.read fetch that row and, with user.manage, reset its password and revoke its
+# sessions.
 # ---------------------------------------------------------------------------
 
 
@@ -227,18 +215,17 @@ async def test_tenant_admin_cannot_fetch_the_platform_superadmin(app, world):
 
 
 async def test_tenant_admin_cannot_reset_the_platform_superadmin_password(app, world, db):
-    """The escalation this class of bug actually buys: PATCH with a password goes
-    through the same ownership gate as the read, then revokes every session the
-    victim holds — so the takeover is silent until the super-admin tries to log in.
+    """The escalation this buys: PATCH with a password goes through the same
+    ownership gate as the read, then revokes the victim's sessions.
 
-    Asserting the 404 alone would not be enough; the hash is re-read to prove the
-    write did not land before the guard.
+    The hash is re-read because a 404 alone would not prove the write did not land
+    before the guard.
     """
     from sqlalchemy import select
 
-    sa_id = world["sa"].id  # read BEFORE expire_all: an expired attribute would
-    # re-load lazily, and a lazy load inside an async session raises rather than
-    # blocking — the failure would look like a bug in the code under test.
+    sa_id = world["sa"].id  # read before expire_all: a lazy re-load inside an async
+    # session raises rather than blocking, which would look like a bug in the code
+    # under test.
     original_hash = (
         await db.execute(select(User).where(User.id == sa_id))
     ).scalar_one().password_hash
@@ -257,17 +244,14 @@ async def test_tenant_admin_cannot_reset_the_platform_superadmin_password(app, w
 async def test_tenant_admin_cannot_delete_or_lock_the_platform_superadmin(app, world):
     """The other admin actions share _admin_target, so they share the guard.
 
-    A misspelt path also answers 404, which would make the two assertions below
-    pass while testing nothing. The positive control runs the SAME urls as a
-    super-admin first: if those do not come back 200, the urls are wrong and this
-    test says so instead of quietly going green.
+    A misspelt path also answers 404, so the positive control runs the same urls as
+    a super-admin first — if those are not 200, the urls are wrong.
     """
     sa_id = world["sa"].id
     async with _client(app) as c:
-        # Positive control: the same url TEMPLATE, a target the super-admin is
-        # allowed to act on. (Not the super-admin itself — lock_user refuses to
-        # lock the caller's own account with a 422, which would fail this control
-        # for a reason unrelated to the paths being right.)
+        # Positive control: same url template, a target the super-admin may act on.
+        # Not the super-admin itself — lock_user 422s on the caller's own account,
+        # which would fail this control for an unrelated reason.
         for tmpl in ("lock", "reset-mfa"):
             ok = await c.post(
                 f"{PREFIX}/auth/users/{world['b_user'].id}/{tmpl}", headers=_auth(world["sa"])
@@ -282,9 +266,9 @@ async def test_tenant_admin_cannot_delete_or_lock_the_platform_superadmin(app, w
 
 
 async def test_superadmin_still_reaches_platform_rows(app, world):
-    """The guard must not be a blanket ban on NULL rows — a super-admin still owns
-    them. Without this, tightening owns() to `== scope.tenant_id` could pass every
-    test above by locking everyone out, which is not the fix."""
+    """The guard must not be a blanket ban on NULL rows: a super-admin still owns
+    them, and tightening owns() to `== scope.tenant_id` would lock everyone out
+    while passing every test above."""
     async with _client(app) as c:
         r = await c.get(f"{PREFIX}/auth/users/{world['sa'].id}", headers=_auth(world["sa"]))
     assert r.status_code == 200
@@ -292,10 +276,9 @@ async def test_superadmin_still_reaches_platform_rows(app, world):
 
 
 async def test_a_tenantless_non_superadmin_is_not_a_super_admin(app, world):
-    """tenant_id NULL + is_superadmin False fell through BOTH hand-rolled filters —
-    `if tenant_id is not None` on the list, `if not is_superadmin and tenant_id is
-    not None` on the export — so this principal saw the entire platform directory
-    while holding nothing but user.read."""
+    """tenant_id NULL with is_superadmin False falls through hand-rolled filters of
+    the form `if tenant_id is not None`, showing this principal the whole platform
+    directory on nothing but user.read."""
     async with _client(app) as c:
         listing = await c.get(f"{PREFIX}/auth/users", headers=_auth(world["rootless"]))
         export = await c.get(f"{PREFIX}/auth/users/export", headers=_auth(world["rootless"]))
@@ -311,8 +294,7 @@ async def test_a_tenantless_non_superadmin_is_not_a_super_admin(app, world):
 
 
 async def test_export_is_tenant_scoped(app, world):
-    """The export had drifted from the list it claims to match. Both now go through
-    scoped(), and this asserts the property rather than the implementation."""
+    """The export must match the list it claims to mirror; both go through scoped()."""
     async with _client(app) as c:
         mine = await c.get(f"{PREFIX}/auth/users/export", headers=_auth(world["a_admin"]))
         every = await c.get(f"{PREFIX}/auth/users/export", headers=_auth(world["sa"]))

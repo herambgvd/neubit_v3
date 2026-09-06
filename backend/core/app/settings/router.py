@@ -34,11 +34,11 @@ async def public_settings(
     db: AsyncSession = Depends(get_db),
     tenant_id=Depends(optional_tenant_id),
 ) -> dict:
-    """PUBLIC — the safe subset of settings the frontend needs everywhere.
+    """Public: the safe subset of settings the frontend needs everywhere.
 
-    Resolves the caller's tenant values when a (valid) bearer token is present,
-    else the platform default. Never raises on a missing/invalid token — the login
-    page and unauthenticated screens must always get a sane answer.
+    Resolves the caller's tenant values when a valid bearer token is present, else
+    the platform default. Never raises on a missing or invalid token — the login
+    page has to get an answer.
     """
     return await SettingsService(db, tenant_id).public_values()
 
@@ -48,24 +48,17 @@ async def get_maps_config(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(get_current_user),
 ) -> MapsConfigOut:
-    """Sites Map config for the browser — any AUTHENTICATED user.
+    """Sites Map config for the browser; any authenticated user.
 
-    Resolves the CALLER'S EFFECTIVE values (their tenant's override ← the
-    platform default), so a tenant-admin who enables Maps and saves a key under
-    Settings → Google Maps lights up their own Sites Map and the site form's
-    address→coordinates lookup. A super-admin (tenant_id None) reads the
-    platform default, as before. The api_key is intentionally returned to the
-    browser (the Maps JavaScript API loader needs it); restrict it by HTTP referrer
-    in Google Cloud Console. Not part of the unauthenticated /public subset.
+    Resolves the caller's effective values (their tenant's override, else the
+    platform default). The api_key is deliberately returned unmasked because the
+    Maps JavaScript API loader cannot use "***" — this is the only route that does
+    so, and `GET /settings` masks it. Restrict the key by HTTP referrer in Google
+    Cloud Console; it is not in the unauthenticated /public subset.
 
-    This is the ONLY route that reads the key unmasked, and it is deliberate: the
-    loader cannot use "***". `GET /settings` masks it. The value is encrypted at
-    rest either way — the `"secret": True` flag in the catalog is now enforced
-    rather than merely declared.
-
-    With ``google_maps_enabled`` off — the default — the browser draws the map
-    from the self-hosted PMTiles archive at ``tiles_url`` instead, which needs no
-    key and no internet.
+    With ``google_maps_enabled`` off (the default) the browser draws the map from
+    the self-hosted PMTiles archive at ``tiles_url``, which needs no key and no
+    internet.
     """
     values = await SettingsService(db, actor.tenant_id).all_values()
     return MapsConfigOut(
@@ -83,11 +76,10 @@ async def get_settings_config(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> SettingsOut:
-    # A tenant-admin sees their effective settings (tenant override ← platform
-    # default); a super-admin (tenant_id None) sees/edits the platform default.
-    # display_values, not all_values: secret-flagged keys come back as "***". The
-    # settings screen never needed the real credential, and this route used to hand
-    # it to every holder of settings.manage on every page load.
+    # A tenant-admin sees their effective settings (tenant override, else platform
+    # default); a super-admin (tenant_id None) sees the platform default.
+    # display_values, not all_values: secret keys must come back as "***" here, the
+    # settings screen never needs the real credential.
     return SettingsOut(
         catalog=catalog.CATALOG,
         values=await SettingsService(db, actor.tenant_id).display_values(),

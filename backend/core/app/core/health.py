@@ -5,19 +5,13 @@
               with a per-dependency breakdown when something is down, so orchestrators
               (k8s) don't route traffic to an instance that can't serve.
 
-THE ABOVE WAS TRUE ABOUT THE CODE AND FALSE ABOUT THE DEPLOYMENT, for a long time.
-`/ready` was correct, and reachable by NOTHING: Traefik's rule listed
-`/api`, `/health`, `/metrics` and `/files` and not `/ready`, and the `core` service
-had no `healthcheck:` stanza at all while its siblings did. So with Postgres stopped
-the only externally probeable endpoint answered `200 {"status":"ok"}` — it is a
-static dict with no dependency injected — while every `/api/v1/*` route 500ed on
-`get_db`. Every prober reported green through a total outage.
+`/ready` only helps if something probes it: `gateway/dynamic/routes.yml` must route
+it (that file wins over the compose labels, which share a router name) and
+`deploy/docker-compose.yml` gives core a healthcheck that consumes it. Without
+those, `/health` answers 200 from a static dict through a total outage.
 
-Fixed in the deployment, not here: `gateway/dynamic/routes.yml` routes `/ready`
-(that file is the one that decides — the compose labels have the same router name
-and are shadowed by it), and `deploy/docker-compose.yml` gives core a healthcheck
-that consumes it. `/health` is deliberately left as-is: liveness and readiness are
-different questions and one endpoint cannot answer both.
+`/health` stays dependency-free on purpose — liveness and readiness are different
+questions and one endpoint cannot answer both.
 """
 
 from __future__ import annotations
@@ -61,7 +55,7 @@ async def _check_redis() -> str:
 async def _check_storage() -> str:
     from .storage import get_storage
 
-    # Cheap reachability probe: existence check on a sentinel key (never created).
+    # Cheap reachability probe: a sentinel key that is never created.
     await get_storage().exists("__readyz__")
     return "ok"
 

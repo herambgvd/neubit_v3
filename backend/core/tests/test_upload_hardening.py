@@ -1,20 +1,14 @@
 """Uploads and the public file route — the stored-XSS path a pentest walks first.
 
-`GET /files/{key:path}` has no auth dependency at all and is routed publicly by
-Traefik (deploy/docker-compose.yml). Two upload routes fed it without checking
-anything: `POST /auth/me/avatar` (ANY authenticated user) and `POST /branding/logo`
-both took the stored extension straight from `os.path.splitext(file.filename)` and
-passed the client's own `content_type` through to storage. Upload `x.html`, read the
-URL out of the response, send the link — script running on the platform origin, with
-the visitor's session.
+`GET /files/{key:path}` has no auth dependency and Traefik routes it publicly
+(deploy/docker-compose.yml), so the upload routes feeding it are what keep script
+off the platform origin: the stored extension must not come from `file.filename`
+and the client's `content_type` must not reach storage.
 
-The size cap had the same shape of hole: it was measured after `await file.read()`
-had already turned the whole request body into one bytes object, so it named a limit
-without imposing one. Upload as much as you like; core allocates all of it and then
-tells you it was too big.
+The size cap has the same shape of hole if measured after `await file.read()` has
+already buffered the whole body — that names a limit without imposing one.
 
-These tests are written as the attack, not as the implementation: each one is a
-thing an assessor would try.
+These tests are written as the attack, not as the implementation.
 """
 
 from __future__ import annotations
@@ -39,10 +33,9 @@ HTML = b"<html><script>alert(document.cookie)</script></html>"
 
 @pytest.fixture(autouse=True)
 def writable_storage(tmp_path, monkeypatch):
-    """The harness mounts the source tree read-only (run-tests.sh), so the default
-    ./data/storage cannot be created. Point LocalStorage at pytest's tmp_path and
-    clear the lru_cache that would otherwise hand back a backend built from the
-    old setting."""
+    """Point LocalStorage at tmp_path — the harness mounts the source tree read-only
+    (run-tests.sh), so ./data/storage cannot be created. The lru_caches have to be
+    cleared both ways or a backend built from the old setting leaks between tests."""
     from app.core import config, storage
 
     monkeypatch.setenv("VE_STORAGE_LOCAL_DIR", str(tmp_path / "storage"))
@@ -137,19 +130,17 @@ async def test_empty_upload_is_refused(app, user):
 
 # --- the cap has to STOP the read, not report on it --------------------------
 #
-# The 413 above passed against the broken implementation too, which is the point:
-# every route did `data = await file.read()` and let validate_image measure the
-# result, so the whole body was already one bytes object before the cap was ever
-# consulted. Any authenticated user could pick core's next allocation size. A
-# status-code assertion cannot tell the two implementations apart — these can,
-# because they count what the helper actually asked the file for.
+# The 413 above also passes when a route does `data = await file.read()` and lets
+# validate_image measure the result, because the body is already buffered by then.
+# These tests count what the helper asked the file for, which is the only way to
+# tell the two implementations apart.
 
 
 class _CountingFile:
     """Stands in for Starlette's UploadFile and records what was pulled off it.
 
-    `read(-1)` returns everything, exactly as the real one does, so a helper that
-    does not pass a size gets the whole body and this fixture notices.
+    `read(-1)` returns everything, like the real one, so a helper that does not pass
+    a size gets the whole body and these tests notice.
     """
 
     def __init__(self, size: int) -> None:
@@ -181,8 +172,8 @@ async def test_read_capped_abandons_an_oversized_upload_instead_of_buffering_it(
 
 
 async def test_read_capped_never_asks_for_the_whole_file_at_once():
-    """`read(-1)` is the bug in one character. Every read must be bounded, or the
-    cap is decided after the allocation it was supposed to prevent."""
+    """Every read must be bounded. `read(-1)` applies the cap after making the
+    allocation the cap exists to prevent."""
     from app.core.errors import ValidationError
     from app.core.uploads import READ_CHUNK_BYTES, read_capped
 
@@ -195,8 +186,8 @@ async def test_read_capped_never_asks_for_the_whole_file_at_once():
 
 
 async def test_read_capped_returns_a_body_that_fits_byte_for_byte():
-    """Chunking is only safe if it reassembles. A body spanning several chunks must
-    come back identical, or the fix trades a DoS for silent corruption."""
+    """Chunking is only safe if it reassembles: a body spanning several chunks must
+    come back byte-for-byte identical."""
     from app.core.uploads import READ_CHUNK_BYTES, read_capped
 
     body = bytes(range(256)) * ((READ_CHUNK_BYTES * 3) // 256 + 7)  # not a chunk multiple
@@ -213,8 +204,8 @@ async def test_read_capped_returns_a_body_that_fits_byte_for_byte():
 
 
 async def test_a_multi_chunk_image_still_round_trips_through_the_route(app, user):
-    """End to end, on the route any authenticated user can reach: an image larger
-    than one read chunk goes in and comes back out of /files unchanged."""
+    """End to end: an image larger than one read chunk goes in and comes back out of
+    /files unchanged."""
     from app.core.uploads import READ_CHUNK_BYTES
 
     png = PNG + bytes(range(256)) * (READ_CHUNK_BYTES * 3 // 256)
@@ -232,8 +223,8 @@ async def test_a_multi_chunk_image_still_round_trips_through_the_route(app, user
 # --- the serving side --------------------------------------------------------
 #
 # Validating uploads is only half. /files also serves report exports and whatever
-# earlier versions of these routes already let onto disk, and it used
-# mimetypes.guess_type on the key — which answers text/html for a .html key.
+# older versions of these routes let onto disk, so the served type must not be
+# inferred from the key — mimetypes.guess_type answers text/html for a .html key.
 
 
 def test_serving_never_infers_a_dangerous_content_type():
@@ -249,9 +240,9 @@ def test_serving_never_infers_a_dangerous_content_type():
 
 
 def test_svg_is_served_as_a_download_not_a_document():
-    """SVG is XML that can carry script, and logos are SVG, so it is accepted and
-    served with a disposition instead of being banned. `<img src>` still renders
-    it; a direct navigation downloads it; script never runs either way."""
+    """SVG is XML that can carry script, but logos are SVG, so it is accepted and
+    served as an attachment rather than banned. `<img src>` still renders it, a
+    direct navigation downloads it, and script never runs either way."""
     from app.core.storage import _serving_headers
 
     ctype, headers = _serving_headers("branding/logo_abc.svg")
@@ -289,17 +280,13 @@ async def test_files_responses_are_sandboxed_by_csp(app, user):
 
 # --- every upload path, not just the three that were audited -----------------
 #
-# The avatar/logo/site-image routes were fixed first because that is where the
-# stored-XSS work had already been done. `read_capped` then made it cheap to check
-# the rest, and there were three more: floor plans (a cap, consulted after the
-# read), the user-import CSV (no cap at all, and it decoded the whole body on top
-# of holding it), and the SQL restore (unbounded, on the one endpoint you least
-# want to fall over mid-operation).
+# Besides avatar/logo/site-image there are three more upload routes — floor plans,
+# the user-import CSV, and the SQL restore — and they all have to go through
+# read_capped too.
 #
 # Asserted by reading the source rather than by posting a large body to each: the
-# property is "no route calls the unbounded form", and a per-route DoS test would
-# be slow, would only cover the routes someone remembered, and would pass on a
-# route that simply moved its unbounded read somewhere else in the same handler.
+# property is "no route calls the unbounded form", and a per-route DoS test would be
+# slow and would only cover the routes someone remembered.
 
 
 def test_no_route_reads_an_upload_without_a_cap():
@@ -312,9 +299,8 @@ def test_no_route_reads_an_upload_without_a_cap():
         if path.name == "uploads.py":
             continue  # defines read_capped and quotes the old call in its docstring
         for lineno, line in enumerate(path.read_text().splitlines(), 1):
-            # Comments are skipped because the fixes QUOTE the old call to explain
-            # what was wrong with it, and a guard that flags its own explanation
-            # teaches people to delete the explanation.
+            # Comments are skipped: the fixes quote the old call to explain it, and a
+            # guard that flags its own explanation gets the explanation deleted.
             if line.lstrip().startswith("#"):
                 continue
             if re.search(r"await\s+file\.read\(\s*\)", line):
@@ -326,8 +312,8 @@ def test_no_route_reads_an_upload_without_a_cap():
 
 
 def test_the_scan_can_actually_find_something():
-    """Guards the guard: a regex that matches nothing would make the test above
-    pass forever, which is the failure mode it exists to prevent elsewhere."""
+    """Guards the guard: a regex matching nothing would make the test above pass
+    forever."""
     import re
 
     assert re.search(r"await\s+file\.read\(\s*\)", "    content = await file.read()")

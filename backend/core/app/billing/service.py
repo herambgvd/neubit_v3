@@ -22,9 +22,10 @@ async def next_invoice_number(db: AsyncSession) -> str:
 
 
 def apply_plan_entitlements(tenant: Tenant, plan: Plan) -> None:
-    """Copy a plan's commercial identity + entitlements onto the tenant so the
-    operator console's license reflects the plan. Only overwrites what the plan
-    defines (features/limits are replaced wholesale to keep the plan authoritative).
+    """Copy a plan's key and entitlements onto the tenant.
+
+    Only what the plan defines is overwritten, and features/limits are replaced
+    wholesale so the plan stays authoritative.
     """
     tenant.plan = plan.key
     if plan.features:

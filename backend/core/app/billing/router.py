@@ -97,9 +97,8 @@ async def update_plan(
     fields = data.model_dump(exclude_unset=True)
     if "interval" in fields and fields["interval"] not in PLAN_INTERVALS:
         raise ValidationError(f"interval must be one of {PLAN_INTERVALS}")
-    # apply_patch, not a bare setattr loop: `exclude_unset` drops what the client
-    # did not send, but an explicit `null` IS sent, so it used to reach a NOT NULL
-    # column and escape as an unhandled 500 with the session left in a failed state.
+    # apply_patch, not a bare setattr loop: `exclude_unset` drops unsent fields, but
+    # an explicit `null` is sent and would reach a NOT NULL column as a 500.
     apply_patch(plan, fields)
     await db.commit()
     await db.refresh(plan)

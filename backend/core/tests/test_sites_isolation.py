@@ -1,11 +1,9 @@
 """Cross-tenant isolation on the sites surface — the first HTTP tests it has.
 
-`sites/`, `floors/` and `zones/` are 39 routes with no test at all, and that is
-where the create-guards-it/update-doesn't asymmetry survived: `SiteService.create`
-vetted `parent_id`'s tenancy, `update` ran a cycle check and then blind-`setattr`
-the whole body. `Site.parent_id` carries no ForeignKey, so the database would not
-have objected either, and the resulting cross-tenant edge is republished on NATS
-`site.updated` to the reporting mirror and BI.
+The asymmetry to watch for across `sites/`, `floors/` and `zones/`: create vets
+`parent_id`'s tenancy while update runs a cycle check and then blind-`setattr`s the
+body. `Site.parent_id` has no ForeignKey, so the database will not object either,
+and the resulting cross-tenant edge is republished on NATS to reporting and BI.
 
 Same harness as test_tenant_isolation.py: the full base app on in-memory SQLite.
 """
@@ -92,8 +90,8 @@ async def world(db):
         "b_admin": await _user("b-site@x.io", tb.id),
         "a_site": await _site("A Tower", ta.id),
         "b_site": await _site("B Tower", tb.id),
-        # A platform-scoped site. Before 36a7798 `owns()` called this owned by
-        # everyone, so it was updatable and deletable by any tenant.
+        # A platform-scoped site: `owns()` must not treat NULL tenant_id as owned by
+        # everyone, which would make this updatable and deletable by any tenant.
         "platform_site": await _site("Shared Campus", None),
     }
 
@@ -110,8 +108,8 @@ async def test_create_rejects_a_parent_in_another_tenant(app, world):
 
 
 async def test_update_rejects_a_parent_in_another_tenant(app, world, db):
-    """The one that didn't. A 409 alone is not enough — the row is re-read, because
-    the failure mode here was a blind setattr that persisted the edge.
+    """The one that did not. The row is re-read because a 409 alone would not catch a
+    blind setattr that had already persisted the edge.
     """
     a_id = world["a_site"].site_id
     async with _client(app) as c:
@@ -127,8 +125,8 @@ async def test_update_rejects_a_parent_in_another_tenant(app, world, db):
 
 
 async def test_update_still_allows_a_parent_in_the_same_tenant(app, world, db):
-    """Re-parenting is a supported operation and must survive the guard — otherwise
-    the tests above would pass against a version that simply refuses every parent.
+    """Re-parenting is supported and must survive the guard, or the tests above pass
+    against a version that refuses every parent.
     """
     a_id = world["a_site"].site_id
     async with _client(app) as c:
@@ -147,7 +145,7 @@ async def test_update_still_allows_a_parent_in_the_same_tenant(app, world, db):
 
 
 async def test_a_tenant_cannot_read_or_write_a_platform_site(app, world, db):
-    """NULL tenant_id is a tenancy, not a wildcard (36a7798)."""
+    """NULL tenant_id is a tenancy, not a wildcard."""
     pid = world["platform_site"].site_id
     async with _client(app) as c:
         got = await c.get(f"{PREFIX}/sites/{pid}", headers=_auth(world["a_admin"]))
@@ -182,12 +180,10 @@ async def test_site_list_is_tenant_scoped(app, world):
 
 # --- the immutable-field guard (app/sites/mutation.py) ----------------------
 #
-# UpdateFloorRequest omits site_id and UpdateZoneRequest omits site_id/floor_id,
-# so the blind setattr loop those services ran was safe — by schema accident, one
-# added field away from being finding #3 again. apply_update writes the rule down
-# next to the loop instead. These two tests are what stop the rule being deleted
-# as unreachable: they call the helper directly, because the schemas correctly
-# refuse the field at the HTTP edge today.
+# The floor and zone update schemas happen to omit site_id/floor_id, so a blind
+# setattr loop is safe only by accident — one added field from a structural move.
+# apply_update states the rule instead. These call the helper directly, since the
+# schemas do refuse the field at the HTTP edge today.
 
 
 def test_apply_update_refuses_a_structural_move():

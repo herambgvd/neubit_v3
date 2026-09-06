@@ -45,16 +45,13 @@ async def get_health(_user=Depends(require_permission(CorePerm.SYSTEM_READ))) ->
 async def stream_resources(websocket: WebSocket) -> None:
     """Push a resource snapshot every 2 seconds over a WebSocket.
 
-    HTTP dependencies like require_permission do NOT run on WS handshakes, so we
-    authenticate + authorize by hand here: the client passes its access token as a
-    ``?token=<access>`` query param (see edge.core.ws_auth). ``authorize_ws`` enforces
-    ``CorePerm.SYSTEM_READ``, closing the socket (4401 unauthenticated / 4403 forbidden)
-    on failure — in which case ``user`` is None and we simply return.
+    HTTP dependencies do not run on WS handshakes, so this authorizes by hand: the
+    client passes its access token as ``?token=<access>`` (see edge.core.ws_auth)
+    and ``authorize_ws`` enforces ``CorePerm.SYSTEM_READ``, closing the socket
+    (4401/4403) and returning None on failure.
 
-    Ordering note: authorize BEFORE ``accept()``. On the installed Starlette (bundled
-    with fastapi>=0.111), ``websocket.close()`` on an un-accepted handshake is
-    supported and rejects the connection outright (no ``accept()`` needed first), so
-    an unauthorized client never gets an open socket.
+    Authorize before ``accept()`` so an unauthorized client never gets an open
+    socket — Starlette supports ``close()`` on an un-accepted handshake.
     """
     user = await authorize_ws(websocket, CorePerm.SYSTEM_READ)
     if user is None:
@@ -62,9 +59,8 @@ async def stream_resources(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         while True:
-            # send_json serialises the snapshot dict to a JSON text frame.
             await websocket.send_json(sample_resources())
             await asyncio.sleep(2)
     except WebSocketDisconnect:
-        # Normal client hang-up — nothing to clean up, just stop the loop.
+        # Normal client hang-up; nothing to clean up.
         log.debug("system resource stream disconnected")

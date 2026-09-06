@@ -86,8 +86,8 @@ async def send_push(
     if row is None or not row.enabled:
         log.info("push channel not configured or disabled; skipping send")
         return False
-    # See send_email: without tenant_id every push went through the
-    # platform-default FCM project, ignoring a tenant's own server key.
+    # tenant_id selects whose FCM project; without it a tenant's own server key
+    # is ignored in favour of the platform default.
     cfg = await get_config_decrypted(db, "push", tenant_id) or {}
     server_key = cfg.get("server_key")
     if not server_key:

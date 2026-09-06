@@ -1,60 +1,39 @@
 """DashForge embed registry API — `{api_prefix}/dashforge/...`.
 
-Mounted by ``create_base_app`` alongside the other always-on core routers, so the
-full paths are `/api/v1/dashforge/dashboards...`. That prefix used to be peeled
-off at the gateway to a `dashforge` container; it now falls through to core with
-the rest of `/api/`, and the routes and their permissions are unchanged.
+Mounted by ``create_base_app`` with the other always-on core routers, so full
+paths are `/api/v1/dashforge/dashboards...`.
 
     dashforge.read     list registrations, open one (mint a viewing session)
     dashforge.manage   register, edit and remove them
 
-Both keys are in core's permission catalog (``app/auth/permissions.py``, group
-"Dashboards") so a tenant admin can actually grant them in the role editor. A key
-the catalog does not know about can only ever be held by a wildcard admin, which
-is not a permission model — the ``ingest.*`` keys were exactly that mistake and
-the catalog comment records it.
+Both keys live in core's permission catalog (``app/auth/permissions.py``, group
+"Dashboards") so a tenant admin can grant them in the role editor. A key the
+catalog does not know about can only be held by a wildcard admin.
 
-MODULE AND TENANT GATING ARE ON THE ROUTER, NOT THE ROUTES. Declared once in the
-``APIRouter`` below so a route added later inherits them and cannot forget:
+Module and tenant gating are declared once on the ``APIRouter`` below, not per
+route, so a route added later inherits them:
 
   * ``require_feature("analytics")``  — the "Dashboards & Reports" module.
   * ``require_tenant_active()``       — suspended tenant / expired licence.
 
-The second one is worth a sentence because it is the piece that had to be
-rebuilt. As a satellite this router was mounted behind the kernel's
-``require_active_license``, which reads the tenant's state from the JWT CLAIM
-because a satellite has no tenants table to ask. Core does have one, and had no
-equivalent per-route gate at all — it refuses a suspended tenant at LOGIN and
-otherwise trusts the token. Dropping the check on the way in would have widened
-this route: a token minted before a suspension would keep minting embed tokens
-until it expired. ``app.tenancy.features.require_tenant_active`` closes the same
-window against the live row.
+Keep ``require_tenant_active``: core only refuses a suspended tenant at login, so
+without it a token minted before a suspension keeps minting embed tokens until it
+expires. It checks the live row.
 
-WHY `POST /{id}/session` IS THE WHOLE POINT OF THIS MODULE
-----------------------------------------------------------
-DashForge's `GET /public/embed/:token` is unauthenticated: the token IS the
-credential. So the ONLY thing standing between a NeuBit-visible dashboard and
-anyone who can load a NeuBit page is the check that happens before a token
-exists. That check is here, on this route, in front of a mint that never happens
-otherwise.
+`POST /{id}/session` is the security boundary of this module. DashForge's
+`GET /public/embed/:token` is unauthenticated — the token is the credential — so
+the permission check in front of the mint is the only thing between a dashboard
+and anyone who can load a NeuBit page. Never expose a token where a browser can
+read it without passing `require_permission` first (baked into the page, a public
+config endpoint, the LIST response); the registration list carries no token for
+that reason.
 
-The failure mode being prevented, concretely: put the token anywhere a browser
-can read it without passing `require_permission` first — bake it into the page,
-serve it from a public config endpoint, attach it to the registration in the LIST
-response — and every account that can reach the console, including one whose role
-grants nothing, holds a working credential to that dashboard's data. The
-registration list deliberately carries NO token for that reason; a session is a
-separate, gated call.
+The session is gated on `dashforge.read`, not `manage`: viewing is a read, and the
+privilege being exercised on the mint belongs to the service account, not the
+caller. `manage` gates which dashboards exist here at all.
 
-`dashforge.read` and not `dashforge.manage`: viewing a dashboard is a read.
-Minting is a privileged act on the DashForge side, but the privilege being
-exercised belongs to the SERVICE account, not the caller — so gating the session
-on the manage key would mean only editors could look at a dashboard, which is
-backwards. What `manage` gates is deciding WHICH dashboards exist here at all.
-
-A note on POST for something that reads: it mints a credential and has a
-DashForge-side side effect (quota metering on the peer), so it is not cacheable
-and must not be a GET that a proxy or a prefetch can replay.
+It is a POST despite reading because it mints a credential and meters quota on the
+peer — not cacheable, and not something a proxy or prefetch may replay.
 """
 
 from __future__ import annotations
@@ -98,8 +77,8 @@ async def _service(
     scope: Annotated[Scope, Depends(get_scope)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> EmbedRegistryService:
-    # The user rides along for attribution only. Authorisation stays the
-    # permission plus the tenant.
+    # The user rides along for attribution only; authorisation is the permission
+    # plus the tenant.
     return EmbedRegistryService(db, scope, actor=user.id)
 
 
@@ -120,8 +99,7 @@ async def list_embeds(
 ) -> EmbedListResponse:
     """Every DashForge dashboard this caller's tenant shows.
 
-    Carries no token. See the module docstring — a token in this response would
-    make the session gate below decorative.
+    Carries no token — one here would make the session gate below decorative.
     """
     items, total = await svc.list_(search=search)
     return EmbedListResponse(
@@ -163,13 +141,11 @@ async def update_embed(svc: Svc, embed_id: str, body: EmbedUpdate) -> EmbedPubli
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
 async def delete_embed(svc: Svc, embed_id: str) -> Response:
-    """Remove the registration.
+    """Remove the registration. NeuBit-side only; the dashboard itself is untouched.
 
-    NeuBit-side only: the dashboard itself is DashForge's and is untouched. This
-    also does NOT revoke outstanding embed tokens — DashForge's revoke bumps a
-    dashboard-wide epoch and would break every other consumer of that dashboard,
-    which is not a decision unregistering it from one platform gets to make. The
-    outstanding tokens expire on their own within the TTL (see `client.py`).
+    Does not revoke outstanding embed tokens: DashForge's revoke bumps a
+    dashboard-wide epoch and would break every other consumer of it. They expire
+    on their own within the TTL (see `client.py`).
     """
     await svc.delete(embed_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -184,18 +160,17 @@ async def delete_embed(svc: Svc, embed_id: str) -> Response:
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def open_session(svc: Svc, embed_id: str) -> EmbedSession:
-    """Mint one short-lived embed token for this viewer, right now.
+    """Mint one short-lived embed token for this viewer.
 
-    Order matters and is the security property: `require_permission` runs, then
-    the registration is loaded THROUGH the tenant scope (a foreign tenant's id
-    reads as not-found), and only then does a token come into existence.
+    Order is the security property: `require_permission` runs, then the
+    registration is loaded through the tenant scope (a foreign tenant's id reads
+    as not-found), and only then does a token exist.
     """
     row = await svc.get(embed_id)
     cfg = get_dashforge_settings()
     if not cfg.public_url:
-        # Without a browser-resolvable origin the iframe URL would be built from
-        # an internal service name and silently never load. Refuse with the
-        # reason instead of returning a URL that cannot work.
+        # Without a browser-resolvable origin the iframe URL would use an internal
+        # service name and silently never load. Refuse with the reason instead.
         raise DashForgeUnavailable(
             "VE_DASHFORGE_PUBLIC_URL is not set, so no browser-resolvable embed "
             "URL can be built for this deployment"
@@ -214,12 +189,10 @@ async def open_session(svc: Svc, embed_id: str) -> EmbedSession:
         embed_id=row.id,
         token=token,
         iframe_url=f"{cfg.public_url.rstrip('/')}/embed/{token}",
-        # DashForge's own expiry, passed through — never restated from this
-        # platform's clock, which would drift against the signature that actually
-        # decides.
+        # DashForge's own expiry, passed through. Do not restate it from this
+        # platform's clock — it would drift against the signature that decides.
         expires_at=str(minted.get("expiresAt") or ""),
-        # Echoed so an operator can see on screen what the token is locked to.
-        # It is already readable inside the token (the payload is base64, not
-        # encrypted), so this reveals nothing the holder does not have.
+        # Echoed so an operator can see what the token is locked to. Already
+        # readable inside the token (base64, not encrypted), so it leaks nothing.
         scope=minted.get("scope") or {},
     )

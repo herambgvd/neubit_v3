@@ -23,29 +23,13 @@ class Role(Base):
     """A named bundle of permission keys. Admin-defined (except the system role)."""
 
     __tablename__ = "roles"
-    # Names are unique WITHIN a tenant, not across the platform (0025). A global
-    # unique let the first tenant to use "Analyst" take the name from everyone
-    # else and answered CONFLICT about a row the caller could not see.
-    #
-    # Postgres gets the real key from 0025 as a UNIQUE INDEX with NULLS NOT
-    # DISTINCT, so the shared (tenant_id NULL) roles still collide with each
-    # other. This declaration is what SQLite builds the test schema from, and
-    # SQLite treats NULLs as distinct — so two shared roles of the same name are
-    # rejected in production and accepted in a unit test. create_role refuses
-    # that case in code, which is what the tests actually exercise.
-    #
-    # Declared as an Index rather than a UniqueConstraint because that is what the
-    # migration creates and what the database holds. Alembic compares the two by
-    # kind: a UniqueConstraint here against a unique index there is reported as one
-    # dropped and one added on every autogenerate run, forever.
-    # `postgresql_nulls_not_distinct` is not decoration: without it Postgres treats
-    # every NULL tenant_id as distinct and the SHARED role namespace has no
-    # uniqueness at all — any number of platform-wide "Administrator" roles. It is
-    # also what makes autogenerate quiet; declared without it, the model and the
-    # database describe two different indexes and every run proposes replacing one
-    # with the other. Other dialects ignore the dialect-prefixed argument, which is
-    # why the SQLite test schema still builds (and why it accepts duplicate shared
-    # names that Postgres refuses — create_role refuses them in code).
+    # Names are unique within a tenant, not across the platform (migration 0025).
+    # Keep this an Index, not a UniqueConstraint: the migration creates an index,
+    # and a mismatch makes autogenerate propose a drop+add on every run.
+    # `postgresql_nulls_not_distinct` makes the shared (tenant_id NULL) roles
+    # collide with each other; without it there is no uniqueness at all for them.
+    # Other dialects ignore it, so SQLite (tests) accepts duplicate shared names
+    # that Postgres refuses — create_role refuses them in code.
     __table_args__ = (
         Index(
             "uq_roles_tenant_name",
@@ -150,51 +134,25 @@ class User(Base):
 
 
 class ApiKey(Base):
-    """A SERVICE CREDENTIAL: a scoped, revocable, non-interactive identity.
+    """A service credential: a scoped, revocable, non-interactive identity.
 
-    It exists because a peer product had to be given a human's password. DashForge
-    reads this platform's BI data with ``NEUBIT_BI_USER`` / ``NEUBIT_BI_PASSWORD``
-    — a service account's real login — because until 2026-09-05 there was nothing
-    else to give it. A password is the wrong credential for a machine in four
-    specific ways, and every field below exists to answer one of them.
+    Replaces giving a machine a human's password. The key's authority is
+    ``scopes`` — a snapshot of permission keys, not a live role link, so widening
+    a role later cannot widen existing keys. ``revoked_at``/``is_active`` let one
+    key be killed without disabling its account; ``expires_at`` and
+    ``last_used_at`` make forgotten keys visible; ``created_by`` records who
+    issued it (the audit trail only records the key itself).
 
-    SCOPED, NOT ROLE-SHAPED — ``scopes``. A key carries a flat list of permission
-    keys chosen at creation, not a role id. A role is a LIVING set: someone widens
-    "Analyst" next quarter and every key wearing it silently widens with it, which
-    is how a BI reader ends up able to create users. ``scopes`` is a snapshot and
-    changes only when a human edits that key. ``role_id`` below is the retired
-    mechanism, kept nullable for the rows that predate this.
-
-    INDEPENDENTLY REVOCABLE — ``revoked_at`` / ``is_active``. Killing a key must
-    not mean disabling the account it was cut from, because that is the reason
-    nobody ever revokes anything: the blast radius of the safe action is a person
-    who cannot log in.
-
-    EXPIRING — ``expires_at``, and ``last_used_at`` next to it. An operator sets an
-    end date, and the last-used stamp is what makes a key that everyone forgot
-    VISIBLE rather than merely old: "issued 14 months ago" is normal, "issued 14
-    months ago and last used never" is a credential to delete.
-
-    ATTRIBUTABLE — ``created_by``. An audit entry written by a key records the key
-    (``actor_type='apikey'``, see core/audit.py); this records who made the key,
-    which is the other half of the question and is not recoverable from the trail
-    once the creating admin has left.
-
-    Only a SHA-256 hash of the whole key is stored, plus ``prefix``, which is a
-    dedicated non-secret id segment rather than a slice of the secret (see
+    Only a SHA-256 hash of the whole key is stored, plus ``prefix``, a dedicated
+    non-secret id segment rather than a slice of the secret (see
     ``security.generate_api_key``). The raw key is shown once at creation.
     """
 
     __tablename__ = "api_keys"
-    # UNIQUE, not merely indexed. `authenticate_api_key` resolves a presented key by
-    # prefix with `.scalar_one_or_none()`, so two rows sharing one turns every
-    # POST /auth/token into a MultipleResultsFound 500 — the credential path stops
-    # working for everyone, not just the duplicate holder. 0023 created this index
-    # unique; the column declared plain `index=True`, so `alembic --autogenerate`
-    # proposed DROPPING the uniqueness the credential path depends on. That was the
-    # suite's only schema drift, and it is the kind that teaches a reviewer to stop
-    # trusting the tool. 0026 also drops the redundant non-unique ix_api_keys_prefix
-    # this column used to create.
+    # Must stay UNIQUE: `authenticate_api_key` resolves a presented key by prefix
+    # with `.scalar_one_or_none()`, so a duplicate prefix 500s every POST
+    # /auth/token. Declared here (not just `index=True` on the column) so it
+    # matches migration 0023 and autogenerate stops proposing to drop it.
     __table_args__ = (Index("uq_api_keys_prefix", "prefix", unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -203,15 +161,13 @@ class ApiKey(Base):
     prefix: Mapped[str] = mapped_column(String, nullable=False)
     key_hash: Mapped[str] = mapped_column(String, nullable=False)
     # The permission keys this key may exercise — the whole of its authority.
-    # Validated against the catalog at creation and against the CREATOR's own
-    # effective permissions, so a key can never be wider than the hand that made
-    # it. The wildcard is refused outright: an unbounded machine credential is the
-    # thing this model replaces, not a configuration of it.
+    # Validated at creation against the catalog and against the creator's own
+    # effective permissions, so a key is never wider than its maker. The wildcard
+    # is refused outright.
     scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    # RETIRED (2026-09-05), kept nullable so the pre-scopes rows still describe
-    # themselves. Nothing reads it to authorize — a key's authority is ``scopes``
-    # and only ``scopes``. Creating with a role_id still works and snapshots that
-    # role's permissions INTO scopes at that moment; it does not store a live link.
+    # Retired, kept nullable for pre-scopes rows. Nothing reads it to authorize.
+    # Creating with a role_id snapshots that role's permissions into scopes at
+    # that moment; it does not store a live link.
     role_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("roles.id"), nullable=True)
     role: Mapped[Role | None] = relationship(lazy="selectin")
     # --- multi-tenancy -----------------------------------------------------
@@ -221,12 +177,11 @@ class ApiKey(Base):
         ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    # When the key stops being accepted, set by the operator at creation. NULL =
-    # no expiry, which is allowed but is the choice an operator has to make on
-    # purpose rather than the one they get by not thinking about it.
+    # When the key stops being accepted, set by the operator at creation.
+    # NULL = no expiry (allowed, but an explicit choice).
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Set once, at revocation. Separate from ``is_active`` because "when" is the
-    # question an incident asks and a boolean cannot answer.
+    # Set once, at revocation. Separate from ``is_active`` so an incident can ask
+    # "when", which a boolean cannot answer.
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -237,9 +192,8 @@ class ApiKey(Base):
     def grants(self, permission: str) -> bool:
         """Whether this key's scopes cover ``permission``.
 
-        No wildcard branch, unlike ``Role.grants``. A key holding "*" cannot exist
-        (creation refuses it), and writing the branch anyway would leave the one
-        line that has to stay false forever sitting in the middle of the check.
+        No wildcard branch, unlike ``Role.grants``: a key holding "*" cannot exist
+        because creation refuses it. Do not add one.
         """
         return permission in (self.scopes or [])
 
@@ -249,11 +203,9 @@ class ApiKey(Base):
             return False
         if self.expires_at is None:
             return True
-        # SQLite (the test DB) hands back a NAIVE datetime for a column Postgres
-        # returns as aware, and comparing the two raises TypeError. An exception
-        # thrown out of an expiry check does not fail closed — it 500s a path that
-        # was supposed to return 401 — so the value is normalised rather than
-        # trusted to arrive with a tzinfo.
+        # SQLite (tests) returns a naive datetime where Postgres returns aware,
+        # and comparing the two raises TypeError — which 500s a path that should
+        # have returned 401. Normalise rather than assume a tzinfo.
         expires = self.expires_at
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
@@ -300,19 +252,13 @@ class PasswordResetToken(Base):
 
 
 class PermissionRegistration(Base):
-    """A permission key registered at RUNTIME by a satellite service.
+    """A permission key registered at runtime by a satellite service.
 
-    The static catalog in ``permissions.py`` is the authority on anything the
-    code itself enforces. This table is for keys the code cannot know at build
-    time — today, the per-dataset read permissions declared by the dataset
-    registry the READING-WRITER owns (it said "the dashboard builder's registry"
-    until 2026-09-03; the builder is retired, the registry outlived it): a dataset
-    is registered with an INSERT into ``neubit_reporting.dashboard_datasets`` and
-    it names the permission required to read it.
-
-    Without this, such a key fails ``PERMISSIONS.unknown()`` on role create and no
-    role can ever grant it — which is precisely the ``ingest.read`` bug the
-    builder contract tells us not to repeat.
+    ``permissions.py`` stays the authority for anything the code enforces. This
+    table is for keys the code cannot know at build time — today, the per-dataset
+    read permissions named by rows in ``neubit_reporting.dashboard_datasets``.
+    Without it such a key fails ``PERMISSIONS.unknown()`` on role create and no
+    role can ever grant it.
     """
 
     __tablename__ = "permission_registrations"

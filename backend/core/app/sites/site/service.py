@@ -7,20 +7,11 @@ with the caller's ``tenant_id``.
 
 Emits domain events on the NATS spine and writes audit entries on every mutation.
 
-TWO THINGS THIS FILE SAYS ABOUT ITSELF THAT ARE WORTH BEING PRECISE ABOUT.
-
-"every by-id fetch through ``assert_owned``" is true, and it was not enough. The
-predicate behind it used to treat a NULL ``tenant_id`` as owned by everyone, so a
-platform-scoped site was readable, writable and deletable by every tenant — see
-`tenancy/scope.py::owns` for why, and for what a NULL tenant_id means on the config
-singletons instead.
-
-And a reference in a request BODY is not covered by either. `parent_id` was vetted
-on create and blind-`setattr` on update, which let a tenant re-point its own site at
-another tenant's; `Site.parent_id` carries no ForeignKey, so nothing downstream
-objected, and the edge was republished on NATS to reporting and BI.
-`_require_assignable_parent` is the one place that check lives now, and
-`app/sites/mutation.py` refuses the structural keys no update body may carry.
+``assert_owned`` covers by-id fetches but not references inside a request body:
+`Site.parent_id` has no ForeignKey, so a re-parent onto another tenant's site is
+only caught by `_require_assignable_parent`, the one place that check lives.
+`app/sites/mutation.py` refuses the other structural keys an update body may not
+carry.
 """
 
 from __future__ import annotations
@@ -71,10 +62,9 @@ class SiteService:
     def __init__(self, db: AsyncSession, scope: Scope, site_ids: list[str] | None = None) -> None:
         self.db = db
         self.scope = scope
-        # Per-user SITE ACCESS SCOPE (from the caller's User.site_ids). EMPTY =
-        # unrestricted (every site in the tenant). Non-empty confines reads/lookups
-        # to exactly these sites — the same coarse control the token's ``site_ids``
-        # claim applies to cameras in the vision service.
+        # Per-user site access scope, from the caller's User.site_ids. Empty means
+        # unrestricted (every site in the tenant); non-empty confines reads and
+        # lookups to exactly these sites.
         self.site_ids = [str(s) for s in (site_ids or [])]
 
     def _site_allowed(self, row: Site) -> bool:
@@ -87,8 +77,8 @@ class SiteService:
     async def _get_row(self, site_id: str) -> Site:
         row = await self.db.get(Site, site_id)
         assert_owned(row, self.scope, message="Site not found")
-        # Site scope: a site outside the caller's scope is indistinguishable from a
-        # missing one (NOT_FOUND, never FORBIDDEN — no cross-site existence leak).
+        # A site outside the caller's scope must look missing, not forbidden, or
+        # the error leaks which site ids exist.
         if not self._site_allowed(row):
             raise NotFoundError("Site not found")
         return row
@@ -171,12 +161,8 @@ class SiteService:
         row = await self._get_row(site_id)
 
         if body.parent_id and body.parent_id != row.parent_id:
-            # Same gate as create. Update used to run the cycle check ALONE and then
-            # blind-setattr the whole body, so `parent_id` was validated on the way
-            # in and unvalidated on the way through — a tenant could re-parent its
-            # own site onto another tenant's. `Site.parent_id` carries no ForeignKey,
-            # so nothing downstream would have objected either, and the cross-tenant
-            # reference is republished on NATS `site.updated` to reporting and BI.
+            # Same gate as create: without it a tenant can re-parent its own site
+            # onto another tenant's, and nothing downstream objects.
             await self._require_assignable_parent(body.parent_id)
             await self._assert_no_cycle(site_id, body.parent_id)
 
@@ -203,20 +189,15 @@ class SiteService:
     async def set_building_facts(self, site_id: str, body, *, actor) -> SitePublic:
         """Record the operator's assertions about the building itself.
 
-        A SET, not a patch: every one of the four fields is written from the
-        request, so an explicit null CLEARS it and the site goes back to "not
-        recorded". That state has to be reachable — a rating that divides by a
-        wrong area an operator cannot take back is worse than one that says it
-        has no area.
-
-        Nothing is inferred here. There is no default area, no assumed currency
-        and no fallback tariff; what the operator did not state stays absent.
+        A set, not a patch: all four fields are written from the request, so an
+        explicit null clears one and the site goes back to "not recorded". That
+        state has to stay reachable. Nothing is inferred — no default area, no
+        assumed currency, no fallback tariff.
         """
         row = await self._get_row(site_id)
 
         if body.energy_tariff_per_kwh is not None and not body.tariff_currency:
-            # A bare 8.5 is not a price. Refusing is the honest response;
-            # assuming rupees would put a currency on a screen nobody stated.
+            # A bare 8.5 is not a price; do not assume a currency nobody stated.
             raise ValidationError("A tariff needs a currency")
 
         row.gross_floor_area_sqm = body.gross_floor_area_sqm
@@ -226,9 +207,8 @@ class SiteService:
 
         actor_user_id = str(getattr(actor, "id", "")) or None
         now = _utcnow()
-        # Provenance of the ASSERTION, separate from the row's own updated_at —
-        # which moves when anyone edits a phone number and so cannot say who
-        # stands behind a number a rating divides by.
+        # Provenance of the assertion, separate from the row's updated_at, which
+        # also moves when someone edits a phone number.
         row.building_facts_updated_at = now
         row.building_facts_updated_by = actor_user_id
         row.updated_by = actor_user_id
@@ -242,11 +222,8 @@ class SiteService:
 
     # ── Time-of-Use tariff slabs + emission factors (migration 0019) ──────
     #
-    # Both are INPUT PATHS for Building Intelligence: homes for numbers an
-    # operator will supply later, never values this code supplies. Both PUTs
-    # are FULL REPLACES — the retraction property `set_building_facts`
-    # established: an explicit empty list clears the set, because a wrong rate
-    # (or factor) an operator cannot take back is worse than none.
+    # Operator input for Building Intelligence; this code never supplies values.
+    # Both PUTs are full replaces, so an empty list clears the set.
 
     async def _slab_rows(self, site_id: str) -> list[SiteTariffSlab]:
         return list(
@@ -283,17 +260,13 @@ class SiteService:
     async def set_tariff_slabs(
         self, site_id: str, body: TariffSlabsUpdate, *, actor
     ) -> list[TariffSlabPublic]:
-        """Replace the site's WHOLE slab list.
+        """Replace the site's whole slab list.
 
-        PRECEDENCE (stated once, in code): when any slab with `effective_from`
-        on or before the date being priced exists, the slab set overrides the
-        scalar `energy_tariff_per_kwh` ENTIRELY for that date; an hour no slab
-        covers has NO price — absence, never a fallback into the scalar. The
-        scalar applies only when no slab set is in effect.
-
-        Coverage of the 24h cycle is deliberately NOT enforced and no filler
-        slab is ever invented: a partial tariff is a partial statement, and the
-        UI warns rather than the server completing it.
+        Precedence: if any slab with `effective_from` on or before the priced date
+        exists, the slab set overrides the scalar `energy_tariff_per_kwh` entirely
+        for that date, and an hour no slab covers has no price rather than falling
+        back to the scalar. Coverage of the 24h cycle is deliberately not enforced
+        and no filler slab is invented; the UI warns instead.
         """
         row = await self._get_row(site_id)
         actor_user_id = str(getattr(actor, "id", "")) or None
@@ -327,9 +300,11 @@ class SiteService:
     async def set_emission_factors(
         self, site_id: str, body: EmissionFactorsUpdate, *, actor
     ) -> list[EmissionFactorPublic]:
-        """Replace the site's WHOLE emission-factor list. Every factor carries
-        its REQUIRED source (schema-enforced): a number with no citation is an
-        invented figure and never reaches this table."""
+        """Replace the site's whole emission-factor list.
+
+        Every factor carries a source, required by the schema: a number with no
+        citation never reaches this table.
+        """
         row = await self._get_row(site_id)
 
         dates = [f.effective_from for f in body.factors]
@@ -453,15 +428,11 @@ class SiteService:
         )
 
     async def _require_assignable_parent(self, parent_id: str) -> None:
-        """The one place a parent site is vetted, for create AND update.
+        """The one place a parent site is vetted, for create and update.
 
-        It was inlined in create only. Keeping it a method is the point: the next
-        path that accepts a parent_id gets the tenancy check by calling this rather
-        than by remembering to re-derive it.
-
-        A parent in another tenant is reported as MISSING, not forbidden, for the
-        same reason assert_owned raises NOT_FOUND — a caller must not be able to
-        probe another tenant's ids by watching the error change.
+        A parent in another tenant is reported as missing, not forbidden, for the
+        same reason assert_owned raises NOT_FOUND: the error must not let a caller
+        probe another tenant's ids.
         """
         parent = await self.db.get(Site, parent_id)
         if parent is None or not parent.is_active or not owns(parent, self.scope):
@@ -470,11 +441,10 @@ class SiteService:
     async def _assert_no_cycle(self, site_id: str, new_parent: str) -> None:
         """Walk the ancestor chain looking for site_id.
 
-        The two `db.get` here are deliberately unscoped: the chain is walked as
-        STORED, so a pre-existing cross-tenant edge is still traversed and still
-        reported as a cycle rather than silently ending the walk. The entry point is
-        vetted by _require_assignable_parent above; this is about not trusting rows
-        already in the table.
+        The `db.get` calls are deliberately unscoped: the chain is walked as
+        stored, so a pre-existing cross-tenant edge is still traversed and still
+        reported as a cycle instead of ending the walk. The entry point is already
+        vetted by _require_assignable_parent.
         """
         if new_parent == site_id:
             raise ConflictError("Setting this parent would create a cycle")
@@ -489,19 +459,13 @@ class SiteService:
             current = await self.db.get(Site, current.parent_id)
 
     async def _emit(self, actor, event: str, row: Site, after: dict) -> None:
-        # The BUILDING FACTS ride on every site event, read from the row core
-        # just committed rather than from the request body. Same rule the device
-        # placement events follow (pipeline contract §18): the authority STATES
-        # the fact beside the id it owns, instead of a subscriber being told to
-        # go and ask. `reading-writer`'s site-facts consumer mirrors these into
-        # `neubit_reporting.site_facts` so Building Intelligence can divide by an
-        # area without reading a database it is banned from reading.
-        #
-        # Since migration 0019 the WHOLE fact set rides too — city, tariff
-        # slabs, emission factors — read fresh from the rows just committed, so
-        # a mirror that misses one message is corrected by the next site edit
-        # of any kind and no COALESCE gymnastics are needed on the other side.
-        # An empty list is a statement ("no slabs"), not an omission.
+        # The whole building-fact set rides on every site event — city, area,
+        # tariff slabs, emission factors — read from the rows just committed, not
+        # from the request body (pipeline contract §18). `reading-writer` mirrors
+        # them into `neubit_reporting.site_facts` so BI never reads core's
+        # database. Sending the full set on every event means a mirror that misses
+        # a message is corrected by the next site edit of any kind. An empty list
+        # is a statement ("no slabs"), not an omission.
         address = row.address if isinstance(row.address, dict) else {}
         city = address.get("city") or None
         slabs = [
@@ -532,9 +496,8 @@ class SiteService:
                 "site_id": row.site_id,
                 "name": row.name,
                 "is_active": row.is_active,
-                # Human location, resolved server-side from core's own row.
-                # Null when the address (or its city) was never recorded — the
-                # mirror stores null and BI renders an em dash, never a guess.
+                # Null when the address or its city was never recorded; the mirror
+                # stores null and BI renders an em dash rather than guessing.
                 "city": city,
                 "gross_floor_area_sqm": row.gross_floor_area_sqm,
                 "energy_tariff_per_kwh": row.energy_tariff_per_kwh,

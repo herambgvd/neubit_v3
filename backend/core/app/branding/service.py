@@ -1,16 +1,13 @@
-"""BrandingService logic — per-tenant branding with a platform-default fallback.
+"""Branding logic — per-tenant branding with a platform-default fallback.
 
-Resolution: the caller's TENANT branding row if it exists, else the PLATFORM-DEFAULT
-row (tenant_id NULL). Writes upsert the caller's OWN scope — a tenant-admin edits
-their tenant's row (created on first write from the platform default), a super-admin
-(tenant_id None) edits the platform default.
+Resolution: the caller's tenant row if it exists, else the platform-default row
+(tenant_id NULL). Writes target the caller's own scope — a tenant-admin's row is
+created on first write, seeded from the platform default; a super-admin (tenant_id
+None) edits the platform default itself.
 
-``resolve`` is read-only and NEVER creates a tenant row (so a public GET for a
-tenant user that hasn't customised branding just returns the platform default).
-``get_or_create_default`` guarantees the single platform-default row exists — used
-by internal callers (invite email, template preview) that always want a branding.
-
-As elsewhere, the session does NOT auto-commit — mutating helpers commit explicitly.
+``resolve`` is read-only and never creates a tenant row. ``get_or_create_default``
+guarantees the platform-default row exists, for internal callers (invite email,
+template preview) that always need one. Mutating helpers commit explicitly.
 """
 
 from __future__ import annotations
@@ -34,10 +31,10 @@ async def _row_for(db: AsyncSession, tenant_id: uuid.UUID | None) -> Branding | 
 
 
 async def get_or_create_default(db: AsyncSession) -> Branding:
-    """Return the single PLATFORM-DEFAULT branding row, creating it if absent.
+    """The single platform-default branding row, created if absent.
 
-    The model column defaults (app_name, colours) apply on insert so a fresh
-    deployment gets sensible branding out of the box.
+    Column defaults (app_name, colours) apply on insert, so a fresh deployment gets
+    sensible branding out of the box.
     """
     row = await _row_for(db, None)
     if row is None:
@@ -64,11 +61,10 @@ async def resolve(db: AsyncSession, tenant_id: uuid.UUID | None) -> Branding:
 async def update(
     db: AsyncSession, data: UpdateBrandingIn, tenant_id: uuid.UUID | None = None
 ) -> Branding:
-    """Apply a partial update to the CALLER'S scope branding row.
+    """Apply a partial update to the caller's scope branding row.
 
-    A tenant-admin (tenant_id set) edits their own row — created on first write,
-    seeded from the platform default's current values so partial edits are sane.
-    A super-admin (tenant_id None) edits the platform default.
+    A tenant-admin (tenant_id set) edits their own row, created on first write from
+    the platform default. A super-admin (tenant_id None) edits the platform default.
     """
     row = await _get_or_create_for_scope(db, tenant_id)
     for field, value in data.model_dump(exclude_unset=True).items():
@@ -94,10 +90,9 @@ async def _get_or_create_for_scope(
 ) -> Branding:
     """Fetch (or lazily create) the branding row a write should target.
 
-    For the platform default (tenant_id None) this is get_or_create_default. For a
-    tenant, the row is created on first write by COPYING the platform default's
-    current field values, so a tenant that only tweaks one field keeps sane values
-    for the rest instead of resetting to bare column defaults.
+    A tenant's row is created on first write by copying the platform default's
+    current values, so tweaking one field does not reset the rest to bare column
+    defaults.
     """
     if tenant_id is None:
         return await get_or_create_default(db)

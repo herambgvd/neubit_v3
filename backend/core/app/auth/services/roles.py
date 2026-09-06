@@ -1,11 +1,9 @@
 """Roles: the named bundles of permission keys an admin assigns.
 
-Two rules here are enforced rather than documented. A key not in `PERMISSIONS` is
-REJECTED on create and update, which is what makes the catalog authoritative — and
-what made two whole products unreachable when their keys were missing from it. And
-a role name is unique per TENANT since 0025, not across the platform: a global
-unique let the first tenant to use "Analyst" take the name from everyone else and
-answered CONFLICT about a row the caller could not see.
+A key not in `PERMISSIONS` is rejected on create and update, which is what makes
+the catalog authoritative. Role names are unique per tenant, not per platform
+(migration 0025) — a global unique lets one tenant take a name from everyone else
+and reports a conflict about a row the caller cannot see.
 """
 
 
@@ -38,11 +36,10 @@ class RolesMixin:
             raise ValidationError(f"unknown permissions: {unknown}")
         if WILDCARD in data.permissions:
             raise ValidationError("wildcard '*' is reserved for the system Administrator role")
-        # Unique per (tenant_id, name) since 0025 — two tenants may both have an
-        # "Analyst". Within the caller's own view the name must still be
-        # unambiguous, so this also refuses a name already held by a SHARED system
-        # role: `roles_query` lists own-tenant and shared roles together, and two
-        # entries reading "Viewer" is a role picker an operator cannot use.
+        # Unique per (tenant_id, name), so two tenants may both have an "Analyst".
+        # Also refuses a name held by a shared system role: `roles_query` lists
+        # own-tenant and shared roles together, and two "Viewer" entries make an
+        # unusable role picker.
         if await self._role_by_name(data.name, scope):
             raise ConflictError("a role with this name already exists")
         # A tenant-admin's roles are stamped with their tenant; a super-admin (no
@@ -116,10 +113,9 @@ class RolesMixin:
     async def _role_by_name(self, name: str, scope: Scope | None = None) -> Role | None:
         """A role of this name the caller could actually be given.
 
-        Scoped to the caller's own tenant plus the shared system roles, the same
-        set `roles_query` lists. Unscoped it searched the whole platform, which was
-        the reporting half of the global-unique-name problem 0025 removed: a tenant
-        was told a name was taken by a row in a tenant it cannot see.
+        Scoped to the caller's own tenant plus the shared system roles — the same
+        set `roles_query` lists. Searching the whole platform tells a tenant a name
+        is taken by a row it cannot see.
         """
         stmt = select(Role).where(Role.name == name)
         if scope is not None and not scope.is_platform:
@@ -132,9 +128,8 @@ class RolesMixin:
         role = await self.db.get(Role, role_id)
         if role is None:
             raise ValidationError("role_id does not reference an existing role")
-        # A tenant-admin may only assign a role they can see: their own tenant's
-        # roles or a shared system role (tenant_id NULL). Assigning another tenant's
-        # role would leak/borrow its permissions, so it's rejected as invalid.
+        # A tenant-admin may only assign a role they can see: their own tenant's or
+        # a shared system role. Another tenant's role would borrow its permissions.
         if scope is not None and not scope.is_platform:
             if role.tenant_id is not None and role.tenant_id != scope.tenant_id:
                 raise ValidationError("role_id does not reference an existing role")

@@ -23,8 +23,8 @@ from .client import OpsAgentClient
 
 # Mounted by create_app under the app's api_prefix, so the full path is
 # {api_prefix}/admin/infra/... (e.g. /api/v1/admin/infra/containers).
-#: Cap on an uploaded SQL dump. Large enough for a real control-plane backup,
-#: finite so a mis-selected file cannot decide the process's memory use.
+#: Cap on an uploaded SQL dump: big enough for a real backup, finite so a
+#: mis-selected file cannot decide the process's memory use.
 MAX_DUMP_BYTES = 512 * 1024 * 1024
 
 router = APIRouter(prefix="/admin/infra", tags=["admin", "infra"])
@@ -110,8 +110,8 @@ async def scale_service(
 ) -> dict:
     """Best-effort scale of a stateless worker service (see ops-agent caveat).
 
-    Currently returns ok=false until real worker services exist; the call is
-    still audited so the intent is recorded.
+    Returns ok=false until real worker services exist; still audited so the intent
+    is recorded.
     """
     result = await _agent().scale(name, body.replicas)
     await audit_record(
@@ -156,26 +156,20 @@ async def db_import(
 ) -> dict:
     """Restore the control database from an uploaded SQL backup. Audited.
 
-    Destructive: the dump uses DROP ... IF EXISTS + recreate, so this overwrites
-    current control-plane data. The UI gates it behind an explicit confirmation.
+    Destructive: the dump does DROP ... IF EXISTS and recreate, overwriting current
+    control-plane data. The UI gates it behind an explicit confirmation.
     """
-    # Capped. A restore is super-admin-only and destructive by design, so the risk
-    # here is not malice but a wrong file: `await file.read()` on an unbounded
-    # upload let one mistaken selection — a disk image instead of a dump — decide
-    # how much memory the control-plane process allocates, on the one endpoint you
-    # least want to fall over mid-operation.
+    # Capped: the risk is a wrong file, not malice. An unbounded `file.read()`
+    # lets a mistaken selection decide how much memory this process allocates.
     sql = await read_capped(file, MAX_DUMP_BYTES, field="SQL backup")
     actor_id = actor.id  # capture before we drop the session's identity map
-    # Critical: this very request holds an AccessShareLock on `users` (from the
-    # require_superadmin auth check) for the life of its DB transaction. The restore
-    # needs AccessExclusiveLock on `users` to rebuild it — so without releasing our
-    # own transaction first, the restore would block on *us* until it times out.
-    # Roll back to drop those locks before handing off to the restore.
+    # This request holds an AccessShareLock on `users` (from require_superadmin)
+    # for the life of its transaction, and the restore needs AccessExclusiveLock to
+    # rebuild that table. Roll back first or the restore blocks on us and times out.
     await db.rollback()
     result = await _agent().db_import(sql)
-    # Best-effort audit: the restore just rebuilt the audit/users tables on this
-    # connection, so re-fetch the actor fresh and never let an audit hiccup fail a
-    # restore that already succeeded.
+    # The restore just rebuilt the audit/users tables, so re-fetch the actor. Audit
+    # is best-effort here: it must not fail a restore that already succeeded.
     try:
         fresh_actor = await db.get(User, actor_id)
         if fresh_actor is not None:

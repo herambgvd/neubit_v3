@@ -1,16 +1,13 @@
 """A report export must not be a permanent capability URL.
 
-`GET /reports/{id}/download` checks `report.export` and then returns a link to
-`/files/reports/<uuid>.<fmt>` — a route with no auth dependency at all, routed
-publicly by the gateway. So the permission gated only the FIRST fetch. Anyone who
-later obtained the link — a chat message, a browser history, a proxy log, a shared
-screenshot — held the tenant's data with no credential, forever, with no way to
-revoke it short of deleting the file.
+`GET /reports/{id}/download` checks `report.export` and returns a link to
+`/files/reports/<uuid>.<fmt>`, a route with no auth dependency, so without a
+signature the permission gates only the first fetch and anyone who later obtains
+the link holds the tenant's data forever.
 
-The fix is a prefix rule, not a blanket one: keys under `signed_url_prefixes` carry
-`?exp=&sig=` and are refused without a valid unexpired signature, while avatars and
-logos stay plain because a browser has to load them from an `<img>` with no token.
-So these tests assert BOTH — the report is protected and the avatar still is not.
+The rule is per-prefix, not blanket: keys under `signed_url_prefixes` need an
+unexpired `?exp=&sig=`, while avatars and logos stay plain because a browser loads
+them from an `<img>` with no token. Both directions are asserted here.
 """
 
 from __future__ import annotations
@@ -140,8 +137,8 @@ async def test_serving_a_report_with_another_files_signature_is_404(app):
 
 
 async def test_an_avatar_is_still_served_with_no_signature(app):
-    """The guard must not become "everything needs a token" — that would break the
-    console's images, and every assertion above would still pass."""
+    """The guard must not become "everything needs a token": that breaks the
+    console's images while every assertion above still passes."""
     storage = LocalStorage()
     await storage.put("avatars/u.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16, "image/png")
     async with _client(app) as c:

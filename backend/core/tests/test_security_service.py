@@ -251,15 +251,11 @@ async def test_dual_auth_action_mismatch_rejected(db):
 
 # --- directory/SSO role resolution is tenant-scoped ---------------------------
 #
-# `_role_by_name(name, tenant_id)` accepted a tenant_id and then queried on name
-# alone, so where tenant A's group_role_map named a role only tenant B had, A's
-# LDAP and SSO users were provisioned with B's role and B's permission list.
-#
-# It would also have raised MultipleResultsFound on two tenants sharing a role
-# name — except `roles.name` carried a global UNIQUE, which made that impossible
-# and was itself the other half of the problem: the first tenant to create
-# "Analyst" took the name from everyone else. 0025 made names unique per tenant,
-# which is what the second test below now exercises.
+# `_role_by_name(name, tenant_id)` must query on both. Querying on name alone
+# provisions tenant A's LDAP and SSO users with tenant B's role whenever A's
+# group_role_map names a role only B has, and raises MultipleResultsFound once two
+# tenants share a role name — which migration 0025 made possible by dropping the
+# global UNIQUE on `roles.name`.
 
 
 async def _role_in(db, name: str, perms: list[str], tenant_id):
@@ -273,8 +269,8 @@ async def _role_in(db, name: str, perms: list[str], tenant_id):
 
 
 async def test_role_lookup_never_borrows_another_tenants_role(db):
-    """Tenant A's map names "Analyst"; only tenant B has one. A must get nothing,
-    not B's role — being handed B's permission list is the whole bug."""
+    """Tenant A's map names "Analyst" and only tenant B has one, so A must get
+    nothing rather than B's permission list."""
     from app.tenancy.models import Tenant
 
     ta = Tenant(name="A", slug="rl-a", status="active", features={}, limits={})
@@ -292,9 +288,8 @@ async def test_role_lookup_never_borrows_another_tenants_role(db):
 
 
 async def test_role_lookup_survives_two_tenants_using_the_same_role_name(db):
-    """Both tenants call it "Analyst"; each must resolve to its own. Only possible
-    at all since 0025 — before it, the global unique on roles.name made this state
-    unreachable, which is why the borrowing bug above was the one that could fire."""
+    """Both tenants call it "Analyst" and each must resolve to its own — a state only
+    reachable since 0025 dropped the global unique on roles.name."""
     from app.tenancy.models import Tenant
 
     ta = Tenant(name="A", slug="rl-c", status="active", features={}, limits={})
@@ -312,9 +307,9 @@ async def test_role_lookup_survives_two_tenants_using_the_same_role_name(db):
 
 
 async def test_a_shared_system_role_is_still_resolvable_and_loses_to_a_tenants_own(db):
-    """A NULL-tenant role is a shared catalog entry and stays usable — the fix must
-    not become "tenant roles only". Where both exist, the tenant's own wins, so a
-    tenant can override a system role for its directory users without renaming it.
+    """A NULL-tenant role is a shared catalog entry and stays usable; where both
+    exist the tenant's own wins, so a tenant can override a system role for its
+    directory users without renaming it.
     """
     from app.tenancy.models import Tenant
 

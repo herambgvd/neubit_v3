@@ -1,21 +1,18 @@
 """Broadcasts and the alert inbox — the two places the platform talks to itself.
 
-They are grouped because they are the same shape from opposite ends: a broadcast
-is something an operator pushes OUT to tenant consoles, an alert is something the
-platform derives and shows the operator. Both are managed from the super-admin
-realm (asserted once in ``test_admin_realm_boundary.py``), and both have exactly
-one interesting boundary of their own, which is what this file is for.
+Same shape from opposite ends: a broadcast is pushed out to tenant consoles, an
+alert is derived and shown to the operator. Both are managed from the super-admin
+realm (asserted once in ``test_admin_realm_boundary.py``), and each has one boundary
+of its own.
 
-For broadcasts that boundary is ``GET /broadcasts/active`` — the single route in
-either module a tenant may call, and the only unauthenticated one. It decides,
-from a token it is not required to have, which announcements a caller may read.
-A targeting mistake there does not leak a row so much as broadcast it: a message
-addressed to one customer, rendered in every other customer's console.
+For broadcasts that is ``GET /broadcasts/active`` — the only route in either module
+a tenant may call, and the only unauthenticated one. It decides, from a token it is
+not required to have, which announcements a caller may read; a targeting mistake
+renders one customer's message in every other customer's console.
 
-For alerts the boundary is between super-admins. The alerts themselves are
-derived and shared, but "I have read this" and "I have dismissed this" are
-per-admin, and a dismissal that applied to everyone would let one operator hide a
-critical licence alert from the rest of the team by clicking it away.
+For alerts the boundary is between super-admins: the alerts are shared, but read and
+dismissed are per-admin, or one operator clicking a critical licence alert away
+hides it from the whole team.
 """
 
 from __future__ import annotations
@@ -69,8 +66,8 @@ def _now() -> dt.datetime:
 
 @pytest_asyncio.fixture
 async def world(db):
-    """Two tenants with a user each, and TWO super-admins — the second one exists
-    only so the per-admin alert state has someone to be isolated from."""
+    """Two tenants with a user each, and two super-admins — the second exists so the
+    per-admin alert state has someone to be isolated from."""
     sa_role = await make_role(db, "Platform", ["*"])
     t_role = await make_role(db, "TenantUser", ["*"])
 
@@ -126,10 +123,9 @@ async def _broadcast(db, **over) -> Broadcast:
 
 # --- who a broadcast reaches -------------------------------------------------
 async def test_a_broadcast_aimed_at_one_tenant_is_invisible_to_another(app, world):
-    """The whole point of targeted announcements. "Your account is past due" or
-    "your site migration starts tonight" addressed to Acme must not render in
-    Globex's console — that is a disclosure about another customer, published to
-    every one of their operators at once."""
+    """"Your account is past due", addressed to Acme, must not render in Globex's
+    console — a disclosure about another customer, published to all their
+    operators."""
     mine = await _broadcast(
         world["db"], title="Acme only", target_type="tenants",
         target_tenant_ids=[str(world["ta"].id)],
@@ -143,9 +139,9 @@ async def test_a_broadcast_aimed_at_one_tenant_is_invisible_to_another(app, worl
 
 
 async def test_a_targeted_broadcast_is_invisible_to_a_caller_with_no_token(app, world):
-    """The route is deliberately unauthenticated so the LOGIN page can show a
-    platform-wide notice. That makes an un-scoped caller the widest audience there
-    is, and a targeted message must not fall through to it."""
+    """The route is deliberately unauthenticated so the login page can show a
+    platform-wide notice, which makes an un-scoped caller the widest audience there
+    is — a targeted message must not fall through to it."""
     await _broadcast(
         world["db"], title="Acme only", target_type="tenants",
         target_tenant_ids=[str(world["ta"].id)],
@@ -158,8 +154,8 @@ async def test_a_targeted_broadcast_is_invisible_to_a_caller_with_no_token(app, 
 
 
 async def test_an_expired_or_not_yet_started_broadcast_is_not_shown(app, world):
-    """The window is what makes a broadcast schedulable. Ignoring it would show
-    next week's maintenance notice today and never stop showing last week's."""
+    """The window is what makes a broadcast schedulable: ignore it and next week's
+    maintenance notice shows today, and last week's never stops."""
     await _broadcast(world["db"], title="over", ends_at=_now() - dt.timedelta(hours=1))
     await _broadcast(world["db"], title="later", starts_at=_now() + dt.timedelta(hours=1))
     await _broadcast(world["db"], title="switched off", is_active=False)
@@ -172,9 +168,8 @@ async def test_an_expired_or_not_yet_started_broadcast_is_not_shown(app, world):
 
 
 async def test_the_tenant_facing_read_does_not_expose_the_target_list(app, world):
-    """A tenant reading its own announcements must not learn WHO ELSE was
-    addressed. `ActiveBroadcastOut` is a narrower shape than the admin one for that
-    reason, and a response_model widened back to the admin shape would turn every
+    """A tenant must not learn who else was addressed. `ActiveBroadcastOut` is
+    narrower than the admin shape for that reason — widening it back would turn every
     targeted notice into a customer list."""
     await _broadcast(
         world["db"], title="Two of you", target_type="tenants",
@@ -189,9 +184,9 @@ async def test_the_tenant_facing_read_does_not_expose_the_target_list(app, world
 
 # --- managing them -----------------------------------------------------------
 async def test_an_operator_can_publish_edit_and_retract_a_broadcast(app, world):
-    """The management happy path, so the refusals elsewhere cannot pass by the
-    surface being dead. Retraction is the part that matters operationally: a wrong
-    announcement has to be removable while people are reading it."""
+    """The happy path, so the refusals elsewhere cannot pass by the surface being
+    dead. Retraction is the operational part: a wrong announcement has to be
+    removable while people are reading it."""
     async with _client(app) as c:
         created = await c.post(
             ADMIN_BC, headers=_auth(world["sa"]),
@@ -218,10 +213,9 @@ async def test_an_operator_can_publish_edit_and_retract_a_broadcast(app, world):
 
 
 async def test_a_severity_or_target_outside_the_vocabulary_is_refused(app, world):
-    """Severity drives how loudly the console renders a notice and `target_type`
-    decides who sees it. An unknown target_type is the dangerous one: the read
-    filter matches "all" or an explicit id list, so anything else silently
-    addresses nobody and the operator is never told the message did not go out."""
+    """Severity drives how loudly the console renders a notice; `target_type` decides
+    who sees it. The read filter matches "all" or an explicit id list, so an unknown
+    target_type silently addresses nobody and the operator is never told."""
     async with _client(app) as c:
         bad_sev = await c.post(
             ADMIN_BC, headers=_auth(world["sa"]),
@@ -247,10 +241,8 @@ async def test_editing_a_broadcast_that_does_not_exist_is_a_404(app, world):
 
 # --- the alert inbox ---------------------------------------------------------
 async def test_alerts_are_derived_from_the_state_they_describe(app, world):
-    """The inbox holds no alert rows — it recomputes from tenants, invoices and
-    subscriptions on every read. So the test that it works is that changing the
-    world changes the inbox: suspend a tenant, and the suspension is in there,
-    keyed by that tenant."""
+    """The inbox holds no alert rows: it recomputes from tenants, invoices and
+    subscriptions on every read. So changing the world must change the inbox."""
     async with _client(app) as c:
         before = await c.get(ALERTS, headers=_auth(world["sa"]))
         assert before.status_code == 200, before.text
@@ -267,9 +259,8 @@ async def test_alerts_are_derived_from_the_state_they_describe(app, world):
 
 
 async def test_one_admin_dismissing_an_alert_does_not_hide_it_from_the_others(app, world):
-    """Read and dismiss state is per-admin on purpose. If it were shared, the first
-    operator to clear a critical licence alert would clear it for the whole team —
-    and the alert it silences is the one nobody else has seen yet."""
+    """Read and dismiss state is per-admin on purpose: shared, the first operator to
+    clear a critical licence alert clears it for everyone who has not seen it."""
     async with _client(app) as c:
         await c.post(
             f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=_auth(world["sa"])
@@ -288,9 +279,8 @@ async def test_one_admin_dismissing_an_alert_does_not_hide_it_from_the_others(ap
 
 
 async def test_marking_read_clears_the_badge_without_hiding_the_alert(app, world):
-    """Read and dismissed are different states and the console renders them
-    differently: read drops the unread count, dismissed removes the row. Collapsing
-    the two would make "I have seen this" delete the thing seen."""
+    """Read drops the unread count, dismissed removes the row. Collapsing the two
+    makes "I have seen this" delete the thing seen."""
     async with _client(app) as c:
         await c.post(
             f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=_auth(world["sa"])
@@ -305,8 +295,8 @@ async def test_marking_read_clears_the_badge_without_hiding_the_alert(app, world
 
 
 async def test_read_all_covers_every_alert_currently_showing(app, world):
-    """The "mark all read" button has to mean the badge goes to zero — including
-    for alerts the operator never opened individually."""
+    """"Mark all read" has to zero the badge, including alerts the operator never
+    opened individually."""
     async with _client(app) as c:
         await c.post(
             f"{PREFIX}/admin/tenants/{world['ta'].id}/suspend", headers=_auth(world["sa"])

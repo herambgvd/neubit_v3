@@ -32,17 +32,10 @@ from .modules import ModuleRegistry
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Attach industry-standard security response headers to every response.
+    """Standard security response headers on every response.
 
-    Defence-in-depth for the API tier (the reverse proxy + frontend set the same
-    on HTML). Maps to OWASP Secure Headers / STQC app-security requirements:
-      * HSTS                     — force HTTPS (ignored by browsers over plain HTTP)
-      * X-Content-Type-Options   — no MIME sniffing
-      * X-Frame-Options          — clickjacking (API is never framed)
-      * Referrer-Policy          — don't leak URLs cross-origin
-      * Permissions-Policy       — disable powerful browser features by default
-      * Content-Security-Policy   — API returns JSON only → lock it right down
-      * Cross-Origin-*           — isolate the API
+    Defence-in-depth for the API tier; the proxy and frontend set the same on HTML.
+    The CSP is locked all the way down because the API returns only JSON.
     """
 
     _HEADERS = {
@@ -61,13 +54,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         for key, value in self._HEADERS.items():
             response.headers.setdefault(key, value)
-        # Files (crops/logos/exports) are blobs, not JSON. The CSP is relaxed only
-        # far enough for an image to load, and `sandbox` is added so that anything
-        # which does reach a browser as a document — an SVG, a legacy .html stored
-        # before the upload whitelist existed — runs with no script, no plugins and
-        # an opaque origin. The route also serves non-raster types as
-        # `Content-Disposition: attachment` (core/storage.py); this is the layer
-        # that still holds if a type slips past that one.
+        # Files are blobs, not JSON: relax the CSP just far enough for an image to
+        # load, plus `sandbox` so anything reaching the browser as a document (an
+        # SVG, a legacy .html) runs with no script and an opaque origin. Backs up
+        # the attachment disposition in core/storage.py.
         if request.url.path.startswith("/files"):
             response.headers["Content-Security-Policy"] = (
                 "default-src 'none'; img-src 'self'; sandbox"
@@ -78,43 +68,26 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
     """Coarse per-IP request cap across the whole API (abuse backstop).
 
-    The window lives in Redis and is shared by every worker and replica
-    (core/ratelimit.py), so this cap means the same number whether core runs one
-    uvicorn worker or eight — which it did not when the window was a per-process
-    dict. `hit` is a coroutine because that store is reached over the network and
-    this middleware is on the path of every request.
+    The window lives in Redis (core/ratelimit.py) so the cap means the same number
+    whether core runs one uvicorn worker or eight.
 
-    WHAT IS EXEMPT, and why the list is shorter than it was:
-
-      * `/health`, `/ready`, `/metrics` — a throttled probe reads as an outage, and
-        a throttled scrape loses the data you need to see the throttling. Matched
-        EXACTLY, not by prefix: `startswith` also exempted `/health-bypass` and
-        `/metrics-anything`, which is a prefix match doing the job of a route match.
-
-      * `/files` is NOT exempt any more. It was, for an obvious reason — a page
-        loading fifty crops would burn the global budget — and the answer to that is
-        a bigger budget, not no budget. It is the highest-bandwidth route in the
-        product and it serves blobs to anyone with a key, so exempting it from the
-        only per-IP cap meant unthrottled bulk media download. It gets its own
-        multiplier instead.
-
-      * `/docs`, `/redoc`, `/openapi.json` are NOT exempt any more. They are not
-        high-frequency legitimate traffic and they are the first thing an attacker
-        enumerates; exempting them had no upside at all.
+    Only `/health`, `/ready` and `/metrics` are exempt — a throttled probe reads as
+    an outage. Matched exactly, not by prefix: `startswith` would also exempt
+    `/health-bypass`. `/files` gets a wider budget rather than an exemption; `/docs`
+    and `/openapi.json` get neither.
     """
 
     #: Exact paths that are never counted.
     EXEMPT_PATHS = frozenset({"/health", "/ready", "/metrics"})
 
-    #: `/files` is bandwidth, not API calls, so it gets a wider budget under its own
-    #: bucket rather than sharing (or escaping) the API one.
+    #: `/files` is bandwidth, not API calls: its own bucket, wider budget.
     FILES_PREFIX = "/files"
     FILES_MULTIPLIER = 10
 
     def __init__(self, app, limit: int, skip_prefixes: tuple[str, ...] = ()):
         super().__init__(app)
         self.limit = limit
-        # Kept for callers that still pass it; the class decides the policy now.
+        # Accepted for callers that still pass it; the class decides the policy.
         self.skip_prefixes = skip_prefixes
 
     async def dispatch(self, request, call_next):
@@ -128,9 +101,8 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
         from .client_ip import client_ip
         from .ratelimit import RateLimitError, hit
 
-        # `client_ip`, not `request.client.host`. Behind a gateway the peer is the
-        # GATEWAY, so this cap counted the whole estate into one bucket — the same
-        # defect the login limiter had, on the surface that sees every request.
+        # `client_ip`, not `request.client.host`: behind a gateway the peer is the
+        # gateway, which would count the whole estate into one bucket.
         ip = client_ip(request)
         if path.startswith(self.FILES_PREFIX):
             bucket, limit = f"files:{ip}", self.limit * self.FILES_MULTIPLIER
@@ -147,12 +119,11 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
 
 
 class LicenseEnforcementMiddleware(BaseHTTPMiddleware):
-    """Block all feature access when the license is expired (the enterprise gate).
+    """Block feature access when the license is expired.
 
-    Login, license status/update, features, branding, health and metrics stay
-    reachable so an admin can sign in and upload a fresh license; everything else
-    returns a LICENSE_EXPIRED envelope the frontend turns into a "License Expired"
-    screen. Reads app.state.license each request → a renewal takes effect at once.
+    Login, license, features, branding, health and metrics stay reachable so an
+    admin can sign in and upload a fresh license; everything else gets a
+    LICENSE_EXPIRED envelope. Read per request, so a renewal takes effect at once.
     """
 
     def __init__(self, app, allow_prefixes: tuple[str, ...]):
@@ -180,8 +151,8 @@ class LicenseEnforcementMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# Placeholder secret values that MUST NOT reach production (shipped defaults +
-# the ones in .env.example). Boot is refused if any survive outside dev/test.
+# Shipped defaults and .env.example placeholders. Boot is refused if any of these
+# survive outside dev/test.
 _WEAK_SECRETS = {
     "change-me-in-prod",
     "change-me-secret",
@@ -192,11 +163,7 @@ _WEAK_SECRETS = {
 
 
 def _enforce_secrets(settings: Settings, log) -> None:
-    """Refuse to start outside dev/test with default or too-short crypto secrets.
-
-    Prevents the classic "shipped with the sample JWT secret" finding — a hard
-    requirement for STQC / any security audit.
-    """
+    """Refuse to start outside dev/test with default or too-short crypto secrets."""
     if settings.env in ("dev", "test", "local"):
         if settings.jwt_secret in _WEAK_SECRETS or settings.secrets_key in _WEAK_SECRETS:
             log.warning("running with DEFAULT secrets — fine for dev, NEVER for production")
@@ -228,10 +195,9 @@ def create_app(
 
     _enforce_secrets(settings, log)
 
-    # Resolve the rate-limit backend ONCE, here, so which one is in force is a line
-    # in the startup log rather than something a reader has to infer from config.
-    # A per-process window is a legitimate choice for a single-worker install and a
-    # silent security downgrade for any other; it must never be reached by accident.
+    # Resolve the rate-limit backend once, here, so the startup log says which one
+    # is in force. A per-process window is fine for a single worker and a silent
+    # downgrade for anything else, so it must not be reached by accident.
     from .ratelimit import configure_rate_limiter
 
     configure_rate_limiter(settings)
@@ -268,16 +234,15 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    # Global license-expiry gate — on-prem/single-tenant only. In the cloud
-    # multi-tenant edition each tenant is gated per-request (kernel
-    # require_active_license), so this is disabled via VE_LICENSE_ENFORCE_GLOBAL=false.
+    # On-prem/single-tenant only. The multi-tenant edition gates per tenant per
+    # request instead, and sets VE_LICENSE_ENFORCE_GLOBAL=false.
     if settings.license_enforce_global:
         app.add_middleware(LicenseEnforcementMiddleware, allow_prefixes=allow_prefixes)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         GlobalRateLimitMiddleware,
         limit=settings.rate_limit_global_per_minute,
-        # The policy lives on the class now — see GlobalRateLimitMiddleware.
+        # The policy lives on the class — see GlobalRateLimitMiddleware.
         skip_prefixes=(),
     )
     app.add_middleware(MetricsMiddleware)
@@ -297,12 +262,9 @@ def create_app(
         return metrics_response()
 
     # --- Gateway ForwardAuth target (internal; never routed to externally) --
-    # Traefik's forward-auth middleware calls this per request. It is an INJECTOR,
-    # not an enforcer: it always returns 200 and, only when a VALID access token is
-    # present, emits the trusted identity headers Traefik injects downstream
-    # (strip-identity removes any client-supplied ones first). It never rejects — so
-    # public routes (login, webhooks) still pass — and authoritative enforcement
-    # stays in each service's own JWT verification (JWT = authority, header = hint).
+    # An injector, not an enforcer: always 200, and only a valid access token gets
+    # the identity headers Traefik injects downstream. It must never reject, so
+    # public routes still pass; enforcement stays in each service's own JWT check.
     @app.get("/internal/auth/verify", include_in_schema=False)
     def internal_auth_verify(request: Request):
         from ..auth.security import decode_token
@@ -319,7 +281,7 @@ def create_app(
                         resp.headers["X-Tenant-Id"] = str(tid)
                     resp.headers["X-Permissions"] = ",".join(payload.get("permissions") or [])
             except Exception:
-                pass  # invalid/expired token → no headers; the service will 401 if protected
+                pass  # no headers; the service will 401 if the route is protected
         return resp
 
     # --- Versioned API (everything under settings.api_prefix) -------------
@@ -331,20 +293,13 @@ def create_app(
         app.include_router(spec.router, prefix=f"{prefix}/modules/{spec.id}", tags=[spec.name])
     log.info("mounted modules: %s", [s.id for s in enabled])
 
-    # Legacy signed-license /features — the FALLBACK for on-prem/single-tenant
-    # scenario apps that carry no tenant-aware endpoint. The multi-tenant core
-    # registers its own tenant-aware /features (tenancy.entitlements.router) via
-    # extra_routers, so this signed-license version is only added when nothing has
-    # claimed the path.
+    # Legacy signed-license /features, the fallback for on-prem apps with no
+    # tenant-aware endpoint. Only added when nothing else has claimed the path.
     #
-    # THE CLAIM CHECK LOOKS AT extra_routers, NOT app.routes, AND THAT IS THE FIX.
-    # This FastAPI version defers `include_router`: an included router appears in
-    # `app.routes` as an `_IncludedRouter` wrapper with no `.path`, so scanning
-    # `app.routes` for the path found NOTHING and this route was registered every
-    # time. It was harmless only because the tenant-aware router had been included
-    # first and matched first — an ordering accident, not a check. Reorder the
-    # includes, or drop the tenancy router from base_routers, and an
-    # UNAUTHENTICATED licence and module dump appears at the same path.
+    # The claim check must scan extra_routers, NOT app.routes: this FastAPI version
+    # defers include_router, so an included router shows up in app.routes as a
+    # wrapper with no `.path` and the scan finds nothing — leaving an
+    # unauthenticated licence and module dump at this path.
     features_path = f"{prefix}/features"
 
     def _claims_features(router) -> bool:

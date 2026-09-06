@@ -1,19 +1,14 @@
 """Request / response models for the DashForge embed registry.
 
-The rule this file follows: validate the ENVELOPE, never the meaning. (It was
-inherited from the retired `dashboards` builder's widget-spec validation, whose
-schemas.py stated it and is gone — restated here rather than left as a pointer
-into a deleted file.) NeuBit does not know what a DashForge dashboard's variables are
-called, so a `scope` binding is checked for shape (a flat map of non-empty names
-to strings, bounded) and nothing else. Whether `site_id` is lockable on dashboard
-41 is a question only DashForge can answer, and it answers it at mint with a
-message naming the offending key.
+Validate the envelope, never the meaning. NeuBit does not know what a DashForge
+dashboard's variables are called, so a `scope` binding is checked only for shape:
+a bounded flat map of non-empty names to strings. Whether a given key is lockable
+is DashForge's question, answered at mint with a message naming it.
 
-The bounds below are NOT a security boundary — the HMAC signature is — they keep
-a registration from producing a token string too long to survive a URL path
-segment. They mirror DashForge's own `maxScopeBindings` / `maxScopeValueLen` so
-the refusal happens at registration time, where a person is looking at a form,
-instead of at mint time, where it surfaces as a dashboard that will not open.
+The bounds are not a security boundary — the HMAC signature is. They keep a
+registration from producing a token too long for a URL path segment, and mirror
+DashForge's own `maxScopeBindings` / `maxScopeValueLen` so the refusal lands at
+registration time, in front of a form, rather than at mint.
 """
 
 from __future__ import annotations
@@ -63,9 +58,9 @@ class EmbedCreate(BaseModel):
 class EmbedUpdate(BaseModel):
     """Every field optional; unset means unchanged.
 
-    `scope` set to `{}` is a REAL edit — it removes the lock — so absence and an
-    empty object cannot be conflated. `model_fields_set` is what distinguishes
-    them in the service, which is why there is no sentinel default here.
+    `scope` set to `{}` is a real edit — it removes the lock — so it must not be
+    conflated with absence. The service tells them apart via `model_fields_set`,
+    which is why there is no sentinel default here.
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=160)
@@ -103,14 +98,12 @@ class EmbedSession(BaseModel):
     """One viewing session's credential.
 
     `iframe_url` is absolute and browser-resolvable, built from
-    VE_DASHFORGE_PUBLIC_URL rather than from the internal base URL — see
-    `app/config.py`. The token is echoed separately because the DashForge JS SDK
-    takes the token rather than a URL, and a consumer that wants the SDK should
-    not have to parse it back out of a path.
+    VE_DASHFORGE_PUBLIC_URL, not the internal base URL. The token is echoed
+    separately because the DashForge JS SDK takes a token, not a URL.
 
-    `expires_at` is DashForge's own answer, passed through unaltered: it is the
-    signature's expiry, and NeuBit restating it from its own clock would drift.
-    The frontend re-mints on it rather than on a locally guessed lifetime.
+    `expires_at` is DashForge's own answer, passed through unaltered — it is the
+    signature's expiry, and restating it from NeuBit's clock would drift. The
+    frontend re-mints on it.
     """
 
     embed_id: str

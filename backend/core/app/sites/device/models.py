@@ -6,18 +6,15 @@ fire); this table records WHERE that device sits on a floor plan and its
 visualisation parameters (position, FoV, coverage).
 
 Tenant-scoped: a nullable ``tenant_id`` isolates placements per-tenant even on a
-direct by-id fetch, matching the site/floor/zone pattern. Ported from neubit_v2's
-``module/sites/device`` (which split a Mongo document + a Postgres ORM) and adapted
-to neubit_v3's single async ORM on the shared ``Base`` (portable generic types run
-on Postgres and SQLite).
+direct by-id fetch, matching the site/floor/zone pattern.
 
-Notes vs v2:
-  * ``device_id`` is NOT the primary key here — a device from another service could
+Two things to know:
+  * ``device_id`` is not the primary key — a device from another service could
     collide across tenants, so the PK is a generated ``placement_id`` and
     ``(tenant_id, device_id)`` is unique. The frontend addresses placements by
-    ``device_id`` (its ``/{device_id}`` routes), which is unambiguous within a tenant.
-  * The v2 ``metadata`` column keeps its stored name ``metadata`` (SQLAlchemy reserves
-    the ``metadata`` attribute, so the python attribute is ``placement_metadata``).
+    ``device_id``, which is unambiguous within a tenant.
+  * the column is stored as ``metadata``, but SQLAlchemy reserves that attribute
+    name, so the python attribute is ``placement_metadata``.
 """
 
 from __future__ import annotations

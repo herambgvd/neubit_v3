@@ -1,8 +1,8 @@
 """Messaging API: channel config (admin) + device registration + in-app inbox.
 
 Two audiences:
-  * ADMIN (settings.manage) configures + tests the delivery channels.
-  * The signed-in USER registers their mobile device and reads/clears their inbox.
+  * an admin (settings.manage) configures and tests the delivery channels;
+  * the signed-in user registers their mobile device and reads their inbox.
 
 Mount alongside the other routers:
 
@@ -88,7 +88,7 @@ class TemplateSummaryOut(BaseModel):
 
 
 class TemplateOut(BaseModel):
-    """The EFFECTIVE template for a name (override if present, else the default)."""
+    """The effective template for a name: the override if present, else the default."""
 
     name: str
     subject: str
@@ -107,9 +107,9 @@ def _require_known_channel(channel: str) -> None:
 
 
 # --- channel config (admin, settings.manage) ---------------------------------
-# Multi-tenancy: a tenant-admin sees/edits THEIR tenant's channel config (resolved
-# with a platform-default fallback for reads); a super-admin (tenant_id None) edits
-# the platform default. Every helper below threads ``user.tenant_id``.
+# A tenant-admin sees and edits their own tenant's channel config (reads fall back
+# to the platform default); a super-admin (tenant_id None) edits the platform
+# default. Every helper below threads ``user.tenant_id``.
 @router.get("/channels", response_model=list[ChannelOut])
 async def list_channels(
     db: AsyncSession = Depends(get_db),
@@ -193,12 +193,9 @@ async def test_channel(
             db, tokens, "Test notification", "This is a test push.", tenant_id=user.tenant_id
         )
     elif channel == "webhook":
-        # The caller's OWN row, with no platform-default fallback — unlike a real
-        # send, where inheriting the default is the intended behaviour. A tenant
-        # admin with no webhook of their own could otherwise make the PLATFORM's
-        # webhook URL be hit with a payload HMAC-signed by the platform's secret,
-        # on demand: the secret is never disclosed, but a lower-privileged caller
-        # gets to exercise it as an oracle.
+        # The caller's own row, no platform-default fallback: otherwise a tenant
+        # admin with no webhook could fire the platform's webhook URL signed with
+        # the platform's secret on demand, using it as an oracle.
         row = await channel_config.get_channel_exact(db, channel, user.tenant_id)
         if row is None:
             raise ValidationError(
@@ -249,11 +246,10 @@ async def mark_notification_read(
 
 
 # --- email templates (admin, settings.manage) --------------------------------
-# Admins customise the built-in "ready" email templates from the DB; a missing
-# override falls back to the code default (see templates.render_with_overrides).
-# Multi-tenancy: overrides resolve/write in the caller's scope (tenant-admin → their
-# tenant, super-admin → the platform default), with reads falling back to the
-# platform default (see template_store.get_override).
+# Admins customise the built-in email templates from the DB; a missing override
+# falls back to the code default (see templates.render_with_overrides). Overrides
+# resolve and write in the caller's scope, with reads falling back to the platform
+# default (see template_store.get_override).
 @router.get("/templates", response_model=list[TemplateSummaryOut])
 async def list_templates(
     db: AsyncSession = Depends(get_db),
@@ -338,8 +334,8 @@ async def delete_template(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> dict:
-    """Remove the CALLER'S override for ``name``, reverting to the fallback (404 if
-    the caller has no override of their own)."""
+    """Remove the caller's own override for ``name``, reverting to the fallback.
+    404 if the caller has no override of their own."""
     deleted = await template_store.delete_override(db, name, user.tenant_id)
     if not deleted:
         raise NotFoundError(f"no override for template '{name}'")

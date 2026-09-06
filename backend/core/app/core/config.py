@@ -1,7 +1,7 @@
 """Application settings.
 
 All config comes from environment variables (prefix ``VE_``) or a ``.env`` file.
-Never hardcode secrets or endpoints in code — that's the whole point of this file.
+Never hardcode secrets or endpoints in code.
 
 Example .env:
     VE_ENV=prod
@@ -38,20 +38,14 @@ class Settings(BaseSettings):
     # Global per-IP request cap across the whole API (0 disables it). A coarse
     # brute-force / abuse backstop on top of the stricter per-login limit.
     rate_limit_global_per_minute: int = 600
-    # Where the rate-limit windows live: "redis" (shared by every worker and
-    # replica — the only correct answer for a deployment that scales) or "memory"
-    # (per process, so N workers means N times the configured cap). Defaults to
-    # redis; "memory" exists for the offline test suite and for a single-process
-    # install with no Redis, and core/ratelimit.py logs which one is in force at
-    # startup so the choice is never implicit.
+    # Where the rate-limit windows live: "redis" (shared by every worker) or
+    # "memory" (per process, so N workers means N times the configured cap).
+    # "memory" is for the offline test suite and single-process installs.
     rate_limit_backend: str = "redis"
 
-    # Networks whose `X-Forwarded-For` header may be believed. EMPTY means trust
-    # nothing and attribute a request to its socket peer — safe by default, and
-    # correct for a core exposed directly. Behind a gateway this must name the
-    # gateway's network or every request shares one rate-limit bucket; see
-    # core/client_ip.py for why the wrong fix (trusting the header from anyone) is
-    # worse than the problem.
+    # Networks whose `X-Forwarded-For` may be believed. Empty means trust nothing
+    # and use the socket peer. Behind a gateway this must name the gateway's
+    # network, or every request shares one rate-limit bucket.
     trusted_proxy_cidrs: list[str] = []
     # Per-ACCOUNT brute-force lockout (complements the per-IP limit). Lock after
     # this many consecutive failed logins, for this many minutes (0 disables).
@@ -61,9 +55,8 @@ class Settings(BaseSettings):
     # reuse of the last N password hashes.
     password_expiry_days: int = 0
     password_history_count: int = 5
-    # When true, platform super-admins MUST have 2FA (TOTP) enrolled to use any
-    # super-admin-gated endpoint. Off by default so the first super-admin can enrol
-    # 2FA (via /auth/me/2fa/*) before turning this on. Opt-in hardening.
+    # Require TOTP on every super-admin-gated endpoint. Off by default so the first
+    # super-admin can enrol via /auth/me/2fa/* before turning it on.
     require_superadmin_2fa: bool = False
 
     # --- Sensitive-media protection (STQC / DPDP) --------------------------
@@ -83,21 +76,15 @@ class Settings(BaseSettings):
     # --- App auth (the app's own users, NOT the license) -------------------
     jwt_secret: str = "change-me-in-prod"
     jwt_ttl_minutes: int = 60 * 12
-    # TTL of the access token an API KEY is exchanged for — deliberately much
-    # shorter than a human's 12 hours, and the reason is revocation. A satellite
-    # verifies a token statelessly, so nothing outside core can learn that a key
-    # was revoked; the only bound on a revoked key's outstanding token is how long
-    # that token lives. Core itself refuses immediately (it re-reads the key row,
-    # exactly as it re-reads the user row), and no further token is ever issued —
-    # this number is the width of the residual window at the SATELLITES.
-    # 12 hours would have made "revoked" mean "revoked tomorrow"; a machine
-    # re-exchanges on 401 without a human, so short costs nothing.
+    # TTL of the access token an API key is exchanged for. Much shorter than a
+    # human's 12 hours because satellites verify statelessly and cannot learn a key
+    # was revoked — this is the width of that residual window. Core itself refuses
+    # immediately. Keep it short: a machine re-exchanges on 401 with no human.
     api_key_token_ttl_minutes: int = 15
 
     # --- Refresh token cookie (httpOnly hardening) -------------------------
-    # The refresh token is delivered as an httpOnly cookie so JavaScript (and
-    # therefore XSS) can never read it. The short-lived access token stays in the
-    # SPA's memory and is sent as a Bearer header. See app/auth/cookies.py.
+    # httpOnly so JavaScript, and therefore XSS, can never read the refresh token.
+    # The short-lived access token stays in SPA memory. See app/auth/cookies.py.
     refresh_cookie_name: str = "nb_refresh"
     # "lax" is correct when the admin UI and API share an origin (recommended).
     # Use "none" only for a cross-site setup — it then also requires Secure.
@@ -120,12 +107,9 @@ class Settings(BaseSettings):
     license_token_file: str | None = None
     license_public_key: str | None = None
     license_public_key_file: str | None = "license_pub.pem"
-    # Global (whole-deployment) license expiry enforcement — the single-tenant /
-    # on-prem model where one signed license gates the entire app. In the CLOUD
-    # multi-tenant edition each tenant is gated per-request instead (kernel
-    # require_active_license + per-tenant license_state), so turn this OFF there
-    # (VE_LICENSE_ENFORCE_GLOBAL=false) to avoid a global license blocking all
-    # tenants. Defaults True to preserve on-prem behaviour.
+    # Whole-deployment license expiry: the on-prem model, one signed license gating
+    # the app. Set false in the multi-tenant edition, which gates per tenant per
+    # request — otherwise one global license blocks every tenant.
     license_enforce_global: bool = True
 
     # --- Object storage (logos, exports, snapshots, clips) -----------------
@@ -135,27 +119,18 @@ class Settings(BaseSettings):
     storage_backend: str = "local"            # "local" | "s3"
     storage_local_dir: str = "./data/storage"
     storage_base_url: str = "/files"          # public URL prefix for local files
-    # Key prefixes whose /files URLs must carry a SIGNATURE and an expiry.
-    #
-    # `/files/{key}` has no auth dependency and is routed publicly, which is right
-    # for an avatar or a logo: the key is unguessable uuid4 hex and a browser has to
-    # be able to load it from an <img>. It is wrong for a report export, which is
-    # the tenant's data behind a `report.export` permission — the download endpoint
-    # checked that permission and then handed back a PERMANENT url, so anyone who
-    # ever obtained the link kept the data forever and the gate was decorative.
-    #
-    # Keys under these prefixes get `?exp=&sig=` and are refused without a valid,
-    # unexpired signature. Deliberately a prefix rule and not "everything", because
-    # signing avatars would break every <img> the console renders.
+    # Key prefixes whose /files URLs must carry a signature and an expiry.
+    # `/files/{key}` is public, which is right for an avatar (unguessable key,
+    # loaded from an <img>) and wrong for a report export, where an unsigned link
+    # would outlive the `report.export` check forever. A prefix rule rather than
+    # "everything", because signing avatars breaks every <img> the console renders.
     signed_url_prefixes: list[str] = ["reports/"]
-    # How long a signed link stays valid. Short on purpose: the console fetches the
-    # url and follows it immediately, so this is a hand-off window, not a session.
+    # Short on purpose: the console follows the url immediately, so this is a
+    # hand-off window, not a session.
     signed_url_ttl_seconds: int = 300
 
-    # How often an OPEN SSE stream re-checks that its caller is still allowed.
-    # A stream outlives a single request by design, so without this a deactivated
-    # user or a suspended tenant keeps their live feed until the token expires.
-    # Polling, so this is the bound on how stale that authorization can be.
+    # How often an open SSE stream re-checks its caller. Without it a deactivated
+    # user keeps their feed until the token expires. This is the staleness bound.
     sse_revalidate_seconds: int = 60
     s3_endpoint: str | None = None            # e.g. http://minio:9000 (None = AWS)
     s3_region: str = "us-east-1"
@@ -165,14 +140,13 @@ class Settings(BaseSettings):
 
     # --- CORS (frontend origins) ------------------------------------------
     cors_origins: list[str] = ["http://localhost:3000"]
-    # Regex of allowed origins. Default allows ANY http(s) origin so the app opens
-    # from localhost or any machine/IP on the LAN without friction (the specific
-    # origin is echoed back, so it stays compatible with allow_credentials=True).
-    # Tighten this in production by overriding VE_CORS_ORIGIN_REGEX (or cors_origins).
+    # Regex of allowed origins. The default allows any http(s) origin so the app
+    # opens from any machine on the LAN. Tighten it in production via
+    # VE_CORS_ORIGIN_REGEX or cors_origins.
     cors_origin_regex: str = r"https?://.*"
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """Cached singleton so we parse the environment only once."""
+    """Cached singleton: the environment is parsed once."""
     return Settings()

@@ -1,9 +1,10 @@
 """Branding: white-label identity (app name, logo, brand colours) for a deployment.
 
-Single-row config. Read is PUBLIC (the login page themes itself); management is
-gated by ``CorePerm.BRANDING_MANAGE``.
+One row per tenant, plus a platform-default row tenants fall back to. The read is
+public (the login page themes itself); management is gated by
+``CorePerm.BRANDING_MANAGE``.
 
-Wire into a scenario app:
+Wire in::
 
     from app import branding
     app = create_app(registry, extra_routers=[branding.router])

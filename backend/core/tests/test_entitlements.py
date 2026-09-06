@@ -176,19 +176,12 @@ async def test_access_token_audience_matches_realm(db, admin_role):
 
 
 def test_per_tenant_encryption_is_key_isolated():
-    """A tenant's secret is encrypted under its OWN key — another tenant's key cannot
-    recover it (Phase 8 per-tenant encryption keys).
+    """A tenant's secret is encrypted under its own key; another tenant's key cannot
+    recover it.
 
-    THIS TEST USED TO BE UNABLE TO FAIL. It asserted
-    `decrypt_secret_for(tenant_b, cipher) != "smtp-password"`, and that passed
-    because the old implementation SWALLOWED InvalidToken and returned its input —
-    so the assertion was "ciphertext != plaintext", which is true of any two
-    different strings. It would have passed against an implementation with no key
-    separation at all, which is roughly what production had: `_fernet_for` existed
-    with an STQC docstring and zero production callers.
-
-    B's key must now RAISE. That is an assertion the broken implementation cannot
-    satisfy by accident.
+    B's key must raise. Asserting only `decrypt_secret_for(tenant_b, cipher) !=
+    "smtp-password"` cannot fail — an implementation that swallows InvalidToken and
+    returns its input passes it, and so does one with no key separation at all.
     """
     import pytest as _pytest
 
@@ -210,9 +203,9 @@ def test_per_tenant_encryption_is_key_isolated():
 
 
 def test_a_secret_that_will_not_decrypt_raises_instead_of_being_returned():
-    """The rotation case. Handing back the ciphertext means an SMTP password of
-    `gAAAAAB…` reaches a mail server and the log says "authentication failed" —
-    a key-rotation incident disguised as a credential problem."""
+    """The rotation case: handing back the ciphertext sends `gAAAAAB…` to a mail
+    server as a password, turning a key-rotation incident into "authentication
+    failed"."""
     import pytest as _pytest
 
     from app.core.secrets import MARKER, SecretDecryptionError, decrypt_secret
@@ -222,9 +215,8 @@ def test_a_secret_that_will_not_decrypt_raises_instead_of_being_returned():
 
 
 def test_a_value_that_was_never_encrypted_is_returned_unchanged():
-    """The leniency that IS wanted, and only this one: deployments hold rows written
-    before encryption existed, and a deploy that cannot read what it wrote yesterday
-    is an outage. It is scoped to values carrying no ciphertext marker at all."""
+    """The only leniency that is wanted: deployments hold rows written before
+    encryption existed. Scoped to values carrying no ciphertext marker at all."""
     from app.core.secrets import decrypt_secret, decrypt_secret_for
 
     assert decrypt_secret("plain-old-password") == "plain-old-password"
@@ -233,8 +225,8 @@ def test_a_value_that_was_never_encrypted_is_returned_unchanged():
 
 def test_a_pre_marker_fernet_token_still_decrypts():
     """Rows written before the enc:v1 tag are bare Fernet tokens under the platform
-    key. They must keep working — and they must NOT be mistaken for plaintext, which
-    is what would happen if the marker check were the only branch."""
+    key. They must keep working, and must not be mistaken for plaintext — which is
+    what happens if the marker check is the only branch."""
     from app.core.secrets import _fernet, decrypt_secret
 
     legacy = _fernet().encrypt(b"old-password").decode()

@@ -1,53 +1,24 @@
 """Symmetric encryption for secrets stored in the DB (SMTP/LDAP/OIDC/TOTP).
 
-Integration credentials are configured from the admin UI, not from `.env`, so they
-live in the database — and at rest they must be encrypted. Keys are derived from
-``VE_SECRETS_KEY``; rotating that env var re-keys everything.
+Integration credentials are configured from the admin UI, so they live in the
+database and must be encrypted at rest. Keys derive from ``VE_SECRETS_KEY``;
+rotating that env var re-keys everything.
 
     token = encrypt_secret_for(tenant_id, "smtp-password")   # store in the DB
     raw   = decrypt_secret_for(tenant_id, token)             # read it back
 
-TWO THINGS HERE ARE LOAD-BEARING AND WERE NOT.
+Tenant-owned secrets use a per-tenant key (the ``*_for`` functions); platform-owned
+rows (tenant_id NULL) use the global key.
 
-1. THE PER-TENANT KEY IS NOW ACTUALLY USED.
-   `_fernet_for` has existed since the multi-tenancy work with a docstring calling
-   it "the STQC per-tenant-key / data-residency requirement". It had ZERO production
-   callers: every real write went through the global `encrypt_secret`, so the
-   control the docstring described was not in force and a reviewer reading that
-   docstring would have concluded otherwise. A declared-but-unenforced control is
-   worse than an absent one. Every tenant-owned secret now goes through the
-   `*_for` functions; platform-owned rows (tenant_id NULL) keep the global key,
-   which is what they are.
+Stored values are tagged, and the tag decides how a decrypt failure is handled:
 
-   The test that should have caught it could not: it asserted
-   `decrypt_secret_for(tenant_b, cipher) != "smtp-password"`, which passed BECAUSE
-   of the swallowed-InvalidToken bug below — the function returned the ciphertext
-   unchanged, and ciphertext != plaintext. It would have passed against an
-   implementation with no key separation whatsoever.
+  ``enc:v1:<token>``  encrypted here. Fails => raise; that is a rotated key and it
+                      must surface as itself, not as a mail-server auth failure.
+  ``gAAAAA…``         a bare Fernet token from before the tag. Global key, same rule.
+  anything else       never encrypted (a legacy plaintext row). Returned unchanged,
+                      so a deploy can still read what it wrote yesterday.
 
-2. A FAILED DECRYPT NO LONGER RETURNS THE CIPHERTEXT.
-   Every decrypt here caught `InvalidToken` and returned its input verbatim, with no
-   log and no counter. Two failures hid behind that:
-
-     * a row that was never encrypted stayed plaintext forever, undetected;
-     * after a `VE_SECRETS_KEY` rotation, the CIPHERTEXT was handed to the SMTP
-       server as the password, and the log said "authentication failed".
-
-   So stored values are now tagged, and the tag decides:
-
-     ``enc:v1:<token>``  — encrypted by this module. Fails to decrypt => RAISE.
-                           That is an operator who rotated the key, and it must
-                           surface as itself, not as a mysterious auth failure.
-     ``gAAAAA…``         — a bare Fernet token from before the tag existed.
-                           Decrypted with the GLOBAL key; fails => RAISE, same
-                           reasoning.
-     anything else       — never encrypted (a legacy plaintext row). Returned
-                           unchanged, because a deploy that cannot read what it
-                           wrote yesterday is an outage.
-
-   The leniency is only for the third case, and only that case, which is the
-   difference between a migration aid and a bug. Same rule, and the same reasoning,
-   as `kernel/secrets.py` in the workflow service (43ff0f5).
+Only that last case is lenient. Do not make the others lenient too.
 """
 
 from __future__ import annotations
@@ -61,8 +32,8 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from .config import get_settings
 
-#: Marks a value this module encrypted. Its presence is a CLAIM that the value is
-#: ciphertext, and a claim that turns out to be false is an error, never a shrug.
+#: Marks a value this module encrypted. Its presence claims the value is
+#: ciphertext; if that turns out to be false, raise rather than shrug.
 MARKER = "enc:v1:"
 
 #: Fernet tokens are base64 of a 0x80 version byte, so they always begin with this.
@@ -74,7 +45,7 @@ class SecretDecryptionError(RuntimeError):
     """A value that claimed to be ciphertext could not be decrypted.
 
     Almost always `VE_SECRETS_KEY` changed. Raised rather than returned so the
-    failure names itself instead of arriving at a mail server as a bad password.
+    failure names itself instead of reaching a mail server as a bad password.
     """
 
 
@@ -87,10 +58,8 @@ def _fernet() -> Fernet:
 def _fernet_for(tenant_id: str | uuid.UUID | None) -> Fernet:
     """A per-tenant Fernet key from the master secret + tenant id, via HMAC-SHA256.
 
-    One tenant's key never decrypts another's data. ``None`` means a platform-owned
-    row and deliberately maps to the platform key rather than to a "None" tenant —
-    a NULL tenant_id is the platform, not a tenant that happens to be unnamed, and
-    conflating them is the mistake `scope.owns()` made (36a7798).
+    One tenant's key never decrypts another's data. ``None`` maps to the platform
+    key, not to a "None" tenant: a NULL tenant_id is the platform.
     """
     if tenant_id is None:
         return _fernet()
@@ -146,10 +115,9 @@ def decrypt_secret(ciphertext: str) -> str:
 def encrypt_bytes(plaintext: bytes) -> bytes:
     """Encrypt a blob (e.g. a biometric face crop) for storage at rest.
 
-    Blobs stay on the platform key: the storage layer is keyed by object path, not
-    by tenant, and a per-tenant blob key needs the tenant to be resolvable from the
-    key — which `storage._encrypts` cannot do today. Written down rather than left
-    as an oversight; the credential path is what the per-tenant requirement is about.
+    Blobs use the platform key: storage is keyed by object path, not by tenant, so
+    `storage._encrypts` cannot resolve a tenant to key from. The per-tenant
+    requirement is about the credential path.
     """
     return _fernet().encrypt(plaintext)
 
@@ -157,11 +125,9 @@ def encrypt_bytes(plaintext: bytes) -> bytes:
 def decrypt_bytes(ciphertext: bytes) -> bytes:
     """Decrypt a blob.
 
-    Unlike the string path this stays lenient, and for a reason that does not apply
-    there: `_encrypts` is a PREFIX rule, so turning encryption on for a path leaves
-    every object already written under it unencrypted, and those are images being
-    served to a browser rather than credentials being handed to a mail server. A
-    wrong answer here is a broken image, not a silent auth failure.
+    Lenient, unlike the string path: `_encrypts` is a prefix rule, so turning
+    encryption on for a path leaves everything already written under it in the
+    clear. A wrong answer here is a broken image, not a silent auth failure.
     """
     try:
         return _fernet().decrypt(ciphertext)

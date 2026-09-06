@@ -1,22 +1,16 @@
 """The WebSocket hub is partitioned by tenant, and /features has no open fallback.
 
-Two latent cross-tenant defects — neither reachable today, both one ordinary commit
-from being reachable, and both behind a comment saying they were fine.
+Two latent cross-tenant defects, neither reachable today:
 
-  * `RealtimeHub` keyed on the caller-supplied topic STRING in a process-global
-    dict. Any authenticated user could join any topic name, and a
-    `broadcast("alerts", …)` would have reached every socket on "alerts" whoever
-    they belonged to. Not a live leak only because `hub.broadcast` has no callers
-    anywhere in backend/ — while the endpoint's docstring called the missing
-    authorization something that "can be layered on later", which is exactly what
-    would have reassured the person writing the first publisher.
+  * A hub keyed on the caller-supplied topic string alone lets any authenticated
+    user join any topic name, so one `broadcast("alerts", …)` reaches every tenant's
+    sockets. `hub.broadcast` still has no callers, which is the only reason it is
+    not a live leak.
 
-  * The legacy signed-licence `/features` route guarded itself with "only register
-    if nothing has claimed this path", scanning `app.routes`. This FastAPI version
-    defers `include_router`, so an included router appears there as a wrapper with
-    no `.path` — the scan found nothing and the route was registered EVERY time. It
-    was harmless because the tenant-aware router happened to be included first and
-    matched first. An ordering accident, not a check.
+  * The legacy signed-licence `/features` route registered itself unless something
+    had already claimed the path, by scanning `app.routes`. This FastAPI version
+    defers `include_router`, so included routes appear there as wrappers with no
+    `.path` and the scan always finds nothing.
 """
 
 from __future__ import annotations
@@ -78,8 +72,8 @@ async def test_there_is_no_way_to_broadcast_to_every_tenant():
 
 
 async def test_a_dead_socket_is_pruned_from_the_right_channel():
-    """The prune path used the unscoped topic name, which would have removed nothing
-    once the key was partitioned — a slow leak of dead sockets."""
+    """Prune by the partitioned channel key, not the bare topic name — the latter
+    removes nothing and leaks dead sockets."""
     from app.core.realtime import RealtimeHub, channel
 
     class _Broken(_FakeSocket):
@@ -95,8 +89,8 @@ async def test_a_dead_socket_is_pruned_from_the_right_channel():
 
 
 def test_the_unauthenticated_features_fallback_is_not_registered():
-    """Registered every time until the claim check was fixed. Asserting on the app
-    rather than on the check, so a future refactor of either is still caught."""
+    """Asserted on the built app rather than on the claim check, so a refactor of
+    either is still caught."""
     from app.app import create_base_app
 
     app = create_base_app(title="test")
@@ -109,17 +103,14 @@ def test_the_unauthenticated_features_fallback_is_not_registered():
 
 # --- the hub is closed by default --------------------------------------------
 #
-# `WS /realtime/{topic}` accepted ANY topic string from any authenticated user with
-# no permission check, behind a docstring calling that something that "can be
-# layered on later". `hub.broadcast` still has no callers, so there is no topic
-# whose meaning anyone has decided — which is exactly why the table is empty and
-# every subscription is refused, rather than every subscription being allowed.
+# `WS /realtime/{topic}` takes a topic string from the caller, so subscriptions are
+# gated by the TOPIC_PERMISSIONS table. Nothing publishes yet, so nobody has decided
+# what any topic means: the table is empty and every subscription is refused.
 
 
 def test_no_topic_is_open_by_default():
-    """If this table ever grows an entry, it is because someone wrote a publisher
-    and decided what a subscriber must hold. An entry appearing without that is the
-    regression."""
+    """An entry belongs here only once a publisher exists and someone has decided
+    what a subscriber must hold."""
     from app.core.realtime import TOPIC_PERMISSIONS
 
     for topic, permission in TOPIC_PERMISSIONS.items():
@@ -127,9 +118,8 @@ def test_no_topic_is_open_by_default():
 
 
 def test_an_unknown_topic_is_refused_before_the_token_is_read():
-    """Closed with 1008 without touching the database. The check must come FIRST —
-    an unknown topic has nothing to authorize against, and doing it after auth
-    would cost two database reads to say no."""
+    """Closed with 1008 without touching the database. An unknown topic has nothing
+    to authorize against, so checking after auth costs two reads to say no."""
     import inspect
 
     from app.core import realtime
@@ -150,5 +140,5 @@ def test_a_registered_topic_requires_its_permission():
     src = inspect.getsource(realtime.realtime_ws)
     assert "required = TOPIC_PERMISSIONS.get(topic)" in src
     assert "await authorize_ws(ws, required)" in src
-    # And it must not fall back to a bare authenticate: that was the bug.
+    # And it must not fall back to a bare authenticate.
     assert "authenticate_ws(" not in src

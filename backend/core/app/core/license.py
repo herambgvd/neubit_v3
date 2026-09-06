@@ -1,19 +1,14 @@
 """Offline, tamper-proof licensing for single-tenant scenario apps.
 
-WHY THIS DESIGN
----------------
-Each deployment is one client (single-tenant). We want ONE codebase that we sell
-in tiers by handing each client a different license. Requirements:
-  * Offline  — must work air-gapped, no license server / phone-home.
-  * Tamper-proof — the client must not be able to raise their own camera limit.
+One codebase sold in tiers, one license per deployment. It has to work air-gapped
+(no license server) and the client must not be able to raise their own limits.
 
-Solution: a signed JWT (Ed25519 / "EdDSA").
-  * Vendor signs the license with a PRIVATE key (kept secret, see tools/gen_license.py).
-  * The app bundles only the PUBLIC key and verifies the signature + expiry.
-  * Editing any claim (cameras, modules, expiry) breaks the signature -> rejected.
+So the license is a signed JWT (Ed25519). The vendor signs with a private key
+(tools/gen_license.py); the app bundles only the public key and verifies the
+signature and expiry. Editing any claim breaks the signature.
 
-The verified :class:`License` then gates: which feature modules load, how many
-cameras can be added, storage caps, and per-feature flags.
+The verified :class:`License` gates which feature modules load, camera counts,
+storage caps and per-feature flags.
 """
 
 from __future__ import annotations

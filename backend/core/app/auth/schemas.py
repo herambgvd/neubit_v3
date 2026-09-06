@@ -72,9 +72,8 @@ class UserOut(BaseModel):
 
 
 class LoginIn(BaseModel):
-    # Deliberately plain EmailStr, not AsciiEmail: sign-in and password-reset only
-    # LOOK UP an existing row, and accounts created before the ASCII rule must still
-    # be able to get in (and be renamed). Only account-creating schemas are strict.
+    # Plain EmailStr, not AsciiEmail: sign-in only looks up an existing row, and
+    # accounts predating the ASCII rule must still get in. Creation schemas are strict.
     email: EmailStr
     password: str
 
@@ -170,10 +169,9 @@ class CreateUserIn(BaseModel):
     is_active: bool = True
     # When true, email the new user a welcome + "set your password" invite link.
     send_invite: bool = False
-    # Multi-tenancy: only a super-admin may target a specific tenant here. For a
-    # tenant-admin this is IGNORED — the new user is forced into the admin's own
-    # tenant (a tenant-admin can never provision into another tenant). A tenant-admin
-    # can also never set is_superadmin (there is no field for it).
+    # Only a super-admin may target a tenant here; for a tenant-admin it is
+    # ignored and the new user lands in the admin's own tenant. There is
+    # deliberately no is_superadmin field.
     tenant_id: uuid.UUID | None = None
     # Site access scope for the new user (site ids). EMPTY = unrestricted.
     site_ids: list[str] = []
@@ -183,9 +181,8 @@ class UpdateUserIn(BaseModel):
     role_id: uuid.UUID | None = None
     is_active: bool | None = None
     full_name: str | None = None
-    # Admin-side identity + credential edits. Both are optional and only applied when
-    # sent: a new address must still be unique, and an omitted (or empty) password
-    # leaves the existing one untouched — the console sends it only when refilled.
+    # Admin-side identity + credential edits, applied only when sent: a new address
+    # must be unique, and an omitted or empty password leaves the existing one alone.
     email: AsciiEmail | None = None
     password: str | None = None
     # None = leave scope unchanged; a list (incl. []) REPLACES it ([] = unrestricted).
@@ -194,8 +191,8 @@ class UpdateUserIn(BaseModel):
 
 class CloneUserIn(BaseModel):
     """Fast onboarding: copy a source user's role, status and site scope into a new
-    account. Only identity differs — a fresh email + name; the new user sets their
-    own password via the emailed invite (no plaintext is ever copied)."""
+    account with a fresh email + name. The new user sets their own password via
+    the invite; no plaintext is copied."""
 
     email: AsciiEmail
     full_name: str | None = None
@@ -240,9 +237,9 @@ class SessionOut(BaseModel):
 
 # --- API keys ----------------------------------------------------------------
 class ApiKeyOut(BaseModel):
-    """A key as an operator sees it. THE SECRET IS NOT IN THIS MODEL and cannot be
-    added to it — ``key_hash`` is the only stored form of it. ``prefix`` is the
-    handle for recognising a key in a list, and it carries no secret material."""
+    """A key as an operator sees it. The secret is not here and must not be added:
+    ``key_hash`` is its only stored form. ``prefix`` is the handle for recognising
+    a key in a list and carries no secret material."""
 
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
@@ -250,8 +247,8 @@ class ApiKeyOut(BaseModel):
     description: str | None = None
     prefix: str
     scopes: list[str] = []
-    # NULL on every key created since 2026-09-05 — a key's authority is ``scopes``.
-    # Kept in the response so a pre-scopes key still shows what it was cut from.
+    # NULL on new keys — a key's authority is ``scopes``. Kept so a pre-scopes key
+    # still shows what it was cut from.
     role: RoleOut | None = None
     is_active: bool
     expires_at: dt.datetime | None = None
@@ -267,10 +264,9 @@ class ApiKeyCreateIn(BaseModel):
     # The permissions this key may exercise. Validated against the catalog AND
     # against the creator's own set (AuthService._resolve_scopes).
     scopes: list[str] = []
-    # LEGACY, and accepted only so the existing key page keeps working: the named
-    # role's permissions are SNAPSHOTTED into ``scopes`` at creation and the link
-    # is not kept. Ignored when ``scopes`` is given. Naming the Administrator role
-    # here is refused, because it would resolve to the wildcard.
+    # Legacy. The named role's permissions are snapshotted into ``scopes`` at
+    # creation and the link is not kept. Ignored when ``scopes`` is given; naming
+    # the Administrator role is refused because it resolves to the wildcard.
     role_id: uuid.UUID | None = None
     expires_at: dt.datetime | None = None
 
@@ -282,9 +278,8 @@ class ApiKeyCreatedOut(ApiKeyOut):
 class ApiKeyTokenIn(BaseModel):
     """The exchange request: a raw key, and nothing else.
 
-    There is no ``scopes`` field to narrow the token with and no ``ttl``. Both
-    would be attacker-controlled inputs on an unauthenticated endpoint, and
-    neither buys anything the key row cannot already express."""
+    Do not add ``scopes`` or ``ttl`` — both would be attacker-controlled inputs on
+    an unauthenticated endpoint, and the key row already expresses them."""
 
     api_key: str
 
@@ -293,6 +288,6 @@ class ApiKeyTokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
-    # Echoed so an integrator can see what the credential actually got without
-    # decoding the JWT — the commonest cause of a 403 nobody can explain.
+    # Echoed so an integrator can see what the credential got without decoding the
+    # JWT.
     scopes: list[str] = []

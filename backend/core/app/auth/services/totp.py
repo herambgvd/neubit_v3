@@ -80,8 +80,7 @@ class TotpMixin:
         from ...core.secrets import encrypt_secret_for
 
         secret = generate_totp_secret()
-        # A TOTP seed is the user's second factor and the user belongs to a tenant,
-        # so it is encrypted under that tenant's key like every other tenant-owned
+        # Encrypted under the owning tenant's key, like every other tenant-owned
         # secret. A platform user (tenant_id NULL) gets the platform key.
         user.totp_secret = encrypt_secret_for(user.tenant_id, secret)
         user.totp_enabled = False

@@ -1,22 +1,15 @@
-"""Effective entitlements — the ONE resolver every consumer reads.
+"""Effective entitlements — the one resolver every consumer reads.
 
-Decision (docs/TENANCY_AND_ENTITLEMENTS_PLAN.md #3): *one resolver, two sources*.
-A single :func:`effective_entitlements` turns a tenant's stored license state
-(``plan`` + ``features{}`` toggles + ``limits{}`` + expiry/grace) into the canonical
-shape that drives:
+:func:`effective_entitlements` turns a tenant's stored license state (``plan``,
+``features{}``, ``limits{}``, expiry/grace) into the canonical shape behind
+``GET /api/v1/features``, the ``features``/``limits`` JWT claims that satellites
+authorise against (:func:`token_entitlements`), and later the API feature-gates.
 
-  * ``GET /api/v1/features`` (this module's router) — the operator console's nav +
-    license display,
-  * the ``features``/``limits`` JWT claims (see :func:`token_entitlements`) that
-    satellite services authorise against,
-  * (later) API feature-gates + quota checks.
-
-Source of that stored state is the ``Tenant`` row for the **cloud multi-tenant**
-edition; for **on-prem single-tenant** the signed license seeds the lone tenant's
-row at boot — either way this resolver is the only shape downstream sees.
+The stored state comes from the ``Tenant`` row; on-prem the signed license seeds
+that row at boot, so downstream only ever sees this one shape.
 
 Super-admins (no tenant) get everything: all catalog modules enabled, no limits,
-an ``active`` license — mirroring the scope/feature bypass everywhere else.
+an ``active`` license — matching the scope/feature bypass everywhere else.
 """
 
 from __future__ import annotations
@@ -76,13 +69,12 @@ def effective_entitlements(
 async def token_entitlements(db: AsyncSession, user: User) -> tuple[dict, dict, str, str]:
     """Return ``(features, limits, license_state, tenant_status)`` for token claims.
 
-    ``features``/``limits`` are the RAW tenant dicts (``features`` is ``{key: bool}``)
-    so a satellite service's ``feature_enabled(key)`` check has the same semantics as
-    core's ``require_feature``. ``license_state`` is "active"|"grace"|"expired" and
-    ``tenant_status`` is "active"|"suspended" so a satellite can gate on expiry OR
-    suspension locally (core already blocks both at login; this closes the window
-    where a token issued before suspension/expiry keeps working). Super-admins (or
-    any tenant-less user) get ``({}, {}, "active", "active")`` — they bypass anyway.
+    ``features``/``limits`` are the raw tenant dicts so a satellite's
+    ``feature_enabled(key)`` matches core's ``require_feature``. ``license_state``
+    is "active"|"grace"|"expired" and ``tenant_status`` is "active"|"suspended", so
+    a satellite can gate on expiry or suspension locally rather than trusting a
+    token minted before either. Super-admins and tenant-less users get
+    ``({}, {}, "active", "active")``; they bypass anyway.
     """
     if getattr(user, "is_superadmin", False) or not getattr(user, "tenant_id", None):
         return {}, {}, "active", "active"

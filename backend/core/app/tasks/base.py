@@ -1,22 +1,16 @@
-"""Task helpers: the ``@task`` decorator + a SYNC DB session for workers.
+"""Task helpers: the ``@task`` decorator + a sync DB session for workers.
 
-Why a *sync* session in an otherwise-async codebase
----------------------------------------------------
-The web app is async (FastAPI + asyncpg + AsyncSession). Celery workers, however,
-run tasks **synchronously** — a worker process pulls a job and calls the function
-in a normal (non-async) call stack. Driving an async engine from there means
-spinning up an event loop per task, which is fragile and slow, and asyncpg is not
-designed to be shared across such short-lived loops.
-
-So workers use a *separate, synchronous* SQLAlchemy engine that talks to the SAME
-database over a plain (blocking) driver. We derive its URL from the same
-``settings.database_url`` by swapping the async driver for its sync counterpart:
+Celery workers run tasks in a normal, non-async call stack, so they get their own
+synchronous engine against the same database rather than driving the app's async
+one through a per-task event loop (fragile, and asyncpg does not like short-lived
+loops). The URL comes from ``settings.database_url`` with the async driver
+stripped:
 
     postgresql+asyncpg://…   →   postgresql://…      (psycopg2 / psycopg)
     sqlite+aiosqlite://…     →   sqlite://…          (stdlib sqlite3)
 
-The engine/sessionmaker are built LAZILY on first use so importing this module in
-the web process (which never needs the sync engine) costs nothing.
+The engine and sessionmaker are built lazily, so importing this in the web process
+costs nothing.
 """
 
 from __future__ import annotations
@@ -33,11 +27,9 @@ __all__ = ["celery_app", "task", "get_sync_session"]
 
 
 def task(*args, **kwargs):
-    """Thin passthrough to ``celery_app.task`` so scenarios import ONE symbol.
+    """Passthrough to ``celery_app.task`` so callers import one symbol.
 
-    Usage mirrors Celery exactly:
-
-        from app.tasks.base import task
+    Usage mirrors Celery exactly::
 
         @task
         def do_work(x): ...
@@ -73,10 +65,10 @@ def _get_sync_sessionmaker() -> sessionmaker[Session]:
 
 
 def get_sync_session() -> Session:
-    """Return a fresh synchronous SQLAlchemy Session for use inside a Celery task.
+    """Return a fresh synchronous Session for use inside a Celery task.
 
-    The CALLER owns the lifecycle — use it as a context manager and commit
-    explicitly (the session does NOT auto-commit, same rule as the async path):
+    The caller owns the lifecycle. It does not auto-commit, same as the async
+    path::
 
         with get_sync_session() as db:
             ... ; db.commit()

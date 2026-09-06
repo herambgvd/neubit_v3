@@ -25,14 +25,10 @@ log = get_logger("edge.messaging.webhook")
 def _loggable(url: str) -> str:
     """A webhook URL with its query string and userinfo removed, for logs.
 
-    The full URL was logged at INFO on every delivery and every failure.
-    Query-string bearer tokens are a common receiver pattern (`?token=…`,
-    `?key=…`), and `SECRET_FIELDS` does not cover the URL — so the credential
-    ended up in application logs, which are shipped and retained differently
-    from the database column it was carefully encrypted in.
-
-    Scheme, host and path are kept: an operator debugging a webhook needs to know
-    WHICH endpoint failed, and that is what identifies it.
+    Receivers commonly put a bearer token in the query string (`?token=…`) and
+    `SECRET_FIELDS` does not cover the URL, so logging it whole leaks a credential
+    into the logs. Scheme, host and path are kept — that is what tells an operator
+    which endpoint failed.
     """
     from urllib.parse import urlsplit, urlunsplit
 

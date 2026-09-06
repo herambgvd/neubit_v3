@@ -1,24 +1,16 @@
 """The login brute-force cap has to mean the same number on every worker.
 
-There was no test for rate limiting at all, which is how the module went years
-with a window that lived in one process's memory. That is not a bug you can see in
-a single-process test: every assertion you would naturally write — "the 11th login
-is refused" — passes perfectly against an implementation that gives each of four
-workers its own set of eleven.
+The load-bearing test here is `test_two_processes_share_one_window`. A window that
+lives in one process's memory satisfies every assertion you would naturally write
+— "the 11th login is refused" — while giving each of four workers its own eleven.
+Everything else guards the easy directions (refusing too much, never forgiving,
+mixing up callers).
 
-So the load-bearing test in this file is `test_two_processes_share_one_window`.
-Everything else here is a guard against the ways a shared limiter can be wrong in
-the easy direction (refusing too much, never forgiving, mixing up callers); that
-one is the only assertion the old implementation could not satisfy, and it is the
-reason the module changed.
-
-The suite is offline (`run-tests.sh --network none`), so there is no Redis. The
-double below implements the four REDIS commands the limiter uses plus MULTI/EXEC —
-sorted sets, scores, key expiry — and nothing about rate limiting. The sliding
-window lives entirely in `RedisRateLimiter`, so these tests exercise the real
-algorithm; if the double contained the decision they would only be testing itself.
-Injection follows tests/test_stream_authorization.py: the module ATTRIBUTE is
-substituted (`ratelimit._limiter`), not a name some other module already imported.
+The suite is offline (`run-tests.sh --network none`), so `FakeRedis` below
+implements the four Redis commands the limiter uses plus MULTI/EXEC and nothing
+about rate limiting — the sliding window stays in `RedisRateLimiter`, so these
+tests exercise the real algorithm. Injection substitutes the module attribute
+`ratelimit._limiter`, not a name another module already imported.
 """
 
 from __future__ import annotations
@@ -49,19 +41,18 @@ WINDOW = 0.4
 class _Down(Exception):
     """Stands in for redis.exceptions.ConnectionError.
 
-    Deliberately not the real class: the limiter's contract is "ANY failure of the
-    store is a fail-open", and asserting that with the one exception type we happen
-    to expect would let a DNS error, a timeout or a decode error through as a 500.
+    Deliberately not the real class: the contract is that any store failure is a
+    fail-open, and testing only the expected type would let a DNS error, a timeout
+    or a decode error through as a 500.
     """
 
 
 class FakeRedis:
     """An in-process Redis: sorted sets, score ranges, TTLs, MULTI/EXEC.
 
-    Faithful to Redis where it matters to this limiter and to nothing else. It
-    knows how ZADD, ZREMRANGEBYSCORE, ZCARD and PEXPIRE behave; it does not know
-    what a rate limit is. `fail` makes every EXEC raise, which is how the
-    store-unreachable case is reached without a network.
+    Knows how ZADD, ZREMRANGEBYSCORE, ZCARD and PEXPIRE behave and nothing about
+    rate limiting. `fail` makes every EXEC raise, which is how the store-unreachable
+    case is reached without a network.
     """
 
     def __init__(self) -> None:
@@ -114,10 +105,9 @@ class FakeRedis:
 class _FakePipeline:
     """MULTI/EXEC: commands are queued, then applied with nothing interleaved.
 
-    `execute` performs every queued command before it yields control, which is the
-    guarantee Redis gives a transaction — and the guarantee the limiter depends on.
-    A double that awaited between commands would let the concurrency test pass
-    against a racy implementation.
+    `execute` runs every queued command before yielding control, the guarantee the
+    limiter depends on. Do not await between commands here — that would let the
+    concurrency test pass against a racy implementation.
     """
 
     def __init__(self, store: FakeRedis) -> None:
@@ -155,9 +145,8 @@ class _FakePipeline:
 
 @pytest.fixture(autouse=True)
 def _restore_process_limiter():
-    """`configure_rate_limiter` installs a process-wide limiter. Tests that call it
-    must not leak that choice into the next test — or into the rest of the suite,
-    which conftest deliberately pins to the in-memory backend."""
+    """`configure_rate_limiter` installs a process-wide limiter, which must not leak
+    into the next test or the rest of the suite."""
     saved = ratelimit._limiter
     yield
     ratelimit._limiter = saved
@@ -193,9 +182,8 @@ async def test_a_request_after_the_window_has_passed_is_allowed(limiter):
 
 
 async def test_two_different_keys_do_not_share_a_bucket(limiter):
-    """One IP exhausting its budget must not lock out an unrelated one — otherwise
-    a single attacker denies the whole product to everybody else, which is a worse
-    outcome than the attack."""
+    """One IP exhausting its budget must not lock out an unrelated one, or a single
+    attacker denies the product to everybody else."""
     await limiter.hit("ip:10.0.0.1", 1, WINDOW)
     with pytest.raises(RateLimitError):
         await limiter.hit("ip:10.0.0.1", 1, WINDOW)
@@ -206,16 +194,12 @@ async def test_two_different_keys_do_not_share_a_bucket(limiter):
 
 
 async def test_two_processes_share_one_window(store):
-    """THE POINT OF THE CHANGE.
+    """The point of the shared store.
 
-    Two limiter instances against one store stand in for two uvicorn workers, or
-    two replicas behind the gateway, sharing one Redis. Between them they get
-    `limit` attempts IN TOTAL — not `limit` each.
-
-    The old implementation cannot pass this. Its window was a dict in the module,
-    so "two instances" was one bucket only by accident of being one process; give
-    it two processes and the cap silently becomes 2x. That is the defect, and this
-    is the assertion that names it.
+    Two limiter instances against one store stand in for two uvicorn workers, or two
+    replicas behind the gateway, sharing one Redis. Between them they get `limit`
+    attempts in total, not `limit` each — a per-process window silently doubles the
+    cap and passes every other test in this file.
     """
     worker_a = RedisRateLimiter(store)
     worker_b = RedisRateLimiter(store)
@@ -225,7 +209,7 @@ async def test_two_processes_share_one_window(store):
     await worker_a.hit("login:198.51.100.7", 4, WINDOW)
     await worker_b.hit("login:198.51.100.7", 4, WINDOW)
 
-    # Four spent between them. The FIFTH is refused whichever worker it lands on.
+    # Four spent between them; the fifth is refused whichever worker it lands on.
     with pytest.raises(RateLimitError):
         await worker_b.hit("login:198.51.100.7", 4, WINDOW)
     with pytest.raises(RateLimitError):
@@ -234,8 +218,8 @@ async def test_two_processes_share_one_window(store):
 
 async def test_concurrent_hits_cannot_both_win(store):
     """A read-then-write limiter passes every sequential test above and still lets
-    two simultaneous requests through on the same last slot. Fire the whole budget
-    plus one at once, from separate instances, and count the refusals."""
+    two simultaneous requests through on the last slot. Fire the whole budget plus
+    one at once, from separate instances, and count the refusals."""
     workers = [RedisRateLimiter(store) for _ in range(8)]
     results = await asyncio.gather(
         *(w.hit("login:203.0.113.9", 5, WINDOW) for w in workers),
@@ -251,12 +235,12 @@ async def test_concurrent_hits_cannot_both_win(store):
 
 
 async def test_a_dead_store_fails_open_and_says_so(store, caplog):
-    """DECISION 2: allow the request, bump a counter, log at ERROR.
+    """Fail open: allow the request, bump a counter, log at ERROR.
 
-    Failing closed would turn a Redis restart into "nobody can log in", including
-    the operator who has to log in to fix it. The per-account lockout in Postgres
-    still bounds credential guessing while this is happening; what is lost is the
-    per-IP flood ceiling, and losing it must be visible.
+    Failing closed would turn a Redis restart into "nobody can log in", including the
+    operator who has to log in to fix it. The per-account lockout still bounds
+    credential guessing; the per-IP flood ceiling is what is lost, so it must be
+    visible.
     """
     limiter = RedisRateLimiter(store)
     store.fail = True
@@ -272,8 +256,8 @@ async def test_a_dead_store_fails_open_and_says_so(store, caplog):
 
 
 async def test_the_fail_open_log_is_throttled_but_the_counter_is_not(store, caplog):
-    """Under the global middleware an outage is one failure per request. The log is
-    throttled so it does not bury itself; the counter is the lossless record."""
+    """An outage is one failure per request, so the log is throttled and the counter
+    is the lossless record."""
     limiter = RedisRateLimiter(store)
     store.fail = True
     before = _fail_opens()
@@ -287,10 +271,9 @@ async def test_the_fail_open_log_is_throttled_but_the_counter_is_not(store, capl
 async def test_a_dead_store_does_not_quietly_become_a_per_process_window(store):
     """The fallback must never engage on a connection failure.
 
-    Demoting to the in-memory window when Redis blinks would restore the original
-    defect — a per-worker cap — at the exact moment somebody may be attacking, and
-    it would look like the limiter was working. Fail open is a decision; silent
-    demotion is the bug wearing a disguise.
+    Demoting to the in-memory window when Redis blinks restores the per-worker cap
+    at the moment somebody may be attacking, while looking like the limiter works.
+    Fail open instead.
     """
     limiter = RedisRateLimiter(store)
     store.fail = True
@@ -304,10 +287,9 @@ async def test_a_dead_store_does_not_quietly_become_a_per_process_window(store):
 
 
 async def test_the_backend_is_chosen_by_configuration_and_announced(caplog):
-    """DECISION 3: the in-memory window is reachable only by asking for it, and
-    saying so at startup. A per-process cap is fine for one worker and a silent
-    security downgrade for anything else; nobody should have to read the code to
-    find out which one is running."""
+    """The in-memory window is reachable only by asking for it, and says so at
+    startup: a per-process cap is fine for one worker and a downgrade for anything
+    else, so which one is running must not need reading the code."""
     from app.core.config import Settings
 
     with caplog.at_level(logging.WARNING, logger="edge.ratelimit"):
@@ -349,8 +331,7 @@ class _Req:
 
 async def test_the_login_dependency_goes_through_the_process_limiter(store, monkeypatch):
     """`hit` reads `_limiter` at call time, so substituting the module attribute is
-    enough — the same reason test_stream_authorization patches `get_sessionmaker`
-    rather than a name the route already imported."""
+    enough."""
     monkeypatch.setattr(ratelimit, "_limiter", RedisRateLimiter(store))
     monkeypatch.setattr(
         ratelimit, "get_settings", lambda: type("S", (), {"rate_limit_login_per_minute": 2})()
@@ -363,11 +344,9 @@ async def test_the_login_dependency_goes_through_the_process_limiter(store, monk
 
 
 async def test_login_and_api_key_do_not_share_a_budget(store, monkeypatch):
-    """The separate-bucket promise in api_key_rate_limit's docstring, asserted.
-
-    It was only ever a comment; a refactor that merged the two keys would have been
-    invisible. A machine re-exchanging its API key on a schedule must not eat the
-    login allowance of every human behind the same egress IP.
+    """The separate-bucket promise in api_key_rate_limit's docstring, asserted: a
+    machine re-exchanging its key on a schedule must not eat the login allowance of
+    every human behind the same egress IP.
     """
     monkeypatch.setattr(ratelimit, "_limiter", RedisRateLimiter(store))
     monkeypatch.setattr(
@@ -384,9 +363,9 @@ async def test_login_and_api_key_do_not_share_a_budget(store, monkeypatch):
 
 
 async def test_the_global_middleware_awaits_the_limiter(store, monkeypatch):
-    """`hit` is a coroutine now. A middleware that forgot to await it would never
-    raise, never refuse, and never fail a test that only checks 200s — the cap
-    would just be gone. So the refusal is asserted through the middleware itself.
+    """`hit` is a coroutine, and a middleware that forgot to await it would never
+    refuse anything while still passing a test that only checks 200s. So the refusal
+    is asserted through the middleware itself.
     """
     from starlette.responses import Response
 
@@ -412,9 +391,8 @@ async def test_the_global_middleware_awaits_the_limiter(store, monkeypatch):
 
 
 async def test_the_memory_backend_still_works():
-    """It is a supported backend, not dead code — a single-process install with no
-    Redis selects it deliberately, so it stays under test. Its bucket store is the
-    module-level `_hits`, which is what tests/test_api_key_credential.py clears."""
+    """A supported backend, not dead code: a single-process install with no Redis
+    selects it deliberately. Its bucket store is the module-level `_hits`."""
     ratelimit._hits.clear()
     mem = MemoryRateLimiter()
     await mem.hit("k", 2, WINDOW)

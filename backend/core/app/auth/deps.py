@@ -13,13 +13,10 @@ person's permissions come from their (dynamic) role, loaded fresh each request; 
 key's come from the key row's own ``scopes``, also read fresh, which is what makes
 a revoked key stop working on the next request rather than at token expiry.
 
-THE TWO PATHS DO NOT MEET, and that is the safety property this module exists to
-hold. ``get_current_user`` — the INTERACTIVE path, behind /auth/me, the session
-endpoints and everything the console SPA touches — looks a ``users`` row up by
-``sub`` and 401s when there is none. A key's ``sub`` is never a user id, so a key
-can hold a perfectly valid signed token and still not be able to sign in to the
-console. There is no branch to remove to change that; the refusal is a
-consequence of the shape, not a check someone has to remember to write.
+The two paths must not meet. ``get_current_user`` (the interactive path behind
+/auth/me, the session endpoints, everything the console SPA touches) resolves
+``sub`` to a ``users`` row and 401s when there is none. A key's ``sub`` is never
+a user id, so a key with a valid token still cannot sign in to the console.
 """
 
 from __future__ import annotations
@@ -44,13 +41,10 @@ async def get_current_user(
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """The signed-in PERSON. Unchanged, and unchanged on purpose.
+    """The signed-in user. Resolves ``sub`` to a ``users`` row, 401 if there is none.
 
-    This is the console's path. It resolves ``sub`` to a ``users`` row and refuses
-    when there is none, so a key-derived token (``sub`` = an api_keys id) is a 401
-    here no matter how valid its signature or how wide its scopes. Do not teach
-    this function about API keys: "a service credential cannot open the UI" is
-    enforced by the fact that nothing on this path knows what one is.
+    Do not add API-key support here — a service credential must not open the UI,
+    and that is enforced by this path not knowing what a key is.
     """
     if cred is None:
         raise UnauthorizedError("missing bearer token")
@@ -86,11 +80,9 @@ async def get_current_sid(
 class _KeyScopes:
     """The ``.role``-shaped view of a key's scopes.
 
-    Core routes read ``actor.role.grants(...)`` and ``actor.role.name`` in a dozen
-    places. This satisfies both WITHOUT being an ORM ``Role``: a detached mapped
-    object handed to a request's session is one autoflush away from an INSERT, and
-    a phantom role row named after an API key is not a bug anybody would find
-    quickly. It is a plain object, so it cannot be persisted by accident.
+    Satisfies the ``actor.role.grants(...)`` / ``actor.role.name`` that routes
+    read. Deliberately not an ORM ``Role``: a mapped object in the request's
+    session is one autoflush away from inserting a phantom role row.
     """
 
     __slots__ = ("name", "permissions")
@@ -105,22 +97,16 @@ class _KeyScopes:
 
 
 class ApiKeyPrincipal:
-    """The caller when the credential is a service key, shaped like the ``User``
-    the routes expect.
+    """The caller when the credential is a service key, shaped like a ``User``.
 
-    It answers the attributes core reads off an actor — ``id``, ``email``,
-    ``full_name``, ``tenant_id``, ``is_superadmin``, ``is_active``, ``role`` — so
-    ``scope_of(actor)`` and ``audit.record(actor=...)`` work unchanged. ``email``
-    is None because a key HAS no email, and leaving it None is what makes the
-    audit row visibly not a person even before you read ``actor_type``.
+    Answers only the attributes core reads off an actor (``id``, ``email``,
+    ``full_name``, ``tenant_id``, ``is_superadmin``, ``is_active``, ``role``) so
+    ``scope_of`` and ``audit.record`` work unchanged. ``email`` stays None: a key
+    has none, and it makes the audit row visibly not a person.
 
-    It deliberately does NOT impersonate a user any further than that. A core
-    route that reaches for something only a real user has (a password hash, a
-    preferences blob, a site scope) raises an AttributeError and returns 500. That
-    is loud and it is the right failure: the alternative is inventing a plausible
-    value and letting a machine credential walk a path written for a person.
-    ``is_superadmin`` is a constant False, not a field, so there is nowhere for a
-    caller to set it.
+    Do not widen it. A route reaching for something only a real user has
+    (password hash, preferences, site scope) should AttributeError and 500 rather
+    than get an invented value. ``is_superadmin`` is a constant, not a field.
     """
 
     audit_actor_type = "apikey"
@@ -139,12 +125,9 @@ class ApiKeyPrincipal:
 async def _resolve_key_actor(payload: dict, db: AsyncSession) -> ApiKeyPrincipal:
     """Load the live ``api_keys`` row a key-derived token names, or refuse.
 
-    Read fresh on EVERY request, exactly as ``get_current_user`` re-reads the user
-    row, and for the same reason inverted: revocation has to bite before the token
-    expires. This is the half of "revoked immediately" that core can actually
-    guarantee — a satellite verifies statelessly and cannot know, which is why the
-    key-token TTL is 15 minutes and not 12 hours (core/config.py says so at the
-    setting).
+    Read fresh every request so revocation bites before the token expires. Only
+    core can do this; satellites verify statelessly, which is why the key-token
+    TTL is 15 minutes (see core/config.py).
     """
     raw_sub = payload.get("sub")
     try:
@@ -162,13 +145,10 @@ async def _resolve_actor(
 ) -> User | ApiKeyPrincipal:
     """The authenticated caller behind a Bearer token — person or service key.
 
-    The person branch is ``get_current_user``'s body, character for character; the
-    key branch is entered ONLY when the token carries ``act == "apikey"``. A token
-    without that claim — every token minted before this existed, and every login
-    token minted after — takes a path that is unchanged, which is the whole basis
-    for calling this additive. An unrecognised ``act`` value is refused rather than
-    falling through to the user branch: an unknown credential kind must not be
-    quietly downgraded to the one with more reach.
+    The key branch is entered only for ``act == "apikey"``; a token with no
+    ``act`` takes the unchanged user path. An unrecognised ``act`` is refused
+    rather than falling through — an unknown credential kind must not be
+    downgraded to the one with more reach.
     """
     if cred is None:
         raise UnauthorizedError("missing bearer token")
@@ -190,14 +170,11 @@ async def _resolve_actor(
 
 
 def require_permission(*permissions: str):
-    """Dependency factory: the caller must grant ALL of these permissions.
+    """Dependency factory: the caller must grant all of these permissions.
 
-    For a PERSON this is ``user.role.grants(...)`` against the role loaded fresh
-    from the database — identical to what it has always been. For a SERVICE KEY it
-    is the key row's own ``scopes``, also loaded fresh. A BI-read key asking to
-    create a user gets the same 403, from the same line, as an under-privileged
-    human: the credential kind changes where the permission list comes from and
-    nothing else.
+    A person is checked against their role, a service key against the key row's
+    own ``scopes`` — both loaded fresh. The credential kind only changes where
+    the permission list comes from.
     """
 
     async def _dep(
@@ -214,20 +191,13 @@ def require_permission(*permissions: str):
 
 
 def require_service_permission(*permissions: str):
-    """Like ``require_permission``, but also accepts a SERVICE token.
+    """Like ``require_permission``, but also accepts a service token.
 
-    Every other satellite on this platform authorises locally by VERIFYING the
-    core-minted JWT with the shared secret — there is no user row behind a
-    background caller (`vision`'s `mint_service_token` is the worked example: a
-    superadmin token with a fixed system `sub`). Core itself has always required a
-    real `users` row, which is right for an operator surface and wrong for a
-    service-to-service one: the reading-writer registering its dataset permissions
-    has no user to be.
-
-    So: a token that carries `is_superadmin` (or the permission itself) in its
-    CLAIMS is accepted without a user lookup. The signature is the authority —
-    minting one already requires the platform secret. A normal operator bearer
-    still goes down the user path and is checked against their role.
+    A background caller has no `users` row (see vision's `mint_service_token`), so
+    a token carrying `is_superadmin` or the permission itself in its CLAIMS is
+    accepted without a user lookup — the signature is the authority, and minting
+    one needs the platform secret. An operator bearer still goes down the user
+    path and is checked against their role.
     """
 
     async def _dep(
@@ -242,12 +212,9 @@ def require_service_permission(*permissions: str):
             raise UnauthorizedError("invalid or expired token")
         if payload.get("type") != "access":
             raise UnauthorizedError("not an access token")
-        # A SERVICE KEY presenting itself here goes down the same live-row check
-        # as it does in require_permission, so a revoked key is refused on this
-        # route too. Without this it would fall through to the claims branch
-        # below and keep working until its token expired — a revocation that is
-        # honoured on most of core and not on the service-to-service routes is a
-        # revocation nobody can reason about.
+        # A service key gets the same live-row check as in require_permission, so
+        # a revoked key is refused here too. Without this it falls through to the
+        # claims branch below and keeps working until its token expires.
         if payload.get("act") == "apikey":
             actor = await _resolve_key_actor(payload, db)
             missing = [p for p in permissions if not actor.role.grants(p)]
@@ -276,11 +243,7 @@ def user_has(user: User, permission: str) -> bool:
     return user.role.grants(permission)
 
 
-# ``get_api_key`` — an X-API-Key header dependency that authenticated a caller
-# with the key's ROLE — stood here from the 0001 baseline until 2026-09-05. It is
-# REMOVED rather than left dormant. No route ever depended on it (checked across
-# every backend before deleting), so it authorized nothing; what it was was a
-# second, role-powered verification path sitting one `Depends(...)` away from
-# being wired to something, next to a scoped path that looks similar and is not.
-# The scopes now live on the key row and the only way to present one is
-# POST /auth/token — one path, and it fails closed.
+# ``get_api_key`` (an X-API-Key dependency that authenticated with the key's
+# ROLE) was removed, not left dormant: no route used it, and a second
+# role-powered verification path next to the scoped one is a trap. Scopes live on
+# the key row and POST /auth/token is the only way to present a key.

@@ -1,51 +1,28 @@
 """DashForge embed registrations ORM — one row per dashboard NeuBit will show.
 
-One table, tenant-scoped the way the rest of core is: a nullable ``tenant_id``
-(NULL = a platform/super-admin row), read through ``app.tenancy.scope`` /
-``assert_owned`` so isolation lives in one place rather than in every handler.
+One table, tenant-scoped like the rest of core: a nullable ``tenant_id`` (NULL =
+a platform row), read through ``app.tenancy.scope`` / ``assert_owned``.
 
-**Why the tenant_id is a real FOREIGN KEY here and was a bare column before.**
-As a satellite this table lived in ``neubit_dashforge`` and ``tenants`` lived in
-core's database, so no FK could span them; the erase on tenant offboard was done
-instead by a NATS subscription (``kernel.lifecycle.subscribe_tenant_offboard``),
-which walked every table carrying a ``tenant_id``. That subscription does not
-survive the fold-in — core PUBLISHES the offboard event, it does not consume its
-own — and dropping it without a replacement would have left this table holding a
-deleted tenant's rows, which is the DPDP right-to-erase failing quietly. The two
-tables are now in one database, so ``ON DELETE CASCADE`` does the same job with
-no bus, no durable consumer and no way for it to be down when it is needed.
-(``sites`` and ``tags`` still carry a bare ``tenant_id`` and are NOT erased this
-way. That is a real gap and a pre-existing one; it is not this change's to fix,
-but do not read their column as the convention to copy.)
+``tenant_id`` is a real FK with ON DELETE CASCADE, which is what erases these rows
+on tenant offboard (DPDP right-to-erase). Do not copy ``sites``/``tags``, which
+still carry a bare ``tenant_id`` and are a known gap.
 
-**Why the reference is a string, not an integer.** DashForge's dashboard id is
-today a ``uint`` and its workspace id likewise. Storing them as strings costs
-nothing and stops this table from encoding a foreign product's key type — if
-DashForge ever moves to a uuid or a slug, this column keeps working and no
-migration of somebody else's identifier lands in NeuBit's release notes.
+The DashForge ids are stored as strings, not ints, so this table does not encode a
+foreign product's key type — a move to uuids or slugs there needs no migration
+here. The workspace ref is recorded at registration because minting is
+workspace-scoped (``X-Workspace-ID``) and the service account may belong to more
+than one; deriving it would mean guessing.
 
-**Why the workspace reference is stored at all.** Minting is workspace-scoped on
-the DashForge side (``X-Workspace-ID``), and a service account may be a member of
-more than one. Deriving it would mean listing workspaces and guessing; recording
-it at registration time makes the mint call unambiguous, and a wrong value fails
-loudly at registration rather than silently later.
+``scope`` is the set of filter bindings locked into the embed token's signature
+(DashForge ``internal/embed/scope.go``) — what stops one token rendering another
+tenant's rows. NeuBit cannot compute it: the lockable names are the DashForge
+dashboard's own global-filter variables. It is recorded by whoever registers the
+dashboard and passed through verbatim at mint; DashForge refuses an unlockable
+name there, naming it.
 
-**Why ``scope`` lives here and is not computed.** It is the set of filter
-bindings locked into the embed token's signature (DashForge
-``internal/embed/scope.go``) — the thing that stops one token from rendering
-another tenant's rows. NeuBit cannot invent it: the lockable names are the
-DashForge dashboard's own global-filter control variables, which this platform
-has no view of. So it is recorded by whoever registers the dashboard (they hold
-``dashforge.manage``), stored verbatim, and passed through at mint. An
-unlockable name is refused by DashForge at mint with a message naming it, which
-is the right place for that check because it is the only side that knows.
-
-Deliberately NOT here: any embed token. A token is a bearer credential minted per
-viewing session (see ``client.py``); storing one would turn this table into a
-credential store whose rows outlive the session that needed them. Nor any
-dashboard definition — layout, widgets and queries live in DashForge, and a
-second copy here would be free to drift from the real one, with the first symptom
-a page that renders one thing and is described here as another.
+Not stored here: any embed token (a per-session bearer credential — see
+``client.py``), and no dashboard definition (layout, widgets and queries live in
+DashForge, and a copy would drift).
 """
 
 from __future__ import annotations
@@ -81,11 +58,9 @@ class DashForgeEmbed(Base):
 
     __tablename__ = "dashforge_embeds"
     __table_args__ = (
-        # Registering the same DashForge dashboard twice within a tenant is a
-        # mistake, not a use case: it produces two names for one thing and a
-        # viewer with no way to tell which is current. Unique WITHIN a tenant and
-        # only within one — two tenants embedding the same shared dashboard is
-        # normal and must not collide.
+        # Registering the same dashboard twice in one tenant gives two names for
+        # one thing. Unique within a tenant only — two tenants embedding the same
+        # shared dashboard is normal and must not collide.
         Index(
             "uq_dashforge_embeds_tenant_ref",
             "tenant_id",
@@ -100,11 +75,8 @@ class DashForgeEmbed(Base):
         Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
-    # What operators call it HERE. Deliberately not read from DashForge: the name
-    # a dashboard carries in its authoring tool is chosen by whoever built it,
-    # and the name on a NeuBit console is a NeuBit decision. Keeping them
-    # separate also means a rename on either side never silently changes the
-    # other's navigation.
+    # What operators call it here. Not read from DashForge on purpose, so a rename
+    # on either side never silently changes the other's navigation.
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1024))
 
@@ -117,11 +89,9 @@ class DashForgeEmbed(Base):
         JSON, nullable=False, default=dict, server_default=text("'{}'")
     )
 
-    # Who registered it. Informational — authorisation is the permission plus the
-    # tenant, never ownership, because an embedded dashboard is a team artefact.
-    # No FK: the registration outliving the operator who made it is correct, and
-    # the alternative (cascade) would delete a working dashboard when its author
-    # leaves.
+    # Who registered it. Informational only — authorisation is the permission plus
+    # the tenant, never ownership. No FK on purpose: a cascade would delete a
+    # working dashboard when its author leaves.
     created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

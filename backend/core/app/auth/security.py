@@ -32,11 +32,9 @@ _ph = PasswordHasher()
 
 REFRESH_TTL = dt.timedelta(days=30)
 
-# Token audiences — the super-admin realm is isolated from tenant users at the token
-# level (STQC "separate realm"): a super-admin's access token is stamped
-# ``aud=neubit-admin`` and the /admin API demands it, so a tenant-context token
-# (``aud=neubit-tenant``) can never reach cross-tenant admin even if it somehow
-# carried is_superadmin. The audience is derived from the user at mint time.
+# Token audiences. The super-admin realm is isolated at the token level: the
+# /admin API demands ``aud=neubit-admin``, so a tenant token can never reach it
+# even if it carried is_superadmin. Derived from the user at mint time.
 AUD_ADMIN = "neubit-admin"
 AUD_TENANT = "neubit-tenant"
 
@@ -95,24 +93,12 @@ def create_access_token(
     tenant_status: str | None = None,
 ) -> str:
     ttl = dt.timedelta(minutes=get_settings().jwt_ttl_minutes)
-    # Multi-tenancy claims: which tenant the caller is scoped to (None for
-    # super-admins) and whether they hold the platform super-admin role. These
-    # are convenience claims — authoritative scoping still re-reads the User row
-    # each request (see auth/deps.get_current_user), so a tenant/role change
-    # takes effect immediately without waiting for the token to expire.
-    #
-    # ``permissions`` is the caller's EFFECTIVE permission list, baked into the
-    # token so SATELLITE services (ingest/workflow) can authorize locally without
-    # a round-trip to core. Super-admins get the wildcard ["*"]; everyone else
-    # gets their role's permission set. Core itself ignores this claim — it still
-    # loads permissions fresh from the role each request (deps.require_permission),
-    # so the additive claim never changes core's own behaviour.
-    #
-    # ``features``/``limits`` are the caller's tenant entitlements (empty for
-    # super-admins, who bypass), baked in for the same reason: a satellite service
-    # gates modules + quotas locally off the token. They are resolved by the caller
-    # (auth service / impersonation) via tenancy.entitlements.token_entitlements and
-    # passed in here — security.py stays DB-free.
+    # The tenant/superadmin/permissions/features/limits claims are conveniences
+    # for SATELLITE services, which authorize locally off the token instead of
+    # calling core. Core ignores them and re-reads the User row and its role each
+    # request (deps.get_current_user), so changes take effect immediately.
+    # Entitlements are resolved by the caller (auth service / impersonation) and
+    # passed in, so security.py stays DB-free.
     role = getattr(user, "role", None)
     if bool(getattr(user, "is_superadmin", False)):
         permissions = ["*"]
@@ -124,16 +110,11 @@ def create_access_token(
         "tenant_id": str(user.tenant_id) if getattr(user, "tenant_id", None) else None,
         "is_superadmin": bool(getattr(user, "is_superadmin", False)),
         "permissions": permissions,
-        # ``role_id`` is the caller's role id, baked in like ``permissions`` so a
-        # satellite service can resolve ROLE-subject per-camera ACL grants (keyed
-        # on core subject ids "role:<id>") without a round-trip to core. Super-admins
-        # may hold no role → None. Core itself ignores this claim.
+        # Lets a satellite resolve role-subject per-camera ACL grants (keyed
+        # "role:<id>") without calling core. None for super-admins with no role.
         "role_id": str(user.role_id) if getattr(user, "role_id", None) else None,
-        # ``site_ids`` is the caller's SITE ACCESS SCOPE: the site ids this user may
-        # see. EMPTY = unrestricted (all sites in the tenant). Non-empty = the user
-        # is confined to exactly these sites — baked in so satellite services (vision)
-        # can filter camera/site-derived data locally off the token. Super-admins get
-        # [] (unrestricted) and bypass regardless.
+        # Site access scope. Empty = unrestricted (all sites in the tenant);
+        # non-empty confines the user to exactly these sites. Super-admins get [].
         "site_ids": list(getattr(user, "site_ids", None) or []),
         "features": dict(features or {}),
         "limits": dict(limits or {}),
@@ -155,7 +136,7 @@ MFA_CHALLENGE_TTL = dt.timedelta(minutes=5)
 
 
 def create_mfa_challenge_token(user) -> str:
-    """Short-lived token proving the FIRST factor passed; exchanged for real
+    """Short-lived token proving the first factor passed; exchanged for real
     tokens once the user submits a valid TOTP/recovery code."""
     return _encode(user.id, "mfa", MFA_CHALLENGE_TTL)
 
@@ -213,9 +194,9 @@ def generate_reset_token() -> tuple[str, str]:
 def decode_token(token: str) -> dict:
     """Decode + verify signature/expiry. Raises jwt.PyJWTError on failure.
 
-    ``verify_aud=False``: the ``aud`` claim is present on access tokens but is checked
-    explicitly where it matters (the /admin API demands ``neubit-admin``), so generic
-    decoding must not fail just because an audience is present.
+    ``verify_aud=False`` because ``aud`` is checked explicitly where it matters
+    (the /admin API demands ``neubit-admin``); generic decoding must not fail
+    just because an audience is present.
     """
     return jwt.decode(
         token, get_settings().jwt_secret, algorithms=["HS256"], options={"verify_aud": False}
@@ -223,27 +204,15 @@ def decode_token(token: str) -> dict:
 
 
 # --- Service API keys ------------------------------------------------------
-# A machine credential, and the reason it exists is worth stating where it is
-# minted: until 2026-09-05 the only credential this platform could give a peer
-# product was a USER'S EMAIL AND PASSWORD. DashForge holds one today
-# (NEUBIT_BI_USER / NEUBIT_BI_PASSWORD) because ``kernel.auth.verify_token``
-# accepts nothing but a login-minted access JWT. A password is the wrong shape
-# for a machine: it opens the console UI, it cannot be narrowed to "read BI",
-# revoking it means disabling a human account, and in the audit trail it is
-# indistinguishable from a person sitting at a keyboard.
+# Key layout: ``nbk_<8 hex id>_<43 char secret>``.
 #
-# KEY LAYOUT — ``nbk_<8 hex id>_<43 char secret>``
+# The prefix (``nbk_`` + the id, a fixed 12 chars) is stored in the clear and
+# shown in listings — it is the operator's handle. The secret appears in no
+# column; only sha256(whole key) is stored, so a DB dump yields no credential.
 #
-# The two segments are separated deliberately. ``prefix`` (``nbk_`` + the id, a
-# fixed 12 characters) is stored in the clear, indexed, and shown in every
-# listing, so it is the handle an operator uses to recognise a key. The SECRET is
-# the rest and appears in no column: only ``sha256(whole key)`` is stored, so a
-# database dump does not yield a working credential.
-#
-# The id is hex on purpose — ``token_urlsafe`` emits ``-`` and ``_``, so a
-# variable-width split on the separator could cut inside a secret that happened
-# to contain one. Both segments are fixed width and the prefix is taken by slice,
-# never by ``split``.
+# The id is hex on purpose: ``token_urlsafe`` emits ``-`` and ``_``, so splitting
+# on the separator could cut inside a secret. Both segments are fixed width and
+# the prefix is taken by slice, never by ``split``.
 API_KEY_PREFIX = "nbk_"
 API_KEY_PREFIX_LEN = 12  # len("nbk_") + 8 hex id chars
 
@@ -251,11 +220,9 @@ API_KEY_PREFIX_LEN = 12  # len("nbk_") + 8 hex id chars
 def generate_api_key() -> tuple[str, str, str]:
     """Return (raw_key, prefix, sha256_hash). Show raw_key once; store the rest.
 
-    The old format was ``vz_`` + secret with the first 11 characters kept as the
-    prefix, i.e. the lookup handle was CARVED OUT OF THE SECRET and then printed
-    in the key list. It is replaced rather than kept alongside: two live formats
-    would mean two verification paths, and the branch that decides between them is
-    exactly where a fail-open gets written.
+    One format only — the old ``vz_`` keys carved the printed prefix out of the
+    secret. Do not reintroduce a second format: the branch choosing between two
+    verification paths is where a fail-open gets written.
     """
     raw = f"{API_KEY_PREFIX}{pysecrets.token_hex(4)}_{pysecrets.token_urlsafe(32)}"
     return raw, raw[:API_KEY_PREFIX_LEN], hash_api_key(raw)
@@ -264,10 +231,8 @@ def generate_api_key() -> tuple[str, str, str]:
 def api_key_prefix(raw: str) -> str | None:
     """The lookup prefix of a presented key, or None if it is not one of ours.
 
-    Refusing an unrecognised shape HERE is what keeps the verifier's query from
-    ever running on attacker-chosen text, and it is the fail-closed half of the
-    contract: a caller that presents something that is not a NeuBit key gets the
-    same 401 as one that presents a wrong key, and no row is looked up at all.
+    Rejecting an unrecognised shape here keeps the verifier's query from running
+    on attacker-chosen text; a non-NeuBit string 401s without any row lookup.
     """
     if not raw or not raw.startswith(API_KEY_PREFIX):
         return None
@@ -280,9 +245,8 @@ def hash_api_key(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-# The audience of a key-derived token. It is the TENANT realm and never
-# ``AUD_ADMIN``: a key is always bound to one tenant, so the cross-tenant /admin
-# API is closed to it at the realm level as well as by its scopes.
+# A key-derived token is always the tenant realm, never ``AUD_ADMIN``: the
+# cross-tenant /admin API is closed to it by realm as well as by scopes.
 def create_api_key_token(
     key,
     *,
@@ -293,31 +257,19 @@ def create_api_key_token(
 ) -> tuple[str, int]:
     """Mint the short-lived access token an API key is exchanged for → (token, ttl_s).
 
-    THE SHAPE IS THE POINT. This returns an ordinary access token, claim for
-    claim, so every one of the nine services keeps verifying it with the code it
-    already runs — ``kernel.auth.verify_token`` is not touched, and neither is any
-    satellite. The key is a CORE-SIDE credential that buys a token; it is not a
-    second thing for a satellite to learn how to check. That is what makes this
-    additive: a service that never hears about API keys still enforces their
-    scopes correctly, because the scopes arrive in the claim it already reads.
+    Deliberately an ordinary access token, claim for claim, so satellites keep
+    verifying it with ``kernel.auth.verify_token`` unchanged and enforce a key's
+    scopes without knowing keys exist. Three claims differ from a login token:
 
-    Three claims differ from a login token, and each closes something:
+      * ``sub`` is the key's id, not a user's. ``get_current_user`` 401s when
+        ``sub`` is not a users row, so a key cannot reach the interactive path.
+      * ``is_superadmin`` is hardcoded False and ``aud`` hardcoded to the tenant
+        realm, so a super-admin cannot mint a key that inherits their reach.
+      * ``act="apikey"`` marks the token machine-driven; it stamps
+        ``actor_type='apikey'`` on audit entries.
 
-      * ``sub`` is the KEY's id, not a user's. Core's ``get_current_user`` loads a
-        ``users`` row by ``sub`` and 401s when there is none, so a key-derived
-        token cannot reach ``/auth/me``, the session endpoints, or anything else
-        on the interactive path. A key cannot sign in to the console because
-        there is no person for it to be.
-      * ``is_superadmin`` is hardcoded False and ``aud`` is hardcoded to the
-        tenant realm. Neither is read off the creating admin, so a super-admin
-        cannot mint a key that inherits their reach.
-      * ``act`` = "apikey" marks the token as machine-driven. Core reads it to
-        decide whether to resolve a key row, and it is what stamps
-        ``actor_type='apikey'`` on an audit entry.
-
-    ``permissions`` is the key's OWN scope list — never the creator's, never a
-    role's live set. A scope removed from the key stops being granted at the next
-    exchange; see ``AuthService.authenticate_api_key`` for the revocation window.
+    ``permissions`` is the key's own scope list, never the creator's or a role's
+    live set. See ``AuthService.authenticate_api_key`` for the revocation window.
     """
     ttl_minutes = get_settings().api_key_token_ttl_minutes
     ttl = dt.timedelta(minutes=ttl_minutes)

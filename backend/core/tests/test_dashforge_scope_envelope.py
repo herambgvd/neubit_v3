@@ -1,11 +1,9 @@
-"""The registration envelope: what NeuBit checks about a locked scope, and what
-it deliberately refuses to have an opinion about.
+"""The registration envelope: what NeuBit checks about a locked scope.
 
-The line these tests hold: NeuBit validates SHAPE and never MEANING. Whether
-`site_id` is lockable on DashForge dashboard 41 is a question only DashForge can
-answer (it depends on that dashboard's global-filter control variables), and a
-NeuBit-side guess that says "fine" where DashForge says "no" would be worse than
-no check at all — it would ship a token the operator believes is per-tenant.
+NeuBit validates shape and never meaning. Whether `site_id` is lockable on a given
+DashForge dashboard depends on that dashboard's global-filter control variables, so
+only DashForge can answer it — and a NeuBit-side guess that says "fine" where
+DashForge says "no" would ship a token the operator believes is per-tenant.
 """
 
 import pytest
@@ -69,9 +67,8 @@ def test_unknown_filter_names_are_NOT_refused_here():
 
 
 def test_absent_scope_and_empty_scope_are_distinguishable_on_update():
-    # `scope: {}` REMOVES the lock and is a real edit; an absent key means
-    # "leave it alone". Conflating them would silently unscope a token on any
-    # rename, which is the cross-tenant leak the lock exists to prevent.
+    # `scope: {}` removes the lock and is a real edit; an absent key means "leave it
+    # alone". Conflating them silently unscopes a token on any rename.
     assert "scope" not in EmbedUpdate(name="x").model_fields_set
     cleared = EmbedUpdate(scope={})
     assert "scope" in cleared.model_fields_set

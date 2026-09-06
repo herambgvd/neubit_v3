@@ -79,21 +79,17 @@ async def download_report(
 ) -> dict:
     """Return a short-lived, signed URL for a finished report's file.
 
-    We hand back a URL (a signed local link or a presigned S3 link) rather than
-    streaming bytes through the API — the browser fetches the blob directly from
-    storage, which is what keeps a large export off the event loop.
+    A URL (signed local link or presigned S3) rather than bytes streamed through
+    the API, so the browser fetches the blob directly and a large export stays off
+    the event loop.
 
-    THE URL EXPIRES, and that is the point. This endpoint checks `report.export`
-    and then used to return a PERMANENT `/files/reports/<uuid>.<fmt>` — a path
-    served with no auth dependency at all. So the permission gated only the FIRST
-    fetch: anyone who later obtained the link, from a chat message, a browser
-    history, a proxy log or a screenshot, had the tenant's data with no credential
-    and no way to revoke it. The link now carries an expiry and an HMAC that
-    `serve_local_file` verifies (`core/storage.py`), and the window is
-    `signed_url_ttl_seconds` — a hand-off, not a session.
+    The URL must stay expiring and signed. `/files/...` is served with no auth
+    dependency, so a permanent link would gate only the first fetch and anyone who
+    later found it — chat, history, proxy log, screenshot — would have the tenant's
+    data. The expiry and HMAC are verified by `serve_local_file`
+    (`core/storage.py`); the window is `signed_url_ttl_seconds`.
 
-    404 if the job doesn't exist OR belongs to another tenant; 422 if it isn't
-    ``done`` yet.
+    404 if the job doesn't exist or belongs to another tenant; 422 if not ``done``.
     """
     job = await db.get(ReportJob, job_id)
     assert_owned(job, scope_of(user), message="report job not found")

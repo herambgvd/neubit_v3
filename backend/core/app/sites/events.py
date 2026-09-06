@@ -6,18 +6,16 @@ domain ``sites`` and an event of the form ``<entity>.<event>`` (e.g. ``site.crea
 ``floor.updated``, ``zone.deleted``) so a subscriber can match ``tenant.*.sites.>``
 or ``tenant.<id>.sites.site.>``.
 
-ONE CONSUMER TODAY: the reading-writer's ``app/placement_sync.py`` binds a durable
-JetStream consumer on ``tenant.*.sites.device_placement.>`` and mirrors an IoT
-device's pin into ``neubit_reporting.device_locations``, which is what makes a
-placement made on the floor plan visible to Building Intelligence. Everything else
-here is still publish-only. Publishing is best-effort and a no-op when NATS is
-disabled (``VE_NATS_URL`` unset), so it never breaks a request.
+One consumer today: the reading-writer's ``app/placement_sync.py`` binds a durable
+JetStream consumer on ``tenant.*.sites.device_placement.>`` and mirrors a device's
+pin into ``neubit_reporting.device_locations``. Everything else is publish-only.
+Publishing is best-effort and a no-op when NATS is disabled (``VE_NATS_URL``
+unset), so it never breaks a request.
 
-``tenant_id`` NULL (a platform/super-admin action) is published under the reserved
-``platform`` tenant segment so the subject is always well-formed. THE SUBJECT
-SEGMENT IS THEREFORE NOT ALWAYS A TENANT ID — the body's ``tenant_id`` is, and it
-is ``None`` in exactly that case. A consumer keying a real ``uuid`` column must
-read the body and decide, deliberately, what a tenant-less action means to it.
+A NULL ``tenant_id`` (a platform/super-admin action) is published under the
+reserved ``platform`` segment, so the subject segment is not always a tenant id.
+The body's ``tenant_id`` is, and it is ``None`` in that case — a consumer keying a
+real ``uuid`` column has to read the body.
 """
 
 from __future__ import annotations

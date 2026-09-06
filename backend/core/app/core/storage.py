@@ -1,12 +1,7 @@
 """Object storage abstraction — one interface, swappable backends.
 
-Every scenario needs to persist *blobs*: uploaded logos, report exports, face
-crops, camera snapshots, recorded clips. Where those bytes actually live differs
-per deployment (a local disk in dev/on-prem, an S3/MinIO bucket in the cloud), so
-the app code should NEVER care. It talks to the abstract ``Storage`` interface;
-``get_storage()`` picks the concrete backend from config.
-
-Contract (this is a PINNED interface — other modules import and rely on it):
+App code talks to the abstract ``Storage`` interface; ``get_storage()`` picks the
+backend from config. Other modules import and rely on this interface:
 
     storage = get_storage()
     key = await storage.put("logos/acme.png", data, content_type="image/png")
@@ -15,15 +10,13 @@ Contract (this is a PINNED interface — other modules import and rely on it):
     href = await storage.url(key)          # a link the browser can fetch
     await storage.delete(key)
 
-A "key" is a logical path *within* the store (e.g. ``"crops/2026/07/abc.jpg"``),
-never an absolute filesystem path. The backend maps the key to a real location.
+A "key" is a logical path within the store (``"crops/2026/07/abc.jpg"``), never an
+absolute filesystem path.
 
-Two backends ship here:
-  * LocalStorage — writes under ``settings.storage_local_dir``; URLs point back at
-    this app's ``GET /files/{key}`` route (see ``files_router`` below).
-  * S3Storage    — talks to AWS S3 or any S3-compatible store (MinIO). Its heavy
-    dependency (``aioboto3``) is imported LAZILY inside methods so the boilerplate
-    installs and runs without it when you only use the local backend.
+  * LocalStorage — files under ``settings.storage_local_dir``; URLs point at this
+    app's ``GET /files/{key}`` route (``files_router`` below).
+  * S3Storage    — AWS S3 or any S3-compatible store. ``aioboto3`` is imported
+    lazily inside methods so it stays an optional dependency.
 """
 
 from __future__ import annotations
@@ -57,15 +50,9 @@ def _encrypts(key: str) -> bool:
 def _needs_signature(key: str) -> bool:
     """Whether ``key`` may only be served with a valid, unexpired signature.
 
-    Same prefix shape as `_encrypts` above, and for a related reason: `/files/{key}`
-    has no auth dependency and is routed publicly. That is correct for an avatar or
-    a logo — the key is unguessable uuid4 hex and a browser must be able to load it
-    from an ``<img>`` with no token. It is wrong for a report export, which is the
-    tenant's own data sitting behind a `report.export` permission: the download
-    endpoint checked that permission and then returned a PERMANENT url, so the gate
-    only ever slowed down the FIRST fetch. Anyone who later obtained the link — a
-    chat message, a browser history, a proxy log, a shared screenshot — had the data
-    with no credential and no expiry.
+    `/files/{key}` has no auth dependency and is routed publicly, which is fine for
+    an avatar (unguessable key, loaded from an ``<img>``) and wrong for a report
+    export — an unsigned link would outlive the `report.export` check forever.
     """
     prefixes = get_settings().signed_url_prefixes or []
     k = key.lstrip("/")
@@ -73,12 +60,10 @@ def _needs_signature(key: str) -> bool:
 
 
 def _signing_key() -> bytes:
-    """A key for URL signatures, derived from — and NOT equal to — the secrets key.
+    """A key for URL signatures, derived from but not equal to the secrets key.
 
-    Domain-separated with HMAC so that a signature and a Fernet token can never be
-    confused for one another, and so that a leaked signing key does not decrypt
-    stored credentials. Rotating `VE_SECRETS_KEY` invalidates outstanding links,
-    which is correct: they are minutes long.
+    Domain-separated so a leaked signing key does not decrypt stored credentials.
+    Rotating `VE_SECRETS_KEY` invalidates outstanding links; they last minutes.
     """
     return hmac.new(
         get_settings().secrets_key.encode(), b"neubit:file-url-signature:v1", hashlib.sha256
@@ -94,9 +79,8 @@ def sign_key(key: str, expires_at: int) -> str:
 def signature_is_valid(key: str, exp: str | None, sig: str | None, *, now: float | None = None) -> bool:
     """Whether ``sig`` authorises serving ``key`` right now.
 
-    Compared with `hmac.compare_digest` — a plain `==` on a hex digest leaks its
-    prefix through timing, and an attacker who can guess a signature byte at a time
-    does not need to guess the key at all.
+    Uses `hmac.compare_digest`: a plain `==` on a hex digest leaks its prefix
+    through timing.
     """
     if not exp or not sig:
         return False
@@ -130,10 +114,8 @@ def _dec(key: str, data: bytes) -> bytes:
 class StorageError(Exception):
     """Raised for backend-level failures (S3 down, permission denied, etc.).
 
-    Kept a plain ``Exception`` (not an ``AppError``) on purpose: storage failures
-    are infrastructure problems, so they surface as a generic 500 via the global
-    handler rather than a client-facing 4xx. Callers that want a nicer message can
-    catch this and re-raise an AppError.
+    Deliberately a plain ``Exception``, not an ``AppError``: infrastructure
+    failures should surface as a 500, not a client-facing 4xx.
     """
 
 
@@ -167,9 +149,8 @@ class Storage(ABC):
 class LocalStorage(Storage):
     """Stores blobs as plain files under ``settings.storage_local_dir``.
 
-    Great for dev and single-node on-prem. The key becomes a relative path under
-    the root, so ``put("a/b/c.png", ...)`` writes ``<root>/a/b/c.png`` (parent
-    directories are created as needed).
+    For dev and single-node on-prem. The key becomes a relative path under the
+    root: ``put("a/b/c.png", ...)`` writes ``<root>/a/b/c.png``.
     """
 
     def __init__(self) -> None:
@@ -179,10 +160,8 @@ class LocalStorage(Storage):
         self._base_url = settings.storage_base_url
 
     def _path(self, key: str) -> Path:
-        """Map a logical key to an on-disk path, guarding against path escapes.
-
-        A malicious key like ``"../../etc/passwd"`` must never resolve outside the
-        storage root. We normalise the joined path and verify it stays inside.
+        """Map a logical key to an on-disk path, refusing anything that escapes the
+        storage root (``"../../etc/passwd"``).
         """
         # Strip any leading slash so the key is always treated as relative.
         safe_key = key.lstrip("/")
@@ -196,9 +175,8 @@ class LocalStorage(Storage):
         path = self._path(key)
         # Create the parent directory tree (e.g. crops/2026/07/) if absent.
         path.parent.mkdir(parents=True, exist_ok=True)
-        # Filesystem writes are quick + local, so a plain sync write is fine here;
-        # content_type is irrelevant on disk (it's inferred at serve time).
-        # Protected (biometric) keys are encrypted at rest before hitting disk.
+        # Sync write is fine on local disk. content_type is inferred at serve time.
+        # Protected (biometric) keys are encrypted before hitting disk.
         path.write_bytes(_enc(key, data))
         log.debug("local put %s (%d bytes)", key, len(data))
         return key
@@ -221,13 +199,10 @@ class LocalStorage(Storage):
     async def url(self, key: str, expires: int = 3600) -> str:
         """A URL a browser can GET.
 
-        For most keys this is a stable app URL: an avatar or a logo is loaded from
-        an ``<img>`` with no credential, and the unguessable key is what protects it.
-
-        For a key under `signed_url_prefixes` it carries an expiry and an HMAC, and
-        `serve_local_file` refuses it without one. ``expires`` is honoured for those
-        — it is a hand-off window, not a session, so the default comes from
-        `signed_url_ttl_seconds` rather than this argument's generic hour.
+        A stable app URL for most keys — the unguessable key is what protects an
+        avatar or logo. Keys under `signed_url_prefixes` get an expiry and an HMAC,
+        with the TTL from `signed_url_ttl_seconds` rather than this argument's
+        generic hour.
         """
         base = f"{self._base_url.rstrip('/')}/{key.lstrip('/')}"
         if not _needs_signature(key):
@@ -239,10 +214,10 @@ class LocalStorage(Storage):
 
 # --- S3 / S3-compatible backend ----------------------------------------------
 class S3Storage(Storage):
-    """Stores blobs in an S3 bucket (AWS or any S3-compatible store like MinIO).
+    """Stores blobs in an S3 bucket (AWS, MinIO, RustFS).
 
-    ``aioboto3`` is imported lazily inside each method so it stays an OPTIONAL
-    dependency: deployments using only LocalStorage need not install it.
+    ``aioboto3`` is imported lazily inside each method so it stays optional for
+    LocalStorage-only deployments.
     """
 
     def __init__(self) -> None:
@@ -254,16 +229,11 @@ class S3Storage(Storage):
         self._secret_key = settings.s3_secret_key
         if not self._bucket:
             raise StorageError("storage_backend=s3 but VE_S3_BUCKET is not set")
-        # Set once the bucket's existence has been confirmed/created, so the
-        # head+create dance happens at most once per process (see _ensure_bucket).
+        # Set once the bucket is confirmed, so _ensure_bucket only checks once.
         self._bucket_ready = False
 
     def _client(self):
-        """Build an aioboto3 S3 client context manager (used as ``async with``).
-
-        Lazily imports aioboto3 so the import cost/dependency is only paid when
-        S3 is actually configured.
-        """
+        """An aioboto3 S3 client context manager. Imports aioboto3 lazily."""
         try:
             import aioboto3  # optional dependency
         except ImportError as exc:  # pragma: no cover - depends on env
@@ -283,28 +253,22 @@ class S3Storage(Storage):
     async def _ensure_bucket(self, s3) -> None:
         """Make sure the target bucket exists, creating it on first miss.
 
-        Idempotent + cheap after the first success: a process-level flag short-
-        circuits the check so we only pay the head/create round-trip once. On a
-        404 / NoSuchBucket we create the bucket. RustFS, MinIO, and AWS S3 all
-        support head_bucket + create_bucket, so this works across every backend
-        (a fresh MinIO/RustFS volume typically has no buckets yet — this is what
-        auto-provisions the one we were configured to use).
+        A process-level flag means the head/create round-trip happens once. This is
+        what provisions the bucket on a fresh MinIO/RustFS volume.
         """
         if self._bucket_ready:
             return
         try:
             await s3.head_bucket(Bucket=self._bucket)
         except Exception as exc:  # 404 / NoSuchBucket => create it
-            # Only treat "missing" as create-able; anything else (e.g. 403 access
-            # denied) is a real error we shouldn't paper over.
+            # Only "missing" is create-able; a 403 is a real error.
             msg = str(exc)
             if "404" in msg or "NoSuchBucket" in msg or "Not Found" in msg:
                 try:
                     await s3.create_bucket(Bucket=self._bucket)
                     log.info("s3 auto-created bucket %s", self._bucket)
                 except Exception as create_exc:  # racing creator, or real failure
-                    # A concurrent creator may have won the race; tolerate the
-                    # "already exists / owned by you" case, re-raise anything else.
+                    # Tolerate a concurrent creator winning the race.
                     cmsg = str(create_exc)
                     if "BucketAlreadyOwnedByYou" not in cmsg and "BucketAlreadyExists" not in cmsg:
                         raise StorageError(
@@ -317,10 +281,9 @@ class S3Storage(Storage):
     async def put(self, key: str, data: bytes, content_type: str | None = None) -> str:
         extra = {"ContentType": content_type} if content_type else {}
         async with self._client() as s3:
-            # Guarantee the bucket exists before the first write (idempotent).
             await self._ensure_bucket(s3)
-            # Protected (biometric) keys are app-encrypted before upload; this is
-            # defence-in-depth on top of any bucket-level SSE.
+            # Protected (biometric) keys are app-encrypted before upload, on top of
+            # any bucket-level SSE.
             await s3.put_object(Bucket=self._bucket, Key=key, Body=_enc(key, data), **extra)
         log.debug("s3 put %s (%d bytes)", key, len(data))
         return key
@@ -330,7 +293,6 @@ class S3Storage(Storage):
             try:
                 resp = await s3.get_object(Bucket=self._bucket, Key=key)
             except Exception as exc:  # botocore ClientError (NoSuchKey) etc.
-                # Normalise a missing object into our standard NotFoundError.
                 if "NoSuchKey" in str(exc) or "404" in str(exc):
                     raise NotFoundError(f"object not found: {key}") from exc
                 raise StorageError(str(exc)) from exc
@@ -354,8 +316,8 @@ class S3Storage(Storage):
 
     async def url(self, key: str, expires: int = 3600) -> str:
         async with self._client() as s3:
-            # A presigned GET URL grants temporary read access without exposing
-            # credentials; it becomes invalid after ``expires`` seconds.
+            # Presigned: temporary read access with no credentials, valid for
+            # ``expires`` seconds.
             return await s3.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self._bucket, "Key": key},
@@ -365,12 +327,7 @@ class S3Storage(Storage):
 
 @lru_cache
 def get_storage() -> Storage:
-    """Return the configured storage backend (cached singleton).
-
-    Chosen by ``settings.storage_backend`` ("local" | "s3"). Cached because the
-    backend holds config that never changes at runtime and building it repeatedly
-    is wasteful.
-    """
+    """The configured storage backend, cached. Chosen by ``settings.storage_backend``."""
     backend = get_settings().storage_backend.lower()
     if backend == "s3":
         return S3Storage()
@@ -380,34 +337,26 @@ def get_storage() -> Storage:
 
 
 # --- Local file serving route ------------------------------------------------
-# Mounted by the app so that LocalStorage URLs (``/files/<key>``) actually resolve.
-# For the S3 backend this route is unused (URLs point straight at the bucket).
+# Mounted by the app so LocalStorage URLs (``/files/<key>``) resolve. Unused under
+# the S3 backend, where URLs point straight at the bucket.
 files_router = APIRouter()
 
 
 @files_router.get("/files/{key:path}")
 async def serve_local_file(key: str, exp: str | None = None, sig: str | None = None):
-    """Stream a blob stored by the LOCAL backend.
+    """Stream a blob stored by the local backend.
 
-    Uses ``{key:path}`` so slashes in the key (``crops/2026/x.jpg``) are captured.
-    Returns a 404 (via NotFoundError) if the file is missing. Only meaningful for
-    the local backend — S3 deployments serve blobs directly from the bucket.
-
-    Protected (encrypt-at-rest) keys can't be streamed raw off disk — they're read
-    through the backend so they're decrypted in memory before reaching the client.
-
-    Keys under `signed_url_prefixes` additionally require `?exp=&sig=` from
-    `LocalStorage.url`. That is what stops a report export being a PERMANENT
-    capability url: `GET /reports/{id}/download` checks `report.export` and then
-    hands out a link, and before this the link outlived the permission forever.
+    ``{key:path}`` so slashes in the key are captured; 404 if the file is missing.
+    Encrypt-at-rest keys are decrypted in memory rather than streamed off disk.
+    Keys under `signed_url_prefixes` also require `?exp=&sig=` from
+    `LocalStorage.url`, so a report-export link expires instead of outliving the
+    `report.export` check.
     """
     if _needs_signature(key) and not signature_is_valid(key, exp, sig):
-        # NOT_FOUND, not FORBIDDEN, and deliberately the same answer as a missing
-        # file: a 403 here would confirm that this report exists, which is most of
-        # what an attacker holding a stale link wants to learn.
+        # NOT_FOUND, not FORBIDDEN: a 403 would confirm the report exists.
         raise NotFoundError(f"object not found: {key}")
     storage = get_storage()
-    # This route only makes sense for LocalStorage; guard defensively.
+    # Only meaningful for LocalStorage.
     if not isinstance(storage, LocalStorage):
         raise NotFoundError("local file serving is disabled for this storage backend")
     path = storage._path(key)  # reuse the same escape-safe key→path mapping
@@ -415,15 +364,13 @@ async def serve_local_file(key: str, exp: str | None = None, sig: str | None = N
         raise NotFoundError(f"object not found: {key}")
     ctype, headers = _serving_headers(key)
     if _encrypts(key):
-        # Decrypt in memory; never hand the browser the ciphertext on disk.
+        # Decrypt in memory; never hand the browser the ciphertext.
         data = _dec(key, path.read_bytes())
         return Response(content=data, media_type=ctype, headers=headers)
-    # FileResponse streams the file efficiently.
     return FileResponse(os.fspath(path), media_type=ctype, headers=headers)
 
 
-#: Types this route will let a browser RENDER inline. Raster images only: they
-#: cannot carry script, so a link to one is not a way to run code on this origin.
+#: Types this route renders inline. Raster images only — they cannot carry script.
 _INLINE_TYPES: dict[str, str] = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -432,10 +379,9 @@ _INLINE_TYPES: dict[str, str] = {
     ".gif": "image/gif",
 }
 
-#: Types that are stored and served but never rendered inline. SVG is XML that can
-#: carry script, and PDF has its own script surface; both go out as downloads.
-#: `<img src>` still displays an SVG served this way, and script in an SVG loaded
-#: as an image does not execute — so logos keep working and links stop being XSS.
+#: Served but never rendered inline: SVG is scriptable XML and PDF has its own
+#: script surface. `<img src>` still displays an SVG served this way, and script in
+#: an SVG loaded as an image does not execute.
 _ATTACH_TYPES: dict[str, str] = {
     ".svg": "image/svg+xml",
     ".pdf": "application/pdf",
@@ -447,14 +393,9 @@ _ATTACH_TYPES: dict[str, str] = {
 def _serving_headers(key: str) -> tuple[str, dict[str, str]]:
     """Decide the Content-Type and disposition for a stored key.
 
-    The type comes from a WHITELIST keyed on the extension, not from
-    ``mimetypes.guess_type``. guess_type answers for anything — text/html included —
-    and this route has no auth dependency and is routed publicly by Traefik, so its
-    answer was the difference between an image host and a way to serve attacker
-    HTML from the platform origin. Uploads are validated too (core/uploads.py); this
-    is the second half, because files also arrive from report exports and from
-    whatever earlier versions of those routes let through.
-
+    The type comes from an extension whitelist, not ``mimetypes.guess_type``:
+    guess_type will answer text/html, and this route is public. Uploads are
+    validated too (core/uploads.py), but files also arrive from report exports.
     Anything not on either list is served as an opaque download.
     """
     ext = os.path.splitext(key)[1].lower()

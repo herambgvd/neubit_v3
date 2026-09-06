@@ -1,9 +1,7 @@
 """Multi-tenancy: the Tenant model + super-admin dependency + startup seeding.
 
-v1 uses tenant_id row-scoping against a single shared control DB — this is the
-testable, pragmatic first cut. DB-per-tenant (a physical database per tenant, for
-hard isolation) is the production hardening target; the code comments flag the
-seams where that swap would land.
+Row-scoping by tenant_id against a single shared control DB. DB-per-tenant is the
+hardening target; the comments in ``models.py`` mark where that swap would land.
 
 The row-scoping primitive lives in ``scope.py``: ``get_scope`` (a FastAPI
 dependency), ``scope_of(user)`` (build one from a User a service already holds),

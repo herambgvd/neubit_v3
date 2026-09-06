@@ -1,10 +1,8 @@
 """Getting in and out: first-run setup, login, MFA, refresh, logout, password reset.
 
-Everything here runs BEFORE there is a session, or ends one. That is the reason it
-is a file of its own rather than a section of a bigger one: these are the routes
-that cannot require a caller, so they are also the routes where a missing gate looks
-exactly like a correct one. `tests/test_route_inventory.py` lists every one of them
-by name with the reason it is unauthenticated.
+Everything here runs before there is a session, or ends one — so these are the
+routes where a missing gate looks exactly like a correct one.
+`tests/test_route_inventory.py` lists each by name with why it is unauthenticated.
 """
 
 from __future__ import annotations
@@ -85,10 +83,9 @@ async def login(
     # First factor passed. If 2FA is on, don't issue tokens yet — challenge for it.
     if user.totp_enabled:
         return LoginResult(mfa_required=True, mfa_token=svc.issue_mfa_challenge(user))
-    # Per-tenant 2FA ENFORCEMENT (P6-D): if a security policy mandates 2FA for this
-    # user but they haven't enrolled, block token issuance and signal enrollment.
-    # The client uses the short-lived challenge token to authorize the enroll flow
-    # (POST /auth/2fa/enroll/*), then logs in again with the new second factor.
+    # Per-tenant 2FA enforcement: if policy mandates 2FA and the user has not
+    # enrolled, issue no tokens and signal enrollment. The client uses the
+    # short-lived challenge token to authorize POST /auth/2fa/enroll/*.
     from ...security.service import SecurityService
 
     if await SecurityService(db).user_must_enroll_2fa(user):
@@ -131,14 +128,12 @@ async def login_mfa(
 async def refresh(request: Request, db: AsyncSession = Depends(get_db)) -> AccessOut:
     """Mint a new access token from the refresh token — a session probe.
 
-    The refresh token is read from the httpOnly cookie (browser path), falling back
-    to a JSON body ``{"refresh_token": ...}`` for non-browser / legacy callers.
+    Read from the httpOnly cookie, falling back to a JSON body
+    ``{"refresh_token": ...}`` for non-browser callers.
 
-    When there is no cookie/body token, or it is invalid/expired/revoked, this
-    returns **200 with a null access_token** rather than a 4xx — so the SPA can
-    bootstrap its session without generating console/network errors when the user
-    is simply signed out. A genuinely present-but-valid token yields a new access
-    token as usual.
+    A missing, invalid, expired or revoked token returns 200 with a null
+    access_token rather than a 4xx, so the SPA can bootstrap without console and
+    network errors when the user is simply signed out.
     """
     token = request.cookies.get(get_settings().refresh_cookie_name)
     if not token:

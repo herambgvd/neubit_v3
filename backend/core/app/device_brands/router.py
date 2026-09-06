@@ -1,8 +1,7 @@
 """Device brands API — full path ``{api_prefix}/admin/device-brands``.
 
-READ by any authenticated user (the frontend needs the brand list when adding a
-device). MUTATIONS are gated by ``require_superadmin``. Read-mostly registry — prep
-for the devices phase. Mutations are audit-logged.
+Any authenticated user can read the brand list (the frontend needs it when adding a
+device). Mutations are gated by ``require_superadmin`` and audit-logged.
 """
 
 from __future__ import annotations

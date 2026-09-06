@@ -1,30 +1,22 @@
 """Tenant-scoped SSE realtime bridge — live VMS camera-events + operator popups.
 
-The VMS service (``vision``) turns each ONVIF/brand device notification into a
-``VmsEvent`` row and publishes it on the NATS spine at
-``tenant.<id>.vms.camera.<event_type>`` (see
-``backend/vision/app/vms/common/events.py`` :func:`emit_camera_event`). The P5-B
-linkage engine's ``popup`` action publishes ``tenant.<id>.vms.popup`` for the
-operator UI (:func:`emit_popup`). This module bridges BOTH families to the browser
-over Server-Sent Events so the VMS Events feed + operator-popup consumer get live
-updates instead of polling.
+The vision service publishes each device notification at
+``tenant.<id>.vms.camera.<event_type>`` and the linkage engine's ``popup`` action at
+``tenant.<id>.vms.popup`` (see ``backend/vision/app/vms/common/events.py``). This
+module bridges both families to the browser over Server-Sent Events.
 
     GET /api/v1/realtime/vms-events           (text/event-stream)
 
-Auth: the same short-lived HS256 access token the REST API uses. Browsers can't set
-headers on ``EventSource``, so we accept the token as ``?token=<jwt>`` first and fall
-back to ``Authorization: Bearer <jwt>`` (native clients / proxies). Invalid/missing →
-401. The caller's ``tenant_id`` is read from the token and used to scope the NATS
-subscription: ``tenant.<tenant_id>.vms.>`` — a tenant only ever sees its own VMS
-events. Super-admins (no tenant) subscribe to ``tenant.*.vms.>`` (all tenants).
+Auth: the same short-lived HS256 access token the REST API uses, as ``?token=<jwt>``
+(``EventSource`` cannot set headers) or an ``Authorization: Bearer`` fallback. The
+token's ``tenant_id`` scopes the subscription to ``tenant.<id>.vms.>``; super-admins
+(no tenant) get ``tenant.*.vms.>``.
 
-An optional ``?camera_id=<id>`` narrows the stream server-side: only frames whose
-payload ``camera_id`` matches are forwarded, so a client watching one camera isn't
-pushed every VMS event in the tenant.
+``?camera_id=<id>`` narrows the stream server-side, so a client watching one camera
+is not pushed every VMS event in the tenant.
 
-Delivery model: one EPHEMERAL, non-durable core NATS subscription PER open stream
-(via ``events_nats.ephemeral_subscribe``), torn down on client disconnect. Live,
-at-most-once — no history/replay, which is exactly what a live feed wants.
+Delivery: one ephemeral, non-durable NATS subscription per open stream, torn down on
+disconnect. Live and at-most-once — no history or replay.
 
 Two SSE event names are emitted so the client can route them:
   * ``vms.event`` — a camera device/system event (``tenant.*.vms.camera.*`` +
@@ -60,8 +52,7 @@ log = get_logger("edge.realtime.vms")
 
 realtime_vms_router = APIRouter(prefix="/realtime", tags=["realtime"])
 
-# How often to emit an SSE keepalive comment so idle connections survive proxy /
-# Traefik / load-balancer idle timeouts (typically 30-60s).
+# Keepalive cadence, so idle connections survive proxy idle timeouts (30-60s).
 KEEPALIVE_SECONDS = 20.0
 
 # SSE ``event:`` names the UI listens on.
@@ -175,22 +166,18 @@ async def vms_events_stream(
     only when no ``camera_id`` filter is set).
     """
     claims = _principal_or_401(request, token)
-    # Authentication is not authorization. This stream carries camera and operator-popup events,
-    # whose REST equivalents are permission-gated; without this line any
-    # authenticated user with no permissions at all received the live feed.
-    # authorize_stream also re-reads the user and the tenant from the
-    # database rather than trusting the token's claims, because a stream
-    # outlives a suspension in a way a single request does not.
+    # Authentication is not authorization: these events are permission-gated on the
+    # REST side, so the stream must be gated too.
+    # authorize_stream re-reads the user and tenant from the database rather than
+    # trusting the token's claims: a stream outlives a suspension.
     await authorize_stream(claims, CorePerm.VMS_CAMERA_READ)
-    # …and again while the stream is open. A stream outlives a single request
-    # by design, so a revoked permission, a deactivated user or a suspended
-    # tenant would otherwise keep this feed alive until the token expired.
+    # …and again while the stream is open, or a revoked permission would keep
+    # this feed alive until the token expired.
     guard = StreamGuard(claims, CorePerm.VMS_CAMERA_READ)
     tenant_id = claims.get("tenant_id")
     is_superadmin = bool(claims.get("is_superadmin", False))
 
-    # Tenant scope: a tenant sees only its own VMS events; a platform super-admin
-    # (no tenant) may watch every tenant's events.
+    # A tenant sees only its own events; a super-admin (no tenant) sees every one.
     if tenant_id:
         pattern = f"tenant.{tenant_id}.vms.>"
     elif is_superadmin:
@@ -207,7 +194,7 @@ async def vms_events_stream(
             etype = str(envelope.get("type") or "")
             is_popup = etype == "vms.popup"
             data = _compact_popup(envelope) if is_popup else _compact_event(envelope)
-            # Per-camera narrowing: drop frames for other cameras.
+            # Drop frames for other cameras.
             if camera_id and data.get("camera_id") != camera_id:
                 return
             frame = (VMS_POPUP_NAME, data) if is_popup else (VMS_EVENT_NAME, data)
@@ -220,7 +207,7 @@ async def vms_events_stream(
         if sub is None:
             log.info("SSE vms: NATS unavailable — stream open, keepalive only")
 
-        # Prime the connection so the client's onopen fires and proxies flush.
+        # Prime the connection so onopen fires and proxies flush.
         yield ": connected\n\n"
         try:
             while True:
@@ -228,16 +215,15 @@ async def vms_events_stream(
                     break
                 kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
                 if kind == "shutdown":
-                    # The process is going down. END the response instead of
-                    # looping: an open stream here is what used to make every
-                    # reload hang forever. EventSource reconnects on its own.
+                    # Going down: end the response instead of looping, or the
+                    # open stream wedges the shutdown. EventSource reconnects.
                     yield SSE_SHUTDOWN_FRAME
                     break
                 if kind == "keepalive":
                     if not await guard.still_allowed():
-                        # The response body is the only thing left to refuse with —
-                        # the 200 was sent when the stream opened. End it; an
-                        # EventSource reconnects and gets a clean 401/403 then.
+                        # The 200 went out when the stream opened, so ending the
+                        # body is the only way left to refuse. EventSource
+                        # reconnects and gets a clean 401/403 then.
                         yield "event: revoked\ndata: {}\n\n"
                         break
                     yield ": keepalive\n\n"

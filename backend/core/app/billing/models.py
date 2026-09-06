@@ -102,23 +102,13 @@ class Subscription(Base):
 class Invoice(Base):
     """One billing invoice for a tenant, tracked through its lifecycle.
 
-    RETAINED WHEN ITS TENANT IS ERASED, which is why ``tenant_id`` below is a bare
-    column and not a foreign key. It carried ``ForeignKey(ondelete="CASCADE")``
-    until 2026-09-05, i.e. offboarding a tenant DESTROYED its issued invoices —
-    books of account that the Companies Act 2013 s.128(5) requires be preserved
-    for eight years and the CGST Act s.36 for six. DPDP s.8(7) makes retention
-    required by law an exception to erasure, so keeping these is not a gap in the
-    right-to-erase; deleting them was a different violation wearing compliance's
-    clothes.
+    Kept when its tenant is erased, so ``tenant_id`` is a bare column and not an
+    FK: invoices are books of account that the Companies Act 2013 s.128(5) and the
+    CGST Act s.36 require be retained, and DPDP s.8(7) exempts them from erasure.
+    Nothing enforces the reference any more, so ``tenant_name`` is snapshotted at
+    offboard (app/tenancy/erasure.py) to keep the row attributable.
 
-    The cost of dropping the constraint is that nothing enforces the reference any
-    more, and it is paid deliberately: ``tenant_name`` is snapshotted onto the row
-    at offboard (app/tenancy/erasure.py) so the record stays attributable to a
-    real party after the tenant row is gone — the same device ``audit_log`` uses to
-    keep a trail readable after a user is deleted.
-
-    ``billing_subscriptions`` is NOT retained with it. The live commercial
-    relationship is not the record of it, and a subscription still addressing a
+    ``billing_subscriptions`` is not retained with it — a subscription addressing a
     tenant that no longer exists would be picked up by the next billing run.
     """
 
@@ -128,9 +118,8 @@ class Invoice(Base):
     # No FK, on purpose — see the class docstring. Still indexed: every read of
     # this table is per tenant.
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True, nullable=False)
-    # The tenant's name at the moment it was erased. NULL for every invoice whose
-    # tenant still exists (join to tenants for those); set once, and never
-    # overwritten, so a re-used uuid cannot rewrite an old invoice's customer.
+    # Tenant name snapshotted at erasure; NULL while the tenant still exists. Set
+    # once, so a re-used uuid cannot rewrite an old invoice's customer.
     tenant_name: Mapped[str | None] = mapped_column(String, nullable=True)
     # Human-facing invoice number, e.g. "INV-2026-0001". Indexed for lookup.
     number: Mapped[str] = mapped_column(String, index=True, nullable=False)

@@ -72,12 +72,10 @@ def base_routers() -> list[APIRouter]:
         device_brands_router,
         licensing_router,
         dashforge_router,
-        # files_router is NOT here. `create_app` already mounts it at the ROOT
-        # (`/files/{key}`), which is the path `LocalStorage.url()` builds and the
-        # only one the gateway routes. Listing it again gave the same public,
-        # unauthenticated blob route a second address under `/api/v1/files/…` —
-        # unused by anything, and a second surface to remember when hardening the
-        # first. Found by the route inventory in tests/test_route_inventory.py.
+        # files_router is deliberately absent: `create_app` mounts it at the root
+        # (`/files/{key}`), which is what `LocalStorage.url()` builds and what the
+        # gateway routes. Listing it here would give the same public blob route a
+        # second address under `/api/v1/files/…`.
         audit_router,
         system_router,
         messaging_router,
@@ -99,22 +97,16 @@ def base_routers() -> list[APIRouter]:
 
 
 def _tenant_active_exempt() -> set[int]:
-    """`id()` of every base router that must keep working for a tenant which CANNOT
-    operate — suspended by a super-admin, or past its licence grace window.
+    """`id()` of every base router that must keep working for a tenant which cannot
+    operate — suspended, or past its licence grace window.
 
-    `require_tenant_active` existed and was applied to exactly ONE router
-    (dashforge). Its own docstring said "for most of core that window is accepted",
-    and the window is real: core refuses a suspended tenant at LOGIN and then nothing
-    on the request path looks again, so a token minted a minute before the suspension
-    keeps working across users, sites, settings, messaging and reports until it
-    expires. Where suspension is a commercial control, that is the control. And
-    "remember to add the dependency" is not a rule that survives the next router.
+    Guarded by default, exempt only if named here: "remember to add the dependency"
+    does not survive the next router, and a token minted before a suspension
+    otherwise keeps working until it expires.
 
-    So the default is inverted — every base router is guarded unless it is named
-    here. Matched by OBJECT IDENTITY, not by prefix or tag: two different routers
-    share the `/admin` prefix, five share `/realtime`, and one has neither prefix nor
-    tag, so any string key would silently mis-classify some of them. A router that
-    disappears from this list is an import error, not a quiet loss of an exemption.
+    Matched by object identity, not prefix or tag — two routers share `/admin`, five
+    share `/realtime`, one has neither. A router removed from this list becomes an
+    import error rather than a silently lost exemption.
     """
     from .auth import router as auth_router
     from .branding import public_router as branding_public_router
@@ -133,38 +125,31 @@ def _tenant_active_exempt() -> set[int]:
     return {
         id(r)
         for r in (
-            # Sign in, sign out, read your own profile, refresh. A suspended tenant's
-            # user must still authenticate far enough to be TOLD they are suspended,
-            # and to log out. Also carries the unauthenticated routes (login, password
-            # reset) which the guard — which resolves a user — would turn into 401s.
+            # A suspended tenant's user must still get far enough to be told they
+            # are suspended, and to log out. Also carries the unauthenticated routes
+            # (login, password reset) that the guard would turn into 401s.
             auth_router,
-            # How the console LEARNS it is suspended. Guarding it leaves the UI with
-            # a 403 and nothing to render the message from.
+            # How the console learns it is suspended. Guarded, the UI gets a 403 and
+            # nothing to render the message from.
             features_router,
-            # The way OUT of the state. Guarding this makes an expired tenant unable
-            # to stop being expired. (Billing sits under /admin and is super-admin
-            # only, which bypasses the guard anyway.)
+            # The way out of the state: guarded, an expired tenant could never stop
+            # being expired. (Billing is super-admin only, so it bypasses anyway.)
             licensing_router,
             # Unauthenticated by design.
             files_router,
             broadcasts_public_router,
-            # The login page reads both of these BEFORE anyone has signed in — its
-            # own logo and colours, and the public settings the unauthenticated
-            # screens need. Guarding their parent routers turned them into 401s and
-            # left the login page unable to theme itself; they are separate router
-            # objects now precisely so the guard can apply to the writes and not to
-            # them. `optional_tenant_id` handles the anonymous caller correctly.
+            # The login page reads both before anyone signs in (its logo, colours,
+            # and the public settings the anonymous screens need). They are separate
+            # router objects so the guard can cover the writes but not these.
             branding_public_router,
             settings_public_router,
-            # `/auth/sso/login` and `/auth/sso/callback` are the OIDC authorization-
-            # code flow and run BEFORE there is a session at all — the guard resolves
-            # a user, so it would turn the login flow into a 401. Its sibling
-            # `/security/sso` (the CONFIG) is guarded like everything else.
+            # The OIDC authorization-code flow runs before there is a session, and
+            # the guard resolves a user. Its sibling `/security/sso` (the config) is
+            # guarded like everything else.
             sso_router,
-            # These authorize inside the handler — SSE cannot take this as a FastAPI
-            # dependency, because a StreamingResponse would hold the session for the
-            # life of the stream — and they check the tenant themselves. See
-            # core/sse_auth.py.
+            # These authorize inside the handler, tenant check included: SSE cannot
+            # take it as a dependency, because a StreamingResponse would hold the
+            # session for the life of the stream. See core/sse_auth.py.
             realtime_router,
             realtime_access_router,
             realtime_incidents_router,
@@ -177,9 +162,9 @@ def _tenant_active_exempt() -> set[int]:
 def _guarded(router: APIRouter) -> APIRouter:
     """Wrap `router` so every route under it also requires an operable tenant.
 
-    A fresh wrapper each call rather than mutating `router.dependencies`: these are
-    module-level singletons and `create_base_app` runs many times per process in the
-    test suite, which would stack one copy of the dependency per app.
+    A fresh wrapper each call, not a mutation of `router.dependencies`: the routers
+    are module-level singletons and `create_base_app` runs many times per process,
+    which would stack one copy of the dependency per app.
     """
     from fastapi import Depends
 

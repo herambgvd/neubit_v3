@@ -1,9 +1,7 @@
 """Tags service — CRUD + assign/unassign + reverse lookups, tenant-scoped.
 
-Folds neubit_v2's repository + service into one scope-aware service (the v3 house
-style: a service that holds the ``AsyncSession`` and routes every read through
-``scoped`` and every by-id fetch through ``assert_owned``). New rows are stamped
-with the caller's ``tenant_id``.
+Every read goes through ``scoped`` and every by-id fetch through ``assert_owned``.
+New rows are stamped with the caller's ``tenant_id``.
 
 Emits domain events on the NATS spine and writes audit entries on every mutation.
 ``usage_count`` is derived on read (a COUNT over ``tag_links``), so it never drifts.

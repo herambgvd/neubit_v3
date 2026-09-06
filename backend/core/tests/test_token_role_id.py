@@ -30,13 +30,10 @@ async def test_token_carries_role_id_and_subjects(db):
 
     # Core minted the claim as a plain string id.
     #
-    # ``audience=`` is not optional here. create_access_token started stamping an
-    # ``aud`` realm claim (Phase 8 realm isolation) after this test was written,
-    # and PyJWT REFUSES a token carrying an aud when the caller names none —
-    # InvalidAudienceError, from a decode that has nothing to do with role_id.
-    # A non-superadmin gets the tenant realm. Asserted rather than switched off
-    # with verify_aud=False, so this test now also pins the realm the claim
-    # carries instead of quietly ignoring it.
+    # ``audience=`` is required: create_access_token stamps an ``aud`` realm claim,
+    # and PyJWT raises InvalidAudienceError when a token carries one and the caller
+    # names none. Asserted rather than switched off with verify_aud=False, so this
+    # also pins the realm a non-superadmin's token carries.
     payload = jwt.decode(
         token, get_settings().jwt_secret, algorithms=["HS256"], audience=AUD_TENANT
     )

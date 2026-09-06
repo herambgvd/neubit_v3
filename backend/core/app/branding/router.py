@@ -26,24 +26,20 @@ from .schemas import BrandingOut, UpdateBrandingIn
 
 router = APIRouter(prefix="/branding", tags=["branding"])
 
-#: The one route here that must answer WITHOUT a credential: the login page has to
+#: The one route here that must answer without a credential: the login page has to
 #: theme itself before anyone has signed in.
 #:
-#: It is a separate router because `app/app.py` guards whole routers with
-#: `require_tenant_active`, and that dependency resolves an actor — so guarding
-#: `branding` as one unit turned this route into a 401 and left the login page
-#: unable to load its own logo. Found by the first HTTP test this router ever had.
-#: `optional_tenant_id` already handles the anonymous case correctly; the mistake
-#: was upstream of it.
+#: Separate from `router` because `app/app.py` guards whole routers with
+#: `require_tenant_active`, which resolves an actor — folding this route back in
+#: makes it a 401. `optional_tenant_id` already handles the anonymous case.
 public_router = APIRouter(prefix="/branding", tags=["branding"])
 
 
 async def _to_out(branding: Branding) -> BrandingOut:
     """Serialise a Branding row into BrandingOut, resolving logo_key → logo_url.
 
-    The DB holds a storage *key*; the client needs a fetchable *URL*. We resolve it
-    here (once, at response time) via the storage backend — a stable local URL or a
-    presigned S3 link depending on config. No logo → logo_url is None.
+    The DB holds a storage key; the client needs a fetchable URL, resolved here at
+    response time (local URL or presigned S3, per config). No logo → logo_url None.
     """
     logo_url = await get_storage().url(branding.logo_key) if branding.logo_key else None
     return BrandingOut(
@@ -79,7 +75,7 @@ async def update_branding(
 ) -> BrandingOut:
     """Update name / colours (partial). Logo is uploaded via POST /logo.
 
-    A tenant-admin edits THEIR tenant's branding; a super-admin edits the default.
+    A tenant-admin edits their own tenant's branding; a super-admin edits the default.
     """
     branding = await service.update(db, data, actor.tenant_id)
     return await _to_out(branding)
@@ -99,9 +95,8 @@ async def upload_logo(
     # read_capped, not file.read() — the 8 MiB cap has to stop the read, not report
     # on it afterwards. See core/uploads.py.
     data = await read_capped(file, field="Logo")
-    # Extension from the validated content type, not from the uploaded filename —
-    # see core/uploads.py. The served URL stays clean and cannot be made to end
-    # in .html.
+    # Extension from the validated content type, not the uploaded filename, so the
+    # served URL cannot be made to end in .html. See core/uploads.py.
     ctype, ext = validate_image(data, file.content_type, field="Logo")
     key = f"branding/logo_{uuid.uuid4().hex}{ext}"
     await get_storage().put(key, data, ctype)

@@ -135,17 +135,15 @@ class UpdateSiteRequest(BaseModel):
 
 
 class BuildingFactsUpdate(BaseModel):
-    """The building facts, written as a SET rather than as a patch.
+    """The building facts, written as a set rather than a patch.
 
-    Its own request (and its own route) for one reason: ``UpdateSiteRequest``
-    is applied with ``exclude_none=True``, so on that path a null can never be
-    SENT — you can change an area but not take one back. For a figure a rating
-    divides by, "I recorded 12000 by mistake and there is no reliable number"
-    has to be sayable. Here an explicit ``null`` CLEARS the value and the site
-    returns to "no area recorded", which is a first-class state.
+    Its own request and route because ``UpdateSiteRequest`` is applied with
+    ``exclude_none=True``, so on that path a value can be changed but never taken
+    back. Here an explicit ``null`` clears the value and the site returns to "no
+    area recorded", which is a first-class state.
 
-    Nothing here is inferred and nothing has a default. A tariff without a
-    currency is refused rather than assumed to be rupees.
+    Nothing is inferred and nothing has a default; a tariff without a currency is
+    refused rather than assumed.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -182,11 +180,10 @@ class SitePublic(BaseModel):
     contact_phone: Optional[str] = None
     email_address: Optional[str] = None
     image_url: Optional[str] = None
-    # --- BUILDING FACTS (migration 0018) ------------------------------------
-    # Null means NOT RECORDED, everywhere, and every consumer must render it as
-    # such. Building Intelligence → Ratings divides by `gross_floor_area_sqm`
-    # and produces NO rating when it is null — never a default, never an
-    # estimate, never a national average.
+    # --- Building facts (migration 0018) ------------------------------------
+    # Null means "not recorded" and consumers must render it as such: BI Ratings
+    # produces no rating when `gross_floor_area_sqm` is null rather than
+    # substituting a default or an estimate.
     gross_floor_area_sqm: Optional[float] = None
     energy_tariff_per_kwh: Optional[float] = None
     tariff_currency: Optional[str] = None
@@ -238,24 +235,22 @@ class SiteListResponse(BaseModel):
 
 # ── Time-of-Use tariff slabs (migration 0019) ─────────────────────────────────
 #
-# The scalar `energy_tariff_per_kwh` above stays: it is the legitimate simple
-# case. PRECEDENCE: if any slab with `effective_from` on or before the date
-# being priced exists, the slab set overrides the scalar ENTIRELY for that
-# date; an hour no slab covers has NO price (absence, never a fallback into the
-# scalar). The scalar applies only when no slab set is in effect.
+# The scalar `energy_tariff_per_kwh` above stays as the simple case. If any slab
+# with `effective_from` on or before the priced date exists, the slab set
+# overrides the scalar entirely for that date, and an hour no slab covers has no
+# price rather than falling back to the scalar.
 #
-# `PUT /sites/{id}/tariff-slabs` is a FULL REPLACE — the same retraction
-# property as building-facts: an explicit empty list clears the set, because a
-# wrong rate an operator cannot take back is worse than none.
+# `PUT /sites/{id}/tariff-slabs` is a full replace, so an empty list clears the
+# set.
 
 
 class TariffSlabIn(BaseModel):
-    """One window. Minutes since midnight; `end < start` WRAPS midnight
-    (22:00 → 06:00); `end == start` is refused (full day is 0 → 1440).
+    """One window, in minutes since midnight.
 
-    Coverage of the 24h cycle is NOT enforced here: a partial tariff is a
-    partial statement, and the UI warns about gaps/overlaps rather than the
-    server inventing filler slabs.
+    `end < start` wraps midnight (22:00 → 06:00); `end == start` is refused (a
+    full day is 0 → 1440). Coverage of the 24h cycle is deliberately not enforced
+    — the UI warns about gaps and overlaps rather than the server inventing
+    filler slabs.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -295,8 +290,8 @@ class TariffSlabIn(BaseModel):
 
 
 class TariffSlabsUpdate(BaseModel):
-    """The whole list, every time. An empty list CLEARS the site's slabs and
-    the scalar tariff (if recorded) is in effect again."""
+    """The whole list, every time. An empty list clears the site's slabs and the
+    scalar tariff, if recorded, is in effect again."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -327,10 +322,12 @@ class TariffSlabListResponse(BaseModel):
 
 
 class EmissionFactorIn(BaseModel):
-    """kg CO2 per kWh with a REQUIRED source. The operator says where the
-    number came from; a factor with no citation is an invented figure and the
-    platform refuses to hold one. One factor per `effective_from` — two on the
-    same date would be a contradiction, not a history."""
+    """kg CO2 per kWh with a required source.
+
+    A factor with no citation is an invented figure, so the platform refuses to
+    hold one. One factor per `effective_from`; two on the same date would be a
+    contradiction, not a history.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -350,7 +347,7 @@ class EmissionFactorIn(BaseModel):
 
 
 class EmissionFactorsUpdate(BaseModel):
-    """Full replace; an empty list clears (the retraction property)."""
+    """Full replace; an empty list clears the site's factors."""
 
     model_config = ConfigDict(extra="forbid")
 

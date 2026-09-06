@@ -1,15 +1,13 @@
 """The scoped service credential — what a key can do, and what it must never do.
 
-Every test here is named for a property the credential is supposed to have, not
-for a function, because the properties are the deliverable: a peer product is
-going to hold one of these instead of a human's password, and each of the
-assertions below is one of the reasons that is an improvement.
+Each test is named for a property of the credential rather than for a function: a
+peer product holds one of these instead of a human's password.
 
 Driven through the real HTTP surface (httpx ASGITransport over the base app,
-in-memory SQLite) rather than against the service methods, because half of what
-is being asserted lives in the wiring — which dependency a route hangs off, which
-claim a token carries, which path a 401 comes out of. A service-level test would
-pass with the interactive login path wide open to a key.
+in-memory SQLite) rather than the service methods, because half of what is asserted
+lives in the wiring — which dependency a route hangs off, which claim a token
+carries, which path a 401 comes out of. A service-level test would pass with the
+interactive login path wide open to a key.
 """
 
 from __future__ import annotations
@@ -36,11 +34,9 @@ PREFIX = "/api/v1"
 
 @pytest.fixture(autouse=True)
 def _fresh_rate_limit_buckets():
-    """The limiter is a module-level dict keyed by client IP, and every test here
-    arrives from the same ASGI "testclient" address. Without this the suite's own
-    exchanges accumulate into one bucket and a later test 429s for a reason that
-    has nothing to do with what it asserts — a failure that would read as a bug in
-    the credential."""
+    """The limiter is a module-level dict keyed by client IP and every test here
+    arrives from the same ASGI address, so without this a later test 429s for a
+    reason unrelated to what it asserts."""
     from app.core import ratelimit
 
     ratelimit._hits.clear()
@@ -73,8 +69,8 @@ def _bearer(token: str) -> dict:
 
 
 async def _admin(db):
-    """An operator who can mint keys and holds every scope handed to one below —
-    a creator can never grant more than they hold, so this list bounds the tests."""
+    """An operator who can mint keys and holds every scope handed to one below — a
+    creator can never grant more than they hold, so this list bounds the tests."""
     role = await make_role(db, "KeyAdmin", ["apikey.manage", "bi.read", "user.manage", "audit.read"])
     return await make_user(db, "keyadmin@x.io", role)
 
@@ -103,13 +99,13 @@ async def test_secret_is_shown_once_and_stored_only_as_a_hash(app, db):
         assert listed.status_code == 200
         (row,) = listed.json()["items"]
         assert "key" not in row
-        # Not merely absent from the projection — absent from the response at all,
-        # so a future field added to ApiKeyOut cannot leak it by accident.
+        # Absent from the whole response, not just the projection, so a field added
+        # to ApiKeyOut later cannot leak it.
         assert raw not in listed.text
 
     key = (await db.execute(select(ApiKey))).scalar_one()
-    # The prefix is a dedicated id segment, NOT a slice of the secret: it is
-    # printed in every listing, so anything it contains is public.
+    # The prefix is a dedicated id segment, not a slice of the secret: it is printed
+    # in every listing, so anything it contains is public.
     assert key.prefix == raw[:12]
     assert raw[12:] not in key.key_hash
     assert key.key_hash != raw
@@ -118,9 +114,8 @@ async def test_secret_is_shown_once_and_stored_only_as_a_hash(app, db):
 async def test_a_key_cannot_hold_the_wildcard_by_any_route(app, db):
     """The unbounded machine credential must not be reachable at all.
 
-    Two ways in: asking for "*" directly, and asking for it sideways by naming the
-    built-in Administrator role, which is how the pre-2026-09-05 form produced one
-    without anybody typing a wildcard.
+    Two ways in: asking for "*" directly, and naming the built-in Administrator role,
+    which produces one without anybody typing a wildcard.
     """
     actor = await _admin(db)
     admin_role = await make_role(db, "Administrator-wild", ["*"])
@@ -139,8 +134,8 @@ async def test_a_key_cannot_hold_the_wildcard_by_any_route(app, db):
 
 
 async def test_a_key_cannot_be_wider_than_its_creator(app, db):
-    """Otherwise the facility is a privilege-escalation primitive: 'I cannot do X,
-    but I can issue a credential that does X and then use it.'"""
+    """Otherwise the facility is a privilege-escalation primitive: issue a credential
+    that does X, then use it."""
     role = await make_role(db, "BiKeyMaker", ["apikey.manage", "bi.read"])
     actor = await make_user(db, "narrow@x.io", role)
     async with _client(app) as c:
@@ -149,14 +144,14 @@ async def test_a_key_cannot_be_wider_than_its_creator(app, db):
             json={"name": "sneaky", "scopes": ["bi.read", "user.manage"]},
         )
         assert r.status_code == 422 and "user.manage" in r.text
-        # The scope the creator DOES hold is still grantable — the rule narrows,
-        # it does not just refuse.
+        # A scope the creator does hold is still grantable: the rule narrows rather
+        # than refuses.
         assert (await _mint(c, actor, scopes=["bi.read"]))["scopes"] == ["bi.read"]
 
 
 async def test_a_scope_nothing_enforces_is_refused(app, db):
     """A key granting a permission no code checks reads as a restriction and is
-    not one. Same failure the ingest.read note in permissions.py records."""
+    not one."""
     actor = await _admin(db)
     async with _client(app) as c:
         r = await c.post(
@@ -168,10 +163,9 @@ async def test_a_scope_nothing_enforces_is_refused(app, db):
 
 # --- the exchange ------------------------------------------------------------
 async def test_exchange_yields_an_ordinary_access_token_carrying_only_the_scopes(app, db):
-    """The claim shape is the contract with eight untouched services.
-
-    ``kernel.auth.verify_token`` is not changed by this feature and must not need
-    to be: whatever a satellite reads off a person's token it reads off a key's.
+    """The claim shape is the contract with the satellites: whatever one reads off a
+    person's token it reads off a key's, so ``kernel.auth.verify_token`` needs no
+    change.
     """
     actor = await _admin(db)
     async with _client(app) as c:
@@ -180,8 +174,8 @@ async def test_exchange_yields_an_ordinary_access_token_carrying_only_the_scopes
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["token_type"] == "bearer" and body["scopes"] == ["bi.read"]
-        # 15 minutes, not the 12 hours a person gets: this number is the width of
-        # the window in which a revoked key still works at the satellites.
+        # 15 minutes, not the 12 hours a person gets: this is how long a revoked key
+        # still works at the satellites.
         assert body["expires_in"] == 15 * 60
 
         claims = decode_token(body["access_token"])
@@ -194,14 +188,14 @@ async def test_exchange_yields_an_ordinary_access_token_carrying_only_the_scopes
     assert claims["is_superadmin"] is False
     assert claims["aud"] == "neubit-tenant"
     assert claims["role_id"] is None
-    # ``sub`` is the KEY row, which is what makes the interactive path below refuse.
+    # ``sub`` is the key row, which is what makes the interactive path below refuse.
     key = (await db.execute(select(ApiKey))).scalar_one()
     assert claims["sub"] == str(key.id)
 
 
 async def test_no_refresh_token_is_issued(app, db):
-    """A refresh token would be a second long-lived credential with its own
-    revocation story, surviving the revocation of the key that produced it."""
+    """A refresh token would be a second long-lived credential, outliving the
+    revocation of the key that produced it."""
     actor = await _admin(db)
     async with _client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
@@ -243,8 +237,8 @@ async def test_an_expired_key_is_refused(app, db):
 
 
 async def test_last_used_is_stamped_so_a_forgotten_key_is_visible(app, db):
-    """'Issued 14 months ago' is normal. 'Issued 14 months ago, never used' is a
-    credential to delete, and nothing else in the row can say it."""
+    """"Issued 14 months ago, never used" is a credential to delete, and nothing
+    else in the row can say it."""
     actor = await _admin(db)
     async with _client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
@@ -259,8 +253,7 @@ async def test_last_used_is_stamped_so_a_forgotten_key_is_visible(app, db):
 async def test_a_key_cannot_sign_in_to_the_console(app, db):
     """The interactive path resolves ``sub`` to a users row and there is none.
 
-    Not a check someone has to remember to write — a consequence of the shape. If
-    this ever passes, somebody has taught ``get_current_user`` about API keys.
+    If this ever fails, somebody has taught ``get_current_user`` about API keys.
     """
     actor = await _admin(db)
     async with _client(app) as c:
@@ -272,9 +265,8 @@ async def test_a_key_cannot_sign_in_to_the_console(app, db):
 
 
 async def test_a_key_is_confined_to_its_scopes_on_core_routes(app, db):
-    """The BI-read key must not be able to create a user. Same 403, same line, as
-    an under-privileged human — the credential kind only changes where the
-    permission list is read from."""
+    """The BI-read key must not be able to create a user: the same 403 an
+    under-privileged human gets."""
     actor = await _admin(db)
     role = await make_role(db, "Target", ["bi.read"])
     async with _client(app) as c:
@@ -297,7 +289,7 @@ async def test_a_key_is_confined_to_its_scopes_on_core_routes(app, db):
 
 
 async def test_a_key_can_reach_what_it_is_scoped_for(app, db):
-    """The other half: a scope that IS held authorizes, or the facility is just an
+    """The other half: a scope that is held authorizes, or the facility is an
     elaborate way of refusing everything."""
     actor = await _admin(db)
     async with _client(app) as c:
@@ -308,8 +300,8 @@ async def test_a_key_can_reach_what_it_is_scoped_for(app, db):
 
 
 async def test_a_token_carrying_an_unknown_credential_kind_is_refused(app, db):
-    """``act`` is a closed set. An unrecognised value must not fall through to the
-    user branch, which is the branch with more reach."""
+    """``act`` is a closed set: an unrecognised value must not fall through to the
+    user branch, which has more reach."""
     actor = await _admin(db)
     forged = jwt.encode(
         {**decode_token(create_access_token(actor, sid="t")), "act": "something-new"},
@@ -323,8 +315,7 @@ async def test_a_token_carrying_an_unknown_credential_kind_is_refused(app, db):
 
 # --- revocation --------------------------------------------------------------
 async def test_revocation_is_immediate_and_touches_no_user_account(app, db):
-    """The reason nobody ever revokes anything is that the safe action disables a
-    person. Here it disables one credential and nothing else."""
+    """Revoking disables one credential and nothing else — no person is disabled."""
     actor = await _admin(db)
     async with _client(app) as c:
         created = await _mint(c, actor, scopes=["audit.read"])
@@ -334,8 +325,8 @@ async def test_revocation_is_immediate_and_touches_no_user_account(app, db):
         r = await c.delete(f"{PREFIX}/auth/api-keys/{created['id']}", headers=_auth(actor))
         assert r.status_code == 204
 
-        # The token that was already minted stops working on core AT ONCE, because
-        # core re-reads the key row exactly as it re-reads a user row.
+        # An already-minted token stops working on core at once, because core
+        # re-reads the key row exactly as it re-reads a user row.
         assert (await c.get(f"{PREFIX}/audit", headers=_bearer(token))).status_code == 401
         # And no further token can be obtained.
         assert (await _exchange(c, created["key"])).status_code == 401
@@ -349,8 +340,7 @@ async def test_revocation_is_immediate_and_touches_no_user_account(app, db):
 
 # --- the audit trail ---------------------------------------------------------
 async def test_a_keys_action_is_not_recorded_as_a_persons(app, db):
-    """A credential that cannot be told apart from a person in the trail has not
-    solved the problem it was built for."""
+    """A credential indistinguishable from a person in the trail solves nothing."""
     actor = await _admin(db)
     async with _client(app) as c:
         created = await _mint(c, actor, scopes=["apikey.manage", "bi.read"])
@@ -369,8 +359,8 @@ async def test_a_keys_action_is_not_recorded_as_a_persons(app, db):
     (machine,) = by_key
     assert machine.action == "apikey.create"
     assert str(machine.actor_id) == created["id"]
-    # No email, because a key has no email. The row is visibly not a person even
-    # before actor_type is read.
+    # No email, because a key has no email: the row is visibly not a person before
+    # actor_type is even read.
     assert machine.actor_email is None
     assert machine.actor_name == "DashForge BI reader"
     # The scopes are in the meta so the trail stays legible after the key row is
@@ -382,8 +372,7 @@ async def test_a_keys_action_is_not_recorded_as_a_persons(app, db):
 
 
 async def test_system_actions_are_classified_as_system_not_as_users(db):
-    """The actor-less rows always meant 'system'; actor_type is the first place it
-    could be said, and saying 'user' there would have been a new lie."""
+    """Actor-less rows mean "system", and actor_type is where that gets said."""
     from app.core.audit import record
 
     entry = await record(db, actor=None, action="tenant.offboard", target_type="tenant")
@@ -392,9 +381,8 @@ async def test_system_actions_are_classified_as_system_not_as_users(db):
 
 # --- the additive guarantee --------------------------------------------------
 async def test_a_login_token_behaves_exactly_as_before(app, db):
-    """This feature is verified by nine services continuing to work, not by the
-    tests above passing. This is the part of that claim a unit test can hold: a
-    token with no ``act`` claim takes an unchanged path.
+    """A token with no ``act`` claim takes the unchanged path — the part of "additive
+    for every existing caller" a unit test can hold.
     """
     actor = await _admin(db)
     claims = decode_token(create_access_token(actor, sid="t"))
@@ -402,9 +390,8 @@ async def test_a_login_token_behaves_exactly_as_before(app, db):
     async with _client(app) as c:
         assert (await c.get(f"{PREFIX}/auth/me", headers=_auth(actor))).status_code == 200
         assert (await c.get(f"{PREFIX}/auth/api-keys", headers=_auth(actor))).status_code == 200
-        # A permission the role does not hold is still a 403 and not a 401: the
-        # rewritten require_permission resolves the actor first and refuses on the
-        # permission, exactly as the get_current_user-based version did.
+        # A permission the role does not hold is still 403, not 401:
+        # require_permission resolves the actor first, then refuses on the permission.
         narrow = await make_user(
             db, "narrowest@x.io", await make_role(db, "NoAudit", ["user.read"])
         )
@@ -412,8 +399,8 @@ async def test_a_login_token_behaves_exactly_as_before(app, db):
 
 
 async def test_service_method_refuses_a_key_with_no_scopes_at_all(db):
-    """Belt and braces on the storage default: an empty scope list grants nothing,
-    so a row that somehow arrives without scopes is inert rather than permissive."""
+    """An empty scope list grants nothing, so a row that arrives without scopes is
+    inert rather than permissive."""
     key = ApiKey(name="inert", prefix="nbk_00000000", key_hash="x", scopes=[])
     assert key.grants("bi.read") is False
     assert key.grants("*") is False

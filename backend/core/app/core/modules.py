@@ -1,12 +1,10 @@
 """Feature-module plugin registry.
 
-A scenario app (e.g. FRS) is a HOST that mounts optional feature modules such as
-Attendance, Transit, and Investigations. Each module is self-contained — its own
-API router, its own service, its own DB tables. The LICENSE decides which ones
-are enabled for a given client.
+A scenario app is a host that mounts optional feature modules, each self-contained
+(own router, service, tables). The license decides which are enabled.
 
-Adding a new feature later = write a package + register a ``ModuleSpec``.
-No edits to the core app. That is the modularity guarantee.
+Adding a feature means writing a package and registering a ``ModuleSpec`` — no
+edits to the core app.
 
     # frs/backend/app/modules/attendance/__init__.py
     from app.core import ModuleSpec

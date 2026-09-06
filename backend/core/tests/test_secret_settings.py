@@ -1,15 +1,9 @@
 """Credentials stored as settings and as messaging config.
 
-Two bugs of the same family, on different surfaces:
-
-  * `google_maps_api_key` declared `"secret": True` in the catalog and NOTHING read
-    the flag — the value went into `app_settings.value` in plaintext and `GET
-    /settings` returned the whole effective map unmasked to every holder of
-    `settings.manage`.
-  * `upsert_channel` replaced the stored config wholesale, so an ordinary edit
-    through the UI — which re-submits the `"***"` it was shown — wrote
-    `encrypt_secret("***")` over the real SMTP password. Mail stopped and the
-    password was unrecoverable. Not an attack: the normal flow.
+Two properties, on two surfaces. A setting the catalog flags `"secret": True` is
+encrypted at rest and masked on the way out. And a write that carries the mask back
+— which is what the UI submits after an unrelated edit — must keep the stored value
+rather than encrypt `"***"` over it.
 """
 
 from __future__ import annotations
@@ -54,8 +48,7 @@ async def test_the_settings_screen_never_sees_the_credential(db):
 
 
 async def test_saving_the_masked_value_back_does_not_destroy_the_secret(db):
-    """The destructive round-trip, on the settings surface. The UI is handed "***"
-    and submits the form it was given."""
+    """The destructive round-trip: the UI is handed "***" and submits it back."""
     svc = SettingsService(db, None)
     await svc.update({"google_maps_api_key": "AIzaSyREAL"})
     await svc.update({"google_maps_api_key": MASK, "google_maps_default_zoom": 9})
@@ -145,11 +138,9 @@ async def test_a_channel_password_is_encrypted_under_its_own_tenants_key(db):
 
 # --- who a message actually goes through -------------------------------------
 #
-# `send_email`, `send_push` and the dispatcher's webhook branch took no tenant_id
-# at all, so every send resolved the PLATFORM-DEFAULT channel row. A tenant that
-# configured its own SMTP had it stored, masked and encrypted correctly — and never
-# used. Their mail went out through the platform's server, from the platform's
-# address, which is both a misdelivery and a data-residency problem.
+# A send that takes no tenant_id resolves the platform-default channel row, so a
+# tenant's own SMTP config is stored and masked correctly and never used — its mail
+# goes out through the platform's server, from the platform's address.
 
 
 async def test_a_tenant_with_its_own_smtp_is_not_sent_through_the_platforms(db):
@@ -166,8 +157,7 @@ async def test_a_tenant_with_its_own_smtp_is_not_sent_through_the_platforms(db):
 
 
 async def test_a_tenant_without_its_own_channel_still_inherits_the_default(db):
-    """The fallback is deliberate and must survive the fix — it is what makes the
-    platform default useful."""
+    """The fallback is deliberate: it is what makes the platform default useful."""
     import uuid
 
     from app.messaging.config import get_config_decrypted, upsert_channel
@@ -177,11 +167,9 @@ async def test_a_tenant_without_its_own_channel_still_inherits_the_default(db):
 
 
 async def test_the_test_button_does_not_fall_back_to_the_platform_webhook(db):
-    """`get_channel_exact` exists for the surfaces where inheriting is wrong. A
-    tenant admin with no webhook of their own could otherwise make the PLATFORM's
-    webhook URL be hit with a payload HMAC-signed by the platform's secret, on
-    demand — the secret is never disclosed, but a lower-privileged caller gets to
-    exercise it as an oracle."""
+    """`get_channel_exact` exists for the surfaces where inheriting is wrong. On
+    demand, a tenant admin with no webhook of their own would otherwise get the
+    platform's webhook hit with a payload signed by the platform's secret."""
     import uuid
 
     from app.messaging.config import get_channel, get_channel_exact, upsert_channel
@@ -195,15 +183,14 @@ async def test_the_test_button_does_not_fall_back_to_the_platform_webhook(db):
 
 def test_a_webhook_url_is_not_logged_with_its_query_string():
     """Query-string bearer tokens are a common receiver pattern and SECRET_FIELDS
-    does not cover the URL, so the full URL at INFO put the credential into logs —
-    which are shipped and retained differently from the column it was encrypted in.
+    does not cover the URL, so logging the full URL leaks the credential into logs.
     """
     from app.messaging.webhook import _loggable
 
     assert _loggable("https://hooks.example/x?token=s3cret") == "https://hooks.example/x"
     assert "s3cret" not in _loggable("https://hooks.example/x?token=s3cret")
     assert "hunter2" not in _loggable("https://user:hunter2@hooks.example/x")
-    # The endpoint must still be identifiable — an operator debugging a failed
-    # delivery needs to know WHICH one failed.
+    # The endpoint must stay identifiable: an operator debugging a failed delivery
+    # needs to know which one failed.
     assert _loggable("https://hooks.example:8443/a/b") == "https://hooks.example:8443/a/b"
     assert _loggable("not a url at all") == "not a url at all"

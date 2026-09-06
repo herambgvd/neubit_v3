@@ -1,26 +1,19 @@
-"""Enterprise security ORM models (P6-D) — VMS-grade hardening.
+"""Enterprise security ORM models (P6-D).
 
-This module adds the *enterprise-pitch* security surface on top of the auth
-hardening that already ships in ``app/auth`` (TOTP 2FA, account lockout, password
-policy, revocable sessions) and the append-only ``app/core/audit`` trail:
+Sits on top of the auth hardening in ``app/auth`` and the append-only
+``app/core/audit`` trail:
 
-  * :class:`SecurityPolicy` — a per-tenant policy singleton. Today it carries the
-    "require 2FA" enforcement toggle (per-tenant / per-role); it is the natural home
-    for future session / password knobs surfaced per-tenant.
-  * :class:`DirectoryConfig` — an LDAP/AD server the tenant syncs users & groups
-    from. Bind credentials are Fernet-encrypted at rest (``app/core/secrets``).
-  * :class:`SsoConfig` — an OIDC identity provider (issuer / client_id / secret).
-    The client secret is Fernet-encrypted at rest.
-  * :class:`DualAuthRequest` — the four-eyes ledger: a flagged sensitive action
-    (export video, delete recording, delete tenant) recorded as *pending* until a
-    second privileged user approves or denies it.
+  * :class:`SecurityPolicy` — per-tenant policy singleton; today the "require 2FA"
+    toggle, and the home for future per-tenant session/password knobs.
+  * :class:`DirectoryConfig` — an LDAP/AD server to sync users and groups from.
+    Bind credentials are Fernet-encrypted at rest (``app/core/secrets``).
+  * :class:`SsoConfig` — an OIDC identity provider; client secret encrypted too.
+  * :class:`DualAuthRequest` — the four-eyes ledger: a flagged sensitive action is
+    pending until a second privileged user approves or denies it.
 
-All tables are TENANT-SCOPED with a nullable ``tenant_id`` (NULL = a platform /
-super-admin row) exactly like the sites/tags/audit tables, so the same row-scoping
-helpers (``tenancy.scope``) apply unchanged.
-
-Portable generic column types (Uuid / JSON / Enum-as-String) so the same models run
-on Postgres and on SQLite (tests).
+All tables are tenant-scoped with a nullable ``tenant_id`` (NULL = a platform row),
+like sites/tags/audit, so ``tenancy.scope`` applies unchanged. Column types are
+generic (Uuid / JSON / Enum-as-String) so the models run on Postgres and SQLite.
 """
 
 from __future__ import annotations
@@ -47,28 +40,26 @@ from ..db.base import Base
 class SecurityPolicy(Base):
     """Per-tenant security policy singleton (one row per tenant; NULL = platform).
 
-    Carries the 2FA enforcement decision so a tenant-admin can mandate TOTP for
-    their organization (optionally only for specific role names). Kept as its own
-    table — rather than a JSON blob in app_settings — so it is queryable at login
-    time with a single indexed lookup and can grow structured columns later.
+    Carries the 2FA enforcement decision so a tenant-admin can mandate TOTP,
+    optionally only for named roles. Its own table rather than a JSON blob in
+    app_settings, so login can check it with one indexed lookup.
     """
 
     __tablename__ = "security_policies"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    # The tenant this policy governs. NULL = the platform-default policy (applies to
-    # super-admins and to tenants with no policy row of their own).
+    # NULL = the platform-default policy: super-admins, and tenants with no row.
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("tenants.id", ondelete="CASCADE"), index=True, unique=True, nullable=True
     )
     # --- 2FA enforcement ---------------------------------------------------
-    # When true, every user in scope MUST have TOTP enrolled; a login without it is
-    # blocked with an "enroll 2FA" signal (the client routes to setup).
+    # When true, every user in scope must have TOTP enrolled; a login without it
+    # gets an "enroll 2FA" signal and the client routes to setup.
     require_2fa: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    # Optional narrowing: only these role NAMES are forced into 2FA (empty = all
-    # users when require_2fa is on). Lets a tenant mandate 2FA for admins only.
+    # Only these role names are forced into 2FA (empty = all users when
+    # require_2fa is on), so a tenant can mandate 2FA for admins only.
     require_2fa_roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # --- session policy (surfaced per-tenant; advisory in v1) --------------
     # Idle/absolute session lifetime hint in minutes (0 = use the platform default).
@@ -83,9 +74,8 @@ class SecurityPolicy(Base):
 class DirectoryConfig(Base):
     """An LDAP / Active Directory server a tenant syncs identities from.
 
-    ``bind_password`` is stored Fernet-encrypted (see ``core.secrets``); it is never
-    returned by the API. A tenant may configure at most one directory in v1
-    (``tenant_id`` unique), which is the common enterprise case.
+    ``bind_password`` is Fernet-encrypted (see ``core.secrets``) and never returned
+    by the API. At most one directory per tenant (``tenant_id`` unique).
     """
 
     __tablename__ = "directory_configs"
@@ -107,8 +97,8 @@ class DirectoryConfig(Base):
     use_ssl: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
-    # Search knobs. user_filter is a template with {username}; the *_attr columns map
-    # LDAP attributes onto core user fields.
+    # user_filter is a template with {username}; the *_attr columns map LDAP
+    # attributes onto core user fields.
     user_dn_base: Mapped[str | None] = mapped_column(String, nullable=True)
     user_filter: Mapped[str] = mapped_column(
         String, nullable=False, default="(sAMAccountName={username})"
@@ -168,10 +158,9 @@ class SsoConfig(Base):
 class DualAuthRequest(Base):
     """A four-eyes approval ledger entry for a sensitive action.
 
-    A flagged action (``action`` e.g. ``vms.export`` / ``recording.delete`` /
-    ``tenant.delete``) is recorded as ``pending`` by its *requester*. It is only
-    permitted once a DIFFERENT privileged user (``dualauth.approve``) approves it.
-    The row is the durable record both core and satellite services (vision) check
+    A flagged ``action`` (``vms.export``, ``recording.delete``, ...) is recorded as
+    ``pending`` by its requester and permitted only once a different user holding
+    ``dualauth.approve`` approves it. Core and satellite services check this row
     before performing the action.
     """
 
@@ -196,7 +185,7 @@ class DualAuthRequest(Base):
     decided_by_email: Mapped[str | None] = mapped_column(String, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decision_note: Mapped[str | None] = mapped_column(String, nullable=True)
-    # When the pending request stops being approvable (a stale request is safer denied).
+    # When the pending request stops being approvable.
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True

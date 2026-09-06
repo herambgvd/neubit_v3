@@ -1,15 +1,14 @@
-"""Report generation logic — create jobs, render bytes, store the result.
+"""Report generation — create jobs, render bytes, store the result.
 
-Two execution paths share the same core (build bytes → store → mark done):
+Two paths share the same core (build bytes → store → mark done):
 
-  * INLINE (async): ``generate_report_now`` — runs inside the web request. This is
-    what the app uses today: small/medium exports produced on demand.
-  * WORKER (sync):  ``run_report_task`` — a Celery task for the SCALE path (large
-    exports that shouldn't block a request). It uses the sync DB session + a sync
-    call into storage. Wired but optional; the inline path is the default.
+  * inline (async): ``generate_report_now``, run inside the web request. The
+    default, for small and medium exports.
+  * worker (sync):  ``run_report_task``, a Celery task for large exports. Wired
+    but optional.
 
-The format→bytes mapping and the storage key convention (``reports/<id>.<fmt>``)
-are identical across both paths so a downloaded file is the same either way.
+The format→bytes mapping and the key convention (``reports/<id>.<fmt>``) are the
+same on both paths, so a downloaded file is identical either way.
 """
 
 from __future__ import annotations
@@ -88,11 +87,10 @@ def list_query(scope=None) -> Select:
 async def generate_report_now(
     db: AsyncSession, job: ReportJob, rows: list[dict], columns: list[str]
 ) -> ReportJob:
-    """Produce the report INLINE: build bytes → store → mark the job done.
+    """Produce the report inline: build bytes, store, mark the job done.
 
-    On any failure the job is flipped to ``failed`` with the error recorded, and
-    the exception is NOT re-raised — the job row is the source of truth for the
-    outcome, so callers poll status rather than catch exceptions.
+    A failure sets the job to ``failed`` with the error recorded and is not
+    re-raised: the job row is the source of truth, so callers poll status.
     """
     job.status = "running"
     await db.commit()
@@ -116,14 +114,11 @@ async def generate_report_now(
 # --- Celery scale path -------------------------------------------------------
 @task(name="edge.reports.service.run_report_task")
 def run_report_task(job_id: str, rows: list[dict], columns: list[str]) -> str:
-    """Celery task: same work as ``generate_report_now`` but fully SYNCHRONOUS.
+    """Celery task: the same work as ``generate_report_now``, fully synchronous.
 
-    Celery workers are sync, so this uses the sync DB session (``get_sync_session``)
-    and a sync bridge into the (async) storage backend. For now the app relies on
-    the inline path above; this task is the horizontal-scale option for big exports
-    enqueued with ``run_report_task.delay(str(job.id), rows, columns)``.
-
-    Returns the job's final status so it's visible in the Celery result backend.
+    Uses the sync DB session and a sync bridge into the async storage backend.
+    Enqueue with ``run_report_task.delay(str(job.id), rows, columns)``. Returns the
+    job's final status so it shows up in the Celery result backend.
     """
     import asyncio
 
@@ -140,8 +135,7 @@ def run_report_task(job_id: str, rows: list[dict], columns: list[str]) -> str:
         try:
             data = _build_bytes(job.format, job.name, rows, columns)
             key = f"reports/{job.id}.{job.format}"
-            # Storage is async; from a sync worker we drive one call on a throwaway
-            # event loop. asyncio.run builds + tears down a loop for this single put.
+            # Storage is async; drive this one call on a throwaway event loop.
             asyncio.run(storage.put(key, data, _CONTENT_TYPES[job.format]))
             job.result_key = key
             job.status = "done"
