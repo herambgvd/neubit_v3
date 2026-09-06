@@ -41,7 +41,15 @@ export function useVmsEventStream({ cameraId = null, enabled = true, max = MAX_E
       // a captured 12h-old token would just 401 forever. Same fix as
       // useVmsPopups; the five hooks share this shape.
       const token = tokens.access;
-      if (!token) return;
+      if (!token) {
+        // No token YET, not "no session": the access token lives in memory, so a
+        // component that mounts while the auth provider is still probing the
+        // refresh cookie sees none. Returning here left the stream dead forever;
+        // retry on the same backoff the error path uses.
+        retry = Math.min(retry + 1, 6);
+        timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 30000));
+        return;
+      }
       let url =
         `${api.defaults.baseURL}/realtime/vms-events` + `?token=${encodeURIComponent(token)}`;
       if (cameraId) url += `&camera_id=${encodeURIComponent(cameraId)}`;

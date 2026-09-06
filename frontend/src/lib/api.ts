@@ -3,6 +3,22 @@
 // concurrent 401s) and retries the failed request — only when the refresh itself
 // fails does it clear the session and bounce to /login; on LICENSE_EXPIRED it
 // routes to the "License Expired" screen so an admin can renew.
+//
+// TOKEN MODEL: the short-lived access token lives ONLY in this module's memory
+// and travels as a Bearer header. The long-lived refresh token is never touched
+// by JavaScript — the backend has always set it as the httpOnly `nb_refresh`
+// cookie at login (backend/core/app/auth/cookies.py), scoped to the /auth path,
+// and prefers it over any body. So an XSS on this console can read nothing that
+// outlives the tab.
+//
+// Consequences worth knowing before changing anything here:
+//   • On a hard reload the in-memory token is gone, so the first call 401s and
+//     self-heals from the cookie. That 401 is expected, not a fault.
+//   • `/auth/refresh` is a session probe: it answers 200 with a null token when
+//     there is no session, so a signed-out visitor makes no failing requests.
+//   • Cross-origin deployments (NEXT_PUBLIC_API_URL pointing elsewhere) need
+//     withCredentials AND a CORS policy that allows credentials, which is why
+//     the instance below sets it rather than relying on the same-origin default.
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
 import type { ApiErrorBody } from "./types";
@@ -15,29 +31,41 @@ import type { ApiErrorBody } from "./types";
 //     system "just works" on the server's IP without baking a hostname in.
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-export const ACCESS_KEY = "vizor.access";
-export const REFRESH_KEY = "vizor.refresh";
+// Where this console used to keep both tokens. Kept only to delete them: an
+// existing install has a 30-day refresh token sitting in localStorage right now,
+// and shipping the new model without this would leave it there indefinitely.
+const LEGACY_KEYS = ["vizor.access", "vizor.refresh"];
+
+function purgeLegacyTokens(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (const key of LEGACY_KEYS) localStorage.removeItem(key);
+  } catch {
+    /* private mode / storage disabled — nothing to purge */
+  }
+}
+purgeLegacyTokens();
+
+// In-memory access token. Deliberately NOT persisted.
+let accessToken: string | null = null;
 
 export const tokens = {
   get access(): string | null {
-    return typeof window !== "undefined" ? localStorage.getItem(ACCESS_KEY) : null;
+    return accessToken;
   },
-  get refresh(): string | null {
-    return typeof window !== "undefined" ? localStorage.getItem(REFRESH_KEY) : null;
-  },
-  set(access?: string | null, refresh?: string | null) {
-    if (typeof window === "undefined") return;
-    if (access) localStorage.setItem(ACCESS_KEY, access);
-    if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
+  set(access?: string | null): void {
+    accessToken = access || null;
   },
   clear(): void {
-    if (typeof window === "undefined") return;
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    accessToken = null;
+    // Belt and braces: a token written by an older build must not survive.
+    purgeLegacyTokens();
   },
 };
 
-export const api = axios.create({ baseURL: `${BASE}/api/v1` });
+// withCredentials so the httpOnly refresh cookie rides along on /auth/* calls
+// (and so a cross-origin deployment still works).
+export const api = axios.create({ baseURL: `${BASE}/api/v1`, withCredentials: true });
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const t = tokens.access;
@@ -46,14 +74,14 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 // --- access-token refresh ----------------------------------------------------
-// POST /auth/refresh semantics (backend/core/app/auth/{router,service}.py):
-//   • accepts {"refresh_token": ...} in the body, though the httpOnly nb_refresh
-//     cookie — set at login — wins when present (both carry the same session jti);
+// POST /auth/refresh semantics (backend/core/app/auth/routes/session.py):
+//   • reads the httpOnly nb_refresh cookie; the JSON body is a fallback for
+//     non-browser callers only, and this console no longer has a token to send;
 //   • success → 200 {"access_token": "<jwt>"};
 //   • missing/expired/revoked refresh token → 200 {"access_token": null}, NOT a
 //     4xx (the endpoint doubles as a session probe), so a null token IS failure;
 //   • refresh tokens do NOT rotate: the response carries no refresh token and the
-//     stored one stays valid until its 30-day expiry or an explicit revocation
+//     cookie stays valid until its 30-day expiry or an explicit revocation
 //     (logout, password change, session revoke).
 const AUTH_LIFECYCLE_PATHS = ["/auth/login", "/auth/login/mfa", "/auth/refresh", "/auth/logout"];
 
@@ -76,10 +104,11 @@ async function refreshAccessToken(): Promise<string | null> {
   try {
     // Bare axios, not `api`: no interceptors, so a refresh can never recurse into
     // the 401 handler and never triggers a refresh of its own.
-    const { data } = await axios.post(
-      `${BASE}/api/v1/auth/refresh`,
-      tokens.refresh ? { refresh_token: tokens.refresh } : {}
-    );
+    // No body: the cookie carries the token, and an empty {} would be parsed as
+    // a body with no refresh_token — same outcome, one more thing to get wrong.
+    const { data } = await axios.post(`${BASE}/api/v1/auth/refresh`, undefined, {
+      withCredentials: true,
+    });
     const access: string | null = data?.access_token ?? null;
     // No rotation server-side (see above) — only the access token is replaced.
     if (access) tokens.set(access);
@@ -87,6 +116,21 @@ async function refreshAccessToken(): Promise<string | null> {
   } catch {
     return null; // network error / 5xx — same as a failed refresh
   }
+}
+
+/**
+ * Resolve the current session without assuming a token is already in memory.
+ *
+ * Used by the auth provider on mount: after a reload there is no in-memory token,
+ * so the cookie is probed first. Returns the access token, or null when the user
+ * is signed out — in which case NOTHING has failed and no request 4xx'd.
+ */
+export async function bootstrapSession(): Promise<string | null> {
+  if (tokens.access) return tokens.access;
+  refreshInFlight ??= refreshAccessToken().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
 }
 
 function clearSessionAndRedirect(): void {

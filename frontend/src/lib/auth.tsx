@@ -5,7 +5,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-import { api, tokens } from "./api";
+import { api, bootstrapSession, tokens } from "./api";
 
 const AuthContext = createContext(null);
 
@@ -18,7 +18,11 @@ export function AuthProvider({ children }) {
   const [entitlements, setEntitlements] = useState<any>(null);
 
   const loadMe = useCallback(async () => {
-    if (!tokens.access) {
+    // The access token lives in memory, so after a reload there is none — probe
+    // the httpOnly refresh cookie before deciding the visitor is signed out.
+    // A signed-out visitor produces no failing request: /auth/refresh answers
+    // 200 with a null token.
+    if (!(await bootstrapSession())) {
       setStatus("anon");
       setEntitlements(null);
       return;
@@ -53,7 +57,9 @@ export function AuthProvider({ children }) {
       // When 2FA is on, the backend withholds tokens and returns a challenge —
       // surface it so the caller can prompt for the authenticator code.
       if (data.mfa_required) return { mfaRequired: true, mfaToken: data.mfa_token };
-      tokens.set(data.access_token, data.refresh_token);
+      // Only the access token: the refresh token came back as an httpOnly cookie
+      // the browser stores itself, invisible to this code.
+      tokens.set(data.access_token);
       await loadMe();
       return { mfaRequired: false };
     },
@@ -65,7 +71,7 @@ export function AuthProvider({ children }) {
   const loginMfa = useCallback(
     async (mfaToken, code) => {
       const { data } = await api.post("/auth/login/mfa", { mfa_token: mfaToken, code });
-      tokens.set(data.access_token, data.refresh_token);
+      tokens.set(data.access_token);
       await loadMe();
     },
     [loadMe]
@@ -73,7 +79,8 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try {
-      if (tokens.refresh) await api.post("/auth/logout", { refresh_token: tokens.refresh });
+      // No body: the endpoint revokes the token from the cookie and clears it.
+      await api.post("/auth/logout");
     } catch {
       /* best-effort */
     }

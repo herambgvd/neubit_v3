@@ -6,7 +6,7 @@
 // bounded, newest-first buffer and exposes { events, connected }. EventSource
 // can't set headers, so the JWT rides as a ?token= query. Auto-reconnects with
 // capped backoff; closes when `paused`/`enabled` is false or on unmount.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, tokens } from "@/lib/api";
 
@@ -37,7 +37,15 @@ export function useAccessEventStream(instanceId, { enabled = true, max = MAX_EVE
       // a captured 12h-old token would just 401 forever. Same fix as
       // useVmsPopups; the five hooks share this shape.
       const token = tokens.access;
-      if (!token) return;
+      if (!token) {
+        // No token YET, not "no session": the access token lives in memory, so a
+        // component that mounts while the auth provider is still probing the
+        // refresh cookie sees none. Returning here left the stream dead forever;
+        // retry on the same backoff the error path uses.
+        retry = Math.min(retry + 1, 6);
+        timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 30000));
+        return;
+      }
       const url =
         `${api.defaults.baseURL}/realtime/access-events` +
         `?token=${encodeURIComponent(token)}&instance_id=${encodeURIComponent(instanceId)}`;

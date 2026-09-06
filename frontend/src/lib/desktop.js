@@ -18,8 +18,9 @@
 //
 // The bridge is defined in desktop/src/shared/ipc.ts and exposed by
 // desktop/src/preload/index.ts over a contextIsolation bridge. It carries no
-// session: the token in localStorage under `vizor.access` is the console's, and
-// the shell never reads it. See the note at the top of that file.
+// session: the console's access token lives in the page's own memory (see
+// lib/api.ts) and its refresh token is an httpOnly cookie, so there is nothing
+// here for the shell to read. See the note at the top of that file.
 import { useCallback, useEffect, useState } from "react";
 
 /** The bridge, or null in a browser.

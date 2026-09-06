@@ -42,7 +42,7 @@ export default function SetupPage() {
         password: form.password,
         full_name: form.full_name || null,
       });
-      tokens.set(data.access_token, data.refresh_token);
+      tokens.set(data.access_token);
       await reload();
       toast.success("Welcome — your workspace is ready");
       router.replace("/");
