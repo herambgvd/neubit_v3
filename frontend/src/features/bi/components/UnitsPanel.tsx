@@ -84,11 +84,12 @@ export default function UnitsPanel() {
   // basis" — the pattern, made visible as a set of actual rows before anything
   // is written.
   const groups = useMemo(() => {
-    const m = new Map<string, { unit: string; basis: string; ids: string[] }>();
+    type UnitGroup = { unit: string; basis: string; ids: string[] };
+    const m = new Map<string, UnitGroup>();
     for (const r of rows) {
       if (!r.suggestion) continue;
       const k = `${r.suggestion.basis}::${r.suggestion.unit}`;
-      const g = m.get(k) || { unit: r.suggestion.unit, basis: r.suggestion.basis, ids: [] };
+      const g: UnitGroup = m.get(k) || { unit: r.suggestion.unit, basis: r.suggestion.basis, ids: [] };
       g.ids.push(r.point_id);
       m.set(k, g);
     }

@@ -22,12 +22,15 @@ function pickerMarkerElement() {
   const el = document.createElement("div");
   el.style.cssText = `width:${PIN_W * PIN_SCALE}px;height:${PIN_H * PIN_SCALE}px;pointer-events:none`;
   el.innerHTML = pinSvg(PICK_COLOR, false);
-  const svg = el.firstElementChild;
+  const svg = el.firstElementChild as SVGElement;
   svg.setAttribute("width", `${PIN_W * PIN_SCALE}`);
   svg.setAttribute("height", `${PIN_H * PIN_SCALE}`);
   svg.style.display = "block";
   return el;
 }
+
+/** What the map canvas is doing: probing the archive, missing it, or drawing. */
+type MapStatus = { state: "probing" | "missing" | "ready"; reason?: string };
 
 export default function OfflineMapPicker({
   tilesUrl = DEFAULT_TILES_URL,
@@ -36,10 +39,10 @@ export default function OfflineMapPicker({
   value,
   onChange,
 }) {
-  const containerRef = useRef(null);
-  const mapRef = useRef(null);
-  const markerRef = useRef(null);
-  const [status, setStatus] = useState({ state: "probing" });
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markerRef = useRef<Marker | null>(null);
+  const [status, setStatus] = useState<MapStatus>({ state: "probing" });
 
   const onChangeRef = useRef(onChange);
   // Refreshed after each commit, never during render (see OfflineMapView).
@@ -53,7 +56,7 @@ export default function OfflineMapPicker({
 
   useEffect(() => {
     let cancelled = false;
-    let map;
+    let map: MapLibreMap | undefined;
 
     // See OfflineMapView: a re-run must not inherit the previous status, or the
     // container this effect needs may not be rendered.
@@ -69,7 +72,7 @@ export default function OfflineMapPicker({
 
       const start = initial.current ?? center;
       map = new MapLibreMap({
-        container: containerRef.current,
+        container: containerRef.current!,
         style: offlineStyle(tilesUrl, probe.header),
         center: [start.lng, start.lat],
         zoom: initial.current ? 13 : zoom,
@@ -93,7 +96,7 @@ export default function OfflineMapPicker({
             offset: [0, (PIN_H - PIN_TIP_Y) * PIN_SCALE],
           })
             .setLngLat([lng, lat])
-            .addTo(map);
+            .addTo(map!);
         }
         onChangeRef.current?.({ latitude: lat, longitude: lng });
       });
@@ -107,7 +110,7 @@ export default function OfflineMapPicker({
             offset: [0, (PIN_H - PIN_TIP_Y) * PIN_SCALE],
           })
             .setLngLat([initial.current.lng, initial.current.lat])
-            .addTo(map);
+            .addTo(map!);
         }
         setStatus({ state: "ready" });
       });

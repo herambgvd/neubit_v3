@@ -102,7 +102,7 @@ export function fitLayoutFor(count) {
 
 // Split a flat camera-id list into PAGES sized to the layout capacity — the
 // unit a tour rotates through (gvd_nvr `tourPages`). Empty list → no pages.
-export function tourPages(cameraIds = [], capacity = 4) {
+export function tourPages(cameraIds: string[] = [], capacity = 4) {
   const ids = (cameraIds || []).filter(Boolean);
   if (ids.length === 0 || capacity < 1) return [];
   const pages: any[] = [];

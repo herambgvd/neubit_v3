@@ -18,7 +18,7 @@ export default function SnapshotModal({ camera, onClose }: any) {
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
-    let objectUrl = null;
+    let objectUrl: string | null = null;
     let cancelled = false;
     setLoading(true);
     setError(null);

@@ -25,10 +25,10 @@ export function useIncidentStream(onEvent, { enabled = true, onStatus }: any = {
   useEffect(() => {
     if (!enabled || typeof window === "undefined" || typeof EventSource === "undefined") return;
 
-    let es = null;
+    let es: EventSource | null = null;
     let closed = false;
     let retry = 0;
-    let timer = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       if (closed) return;
@@ -51,7 +51,7 @@ export function useIncidentStream(onEvent, { enabled = true, onStatus }: any = {
       es = new EventSource(url);
 
       const handler = (type) => (e) => {
-        let data = null;
+        let data: any = null;
         try { data = JSON.parse(e.data); } catch { /* keepalive/comment — ignore */ }
         cbRef.current?.({ type, data });
       };

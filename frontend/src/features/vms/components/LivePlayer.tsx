@@ -231,7 +231,7 @@ function LivePlayer({
   // centre, so a point d from that centre lands at pan + z·d; holding it still
   // while z → z' gives pan' = d − k(d − pan), k = z'/z. Passing a null point
   // (the +/− buttons) zooms about the centre, where that reduces to pan' = k·pan.
-  const zoomAt = useCallback((delta, clientX = null, clientY = null) => {
+  const zoomAt = useCallback((delta: number, clientX: number | null = null, clientY: number | null = null) => {
     const el = videoRef.current;
     const z = zoomRef.current;
     const next = Math.min(MAX_ZOOM, Math.max(1, +(z + delta).toFixed(2)));
@@ -246,7 +246,7 @@ function LivePlayer({
     const p = panRef.current;
     let dx = 0;
     let dy = 0;
-    if (r && clientX != null) {
+    if (r && clientX != null && clientY != null) {
       dx = clientX - (r.left + r.width / 2);
       dy = clientY - (r.top + r.height / 2);
     }
@@ -320,8 +320,8 @@ function LivePlayer({
 
     let disposed = false;
     let warmedUp = false;
-    let nativeLoaded = null;
-    let nativeError = null;
+    let nativeLoaded: (() => void) | null = null;
+    let nativeError: (() => void) | null = null;
     let coldRetries = 0;
     // Set once the WebRTC ladder (direct WHEP + the one /h264 transcode retry)
     // has fully given up. Stops the HLS error handlers from bouncing back to
@@ -356,8 +356,8 @@ function LivePlayer({
     //                   we are still connecting, so one unreachable camera cannot
     //                   sit in the queue's way. We keep trying without the slot.
     //   deadlineTimer — gives up entirely after CONNECT_DEADLINE_MS.
-    let gateTimer = null;
-    let deadlineTimer = null;
+    let gateTimer: ReturnType<typeof setTimeout> | null = null;
+    let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
 
     // A connection SETTLED — playing, or the ladder is out of options. Frees the
     // slot and cancels the deadline (nothing left to time out).
@@ -527,7 +527,9 @@ function LivePlayer({
           const res = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/sdp" },
-            body: pc.localDescription.sdp,
+            // localDescription is set by setLocalDescription above; the optional
+            // chain is for the case where the pc was closed while we awaited it.
+            body: pc.localDescription?.sdp,
           });
           // Unmounted while the POST was in flight → don't touch a torn-down pc. The
           // pc was already closed by cleanup(), so MediaMTX reaps this just-created
@@ -797,7 +799,11 @@ function LivePlayer({
       const canvas = document.createElement("canvas");
       canvas.width = v.videoWidth || 640;
       canvas.height = v.videoHeight || 480;
-      canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
+      // getContext returns null when the context cannot be created (a headless
+      // or GPU-less browser); there is nothing to snapshot then.
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);

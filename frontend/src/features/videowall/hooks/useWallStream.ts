@@ -33,10 +33,10 @@ export function useWallStream(wallId, { enabled = true }: any = {}) {
       return undefined;
     }
     if (typeof window === "undefined" || typeof EventSource === "undefined") return undefined;
-    let es = null;
+    let es: EventSource | null = null;
     let closed = false;
     let retry = 0;
-    let timer = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       if (closed) return;
@@ -61,7 +61,7 @@ export function useWallStream(wallId, { enabled = true }: any = {}) {
       es = new EventSource(url);
 
       es.addEventListener("wall.state", (e) => {
-        let data = null;
+        let data: any = null;
         try {
           data = JSON.parse(e.data);
         } catch {

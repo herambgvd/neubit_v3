@@ -99,11 +99,12 @@ export default function MetricRoles() {
   // Suggestion groups: every loaded row whose suggestion shares a basis — the
   // pattern, made visible as actual rows before anything is written.
   const groups = useMemo(() => {
-    const m = new Map<string, { role: string; basis: string; ids: string[] }>();
+    type RoleGroup = { role: string; basis: string; ids: string[] };
+    const m = new Map<string, RoleGroup>();
     for (const r of rows) {
       if (!r.suggestion) continue;
       const k = `${r.suggestion.basis}::${r.suggestion.role}`;
-      const g = m.get(k) || { role: r.suggestion.role, basis: r.suggestion.basis, ids: [] };
+      const g: RoleGroup = m.get(k) || { role: r.suggestion.role, basis: r.suggestion.basis, ids: [] };
       g.ids.push(r.point_id);
       m.set(k, g);
     }

@@ -24,7 +24,7 @@ function useSnapshotThumb(camera) {
       setUrl(null);
       return undefined;
     }
-    let objectUrl = null;
+    let objectUrl: string | null = null;
     let cancelled = false;
     api
       .get(vms.cameras.snapshotUrl(camera.id), { responseType: "blob" })

@@ -69,7 +69,7 @@ export function makeWindow(atMs, seconds) {
 // A plain subscribable value. The master tile publishes; the transport bar and
 // the synced tiles subscribe. Deliberately outside React: see the header.
 function createClock() {
-  let ms = null;
+  let ms: number | null = null;
   // When a TILE last published. `advance` deliberately does not touch it, so the
   // heartbeat below can tell "a camera is driving this" from "nobody is".
   let publishedAt = 0;

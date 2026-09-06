@@ -34,7 +34,7 @@ const VIEWS = {
 
 export default function WorkflowConfigPage() {
   const v = useSearchParams().get("view");
-  const View = VIEWS[v] || VIEWS[WORKFLOW_VIEWS[0].key];
+  const View = (v ? VIEWS[v] : undefined) || VIEWS[WORKFLOW_VIEWS[0].key];
 
   return (
     <ConsolePage>

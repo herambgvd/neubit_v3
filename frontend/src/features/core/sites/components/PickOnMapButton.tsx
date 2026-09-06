@@ -23,7 +23,7 @@ const WORLD_ZOOM = 1.4;
 
 export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, onResult }) {
   const [open, setOpen] = useState(false);
-  const [picked, setPicked] = useState(null);
+  const [picked, setPicked] = useState<{ lat: number; lng: number } | null>(null);
 
   // Whatever is already in the form's lat/lng fields, but only when BOTH parse —
   // an empty string coerces to 0, and half a coordinate would open the picker in

@@ -208,7 +208,7 @@ export default function HomePage() {
   // The active mode is kept in the URL (?mode=…) so it survives a refresh and is
   // shareable; falls back to Surveillance for a missing/unknown value.
   const urlMode = searchParams.get("mode");
-  const mode = MODE_IDS.includes(urlMode) ? urlMode : "surv";
+  const mode = urlMode && MODE_IDS.includes(urlMode) ? urlMode : "surv";
   const setMode = (id) =>
     router.replace(`/home?mode=${id}`, { scroll: false });
 

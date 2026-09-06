@@ -3,19 +3,69 @@
 // DashCode Redux store, so it stays simple and portable across scenarios.
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { api, bootstrapSession, tokens } from "./api";
 
-const AuthContext = createContext(null);
+/** The signed-in operator, as this console reads them. */
+export interface AuthUser {
+  id: string;
+  email: string;
+  full_name: string | null;
+  avatar_url?: string | null;
+  email_verified?: boolean;
+  is_superadmin?: boolean;
+  preferences?: Record<string, unknown>;
+  role?: { id?: string; name?: string; permissions?: string[] };
+}
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState<any>(null);
-  const [status, setStatus] = useState("loading"); // loading | authed | anon
+/** One module's entitlement, as /features reports it. */
+export interface ModuleEntitlement {
+  key: string;
+  enabled: boolean;
+  name?: string;
+}
+
+/** GET /features — `effective_entitlements` in backend/core/app/tenancy/entitlements.py. */
+export interface Entitlements {
+  /** The tenant's plan name; null for a super-admin (no tenant). */
+  plan?: string | null;
+  modules?: ModuleEntitlement[];
+  limits?: Record<string, number>;
+  /** `effective_license_state` in backend/core/app/tenancy/models.py. */
+  license_state?: "active" | "grace" | "expired";
+  /** ISO timestamp; null when the license has no expiry. */
+  expires_at?: string | null;
+}
+
+export type AuthStatus = "loading" | "authed" | "anon";
+
+export interface AuthContextValue {
+  user: AuthUser | null;
+  status: AuthStatus;
+  login: (email: string, password: string) => Promise<{ mfaRequired: boolean; mfaToken?: string }>;
+  loginMfa: (mfaToken: string, code: string) => Promise<void>;
+  logout: () => Promise<void>;
+  /** Permission check against the user's role; "*" is admin. */
+  can: (perm: string) => boolean;
+  /** Whether the caller's tenant has a module on. Permissive when unknown. */
+  hasModule: (key?: string | null) => boolean;
+  entitlements: Entitlements | null;
+  licenseState: string | null;
+  reload: () => Promise<void>;
+}
+
+// null until a provider mounts — `useAuth` is what turns that into an error, so
+// every consumer gets a non-null value.
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [status, setStatus] = useState<AuthStatus>("loading");
   // The caller's effective entitlements from GET /features (modules/limits/license
   // state), resolved from their tenant. null until loaded (nav treats that as
   // permissive so it doesn't flash-hide during the fetch).
-  const [entitlements, setEntitlements] = useState<any>(null);
+  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
 
   const loadMe = useCallback(async () => {
     // The access token lives in memory, so after a reload there is none — probe
@@ -52,7 +102,7 @@ export function AuthProvider({ children }) {
   }, [loadMe]);
 
   const login = useCallback(
-    async (email, password) => {
+    async (email: string, password: string) => {
       const { data } = await api.post("/auth/login", { email, password });
       // When 2FA is on, the backend withholds tokens and returns a challenge —
       // surface it so the caller can prompt for the authenticator code.
@@ -69,7 +119,7 @@ export function AuthProvider({ children }) {
   // Second step of a 2FA login: exchange the challenge token + a TOTP/recovery
   // code for real tokens.
   const loginMfa = useCallback(
-    async (mfaToken, code) => {
+    async (mfaToken: string, code: string) => {
       const { data } = await api.post("/auth/login/mfa", { mfa_token: mfaToken, code });
       tokens.set(data.access_token);
       await loadMe();
@@ -92,7 +142,7 @@ export function AuthProvider({ children }) {
 
   // permission check against the user's dynamic role ("*" = admin)
   const can = useCallback(
-    (perm) => {
+    (perm: string) => {
       const perms = user?.role?.permissions || [];
       return perms.includes("*") || perms.includes(perm);
     },
@@ -103,10 +153,10 @@ export function AuthProvider({ children }) {
   // Permissive when entitlements aren't loaded yet (avoids flash-hiding real nav)
   // and for keys not in the catalog (only known domain modules gate the nav).
   const hasModule = useCallback(
-    (key) => {
+    (key?: string | null) => {
       if (!key) return true;
       if (!entitlements?.modules) return true;
-      const mod = entitlements.modules.find((m) => m.key === key);
+      const mod = entitlements.modules.find((m: ModuleEntitlement) => m.key === key);
       return mod ? !!mod.enabled : true;
     },
     [entitlements]

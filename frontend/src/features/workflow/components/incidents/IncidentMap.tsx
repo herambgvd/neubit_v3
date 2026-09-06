@@ -39,7 +39,8 @@ import { incId, incTitle, incZoneHint, incSiteRef, sev, prioWeight } from "./lib
 const DEFAULT_W = 1200;
 const DEFAULT_H = 800;
 
-function centroid(polygon = []) {
+// `polygon` is FloorZone.polygon (components/floor-builder/floor-plan-editor.tsx).
+function centroid(polygon: number[][] = []): [number, number] | null {
   if (!Array.isArray(polygon) || polygon.length === 0) return null;
   let sx = 0;
   let sy = 0;
@@ -203,8 +204,10 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
               )}
 
               {/* Zones */}
-              {zones.map((z) =>
-                Array.isArray(z.polygon) && z.polygon.length >= 3 ? (
+              {zones.map((z) => {
+                if (!Array.isArray(z.polygon) || z.polygon.length < 3) return null;
+                const c = centroid(z.polygon);
+                return (
                   <g key={z.zone_id}>
                     <polygon
                       points={z.polygon.map(([x, y]) => `${x},${y}`).join(" ")}
@@ -214,10 +217,10 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
                       strokeOpacity="0.6"
                       strokeWidth="2"
                     />
-                    {centroid(z.polygon) && (
+                    {c && (
                       <text
-                        x={centroid(z.polygon)[0]}
-                        y={centroid(z.polygon)[1] - 20}
+                        x={c[0]}
+                        y={c[1] - 20}
                         textAnchor="middle"
                         fontSize="13"
                         className="fill-muted"
@@ -226,8 +229,8 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
                       </text>
                     )}
                   </g>
-                ) : null,
-              )}
+                );
+              })}
 
               {/* Incident markers */}
               {clusters.map((c) => (

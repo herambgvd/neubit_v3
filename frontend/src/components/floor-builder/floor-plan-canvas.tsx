@@ -68,10 +68,10 @@ function isPointInDeviceFov(device, worldPt) {
   return Math.abs(delta) <= half;
 }
 
-function pointInAnyZone(worldPt, zones = []) {
+function pointInAnyZone(worldPt: number[], zones: { polygon?: number[][] }[] = []) {
   if (!zones.length) return false;
   return zones.some(
-    (z) => z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon),
+    (z) => z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon as number[][]),
   );
 }
 
@@ -164,7 +164,9 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
       setImgEl(null);
       setImgSize({ w: 0, h: 0 });
     };
-    img.src = fileUrl(floorplanUrl);
+    // fileUrl returns null for an empty ref; the effect guards on floorplanUrl
+    // above, so this is only ever a real path here.
+    img.src = fileUrl(floorplanUrl) ?? "";
   }, [floorplanUrl]);
 
   // ── Fit to container on first load ────────────────────────────────
@@ -432,7 +434,7 @@ export const FloorPlanCanvas = forwardRef(function FloorPlanCanvas(
   const hitZone = useCallback(
     (worldPt) => {
       for (const z of zones) {
-        if (z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon)) return z;
+        if (z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon as number[][])) return z;
       }
       return null;
     },

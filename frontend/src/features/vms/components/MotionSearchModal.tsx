@@ -88,7 +88,7 @@ export default function MotionSearchModal({
     setRunning(false);
     setStatusText("");
 
-    let objectUrl = null;
+    let objectUrl: string | null = null;
     let cancelled = false;
     setFrameLoading(true);
     setFrameError(false);

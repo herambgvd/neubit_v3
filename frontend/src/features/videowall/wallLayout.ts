@@ -56,8 +56,25 @@ export function filledCount(state) {
   );
 }
 
+/** A wall monitor as the vision service returns it — `MonitorPublic` in
+ *  backend/vision/app/vms/videowall/schemas.py. */
+export interface WallMonitor {
+  id: string;
+  wall_id: string;
+  name: string;
+  position: number;
+  /** "browser" | "decoder" (MonitorKind). */
+  kind: string;
+  /** 1 | 4 | 9 | 16. */
+  layout: number;
+  decoder_id?: string | null;
+  decoder_channel?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Sort monitors by position (row-major fill of the wall grid).
-export function sortedMonitors(monitors = []) {
+export function sortedMonitors(monitors: WallMonitor[] = []) {
   return [...monitors].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 }
 

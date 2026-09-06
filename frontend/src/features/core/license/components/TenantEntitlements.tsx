@@ -24,7 +24,7 @@ export default function TenantEntitlements() {
   if (!entitlements) return null;
 
   const { plan, modules = [], limits = {}, license_state, expires_at } = entitlements;
-  const state = STATE_META[license_state] || STATE_META.active;
+  const state = STATE_META[license_state ?? "active"] || STATE_META.active;
   const enabled = modules.filter((m) => m.enabled);
   const disabled = modules.filter((m) => !m.enabled);
   const limitRows = Object.entries<any>(limits);

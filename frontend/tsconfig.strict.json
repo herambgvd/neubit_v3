@@ -5,7 +5,7 @@
     "allowJs": false,
     // `strict` is being turned on a flag at a time. noImplicitAny is the one
     // still outstanding (~2.5k call sites, tracked in the README).
-    "strict": false,
+    "strict": true,
     // Enabled ahead of full `strict`: this is the flag that catches real null and
     // undefined bugs, and without it TypeScript will not even narrow a
     // discriminated union on a boolean, which silently weakens every guard.

@@ -230,7 +230,7 @@ export default function PlaybackPlayer({
 
   // First recorded timestamp in the window → a sensible default playhead.
   const firstCoverageMs = useMemo(() => {
-    let min = null;
+    let min: number | null = null;
     for (const c of coverage) {
       const s = c?.start ? new Date(c.start).getTime() : null;
       if (s != null && (min == null || s < min)) min = s;
@@ -472,10 +472,14 @@ export default function PlaybackPlayer({
           pc.addEventListener("icegatheringstatechange", check);
           setTimeout(resolve, 3_000);
         });
+        // Set by setLocalDescription above; a missing one is a broken peer, and
+        // throwing lands in the same catch a TypeError did.
+        const local = pc.localDescription;
+        if (!local) throw new Error("no local description");
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/sdp" },
-          body: pc.localDescription.sdp,
+          body: local.sdp,
           signal: abort.signal,
         });
         if (disposed) return;
@@ -706,7 +710,9 @@ export default function PlaybackPlayer({
       const canvas = document.createElement("canvas");
       canvas.width = v.videoWidth || 640;
       canvas.height = v.videoHeight || 480;
-      canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return; // same outcome as the catch below: nothing to snapshot
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);

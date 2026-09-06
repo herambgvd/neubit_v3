@@ -86,7 +86,8 @@ export default function HardwareTab({ instanceId }: any) {
   });
   const items = asItems(q.data);
   const colDefs = HARDWARE_COLUMNS[section] || null;
-  const genericCols = colDefs ? null : pickColumns(items);
+  // Only read by the generic table below, i.e. when there is no colDefs.
+  const genericCols: string[] = colDefs ? [] : pickColumns(items);
 
   const th = "px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-muted";
 

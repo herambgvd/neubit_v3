@@ -27,10 +27,10 @@ export function useVmsPopups({ enabled = true }: any = {}) {
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
     if (!tokens.access) return;
 
-    let es = null;
+    let es: EventSource | null = null;
     let closed = false;
     let retry = 0;
-    let timer = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const push = (p) => {
       // Dedupe by event_id (a rule + a manual re-fire could double up).
@@ -73,7 +73,7 @@ export function useVmsPopups({ enabled = true }: any = {}) {
       es = new EventSource(url);
 
       es.addEventListener("vms.popup", (e) => {
-        let data = null;
+        let data: any = null;
         try {
           data = JSON.parse(e.data);
         } catch {

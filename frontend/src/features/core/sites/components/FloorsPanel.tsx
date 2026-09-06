@@ -85,7 +85,7 @@ export default function FloorsPanel({ site }: any) {
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-500/10 text-blue-500 shrink-0 overflow-hidden border border-nb-line">
                   {f.floorplan_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={fileUrl(f.floorplan_url)} alt={f.name} className="h-full w-full object-cover" />
+                    <img src={fileUrl(f.floorplan_url) ?? undefined} alt={f.name} className="h-full w-full object-cover" />
                   ) : (
                     <Icon icon="heroicons-outline:square-3-stack-3d" className="text-base" />
                   )}

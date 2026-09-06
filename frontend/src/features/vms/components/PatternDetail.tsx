@@ -14,7 +14,8 @@ import { getGroupLayout, groupGridStyle } from "../videoWall";
 export default function PatternDetail({ item, isPattern, groupById, cameraById, onEdit, onDelete, onToggleActive }: any) {
   const active = item.is_active !== false;
   const icon = isPattern ? "heroicons:squares-2x2" : "heroicons-outline:video-camera";
-  const grid = isPattern ? null : getGroupLayout(item.layout);
+  // Only read on the group branches below; a pattern has no layout of its own.
+  const grid = getGroupLayout(item.layout);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">

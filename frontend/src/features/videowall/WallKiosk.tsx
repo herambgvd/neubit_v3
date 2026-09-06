@@ -30,7 +30,7 @@ export default function WallKiosk({ wallId, monitorId }: any) {
 
   // Auto-hide the overlay after inactivity; any mouse move brings it back.
   useEffect(() => {
-    let hideTimer = null;
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const arm = () => {
       setChromeOn(true);
       if (hideTimer) clearTimeout(hideTimer);

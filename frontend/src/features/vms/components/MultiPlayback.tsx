@@ -90,7 +90,7 @@ export default function MultiPlayback() {
   }, [timelineQs]);
 
   const firstCoverageMs = useMemo(() => {
-    let min = null;
+    let min: number | null = null;
     for (const c of mergedCoverage) {
       const s = new Date(c.start).getTime();
       if (min == null || s < min) min = s;

@@ -19,7 +19,7 @@ export default function AlarmCardCamera({ cameraId, eventTime }: any) {
 
   useEffect(() => {
     if (!cameraId) return undefined;
-    let objectUrl = null;
+    let objectUrl: string | null = null;
     let cancelled = false;
     setState("loading");
     api

@@ -80,7 +80,7 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
     onChange?.(next.slice(0, capacity));
   }
 
-  function onCameraDragStart(e, cameraId, sourceIdx = null) {
+  function onCameraDragStart(e, cameraId, sourceIdx: number | null = null) {
     e.dataTransfer.setData(CAMERA_DRAG_MIME, JSON.stringify({ cameraId, sourceIdx }));
     e.dataTransfer.effectAllowed = "move";
   }

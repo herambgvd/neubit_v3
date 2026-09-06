@@ -25,7 +25,7 @@ const VIEWS = {
 
 export default function PlatformConsole() {
   const v = useSearchParams().get("view");
-  const View = VIEWS[v] || Channels;
+  const View = (v ? VIEWS[v] : undefined) || Channels;
   return (
     <ConsolePage>
       <ConsoleScroll>

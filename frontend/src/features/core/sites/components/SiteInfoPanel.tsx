@@ -61,7 +61,7 @@ export default function SiteInfoPanel({ site }: any) {
           <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-muted mb-2">Site image</div>
           {site.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={fileUrl(site.image_url)} alt={site.name} className="h-64 w-full rounded-lg border border-nb-line object-cover" />
+            <img src={fileUrl(site.image_url) ?? undefined} alt={site.name} className="h-64 w-full rounded-lg border border-nb-line object-cover" />
           ) : (
             <div className="h-64 w-full rounded-lg border border-dashed border-nb-line bg-[rgba(8,15,34,.5)] flex flex-col items-center justify-center text-center px-4">
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-nb-muted">

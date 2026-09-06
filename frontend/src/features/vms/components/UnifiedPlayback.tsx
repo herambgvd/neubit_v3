@@ -457,7 +457,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
 
   // Default the playhead to first coverage when it appears (and not playing).
   const firstCoverageMs = useMemo(() => {
-    let min = null;
+    let min: number | null = null;
     for (const c of mergedCoverage) {
       const s = new Date(c.start).getTime();
       if (min == null || s < min) min = s;
@@ -557,7 +557,9 @@ export default function UnifiedPlayback({ onExportRange }: any) {
       const canvas = document.createElement("canvas");
       canvas.width = v.videoWidth;
       canvas.height = v.videoHeight;
-      canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return; // same outcome as the catch below: nothing to snapshot
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
@@ -670,13 +672,19 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   // into an "Unassigned" group pinned to the end.
   const railCameras = cameras;
   const camGroups = useMemo(() => {
-    const bySite = new Map<any, any>(); // site_id → { name, cameras: [] }
-    let unassigned = null;
+    // Rail groups; the cameras are whatever asItems() handed back (untyped).
+    type RailGroup = { key: string; name: string; cameras: typeof railCameras };
+    const bySite = new Map<string, RailGroup>(); // site_id → { name, cameras: [] }
+    let unassigned: RailGroup | null = null;
     for (const c of railCameras) {
       const sid = c.placement?.site_id;
       if (sid) {
-        if (!bySite.has(sid)) bySite.set(sid, { key: sid, name: siteNames[sid] || "Site", cameras: [] });
-        bySite.get(sid).cameras.push(c);
+        let group = bySite.get(sid);
+        if (!group) {
+          group = { key: sid, name: siteNames[sid] || "Site", cameras: [] };
+          bySite.set(sid, group);
+        }
+        group.cameras.push(c);
       } else {
         if (!unassigned) unassigned = { key: "__unassigned", name: "Unassigned", cameras: [] };
         unassigned.cameras.push(c);

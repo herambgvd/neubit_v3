@@ -25,7 +25,8 @@ import SiteCard from "./SiteCard";
 const LABEL_MAX = 26;
 const SINGLE_SITE_ZOOM = 14;
 
-const lngLat = (site) => [site.coordinates.longitude, site.coordinates.latitude];
+/** A site's position as MapLibre wants it: [lng, lat]. */
+const lngLat = (site: any): [number, number] => [site.coordinates.longitude, site.coordinates.latitude];
 
 // One marker's DOM: the pin art, plus the site name pinned below it. The label is
 // absolutely positioned so it never grows the element box — MapLibre anchors on
@@ -144,6 +145,9 @@ function OfflineMapStyleFix() {
   );
 }
 
+/** What the map canvas is doing: probing the archive, missing it, or drawing. */
+type MapStatus = { state: "probing" | "missing" | "ready"; reason?: string };
+
 export default function OfflineMapView({
   tilesUrl = DEFAULT_TILES_URL,
   center,
@@ -153,12 +157,12 @@ export default function OfflineMapView({
   onSelect,
   onClose,
 }) {
-  const containerRef = useRef(null);
-  const mapRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map());
-  const popupRef = useRef(null);
+  const popupRef = useRef<Popup | null>(null);
 
-  const [status, setStatus] = useState({ state: "probing" });
+  const [status, setStatus] = useState<MapStatus>({ state: "probing" });
 
   // A node MapLibre owns and React renders into, so the popup body can stay a
   // component instead of an innerHTML string.
@@ -183,7 +187,7 @@ export default function OfflineMapView({
   // ── map lifecycle ────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-    let map;
+    let map: MapLibreMap | undefined;
 
     // Back to square one whenever this re-runs. Without it a tiles-URL change
     // leaves `status` at its previous value: from "ready" the marker and auto-fit
@@ -201,7 +205,7 @@ export default function OfflineMapView({
       }
 
       map = new MapLibreMap({
-        container: containerRef.current,
+        container: containerRef.current!,
         style: offlineStyle(tilesUrl, probe.header),
         center: [center.lng, center.lat],
         zoom,

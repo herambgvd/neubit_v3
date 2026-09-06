@@ -161,10 +161,14 @@ export default function TalkButton({ cameraId, disabled = false }: any) {
       // as a Bearer (MediaMTX accepts either).
       if (session?.token) headers.Authorization = `Bearer ${session.token}`;
 
+      // Set by setLocalDescription above; a missing one is a broken peer, and
+      // throwing lands in the same catch a TypeError did.
+      const local = pc.localDescription;
+      if (!local) throw new Error("no local description");
       const res = await fetch(whipUrl, {
         method: "POST",
         headers,
-        body: pc.localDescription.sdp,
+        body: local.sdp,
       });
       if (!res.ok) throw new Error(`WHIP ${res.status}`);
 

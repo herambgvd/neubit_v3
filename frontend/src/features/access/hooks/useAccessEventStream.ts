@@ -24,10 +24,10 @@ export function useAccessEventStream(instanceId, { enabled = true, max = MAX_EVE
     }
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
 
-    let es = null;
+    let es: EventSource | null = null;
     let closed = false;
     let retry = 0;
-    let timer = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       if (closed) return;
@@ -52,7 +52,7 @@ export function useAccessEventStream(instanceId, { enabled = true, max = MAX_EVE
       es = new EventSource(url);
 
       es.addEventListener("access.event", (e) => {
-        let data = null;
+        let data: any = null;
         try {
           data = JSON.parse(e.data);
         } catch {

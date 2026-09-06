@@ -23,6 +23,64 @@
 // here for the shell to read. See the note at the top of that file.
 import { useCallback, useEffect, useState } from "react";
 
+// ══ THE BRIDGE CONTRACT ══════════════════════════════════════════════════════
+//
+// Mirrors `NeubitBridge` and its screen types in desktop/src/shared/ipc.ts —
+// COPIED, not imported. The frontend is built from its own directory alone
+// (deploy/docker-compose.yml: `build: ../frontend`), so a type import reaching
+// into ../desktop would not resolve inside `next build`. Only the members the
+// console calls are declared; keep them in step with ipc.ts.
+
+/** What the shell remembers about a screen it has put a wall monitor on. */
+export interface WallAssignment {
+  displaySignature: string;
+  displayLabel: string;
+  wallId: string;
+  monitorId: string;
+  wallLabel: string;
+  monitorLabel: string;
+}
+
+/** What the console sends to claim a screen. */
+export type WallTarget = Omit<WallAssignment, "displaySignature" | "displayLabel">;
+
+export interface ScreenSlot {
+  signature: string;
+  label: string;
+  primary: boolean;
+  /** False for a saved assignment whose monitor is not plugged in right now. */
+  attached: boolean;
+  resolution: string;
+  /** Whether a wall window is actually up on it at this moment. */
+  open: boolean;
+  assignment: WallAssignment | null;
+}
+
+export interface ScreenLayout {
+  /** The console origin wall windows are opened against, or null when none is
+   *  configured — a supported state the panel reports rather than an error. */
+  consoleUrl: string | null;
+  screens: ScreenSlot[];
+}
+
+/** The subset of `window.neubit` (desktop/src/shared/ipc.ts `NeubitBridge`)
+ *  the console uses. */
+export interface NeubitBridge {
+  screensLayout(): Promise<ScreenLayout>;
+  assignScreen(signature: string, target: WallTarget): Promise<ScreenLayout>;
+  clearScreen(signature: string): Promise<ScreenLayout>;
+  closeAllWalls(): Promise<ScreenLayout>;
+  identifyScreens(): Promise<void>;
+  onScreensChanged(cb: (layout: ScreenLayout) => void): () => void;
+}
+
+declare global {
+  interface Window {
+    /** Exposed by desktop/src/preload/index.ts; absent in a browser. */
+    neubit?: NeubitBridge;
+  }
+}
+
 /** The bridge, or null in a browser.
  *
  *  Guarded on `typeof window` because Next prerenders these pages on the server,
@@ -51,7 +109,7 @@ export function useIsDesktop() {
  *  it put where — it is not read back from the server, because it is a fact about
  *  this desk and no other client's business. */
 export function useScreens() {
-  const [layout, setLayout] = useState(null);
+  const [layout, setLayout] = useState<ScreenLayout | null>(null);
   const [busy, setBusy] = useState(false);
 
   const available = useIsDesktop();
@@ -81,7 +139,7 @@ export function useScreens() {
   // shell actually did rather than what was asked for — a screen that was
   // unplugged between the click and the call reports back as detached instead of
   // showing as assigned to a monitor that is not there.
-  const run = useCallback(async (fn) => {
+  const run = useCallback(async (fn: () => Promise<ScreenLayout>) => {
     setBusy(true);
     try {
       setLayout(await fn());
@@ -91,7 +149,7 @@ export function useScreens() {
   }, []);
 
   const assign = useCallback(
-    (signature, target) => {
+    (signature: string, target: WallTarget) => {
       const bridge = desktopBridge();
       if (!bridge) return undefined;
       return run(() => bridge.assignScreen(signature, target));
@@ -100,7 +158,7 @@ export function useScreens() {
   );
 
   const clear = useCallback(
-    (signature) => {
+    (signature: string) => {
       const bridge = desktopBridge();
       if (!bridge) return undefined;
       return run(() => bridge.clearScreen(signature));

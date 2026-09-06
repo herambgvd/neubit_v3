@@ -46,7 +46,7 @@ export default function GeocodeButton({ apiKey, address, onResult }: any) {
     setBusy(true);
     try {
       // Callback form — supported by every JS API release, unlike the newer promise one.
-      const results = await new Promise((resolve, reject) => {
+      const results = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
         new window.google.maps.Geocoder().geocode({ address: query }, (res, status) => {
           if (status === "OK" && res?.length) resolve(res);
           else reject(new Error(status || "UNKNOWN_ERROR"));

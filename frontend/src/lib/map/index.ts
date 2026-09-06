@@ -16,7 +16,7 @@
 // a blank canvas. pmtiles 4 and @protomaps/basemaps 5 both predate v6. Do not
 // bump the major without re-running `npm run map:verify` AND checking a real map.
 // v5 also has no default export — named imports only.
-import { addProtocol } from "maplibre-gl";
+import { addProtocol, type StyleSpecification } from "maplibre-gl";
 import { layers, namedFlavor } from "@protomaps/basemaps";
 import { PMTiles, Protocol } from "pmtiles";
 
@@ -24,12 +24,12 @@ import { ATTRIBUTION, DEFAULT_TILES_URL, GLYPHS_URL, SOURCE_ID, SPRITE_URL } fro
 
 export { DEFAULT_TILES_URL, GLYPHS_URL, SOURCE_ID, SPRITE_URL } from "./config";
 
-let protocol = null;
+let protocol: Protocol | null = null;
 
 // MapLibre resolves `pmtiles://…` tile URLs through this handler, which reads the
 // archive with HTTP range requests — so a 3.7 GB planet file costs only the few
 // KB of tiles actually on screen.
-export function ensurePmtilesProtocol() {
+export function ensurePmtilesProtocol(): Protocol {
   if (!protocol) {
     protocol = new Protocol();
     addProtocol("pmtiles", protocol.tile);
@@ -49,7 +49,30 @@ export function ensurePmtilesProtocol() {
 // off the protocol's TileJSON branch: under maplibre-gl v6 that handshake never
 // resolves, and the map sits on "Loading map…" forever with no error. We already
 // have the header from the probe, so there is nothing to ask for anyway.
-export function offlineStyle(tilesUrl = DEFAULT_TILES_URL, header) {
+/** The parts of a PMTiles header the style needs. Only ever populated from a
+ *  pmtiles `Header` (probeTiles below), where the bounds are plain numbers. */
+export interface TilesHeader {
+  minZoom?: number;
+  maxZoom?: number;
+  minLon: number;
+  minLat: number;
+  maxLon: number;
+  maxLat: number;
+  tileType?: number;
+}
+
+/** A probe either succeeds with the header, or explains why it did not. */
+export type TilesProbe =
+  | { ok: true; header: TilesHeader }
+  | { ok: false; reason: string; header?: undefined };
+
+// The return type is annotated rather than inferred: MapLibre types `version` as
+// the literal 8, and only a contextual type makes `version: 8` below that literal
+// instead of `number`.
+export function offlineStyle(
+  tilesUrl = DEFAULT_TILES_URL,
+  header?: TilesHeader,
+): StyleSpecification {
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   return {
     version: 8,
@@ -78,7 +101,7 @@ export function offlineStyle(tilesUrl = DEFAULT_TILES_URL, header) {
 // so this is what lets the UI say "basemap not installed" instead of just looking
 // broken. On success the instance is handed to the protocol, so the header bytes
 // read here are the same ones the map goes on to use.
-export async function probeTiles(tilesUrl = DEFAULT_TILES_URL) {
+export async function probeTiles(tilesUrl = DEFAULT_TILES_URL): Promise<TilesProbe> {
   try {
     // Probe on a FRESH instance, and only hand it to the protocol once it works.
     // pmtiles' SharedPromiseCache caches the getHeader promise before it settles
@@ -98,6 +121,6 @@ export async function probeTiles(tilesUrl = DEFAULT_TILES_URL) {
     ensurePmtilesProtocol().add(archive);
     return { ok: true, header };
   } catch (e) {
-    return { ok: false, reason: e.message || "unreachable" };
+    return { ok: false, reason: (e as Error)?.message || "unreachable" };
   }
 }

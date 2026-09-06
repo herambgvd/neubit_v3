@@ -12,10 +12,16 @@
 // Adding a new icon to the UI? Run `npm run icons` (needs network) to refresh
 // src/lib/icons/icon-bundle.json, and commit the result.
 import { addAPIProvider, addCollection } from "@iconify/react";
+import type { IconifyJSON } from "@iconify/types";
 
 import bundle from "./icon-bundle.json";
 
-for (const collection of bundle) {
+// The bundle is written as IconifyJSON[] by scripts/build-icon-bundle.mjs.
+// resolveJsonModule instead infers one literal type per collection and folds them
+// into a union where every icon absent from a sibling collection becomes
+// `?: undefined`, which IconifyIcons' index signature rejects — so the inferred
+// type and the real one do not even overlap, hence the cast through unknown.
+for (const collection of bundle as unknown as IconifyJSON[]) {
   addCollection(collection);
 }
 

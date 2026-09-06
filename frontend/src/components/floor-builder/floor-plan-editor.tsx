@@ -38,7 +38,21 @@ import { sites } from "@/lib/api/sites";
 
 const HISTORY_LIMIT = 30;
 
-function buildZonePayload(zone) {
+/** A point in floor-plan space (the units the polygon is drawn in). */
+export interface FloorPoint {
+  x: number;
+  y: number;
+}
+
+/** A zone as the editor holds it: an id once saved, and its polygon. */
+export interface FloorZone {
+  zone_id?: string;
+  name?: string;
+  polygon?: number[][];
+  [extra: string]: unknown;
+}
+
+function buildZonePayload(zone: FloorZone) {
   return {
     name: zone.name,
     description: zone.description ?? null,
@@ -64,7 +78,7 @@ function normalizePlacement(p) {
   };
 }
 
-function pointInPolygon(pt, points) {
+function pointInPolygon(pt: number[], points: number[][]) {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     const [xi, yi] = points[i];
@@ -77,22 +91,22 @@ function pointInPolygon(pt, points) {
   return inside;
 }
 
-function isInsideAnyZone(point, zones = []) {
+function isInsideAnyZone(point: FloorPoint, zones: FloorZone[] = []) {
   if (!zones.length) return false;
   return zones.some(
     (z) =>
       Array.isArray(z.polygon) &&
       z.polygon.length >= 3 &&
-      pointInPolygon([point.x, point.y], z.polygon),
+      pointInPolygon([point.x, point.y], z.polygon as number[][]),
   );
 }
 
-function getZoneIdForPoint(point, zones = []) {
+function getZoneIdForPoint(point: FloorPoint, zones: FloorZone[] = []) {
   const zone = zones.find(
     (z) =>
       Array.isArray(z.polygon) &&
       z.polygon.length >= 3 &&
-      pointInPolygon([point.x, point.y], z.polygon),
+      pointInPolygon([point.x, point.y], z.polygon as number[][]),
   );
   return zone?.zone_id ?? null;
 }
@@ -100,7 +114,7 @@ function getZoneIdForPoint(point, zones = []) {
 export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: any) {
   const canvasRef = useRef<any>(null);
   const [floor, setFloor] = useState(initialFloor);
-  const [zones, setZones] = useState<any[]>([]);
+  const [zones, setZones] = useState<FloorZone[]>([]);
   const [placements, setPlacements] = useState<any[]>([]);
   const [editorMode, setEditorMode] = useState(EDITOR_MODES.VIEW);
   const [activeTool, setActiveTool] = useState(TOOL_TYPES.SELECT);
@@ -119,7 +133,7 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: any) 
   // Tracked around the save call but not surfaced: the Save control shows no
   // in-flight state yet.
   const [_saving, setSaving] = useState(false);
-  const savedPlacementsRef = useRef([]);
+  const savedPlacementsRef = useRef<{ device_id?: string; [k: string]: unknown }[]>([]);
   const [deletedDeviceIds, setDeletedDeviceIds] = useState(() => new Set<any>());
 
   // ── Sync `floor` when parent passes a different one (render-phase reset) ──

@@ -103,7 +103,7 @@ export default function RegionDrawModal({
     setLoadError("");
     setGlobalSensitivity(0.5);
 
-    let objectUrl = null;
+    let objectUrl: string | null = null;
     let cancelled = false;
 
     // Snapshot blob — same pattern as MotionSearchModal.

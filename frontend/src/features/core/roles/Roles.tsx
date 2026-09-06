@@ -28,7 +28,14 @@ import RolePanel from "./components/RolePanel";
 import RoleFormModal from "./components/RoleFormModal";
 import CloneRoleModal from "./components/CloneRoleModal";
 
-const EMPTY = { name: "", description: "", permissions: [] };
+interface RoleForm {
+  name: string;
+  description: string;
+  /** Permission keys, e.g. "vms.camera.read". */
+  permissions: string[];
+}
+
+const EMPTY: RoleForm = { name: "", description: "", permissions: [] };
 
 export default function RolesPage() {
   const qc = useQueryClient();

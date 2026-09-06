@@ -118,7 +118,7 @@ export function assignPreviewValue(out, target, value) {
 export function clientSidePreview(payload, { conditions, fieldMap, eventType }) {
   const { matched, results } = evaluateRule(payload, conditions);
 
-  let extracted = null;
+  let extracted: Record<string, unknown> | null = null;
   if (matched && fieldMap && Object.keys(fieldMap).length) {
     extracted = {};
     for (const [target, expr] of Object.entries<any>(fieldMap)) {

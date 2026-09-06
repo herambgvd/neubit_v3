@@ -17,7 +17,11 @@ import { Icon } from "@iconify/react";
 // The bundle exposes window.H265webjsPlayer. We inject the <script> once and share
 // the load promise across every tile.
 const SDK_SRC = "/h265web/h265web.js";
-let sdkPromise = null;
+/** The h265web SDK factory, once the script has loaded. */
+type H265Factory = () => any;
+
+// Shared across every player instance: the script is loaded at most once.
+let sdkPromise: Promise<H265Factory> | null = null;
 
 function loadSdk() {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
@@ -81,7 +85,7 @@ export default function H265WebPlayer({
   useEffect(() => {
     if (!url) return undefined;
     let disposed = false;
-    let player = null;
+    let player: any = null;
     setStatus("loading");
 
     loadSdk()

@@ -20,7 +20,7 @@ export default function SiteListItem({ site, selected, onSelect }: any) {
       <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-[9px] border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
         {s.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={fileUrl(s.image_url)} alt={s.name} className="h-full w-full object-cover" />
+          <img src={fileUrl(s.image_url) ?? undefined} alt={s.name} className="h-full w-full object-cover" />
         ) : (
           <Icon icon="heroicons-outline:map-pin" className="text-base text-nb-blueb" />
         )}
