@@ -36,9 +36,16 @@ class TriggerService(ChecksReferences):
         self.db = db
         self.scope = scope
 
-    async def _row(self, trigger_id: str) -> Trigger:
+    async def _row(self, trigger_id: str, *, for_write: bool = False) -> Trigger:
+        """The row, refusing a PLATFORM row when this is a write.
+
+        `owns()` treats a NULL tenant_id as readable by everyone — right for a
+        shared catalog a tenant may USE, wrong for `update` and `delete`, which
+        reach the same row through this helper. `for_write` separates the two.
+        """
         row = await self.db.get(Trigger, trigger_id)
-        assert_owned(row, self.scope, message="Trigger not found")
+        assert_owned(row, self.scope, message="Trigger not found",
+                     allow_shared=not for_write)
         return row
 
     async def create(self, body, *, actor) -> Trigger:
@@ -83,7 +90,7 @@ class TriggerService(ChecksReferences):
         return await self._row(trigger_id)
 
     async def update(self, trigger_id: str, body, *, actor) -> Trigger:
-        row = await self._row(trigger_id)
+        row = await self._row(trigger_id, for_write=True)
         data = body.model_dump(exclude_none=True)
         await self._check_references(data)
         if "priority" in data:
@@ -102,14 +109,14 @@ class TriggerService(ChecksReferences):
         return row
 
     async def delete(self, trigger_id: str) -> None:
-        row = await self._row(trigger_id)
+        row = await self._row(trigger_id, for_write=True)
         await self.db.delete(row)
         await self.db.commit()
         await emit(self.scope.tenant_id, "trigger", "deleted", {"trigger_id": trigger_id})
 
     async def set_enabled(self, trigger_id: str, enabled: bool, *, actor) -> Trigger:
         """Flip a trigger's ``enabled`` flag (enable/disable endpoints)."""
-        row = await self._row(trigger_id)
+        row = await self._row(trigger_id, for_write=True)
         row.enabled = enabled
         row.updated_by = _actor_id(actor)
         row.updated_at = utcnow()
@@ -134,9 +141,10 @@ class AlertFormatService(ChecksReferences):
         self.db = db
         self.scope = scope
 
-    async def _row(self, format_id: str) -> AlertFormat:
+    async def _row(self, format_id: str, *, for_write: bool = False) -> AlertFormat:
         row = await self.db.get(AlertFormat, format_id)
-        assert_owned(row, self.scope, message="Alert format not found")
+        assert_owned(row, self.scope, message="Alert format not found",
+                     allow_shared=not for_write)
         return row
 
     async def _code_taken(self, alert_code: str, *, exclude_id: str | None = None) -> bool:
@@ -193,7 +201,7 @@ class AlertFormatService(ChecksReferences):
         return None
 
     async def update(self, format_id: str, body, *, actor) -> AlertFormat:
-        row = await self._row(format_id)
+        row = await self._row(format_id, for_write=True)
         data = body.model_dump(exclude_none=True)
         await self._check_references(data)
         if "alert_code" in data and await self._code_taken(data["alert_code"], exclude_id=format_id):
@@ -208,7 +216,7 @@ class AlertFormatService(ChecksReferences):
         return row
 
     async def delete(self, format_id: str) -> None:
-        row = await self._row(format_id)
+        row = await self._row(format_id, for_write=True)
         await self.db.delete(row)
         await self.db.commit()
         await emit(self.scope.tenant_id, "alert_format", "deleted", {"format_id": format_id})

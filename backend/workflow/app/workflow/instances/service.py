@@ -46,9 +46,16 @@ class InstanceService:
         self.db = db
         self.scope = scope
 
-    async def _row(self, instance_id: str) -> WorkflowInstance:
+    async def _row(self, instance_id: str, *, for_write: bool = False) -> WorkflowInstance:
+        """The row, refusing a PLATFORM row when this is a write.
+
+        `owns()` treats a NULL tenant_id as readable by everyone — right for a
+        shared catalog a tenant may USE, wrong for `update` and `delete`, which
+        reach the same row through this helper. `for_write` separates the two.
+        """
         row = await self.db.get(WorkflowInstance, instance_id)
-        assert_owned(row, self.scope, message="Workflow instance not found")
+        assert_owned(row, self.scope, message="Workflow instance not found",
+                     allow_shared=not for_write)
         return row
 
     async def _initial_state(self, sop_id: str) -> State | None:
@@ -57,6 +64,10 @@ class InstanceService:
 
     async def create(self, body, *, actor) -> WorkflowInstance:
         sop = await self.db.get(SOP, body.sop_id)
+        # No `allow_shared=False` here, and that is the point: starting an
+        # instance from a PLATFORM SOP is using a shared procedure, which is what
+        # a shared procedure is for. Every by-id path that CHANGES a SOP passes
+        # `for_write=True` instead — see SOPService._row.
         assert_owned(sop, self.scope, message="SOP not found")
         initial = await self._initial_state(sop.sop_id)
         if not initial:
@@ -189,7 +200,7 @@ class InstanceService:
         return [t for t in rows if matches_conditions(ctx, t.conditions or [])]
 
     async def transition(self, instance_id: str, body, *, actor, actor_name=None) -> WorkflowInstance:
-        inst = await self._row(instance_id)
+        inst = await self._row(instance_id, for_write=True)
         if InstanceStatus(inst.status) in CLOSED_STATUSES:
             raise ConflictError("Cannot mutate a closed instance")
 
@@ -266,7 +277,7 @@ class InstanceService:
         return inst
 
     async def assign(self, instance_id: str, body, *, actor) -> WorkflowInstance:
-        inst = await self._row(instance_id)
+        inst = await self._row(instance_id, for_write=True)
         if InstanceStatus(inst.status) in CLOSED_STATUSES:
             raise ConflictError("Cannot mutate a closed instance")
         now = utcnow()
@@ -285,7 +296,7 @@ class InstanceService:
         return inst
 
     async def change_status(self, instance_id: str, body, *, actor) -> WorkflowInstance:
-        inst = await self._row(instance_id)
+        inst = await self._row(instance_id, for_write=True)
         current = InstanceStatus(inst.status)
         if current in CLOSED_STATUSES:
             raise ConflictError("Cannot mutate a closed instance")
@@ -309,7 +320,7 @@ class InstanceService:
         return inst
 
     async def escalate(self, instance_id: str, body, *, actor) -> WorkflowInstance:
-        inst = await self._row(instance_id)
+        inst = await self._row(instance_id, for_write=True)
         if InstanceStatus(inst.status) in CLOSED_STATUSES:
             raise ConflictError("Cannot mutate a closed instance")
         now = utcnow()

@@ -30,9 +30,18 @@ class SopService:
         self.db = db
         self.scope = scope
 
-    async def _row(self, sop_id: str) -> SOP:
+    async def _row(self, sop_id: str, *, for_write: bool = False) -> SOP:
+        """The row, refusing a PLATFORM row when this is a write.
+
+        `owns()` treats a NULL tenant_id as readable by everyone, which is right
+        for a shared catalog a tenant may USE. It is not right for `update` and
+        `delete`, which reach the same row through this helper: a tenant could
+        rewrite or deactivate a platform SOP that every other tenant runs on.
+        `for_write` is what separates the two.
+        """
         row = await self.db.get(SOP, sop_id)
-        assert_owned(row, self.scope, message="SOP not found")
+        assert_owned(row, self.scope, message="SOP not found",
+                     allow_shared=not for_write)
         return row
 
     async def create(self, body, *, actor) -> SOP:
@@ -78,7 +87,7 @@ class SopService:
         return await self._row(sop_id)
 
     async def update(self, sop_id: str, body, *, actor) -> SOP:
-        row = await self._row(sop_id)
+        row = await self._row(sop_id, for_write=True)
         data = body.model_dump(exclude_none=True)
         if "priority" in data:
             data["priority"] = body.priority.value
@@ -95,7 +104,7 @@ class SopService:
         return row
 
     async def delete(self, sop_id: str, *, actor) -> None:
-        row = await self._row(sop_id)
+        row = await self._row(sop_id, for_write=True)
         row.is_active = False
         row.updated_at = utcnow()
         await self.db.commit()
@@ -110,14 +119,24 @@ class StateService:
         self.db = db
         self.scope = scope
 
-    async def _sop(self, sop_id: str) -> SOP:
+    async def _sop(self, sop_id: str, *, for_write: bool = False) -> SOP:
         row = await self.db.get(SOP, sop_id)
-        assert_owned(row, self.scope, message="SOP not found")
+        assert_owned(row, self.scope, message="SOP not found",
+                     allow_shared=not for_write)
         return row
 
-    async def _row(self, state_id: str) -> State:
+    async def _row(self, state_id: str, *, for_write: bool = False) -> State:
+        """The row, refusing a PLATFORM row when this is a write.
+
+        `owns()` treats a NULL tenant_id as readable by everyone, which is right
+        for a shared catalog a tenant may USE. It is not right for `update` and
+        `delete`, which reach the same row through this helper: a tenant could
+        rewrite or deactivate a platform state that every other tenant runs on.
+        `for_write` is what separates the two.
+        """
         row = await self.db.get(State, state_id)
-        assert_owned(row, self.scope, message="State not found")
+        assert_owned(row, self.scope, message="State not found",
+                     allow_shared=not for_write)
         return row
 
     async def list_(self, sop_id: str) -> list[State]:
@@ -127,7 +146,8 @@ class StateService:
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def create(self, sop_id: str, body, *, actor) -> State:
-        sop = await self._sop(sop_id)
+        # Adding a state to a platform SOP is editing that SOP.
+        sop = await self._sop(sop_id, for_write=True)
         if body.is_initial:
             await self._clear_initial(sop_id)
         row = State(
@@ -157,7 +177,7 @@ class StateService:
         return row
 
     async def update(self, state_id: str, body, *, actor) -> State:
-        row = await self._row(state_id)
+        row = await self._row(state_id, for_write=True)
         data = body.model_dump(exclude_none=True)
         if data.get("is_initial"):
             await self._clear_initial(row.sop_id, keep=state_id)
@@ -172,7 +192,7 @@ class StateService:
         return row
 
     async def delete(self, state_id: str) -> None:
-        row = await self._row(state_id)
+        row = await self._row(state_id, for_write=True)
         sop_id = row.sop_id
         await self.db.delete(row)
         await self._sync_pointer(await self._sop(sop_id))
@@ -233,14 +253,24 @@ class TransitionService:
         self.db = db
         self.scope = scope
 
-    async def _sop(self, sop_id: str) -> SOP:
+    async def _sop(self, sop_id: str, *, for_write: bool = False) -> SOP:
         row = await self.db.get(SOP, sop_id)
-        assert_owned(row, self.scope, message="SOP not found")
+        assert_owned(row, self.scope, message="SOP not found",
+                     allow_shared=not for_write)
         return row
 
-    async def _row(self, transition_id: str) -> Transition:
+    async def _row(self, transition_id: str, *, for_write: bool = False) -> Transition:
+        """The row, refusing a PLATFORM row when this is a write.
+
+        `owns()` treats a NULL tenant_id as readable by everyone, which is right
+        for a shared catalog a tenant may USE. It is not right for `update` and
+        `delete`, which reach the same row through this helper: a tenant could
+        rewrite or deactivate a platform transition that every other tenant runs on.
+        `for_write` is what separates the two.
+        """
         row = await self.db.get(Transition, transition_id)
-        assert_owned(row, self.scope, message="Transition not found")
+        assert_owned(row, self.scope, message="Transition not found",
+                     allow_shared=not for_write)
         return row
 
     async def list_(self, sop_id: str) -> list[Transition]:
@@ -249,7 +279,8 @@ class TransitionService:
         return list((await self.db.execute(stmt.order_by(Transition.created_at.asc()))).scalars().all())
 
     async def create(self, sop_id: str, body, *, actor) -> Transition:
-        await self._sop(sop_id)
+        # Adding a transition to a platform SOP is editing that SOP.
+        await self._sop(sop_id, for_write=True)
         row = Transition(
             tenant_id=self.scope.tenant_id,
             sop_id=sop_id,
@@ -274,7 +305,7 @@ class TransitionService:
         return row
 
     async def update(self, transition_id: str, body, *, actor) -> Transition:
-        row = await self._row(transition_id)
+        row = await self._row(transition_id, for_write=True)
         data = body.model_dump(exclude_none=True)
         if "conditions" in data and body.conditions is not None:
             data["conditions"] = [c.model_dump(mode="json") for c in body.conditions]
@@ -288,7 +319,7 @@ class TransitionService:
         return row
 
     async def delete(self, transition_id: str) -> None:
-        row = await self._row(transition_id)
+        row = await self._row(transition_id, for_write=True)
         await self.db.delete(row)
         await self.db.commit()
         await emit(self.scope.tenant_id, "transition", "deleted", {"transition_id": transition_id})

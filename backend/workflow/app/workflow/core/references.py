@@ -37,4 +37,7 @@ class ChecksReferences:
             target_id = data.get(field)
             if target_id is None:
                 continue
+            # Shared-readable on purpose: this only asks whether the target
+            # EXISTS and may be referenced. Nothing is written through it, so a
+            # platform row being visible here is the shared catalog working.
             assert_owned(await self.db.get(model, target_id), self.scope, message=message)

@@ -20,9 +20,16 @@ class FormService:
         self.db = db
         self.scope = scope
 
-    async def _row(self, form_id: str) -> Form:
+    async def _row(self, form_id: str, *, for_write: bool = False) -> Form:
+        """The row, refusing a PLATFORM row when this is a write.
+
+        `owns()` treats a NULL tenant_id as readable by everyone — right for a
+        shared catalog a tenant may USE, wrong for `update` and `delete`, which
+        reach the same row through this helper. `for_write` separates the two.
+        """
         row = await self.db.get(Form, form_id)
-        assert_owned(row, self.scope, message="Form not found")
+        assert_owned(row, self.scope, message="Form not found",
+                     allow_shared=not for_write)
         return row
 
     async def create(self, body, *, actor) -> Form:
@@ -55,7 +62,7 @@ class FormService:
         return await self._row(form_id)
 
     async def update(self, form_id: str, body, *, actor) -> Form:
-        row = await self._row(form_id)
+        row = await self._row(form_id, for_write=True)
         data = body.model_dump(exclude_none=True)
         if "fields" in data and body.fields is not None:
             data["fields"] = [f.model_dump(mode="json") for f in body.fields]
@@ -68,7 +75,7 @@ class FormService:
         return row
 
     async def delete(self, form_id: str) -> None:
-        row = await self._row(form_id)
+        row = await self._row(form_id, for_write=True)
         row.is_active = False
         row.updated_at = utcnow()
         await self.db.commit()

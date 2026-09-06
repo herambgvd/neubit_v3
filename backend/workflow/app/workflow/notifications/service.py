@@ -30,9 +30,16 @@ class NotificationService:
         self.scope = scope
 
     # -- templates --
-    async def _template(self, template_id: str) -> NotificationTemplate:
+    async def _template(self, template_id: str, *, for_write: bool = False) -> NotificationTemplate:
+        """The row, refusing a PLATFORM row when this is a write.
+
+        `owns()` treats a NULL tenant_id as readable by everyone — right for a
+        shared catalog a tenant may USE, wrong for `update` and `delete`, which
+        reach the same row through this helper. `for_write` separates the two.
+        """
         row = await self.db.get(NotificationTemplate, template_id)
-        assert_owned(row, self.scope, message="Template not found")
+        assert_owned(row, self.scope, message="Template not found",
+                     allow_shared=not for_write)
         return row
 
     async def create_template(self, body, *, actor) -> NotificationTemplate:
@@ -56,7 +63,7 @@ class NotificationService:
         return rows, total
 
     async def update_template(self, template_id: str, body, *, actor) -> NotificationTemplate:
-        row = await self._template(template_id)
+        row = await self._template(template_id, for_write=True)
         for k, v in body.model_dump(exclude_none=True).items():
             setattr(row, k, v)
         row.updated_by = _actor_id(actor)
@@ -66,14 +73,15 @@ class NotificationService:
         return row
 
     async def delete_template(self, template_id: str) -> None:
-        row = await self._template(template_id)
+        row = await self._template(template_id, for_write=True)
         await self.db.delete(row)
         await self.db.commit()
 
     # -- channels --
-    async def _channel(self, channel_id: str) -> NotificationChannel:
+    async def _channel(self, channel_id: str, *, for_write: bool = False) -> NotificationChannel:
         row = await self.db.get(NotificationChannel, channel_id)
-        assert_owned(row, self.scope, message="Channel not found")
+        assert_owned(row, self.scope, message="Channel not found",
+                     allow_shared=not for_write)
         return row
 
     async def create_channel(self, body, *, actor) -> NotificationChannel:
@@ -99,7 +107,7 @@ class NotificationService:
         return rows, total
 
     async def update_channel(self, channel_id: str, body, *, actor) -> NotificationChannel:
-        row = await self._channel(channel_id)
+        row = await self._channel(channel_id, for_write=True)
         fields = body.model_dump(exclude_none=True)
         if "config" in fields:
             # Encrypt under the ROW's tenant, not the caller's: a super-admin
@@ -117,7 +125,7 @@ class NotificationService:
         return row
 
     async def delete_channel(self, channel_id: str) -> None:
-        row = await self._channel(channel_id)
+        row = await self._channel(channel_id, for_write=True)
         await self.db.delete(row)
         await self.db.commit()
 
@@ -137,9 +145,10 @@ class DeviceTokenService:
         self.db = db
         self.scope = scope
 
-    async def _row(self, device_token_id: str) -> DeviceToken:
+    async def _row(self, device_token_id: str, *, for_write: bool = False) -> DeviceToken:
         row = await self.db.get(DeviceToken, device_token_id)
-        assert_owned(row, self.scope, message="Device token not found")
+        assert_owned(row, self.scope, message="Device token not found",
+                     allow_shared=not for_write)
         return row
 
     async def register(self, body, *, actor) -> DeviceToken:
@@ -191,7 +200,7 @@ class DeviceTokenService:
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def unregister(self, device_token_id: str, *, actor) -> None:
-        row = await self._row(device_token_id)
+        row = await self._row(device_token_id, for_write=True)
         # A user may only unregister their own device token.
         if row.user_id != _actor_id(actor) and not self.scope.is_superadmin:
             raise ValidationError("cannot unregister another user's device token")
