@@ -27,6 +27,7 @@ from .errors import register_error_handlers
 from .health import router as health_router
 from .license import load_license
 from .logging import RequestLoggingMiddleware, configure_logging, get_logger
+from .request_limits import RequestSizeLimitMiddleware
 from .metrics import MetricsMiddleware, metrics_response
 from .modules import ModuleRegistry
 
@@ -247,6 +248,10 @@ def create_app(
     )
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
+    # Added last, so it is the OUTERMOST middleware — the body has to be measured
+    # before anything reads it. Starlette's multipart parser spools parts over
+    # 1 MiB to disk, so a handler-side cap protects the heap and nothing else.
+    app.add_middleware(RequestSizeLimitMiddleware)
 
     register_error_handlers(app)
 
