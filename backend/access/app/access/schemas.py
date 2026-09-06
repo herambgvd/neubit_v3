@@ -437,7 +437,9 @@ class AccessGroupPublic(BaseModel):
     name: str
     description: Optional[str] = None
     access_group_type: str = "Door"
-    api_key: Optional[str] = None
+    # The stored value is a credential and is never returned. Send a new one to
+    # replace it; omit the field to leave it alone.
+    has_api_key: bool = False
     door_ids: list[str] = Field(default_factory=list)
     schedule_id: Optional[str] = None
     created_at: datetime
@@ -451,7 +453,7 @@ class AccessGroupPublic(BaseModel):
                 "name": row.name,
                 "description": row.description,
                 "access_group_type": row.access_group_type,
-                "api_key": row.api_key,
+                "has_api_key": bool(row.api_key),
                 "door_ids": row.door_ids or [],
                 "schedule_id": row.schedule_id,
                 "created_at": row.created_at,

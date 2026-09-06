@@ -131,3 +131,88 @@ def test_every_call_site_passes_a_tenant():
             if re.search(r"\b(en|de)crypt_secret\(", line) and "tenant_id" not in line:
                 bad.append(f"{f.relative_to(app_dir)}:{i}")
     assert not bad, "call sites not passing a tenant:\n" + "\n".join(bad)
+
+
+# --- the access-group api_key ------------------------------------------------
+#
+# AccessGroup.api_key is a credential. It was stored in plaintext, returned in
+# AccessGroupPublic, and rendered into a table column by the operator UI.
+
+
+async def test_a_group_api_key_is_encrypted_at_rest(session):
+    import uuid as _uuid
+
+    from app.access.catalog import AccessGroupCatalog
+    from app.access.models import AccessGroup, Instance
+    from kernel.auth import Scope
+
+    tenant = _uuid.uuid4()
+    inst = Instance(
+        tenant_id=tenant, brand="dds", name="c1", base_url="https://c.example",
+        auth_type="basic", username="u", verify_tls=True, is_active=True, status="unknown",
+    )
+    session.add(inst)
+    await session.commit()
+    await session.refresh(inst)
+
+    cat = AccessGroupCatalog(session, Scope(tenant_id=tenant, is_superadmin=False))
+    row = await cat.create(inst.id, {"name": "G", "api_key": "s3cret", "door_ids": []})
+
+    stored = (await session.get(AccessGroup, row.id)).api_key
+    assert stored != "s3cret"
+    assert stored.startswith("enc:v1:")
+    assert decrypt_secret(tenant, stored) == "s3cret"
+
+
+async def test_the_group_response_never_carries_the_key(session):
+    """It was rendered into a table column in the operator UI."""
+    from app.access.schemas import AccessGroupPublic
+
+    class _Row:
+        id = "g1"
+        name = "G"
+        description = None
+        access_group_type = "Door"
+        api_key = "enc:v1:whatever"
+        door_ids: list[str] = []
+        schedule_id = None
+        created_at = updated_at = __import__("datetime").datetime.now()
+
+    out = AccessGroupPublic.from_row(_Row()).model_dump()
+    assert "api_key" not in out
+    assert out["has_api_key"] is True
+
+    _Row.api_key = None
+    assert AccessGroupPublic.from_row(_Row()).model_dump()["has_api_key"] is False
+
+
+async def test_an_edit_that_omits_the_key_keeps_it(session):
+    """The response carries has_api_key, so an ordinary edit round-trips nothing
+    to overwrite the credential with — and must not blank it either."""
+    import uuid as _uuid
+
+    from app.access.catalog import AccessGroupCatalog
+    from app.access.models import AccessGroup, Instance
+    from kernel.auth import Scope
+
+    tenant = _uuid.uuid4()
+    inst = Instance(
+        tenant_id=tenant, brand="dds", name="c2", base_url="https://c.example",
+        auth_type="basic", username="u", verify_tls=True, is_active=True, status="unknown",
+    )
+    session.add(inst)
+    await session.commit()
+    await session.refresh(inst)
+
+    cat = AccessGroupCatalog(session, Scope(tenant_id=tenant, is_superadmin=False))
+    row = await cat.create(inst.id, {"name": "G", "api_key": "s3cret", "door_ids": []})
+
+    await cat.update(inst.id, row.id, {"name": "Renamed"})
+    fresh = await session.get(AccessGroup, row.id)
+    assert fresh.name == "Renamed"
+    assert decrypt_secret(tenant, fresh.api_key) == "s3cret"
+
+    # …and a real rotation still lands.
+    await cat.update(inst.id, row.id, {"api_key": "rotated"})
+    fresh = await session.get(AccessGroup, row.id)
+    assert decrypt_secret(tenant, fresh.api_key) == "rotated"

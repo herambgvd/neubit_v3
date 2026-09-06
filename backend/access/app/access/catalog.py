@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, assert_owned, scoped
 
+from .crypto import encrypt_secret
+
 from .models import AccessGroup, Instance, Schedule
 
 
@@ -72,7 +74,10 @@ class AccessGroupCatalog:
             name=payload["name"],
             description=payload.get("description"),
             access_group_type=payload.get("access_group_type") or "Door",
-            api_key=payload.get("api_key"),
+            api_key=(
+                encrypt_secret(inst.tenant_id, payload["api_key"])
+                if payload.get("api_key") else None
+            ),
             door_ids=list(payload.get("door_ids") or []),
             schedule_id=payload.get("schedule_id"),
         )
@@ -88,10 +93,14 @@ class AccessGroupCatalog:
         row = await self._get_owned(instance_id, group_id)
         if row is None:
             return None
-        for key in ("name", "description", "access_group_type", "api_key",
-                    "door_ids", "schedule_id"):
+        for key in ("name", "description", "access_group_type", "door_ids", "schedule_id"):
             if key in fields:
                 setattr(row, key, fields[key])
+        # A credential is replaced only when a new one is sent. The response
+        # carries has_api_key rather than the value, so an ordinary edit round-trips
+        # nothing to overwrite it with.
+        if fields.get("api_key"):
+            row.api_key = encrypt_secret(row.tenant_id, fields["api_key"])
         row.updated_at = _utcnow()
         await self.db.commit()
         await self.db.refresh(row)

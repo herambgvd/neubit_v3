@@ -100,7 +100,8 @@ export default function AccessGroupsTab({ instanceId }: any) {
                       {g.access_group_type || "Door"}
                     </span>
                   </td>
-                  <td className="max-w-[20ch] truncate px-3 py-2 font-mono text-[11px] text-muted">{g.api_key || "—"}</td>
+                  {/* The key itself is never sent by the API — it is a credential. */}
+                  <td className="px-3 py-2 text-[11px] text-muted">{g.has_api_key ? "Set" : "—"}</td>
                   <td className="px-3 py-2">
                     <DoorChips ids={g.door_ids} doorsById={doorsById} />
                   </td>

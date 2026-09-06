@@ -32,6 +32,11 @@ from kernel.config import get_settings
 
 from app.db import Base, get_db
 
+# Import the models so Base.metadata is complete. A table whose module has not
+# been imported is silently missing from create_all — the same gotcha
+# migrations/env.py documents.
+import app.access.models  # noqa: E402,F401
+
 PREFIX = "/api/v1"
 
 
