@@ -1,0 +1,51 @@
+{
+  "compilerOptions": {
+    // The panel is fully TypeScript: `allowJs` is off deliberately, so a stray
+    // .js/.jsx file is a build error rather than a silently untyped island.
+    "allowJs": false,
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "incremental": true,
+    "types": [
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
+}
