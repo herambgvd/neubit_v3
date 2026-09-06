@@ -83,6 +83,13 @@ _HTTP_CODE_MAP = {
     409: "CONFLICT",
     422: "VALIDATION_ERROR",
     429: "RATE_LIMITED",
+    # Upstream failures. Without these a controller that is unreachable, or a
+    # gateway timeout, came back as the generic HTTP_ERROR — indistinguishable in
+    # a client from any other unmapped status, when it is the one class of error a
+    # caller can act on by retrying.
+    502: "UPSTREAM_ERROR",
+    503: "UNAVAILABLE",
+    504: "UPSTREAM_TIMEOUT",
 }
 
 

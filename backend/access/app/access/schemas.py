@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+
+def _building_id(v: Optional[str]) -> Optional[str]:
+    """A site / floor / zone id is one core minted. Refuse anything that is not one.
+
+    Access CANNOT check that the id EXISTS: sites live in `neubit_control` and the
+    platform bans cross-service reads. What it can do is refuse a value that could
+    never be one — a typo, a truncated paste, a building name typed into an id box
+    — at the edge, rather than storing it, filtering doors on it, publishing it on
+    `tenant.<id>.access.*` and letting reporting mirror it into `access_events`.
+    A wrong-but-plausible id is a different problem and is not one this service can
+    see; a malformed one is, and it was being accepted.
+
+    Canonicalised, so an id pasted in upper case or in braces (which is how one
+    arrives from a Windows tool) still matches the same rows when the doors list
+    is filtered on it. Attached with ``mode="before"`` for exactly that reason:
+    the braced form is 38 characters, so running after the field's max_length
+    would refuse a valid id with "Site is too long". Normalise first, then let the
+    length constraint apply to the canonical 36.
+    """
+    if v is None or v == "":
+        return None
+    try:
+        return str(uuid.UUID(str(v)))
+    except (ValueError, AttributeError, TypeError):
+        raise ValueError("must be a uuid issued by the sites service") from None
 
 
 class Brand(str, Enum):
@@ -46,6 +74,7 @@ class InstanceCreate(BaseModel):
             raise ValueError("base_url must start with http:// or https://")
         return v
 
+    _check_building_ids = field_validator("site_id", mode="before")(_building_id)
 
 class InstanceUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -71,6 +100,7 @@ class InstanceUpdate(BaseModel):
             raise ValueError("base_url must start with http:// or https://")
         return v
 
+    _check_building_ids = field_validator("site_id", mode="before")(_building_id)
 
 class InstancePublic(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -272,6 +302,7 @@ class DoorCreate(BaseModel):
     is_active: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    _check_building_ids = field_validator("site_id", "floor_id", "zone_id", mode="before")(_building_id)
 
 class DoorUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -283,6 +314,7 @@ class DoorUpdate(BaseModel):
     is_active: Optional[bool] = None
     metadata: Optional[dict[str, Any]] = None
 
+    _check_building_ids = field_validator("site_id", "floor_id", "zone_id", mode="before")(_building_id)
 
 class DoorPublic(BaseModel):
     model_config = ConfigDict(extra="ignore")

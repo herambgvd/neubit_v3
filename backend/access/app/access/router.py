@@ -28,6 +28,7 @@ from .catalog import AccessGroupCatalog, ScheduleCatalog
 from .commands import CommandError, CommandService, HARDWARE_SETS, SCHEDULED_SETS
 from .doors import DoorCommandError, DoorService
 from .schemas import (
+    _building_id,
     AccessEventListResponse,
     AccessGroupCreate,
     AccessGroupListResponse,
@@ -660,6 +661,15 @@ async def list_doors(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
 ) -> DoorListResponse:
+    # Same rule the write path applies: a site id that could never be one is a
+    # mistake, and answering it with an empty list reads as "no doors on that
+    # site" — which is a wrong answer, not an error.
+    try:
+        site_id = _building_id(site_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"site_id {exc}"
+        ) from None
     rows, total = await svc.list_(
         instance_id=instance_id, site_id=site_id, skip=skip, limit=limit
     )
