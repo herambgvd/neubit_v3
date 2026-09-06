@@ -90,6 +90,17 @@
     license token is a HARD ERROR and core does not start. Nothing issues license
     tokens yet, so 'prod' here would produce an appliance that installs perfectly
     and then refuses to run. Flip this when licensing ships, together.
+
+    Until then 'prod' is REFUSED AT INSTALL TIME unless -LicenseToken is given.
+    The paragraph above was true and was only a paragraph: the parameter still
+    accepted 'prod', so the documented outcome — a perfect install that cannot
+    start — was one flag away. Failing here says so while the operator is still
+    at the console, instead of in a boot log.
+
+.PARAMETER LicenseToken
+    The signed license for this machine. Required with -RuntimeEnv prod, ignored
+    otherwise. Written to /opt/neubit/.env as VE_LICENSE_TOKEN; core verifies it
+    against VE_LICENSE_PUBLIC_KEY and refuses to start if it does not check out.
 #>
 [CmdletBinding()]
 param(
@@ -102,11 +113,29 @@ param(
     # NOT named $Env: $env: is PowerShell's environment-variable drive and this
     # script reads $env:ProgramData and $env:SystemRoot. Same word, two meanings,
     # in one file is how a reader loses ten minutes.
-    [ValidateSet('dev','prod')][string] $RuntimeEnv = 'dev'
+    [ValidateSet('dev','prod')][string] $RuntimeEnv = 'dev',
+    [string] $LicenseToken = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# Refuse the combination that installs cleanly and then cannot boot. core's
+# load_license() falls back to an unlimited licence only when VE_ENV is 'dev';
+# under 'prod' a missing token is a hard error raised during startup, so the
+# appliance would come up with everything running except the one service that
+# serves the console.
+if ($RuntimeEnv -eq 'prod' -and [string]::IsNullOrWhiteSpace($LicenseToken)) {
+    throw @'
+-RuntimeEnv prod needs -LicenseToken.
+
+Under VE_ENV=prod core refuses to start without a signed licence
+(core/app/core/license.py), so this would install perfectly and then fail on
+first boot with "no license configured".
+
+Either pass -LicenseToken <token>, or install with the default -RuntimeEnv dev.
+'@
+}
 
 # ── constants ────────────────────────────────────────────────────────────────
 $DistroName  = 'neubit-vms'
@@ -757,6 +786,7 @@ $envSh = @'
 set -euo pipefail
 
 VERSION="$1"; BULK="$2"; ADMIN_EMAIL="$3"; ADMIN_PASS="$4"; RUNTIME_ENV="$5"
+LICENSE_TOKEN="${6:-}"
 ENVFILE=/opt/neubit/.env
 
 rand() { head -c 96 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c "${1:-32}"; }
@@ -810,6 +840,9 @@ set_kv() {
 }
 set_kv NEUBIT_VERSION "$VERSION"
 set_kv NEUBIT_BULK "$BULK"
+# Only when one was supplied: set_kv on an empty value would blank a licence a
+# previous install wrote.
+if [ -n "$LICENSE_TOKEN" ]; then set_kv VE_LICENSE_TOKEN "$LICENSE_TOKEN"; fi
 
 # ADD IF MISSING, never overwrite. An appliance installed before the bus
 # authenticated has an .env with no NATS_PASS_* in it, and compose will refuse to
@@ -824,7 +857,7 @@ for n in CORE ACCESS INGEST VISION WORKFLOW READING_WRITER CONFLUX; do
 done
 
 echo "--- /opt/neubit/.env (secrets masked) ---"
-sed -E 's/^(POSTGRES_PASSWORD|VE_JWT_SECRET|VE_SECRETS_KEY|OPS_AGENT_TOKEN|VE_DATABASE_URL|VE_BOOTSTRAP_ADMIN_PASSWORD|NATS_PASS_[A-Z_]+)=.*/\1=********/' "$ENVFILE"
+sed -E 's/^(POSTGRES_PASSWORD|VE_JWT_SECRET|VE_SECRETS_KEY|OPS_AGENT_TOKEN|VE_DATABASE_URL|VE_BOOTSTRAP_ADMIN_PASSWORD|NATS_PASS_[A-Z_]+|VE_LICENSE_TOKEN)=.*/\1=********/' "$ENVFILE"
 '@ -replace "`r`n", "`n"
 
 $envShPath = Join-Path $env:ProgramData 'Neubit\VMS\install\write-env.sh'
@@ -834,7 +867,7 @@ $envShWsl = '/mnt/' + $envShPath.Substring(0,1).ToLower() + $envShPath.Substring
 
 $envScript = @"
     `$ErrorActionPreference = 'Continue'
-    wsl.exe -d $DistroName -u root -- bash '$envShWsl' '$Version' '$bulkWsl' '$AdminEmail' '$adminPass' '$RuntimeEnv'
+    wsl.exe -d $DistroName -u root -- bash '$envShWsl' '$Version' '$bulkWsl' '$AdminEmail' '$adminPass' '$RuntimeEnv' '$LicenseToken'
     if (`$LASTEXITCODE -ne 0) { throw "writing /opt/neubit/.env failed with `$LASTEXITCODE" }
 "@
 Invoke-InSession -Script $envScript -What 'write .env' | Out-Null

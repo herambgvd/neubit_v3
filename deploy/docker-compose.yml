@@ -495,6 +495,15 @@ services:
       # scopes this service's publish permissions to.
       VE_NATS_URL: nats://access:${NATS_PASS_ACCESS}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_access
+      # The periodic reconcile. `reconciler_cron` (default 0 3 * * *) has been on
+      # every controller row since the port and nothing fired it, so a nightly
+      # sync only ever happened when somebody pressed the button.
+      #
+      # ON here, off in the code: a background writer that talks to a customer's
+      # access hardware should be a deployment's choice, not something an upgrade
+      # turns on. Set to 0 to stop it. The claim is a Postgres advisory lock per
+      # instance, so `--scale access=2` does not double-pull a controller.
+      VE_ACCESS_RECONCILE_SCHEDULER: ${VE_ACCESS_RECONCILE_SCHEDULER:-1}
     depends_on:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
