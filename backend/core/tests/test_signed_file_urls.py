@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 from app.app import create_base_app
+from app.auth.models import User
 from app.core import storage as storage_mod
 from app.core.storage import LocalStorage, sign_key, signature_is_valid
 from app.db.base import get_db
@@ -144,3 +145,102 @@ async def test_an_avatar_is_still_served_with_no_signature(app):
     async with _client(app) as c:
         r = await c.get("/files/avatars/u.png")
     assert r.status_code == 200, r.text
+
+
+# --- the other backend -------------------------------------------------------
+#
+# S3 links are not signed by `sign_key`; S3 presigns them and they expire on their
+# own. So the property is not "there is a sig=", it is that an expiry is passed at
+# all and that for a report it is `signed_url_ttl_seconds`, not the interface's
+# generic hour. `aioboto3` is an optional extra, so the client is substituted
+# rather than built.
+
+
+class _RecordingS3:
+    """Stands in for the aioboto3 client, recording the presign call."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def generate_presigned_url(self, operation, Params, ExpiresIn):  # noqa: N803
+        self.calls.append({"operation": operation, "params": Params, "expires_in": ExpiresIn})
+        return f"https://s3.test/{Params['Key']}?X-Amz-Expires={ExpiresIn}"
+
+
+@pytest.fixture
+def s3(monkeypatch):
+    """An S3Storage whose client is a recorder. Returns (storage, recorder)."""
+    from app.core import config
+    from app.core.storage import S3Storage
+
+    monkeypatch.setenv("VE_S3_BUCKET", "neubit-test")
+    config.get_settings.cache_clear()
+    storage = S3Storage()
+    recorder = _RecordingS3()
+    monkeypatch.setattr(storage, "_client", lambda: recorder)
+    return storage, recorder
+
+
+async def test_an_s3_url_is_a_presigned_get_with_an_expiry(s3):
+    storage, recorder = s3
+    url = await storage.url("reports/abc.csv", expires=120)
+    call = recorder.calls[0]
+    assert call["operation"] == "get_object"
+    assert call["params"] == {"Bucket": "neubit-test", "Key": "reports/abc.csv"}
+    assert call["expires_in"] == 120
+    assert url.startswith("https://s3.test/")
+
+
+async def test_an_s3_report_link_expires_after_the_configured_ttl_not_a_generic_hour(
+    s3, db, monkeypatch
+):
+    """The router, not S3Storage, chooses the window — so drive the route.
+
+    A presign that took the interface's default would hand out an hour-long link to
+    a tenant's export.
+    """
+    import uuid
+
+    from importlib import import_module
+
+    from app.auth.security import hash_password
+    from app.core.config import get_settings
+    from app.reports.models import ReportJob
+    from app.tenancy.models import Tenant
+    from conftest import make_role
+
+    # import_module, not `from app.reports import router`: that name is the
+    # APIRouter the package re-exports, not the module the route lives in.
+    reports_router = import_module("app.reports.router")
+    storage, recorder = s3
+    ttl = get_settings().signed_url_ttl_seconds
+    assert ttl != 3600, "this test cannot tell the two apart if the TTL is an hour"
+
+    tenant = Tenant(id=uuid.uuid4(), name="Acme", slug="acme")
+    db.add(tenant)
+    await db.flush()
+    role = await make_role(db, "Reporter", ["report.export"])
+    user = User(
+        email="r@acme.io", full_name="R", role_id=role.id, tenant_id=tenant.id,
+        password_hash=hash_password("Passw0rd!"),
+    )
+    db.add(user)
+    job = ReportJob(
+        tenant_id=tenant.id, name="q3", format="csv", status="done",
+        result_key="reports/q3.csv",
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(user, attribute_names=["role"])
+
+    monkeypatch.setattr(reports_router, "get_storage", lambda: storage)
+    out = await reports_router.download_report(job.id, db=db, user=user)
+
+    assert recorder.calls[0]["expires_in"] == ttl
+    assert out["expires_in"] == ttl

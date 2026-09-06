@@ -17,8 +17,10 @@ import pkgutil
 import uuid
 
 import pytest
+import pytest_asyncio
 
 from app.tenancy.erasure import (
+    CASCADE,
     DISPOSITIONS,
     ERASE,
     ERASE_BY_USER,
@@ -330,3 +332,110 @@ async def test_the_erase_refuses_rather_than_half_finishing(db, monkeypatch):
         await db.scalar(select(func.count()).select_from(Site).where(Site.tenant_id == doomed.id))
         or 0
     ) == 1, "rows were deleted despite the refusal"
+
+
+# --- the cascades, actually fired --------------------------------------------
+#
+# The tests above assert the CONSTRAINT is declared. These watch a row vanish.
+# They need their own engine: SQLite ignores foreign keys unless the connection
+# issues `PRAGMA foreign_keys=ON`, and conftest's shared `db` does not, so a
+# cascade assertion made against it would pass by never deleting anything.
+
+#: What each CASCADE table needs beyond tenant_id to satisfy its NOT NULLs.
+#: users also needs a role, wired up in the test.
+_CASCADE_ROWS: dict[str, dict] = {
+    "users": {"email": "person@doomed.io", "password_hash": "x"},
+    "roles": {"name": "doomed-role"},
+    "api_keys": {"name": "k", "prefix": "ve_abc", "key_hash": "h"},
+    "dashforge_embeds": {"name": "d", "workspace_ref": "w", "dashboard_ref": "b"},
+    "security_policies": {},
+    "directory_configs": {"server_uri": "ldap://x", "base_dn": "dc=x", "bind_dn": "cn=x"},
+    "sso_configs": {"issuer": "https://idp.test", "client_id": "c"},
+    "billing_subscriptions": {"plan_key": "pro"},
+}
+
+_CASCADE_TABLES = sorted(n for n, d in DISPOSITIONS.items() if d.how == CASCADE)
+
+
+@pytest_asyncio.fixture
+async def fk_db():
+    """A session on a connection that enforces foreign keys."""
+    from sqlalchemy import event
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.db.base import Base
+
+    _metadata_of_every_module()
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _foreign_keys_on(dbapi_connection, _record):  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
+
+
+def _tables() -> dict:
+    from app.db.base import Base
+
+    return {t.name: t for t in Base.metadata.sorted_tables}
+
+
+async def _row_exists(session, table, row_id) -> bool:
+    """By primary key, not by tenant_id: an ON DELETE SET NULL also empties a
+    tenant_id count, and SET NULL is the bug CASCADE is being asserted against."""
+    from sqlalchemy import func, select
+
+    stmt = select(func.count()).select_from(table).where(table.c.id == row_id)
+    return int(await session.scalar(stmt) or 0) > 0
+
+
+def test_every_cascade_table_has_a_row_to_probe_with():
+    """A CASCADE table added later must be observed, not just declared."""
+    assert set(_CASCADE_TABLES) == set(_CASCADE_ROWS)
+
+
+async def test_the_cascade_fixture_really_enforces_foreign_keys(fk_db):
+    """Without the pragma every cascade test below would pass by doing nothing."""
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError):
+        await fk_db.execute(
+            _tables()["security_policies"].insert().values(tenant_id=uuid.uuid4())
+        )
+
+
+@pytest.mark.parametrize("table_name", _CASCADE_TABLES)
+async def test_a_cascade_table_loses_its_row_when_the_tenant_is_deleted(fk_db, table_name):
+    """The row is gone after DELETE FROM tenants, with no explicit DELETE for it."""
+    tables = _tables()
+    tenants = tables["tenants"]
+    tid = uuid.uuid4()
+    await fk_db.execute(
+        tenants.insert().values(id=tid, name="Doomed", slug=f"doomed-{tid.hex[:8]}")
+    )
+
+    values = dict(_CASCADE_ROWS[table_name], tenant_id=tid)
+    if table_name == "users":
+        # A shared built-in role (tenant_id NULL), so this probes the users
+        # cascade and not the roles one.
+        role_id = uuid.uuid4()
+        await fk_db.execute(
+            tables["roles"].insert().values(id=role_id, name=f"system-{role_id.hex[:8]}")
+        )
+        values["role_id"] = role_id
+
+    table = tables[table_name]
+    result = await fk_db.execute(table.insert().values(**values))
+    row_id = result.inserted_primary_key[0]
+    assert await _row_exists(fk_db, table, row_id), f"{table_name} row was not seeded"
+
+    await fk_db.execute(tenants.delete().where(tenants.c.id == tid))
+    assert not await _row_exists(fk_db, table, row_id), f"{table_name} survived its tenant"
