@@ -419,6 +419,16 @@ services:
                uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes:
       - ./migrate.sh:/usr/local/bin/neubit-migrate:ro
+    # /readyz, not /health. /health is a static dict that answers 200 with Postgres
+    # stopped; /readyz asks the database and the event bus. The service had no
+    # healthcheck at all, so nothing consumed either. Not routed by the gateway —
+    # a satellite's probes are an internal concern (see gateway/dynamic/routes.yml).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
     networks: [neubit]
 
   # ── vision — VMS control-plane (Python / neubit kernel) ─────────

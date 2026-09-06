@@ -103,7 +103,15 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
+        """Liveness only — never touches a dependency. See app/probes.py."""
         return {"status": "ok", "service": "access", "env": settings.env}
+
+    @app.get("/readyz")
+    async def ready():
+        """Readiness: 503 naming the dependency that failed."""
+        from app.probes import readyz
+
+        return await readyz()
 
     # Sample authed route — proves JWT verification + tenant scope work locally.
     @app.get(f"{settings.api_prefix}/access/whoami")

@@ -40,8 +40,13 @@ if ! "$DOCKER" build -q \
   fi
 fi
 
+# deploy/ is mounted because one test is about the DEPLOYMENT, not the code:
+# access's healthcheck has to consume /readyz. That endpoint existed nowhere and
+# nothing consumed it, precisely because no test could see the compose file.
 exec "$DOCKER" run --rm --network none \
   -v "$REPO/backend:/src:ro" \
+  -v "$REPO/deploy:/repo/deploy:ro" \
+  -e VE_REPO_ROOT=/repo \
   -w /src/access \
   -e PYTHONDONTWRITEBYTECODE=1 \
   -e VE_JWT_SECRET=test-jwt-secret-that-is-long-enough-for-hs256 \
