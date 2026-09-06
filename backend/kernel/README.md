@@ -56,12 +56,24 @@ publish as `vms`, and `reading-writer`, which only consumes, may publish no doma
 event at all. The conflux edge collector is a separate deployment and has its own
 user, restricted to `tenant.*.iot.>`.
 
-Two things it does not do, both deliberate and both recorded here rather than in a
-backlog. `ingest`'s grant is `tenant.*.*.>`, because a rule's `target_domain` is
-tenant-configured and interpolated into the subject — scoping it to a fixed list
-would break a legitimate rule, so "an ingest rule naming another module's word"
-stays a permission-model question, not a broker one. And `$JS.API.>` is granted
-whole: splitting JetStream's API per stream is its own piece of work.
+**No service can destroy a stream.** `$JS.API.STREAM.DELETE.>` and
+`$JS.API.STREAM.PURGE.>` are denied to every user. Nothing in the estate calls
+either — checked, including vision's `purge()`, which sweeps database rows — so
+denying them costs nothing and takes "a compromised service drops the readings
+stream" off the table.
+
+CONSUMER delete is not denied, and that is not an oversight: two callers rely on
+it and both recreate THEIR OWN durable — a projection whose spec's filter changed,
+and this module replacing a legacy never-acking consumer. Scoping consumer ops per
+durable is not expressible anyway, because a durable name is one subject token and
+NATS has no partial-token wildcard; it would mean listing every durable in the
+estate and having a new one fail silently.
+
+One grant stays wide, deliberately. `ingest`'s is `tenant.*.*.>`, because a rule's
+`target_domain` is tenant-configured and interpolated into the subject — a fixed
+list at the broker would break a legitimate rule. That control lives at the edge
+where a rule is saved instead: ingest refuses the ten domains another service is
+the authority for. See `backend/ingest/README.md`.
 
 **A subject's domain is validated.** `subject()` interpolated all three tokens
 unchecked, and `domain` reaches it from tenant-editable configuration (ingest's
