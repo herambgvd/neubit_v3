@@ -92,13 +92,31 @@ def decrypt_secret_for(tenant_id: str | None, value: str) -> str:
 # ciphering is not.
 
 
+class SecretShapeError(TypeError):
+    """A secret path held something that cannot be encrypted (not a string)."""
+
+
 def _walk(obj: Any, path: tuple[str, ...], is_secret, fn) -> Any:
+    """Apply ``fn`` at every path ``is_secret`` selects.
+
+    The secret check runs BEFORE recursing, and that ordering is the whole point.
+    It used to descend into dicts first and only apply ``fn`` to str leaves, so a
+    secret one level deeper than the predicate expected — ``{"password": {"v": …}}``
+    — or one that was not a string, was walked straight past. For `redact_fields`,
+    whose job is to build a response, that meant the secret came back in the clear
+    with no error and no marker.
+
+    A list at a secret path has ``fn`` applied to each element, so a list of keys
+    still works.
+    """
+    if path and is_secret(path):
+        if isinstance(obj, list):
+            return [fn(v) for v in obj]
+        return fn(obj)
     if isinstance(obj, dict):
         return {k: _walk(v, path + (str(k),), is_secret, fn) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_walk(v, path, is_secret, fn) for v in obj]
-    if isinstance(obj, str) and path and is_secret(path):
-        return fn(obj)
     return obj
 
 
@@ -113,7 +131,17 @@ def encrypt_fields(
     """
     if not data:
         return data
-    return _walk(data, (), is_secret, lambda s: encrypt_secret_for(tenant_id, s))
+    def _enc(node: Any) -> Any:
+        if not isinstance(node, str):
+            # Refuse rather than store it readable. A secret we cannot encrypt is
+            # not a secret, and silently writing it through is how the old walker
+            # left plaintext in the column with nothing complaining.
+            raise SecretShapeError(
+                f"a secret field holds {type(node).__name__}, which cannot be encrypted"
+            )
+        return encrypt_secret_for(tenant_id, node)
+
+    return _walk(data, (), is_secret, _enc)
 
 
 def decrypt_fields(
@@ -122,7 +150,12 @@ def decrypt_fields(
     """Inverse of :func:`encrypt_fields`; legacy plaintext leaves pass through."""
     if not data:
         return data
-    return _walk(data, (), is_secret, lambda s: decrypt_secret_for(tenant_id, s))
+    # Non-strings pass through: a secret path holding a number is a row written
+    # before encryption, not something to fail a read on.
+    return _walk(
+        data, (), is_secret,
+        lambda v: decrypt_secret_for(tenant_id, v) if isinstance(v, str) else v,
+    )
 
 
 def redact_fields(
@@ -135,4 +168,6 @@ def redact_fields(
     """
     if not data:
         return data
-    return _walk(data, (), is_secret, lambda _s: placeholder)
+    # Whatever the node is — string, number, nested dict — it is replaced. A shape
+    # the predicate did not anticipate must never come back readable.
+    return _walk(data, (), is_secret, lambda _node: placeholder)

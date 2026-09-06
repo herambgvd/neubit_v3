@@ -119,7 +119,17 @@ def verify_token(token: str) -> Principal:
             token,
             get_settings().jwt_secret,
             algorithms=["HS256"],
-            options={"verify_aud": False},  # aud is core's admin realm's business
+            options={
+                "verify_aud": False,  # aud is core's admin realm's business
+                # exp must be PRESENT, not just valid when present. PyJWT only
+                # checks a claim it finds, so a token minted without one was
+                # accepted forever — as super-admin — and nothing here can revoke
+                # it. Core's single mint point always sets exp.
+                "require": ["exp"],
+            },
+            # Appliances run without NTP. Without leeway a satellite whose clock
+            # trails core rejects fresh tokens, and it reads as "invalid token".
+            leeway=30,
         )
     except jwt.PyJWTError:
         raise UnauthorizedError("invalid or expired token")
