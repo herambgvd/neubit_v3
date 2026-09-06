@@ -111,6 +111,18 @@ async def reconcile_placement(
     an entire tenant is a legitimate operation but it is not this function's job,
     because on the write path it would turn a 500-row batch into a 314-row table
     rewrite.
+
+    `tenant` IS OPTIONAL AND IS NOT WHAT KEEPS TENANTS APART. The isolation is in
+    the join — `device_locations` is matched on `tenant_id` AND `device_id`, so a
+    placement can only ever reach points of the tenant that made it, whatever is
+    passed here. Verified with two tenants holding the SAME device id and one
+    placement between them: the unplaced tenant's point stayed unplaced.
+
+    It has to be optional. The writer calls this with the points of one BATCH, and
+    a batch is whatever the durable pulled off `tenant.*.iot.reading.>` — several
+    tenants at once, routinely. There is no single tenant it could name. The
+    argument is a narrowing for the API path, which does know one, and nothing
+    more; do not read it as the guard.
     """
     if point_ids is None and device_ids is None:
         raise ValueError("reconcile_placement needs point_ids or device_ids")
