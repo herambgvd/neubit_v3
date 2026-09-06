@@ -103,7 +103,7 @@ async def test_command_rights_alone_cannot_reconfigure_the_controller(app, sessi
     assert r.status_code == 403, r.text
 
 
-def test_every_route_is_still_gated():
+async def test_every_route_is_still_gated():
     """55 routes, four keys. A new route with no gate is the failure this catches."""
     from fastapi.routing import APIRoute
 
@@ -126,7 +126,7 @@ def test_every_route_is_still_gated():
     assert not ungated, "routes with no permission gate:\n" + "\n".join(ungated)
 
 
-def test_the_actuation_keys_are_registered_in_cores_catalog():
+async def test_the_actuation_keys_are_registered_in_cores_catalog():
     """A key access enforces but core cannot grant is a key no role can hold —
     core's own suite guards this too, but access should fail on its own."""
     import pathlib

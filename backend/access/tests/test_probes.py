@@ -92,7 +92,7 @@ async def test_offline_listeners_do_not_fail_readiness(app, monkeypatch):
     assert json.loads(r.text)["listeners"] == 0
 
 
-def test_an_unset_nats_url_is_not_a_fault(monkeypatch):
+async def test_an_unset_nats_url_is_not_a_fault(monkeypatch):
     """A deployment without NATS runs fine; only 'configured but disconnected' is
     a fault."""
     from kernel import config
@@ -105,7 +105,7 @@ def test_an_unset_nats_url_is_not_a_fault(monkeypatch):
         config.get_settings.cache_clear()
 
 
-def test_the_deployment_actually_probes_readiness():
+async def test_the_deployment_actually_probes_readiness():
     """The code was never the problem here either — the service had no healthcheck.
     Without this, /readyz can silently become unconsumed again."""
     import os
