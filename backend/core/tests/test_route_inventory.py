@@ -188,3 +188,73 @@ async def test_a_public_route_answers_without_a_token(sessionmaker_, path):
         f"Got {r.status_code}: {r.text[:200]}"
     )
     assert r.status_code < 500, f"{path} -> {r.status_code}: {r.text[:200]}"
+
+
+# Over the wire, every route. --------------------------------------------------
+#
+# `test_every_route_authenticates_or_is_listed_with_a_reason` reads the dependency
+# tree. That is the right check for "somebody added a route and forgot the gate",
+# and it is a DIFFERENT question from "the gate answers": a dependency can be
+# declared and never reached — an earlier one that raises something else, a router
+# mounted without its gates, a path that 500s before any of it runs.
+#
+# Core is the biggest surface in the estate and the one holding auth, tenants and
+# users, and until now only the five PUBLIC routes had ever been CALLED without a
+# token. This calls all of them.
+
+
+def _protected_urls():
+    """A concrete URL per route that is supposed to need a credential.
+
+    Note what this does NOT filter on: whether the static walk thinks the route is
+    gated. Taking `protected` into account here would make this test only ever
+    visit routes the walk already approved of — an ungated route would be excluded
+    from it by the very property that makes it a bug. The allowlists are the only
+    exemption, so a route with no gate at all fails this as well as the static
+    check above.
+    """
+    import uuid as _uuid
+
+    out = []
+    for method, path, _protected in _inventory():
+        if (method, path) in ALLOWED_UNAUTHENTICATED or path in PUBLIC_ROUTES:
+            continue
+        url = "/".join(
+            str(_uuid.uuid4()) if seg.startswith("{") and seg.endswith("}") else seg
+            for seg in path.split("/")
+        )
+        out.append((method, url))
+    return sorted(set(out))
+
+
+PROTECTED_URLS = _protected_urls()
+
+
+def test_there_is_something_to_call():
+    """A walk that finds nothing makes the assertion below pass over an empty list —
+    which is exactly how 41-of-216 went unnoticed before."""
+    assert len(PROTECTED_URLS) > 180, len(PROTECTED_URLS)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,url", PROTECTED_URLS, ids=lambda v: str(v))
+async def test_anonymous_is_refused_over_http(sessionmaker_, method, url):
+    """401, and never a 2xx or a 500. A 500 here would mean the route did work
+    before it looked at the caller."""
+    import httpx
+
+    from app.db.base import get_db
+
+    app = create_base_app(title="test")
+
+    async def _override_db():
+        async with sessionmaker_() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _override_db
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        r = await c.request(
+            method, url, json={} if method in ("POST", "PUT", "PATCH") else None
+        )
+    assert r.status_code == 401, f"{method} {url} -> {r.status_code}: {r.text[:200]}"
