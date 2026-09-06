@@ -1,28 +1,20 @@
 """Two workers, one outbox: a notification is claimed by exactly one of them.
 
-THE BUG THIS PINS. ``dispatch_notifications`` selected pending rows with
-``WHERE status = 'pending' ... ORDER BY created_at LIMIT n`` and then updated them.
-No ``FOR UPDATE SKIP LOCKED``, no claim state. With one worker replica that is
-invisible. With two — which is what an operator adds when the outbox is backing up
-— both replicas select the same rows and the same alert is delivered twice. In a
-system adjacent to life-safety that is an incident, and the fix for a slow outbox
-was the thing that caused it.
+Without ``FOR UPDATE SKIP LOCKED`` and a claim state, two worker replicas select
+the same pending rows and deliver the same alert twice — and two replicas is
+exactly what an operator adds when the outbox backs up.
 
-WHY THIS TEST RUNS AGAINST REAL POSTGRES AND NOT SQLITE. The entire mechanism is
-row-level locking. SQLite has none, so a SQLite version of this test would pass
-against the broken code and prove nothing; and an assertion that the compiled SQL
-string contains "SKIP LOCKED" tests the ORM, not the exclusion. So: two claimers,
-two connections, one table, genuinely overlapping transactions.
+It runs against real Postgres, not SQLite: the mechanism is row-level locking, so
+a SQLite version would pass against the broken code, and asserting on the compiled
+SQL string would test the ORM rather than the exclusion.
 
-WHY IT DOES NOT TOUCH THE LIVE ``notifications`` TABLE. It creates a throwaway
-SCHEMA and points the connection's ``search_path`` at it, so the production queries
-run verbatim against an isolated copy of the table — same DDL from the same model,
-no live row read or written, and nothing for the running beat schedule to race. The
-schema is dropped in a finally.
+It does not touch the live table. It creates a throwaway schema and points
+``search_path`` at it, so the unqualified production queries run verbatim against
+an isolated copy. The schema is dropped in a finally.
 
-THE GUARD IS SHOWN FAILING. ``test_the_old_shape_double_claims`` runs the exact
-pre-fix statement through the same harness and asserts it DOES hand both claimers
-the same rows. A guard nobody has seen fail is not known to work.
+``test_the_old_shape_double_claims`` runs the pre-fix statement through the same
+harness and asserts it DOES double-claim: a guard nobody has seen fail is not known
+to work.
 """
 
 from __future__ import annotations
@@ -100,9 +92,8 @@ class _Sandbox:
 async def _legacy_claim(session, limit, now):
     """The pre-fix statement, verbatim: no FOR UPDATE, no claim state.
 
-    In the old code the SELECT *was* the claim — everything after it was in-memory
-    mutation of the rows it returned, so two workers returning the same rows is two
-    workers sending the same message.
+    There the SELECT was the claim — everything after it was in-memory mutation of
+    the rows returned, so two workers returning the same rows send twice.
     """
     due = or_(Notification.next_attempt_at.is_(None), Notification.next_attempt_at <= now)
     stmt = (select(Notification.notification_id)
@@ -114,9 +105,8 @@ async def _legacy_claim(session, limit, now):
 async def _race(sandbox, claimer, limit):
     """Run two claimers with their transactions genuinely overlapping.
 
-    A claims and HOLDS its transaction open; only then does B claim. That ordering
-    is the whole point: it is the interleaving where the two workers are inside the
-    outbox at the same instant, which is the one a sequential test never reaches.
+    A claims and holds its transaction open, then B claims. That interleaving —
+    both workers inside the outbox at once — is the one a sequential test misses.
     """
     a_claimed, b_claimed = asyncio.Event(), asyncio.Event()
     now = utcnow()
@@ -166,8 +156,8 @@ def test_two_concurrent_claimers_split_the_outbox_exactly():
                 assert not left
                 claimed = (await s.execute(
                     select(Notification).where(Notification.status == "claimed"))).scalars().all()
-                # The claim is committed BEFORE any provider is contacted, so the
-                # counter cannot be lost by a crash mid-send.
+                # The claim commits before any provider is contacted, so a crash
+                # mid-send cannot lose the counter.
                 assert all(n.attempts == 1 and n.claimed_at is not None for n in claimed)
     run_async(go())
 
@@ -211,9 +201,8 @@ def test_a_row_whose_worker_died_comes_back_after_the_lease():
                 for n in rows:
                     assert n.status == "pending"
                     assert n.claimed_at is None and n.claimed_by is None
-                    # NOT reset: the dead worker may have reached the provider, and
-                    # forgiving the attempt is how a row that kills the worker
-                    # retries forever.
+                    # Not reset: the dead worker may have reached the provider, and
+                    # forgiving the attempt lets a killer row retry forever.
                     assert n.attempts == 1
 
             # And now another worker can have it.

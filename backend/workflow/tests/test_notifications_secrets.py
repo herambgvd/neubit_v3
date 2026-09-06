@@ -1,21 +1,18 @@
 """Channel credentials are unreadable at rest, and yesterday's rows still work.
 
-``NotificationChannel.config`` held SMTP passwords, webhook bearer tokens, the FCM
-service-account private key and the APNs signing key as plain JSON. Anyone with the
-table, a replica or a nightly dump had every tenant's sending credentials. These
-tests pin the three properties that fix has to hold at once, because getting any
-two of them is easy and getting the third is where this usually goes wrong:
+``NotificationChannel.config`` holds SMTP passwords, webhook bearer tokens, the FCM
+service-account private key and the APNs signing key. Three properties have to hold
+at once — any two are easy, the third is where this usually goes wrong:
 
-  1. a credential written today is CIPHERTEXT in the column and plaintext to the
+  1. a credential written today is ciphertext in the column and plaintext to the
      connector;
-  2. a credential written BEFORE encryption existed is still readable -- the
-     migration path is "read both", not "re-write the table";
+  2. a credential written before encryption existed is still readable — the
+     migration path is "read both", not "rewrite the table";
   3. a credential never leaves through the API, and the redaction that makes that
      true cannot be PATCHed back over the real value.
 
-WHY THE CRYPTO ITSELF IS NOT RE-TESTED HERE: it is ``kernel.secrets``, one
-derivation for the platform. What is tested here is workflow's half -- the field
-POLICY, and the three call sites that have to apply it.
+The crypto itself is ``kernel.secrets`` and is not re-tested here. What is tested is
+workflow's half: the field policy and the three call sites that apply it.
 """
 
 from __future__ import annotations
@@ -57,8 +54,8 @@ def test_policy_separates_credentials_from_routing():
     for path in secret:
         assert is_secret_path(path), f"{path} must be encrypted"
 
-    # Identifiers and routing. Encrypting these buys nothing and costs every
-    # operator who has to read a channel to work out where it is sending.
+    # Identifiers and routing: encrypting these buys nothing and costs the
+    # operator who has to read a channel to see where it sends.
     plain = [("host",), ("smtp_host",), ("port",), ("url",), ("use_tls",),
              ("from_address",), ("username",), ("timeout",), ("project_id",),
              ("key_id",), ("team_id",), ("topic",), ("bundle_id",),

@@ -1,11 +1,9 @@
 """Trigger / alert-format / event-simulator REST API.
 
-Mounted in the order trigger → alert format → simulator. The simulator lives on
-``/workflow/events`` rather than under ``/workflow/triggers`` because a dry run
-matches BOTH a trigger and an alert format; it is gated on
-``workflow.instance.create`` because a non-dry run really does create incidents.
-Alert formats reuse the ``workflow.sop.*`` keys — a format is a SOP mapping, and
-it was never given a permission family of its own.
+Mounted trigger → alert format → simulator. The simulator sits on
+``/workflow/events``, not under triggers, because a dry run matches both; it is
+gated on ``workflow.instance.create`` because a non-dry run creates incidents.
+Alert formats reuse the ``workflow.sop.*`` keys — a format is a SOP mapping.
 """
 
 from __future__ import annotations

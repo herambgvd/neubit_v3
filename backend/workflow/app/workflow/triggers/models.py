@@ -1,11 +1,8 @@
 """Trigger + alert-format ORM models — the two ways an event starts an incident.
 
-Both tables answer the same question from opposite ends, which is why they are one
-feature: a ``workflow_triggers`` row matches an event by TYPE plus a condition
-list; an ``alert_formats`` row matches it by CODE. The correlation engine consults
-both on every message, and the event simulator (``service.SimulatorService``)
-reports what each would have done — so a change to one is nearly always a change to
-the other.
+One feature because both answer the same question from opposite ends: a trigger
+matches an event by TYPE plus conditions, an alert format matches it by CODE. The
+correlation engine consults both on every message.
 
     workflow_triggers — event-keyed launchers (match → create instance)
     alert_formats     — alert_code → SOP mapping (category/severity/priority/icon)
@@ -62,11 +59,10 @@ class Trigger(Base, _TenantTimestamped):
 class AlertFormat(Base, _TenantTimestamped):
     """Maps an alert code (e.g. "TEST_ALERT", "unknown_card") → a SOP.
 
-    Ported from neubit_v2's ``module/workflow/format``. When an incoming event
-    carries an alert code that matches an active AlertFormat, the correlation
-    engine spins up an incident from the mapped SOP (in its initial state).
-    ``alert_code`` is unique PER TENANT. Simple String columns (not enums) for
-    category/severity/priority — matches v2 and dodges the asyncpg enum footgun.
+    An event carrying a matching alert code makes the correlation engine spin up
+    an incident from the mapped SOP, in its initial state. ``alert_code`` is unique
+    per tenant. category/severity/priority are plain String columns, not enums, to
+    avoid the asyncpg enum footgun.
     """
 
     __tablename__ = "alert_formats"

@@ -1,23 +1,15 @@
 """Scheduled job over the notification outbox — the dispatch drain.
 
-Async body for the worker's ``dispatch_notifications`` beat task (``app.worker``
-wraps it in ``asyncio.run``), plus the long-running notify-request consumer
-runner. Both live with the notifications feature because they are the far end of
-it: the service and the consumer WRITE outbox rows, this drains them through the
-connector registry.
+Async body for the worker's ``dispatch_notifications`` beat task, plus the
+long-running notify-request consumer runner. The service and the consumer write
+outbox rows; this drains them through the connector registry.
 
-The retry policy is here rather than in a connector on purpose. A connector knows
-how to send one message; how many times a message is worth sending, and how long
-to wait between tries, is a property of the outbox — and a per-connector copy is
-how a flaky provider ends up hammered by one channel and abandoned by another.
+Retry policy lives here, not in a connector: how often a message is worth sending
+is a property of the outbox, and per-connector copies drift.
 
-THE DRAIN IS A CLAIM, NOT A SELECT. Every replica of this worker runs the same
-``SELECT ... WHERE status = 'pending' ORDER BY created_at LIMIT n``, so with one
-replica the outbox drains and with two the SAME ROWS come back to both and every
-operator gets the alert twice. Two replicas is the normal response to a backlog,
-which means the fix for a slow outbox was the trigger for duplicate alerts. See
-``_claim_batch`` for the exclusion and ``_reclaim_expired`` for what happens to a
-row whose claimer died holding it.
+The drain is a CLAIM, not a SELECT — every replica runs the same sweep on the same
+minute, so a plain select would send every notification once per replica. See
+``_claim_batch`` for the exclusion and ``_reclaim_expired`` for a dead claimer.
 """
 
 from __future__ import annotations
@@ -43,14 +35,10 @@ log = logging.getLogger("workflow.notifications.jobs")
 
 MAX_NOTIFY_ATTEMPTS = 5
 
-# How long a claim is good for. A worker that dies between claiming a row and
-# recording its outcome leaves the row in ``claimed`` with nobody working it, and
-# ``claimed`` is not a state anything else drains — so without this the row is lost
-# silently, which for a life-safety-adjacent alert is worse than sending it twice.
-# 600s is an order of magnitude above the slowest realistic delivery (an APNs or
-# SMTP connect timing out is tens of seconds) and well below anyone's patience for
-# a missing alert. Set it too low and a merely SLOW send is reclaimed while it is
-# still in flight, which reintroduces the double-send this commit removes.
+# How long a claim is good for. Without it, a worker that dies mid-send leaves a
+# row in ``claimed`` that nothing drains. Too low and a merely slow send is
+# reclaimed while still in flight, which is a double-send; too high and a real
+# alert waits.
 NOTIFY_CLAIM_LEASE_SECONDS = int(os.getenv("VE_WORKFLOW_NOTIFY_CLAIM_LEASE", "600"))
 
 # Exponential-backoff tuning for notification retries (seconds).
@@ -74,35 +62,24 @@ def _backoff_delay(attempts: int) -> timedelta:
 
 
 def _worker_id() -> str:
-    """Who holds a claim. Container hostname + pid: enough to point at one process
-    across replicas from a psql prompt, and it is diagnostic only — nothing keys off
-    it, so a recycled hostname cannot cause a row to be handed to the wrong worker.
-    """
+    """Who holds a claim: hostname + pid. Diagnostic only — nothing keys off it."""
     return f"{socket.gethostname()}:{os.getpid()}"
 
 
 async def _reclaim_expired(session, now) -> int:
     """Return rows whose claimer died back to ``pending``. Caller commits.
 
-    A claim is committed before the send (see ``_claim_batch``), which is what keeps
-    the attempt counter durable — and is also what makes an orphan possible: SIGKILL
-    the worker mid-send and the row sits in ``claimed`` forever, drained by nothing
-    and counted by nothing.
-
-    ``attempts`` is DELIBERATELY NOT reset here. The dead worker may well have
-    reached the provider before it died, so that try happened whether or not anyone
-    recorded it; forgiving it would let a row that crashes the worker every time
-    retry forever. Over-counting an attempt costs one lost retry, under-counting
-    costs an unbounded loop — the asymmetry decides it.
+    ``attempts`` is deliberately not reset: the dead worker may have reached the
+    provider first, and forgiving the try would let a row that kills the worker
+    every time retry forever.
     """
     cutoff = now - timedelta(seconds=NOTIFY_CLAIM_LEASE_SECONDS)
     stmt = (
         update(Notification)
         .where(
             Notification.status == "claimed",
-            # A NULL claimed_at is a claimed row from before this column existed, or
-            # one written by hand. It has no lease to expire, so expire it now
-            # rather than leaving it stuck for the same reason.
+            # A NULL claimed_at (pre-dates this column, or written by hand) has no
+            # lease to expire, so expire it now rather than leave it stuck.
             or_(Notification.claimed_at.is_(None), Notification.claimed_at <= cutoff),
         )
         .values(status="pending", claimed_at=None, claimed_by=None, updated_at=now)
@@ -118,30 +95,19 @@ async def _reclaim_expired(session, now) -> int:
 async def _claim_batch(session, limit: int, now, worker: str) -> list[str]:
     """Take exclusive ownership of up to ``limit`` due rows. Caller commits.
 
-    ``FOR UPDATE SKIP LOCKED`` on the id select is the exclusion: a second worker
-    running this same statement in a concurrent transaction does not block on the
-    rows this one holds and does not return them either — it walks past to the next
-    unlocked rows. The locks live until the caller COMMITS, and the caller commits
-    immediately after this returns, before any provider is contacted; holding a row
-    lock (and therefore a connection and an open transaction) across an SMTP dial is
-    how a slow provider becomes a database incident.
+    ``FOR UPDATE SKIP LOCKED`` is the exclusion: a concurrent worker walks past
+    these rows instead of blocking on them. The caller commits immediately, before
+    any provider is contacted — holding a row lock across an SMTP dial turns a slow
+    provider into a database incident.
 
-    That commit is what turns the lock into a lease: once the transaction ends the
-    row is no longer locked, so ``status = 'claimed'`` is what keeps the next worker
-    off it, and ``claimed_at`` is what stops that being forever
-    (``_reclaim_expired``).
+    That commit turns the lock into a lease: ``status='claimed'`` keeps the next
+    worker off the row and ``claimed_at`` stops that being forever.
 
-    ``attempts`` is incremented HERE, in the same committed transaction as the
-    claim. It used to be a ``note.attempts += 1`` in memory that reached the
-    database only in one big commit after the whole batch had been sent, so a crash
-    anywhere in the batch lost the increments AND the ``sent`` marks of every row
-    already delivered — the counter could not bound anything and delivered rows were
-    re-delivered on the next tick. Committing the increment before the send can only
-    over-count (a crash after claiming and before sending burns one try), which is
-    the direction that stays bounded.
+    ``attempts`` is incremented in the same committed transaction, so a crash can
+    only over-count. Counting after the send would lose increments on a crash and
+    re-deliver rows already sent.
 
-    Caller must not have an open transaction it cares about: this is a claim, not
-    part of a larger unit of work.
+    Caller must not have an open transaction it cares about.
     """
     due = or_(Notification.next_attempt_at.is_(None), Notification.next_attempt_at <= now)
     picker = (
@@ -150,9 +116,8 @@ async def _claim_batch(session, limit: int, now, worker: str) -> list[str]:
         .order_by(Notification.created_at.asc())
         .limit(limit)
     )
-    # SQLite has no row locks and no SKIP LOCKED; the unit suite runs single-
-    # threaded there, so the clause is Postgres-only and its absence is not a
-    # silently weaker claim in production — production is Postgres.
+    # SQLite has no SKIP LOCKED, and the unit suite is single-threaded there.
+    # Production is Postgres.
     if session.bind is not None and session.bind.dialect.name == "postgresql":
         picker = picker.with_for_update(skip_locked=True)
     ids = list((await session.execute(picker)).scalars().all())
@@ -170,14 +135,11 @@ async def _claim_batch(session, limit: int, now, worker: str) -> list[str]:
 async def dispatch_notifications(limit: int = 50) -> int:
     """Drain due pending notifications through the pluggable connector registry.
 
-    Only rows whose ``next_attempt_at`` is NULL (never tried) or <= now are picked
-    up; on failure the row is rescheduled with exponential backoff (+jitter) so a
-    flaky provider doesn't get hammered.
+    Picks up rows whose ``next_attempt_at`` is NULL or due; a failure reschedules
+    with exponential backoff plus jitter.
 
-    Three transactions, not one: reclaim, claim, then ONE PER ROW for its outcome.
-    The single batch-wide commit this replaces meant a crash on row 40 threw away
-    the recorded outcome of rows 1..39 — including ones the provider had already
-    accepted, which came back as pending and were sent again.
+    Commits per row, not per batch: one batch-wide commit would throw away the
+    outcome of every row already delivered when a later row crashed.
     """
     sent = 0
     now = utcnow()
@@ -230,9 +192,8 @@ async def dispatch_notifications(limit: int = 50) -> int:
                     note.next_attempt_at = None
                 log.warning("notification %s dispatch failed (attempt %d): %s",
                             note.notification_id, note.attempts, exc)
-            # The claim is released with the outcome, in the same commit. A row that
-            # kept claimed_at after reaching a terminal state would be reclaimed by a
-            # later sweep and, if it were still pending, sent again.
+            # Release the claim with the outcome, in the same commit — a row still
+            # holding claimed_at would be reclaimed by a later sweep and resent.
             note.claimed_at = note.claimed_by = None
             note.updated_at = utcnow()
             await session.commit()
@@ -244,13 +205,10 @@ async def dispatch_notifications(limit: int = 50) -> int:
 async def _resolve_channel_config(session, note) -> dict:
     """Find the tenant's enabled channel config for this notification's type.
 
-    Credentials come out of the column encrypted and are decrypted HERE, at the last
-    possible point before a connector needs them, under the key of the tenant that
-    OWNS the row (``row.tenant_id``) -- which is the tenant the value was encrypted
-    under, and is not always the notification's own tenant (a NULL-tenant platform
-    channel serves rows that carry a tenant). The plaintext exists only inside the
-    ``DeliveryContext`` handed to one connector for one send; it is never written
-    back, never returned by the API and never logged.
+    Credentials are decrypted here, as late as possible, under the key of the tenant
+    that OWNS the channel row — not the notification's tenant, which differs when a
+    platform channel serves a tenant's rows. The plaintext lives only in the
+    ``DeliveryContext`` for one send; never stored back, returned or logged.
     """
     stmt = select(NotificationChannel).where(
         NotificationChannel.channel_type == note.channel_type,
@@ -274,10 +232,9 @@ async def _resolve_channel_config(session, note) -> dict:
 async def run_notify_consumer() -> None:
     """Start the notify-request consumer and block forever (Celery long-running).
 
-    Drains ``tenant.*.notify.request`` / ``tenant.*.vms.popup`` into the
-    notification outbox (email / webhook / push), which ``dispatch_notifications``
-    then delivers. Kept separate from the correlation consumer (that one creates
-    incidents; this one creates notifications).
+    Drains ``tenant.*.notify.request`` / ``tenant.*.vms.popup`` into the outbox,
+    which ``dispatch_notifications`` then delivers. Separate from the correlation
+    consumer: that one creates incidents, this one creates notifications.
     """
     from .consumer import run_notify_consumer as _run
 

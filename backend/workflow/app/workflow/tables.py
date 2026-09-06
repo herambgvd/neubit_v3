@@ -1,23 +1,18 @@
 """Every ORM table in this service, in one import.
 
-WHY THIS FILE EXISTS. ``migrations/env.py`` builds ``target_metadata`` from
-``app.db.Base.metadata``, which is populated as a SIDE EFFECT of importing model
-modules. A model class Alembic has not imported by that point simply is not in the
-metadata — and autogenerate does not warn about a table it cannot see, it proposes
-DROPPING it. When the models lived in one flat module that risk did not exist;
-now that they live in seven feature packages, THIS is the file that has to be
-right, and it is the reason a feature's models are never imported into
-``env.py`` individually.
+``migrations/env.py`` builds ``target_metadata`` from ``app.db.Base.metadata``,
+which is populated as a side effect of importing model modules. A model Alembic
+has not imported is not in the metadata, and autogenerate proposes DROPPING the
+table rather than warning.
 
-So: when you add a model, add its module here. Not doing so does not break a
-test — it silently arms the next ``--autogenerate`` with a table drop.
+So add a new model's module here. Forgetting breaks no test — it silently arms the
+next ``--autogenerate`` with a table drop.
 
-Importing the modules (not the classes) is deliberate: a module import registers
-every table the module declares, including one added later that nobody remembered
-to name here.
+Import the module, not the classes: that registers every table the module declares,
+including ones added later.
 
-Nothing but the migration environment should import this. Application code should
-import the one model it needs from the feature that owns it.
+Only the migration environment should import this. Application code imports the one
+model it needs from the feature that owns it.
 """
 
 from __future__ import annotations

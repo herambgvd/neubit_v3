@@ -1,14 +1,13 @@
 """DB-backed tests for the trigger side — what turns an event into an incident.
 
-``core/matching.py`` is covered by ``test_pure_rules.py``. What was untested is
-the SERVICE around it: which of the stored triggers is even OFFERED to the
-matcher, what the alert-code lookup does, and what the simulator reports and
-persists. Those are separate decisions from the operator semantics, and they are
-where a regression would silently stop incidents being created.
+``core/matching.py`` is covered by ``test_pure_rules.py``. What was untested is the
+service around it: which stored triggers are even offered to the matcher, what the
+alert-code lookup does, and what the simulator reports and persists. That is where
+a regression silently stops incidents being created.
 
-``SimulatorService`` is tested rather than ``CorrelationEngine`` because it is
-the one that reaches into the engine for the SAME create helpers the live NATS
-consumer uses — so these assertions cover both, without a broker.
+``SimulatorService`` is tested rather than ``CorrelationEngine`` because it reaches
+into the engine for the same create helpers the live NATS consumer uses, so these
+assertions cover both without a broker.
 """
 
 from __future__ import annotations
@@ -527,9 +526,9 @@ def test_an_alert_format_cannot_be_pointed_at_another_tenants_sop():
 
 
 def test_the_simulator_will_not_read_a_sop_the_caller_does_not_own():
-    """Defence in depth for rows written BEFORE the write side was closed: a
-    trigger already holding a foreign ``sop_id`` must read as "SOP missing",
-    never as an incident carrying the other tenant's SOP name."""
+    """Defence in depth for rows written before the write side was closed: a
+    trigger holding a foreign ``sop_id`` must read as "SOP missing", never as an
+    incident carrying the other tenant's SOP name."""
 
     async def go():
         engine, sm = await _session()

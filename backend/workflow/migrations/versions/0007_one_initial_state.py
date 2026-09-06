@@ -4,45 +4,28 @@ Revision ID: 0007_one_initial_state
 Revises: 0006_notification_claim
 Create Date: 2026-09-05
 
-``sops.initial_state`` is documented as "a convenience pointer the service keeps
-in sync". It did not: ``StateService.create`` assigned it from a State that had
-not been INSERTed yet, so the value was always NULL -- creating an initial state
-never set the pointer, and creating a REPLACEMENT initial state wiped a correct
-one. ``StateService.delete`` left it naming a row it had just deleted. Only
-``update`` was right, so the pointer and the ``is_initial`` flag disagreed
-depending on which endpoint the graph editor happened to call.
+``sops.initial_state`` and the ``is_initial`` flag could disagree, because the
+service assigned the pointer on some write paths and not others. The service fix
+derives the pointer from the flag everywhere; this migration repairs the rows that
+are already wrong and adds the half of the invariant a schema can hold.
 
-The service fix makes the pointer DERIVED from the flag on every write path. This
-migration does the two things the service cannot: repair the rows that are
-already wrong, and put the half of the invariant a schema can hold into the
-schema.
+The index is on (tenant_id, sop_id), not sop_id, so it says exactly what
+``_clear_initial`` enforces through ``scoped`` — a state row carrying a foreign
+tenant_id is corruption and must not fail the innocent tenant's next write. NULLS
+NOT DISTINCT (PG 15+) because a NULL tenant_id is a real platform row here.
 
-WHY (tenant_id, sop_id) AND NOT sop_id. The index must say exactly what
-``_clear_initial`` enforces, and that runs through ``scoped``. For real data they
-are the same key -- a SOP belongs to one tenant, so its states do -- but a state
-row carrying a foreign tenant_id is corruption, and the constraint must not turn
-it into a write failure on the innocent tenant's next edit. NULLS NOT DISTINCT
-(PG 15+) because tenant_id NULL is a real row here, the platform/super-admin SOP;
-under the default rule those would be the only rows left uncovered.
+Not a trigger: "this column equals the id of the child flagged is_initial" is not
+expressible as a constraint, and a PL/pgSQL trigger would be Postgres-only and so
+invisible to a suite that runs on SQLite.
 
-DELIBERATELY NOT a trigger enforcing the pointer itself. "This column equals the
-id of the child row flagged is_initial" is not expressible as a constraint, and a
-PL/pgSQL trigger would be Postgres-only -- invisible to a test suite that runs on
-SQLite, i.e. an invariant nothing in CI can break. Derived-in-one-method is
-checkable; a trigger nobody exercises is a comment that costs a rewrite.
+Safe on a live table. Both repairs only touch rows that are already wrong, and the
+index is built CONCURRENTLY after the duplicates are demoted — a concurrent build
+that hits a duplicate leaves an INVALID index behind.
 
-SAFE ON A LIVE TABLE. The two repairs are UPDATEs touching only rows that are
-already wrong (each carries a WHERE that excludes the correct ones). The index is
-built CONCURRENTLY, outside the migration's transaction, so writers are not
-blocked; it is created only AFTER the duplicate initials are demoted, because a
-concurrent build that hits a duplicate leaves an INVALID index behind.
-
-EXISTING ROWS. A SOP with several states flagged initial keeps ONE: the one the
-pointer already names if that is among them, else the oldest -- never a guess
-that changes where an incident starts if the data was already consistent. A
-pointer naming a deleted or foreign state is set to the flagged state, or to
-NULL when the SOP has none. NULL is the honest answer: that SOP cannot be
-launched (``InstanceService.create`` 409s on it), and it could not before either.
+A SOP with several initial states keeps one: the one the pointer already names if
+it is among them, else the oldest. A pointer naming a deleted or foreign state is
+set to the flagged state, or NULL when there is none — that SOP cannot be launched,
+and it could not before either.
 """
 
 from __future__ import annotations

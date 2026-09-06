@@ -5,10 +5,9 @@
     service.py   ThreatLevelService
     router.py    /workflow/threat-levels
 
-BELONGS HERE: the posture itself and its change history.
+Belongs here: the posture itself and its change history.
 
-Small, and deliberately its own package rather than a corner of ``triggers``:
-posture is operator-SET state with its own permissions and its own record, and
-the fact that the correlation engine can match on a posture change no more makes
-it a trigger than a camera is an alarm.
+Its own package rather than a corner of ``triggers``: posture is operator-set state
+with its own permissions and its own record. The correlation engine matching on a
+posture change does not make it a trigger.
 """

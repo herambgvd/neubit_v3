@@ -1,28 +1,20 @@
 """The one property whose failure is a breach rather than a bug.
 
-Every service in this package routes list reads through ``kernel.auth.scoped``
-and every by-id fetch through ``assert_owned``. That is a house rule, and a house
-rule with no test is a convention. This file proves it AS A PROPERTY, entity by
-entity: with one row belonging to tenant A and one to tenant B, a service holding
-B's scope must not READ, UPDATE or DELETE A's row, and must not see it in a
-listing.
+Every service routes list reads through ``kernel.auth.scoped`` and every by-id
+fetch through ``assert_owned``. This proves it as a property, entity by entity:
+with one row for tenant A and one for tenant B, a service holding B's scope must
+not read, update or delete A's row, and must not see it in a listing.
 
-The table below is the whole point. A new entity added to this service is a new
-row in it, and a service that forgets ``scoped``/``assert_owned`` fails here
-rather than in production.
+The table below is the point — a new entity is a new row in it, and a service that
+forgets ``scoped``/``assert_owned`` fails here rather than in production.
 
-WHAT IS NOT COVERED, and why:
-  * ``notifications`` (NotificationService, DeviceTokenService) — owned by
-    another change in flight; ``test_device_tokens.py`` covers the token side.
-  * ``correlation_dedup`` has no tenant_id by design (its key embeds a
-    tenant-scoped trigger id), which ``core/mixins.py`` documents.
+Not covered: ``notifications`` (``test_device_tokens.py`` covers the token side),
+and ``correlation_dedup``, which has no tenant_id by design.
 
-Two shapes are asserted deliberately:
-  * a by-id miss is ``NotFoundError``, NOT ``ForbiddenError`` — the caller must
-    not be able to probe whether an id exists in another tenant;
-  * a super-admin scope DOES see across tenants, because that is the documented
-    behaviour of ``scoped`` and a test that only proved "nobody sees anything"
-    would pass on a service that returns nothing at all.
+Two shapes are asserted deliberately: a by-id miss is ``NotFoundError``, not
+``ForbiddenError``, so a caller cannot probe whether an id exists in another
+tenant; and a super-admin scope DOES see across tenants, so the suite cannot pass
+on a service that returns nothing at all.
 """
 
 from __future__ import annotations
@@ -79,9 +71,8 @@ ALL_TABLES = (
 
 # ── Per-entity seeding + the operations each service exposes ──────────
 #
-# Each seeder plants one row for the given tenant and returns (id, row). The
-# op-lambdas below name the by-id calls; a service that skipped assert_owned in
-# ANY of them is a service that leaks, so all three are checked, not just read.
+# Each seeder plants one row for the given tenant and returns (id, row). All three
+# by-id ops are checked, not just read: skipping assert_owned in any one leaks.
 
 
 async def _seed_sop(session, tenant):

@@ -1,9 +1,8 @@
 """Incident (workflow-instance) REST API.
 
-``available-transitions`` answers with ``sops.schemas.TransitionPublic`` — the
-same body the SOP editor returns — so an operator UI can render the buttons from
-one model. That import is the only reason this router reaches into another
-feature's schemas, and it is one-directional.
+``available-transitions`` answers with ``sops.schemas.TransitionPublic``, the same
+body the SOP editor returns, so a UI renders the buttons from one model. That is
+the only reason this router reaches into another feature's schemas.
 """
 
 from __future__ import annotations

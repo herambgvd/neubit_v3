@@ -19,8 +19,7 @@ import uuid
 
 from kernel.events import EventBus, subject
 
-# Process-wide bus (source tag = "workflow"). The API connects this at startup;
-# the correlation consumer/worker uses its own bus instance.
+# Process-wide bus. The API connects it at startup; the worker uses its own.
 bus = EventBus(source="workflow")
 
 

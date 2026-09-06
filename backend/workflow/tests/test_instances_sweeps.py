@@ -1,28 +1,20 @@
 """DB-backed tests for the escalation + timeout sweeps — the clock's half of the
 incident state machine.
 
-``instances/jobs.py`` claims, in its own docstring, that both sweeps are
-"idempotent by construction — re-running a sweep re-derives the same decision from
-the row, so a Celery redelivery cannot double-escalate". That is a promise about
-what happens on the SECOND run, and every test here runs the sweep twice.
-
+Both sweeps are meant to be idempotent, so every test here runs the sweep twice.
 The other half is the collision the package was grouped around: an SLA breach and
-an operator move the same row, one by the clock and one by hand. Both orderings
-are exercised.
+an operator moving the same row. Both orderings are exercised.
 
-TWO SEAMS ARE PATCHED, both of them process plumbing rather than domain code:
+Two seams are patched, both process plumbing rather than domain code:
 
-  * ``jobs._task_session`` — production opens its own NullPool engine against
-    ``settings.database_url``. A test must not reach the live database, so the
-    context manager is replaced with one yielding the in-memory session. The SAME
-    session is yielded to every call on purpose: SQLite's DATETIME storage drops
-    tzinfo, so a row re-read through a second session would come back naive and
-    the sweep's ``deadline < now`` would raise instead of compare. Assertions
-    therefore read through that session too.
-  * ``jobs.EventBus`` — a recorder. The published subjects ARE the sweep's
-    contract with the rest of the platform (correlation and the notify consumer
-    subscribe to them), so "did it publish, and how many times" is behaviour,
-    not implementation.
+  * ``jobs._task_session`` — replaced with one yielding the in-memory session, so
+    no test reaches the live database. The SAME session is yielded to every call
+    on purpose: SQLite drops tzinfo on DATETIME, so a row re-read through a second
+    session comes back naive and the sweep's ``deadline < now`` raises instead of
+    comparing. Assertions read through that session too.
+  * ``jobs.EventBus`` — a recorder. The published subjects are the sweep's contract
+    with correlation and the notify consumer, so "did it publish, and how often" is
+    behaviour rather than implementation.
 """
 
 from __future__ import annotations

@@ -1,8 +1,6 @@
 """The two column-default callables every workflow table uses.
 
-Split out of the old ``shared`` module so that importing "a string uuid" does not
-also drag in the enums, the trigger matcher and the form validator. Both are
-plain functions (not values) because SQLAlchemy calls a default per INSERT — a
+Both are functions, not values: SQLAlchemy calls a default per INSERT, and a
 module-level ``datetime.now()`` would freeze at import time.
 """
 

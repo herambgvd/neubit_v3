@@ -1,9 +1,8 @@
 """Connector framework — pluggable notification delivery.
 
-A ``Connector`` turns a queued ``Notification`` into an actual delivery through a
-provider (SMTP, an HTTP webhook, and later WhatsApp / mobile-push). The design
-goal is extensibility: adding a new channel is a new ``Connector`` subclass + one
-``register()`` call — no changes to the dispatch task.
+A ``Connector`` turns a queued ``Notification`` into a delivery through a provider.
+Adding a channel is a new subclass plus one ``register()`` call — the dispatch task
+does not change.
 
 Delivery is driven by the notification-dispatch Celery task, which:
   1. reads pending ``notifications`` rows,

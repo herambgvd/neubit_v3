@@ -1,48 +1,20 @@
 """Whether the JetStream durables this service binds are still consuming.
 
-Both long-lived consumers here — ``correlation.engine.CorrelationEngine`` and
-``notifications.consumer.NotifyConsumer`` — are PUSH subscriptions: they hand
-``kernel.events.EventBus.subscribe`` a callback and never poll. That shape has a
-blind spot with no local symptom whatsoever:
+Both long-lived consumers here are PUSH subscriptions, and a push subscription
+that has stopped receiving looks exactly like a quiet hour: no exception, no
+callback, no counter movement, and ``EventBus.is_connected()`` still True. The
+durable may have been deleted out of band, the client's subscription may be gone
+after a reconnect, or the handler may be failing and redelivering forever.
 
-    A push subscription that has stopped receiving looks EXACTLY like a quiet
-    hour. No exception is raised, no callback fires, no counter moves, and
-    ``EventBus.is_connected()`` keeps returning True because it only asks whether
-    an object is non-None.
+So this asks the server on its own timer, and keeps two numbers apart:
 
-Three real states live in that gap, and this platform has met the shape before —
-see backend/reading-writer/app/metrics.py, where a pull loop's own liveness flag
-sat green through a ten-minute wedge because nats-py folds the server's 409
-CONFLICT in with NO_MESSAGES and re-raises both as ``TimeoutError``. The push side
-is worse, not better: there is no fetch call to raise anything at all.
+  ``num_pending``  the lag. 0 both for caught-up and for not-consuming-at-all,
+                   which is why it cannot stand alone.
+  ``push_bound``   whether the server has an active delivery binding. False while
+                   we believe we are subscribed is the wedge.
 
-  * the durable was deleted or replaced out of band. The stream keeps matching
-    messages against a consumer that no longer exists, the client keeps a healthy
-    TCP session, and nothing on this side notices;
-  * the client's subscription is gone (a failed resubscribe after a reconnect,
-    a cancelled task) while the durable still exists on the server, so messages
-    pile up server-side addressed to nobody;
-  * the handler is failing and every message is being redelivered — work is
-    arriving and none of it is finishing.
-
-So this asks the SERVER, out of band, on its own timer. Two answers matter and
-they are deliberately separate numbers:
-
-  ``num_pending``  the LAG: matched messages the server has not delivered. This
-                   is the one that says "behind", and it is 0 both for a consumer
-                   that is perfectly caught up and for one that is not consuming
-                   at all — which is precisely why it cannot stand alone.
-  ``push_bound``   whether the server currently has an ACTIVE delivery binding
-                   for this durable. This is the push-side analogue of the
-                   reading-writer's second proof: it answers the question a
-                   silent callback cannot, namely "is anyone actually attached".
-                   False while we believe we are subscribed IS the wedge.
-
-NOT A TRAFFIC GAUGE. A correct, idle, fully-attached consumer reports
-``num_pending=0`` and ``push_bound=True`` through an entirely eventless night and
-this module says it is fine. The thing that goes red is absence of the BINDING or
-of the durable, never absence of events — a probe that reds on a quiet estate is
-a probe somebody switches off within the week.
+Not a traffic gauge: an idle, correctly attached consumer reads healthy all night.
+What goes red is a missing durable or binding, never an absence of events.
 """
 
 from __future__ import annotations
@@ -56,9 +28,8 @@ from kernel.events import EVENTS_STREAM, EventBus
 
 log = logging.getLogger("workflow.runtime.consumers")
 
-# How often to ask the server. 10s is far below every silence limit that reads
-# these numbers, so a single failed call during a NATS blip can never be the
-# thing that reds the service — only a sustained streak can.
+# Far below every silence limit that reads these numbers, so one failed call
+# during a blip cannot red the service; only a sustained streak can.
 POLL_INTERVAL_SEC = 10.0
 
 
@@ -67,7 +38,7 @@ class DurableState:
     """What the last successful ``consumer_info`` said about one durable."""
 
     durable: str
-    pending: int = 0            # THE lag
+    pending: int = 0            # the lag
     ack_pending: int = 0        # delivered, handler has not returned
     redelivered: int = 0        # handler raised; NAKed and coming back
     delivered: int = 0          # consumer sequence, monotonic — proves motion
@@ -84,10 +55,8 @@ class DurableState:
 class ConsumerWatch:
     """Polls ``consumer_info`` for a set of durables on one bus.
 
-    One instance per logical consumer (the correlation engine has five durables,
-    the notify consumer two) so a reader is told WHICH consumer is wedged and not
-    merely that something is. ``label`` prefixes every reason string and every
-    metric label for exactly that reason.
+    One instance per logical consumer, and ``label`` prefixes every reason string
+    and metric label, so a reader is told which consumer is wedged.
     """
 
     def __init__(
@@ -112,9 +81,8 @@ class ConsumerWatch:
 
     async def start(self) -> None:
         if self._task is None:
-            # Poll once inline first so a scrape that arrives in the second after
-            # startup reports real numbers rather than a service that looks
-            # unconfirmed because nothing has asked yet.
+            # Poll inline once so a scrape right after startup reports real
+            # numbers instead of "never confirmed".
             await self.poll_once()
             self._task = asyncio.create_task(self._loop(), name=f"consumer-watch-{self.label}")
 
@@ -135,19 +103,16 @@ class ConsumerWatch:
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001
-                # This task watches the consumers; it must not be the thing that
-                # dies. A watchdog that can crash leaves the wedge it was there
-                # to find completely invisible, which is worse than no watchdog.
+                # The watchdog must not be the thing that dies: a crashed watch
+                # leaves the wedge it exists to find invisible.
                 log.warning("consumer watch %s: poll loop error: %s", self.label, e)
 
     # ── the poll ─────────────────────────────────────────────────────────────
 
     async def poll_once(self) -> None:
-        # kernel's EventBus exposes only `is_connected()`, so the JetStream
-        # context is read off the private attribute. Deliberately a getattr with a
-        # fallback rather than a kernel change: adding a public accessor edits a
-        # module five services import, and this is one attribute read that must
-        # degrade to "unknown" rather than raise if kernel's internals move.
+        # kernel's EventBus exposes only `is_connected()`, so read the JetStream
+        # context off the private attribute. getattr with a fallback so this
+        # degrades to "unknown" rather than raising if kernel's internals move.
         js = getattr(self.bus, "_js", None)
         for durable, st in self.states.items():
             if js is None:
@@ -157,18 +122,10 @@ class ConsumerWatch:
             try:
                 info = await js.consumer_info(EVENTS_STREAM, durable)
             except Exception as e:  # noqa: BLE001 — absent, renamed, or NATS down
-                # The timestamp is deliberately NOT cleared: one failed API call
-                # during a blip must not red the service, and letting the clock
-                # run is what makes the silence limit apply to this proof too.
-                #
-                # `push_bound` IS cleared, and that split is the point. It is the
-                # RAW last answer — we could not ask, so we may not keep claiming
-                # 1; a gauge that holds its last good value through an outage is
-                # the exact trap the reading-writer's `consumer_pending` fell into
-                # ("read from a consumer that is no longer there, keeps whatever
-                # value it last had"). `confirmed` is the DEBOUNCED verdict and is
-                # the one with the silence limit, so a blip moves the raw gauge
-                # for one poll and moves nothing else.
+                # Leave the timestamp alone so one failed call cannot red the
+                # service; the silence limit debounces it. Clear `push_bound`
+                # though — it is the raw last answer, and a gauge that holds its
+                # last good value through an outage lies.
                 st.push_bound = False
                 st.missing = f"{type(e).__name__}: {e}"[:200]
                 st.checks_failed += 1
@@ -178,10 +135,8 @@ class ConsumerWatch:
             st.redelivered = int(getattr(info, "num_redelivered", 0) or 0)
             st.delivered = int(getattr(getattr(info, "delivered", None), "consumer_seq", 0) or 0)
             bound = getattr(info, "push_bound", None)
-            # `push_bound` is None on a pull consumer and on older servers. Treat
-            # None as bound: this must never invent a wedge on a deployment whose
-            # server does not report the field, because a probe that cries wolf
-            # gets muted and then the real wedge is invisible too.
+            # None on a pull consumer and on older servers. Treat None as bound,
+            # so a server that does not report the field cannot invent a wedge.
             st.push_bound = True if bound is None else bool(bound)
             if not st.push_bound:
                 st.missing = "durable exists but nothing is bound to it"
@@ -196,7 +151,7 @@ class ConsumerWatch:
         if self.silence_limit_sec <= 0:
             return True
         if st.last_ok_mono is None:
-            return False  # never once confirmed since start
+            return False  # never confirmed since start
         return st.unconfirmed_sec() < self.silence_limit_sec
 
     def reasons(self) -> list[str]:
@@ -232,7 +187,7 @@ class ConsumerWatch:
         }
 
     def prometheus(self, prefix: str = "workflow_") -> str:
-        """Per-durable series, so a healthy access feed cannot hide a wedged one."""
+        """Per-durable series, so a healthy feed cannot hide a wedged one."""
         lines: list[str] = []
         for st in self.states.values():
             lbl = f'{{consumer="{self.label}",durable="{st.durable}"}}'

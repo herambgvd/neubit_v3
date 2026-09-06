@@ -1,16 +1,12 @@
 """SOP / state / transition services — CRUD over the playbook graph.
 
-Three service classes, one module, because they are one feature and one of them
-writes another's table: creating, promoting or deleting a state clears another
-state's ``is_initial`` and re-derives ``SOP.initial_state`` (see
-``StateService._sync_pointer``). Splitting them apart would put that two-table
-write on opposite sides of an import.
+Three classes in one module because one writes another's table: creating,
+promoting or deleting a state clears another state's ``is_initial`` and re-derives
+``SOP.initial_state`` (``StateService._sync_pointer``).
 
-NOT a reason, though it was claimed as one here until the tests went looking:
-deleting a SOP does NOT cascade. ``SopService.delete`` is a SOFT delete -- it sets
-``is_active = False`` and leaves every state and transition exactly where they
-are, which is what makes an incident already running on that SOP still resolvable.
-There are no foreign keys in this schema at all.
+``SopService.delete`` is a SOFT delete and does not cascade — states and
+transitions stay, so an incident already running on that SOP is still resolvable.
+There are no foreign keys in this schema.
 """
 
 from __future__ import annotations
@@ -67,15 +63,10 @@ class SopService:
             count = count.where(SOP.is_active.is_(is_active))
         stmt = stmt.order_by(SOP.created_at.desc())
         if tag:
-            # ``tags`` is a portable JSON column — the same model has to work on
-            # Postgres and on SQLite — so there is no containment operator to push
-            # this into SQL. It used to be filtered in Python AFTER offset/limit and
-            # was never applied to the count, so a tagged listing returned at most
-            # one page's worth of matches and a ``total`` for the UNTAGGED set: page
-            # 2 could come back empty while ``total`` promised more. Filtering the
-            # whole scoped set and paging THAT is what makes the two agree, at the
-            # cost of reading a table that is an operator-authored set of tens —
-            # the same trade ``AlertFormatService.find_by_code`` already makes.
+            # ``tags`` is a portable JSON column (Postgres and SQLite), so there is
+            # no containment operator to push this into SQL. Filter the whole scoped
+            # set and page THAT, so rows and ``total`` agree — paging first would
+            # give a page of matches and a count of everything.
             matched = [r for r in (await self.db.execute(stmt)).scalars().all()
                        if tag in (r.tags or [])]
             return matched[skip:skip + limit], len(matched)
@@ -191,29 +182,22 @@ class StateService:
     async def _sync_pointer(self, sop: SOP) -> None:
         """Recompute ``SOP.initial_state`` from the state actually flagged is_initial.
 
-        DERIVED, never assigned. The old code assigned it from whatever the caller
-        was holding, which on the create path was a State not yet INSERTed — so
-        ``state_id`` was still None (it comes from a column default) and creating
-        an initial state set the pointer to NULL, wiping a correct one. Three
-        methods each having to remember the right value is the shape of that bug;
-        one method reading the flag back cannot produce a value the flag disagrees
-        with, whatever the caller did.
+        Always derived here, never assigned by a caller — reading the flag back
+        cannot produce a pointer the flag disagrees with.
 
-        The flush is load-bearing twice over: it gives a pending State its id, and
-        it applies a pending delete, so the flag we read back is the one the row
-        will actually have after the commit.
+        The flush is load-bearing twice: it gives a pending State its id, and it
+        applies a pending delete, so the flag read back is the post-commit one.
         """
         await self.db.flush()
         initial = await self.find_initial(sop.sop_id)
         sop.initial_state = initial.state_id if initial else None
 
     async def _clear_initial(self, sop_id: str, keep: str | None = None) -> None:
-        """Demote every other initial state of this SOP, and FLUSH the demotion.
+        """Demote every other initial state of this SOP, and flush the demotion.
 
-        The flush orders the demoting UPDATE before the promoting INSERT/UPDATE
-        that follows it. Without it SQLAlchemy is free to emit them in either
-        order within one flush, and ``uq_workflow_states_one_initial_per_sop``
-        would reject the promotion of a state that is about to be the only one.
+        The flush orders the demoting UPDATE before the promotion that follows;
+        otherwise SQLAlchemy may emit them in either order and
+        ``uq_workflow_states_one_initial_per_sop`` rejects the promotion.
         """
         stmt = scoped(
             select(State).where(State.sop_id == sop_id, State.is_initial.is_(True)),
@@ -231,9 +215,8 @@ class StateService:
     async def find_initial(self, sop_id: str) -> State | None:
         """The caller's initial state for this SOP, or None.
 
-        ``scoped`` for the same reason ``_clear_initial`` is: a state row carrying
-        a foreign tenant_id is corruption, and the pointer this feeds must not be
-        made to name it.
+        ``scoped`` because a state row carrying a foreign tenant_id is corruption,
+        and the pointer this feeds must not name it.
         """
         stmt = scoped(
             select(State).where(State.sop_id == sop_id, State.is_initial.is_(True)),

@@ -1,49 +1,18 @@
-"""What the workflow service knows about itself, for both of its entry points.
+"""Health, readiness and metrics for all three workflow processes.
 
-WHY /health AND /readyz ARE TWO ENDPOINTS AND MUST STAY TWO. Somebody will
-eventually look at these and want to "simplify" them into one. They answer
-different questions and have different consequences:
+`/health` is liveness: it touches nothing outside the process, so a dependency
+outage never triggers a restart. `/readyz` is readiness: it checks the
+dependencies and returns 503 naming the one that failed. Keep them separate.
 
-    /health   LIVENESS. "Is this process alive and running its own code?" It
-              touches nothing outside the process — no database, no Redis, no
-              NATS, no clock arithmetic that can be wrong. A failing liveness
-              probe is a restart signal, so it must NEVER go red for a dependency
-              outage: restarting a healthy API because Postgres is down turns one
-              outage into two, and a restart loop during a database blip is how a
-              recoverable incident becomes a total one.
+The Celery worker's liveness is deliberately not part of the API's readiness —
+the API serves fine while the worker is wedged, and failing it would take the
+console offline for a fault it cannot fix. The worker's age is reported in the
+readiness body as advisory context only.
 
-    /readyz   READINESS. "Would work sent here actually get done?" It checks the
-              dependencies this process cannot work without, and returns 503 with
-              a reason NAMING the one that failed. A failing readiness probe means
-              stop sending traffic / stop gating on this — not restart.
-
-              Deliberately NOT part of the API's readiness: the Celery worker's
-              liveness. The API can serve every request correctly while the worker
-              is wedged; failing the API for it would take the console offline for
-              a fault the console did not cause and cannot fix. The worker reports
-              its own readiness on its own port, and the API exposes the worker's
-              age in /metrics and in the readiness BODY as advisory context.
-
-The old ``/health`` returned ``{"status": "ok", ...}`` unconditionally. With
-Postgres, Redis and NATS all down it still returned ok, and there was no /readyz
-at all — so "the workflow service is up" was a statement about nothing.
-
-THE WORKER AND BEAT HAVE NO HTTP SERVER, so this also provides a ~40-line stdlib
-one for them. The alternatives were considered and rejected:
-
-  * ``celery inspect ping`` as the healthcheck. It is answered by the worker's
-    CONTROL consumer on a broadcast queue — a different consumer on a different
-    queue from the one that carries tasks. It returns pong for a worker whose task
-    queue has been cancelled, which is the exact wedge being probed for, so it is
-    structurally a liar here. (Proven: the verification for this commit cancels
-    the task consumer and shows ping still answering.)
-  * a touched file plus a healthcheck that stats it. Works, but gives the worker
-    no /metrics, and Prometheus cannot scrape a mtime.
-  * no probe on worker/beat at all, gating them on the API's. That is what
-    existed, and it is why a wedged worker looked identical to a working one.
-
-A thread running ``http.server`` costs one socket and no dependency, and makes the
-worker scrapeable like everything else on this platform.
+Worker and beat have no web framework, so this also provides a small stdlib HTTP
+server for them. `celery inspect ping` is not usable as their healthcheck: it is
+answered by the control consumer on a broadcast queue, so it says pong even when
+the task queue is not being consumed.
 """
 
 from __future__ import annotations
@@ -66,18 +35,15 @@ log = logging.getLogger("workflow.probes")
 
 STARTED_AT = time.time()
 
-# Dependency checks get a hard ceiling. A readiness probe that blocks is a
-# readiness probe that times out at the orchestrator instead of answering, and
-# "no answer" and "answered 503 naming Postgres" are very different to the person
-# reading it at 3am.
+# Hard ceiling on dependency checks, so readiness always answers rather than
+# timing out at the orchestrator.
 CHECK_TIMEOUT_SEC = 3.0
 
-# Lag past which a durable is called behind. The correlation feed is domain
-# events, not telemetry: a few hundred queued means something stopped, not that a
-# busy afternoon is being absorbed.
+# Lag past which a durable is called behind. These are domain events, not
+# telemetry, so a few hundred queued means something stopped.
 CONSUMER_LAG_WARN = 500
-# How long a durable may go unconfirmed before it counts as wedged. Six polls of
-# ConsumerWatch's 10s timer, so a single blip or a NATS reconnect cannot trip it.
+# Unconfirmed time before a durable counts as wedged. Six polls of ConsumerWatch's
+# 10s timer, so a blip or a NATS reconnect cannot trip it.
 CONSUMER_SILENCE_SEC = 60.0
 
 
@@ -95,9 +61,8 @@ async def check_database() -> str | None:
 
         await asyncio.wait_for(_ping(), timeout=CHECK_TIMEOUT_SEC)
     except asyncio.TimeoutError:
-        # Distinguished from a refused connection on purpose: a database that
-        # accepts the socket and then never answers is a different fault (lock
-        # wait, saturated pool, a SIGSTOPped server) from one that is simply down.
+        # Kept distinct from a refused connection: a database that accepts the
+        # socket and never answers is a different fault from one that is down.
         return f"database: no answer to SELECT 1 within {CHECK_TIMEOUT_SEC}s"
     except Exception as e:  # noqa: BLE001
         return f"database: {type(e).__name__}: {e}"[:300]
@@ -107,9 +72,8 @@ async def check_database() -> str | None:
 async def check_broker() -> str | None:
     """None when the Celery broker answers PING.
 
-    This is the SAME Redis the worker and beat use, so a failure here explains a
-    stale worker heartbeat rather than duplicating it — which is why the readiness
-    body reports both and does not collapse them.
+    Same Redis the worker and beat use, so a failure here explains a stale worker
+    heartbeat. The readiness body reports both rather than collapsing them.
     """
     try:
         import redis.asyncio as aredis
@@ -135,11 +99,9 @@ async def check_broker() -> str | None:
 class ApiProbes:
     """Assembles the API's readiness and metrics.
 
-    Holds the ``ConsumerWatch`` for whichever consumers this process is hosting.
-    When ``VE_WORKFLOW_INLINE_CORRELATION`` is off they are hosted elsewhere and
-    this reports so EXPLICITLY rather than reporting green: "not checked here" and
-    "checked and fine" must not look the same, or turning the flag off would
-    silently delete the check.
+    Holds a ``ConsumerWatch`` per consumer this process hosts. When
+    ``VE_WORKFLOW_INLINE_CORRELATION`` is off it says "not hosted here" rather
+    than green, so turning the flag off cannot silently delete the check.
     """
 
     def __init__(self) -> None:
@@ -160,7 +122,7 @@ class ApiProbes:
         await heartbeat.close_reader()
 
     async def readiness(self) -> tuple[bool, dict]:
-        """(ready, body). Every reason names the dependency, in reading-writer style."""
+        """(ready, body). Every reason names the dependency that failed."""
         db, broker = await asyncio.gather(check_database(), check_broker())
         reasons = [r for r in (db, broker) if r]
         for w in self.watches:
@@ -181,7 +143,7 @@ class ApiProbes:
                 if self.hosts_consumers
                 else "not hosted in this process (VE_WORKFLOW_INLINE_CORRELATION off)"
             ),
-            # Advisory, NOT part of `ready` — see the module docstring.
+            # Advisory only, not part of `ready` — see the module docstring.
             "worker": _role_view("worker", worker, worker_err, heartbeat.WORKER_SILENCE_SEC),
             "beat": _role_view("beat", beat, beat_err, heartbeat.BEAT_SILENCE_SEC),
         }
@@ -207,9 +169,8 @@ class ApiProbes:
             parts.append(backlog_mod.prometheus(b))
             db_up = 1
         except Exception as e:  # noqa: BLE001
-            # A scrape must still return the OTHER families when one source is
-            # down. Losing the whole exposition because Postgres is unreachable
-            # would hide the very consumer metrics that explain why.
+            # Keep serving the other metric families when one source is down —
+            # dropping the whole exposition would hide the metrics that explain why.
             log.warning("metrics: notification backlog unavailable: %s", e)
             db_up = 0
         parts.append(
@@ -243,8 +204,8 @@ def _role_view(role: str, payload: dict | None, err: str | None, limit: float) -
     age = heartbeat.age_of(payload)
     return {
         "seen": payload is not None,
-        # Kept apart from `seen`: "the broker is unreachable" and "this process has
-        # never published" are the same None and two different investigations.
+        # Kept apart from `seen`: an unreachable broker and a process that never
+        # published are both None here, and are different investigations.
         "read_error": err,
         "last_event_age_sec": age,
         "last_event_name": (payload or {}).get("last_event_name"),
@@ -290,9 +251,7 @@ async def _role_metrics() -> str:
         age = heartbeat.age_of(payload)
         alive = int(age is not None and age < limit)
         lines.append(f"workflow_heartbeat_seen{{role=\"{role}\"}} {int(payload is not None)}")
-        # -1, not 0, for "unknown": 0 is the value a perfectly healthy process
-        # reports, and a missing heartbeat must never render as the healthiest
-        # possible reading.
+        # -1, not 0, for "unknown": 0 is what a perfectly healthy process reports.
         shown = age if age is not None else -1
         if role == "worker":
             lines.append(f"workflow_worker_consuming {alive}")
@@ -313,15 +272,10 @@ async def _role_metrics() -> str:
 class ProcessProbeServer:
     """A stdlib HTTP server on a daemon thread, serving one process's heartbeat.
 
-    Runs inside the Celery worker and beat, which have no web framework and should
-    not grow one for this. It shares NOTHING with the task pool — no event loop, no
-    ORM session, its own thread — because it has to keep answering while the thing
-    it reports on is wedged, and a probe wired through the machinery it is watching
-    goes down with it.
-
-    The two short Redis reads on the /readyz path are the only outbound calls, and
-    both are allowed to fail into a NAMED reason rather than an exception: a broker
-    it cannot read is not an error to report, it is the finding.
+    Runs inside the Celery worker and beat. It shares nothing with the task pool —
+    own thread, no event loop, no ORM session — so it keeps answering while the
+    thing it reports on is wedged. The Redis reads on /readyz are allowed to fail
+    into a named reason rather than an exception.
     """
 
     def __init__(self, role: str, *, port: int, silence_limit: float) -> None:
@@ -334,9 +288,8 @@ class ProcessProbeServer:
     def state(self) -> tuple[dict | None, str | None, float | None]:
         """(own heartbeat, read error, age). Read from Redis, not from memory.
 
-        The counters cannot live in this process: Celery's prefork pool runs
-        ``task_postrun`` in a forked CHILD, so an in-process counter is invisible
-        to this thread and separately wrong in each of the eleven children.
+        Celery's prefork pool runs ``task_postrun`` in a forked child, so an
+        in-process counter would be invisible here and wrong in every child.
         """
         payload, err = heartbeat.read_sync(self.role)
         return payload, err, heartbeat.age_of(payload)
@@ -352,9 +305,8 @@ class ProcessProbeServer:
             "peer_role": peer_role, "peer_age_sec": peer_age, "peer_read_error": peer_err,
         }
         if err is not None:
-            # The broker being unreachable is not a symptom of the worker: it is
-            # the cause, and it means the worker is not receiving tasks either.
-            # Named as the broker so nobody goes reading the worker's task log.
+            # Blame the broker, not the worker: if we cannot read Redis the worker
+            # is not receiving tasks either.
             return ([f"{self.role}: celery broker unreachable, so neither tasks nor this "
                      f"heartbeat can move: {err}"], ctx)
         if age is None:
@@ -367,9 +319,8 @@ class ProcessProbeServer:
             return ([f"beat: nothing published for {age}s (limit {self.silence_limit}s); the "
                      f"schedule publishes twice a minute, so this is not an idle period"], ctx)
 
-        # A worker that has completed nothing because beat stopped SENDING is a
-        # healthy worker with a dead upstream. Quoting beat's age here is what
-        # makes the reason name the right CONTAINER instead of this one.
+        # An idle worker may just have a dead beat upstream. Quote beat's age so
+        # the reason names the right container.
         if peer_age is None:
             blame = ("beat's heartbeat cannot be read at all (beat is down, or it never "
                      "armed) — nothing is being SENT, so having nothing to do is expected "
@@ -457,17 +408,13 @@ class ProcessProbeServer:
             def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler's contract
                 path = self.path.split("?")[0]
                 if path == "/health":
-                    # Liveness. Touches nothing. If this thread can answer, the
-                    # process is running its own code — that is the entire claim.
+                    # Liveness. Touches nothing: answering is the whole claim.
                     self._send(200, json.dumps(
                         {"status": "ok", "service": "workflow", "role": probe.role}
                     ), "application/json")
                 elif path == "/readyz":
-                    # The two Redis reads here are the only outbound calls on this
-                    # path, and both are allowed to fail: reasons() turns an
-                    # unreadable broker into a NAMED reason rather than an
-                    # exception, so the probe keeps answering through the outage
-                    # it is reporting.
+                    # reasons() turns an unreadable broker into a named reason, so
+                    # the probe keeps answering through the outage it reports.
                     ok, body = probe.payload()
                     self._send(200 if ok else 503, json.dumps(body), "application/json")
                 elif path == "/metrics":
@@ -476,7 +423,7 @@ class ProcessProbeServer:
                     self._send(404, "not found\n", "text/plain")
 
             def log_message(self, *args):
-                pass  # a healthcheck every 15s must not drown the task log
+                pass  # a healthcheck every 15s would drown the task log
 
         self._srv = ThreadingHTTPServer(("0.0.0.0", self.port), Handler)
         threading.Thread(

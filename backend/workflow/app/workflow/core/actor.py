@@ -1,10 +1,7 @@
 """Reading the acting user out of a kernel ``Principal``.
 
-One function, and it is here rather than copied into each feature's service
-because every ``create``/``update`` in this domain stamps ``created_by`` /
-``updated_by`` the same way. It is deliberately best-effort: a system-initiated
-write (the escalation sweep, the correlation engine) has no Principal, and
-stamping NULL is the truthful answer — not a placeholder user id.
+Best-effort on purpose: a system-initiated write (escalation sweep, correlation
+engine) has no Principal, and NULL is the truthful stamp there.
 """
 
 from __future__ import annotations

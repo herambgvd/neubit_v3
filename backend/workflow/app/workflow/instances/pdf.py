@@ -1,14 +1,10 @@
 """Incident PDF report generator.
 
-Ported from neubit_v2's ``instance/pdf_report.py``, adapted to the v3
-``WorkflowInstance`` ORM row (``timeline`` replaces v2's ``history``; ``extra``
-replaces ``metadata``; ``assignment`` is a JSON dict). Builds a single-page
-summary PDF (header, identity block, transition-history table, description /
-outcome) with reportlab. Returns a ``bytes`` blob the HTTP route streams as
-``application/pdf``.
+Builds a single-page summary PDF (header, identity block, transition history,
+description / outcome) with reportlab, returned as bytes for the route to stream.
 
-reportlab is imported lazily inside ``render_incident_pdf`` so the module import
-never fails if the dependency is missing at import time (it is a declared dep).
+reportlab is imported lazily inside ``render_incident_pdf`` so a missing optional
+dependency cannot break module import.
 """
 
 from __future__ import annotations

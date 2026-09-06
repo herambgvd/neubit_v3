@@ -6,8 +6,8 @@
     router.py      /workflow/forms
     validation.py  validate_form_data — checks submitted data against a definition
 
-BELONGS HERE: what a form IS and whether a submission satisfies it.
+Belongs here: what a form is, and whether a submission satisfies it.
 
-DOES NOT BELONG HERE: what is done with a valid submission. The transition that
-captures it, and the audit-trail entry it becomes, are in ``instances``.
+Does not belong here: what is done with a valid submission — the transition that
+captures it and the audit-trail entry it becomes are in ``instances``.
 """

@@ -1,15 +1,14 @@
 """DB-backed tests for the running incident — ``InstanceService``'s state machine.
 
-The service promises a specific set of refusals, and the refusals are the part
-that matters: a closed incident cannot be moved, a transition that does not start
-from the current state is not a transition, a note-requiring transition without a
-note is a 422 and not a silent success, and a gated transition whose conditions
-fail is a 409. Each of those is asserted together with "and the row did not
-change", because a refusal that still writes is the same bug as no refusal.
+The refusals are the part that matters: a closed incident cannot be moved, a
+transition not starting from the current state is not a transition, a
+note-requiring transition without a note is a 422, and a gated transition whose
+conditions fail is a 409. Each is asserted together with "and the row did not
+change" — a refusal that still writes is the same bug as no refusal.
 
-The happy paths asserted are the ones other features read: the terminal/
-cancellation states that CLOSE an incident, the timeline entry the incident report
-renders, and the notification rows a transition enqueues.
+The happy paths asserted are the ones other features read: the terminal and
+cancellation states that close an incident, the timeline entry the report renders,
+and the notification rows a transition enqueues.
 """
 
 from __future__ import annotations

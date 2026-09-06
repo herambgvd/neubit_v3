@@ -1,38 +1,19 @@
 """How much of the notification outbox is waiting, and how much of it is late.
 
-A raw count of pending rows is close to useless as a health signal, which is why
-this is three numbers rather than one. Pending rises for two reasons that need
-opposite responses:
+Three numbers, not one, because a raw pending count cannot tell a busy minute from
+a drain that has stopped. What separates them is AGE: the drain runs every minute,
+so a row still pending five ticks after it became due was passed over by no worker
+at all. That is ``overdue``, the number worth paging on.
 
-  * a burst arrived and ``dispatch_notifications`` has not reached it yet — a busy
-    minute, self-correcting, nothing to do;
-  * nothing is draining the outbox at all — a wedged worker, a broker outage, a
-    provider timing out on every row.
+``claimed`` is counted separately because rows in flight are invisible to the other
+two — a worker that claims a batch and then wedges would otherwise empty the
+gauges while delivering nothing.
 
-Both look identical at any single instant. What separates them is AGE. A row
-becomes due at ``next_attempt_at`` (or, never having been tried, at
-``created_at``); the drain runs on ``crontab(minute="*")``. So a row that has been
-DUE for five dispatch ticks and is still pending has not been passed over by a
-busy worker — it has been passed over by no worker. That is ``overdue``, and it is
-the number worth paging on. ``pending`` is context for it.
+``failed`` rows are not backlog: they will never be retried, and folding them in
+would make a broken SMTP server look like a dead worker.
 
-``claimed`` is counted separately and is NOT folded into ``pending``, because a
-claimed row is one a worker owns right now. It has to be its own number rather than
-be left out: rows in flight are invisible to ``pending``/``overdue``, so a worker
-that claims a batch and then wedges would empty the backlog gauges while delivering
-nothing. ``claimed`` sitting at a constant non-zero across ticks is that wedge. (The
-lease reaper returns those rows to pending once the claim expires, so a permanent
-stall still reaches ``overdue`` eventually — this is what sees it sooner.)
-
-DELIBERATELY NOT COUNTING ``failed`` ROWS AS BACKLOG. A row that exhausted
-MAX_NOTIFY_ATTEMPTS is a delivery that will never be retried; it is a delivery
-problem, not a drain problem, and folding it in would make a broken SMTP server
-look like a dead worker. It is exposed as its own counter instead.
-
-Why here and not in ``service.py``: nothing about this is a request. There is no
-principal, no tenant scope and no permission — it is a whole-process gauge over
-every tenant's rows, which is the one thing a tenant-scoped service must never
-return.
+Not in ``service.py`` because nothing here is a request: no principal, no scope, no
+permission — it is a whole-process gauge across every tenant's rows.
 """
 
 from __future__ import annotations
@@ -46,25 +27,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.primitives import utcnow
 from .models import Notification
 
-# Five ticks of the every-minute dispatch schedule. Same reasoning as the worker's
-# silence limit: one or two missed passes is a slow provider or a restart, five is
-# nothing draining. Kept as its own knob because the two limits answer different
-# questions — this one can go red while the worker is perfectly healthy, if every
-# connector is failing.
+# Five ticks of the every-minute dispatch schedule: one or two missed passes is a
+# slow provider or a restart, five is nothing draining. Its own knob because it can
+# go red while the worker is healthy and every connector is failing.
 OVERDUE_AFTER_SEC = int(os.getenv("VE_WORKFLOW_NOTIFY_OVERDUE_SEC", "300"))
 
 
 async def backlog(session: AsyncSession) -> dict:
     """Outbox depth for the whole process. One query, three counts plus the age.
 
-    ``oldest_due_age_sec`` is the one that keeps rising during a wedge while every
-    count can sit flat (a stalled drain with a stable inbound rate holds ``pending``
-    perfectly still), so it is the signal that distinguishes "stuck" from "steady".
+    ``oldest_due_age_sec`` keeps rising during a wedge while the counts can sit
+    flat, so it is what distinguishes "stuck" from "steady".
     """
     now = utcnow()
     due = or_(Notification.next_attempt_at.is_(None), Notification.next_attempt_at <= now)
-    # A row's due time: when it may next be attempted, or when it was created if it
-    # never has been. COALESCE, not two queries, so the two branches cannot drift.
+    # Due time: next attempt, or creation if never tried. One COALESCE rather than
+    # two queries, so the branches cannot drift.
     due_at = func.coalesce(Notification.next_attempt_at, Notification.created_at)
     cutoff = now - timedelta(seconds=OVERDUE_AFTER_SEC)
 

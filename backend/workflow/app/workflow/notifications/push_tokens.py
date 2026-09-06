@@ -1,12 +1,10 @@
 """Device-token DB helpers for the push connector.
 
-The push connector (``connectors/push.py``) is transport-only; these helpers are
-its default DB-backed ``token_resolver`` / ``token_pruner``. They run from the
-Celery dispatch task (its own asyncio loop), so — like ``tasks.py`` — they open a
-short-lived NullPool engine per call to stay loop-safe.
+The connector is transport-only; these are its default DB-backed
+``token_resolver`` / ``token_pruner``. They run under the Celery dispatch task's
+own loop, so each opens a short-lived NullPool engine to stay loop-safe.
 
-Tenant isolation is enforced in ``resolve_tokens``: only tokens whose
-``(tenant_id, user_id)`` match the target are returned, so a push can never reach
+``resolve_tokens`` filters on ``(tenant_id, user_id)``, so a push can never reach
 another tenant's devices.
 """
 

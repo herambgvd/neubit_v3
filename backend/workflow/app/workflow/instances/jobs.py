@@ -1,14 +1,12 @@
 """Scheduled jobs over incidents — the escalation and timeout sweeps.
 
-Async bodies for two of the workflow worker's beat tasks (``app.worker`` wraps
-each in ``asyncio.run``). They live with the instances feature, not in a flat
-``tasks`` module, because what they do IS the incident lifecycle: an SLA breach,
-a state timeout and a SOP escalation rule are the same state machine the service
-drives from a request, moved by the clock instead of an operator. Reading
-``instances/service.py`` without these is reading half of it.
+Async bodies for two of the worker's beat tasks. They live with the instances
+feature because they ARE the incident lifecycle: an SLA breach, a state timeout
+and a SOP escalation rule move the same state machine the service drives from a
+request, just on the clock.
 
-Both are idempotent by construction — re-running a sweep re-derives the same
-decision from the row, so a Celery redelivery cannot double-escalate.
+Both are idempotent by construction — a re-run re-derives the same decision from
+the row, so a Celery redelivery cannot double-escalate.
 """
 
 from __future__ import annotations
@@ -106,9 +104,8 @@ async def _evaluate_instance(session, inst, now, bus) -> bool:
                               {"tenant_id": tid, "instance_id": inst.instance_id,
                                "priority": new_pri.value, "level": inst.escalation["level"],
                                "notify_role_ids": rule.get("notify_role_ids", [])})
-            # Enqueue notifications for the rule's recipients (roles/users). Role→user
-            # resolution lives in core; we can't reach it here, so we create pending
-            # rows keyed by the role_id/user_id and let dispatch/core resolve later.
+            # Role→user resolution lives in core, so enqueue rows keyed by role/user
+            # id and let dispatch resolve them later.
             _enqueue_escalation_notifications(session, inst, rule, new_pri, now)
             changed = True
             cur = new_pri
@@ -118,12 +115,9 @@ async def _evaluate_instance(session, inst, now, bus) -> bool:
 def _enqueue_escalation_notifications(session, inst, rule, new_pri, now) -> None:
     """Create pending Notification rows for a SOP escalation rule's recipients.
 
-    ``notify_role_ids`` (and optional ``notify_user_ids``) come from the SOP's
-    escalation rule. We cannot resolve a role → concrete users/addresses from this
-    service (that's core data), so we enqueue one webhook-channel row per recipient
-    with the recipient set to ``role:<id>`` / ``user:<id>`` and a TODO marker in
-    metadata. A downstream resolver (or the connector) can expand these; nothing is
-    silently dropped.
+    Role → user/address resolution is core data this service cannot reach, so it
+    enqueues one webhook row per recipient keyed ``role:<id>`` / ``user:<id>`` for a
+    downstream resolver to expand. Nothing is silently dropped.
     """
     role_ids = rule.get("notify_role_ids") or []
     user_ids = rule.get("notify_user_ids") or []
@@ -138,8 +132,8 @@ def _enqueue_escalation_notifications(session, inst, rule, new_pri, now) -> None
     for kind, ident in recipients:
         session.add(Notification(
             tenant_id=inst.tenant_id,
-            # webhook is the safe default: role/user recipients need core resolution
-            # before an email address exists. A resolver may re-route to "email".
+            # webhook is the safe default: a role/user recipient has no email
+            # address until core resolves it. A resolver may re-route to "email".
             channel_type="webhook",
             recipient=f"{kind}:{ident}",
             subject=subject_text,

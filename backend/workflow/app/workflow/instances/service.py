@@ -1,10 +1,8 @@
 """Instance service — the running incident, and the state machine that moves it.
 
-This is the one service that reads across features, and the direction is
-deliberate: an incident is an instance OF a SOP, executes ITS transitions,
-captures a FORM on the way through, and enqueues NOTIFICATIONS when it lands.
-Nothing in ``sops``, ``forms`` or ``notifications`` imports back, so the graph
-stays one-directional and acyclic.
+The one service that reads across features: an incident is an instance OF a SOP,
+executes ITS transitions, captures a FORM on the way, and enqueues NOTIFICATIONS
+when it lands. Nothing in those packages imports back, so the graph stays acyclic.
 """
 
 from __future__ import annotations
@@ -102,11 +100,9 @@ class InstanceService:
             if val is not None:
                 stmt = stmt.where(col == val)
                 count = count.where(col == val)
-        # event_id — the CROSS-LINK key from a camera event. A camera event's own id
-        # (VmsEvent.id) rides in the envelope PAYLOAD (trigger_data.payload.event_id),
-        # while WorkflowInstance.event_id holds the bus envelope UUID (a different id).
-        # So match EITHER identifier so a lookup by a camera-event id finds the
-        # incident it spawned, and a lookup by the envelope id also works.
+        # A camera event's own id rides in trigger_data.payload.event_id, while
+        # WorkflowInstance.event_id holds the bus envelope UUID. Match either, so a
+        # lookup by camera-event id and by envelope id both find the incident.
         if event_id is not None:
             link = or_(
                 WorkflowInstance.event_id == event_id,
@@ -114,19 +110,14 @@ class InstanceService:
             )
             stmt = stmt.where(link)
             count = count.where(link)
-        # source — the ORIGINATING domain (the EventBus source tag stored on the
-        # envelope): "vision" (camera events), "access", "ingest", … The UI groups
-        # camera-ish sources under "Camera". "manual" matches operator-raised
-        # incidents (created via POST /instances → extra.source == "manual", no
-        # trigger envelope).
+        # The originating domain, from the EventBus source tag on the envelope:
+        # "vision", "access", "ingest". "manual" matches operator-raised incidents,
+        # which have no trigger envelope.
         if source is not None:
             if source == "manual":
-                # Operator-raised incidents have no originating-event envelope, so no
-                # domain source tag. A JSON column set to Python None stores JSON
-                # 'null' (not SQL NULL), so extracting .source yields NULL — that's
-                # the portable "no envelope source" test (also matches an envelope
-                # that carries no source). extra.source == 'manual' is the explicit
-                # opt-in if a create ever stamps it.
+                # A JSON column set to Python None stores JSON 'null', not SQL NULL,
+                # so extracting .source yields NULL. That is the portable "no envelope
+                # source" test, and it also matches an envelope carrying no source.
                 src = or_(
                     WorkflowInstance.trigger_data["source"].as_string().is_(None),
                     WorkflowInstance.extra["source"].as_string() == "manual",
@@ -160,9 +151,8 @@ class InstanceService:
     async def stats(self, *, site_id=None) -> dict:
         """Incident counts grouped by status and by priority for the tenant scope.
 
-        Returns ``{by_status: {...}, by_priority: {...}, total: N}`` with every
-        known status/priority key present (zero-filled) so the frontend strip is
-        stable regardless of which buckets currently have rows.
+        Returns ``{by_status, by_priority, total}`` with every key present and
+        zero-filled, so the frontend strip is stable whichever buckets have rows.
         """
         base = scoped(select(WorkflowInstance), WorkflowInstance, self.scope)
         if site_id is not None:
@@ -193,8 +183,8 @@ class InstanceService:
             Transition.from_state_id == inst.current_state,
         )
         rows = list((await self.db.execute(stmt)).scalars().all())
-        # Gate on each transition's conditions against the instance context.
-        # Empty conditions (None / []) always pass (matches_conditions contract).
+        # Gate each transition's conditions against the instance context. Empty
+        # conditions always pass (matches_conditions contract).
         ctx = build_instance_context(inst)
         return [t for t in rows if matches_conditions(ctx, t.conditions or [])]
 
@@ -210,8 +200,8 @@ class InstanceService:
         if trans.requires_note and not (body.notes and body.notes.strip()):
             raise ValidationError("Transition requires a note")
 
-        # Gate: the transition's conditions must be satisfied by the instance context.
-        # Empty conditions always pass; a failing gate is a 409 (state precondition).
+        # The transition's conditions must hold. Empty always passes; a failing
+        # gate is a 409.
         if trans.conditions:
             ctx = build_instance_context(inst)
             if not matches_conditions(ctx, trans.conditions):
@@ -299,8 +289,7 @@ class InstanceService:
         current = InstanceStatus(inst.status)
         if current in CLOSED_STATUSES:
             raise ConflictError("Cannot mutate a closed instance")
-        # Enforce the legal status machine (PENDING→ACTIVE→PAUSED↔ACTIVE→RESOLVED/
-        # CANCELLED; terminal states can't change). A no-op is allowed.
+        # Enforce the legal status machine; a no-op is allowed. See core.enums.
         if not is_legal_status_change(current, body.status):
             raise ConflictError(
                 f"Illegal status change: {current.value} → {body.status.value}"
@@ -347,9 +336,8 @@ class InstanceService:
             inst, from_state=from_name, to_state=to_name, sop_name=inst.sop_name
         )
 
-        # If a NotificationTemplate is referenced, render its subject/body with
-        # Jinja2. Otherwise fall back to the inline config strings (or a default),
-        # rendered through Jinja2 too so {{ }} placeholders work uniformly.
+        # Render the referenced template, else the inline config strings — both
+        # through Jinja2, so {{ }} placeholders work either way.
         template = None
         template_id = cfg.get("template_id")
         if template_id:

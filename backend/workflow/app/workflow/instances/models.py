@@ -1,9 +1,8 @@
 """Workflow-instance ORM model — a running incident.
 
-One table, because one row IS the incident: its position in the SOP's state
-machine, who owns it, its SLA clock, and its transition/audit trail (``timeline``,
-a JSON list rather than a child table — the trail is only ever read whole, with
-the row).
+One table: one row is the incident — its position in the SOP's state machine, its
+owner, its SLA clock, and its audit trail. ``timeline`` is a JSON list rather than
+a child table because the trail is only ever read whole, with the row.
 
     workflow_instances — a running incident (the state machine in motion)
 """

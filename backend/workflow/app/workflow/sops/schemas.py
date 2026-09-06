@@ -1,9 +1,8 @@
 """SOP / state / transition request + response schemas.
 
-``*Public`` models carry a ``from_row`` classmethod rather than
-``model_validate(orm)``: the wire shape is deliberately NOT the column shape (v2
-field names are preserved for the frontend), so the mapping is written out once,
-here, where a reviewer can see it.
+``*Public`` models use a ``from_row`` classmethod, not ``model_validate(orm)``:
+the wire shape is not the column shape (v2 field names are kept for the frontend),
+so the mapping is written out once, here.
 """
 
 from __future__ import annotations
@@ -42,12 +41,10 @@ class UpdateSopRequest(BaseModel):
     name: Optional[str] = Field(default=None, max_length=255)
     description: Optional[str] = None
     priority: Optional[InstancePriority] = None
-    # NO ``initial_state``. It is derived from the state flagged ``is_initial``
-    # (StateService._sync_pointer); accepting it here let a PATCH on the SOP write
-    # any string into the column -- a state of another SOP, of another TENANT, or
-    # one that never existed -- and the next graph-editor load could not resolve
-    # it. ``extra="ignore"`` means a client still sending the field is ignored
-    # rather than 422'd. The way to move it is PATCH .../states/{id} is_initial.
+    # No ``initial_state`` here: it is derived (StateService._sync_pointer), and
+    # accepting it would let a PATCH point a SOP at a state of another SOP, another
+    # tenant, or none at all. ``extra="ignore"`` so an old client is not 422'd.
+    # Move it with PATCH .../states/{id} is_initial.
     trigger_event_types: Optional[list[str]] = None
     sla_hours: Optional[float] = None
     tags: Optional[list[str]] = None

@@ -5,16 +5,14 @@
     service.py   TriggerService, AlertFormatService, SimulatorService
     router.py    /workflow/triggers, /workflow/alert-formats, /workflow/events
 
-BELONGS HERE: the MATCHING side of the engine — which events fire what, keyed by
-event type + conditions (a trigger) or by alert code (an alert format), and the
-dry-run simulator that reports what both would do.
+Belongs here: the MATCHING side — which events fire what, keyed by event type plus
+conditions (a trigger) or by alert code (an alert format), and the dry-run
+simulator over both.
 
-Two tables share this package because they answer the same question and the
-correlation engine consults them together on every message; a change to one is
-almost always a change to the other.
+The two tables share a package because the correlation engine consults them
+together on every message.
 
-DOES NOT BELONG HERE: the matcher itself (``core.matching`` — the correlation
-engine needs it too, and its operator set is a frozen contract), and the
-consumption of live events (``correlation``, which subscribes and creates rows;
-this package only stores what to look for).
+Does not belong here: the matcher itself (``core.matching``, also used by the
+engine) and the consumption of live events (``correlation``). This package only
+stores what to look for.
 """

@@ -9,8 +9,8 @@ Built-in connectors are registered here at import time. To add a new channel
     2. Import + ``registry.register(WhatsAppConnector())`` below.
     3. Create a ``NotificationChannel`` row (channel_type="whatsapp") per tenant.
 
-That's the whole extension surface — the dispatch Celery task, the notification
-model, and the REST channel CRUD already handle arbitrary channel types.
+That is the whole extension surface: the dispatch task, the notification model and
+the REST channel CRUD already handle arbitrary channel types.
 
 TODO(whatsapp): WhatsAppConnector — Cloud API / provider (Twilio/Gupshup) send.
 """
@@ -25,8 +25,8 @@ from .webhook import WebhookConnector
 # Register the built-in connectors. New connectors register the same way.
 registry.register(EmailConnector())
 registry.register(WebhookConnector())
-# Mobile push (FCM/APNs) — channel_type "push"; recipient == target user_id, fanned
-# out to that user's registered device tokens (tenant-scoped).
+# Mobile push (FCM/APNs): recipient is a user_id, fanned out to that user's
+# registered device tokens.
 registry.register(PushConnector())
 
 # --- Future connectors (stubs — implement + register when the provider is wired) ---

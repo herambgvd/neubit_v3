@@ -9,8 +9,7 @@ setting ``VE_WORKFLOW_INLINE_CORRELATION=1`` (default off).
 
 Three probe endpoints, unauthenticated and outside the api_prefix so an
 orchestrator can reach them: ``/health`` (liveness), ``/readyz`` (readiness — 503
-naming the failed dependency) and ``/metrics`` (Prometheus text). What each one
-means and why the first two are not one endpoint is written in ``app/probes.py``.
+naming the failed dependency) and ``/metrics``. See ``app/probes.py``.
 
 Run:   uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
@@ -47,8 +46,7 @@ configure_logging("workflow", "api")
 log = logging.getLogger("workflow")
 
 # What this process can say about itself. Populated during lifespan with a watch
-# per consumer it actually hosts — see ApiProbes for why "not hosted here" and
-# "hosted and healthy" are reported differently.
+# per consumer it hosts.
 probes = ApiProbes()
 
 # The correlation + notify consumers, when hosted in-process (opt-in). Held so
@@ -77,7 +75,7 @@ async def lifespan(app: FastAPI):
         _correlation = CorrelationEngine()
         await _correlation.start()
         # One watch per consumer, each naming its own durables, so /readyz can say
-        # WHICH feed stopped rather than that NATS is unhappy in general.
+        # which feed stopped.
         probes.add(ConsumerWatch(
             _correlation.bus,
             [f"{correlation_engine.DURABLE}-{p.split('.')[2]}"
@@ -86,8 +84,8 @@ async def lifespan(app: FastAPI):
             silence_limit_sec=CONSUMER_SILENCE_SEC, lag_warn=CONSUMER_LAG_WARN,
         ))
         log.info("inline correlation consumer started")
-    # The notify-request/vms.popup → outbox consumer rides the same inline flag (it
-    # feeds the same connector framework). Separate opt-out via VE_WORKFLOW_INLINE_NOTIFY=0.
+    # The notify-request/vms.popup → outbox consumer rides the same inline flag.
+    # Opt out separately with VE_WORKFLOW_INLINE_NOTIFY=0.
     if inline and os.getenv("VE_WORKFLOW_INLINE_NOTIFY", "1").lower() in ("1", "true", "yes"):
         from app.workflow.notifications import consumer as notify_consumer
         from app.workflow.notifications.consumer import NotifyConsumer
@@ -117,8 +115,8 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Neubit Workflow", lifespan=lifespan)
     register_error_handlers(app)
 
-    # CORS — the operator UI may call this satellite directly (dev :3000) instead of
-    # through the gateway. Mirror core's policy (shared kernel settings).
+    # CORS — the operator UI may call this service directly in dev instead of
+    # through the gateway. Mirrors core's policy via shared kernel settings.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -128,20 +126,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # LIVENESS. Answers "is this process alive and running its own code", and
-    # touches NOTHING outside it. It must not consult the database, Redis or NATS:
-    # a liveness probe is a RESTART signal, and restarting a healthy API because
-    # Postgres blinked turns one outage into a restart loop on top of it.
+    # Liveness. Touches nothing outside the process — a liveness probe is a restart
+    # signal, and restarting a healthy API because Postgres blinked makes it worse.
     @app.get("/health")
     async def health() -> dict:
         return {"status": "ok", "service": "workflow", "env": settings.env, "role": "api"}
 
-    # READINESS. Answers the different question "would work sent here get done",
-    # by actually asking the dependencies this process cannot work without, and
-    # returns 503 with a reason NAMING the one that failed. The old /health
-    # answered ok with all three of them down, which is what this splits apart.
-    # Keep them separate: a readiness failure means stop routing here, a liveness
-    # failure means restart, and one endpoint cannot mean both.
+    # Readiness. Asks the dependencies this process cannot work without and returns
+    # 503 naming the one that failed. Keep it separate from /health: readiness means
+    # stop routing here, liveness means restart.
     @app.get("/readyz")
     async def readyz() -> JSONResponse:
         ok, body = await probes.readiness()
@@ -149,10 +142,9 @@ def create_app() -> FastAPI:
 
     @app.get("/metrics")
     async def metrics() -> PlainTextResponse:
-        # One scrape covers all three parts of the service, each distinguishable:
-        # workflow_notifications_* (the outbox), workflow_consumer_*{consumer=,
-        # durable=} (the NATS feeds) and workflow_worker_*/workflow_beat_* (read
-        # back off the shared broker). A reader can tell WHICH is wedged.
+        # One scrape covers all three parts, each distinguishable:
+        # workflow_notifications_* (outbox), workflow_consumer_* (NATS feeds),
+        # workflow_worker_*/workflow_beat_* (read off the shared broker).
         return PlainTextResponse(
             await probes.metrics(), media_type="text/plain; version=0.0.4"
         )
@@ -171,8 +163,8 @@ def create_app() -> FastAPI:
             "is_platform": scope.is_platform,
         }
 
-    # Mount the workflow REST API under the service api_prefix, gated by the tenant's
-    # "workflow" module + an unexpired license (super-admins bypass).
+    # Mount the workflow REST API under the api_prefix, gated on the tenant's
+    # "workflow" module and an unexpired license. Super-admins bypass.
     workflow_gate = [Depends(require_feature("workflow")), Depends(require_active_license())]
     for r in workflow_routers:
         app.include_router(r, prefix=settings.api_prefix, dependencies=workflow_gate)

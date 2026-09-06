@@ -1,11 +1,8 @@
 """Dynamic-form data validation — pure, no session, no request.
 
-Lives with the form definition it validates against rather than in ``core``: the
-rules here are the meaning of a ``workflow_forms.fields`` row, and the only reason
-it is not private to this package is that the caller is elsewhere — an incident
-transition captures a form, so ``instances.service`` imports it. That edge
-(instances → forms) already exists for the ``Form`` model itself; this adds no new
-direction.
+Lives with the form definition rather than in ``core``: these rules are the meaning
+of a ``workflow_forms.fields`` row. ``instances.service`` imports it, an edge that
+already exists for the ``Form`` model.
 """
 
 from __future__ import annotations
@@ -56,10 +53,9 @@ def validate_form_data(
 ) -> list[str]:
     """Validate submitted ``data`` against a form's ``fields`` definition.
 
-    Returns a list of per-field error strings (empty == valid). Pure + synchronous
-    so it can be unit-tested and reused. ``fields`` entries look like
-    ``{id, label, type, required, options, validation}`` where ``validation`` may
-    carry a ``pattern`` (regex), ``min``/``max`` (numbers), or ``min_length`` /
+    Returns per-field error strings; empty means valid. ``fields`` entries are
+    ``{id, label, type, required, options, validation}``, where ``validation`` may
+    carry ``pattern`` (regex), ``min``/``max`` (numbers) or ``min_length`` /
     ``max_length`` (strings). Unknown field types are treated as free text.
     """
     errors: list[str] = []
@@ -132,7 +128,7 @@ def validate_form_data(
                     if re.search(str(pattern), value) is None:
                         errors.append(f"{label}: does not match required format")
                 except re.error:
-                    # A broken pattern in the form definition shouldn't 500.
+                    # A broken pattern in the form definition must not 500.
                     pass
     return errors
 

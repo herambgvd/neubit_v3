@@ -1,34 +1,19 @@
 """The import direction the package docstrings assert, checked against the graph.
 
-``core/__init__.py`` says it "is the LEAF of the internal dependency graph … imports
-nothing from a feature package and nothing from ``app.db``". ``runtime/__init__.py``
-says it holds nothing that "knows a table, a schema or a route".
-``app/workflow/__init__.py`` says "``core`` ← features ← ``instances`` ←
-``correlation``. Nothing in ``sops``, ``forms`` or ``notifications`` may import
-``instances``."
+``core`` is the leaf (imports no feature and not ``app.db``), ``runtime`` knows no
+table, schema or route, and the direction is ``core`` ← features ← ``instances`` ←
+``correlation``. This is the guard on all three.
 
-All three were true when they were written and nothing checked them. A documented
-rule with no guard is a rule that gets broken by a one-line import in a hurry, and
-nobody finds out until the cycle bites — a "shared" bucket growing back into the
-flat module the feature split replaced is exactly the shape this repo has been
-bitten by. This is the guard.
+It parses the AST rather than importing: no live ``app.db`` is needed, deferred
+imports are still seen, and a failure names the offending file and line.
 
-WHY THE AST AND NOT ``importlib``. Importing the packages to inspect
-``sys.modules`` would need a live ``app.db`` (which needs a database URL), would
-miss deferred imports entirely, and would report the transitive closure rather
-than the edge that was actually written. Parsing the source names the offending
-FILE and the offending LINE, which is what the person who has to fix it needs.
+A function-local import is still an edge — it breaks a cycle but not a dependency.
+A deliberate back-edge goes in :data:`DEFERRED_BACK_EDGES` with its reason, and
+:func:`test_deferred_back_edges_are_real` fails if it stops existing or stops being
+deferred.
 
-WHY DEFERRED IMPORTS ARE STILL EDGES. A function-local import breaks an import
-CYCLE but it does not undo a dependency: the module still cannot work without the
-one it reaches into. So they are checked the same way, with one difference — a
-back-edge that is deliberately deferred may be listed in
-:data:`DEFERRED_BACK_EDGES` with the reason, and :func:`test_deferred_back_edges_
-are_real` fails if a listed one stops existing or stops being deferred. A lazy
-import is therefore never a way around this file; it is a way to write down why.
-
-TO ADD A FEATURE PACKAGE: one line in :data:`MAY_IMPORT` and, if it owns tables,
-one entry in :data:`MAY_IMPORT_APP_DB`. There is no test logic to edit.
+To add a feature package: one line in :data:`MAY_IMPORT`, plus one entry in
+:data:`MAY_IMPORT_APP_DB` if it owns tables. There is no test logic to edit.
 """
 
 from __future__ import annotations
@@ -38,10 +23,8 @@ import pathlib
 
 WORKFLOW = pathlib.Path(__file__).resolve().parents[1] / "app" / "workflow"
 
-# The three modules that sit at ``app/workflow/`` itself rather than in a package.
-# They exist to be the one place something is listed (``router.py`` the mount
-# order, ``tables.py`` the model modules), so assembling every feature is their
-# job and they are outside the direction rule by definition.
+# The modules that sit at ``app/workflow/`` itself rather than in a package. Their
+# job is to assemble every feature, so they are outside the direction rule.
 ASSEMBLY = "<assembly>"
 
 # ── the direction, as data ───────────────────────────────────────────────────
@@ -49,11 +32,8 @@ ASSEMBLY = "<assembly>"
 # Read as "this package's modules may import from these packages, and nothing
 # else". A package may always import its own modules; that is not listed.
 #
-# ``runtime`` appears on every feature because that is what it is FOR — the event
-# bus and the per-run task session are declared shared plumbing, and a feature
-# reaching for either is the intended use, not drift. ``core`` likewise.
-#
-# The interesting entries are the ones that are NOT symmetric:
+# ``runtime`` and ``core`` appear on every feature because that is what they are
+# for. The interesting entries are the asymmetric ones:
 #   * ``triggers`` may read ``sops`` (a trigger names the SOP it starts) but
 #     ``sops`` may not read ``triggers``.
 #   * ``instances`` may read ``sops``/``forms``/``notifications``; none of those
@@ -72,23 +52,21 @@ MAY_IMPORT: dict[str, set[str]] = {
     "correlation": {"core", "runtime", "sops", "triggers", "instances"},
     ASSEMBLY: set(),                                  # filled in below
 }
-# The assembly layer may reach everything; spelled as the union rather than a
-# repeated list so adding a feature above does not need a second edit here.
+# The assembly layer may reach everything. Spelled as a union so adding a feature
+# above needs no second edit here.
 MAY_IMPORT[ASSEMBLY] = {p for p in MAY_IMPORT if p != ASSEMBLY}
 
-# Who may import ``app.db``. ``core`` and ``runtime`` may not, and that is the
-# second half of the leaf claim: a module that can reach ``Base`` can declare a
-# table, and a "shared" package that declares tables is a feature wearing a
-# disguise. ``runtime.session`` builds its OWN engine from the settings for
-# exactly this reason.
+# Who may import ``app.db``. ``core`` and ``runtime`` may not: a module that can
+# reach ``Base`` can declare a table. ``runtime.session`` builds its own engine
+# from the settings for that reason.
 MAY_IMPORT_APP_DB: set[str] = {
     "forms", "sops", "threat_levels", "notifications", "triggers", "instances",
     "correlation", ASSEMBLY,
 }
 
-# Back-edges that exist, are deliberate, and are kept DEFERRED (inside a function)
-# so they never appear in the module-import graph. Keyed by the module that does
-# it, valued by (target package, why). Each one is checked to still be real.
+# Deliberate back-edges kept deferred (inside a function) so they never appear in
+# the module-import graph. Keyed by module → (target package, why). Each is checked
+# to still be real.
 DEFERRED_BACK_EDGES: dict[str, tuple[str, str]] = {
     "triggers.service": (
         "correlation",
@@ -119,10 +97,8 @@ def _module_name(path: pathlib.Path) -> str:
 def _target_package(path: pathlib.Path, node: ast.ImportFrom | ast.Import) -> list[str]:
     """The internal packages one import statement reaches, if any.
 
-    Handles both spellings: relative (``from ..sops.models import SOP`` — what this
-    codebase uses, and what makes the import line say which feature a name came
-    from) and absolute (``from app.workflow.sops.models import SOP``), so switching
-    style cannot switch the guard off.
+    Handles both relative and absolute spellings, so switching style cannot switch
+    the guard off.
     """
     if isinstance(node, ast.Import):
         names = [a.name for a in node.names]
@@ -163,8 +139,8 @@ def _edges() -> list[tuple[str, str, str, int, bool]]:
     found: list[tuple[str, str, str, int, bool]] = []
     for path in sorted(WORKFLOW.rglob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
-        # A node is DEFERRED when it is not at module level, i.e. it has a
-        # function or class between it and the module body.
+        # Deferred == not at module level, i.e. a function or class sits between
+        # it and the module body.
         deferred: set[int] = set()
         for parent in ast.walk(tree):
             if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -196,12 +172,10 @@ def _app_db_importers() -> list[tuple[str, str, int]]:
 
 
 def test_declared_direction_is_acyclic():
-    """The TABLE itself must be a DAG, before it is used to judge anything.
+    """The table itself must be a DAG before it is used to judge anything.
 
-    Checked separately because the graph walk below cannot catch this: an edit
-    that grants ``sops`` → ``instances`` while ``instances`` → ``sops`` stands
-    would make every real import legal and the direction meaningless. The table is
-    the claim; this is the claim being self-consistent.
+    The graph walk cannot catch this: granting ``sops`` → ``instances`` while
+    ``instances`` → ``sops`` stands would make every real import legal.
     """
     colour: dict[str, int] = {}
 
@@ -236,15 +210,13 @@ def test_every_package_on_disk_is_declared():
 def test_core_and_runtime_import_no_feature():
     """The claim in core/__init__.py and runtime/__init__.py, literally.
 
-    Kept as its own test rather than folded into the general walk because it is
-    the claim a reader of those two docstrings is checking, and a failure here
-    should say so in those words.
+    Its own test, not folded into the general walk, so a failure reads in the same
+    words as the docstring it contradicts.
     """
     offenders = [
         f"{mod} (line {line}) imports `{to}`" + (" — deferred, still an edge" if lazy else "")
         for mod, pkg, to, line, lazy in _edges()
-        # `to == pkg` is core.mixins reaching core.primitives — a package's own
-        # modules are not an outward edge and are excluded everywhere here.
+        # `to == pkg` is a package's own modules, not an outward edge.
         if pkg in ("core", "runtime") and to != pkg
     ]
     assert not offenders, (
@@ -298,10 +270,8 @@ def test_no_import_runs_against_the_declared_direction():
 def test_deferred_back_edges_are_real():
     """The allowlist may not outlive the thing it excuses.
 
-    Without this, removing the simulator's lazy import would leave a permanent
-    licence for anything in ``triggers`` to reach into ``correlation``, and the
-    next person would find a rule that says the edge is fine rather than a rule
-    that says why this one is.
+    Otherwise removing the simulator's lazy import would leave a standing licence
+    for anything in ``triggers`` to reach into ``correlation``.
     """
     edges = _edges()
     for mod, (target, _why) in DEFERRED_BACK_EDGES.items():

@@ -190,8 +190,8 @@ class CorrelationEngine:
 
     async def start(self) -> None:
         await self.bus.connect()
-        # One JetStream durable can bind to only ONE subscription, so give each
-        # subject pattern its own durable (workflow-correlation-<domain>).
+        # A JetStream durable binds to one subscription, so each subject pattern
+        # gets its own durable (workflow-correlation-<domain>).
         for pattern in SUBSCRIBE_PATTERNS:
             domain = pattern.split(".")[2]  # tenant.*.<domain>.>
             await self.bus.subscribe(pattern, self.handle_event, durable=f"{DURABLE}-{domain}")

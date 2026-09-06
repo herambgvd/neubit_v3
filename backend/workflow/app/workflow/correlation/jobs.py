@@ -1,10 +1,9 @@
 """Scheduled job over the correlation dedup slots — the expiry cleanup, and the
 runner that keeps the event→incident consumer alive.
 
-``dedup_cleanup`` is housekeeping for the idempotency table this package owns:
-a slot's only job is to make a firing decision once inside its window, so past
-``expires_at`` it is dead weight. Deleting it can never resurrect an incident —
-the window has already closed.
+``dedup_cleanup`` is housekeeping for the idempotency table: a slot only has to
+make one firing decision inside its window, so past ``expires_at`` it is dead
+weight and deleting it cannot resurrect anything.
 """
 
 from __future__ import annotations

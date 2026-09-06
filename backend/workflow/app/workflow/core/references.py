@@ -1,21 +1,12 @@
-"""Ownership checks for a submitted field that NAMES ANOTHER ROW.
+"""Ownership checks for a submitted field that names another row.
 
-``assert_owned`` guards the row a request addresses by id. Nothing guarded the
-rows a request POINTS AT. A trigger's ``sop_id`` arrives from the caller like any
-other field, so a service that validates it in ``create`` and then runs
-``setattr(row, k, v)`` over the update body has validated it on the one path that
-is not the attack: PATCH is what a caller already holding a row of their own
-reaches for.
+``assert_owned`` guards the row a request addresses by id; this guards the rows a
+request points at. Declaring the reference on the service class rather than at a
+call site means every write path (create and PATCH alike) checks it.
 
-The reference is therefore declared on the SERVICE CLASS instead of being checked
-at a call site, and every write path runs the same declaration. Adding a column
-that names another row is one line in ``REFERENCES``; forgetting to re-check it
-on a new endpoint stops being possible without deleting that line.
-
-Deliberately NOT a foreign key: these tables are cross-tenant by shape (a NULL
-tenant_id row is platform-shared and legitimately referenced by everyone), so the
-question is not "does the target exist" — which is all an FK answers — but "may
-THIS caller see it", which only the scope knows.
+Not a foreign key on purpose: a NULL-tenant row is platform-shared and
+legitimately referenced by everyone, so the question is "may this caller see it",
+which only the scope knows — not "does it exist".
 """
 
 from __future__ import annotations
@@ -32,10 +23,9 @@ class ChecksReferences:
     Hosts must hold ``self.db`` (AsyncSession) and ``self.scope`` (Scope).
     """
 
-    #: field name → (ORM model, not-found message). The message is deliberately the
-    #: one a genuinely absent id gets: a caller must not be able to tell "another
-    #: tenant's SOP" from "no such SOP" — that is ``assert_owned``'s promise, and
-    #: it is what stops an id being probed through a PATCH body.
+    #: field name → (ORM model, not-found message). The message must be the one a
+    #: genuinely absent id gets, so a caller cannot tell "another tenant's row"
+    #: from "no such row".
     REFERENCES: dict[str, tuple[Any, str]] = {}
 
     async def _check_references(self, data: Mapping[str, Any]) -> None:

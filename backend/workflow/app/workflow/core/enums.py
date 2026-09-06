@@ -1,13 +1,11 @@
 """Workflow literal types, and the pure rules defined over them.
 
-Kept faithful to neubit_v2: these strings are persisted in DB columns AND are the
-literals the REST API accepts and returns, so renaming a member is a data +
-contract change, never a tidy-up.
+These strings are persisted in DB columns and are also the literals the REST API
+accepts and returns, so renaming a member is a data + contract change.
 
-The rules that live here (``is_legal_status_change``, ``bump_priority``) are here
-rather than in a service because more than one caller enforces them: the instance
-service on a manual status change, and the escalation sweep in the worker. A copy
-in each is how the two drift apart.
+``is_legal_status_change`` and ``bump_priority`` live here rather than in a
+service because two callers enforce them: the instance service and the escalation
+sweep.
 """
 
 from __future__ import annotations
@@ -15,7 +13,7 @@ from __future__ import annotations
 from enum import Enum
 
 
-# ── Enums (kept faithful to neubit_v2) ─────────────────────────────────
+# ── Enums ────────────────────────────────────────────────────────────
 
 
 class InstancePriority(str, Enum):
@@ -25,8 +23,7 @@ class InstancePriority(str, Enum):
     LOW = "low"
 
 
-# neubit_v2 uses PENDING/ACTIVE/PAUSED/COMPLETED/CANCELLED. The v3 task spec calls
-# for pending|active|paused|resolved|cancelled — RESOLVED replaces COMPLETED.
+# RESOLVED is v3's name for what v2 called COMPLETED.
 class InstanceStatus(str, Enum):
     PENDING = "pending"
     ACTIVE = "active"
@@ -39,10 +36,8 @@ class InstanceStatus(str, Enum):
 CLOSED_STATUSES = {InstanceStatus.RESOLVED, InstanceStatus.CANCELLED}
 
 
-# Legal manual status-machine edges (used by InstanceService.change_status).
-# PENDING → ACTIVE/CANCELLED; ACTIVE ↔ PAUSED; ACTIVE/PAUSED → RESOLVED/CANCELLED;
-# terminal states (RESOLVED/CANCELLED) can't change. A no-op (X → X) is always
-# allowed. transition()/escalate() drive status via their own machine and are not
+# Legal manual status edges, used by InstanceService.change_status. A no-op (X → X)
+# is always allowed. transition()/escalate() have their own machine and are not
 # gated by this map.
 LEGAL_STATUS_EDGES: dict[InstanceStatus, set[InstanceStatus]] = {
     InstanceStatus.PENDING: {InstanceStatus.ACTIVE, InstanceStatus.CANCELLED},

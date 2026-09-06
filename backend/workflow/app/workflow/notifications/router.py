@@ -1,9 +1,7 @@
 """Notification REST API — templates, channels and device tokens on one router.
 
-One ``APIRouter`` for all three because they are one prefix
-(``/workflow/notifications``) and one permission family
-(``workflow.notification.*``); splitting the router would change the paths, and
-the paths are the contract.
+One ``APIRouter`` for all three: one prefix, one permission family. Splitting it
+would change the paths, and the paths are the contract.
 """
 
 from __future__ import annotations
@@ -87,12 +85,10 @@ async def delete_channel(channel_id: str, svc: Annotated[NotificationService, De
     await svc.delete_channel(channel_id)
 
 
-# -- device tokens (mobile push registration; the current user's own devices) --
+# -- device tokens (the caller's own devices) --
 #
-# Reuses the notification-domain permissions: any user who can read notifications
-# may register/list/unregister THEIR OWN push device tokens. Registration is
-# self-service (the row is stamped with the caller's user_id + tenant), so these
-# are the right gate — no new permission catalog entry (that lives in core).
+# Gated on the notification permissions: registration is self-service and the row
+# is stamped with the caller's user_id + tenant, so no new catalog entry is needed.
 
 
 @notification_router.get("/devices", response_model=list[S.DeviceTokenPublic],

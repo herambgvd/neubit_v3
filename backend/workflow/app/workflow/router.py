@@ -1,10 +1,9 @@
 """The workflow REST API, assembled from the feature routers.
 
-Each feature owns its own ``router.py``; this module only collects them. It is
-the one place the MOUNT ORDER is decided, and that order is load-bearing in one
-narrow way: FastAPI's generated OpenAPI lists paths in route-registration order,
-so reordering this list changes ``/openapi.json`` byte-for-byte even though every
-route still resolves identically. Keep it as it is unless a path genuinely moves.
+Each feature owns its own ``router.py``; this module only collects them, and is
+the one place mount order is decided. That order is load-bearing: OpenAPI lists
+paths in registration order, so reordering this list changes ``/openapi.json``
+even though every route still resolves the same. Leave it unless a path moves.
 
 All routers mount under the service ``api_prefix`` (``/api/v1``) with a
 ``/workflow`` prefix, so paths are ``/api/v1/workflow/...``. Every endpoint is

@@ -1,10 +1,9 @@
 """Trigger / alert-format / simulator services — what turns an event into an incident.
 
-``SimulatorService`` reaches into ``correlation.engine`` for the SAME
-match-and-create helpers the live NATS consumer uses, so a dry run cannot drift
-from what actually happens. That import is deliberately made inside the method:
-the correlation engine imports these models, and a module-level import here would
-close the loop.
+``SimulatorService`` uses ``correlation.engine``'s match-and-create helpers, the
+same ones the live consumer uses, so a dry run cannot drift from reality. That
+import is function-local because the engine imports these models — a module-level
+import would close the loop.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ from .models import AlertFormat, Trigger
 
 
 class TriggerService(ChecksReferences):
-    # A trigger names the SOP it starts. Checked on EVERY write path, not just
+    # A trigger names the SOP it starts. Checked on every write path, not just
     # create — see ``core.references``.
     REFERENCES = {"sop_id": (SOP, "SOP not found")}
 
@@ -219,12 +218,10 @@ class AlertFormatService(ChecksReferences):
 
 
 class SimulatorService:
-    """Run a synthetic event through the SAME matching logic the correlation
-    engine uses (trigger conditions + AlertFormat lookup) and report — or, when
-    ``dry_run`` is false, actually create — the resulting incident(s).
+    """Run a synthetic event through the correlation engine's own matching.
 
-    Reuses the correlation module's helpers so simulate and the live NATS consumer
-    share one match/create implementation (no duplication).
+    Reports the resulting incident(s), or creates them when ``dry_run`` is false.
+    Shares one match/create implementation with the live NATS consumer.
     """
 
     def __init__(self, db: AsyncSession, scope: Scope) -> None:
@@ -237,11 +234,9 @@ class SimulatorService:
     async def _owned_sop(self, sop_id: str | None) -> SOP | None:
         """The referenced SOP, or None when the caller may not see it.
 
-        The write side now refuses a foreign ``sop_id``, but rows stored before it
-        did still exist, and a bare ``db.get`` on a tenant-owned table would read
-        one straight into this tenant's simulate output (and, when dry_run is off,
-        into an incident carrying that SOP's name). Unreadable is reported as
-        "SOP missing", which is what it is from here.
+        The write side refuses a foreign ``sop_id``, but older rows may hold one, and
+        a bare ``db.get`` would read another tenant's SOP into this tenant's output.
+        Unreadable is reported as "SOP missing".
         """
         if not sop_id:
             return None

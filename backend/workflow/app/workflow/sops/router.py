@@ -1,10 +1,8 @@
 """SOP / state / transition REST API.
 
-Three routers, mounted in the order SOP → state → transition. States and
-transitions are nested under ``/workflow/sops/{sop_id}`` and reuse the SOP's
-permission keys (``workflow.sop.read`` to list, ``workflow.sop.update`` to
-change the graph) — editing a state IS editing its SOP, and a second permission
-family would be one an operator could hold without the first.
+Three routers, mounted SOP → state → transition. States and transitions nest under
+``/workflow/sops/{sop_id}`` and reuse the SOP's permission keys: editing a state is
+editing its SOP, and a separate family could be held without the first.
 """
 
 from __future__ import annotations

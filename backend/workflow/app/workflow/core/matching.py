@@ -1,17 +1,12 @@
 """Trigger-condition evaluation — the matcher, and the context it matches against.
 
-PORTED VERBATIM from neubit_v2's ``module/correlation/matcher.py``. The operator
-set below is part of the trigger contract: a trigger row stored last year carries
-``{"field": ..., "operator": ..., "value": ...}`` and expects exactly these
-semantics, so adding, renaming or "improving" an operator silently changes which
-incidents fire. The frontend keeps its own mirror of this operator set
-(``frontend/src/features/workflow/lib/matcher.ts``); the two must agree.
+The operator set is part of the stored trigger contract: changing or renaming one
+silently changes which incidents fire. The frontend mirrors it in
+``frontend/src/features/workflow/lib/matcher.ts``; the two must agree.
 
-Two callers, one implementation:
-  * the correlation engine matches a trigger's conditions against an incoming
-    event ENVELOPE;
-  * the instance service matches a transition's conditions against a running
-    incident, via ``build_instance_context``.
+Two callers: the correlation engine matches trigger conditions against an event
+envelope, and the instance service matches transition conditions against a running
+incident via ``build_instance_context``.
 """
 
 from __future__ import annotations
@@ -20,7 +15,7 @@ import re
 from typing import Any, Iterable
 
 
-# ── Trigger-condition matcher (ported from v2 matcher.py) ──────────────
+# ── Trigger-condition matcher ─────────────────────────────────────────
 
 
 def walk(obj: dict[str, Any], path: str) -> Any:
@@ -120,7 +115,7 @@ def build_instance_context(inst: Any) -> dict[str, Any]:
         "tags": getattr(inst, "tags", None) or [],
         # The whole originating envelope, addressable via dotted paths.
         "trigger_data": trigger_data,
-        # v2 alias — some triggers/conditions use "envelope" as the root.
+        # Alias: some conditions use "envelope" as the root.
         "envelope": trigger_data,
         "metadata": extra,
     }

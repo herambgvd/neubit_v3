@@ -1,16 +1,14 @@
-"""DB-backed tests for the incident (WorkflowInstance) list cross-link filters.
+"""DB-backed tests for the incident list cross-link filters.
 
-Uses an in-memory aiosqlite engine (portable generic column types build on
-SQLite). Exercises the two new filters added for the camera-event ↔ incident
-cross-link, plus the derived InstancePublic fields:
+In-memory aiosqlite (the models use portable column types). Covers the camera-event
+↔ incident cross-link filters and the derived ``InstancePublic`` fields:
 
-  * ?source=<domain>  — filter by the EventBus source tag on the envelope
-    (trigger_data.source): "vision" (camera), "access", "ingest".
-  * ?source=manual     — operator-raised incidents (no trigger envelope).
-  * ?event_id=<id>     — match EITHER the bus-envelope id (WorkflowInstance.event_id)
-    OR the ORIGINATING event id in the payload (trigger_data.payload.event_id), so a
-    lookup by a camera-event id (VmsEvent.id) finds the incident it spawned.
-  * InstancePublic.from_row derives event_source + source_event_id from the envelope.
+  * ?source=<domain>  — the EventBus source tag on the envelope: vision, access,
+    ingest.
+  * ?source=manual    — operator-raised incidents, which have no envelope.
+  * ?event_id=<id>    — matches either the bus-envelope id or the originating event
+    id in the payload, so a lookup by camera-event id finds the incident it spawned.
+  * ``InstancePublic.from_row`` derives event_source + source_event_id.
   * Tenant scoping stays intact under the new filters.
 """
 

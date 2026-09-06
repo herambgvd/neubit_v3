@@ -1,21 +1,15 @@
 """Shared test setup for the workflow suite.
 
-Every file here duplicated the same two pieces of boilerplate before this existed.
-They are moved, not rewritten — same bodies, one copy:
+  * ``run_async`` — the tests are synchronous functions driving async code, so each
+    owns its event loop via ``asyncio.run``. Not pytest-asyncio: there are no async
+    fixtures, and adding a plugin plus a marker everywhere would change what runs.
 
-  * ``run_async`` — these tests are synchronous functions driving async code, so
-    each one owns its event loop via ``asyncio.run``. Deliberately NOT
-    ``pytest-asyncio``: the suite has no async fixtures and adding a plugin +
-    marker to every test would be a change to what runs, not to where it lives.
+  * ``make_sqlite_session`` — an in-memory aiosqlite engine holding only the tables
+    a test names. The models use portable column types so they build on SQLite;
+    creating the whole metadata would couple every test to every table.
 
-  * ``make_sqlite_session`` — an in-memory aiosqlite engine with ONLY the tables a
-    test names. The models use portable generic column types so they build on
-    SQLite, and creating the whole metadata would silently couple every test to
-    every table; each caller still names its own.
-
-pytest puts this directory on ``sys.path`` (no ``__init__.py``, default
-``prepend`` import mode), which is why the test modules import from ``conftest``
-by name.
+pytest puts this directory on ``sys.path`` (no ``__init__.py``, default prepend
+import mode), which is why the test modules import from ``conftest`` by name.
 """
 
 from __future__ import annotations

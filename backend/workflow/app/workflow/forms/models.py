@@ -2,10 +2,8 @@
 
     workflow_forms — dynamic form definitions (captured on transitions)
 
-``fields`` is a JSON list, not a child table: a form definition is authored,
-stored and rendered whole, and the validator that reads it
-(``forms.validation.validate_form_data``) takes the same list a transition's
-``form_data`` is checked against.
+``fields`` is a JSON list, not a child table: a definition is authored, stored and
+rendered whole, and ``forms.validation.validate_form_data`` takes that same list.
 """
 
 from __future__ import annotations

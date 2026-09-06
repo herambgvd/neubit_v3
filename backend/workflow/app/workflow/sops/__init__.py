@@ -5,16 +5,12 @@
     service.py   SopService, StateService, TransitionService
     router.py    /workflow/sops, .../{sop_id}/states, .../{sop_id}/transitions
 
-BELONGS HERE: anything about the SHAPE of a playbook — its states, the edges
-between them, which state is initial, what a transition requires before it may be
-taken.
+Belongs here: the SHAPE of a playbook — its states, the edges between them, which
+state is initial, what a transition requires.
 
-DOES NOT BELONG HERE: a RUNNING playbook. The moment a SOP is instantiated it is
-an incident and lives in ``instances``. This package must not import ``instances``
-— the dependency runs the other way, and a cycle here is the first step back to
-one flat directory.
+Does not belong here: a RUNNING playbook. Once instantiated it is an incident and
+lives in ``instances``. This package must not import ``instances``; the dependency
+runs the other way.
 
-Nothing is re-exported: importers name the module (``from ..sops.models import
-SOP``), so a reader can tell a table from a schema from a service at the import
-line.
+Nothing is re-exported — importers name the module.
 """

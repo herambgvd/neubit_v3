@@ -18,9 +18,8 @@ on their phone without the publisher knowing user ids).
 Tenant isolation: the ``tenant_id`` is taken from the subject / envelope and
 stamped on every row, so a push only ever reaches that tenant's users.
 
-Runs as a long-lived JetStream durable in the Celery worker (alongside the
-correlation consumer). Best-effort + idempotent-ish: a duplicate delivery just
-enqueues a duplicate row (bounded by the publisher's own dedup upstream).
+Runs as a long-lived JetStream durable in the Celery worker. A duplicate delivery
+just enqueues a duplicate row, bounded by the publisher's own dedup upstream.
 """
 
 from __future__ import annotations
@@ -78,18 +77,12 @@ class NotifyConsumer:
     async def _route(self, envelope: dict[str, Any]) -> None:
         """Dispatch a raw envelope to the right handler by its shape.
 
-        A ``vms.popup`` carries ``camera_id`` + ``reason``; a ``notify.request``
-        carries a ``channel``. We branch on the presence of ``channel``.
+        A ``notify.request`` carries a ``channel``; a ``vms.popup`` does not.
 
-        Failures PROPAGATE — raising is the retry contract (kernel.events): a
-        notify.request that failed to enqueue because the database was down must
-        NAK and be redelivered, not be swallowed into an ack that loses the
-        notification. The old catch here was an auto-ack-era hangover; under
-        manual ack it turned every transient failure into a silent drop. The
-        consumer loop is not at risk — the bus catches handler exceptions to
-        make its ack decision. Both handlers read fields with .get() defaults,
-        so a malformed envelope enqueues a thin notification rather than
-        raising; anything that does raise is worth retrying.
+        Do not catch here: raising is the retry contract (kernel.events), so a row
+        that failed to enqueue NAKs and is redelivered instead of being acked away.
+        The bus catches handler exceptions to make its ack decision, and both
+        handlers use .get() defaults, so anything that does raise is worth retrying.
         """
         if "channel" in envelope:
             await self.handle_notify_request(envelope)

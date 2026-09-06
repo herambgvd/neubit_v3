@@ -4,10 +4,9 @@ The simulator's response models live here, with the two things it simulates: a
 dry run reports which TRIGGERS matched, which ALERT FORMAT matched, and what was
 skipped and why.
 
-``TransitionCondition`` is imported rather than redeclared: a trigger's condition
-and a transition's condition are the SAME ``{field, operator, value}`` triple,
-evaluated by the same ``core.matching`` code. A second class of the same shape
-would also be a second OpenAPI component, and the frontend reads one.
+``TransitionCondition`` is imported, not redeclared: a trigger condition and a
+transition condition are the same ``{field, operator, value}`` triple, and a second
+class would be a second OpenAPI component for the frontend to read.
 """
 
 from __future__ import annotations
@@ -178,10 +177,9 @@ class AlertFormatListResponse(BaseModel):
 class SimulateEventRequest(BaseModel):
     """A synthetic event injected into the matching pipeline.
 
-    VMS-independent — a generic event envelope. ``alert_code`` (or a code inside
-    ``payload``) drives AlertFormat matching; ``event_type`` + ``payload`` drive
-    trigger matching. ``dry_run`` (default true) reports what WOULD happen without
-    persisting; ``dry_run=false`` actually creates the incident(s).
+    A generic event envelope. ``alert_code`` (or a code in ``payload``) drives
+    AlertFormat matching; ``event_type`` + ``payload`` drive trigger matching.
+    ``dry_run`` (default true) reports without persisting; false creates for real.
     """
 
     model_config = ConfigDict(extra="ignore")

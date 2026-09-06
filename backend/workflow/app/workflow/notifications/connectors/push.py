@@ -150,8 +150,8 @@ class PushConnector(Connector):
         await self._prune_tokens(invalid)
 
         if delivered == 0 and errors:
-            # Nothing got through and at least one hard error — surface it so the
-            # dispatch task records + retries (bounded by attempts).
+            # Nothing got through and at least one hard error — raise so the
+            # dispatch task records and retries it.
             raise RuntimeError("push connector: all deliveries failed: " + "; ".join(errors[:3]))
 
         log.info(

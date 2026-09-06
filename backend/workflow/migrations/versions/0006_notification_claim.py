@@ -6,24 +6,20 @@ Create Date: 2026-09-05
 
 Adds the two columns that let exactly one worker own a pending notification.
 
-WHY A MIGRATION AT ALL, when ``status`` already had room for the string
-``'claimed'``: a claim needs a CLOCK. Without one, a worker that dies between
-claiming a row and recording its outcome leaves that row in ``claimed`` forever —
-drained by nothing, counted by nothing, and for a life-safety-adjacent alert that
-is worse than the duplicate this whole change removes. ``claimed_at`` is the lease
-the reaper measures against; ``claimed_by`` is so an operator at a psql prompt can
-name the container that is holding a row.
+``status`` already had room for the string ``'claimed'``, but a claim needs a
+CLOCK: without one, a worker that dies mid-send leaves a row in ``claimed``
+forever, drained by nothing. ``claimed_at`` is the lease the reaper measures
+against; ``claimed_by`` names the container holding a row at a psql prompt.
 
-DELIBERATELY NOT reusing ``last_attempt_at`` as that clock. It is the same instant
-today and stops being so the first time anything is added between the claim and the
-send, and by then the reaper is silently measuring the wrong thing.
+Not reusing ``last_attempt_at`` as that clock: it is the same instant today and
+stops being so the moment anything is added between the claim and the send.
 
-SAFE ON A LIVE TABLE. Both columns are nullable with no default, so Postgres
-records them in the catalog and rewrites no rows and takes no long lock. The index
-is on the new (all-NULL) column. Existing rows read as "not claimed", which is what
-they are. Forward-only in effect: ``downgrade`` drops the columns, which would
-strand any row sitting in ``claimed`` at that moment, so it is for a dev database
-and not for a rollback of a running estate.
+Safe on a live table — both columns are nullable with no default, so Postgres
+rewrites no rows and takes no long lock, and the index is on the new all-NULL
+column. Existing rows read as "not claimed", which is what they are.
+
+Forward-only in effect: ``downgrade`` drops the columns and would strand any row
+sitting in ``claimed``, so it is for a dev database, not a live rollback.
 """
 
 from __future__ import annotations

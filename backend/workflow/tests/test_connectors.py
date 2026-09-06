@@ -1,35 +1,22 @@
 """The email and webhook connectors — the two that had no test at all.
 
-The push connector is covered (test_push.py, 12 tests). Email and webhook were
-not, and they are the two that are actually configured on every estate: the outbox
-drains through them on the every-minute ``dispatch_notifications`` sweep, and when
-one of them is wrong the symptom is a notification that never arrives, which is
-indistinguishable from one that was never queued.
+These are the two configured on every estate, and when one is wrong the symptom is
+a notification that never arrives, indistinguishable from one never queued.
 
-WHAT IS WORTH ASSERTING HERE, given a connector is 40 lines of "read a dict and
-call a library". Not that the library was called — that is the library's test.
-Three things:
+Three things are worth asserting about 40 lines of "read a dict and call a
+library" — not that the library was called, which is the library's test:
 
-  * THE TLS MODE. ``port == 465`` means implicit TLS (the socket is encrypted
-    before SMTP starts); 587 and 25 mean STARTTLS (plaintext socket, upgraded).
-    Getting the pair backwards on 465 does not fail loudly — aiosmtplib opens a
-    plaintext socket to a port expecting TLS — and the failure mode of the other
-    direction is worse: an SMTP AUTH sent before the upgrade puts the tenant's
-    stored password on the wire in the clear. Nothing else in this repo checks it.
-  * THE FALLBACK CHAIN. Both connectors resolve config from the tenant's channel
-    row first, then (email) the service env vars, then a default; webhook falls
-    back to the notification's own ``recipient`` as the URL. Which one wins is the
-    part an operator debugs at 2am, and it is the part a refactor silently
-    reorders.
-  * THAT A FAILURE RAISES. The dispatch contract in connectors/base.py is "``send``
-    raises on failure — the dispatch task marks the row failed and retries". A
-    connector that swallowed a 500 would mark the notification DELIVERED and it
-    would never be retried and never be reported. That is a silent data-loss bug
-    with no log line, so both connectors are asserted to propagate.
+  * THE TLS MODE. Port 465 is implicit TLS, 587/25 are STARTTLS. Getting it
+    backwards on 465 fails quietly, and the other direction puts the tenant's
+    stored password on the wire in the clear.
+  * THE FALLBACK CHAIN. Channel row, then (email) the service env vars, then a
+    default; webhook falls back to the notification's own ``recipient`` as the URL.
+    Which one wins is what an operator debugs at 2am and what a refactor reorders.
+  * THAT A FAILURE RAISES. ``send`` raises on failure, or the dispatch task marks
+    the row delivered and it is lost with no log line.
 
-No network and no SMTP server: the lazy imports both connectors use are the seam,
-and both are patched at the module object so the connector's own resolution logic
-is what runs.
+No network and no SMTP server: both connectors' lazy imports are the seam, patched
+at the module object so the connector's own resolution logic still runs.
 """
 
 from __future__ import annotations
@@ -43,7 +30,7 @@ from app.workflow.notifications.connectors.webhook import WebhookConnector
 
 from conftest import run_async as _run
 
-#: The env vars EmailConnector falls back to. Cleared in every email test so a
+#: The env vars EmailConnector falls back to. Cleared in every email test, so a
 #: developer with VE_SMTP_HOST exported cannot make "no host configured" pass.
 _SMTP_ENV = (
     "VE_SMTP_HOST", "VE_SMTP_PORT", "VE_SMTP_USERNAME",
@@ -264,9 +251,8 @@ def test_webhook_posts_the_documented_body_and_headers(http):
 
 
 def test_webhook_propagates_a_non_2xx(http):
-    """``raise_for_status`` is the whole error handling. If a 500 from the receiver
-    did not raise, the row would be marked delivered and the incident notification
-    would be lost with no log line."""
+    """``raise_for_status`` is the whole error handling: without it a 500 from the
+    receiver marks the row delivered and loses the notification."""
     import httpx
 
     posts, state = http

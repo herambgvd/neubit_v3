@@ -1,18 +1,15 @@
 """DB-backed tests for the SOP graph services — the playbook's own state machine.
 
-``sops/service.py`` holds three service classes in one module for one stated
-reason: creating or updating a state can clear ANOTHER state's ``is_initial`` and
-re-point ``SOP.initial_state``. That is a write touching two tables, it is the
-invariant the whole package's shape was justified by, and it had no test.
+Creating or updating a state can clear another state's ``is_initial`` and re-point
+``SOP.initial_state``. That two-table write is the invariant the package's shape
+was justified by, and it had no test.
 
-What is asserted here is what the DATABASE holds after the call (read back in a
-fresh session, so an uncommitted in-memory mutation cannot pass), not which
-method called which.
+What is asserted is what the DATABASE holds after the call, read back in a fresh
+session so an uncommitted in-memory mutation cannot pass.
 
-Also covered: the SOP soft-delete, the version bump, and the two edges that used
-to fall outside the invariant — deleting the initial state (the pointer is now
-re-derived, and the SOP is left unlaunchable rather than dangling), and a
-transition whose endpoint state was deleted underneath it.
+Also covered: the SOP soft-delete, the version bump, deleting the initial state
+(the pointer is re-derived and the SOP left unlaunchable rather than dangling), and
+a transition whose endpoint state was deleted underneath it.
 """
 
 from __future__ import annotations
@@ -76,8 +73,7 @@ def test_the_created_state_is_flagged_initial_on_its_own_row():
                 svc = StateService(session, SCOPE_A)
                 first = await svc.create(sop.sop_id, _state_body("Triage", is_initial=True),
                                          actor=ACTOR)
-            # Read back in a FRESH session: the flag must be committed, not merely
-            # set on the in-memory object.
+            # Fresh session: the flag must be committed, not just set in memory.
             async with sm() as check:
                 assert (await check.get(State, first.state_id)).is_initial is True
         finally:
@@ -111,10 +107,9 @@ def test_second_initial_state_demotes_the_first():
     _run(go())
 
 
-# The denormalised pointer. ``SOP.initial_state`` is documented in the model as
-# "a convenience pointer the service keeps in sync"; it is now DERIVED from the
-# is_initial flag on every write path rather than assigned, so these two assert
-# the pointer and the flag can no longer disagree by which endpoint was used.
+# The denormalised pointer is derived from the is_initial flag on every write path,
+# so these two assert it cannot disagree with the flag depending on which endpoint
+# was called.
 
 def test_creating_an_initial_state_points_the_sop_at_it():
     async def go():
@@ -205,9 +200,8 @@ def test_promoting_the_already_initial_state_does_not_demote_itself():
 
 def test_a_second_initial_state_is_refused_by_the_database_itself():
     """The service demotes the old one first, so it never hits this. Anything that
-    does not -- a second writer, a partial update, a hand-run UPDATE at a psql
-    prompt -- must be stopped by ``uq_workflow_states_one_initial_per_sop`` rather
-    than leave the launch path picking whichever row LIMIT 1 happened to return."""
+    does not must be stopped by ``uq_workflow_states_one_initial_per_sop`` rather
+    than leave the launch path picking whichever row LIMIT 1 returned."""
 
     async def go():
         engine, sm = await _session()
@@ -236,8 +230,8 @@ def test_demotion_never_reaches_another_tenants_state():
         try:
             async with sm() as session:
                 sop_a = await _new_sop(session, name="A")
-                # A hand-built foreign row sharing the sop_id — the only way to
-                # reach the branch, and exactly what a leak would look like.
+                # A hand-built foreign row sharing the sop_id: the only way to reach
+                # the branch, and what a leak would look like.
                 foreign = State(tenant_id=TENANT_B, sop_id=sop_a.sop_id, name="B-initial",
                                 is_initial=True, entry_actions=[], exit_actions=[],
                                 required_role_ids=[])
@@ -391,9 +385,9 @@ def test_delete_is_a_soft_delete_the_row_survives():
 
 
 def test_the_pointer_cannot_be_written_through_the_sop_update_body():
-    """``UpdateSopRequest`` used to carry ``initial_state``, and ``SopService.update``
-    setattrs whatever it is given: a PATCH on the SOP could write any string into
-    the derived pointer, another tenant's state id included."""
+    """``SopService.update`` setattrs whatever it is given, so an ``initial_state``
+    on the request body would let a PATCH write any string into the derived
+    pointer, another tenant's state id included."""
 
     async def go():
         engine, sm = await _session()
@@ -431,8 +425,8 @@ def test_tag_filter_agrees_with_its_own_total():
                 rows, total = await svc.list_(tag="fire")
                 assert len(rows) == 3
                 assert total == 3
-                # …and the filter is applied BEFORE paging, so a page of a tagged
-                # listing is a page of the MATCHES, not of everything.
+                # …and the filter runs before paging, so a page of a tagged listing
+                # is a page of the matches, not of everything.
                 page, total = await svc.list_(tag="fire", limit=2)
                 assert [r.name for r in page] == ["tagged-2", "tagged-1"]
                 assert total == 3

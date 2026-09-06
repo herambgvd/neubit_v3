@@ -17,9 +17,8 @@ from jinja2.sandbox import SandboxedEnvironment
 
 log = logging.getLogger("workflow.templating")
 
-# ChainableUndefined lets ``{{ a.b.c }}`` resolve to empty even when ``a`` is
-# missing, instead of raising UndefinedError. StrictUndefined would be the
-# opposite; we want forgiving.
+# ChainableUndefined resolves ``{{ a.b.c }}`` to empty when ``a`` is missing,
+# rather than raising. Forgiving is what we want here.
 _env = SandboxedEnvironment(undefined=ChainableUndefined, autoescape=False)
 
 
@@ -42,7 +41,7 @@ def render_template(source: str | None, context: dict) -> str:
 def build_notification_context(inst, *, from_state=None, to_state=None, sop_name=None) -> dict:
     """Assemble the render context exposed to notification templates.
 
-    Keys (contract — the frontend/template authors rely on these names):
+    Keys (a contract — template authors rely on these names):
         instance     — the WorkflowInstance-ish object (attr access: .name, .priority…)
         instance_id, instance_name, sop_id, sop_name, sop_version
         priority, status, site_id, event_type, event_id

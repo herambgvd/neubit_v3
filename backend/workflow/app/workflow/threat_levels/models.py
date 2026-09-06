@@ -3,11 +3,9 @@
     threat_levels — one deployment-wide row per tenant (``site_id`` NULL) plus
                     optional per-site rows
 
-Its own feature rather than a corner of ``triggers`` even though the correlation
-engine matches on posture changes: this is operator-SET state with its own router
-(``/workflow/threat-levels``), its own permission pair
-(``workflow.threat_level.read`` / ``.update``) and a change history that is read
-as a record in its own right, not a launcher.
+Its own feature rather than a corner of ``triggers``: operator-set state with its
+own router, its own permission pair (``workflow.threat_level.read`` / ``.update``)
+and a change history read as a record in its own right.
 """
 
 from __future__ import annotations

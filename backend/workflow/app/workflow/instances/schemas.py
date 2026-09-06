@@ -78,12 +78,11 @@ class InstancePublic(BaseModel):
     trigger_data: Optional[dict] = None
     event_id: Optional[str] = None
     event_type: Optional[str] = None
-    # Cross-link fields (DERIVED from the originating event envelope in trigger_data;
-    # not their own columns). event_source = the EventBus domain source tag on the
-    # envelope ("vision" for camera events, "access", "ingest", …) — the coarse
-    # grouping the incident Source filter uses. source_event_id = the ORIGINATING
-    # event's OWN id (e.g. a VmsEvent id) carried in the envelope payload, which
-    # differs from event_id (the bus envelope UUID). "manual" when operator-raised.
+    # Derived from the originating envelope in trigger_data, not columns of their
+    # own. event_source is the EventBus domain tag ("vision", "access", "ingest"),
+    # the grouping the Source filter uses. source_event_id is the originating
+    # event's OWN id, which differs from event_id (the bus envelope UUID).
+    # "manual" when operator-raised.
     event_source: Optional[str] = None
     source_event_id: Optional[str] = None
     closed_at: Optional[datetime] = None
@@ -130,9 +129,9 @@ class InstanceListResponse(BaseModel):
 class InstanceStatsResponse(BaseModel):
     """Incident counts for the stats strip.
 
-    ``by_status`` keys: pending | active | paused | resolved | completed |
-    cancelled (``completed`` is an alias of ``resolved``). ``by_priority`` keys:
-    critical | high | medium | low. Every key is present (zero-filled).
+    ``by_status``: pending | active | paused | resolved | completed | cancelled
+    (``completed`` aliases ``resolved``). ``by_priority``: critical | high | medium
+    | low. Every key is present, zero-filled.
     """
 
     model_config = ConfigDict(extra="ignore")
