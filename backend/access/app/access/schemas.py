@@ -11,6 +11,50 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 
+
+def _cron(v: Optional[str]) -> Optional[str]:
+    """A five-field cron, or nothing. Validated where it is SAVED, not only where
+    it is read.
+
+    croniter — which `app/access/scheduler.py` evaluates this with — also accepts
+    six- and seven-field forms, and the extra leading field is SECONDS. `* * * * * *`
+    saved here parses happily and means a full pull against that controller every
+    second. The column documents a five-field cron and defaults to one; anything
+    else is refused at the edge rather than accepted and skipped later, which
+    would look like a schedule that simply never fires.
+    """
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        # "" is TURNING THE SCHEDULE OFF, and it is deliberately not folded into
+        # None. Two reasons, both load-bearing:
+        #   * the column carries `server_default '0 3 * * *'`, so a None on create
+        #     is OMITTED from the INSERT and the database fills the nightly default
+        #     back in — there would be no way to express "no schedule" at all;
+        #   * `InstanceService.update` uses `exclude_none=True`, so a None on PATCH
+        #     means "unchanged" and clearing would be unreachable there too.
+        # An empty string is stored as itself, and `scheduler.due_instances` reads
+        # a blank cron as no schedule. Same shape as `secret`, where None is
+        # unchanged and "" clears.
+        return ""
+    fields = v.split()
+    if len(fields) != 5:
+        raise ValueError(
+            f"must be a 5-field cron (got {len(fields)}); a 6-field cron means "
+            f"seconds and is not accepted here"
+        )
+    try:
+        from croniter import croniter
+
+        croniter(v)
+    except ImportError:  # pragma: no cover — declared dependency
+        return v
+    except (ValueError, KeyError, AttributeError) as exc:
+        raise ValueError(f"is not a valid cron: {exc}") from None
+    return v
+
+
 def _building_id(v: Optional[str]) -> Optional[str]:
     """A site / floor / zone id is one core minted. Refuse anything that is not one.
 
@@ -75,6 +119,7 @@ class InstanceCreate(BaseModel):
         return v
 
     _check_building_ids = field_validator("site_id", mode="before")(_building_id)
+    _check_cron = field_validator("reconciler_cron")(_cron)
 
 class InstanceUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -101,6 +146,7 @@ class InstanceUpdate(BaseModel):
         return v
 
     _check_building_ids = field_validator("site_id", mode="before")(_building_id)
+    _check_cron = field_validator("reconciler_cron")(_cron)
 
 class InstancePublic(BaseModel):
     model_config = ConfigDict(extra="ignore")

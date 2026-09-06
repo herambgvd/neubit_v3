@@ -16,6 +16,7 @@ dependencies = [
     "alembic>=1.13",
     "httpx>=0.27",             # OData REST client
     "signalrcore>=0.9.5",      # DDS SignalR EventsHub client
+    "croniter>=2.0",           # `reconciler_cron` evaluation (app/access/scheduler.py)
 ]
 
 [project.optional-dependencies]

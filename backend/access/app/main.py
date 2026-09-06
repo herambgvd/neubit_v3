@@ -32,6 +32,7 @@ from kernel.events import subject
 
 from app.access.events import bus
 from app.access.ingestion import SignalRSupervisor
+from app.access.scheduler import ReconcileScheduler, enabled as scheduler_enabled
 from app.access.router import routers as access_routers
 
 logging.basicConfig(level=logging.INFO)
@@ -41,15 +42,10 @@ log = logging.getLogger("access")
 _supervisor: SignalRSupervisor | None = None
 
 
-async def _run_reconcile_scheduler() -> None:
-    """Periodic reconcile trigger — STUB entrypoint (wired, not yet ticking).
-
-    v2 ran a per-instance cron (``reconciler_cron``, default 0 3 * * *). The v3
-    scheduler (Celery-beat or an internal ticker firing InstanceService.reconcile
-    for due instances) is a later phase; this function exists so the lifespan wire
-    point is in place. Enable with VE_ACCESS_RECONCILE_SCHEDULER=1 once built.
-    """
-    log.info("reconcile scheduler entrypoint present (disabled — later phase)")
+# The periodic reconcile, held so lifespan shutdown can stop it cleanly. None
+# unless VE_ACCESS_RECONCILE_SCHEDULER is on — a background writer that talks to a
+# customer's access controllers is opt-in, not something an upgrade turns on.
+_scheduler: ReconcileScheduler | None = None
 
 
 @asynccontextmanager
@@ -74,12 +70,25 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — belt-and-braces; must not block boot
         log.warning("event ingestion supervisor failed to start: %s", exc)
 
-    # Reconcile scheduler entrypoint (opt-in; stubbed for now).
-    if os.getenv("VE_ACCESS_RECONCILE_SCHEDULER", "").lower() in ("1", "true", "yes"):
-        await _run_reconcile_scheduler()
+    # The periodic reconcile (opt-in). Started AFTER the event supervisor so a
+    # scheduler failure cannot stop live ingestion from coming up.
+    global _scheduler
+    if scheduler_enabled():
+        from app.db import database
+
+        _scheduler = ReconcileScheduler(
+            database.get_sessionmaker(), database.database_url
+        )
+        try:
+            await _scheduler.start()
+        except Exception as exc:  # noqa: BLE001 — must not block boot
+            _scheduler = None
+            log.exception("reconcile scheduler failed to start: %s", exc)
 
     yield
 
+    if _scheduler is not None:
+        await _scheduler.stop()
     if _supervisor is not None:
         await _supervisor.stop()
     await bus.close()

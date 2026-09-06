@@ -82,6 +82,29 @@ path**, so it is checked against a closed list (`HARDWARE_SETS`,
 `SCHEDULED_SETS`) before anything leaves the box. Dashed and underscored
 spellings are both accepted.
 
+## The periodic reconcile
+
+`access_instances.reconciler_cron` (default `0 3 * * *`) has existed since the
+port and nothing fired it — the lifespan held a stub that logged "later phase", so
+an operator who set a nightly sync on every controller got one only by pressing
+the button. `app/access/scheduler.py` is the ticker.
+
+The cron is evaluated FROM THE LAST RUN, not from the wall clock: the next fire
+after the most recent job's `started_at`. A controller that has never reconciled
+is due immediately; one that ran an hour ago is not due until its next window; and
+a deployment that was down across 03:00 catches up on the next tick rather than
+silently skipping the night.
+
+**Five fields only.** croniter also accepts six- and seven-field forms where the
+extra LEADING field is seconds, so `* * * * * *` would mean a full pull against
+that controller every second. Refused where it is saved, not only where it is read.
+
+**An empty cron turns the schedule off** for one controller without deactivating
+it. `""` is stored as itself rather than folded into NULL, because the column
+carries `server_default '0 3 * * *'` — a NULL on create is omitted from the INSERT
+and the database puts the nightly default back, so "no schedule" was not
+expressible at all.
+
 ## Live event ingestion
 
 One SignalR listener per active instance, supervised. It never blocks or crashes
@@ -94,7 +117,7 @@ listener count alongside the database and event-bus checks.
 ./backend/access/run-tests.sh
 ```
 
-237, offline: a throwaway container from the shipped image, tree mounted
+266, offline: a throwaway container from the shipped image, tree mounted
 read-only, no network. In-memory SQLite built from the real `Base.metadata`, with
 `get_db` overridden — routes run their real scope and ownership code, and nothing
 below the HTTP edge is mocked.
@@ -111,9 +134,15 @@ with an identical response.
 
 ## Known gaps
 
-* The reconcile scheduler is a wired entrypoint, not a ticking cron. v2 ran one
-  per instance; the v3 scheduler is a later phase. Enable the stub with
-  `VE_ACCESS_RECONCILE_SCHEDULER=1`.
+* The reconcile scheduler is OFF by default. It ticks now (it was a stub that
+  logged "later phase" while every controller carried a `reconciler_cron` nothing
+  fired), but a background writer that talks to a customer's access hardware is
+  opt-in: `VE_ACCESS_RECONCILE_SCHEDULER=1`, tick interval
+  `VE_ACCESS_RECONCILE_TICK_SEC` (60).
+
+  Its claim is a Postgres advisory lock per instance, so two replicas cannot both
+  pull one controller. On a database with no advisory locks it says so at startup
+  and does not pretend — run one replica there.
 * `scoped()` inside `AccessGroupCatalog._get_owned` is unreachable from any route
   — the instance gate and the `instance_id` filter answer first. It is
   defence-in-depth against a row whose tenant disagrees with its instance's, and
