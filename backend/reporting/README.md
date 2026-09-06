@@ -138,13 +138,17 @@ erase reaching the projection relations and aggregates.
 
 ## Known gaps
 
-* `metric_definitions.tenant_id` and `benchmark_site_config.tenant_id` are
-  nullable, which is correct for a platform-wide definition but means a row a
-  super-admin writes without a tenant is one no tenant erase reaches. There are
-  none today outside the 8 seeded platform metric definitions.
+* `metric_definitions.tenant_id` is nullable and NULL means PLATFORM: the listing
+  is `tenant_id IS NULL OR tenant_id = :tenant`, so such a row is visible to every
+  tenant and a tenant erase correctly leaves it alone. That is the design, and the
+  8 seeded definitions are what it is for. The limitation is the other direction —
+  a super-admin cannot author a definition scoped to ONE tenant, because the
+  registration takes the tenant from the caller's own token.
 * `benchmark_site_config` is keyed on `site_id` alone, so it holds one config per
   site across all tenants. Sound while site ids are globally unique uuids minted by
-  core, but it is not enforced here.
+  core, but it is not enforced here. Its `tenant_id` now comes from the SITE rather
+  than from the actor, so a super-admin's write is still reachable by that tenant's
+  erase.
 * The erase finds a tenant column named `tenant_id`, plus whatever a projection
   spec declares. A future table using some other name and no spec would be missed.
 

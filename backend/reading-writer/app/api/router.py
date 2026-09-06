@@ -1156,6 +1156,26 @@ async def set_benchmark_config(
     all_sites = await rt.sites(db, tenant)
     if not any(s["site_id"] == body.site_id for s in all_sites):
         raise ForbiddenError("no such site in this tenant's reporting store")
+
+    # WHOSE row this is, taken from the SITE rather than from the actor.
+    #
+    # `_tenant(scope)` is None for a super-admin, and this row used to store that
+    # None. `benchmark_site_config.tenant_id` is the only thing a tenant erase can
+    # match on, so a config a super-admin saved on a tenant's site was a row the
+    # right-to-erase would never find — for a site that unambiguously belongs to
+    # someone. The site's own tenant is the correct answer either way: a tenant
+    # admin gets the same value they would have supplied, and a super-admin acting
+    # on a tenant's site writes that tenant's id rather than a blank.
+    owner = (
+        await db.execute(
+            sa_text("SELECT tenant_id FROM site_facts WHERE site_id = CAST(:s AS uuid)"),
+            {"s": str(body.site_id)},
+        )
+    ).scalar()
+    if owner is None:
+        # `rt.sites` is fed from site_facts, so passing the check above and
+        # finding nothing here means the row went away mid-request.
+        raise ValidationError("site is no longer in this store")
     # Validate against EVERY seeded version of the standard: a config outlives
     # version transitions (the zone is read by both feb-2009 and jan-2022;
     # `ac_category` only by the fixed-range 2009 tables — the 2022 rows key
@@ -1209,7 +1229,7 @@ async def set_benchmark_config(
         ),
         {
             "site": str(body.site_id),
-            "tenant": str(tenant) if tenant else None,
+            "tenant": str(owner),
             "std": body.standard_key,
             "zone": body.climate_zone,
             "ac": body.ac_category,
