@@ -40,7 +40,7 @@ class PatternService:
 
     async def _row(self, pattern_id: str) -> CameraPattern:
         row = await self.db.get(CameraPattern, pattern_id)
-        assert_owned(row, self.scope, message="Pattern not found")
+        assert_owned(row, self.scope, message="Pattern not found", allow_shared=False)
         return row
 
     async def get(self, pattern_id: str) -> PatternPublic:

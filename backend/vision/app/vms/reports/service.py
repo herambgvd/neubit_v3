@@ -102,7 +102,7 @@ class ReportService:
     # ── ReportSchedule CRUD ─────────────────────────────────────────────
     async def _schedule(self, sid: str) -> ReportSchedule:
         row = await self.db.get(ReportSchedule, sid)
-        assert_owned(row, self.scope, message="report schedule not found")
+        assert_owned(row, self.scope, message="report schedule not found", allow_shared=False)
         return row
 
     async def list_schedules(self) -> list[ReportSchedule]:
@@ -187,7 +187,7 @@ class ReportService:
     async def _run(self, schedule_id: str, run_id: str) -> ReportRun:
         """Load a ReportRun tenant-scoped AND belonging to ``schedule_id`` (else 404)."""
         row = await self.db.get(ReportRun, run_id)
-        assert_owned(row, self.scope, message="report run not found")
+        assert_owned(row, self.scope, message="report run not found", allow_shared=False)
         if row.schedule_id != schedule_id:
             raise NotFoundError("report run not found")
         return row

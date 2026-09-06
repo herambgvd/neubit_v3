@@ -65,7 +65,7 @@ class PtzService:
     # ── camera resolution + ptz gate ────────────────────────────────────
     async def _camera(self, camera_id: str, *, require_ptz: bool = True) -> Camera:
         row = await self.db.get(Camera, camera_id)
-        assert_owned(row, self.scope, message="Camera not found")
+        assert_owned(row, self.scope, message="Camera not found", allow_shared=False)
         if require_ptz and not row.ptz_capable:
             raise ValidationError("camera is not PTZ-capable")
         return row

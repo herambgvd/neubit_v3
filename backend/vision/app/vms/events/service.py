@@ -214,7 +214,7 @@ class VmsEventService:
         from app.vms.models import Camera
 
         row = await self.db.get(Camera, camera_id)
-        assert_owned(row, self.scope, message="camera not found")
+        assert_owned(row, self.scope, message="camera not found", allow_shared=False)
 
     async def list_(
         self,
@@ -274,7 +274,7 @@ class VmsEventService:
 
     async def ack(self, event_id: str, *, actor) -> VmsEventPublic:
         row = await self.db.get(VmsEvent, event_id)
-        assert_owned(row, self.scope, message="event not found")
+        assert_owned(row, self.scope, message="event not found", allow_shared=False)
         if not row.acknowledged:
             row.acknowledged = True
             row.acknowledged_by = str(getattr(actor, "user_id", "")) or None

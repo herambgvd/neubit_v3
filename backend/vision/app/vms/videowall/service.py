@@ -91,7 +91,7 @@ class VideoWallService:
     # ── row fetch helpers (ownership-checked) ───────────────────────────
     async def _wall(self, wall_id: str) -> VideoWall:
         row = await self.db.get(VideoWall, wall_id)
-        assert_owned(row, self.scope, message="Video wall not found")
+        assert_owned(row, self.scope, message="Video wall not found", allow_shared=False)
         return row
 
     async def _monitor(self, wall_id: str, monitor_id: str) -> WallMonitor:
@@ -99,7 +99,7 @@ class VideoWallService:
         row = await self.db.get(WallMonitor, monitor_id)
         if row is None or row.wall_id != wall_id:
             raise NotFoundError("Monitor not found")
-        assert_owned(row, self.scope, message="Monitor not found")
+        assert_owned(row, self.scope, message="Monitor not found", allow_shared=False)
         return row
 
     async def _preset(self, wall_id: str, preset_id: str) -> WallPreset:
@@ -107,7 +107,7 @@ class VideoWallService:
         row = await self.db.get(WallPreset, preset_id)
         if row is None or row.wall_id != wall_id:
             raise NotFoundError("Preset not found")
-        assert_owned(row, self.scope, message="Preset not found")
+        assert_owned(row, self.scope, message="Preset not found", allow_shared=False)
         return row
 
     async def _tour(self, wall_id: str, tour_id: str) -> WallTour:
@@ -115,7 +115,7 @@ class VideoWallService:
         row = await self.db.get(WallTour, tour_id)
         if row is None or row.wall_id != wall_id:
             raise NotFoundError("Tour not found")
-        assert_owned(row, self.scope, message="Tour not found")
+        assert_owned(row, self.scope, message="Tour not found", allow_shared=False)
         return row
 
     # ── wall CRUD ───────────────────────────────────────────────────────

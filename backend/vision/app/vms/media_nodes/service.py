@@ -206,9 +206,29 @@ class MediaNodeService:
         self.db = db
         self.scope = scope
 
-    async def _row(self, node_id: str) -> MediaNode:
+    async def _row(self, node_id: str, *, for_write: bool = False) -> MediaNode:
+        """The node, refusing a PLATFORM node when this is a write.
+
+        `owns()` treats a NULL tenant_id as readable by everyone, which is right
+        here: a shared recorder is how a tenant's cameras reach storage at all, and
+        `get` has to answer for it. It is NOT right for the paths that CHANGE the
+        node, and those reach the row through this same helper.
+
+        The one media node on a live deployment is the standalone recorder, with
+        `tenant_id` NULL and the credential the VMS authenticates to it with. Before
+        `for_write` existed, a tenant holding `vms.config.manage` could PATCH that
+        row — `MediaNodeUpdate` accepts `host` and `api_url` — and repoint the
+        recorder connection at an address of their choosing, or mint itself a
+        credential on it. Measured, not supposed: the PATCH returned 200 with
+        `api_url: http://attacker.example:8000`.
+
+        Credential LISTING counts as a write for this purpose. It is not a
+        modification, but enumerating another owner's credential set is not a read
+        a shared record owes anyone.
+        """
         row = await self.db.get(MediaNode, node_id)
-        assert_owned(row, self.scope, message="Media node not found")
+        assert_owned(row, self.scope, message="Media node not found",
+                     allow_shared=not for_write)
         return row
 
     async def _assigned_camera_count(self, node_id: str) -> int:
@@ -387,7 +407,7 @@ class MediaNodeService:
         )
 
     async def update(self, node_id: str, body: MediaNodeUpdate) -> MediaNodePublic:
-        row = await self._row(node_id)
+        row = await self._row(node_id, for_write=True)
         data = body.model_dump(exclude_unset=True)
 
         if "name" in data and data["name"] is not None and data["name"] != row.name:
@@ -431,7 +451,7 @@ class MediaNodeService:
         orphan live placements. We check first and raise a clear ``ConflictError`` naming
         the count so the operator re-homes the cameras before removing the recorder.
         """
-        row = await self._row(node_id)
+        row = await self._row(node_id, for_write=True)
         assigned = await self._assigned_camera_count(node_id)
         if assigned:
             raise ConflictError(
@@ -449,7 +469,7 @@ class MediaNodeService:
         """List the node's ACTIVE federation credentials. Single-credential invariant:
         exactly one active credential per node (enroll rotates + revokes the rest), so
         revoked rows are filtered out — the UI shows the one live credential."""
-        row = await self._row(node_id)
+        row = await self._row(node_id, for_write=True)
         from app.vms.federation.client import NodeUnavailable, list_node_credentials
 
         try:
@@ -462,7 +482,7 @@ class MediaNodeService:
         """Enrol a fresh scoped credential on the node, OVERWRITE the stored key with it,
         REVOKE every prior credential (one-active-credential-per-node invariant), and
         surface the raw credential ONCE ({credential, id, label, grants})."""
-        row = await self._row(node_id)
+        row = await self._row(node_id, for_write=True)
         from app.vms.federation.client import (
             NodeUnavailable,
             enroll_node_full,
@@ -536,7 +556,7 @@ class MediaNodeService:
     async def revoke_credential(self, node_id: str, cred_id: str) -> None:
         """Revoke one credential the node issued. If it was the key we currently store,
         clear the stored copy so the node falls back to the shared service JWT."""
-        row = await self._row(node_id)
+        row = await self._row(node_id, for_write=True)
         from app.vms.federation.client import NodeUnavailable, revoke_node_credential
 
         try:

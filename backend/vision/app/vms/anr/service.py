@@ -145,7 +145,7 @@ class AnrFulfiller:
         # 1) Load the camera (tenant-scoped from the event).
         camera = await self.db.get(Camera, req.camera_id)
         try:
-            assert_owned(camera, self.scope, message="camera not found")
+            assert_owned(camera, self.scope, message="camera not found", allow_shared=False)
         except Exception:  # noqa: BLE001 — unknown/foreign camera → clean failed result
             return AnrResult(req.job_id, "failed", error="camera not found for tenant")
 

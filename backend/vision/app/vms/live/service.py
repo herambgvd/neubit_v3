@@ -99,12 +99,12 @@ class LiveService:
     # ── row helpers ─────────────────────────────────────────────────────
     async def _camera(self, camera_id: str) -> Camera:
         row = await self.db.get(Camera, camera_id)
-        assert_owned(row, self.scope, message="camera not found")
+        assert_owned(row, self.scope, message="camera not found", allow_shared=False)
         return row
 
     async def _session(self, session_id: str) -> PlaybackSession:
         row = await self.db.get(PlaybackSession, session_id)
-        assert_owned(row, self.scope, message="playback session not found")
+        assert_owned(row, self.scope, message="playback session not found", allow_shared=False)
         return row
 
     async def _rtsp_source_for(self, camera: Camera, profile: str) -> str | None:

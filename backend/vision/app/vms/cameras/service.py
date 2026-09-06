@@ -103,7 +103,7 @@ class CameraService:
     # ── row + credential helpers ────────────────────────────────────────
     async def _row(self, camera_id: str) -> Camera:
         row = await self.db.get(Camera, camera_id)
-        assert_owned(row, self.scope, message="Camera not found")
+        assert_owned(row, self.scope, message="Camera not found", allow_shared=False)
         # Site scope: a camera outside the caller's sites is indistinguishable from a
         # missing one (NOT_FOUND, never FORBIDDEN — no cross-site existence leak).
         if not self._site_allowed(row):
@@ -383,7 +383,7 @@ class CameraService:
         # Group filter: membership is a JSON id-list on the group row.
         if group_id:
             grp = await self.db.get(CameraGroup, group_id)
-            assert_owned(grp, self.scope, message="Camera group not found")
+            assert_owned(grp, self.scope, message="Camera group not found", allow_shared=False)
             ids = list(grp.camera_ids or []) or ["__none__"]
             stmt = stmt.where(Camera.id.in_(ids))
             count_stmt = count_stmt.where(Camera.id.in_(ids))
@@ -553,7 +553,7 @@ class CameraService:
             if not group_id:
                 raise ValidationError("group_id required for the group action")
             grp = await self.db.get(CameraGroup, group_id)
-            assert_owned(grp, self.scope, message="Camera group not found")
+            assert_owned(grp, self.scope, message="Camera group not found", allow_shared=False)
             merged = list(dict.fromkeys([*(grp.camera_ids or []), *[r.id for r in rows]]))
             grp.camera_ids = merged
             grp.updated_at = _utcnow()

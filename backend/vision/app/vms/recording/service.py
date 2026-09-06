@@ -87,7 +87,7 @@ class RecordingService:
     # ── row helpers ─────────────────────────────────────────────────────
     async def _camera(self, camera_id: str) -> Camera:
         row = await self.db.get(Camera, camera_id)
-        assert_owned(row, self.scope, message="camera not found")
+        assert_owned(row, self.scope, message="camera not found", allow_shared=False)
         return row
 
     def _record_profile(self, camera: Camera) -> str:
@@ -271,7 +271,7 @@ class RecordingService:
 
     async def get(self, rec_id: str):
         row = await self.db.get(Recording, rec_id)
-        assert_owned(row, self.scope, message="recording not found")
+        assert_owned(row, self.scope, message="recording not found", allow_shared=False)
         from .schemas import RecordingPublic
 
         return RecordingPublic.from_row(row)

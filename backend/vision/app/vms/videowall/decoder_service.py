@@ -60,7 +60,7 @@ class VideoDecoderService:
     # ── row fetch (ownership-checked) ───────────────────────────────────────
     async def _decoder(self, decoder_id: str) -> VideoDecoder:
         row = await self.db.get(VideoDecoder, decoder_id)
-        assert_owned(row, self.scope, message="Video decoder not found")
+        assert_owned(row, self.scope, message="Video decoder not found", allow_shared=False)
         return row
 
     # ── CRUD ────────────────────────────────────────────────────────────────

@@ -118,7 +118,7 @@ class StorageService:
     # ── recording integrity / lock ──────────────────────────────────────
     async def _recording(self, rec_id: str) -> Recording:
         row = await self.db.get(Recording, rec_id)
-        assert_owned(row, self.scope, message="recording not found")
+        assert_owned(row, self.scope, message="recording not found", allow_shared=False)
         return row
 
     async def set_lock(self, rec_id: str, *, locked: bool, actor, reason: str | None = None):

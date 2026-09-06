@@ -105,7 +105,7 @@ class NvrService:
     # ── row + credential helpers ────────────────────────────────────────
     async def _row(self, nvr_id: str) -> NVR:
         row = await self.db.get(NVR, nvr_id)
-        assert_owned(row, self.scope, message="NVR not found")
+        assert_owned(row, self.scope, message="NVR not found", allow_shared=False)
         return row
 
     def _creds_for(self, row: NVR) -> Credentials:

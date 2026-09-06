@@ -111,7 +111,7 @@ class LinkageRuleService:
 
     async def _owned(self, rule_id: str) -> LinkageRule:
         row = await self.db.get(LinkageRule, rule_id)
-        assert_owned(row, self.scope, message="linkage rule not found")
+        assert_owned(row, self.scope, message="linkage rule not found", allow_shared=False)
         return row
 
     async def get(self, rule_id: str) -> LinkageRulePublic:

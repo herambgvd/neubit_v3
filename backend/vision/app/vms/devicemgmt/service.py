@@ -40,7 +40,7 @@ class DeviceMgmtService:
     # ── row + credential helpers (mirror CameraService) ──────────────────
     async def _row(self, camera_id: str) -> Camera:
         row = await self.db.get(Camera, camera_id)
-        assert_owned(row, self.scope, message="Camera not found")
+        assert_owned(row, self.scope, message="Camera not found", allow_shared=False)
         return row
 
     @staticmethod

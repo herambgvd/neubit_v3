@@ -102,7 +102,7 @@ class PlaybackService:
     # ── row helpers ─────────────────────────────────────────────────────
     async def _camera(self, camera_id: str) -> Camera:
         row = await self.db.get(Camera, camera_id)
-        assert_owned(row, self.scope, message="camera not found")
+        assert_owned(row, self.scope, message="camera not found", allow_shared=False)
         return row
 
     async def _recordings_in_window(
