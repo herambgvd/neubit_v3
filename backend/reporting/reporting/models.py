@@ -1,6 +1,6 @@
 """ORM models for the reporting store.
 
-Two tables, and the split between them is the whole design:
+The IoT schema first — two tables, and the split between them is the whole design:
 
 ``readings``  — the fact table. One row per reading, deliberately NARROW.
                 What decides whether this stays fast is CARDINALITY (distinct
@@ -27,6 +27,11 @@ minutes late and the row must still say when it happened.
 ``PRIMARY KEY (point_id, ts)`` is not decoration. Replays from the outbox are
 expected and normal, so the writer inserts with ``ON CONFLICT DO NOTHING`` and
 lets the database make a redelivery a no-op.
+
+After the IoT schema come the site read-models fed from core's events, and then
+the registry and catalog tables at the bottom of the file. Everything Alembic
+creates in this database is modelled here; the relations a `reporting_projections`
+row creates at runtime are not, and the note above them says why.
 """
 
 from __future__ import annotations
@@ -36,15 +41,18 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
     Index,
     Integer,
+    Numeric,
     PrimaryKeyConstraint,
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -204,6 +212,11 @@ class Point(Base):
     )
 
     __table_args__ = (
+        # The three values the comment above allows, enforced (migration 0008).
+        CheckConstraint(
+            "placement_source IS NULL OR placement_source IN ('device', 'point')",
+            name="ck_points_placement_source",
+        ),
         Index("ix_points_tenant", "tenant_id"),
         Index("ix_points_conn", "conn_id"),
         Index("ix_points_device", "device_id"),
@@ -433,4 +446,244 @@ class SiteEmissionFactor(Base):
     effective_from: Mapped[date] = mapped_column(Date, nullable=False)
     mirrored_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Registry and catalog tables.
+#
+# These six are written by Alembic (0004, 0005, 0014, 0016) and read by
+# reading-writer. They had no model for a long time, which cost two things:
+# `alembic revision --autogenerate` proposed DROP TABLE for every one of them,
+# and `kernel.lifecycle.erase_tenant_data` — which walks `Base.metadata` — never
+# saw the three that hold tenant rows. A model here fixes both.
+#
+# The projection relations (`access_events`, `iot_alerts` and their rollups) are
+# deliberately NOT here. Those are created at runtime from a `reporting_projections`
+# row, so a hand-written model would be a second copy of the spec, free to drift.
+# migrations/env.py reads their names out of the registry instead.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class DashboardDataset(Base):
+    """A dataset the dashboard builder can query, keyed by a short slug.
+
+    `definition` holds the query shape; `permission` is the key a user needs to
+    read it. Platform-wide, not per tenant.
+    """
+
+    __tablename__ = "dashboard_datasets"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+
+    permission: Mapped[str] = mapped_column(String(128), nullable=False)
+    # What the permission is called on the roles screen, and which group it sits
+    # in. Stored rather than derived so a new dataset names itself.
+    permission_label: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
+    permission_group: Mapped[str] = mapped_column(
+        String(80), nullable=False, server_default="Dashboard datasets"
+    )
+
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    definition: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ReportingProjection(Base):
+    """One projection: which subject to consume and which relations to write.
+
+    Registration is data. Inserting a row here starts a projection without a
+    deploy; `enabled = false` stops it. The reading-writer re-reads this table on
+    an interval and builds the relations `spec` declares.
+
+    Nothing in this file models those relations — see the note above.
+    """
+
+    __tablename__ = "reporting_projections"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    spec: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BenchmarkStandard(Base):
+    """A published rating scale — BEE star bands, CEA grid factors and the like.
+
+    `citation` and `source_url` are NOT NULL because a band with no source is a
+    number somebody made up, and this platform does not show those. Seeded by
+    migration, one row per (key, version); a revised standard is a NEW version,
+    never an edit, so a rating computed last year can still be explained.
+    """
+
+    __tablename__ = "benchmark_standards"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    citation: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # What the bands measure, e.g. "energy_per_area". Decides which figure the
+    # rating divides before it looks the answer up.
+    dimension: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="energy_per_area"
+    )
+    bands: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    seeded_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # When the standard itself took effect. NULL = not stated by the publisher.
+    effective_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("key", "version", name="uq_benchmark_key_version"),
+    )
+
+
+class BenchmarkSiteConfig(Base):
+    """Which standard a site is rated against, and the inputs that standard needs.
+
+    An operator's choice, one row per site. Everything but `standard_key` is
+    optional and NULL means not stated — a rating that needs a climate zone
+    simply is not produced, rather than assuming one.
+    """
+
+    __tablename__ = "benchmark_site_config"
+
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    # Nullable for the rows written before the column existed. New rows always
+    # carry it — without it the offboard erase cannot find this row.
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    standard_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default="bee_star_office"
+    )
+    climate_zone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ac_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Share of floor area that is air-conditioned, 0-100. BEE bands differ by it.
+    ac_share_percent: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+
+    set_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    set_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "ac_share_percent IS NULL OR (ac_share_percent >= 0 AND ac_share_percent <= 100)",
+            name="ck_benchmark_ac_share_pct",
+        ),
+    )
+
+
+class MetricDefinition(Base):
+    """How a derived metric is computed — the formula as data, with a version.
+
+    A definition is never edited: a change is a new `version` with a later
+    `effective_from`, so a figure shown last month can still be reproduced. NULL
+    `tenant_id` means a platform definition that every tenant sees; a row with a
+    tenant is that tenant's own, and is what the offboard erase removes.
+    """
+
+    __tablename__ = "metric_definitions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # "formula" evaluates `formula`; "composite" combines `components`;
+    # "occupancy" reads the site's headcount.
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, server_default="formula")
+
+    # Which points the metric applies to, what it reads, and what it produces.
+    applies_to: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    inputs: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    formula: Mapped[str | None] = mapped_column(Text, nullable=True)
+    components: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    output: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+
+    # Conditions that suppress the result instead of showing a wrong number.
+    guards: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    display: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+
+    created_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "key", "version", name="uq_metric_defs_key_version"),
+        Index("ix_metric_defs_key", "key", "effective_from"),
+        CheckConstraint(
+            "kind IN ('formula', 'composite', 'occupancy')", name="ck_metric_defs_kind"
+        ),
+    )
+
+
+class PointRole(Base):
+    """What a point MEANS — "main incomer", "chiller power", and so on.
+
+    One role per point, asserted by an operator. This is the axis a metric
+    definition selects on: a formula asks for the site's main incomer, not for a
+    point tag. `role_source` records who said it; nothing infers a role from a
+    tag, for the same reason nothing infers a unit from one.
+    """
+
+    __tablename__ = "point_roles"
+
+    point_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    role_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="operator"
+    )
+    confirmed_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_point_roles_tenant_role", "tenant_id", "role"),
     )
