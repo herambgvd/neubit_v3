@@ -11,6 +11,12 @@ class ResizeObserverStub {
 }
 vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 
+// jsdom implements no layout, so it has no scrollIntoView. The command palette
+// calls it to keep the highlighted row visible.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}
+
 if (!window.matchMedia) {
   vi.stubGlobal(
     "matchMedia",
