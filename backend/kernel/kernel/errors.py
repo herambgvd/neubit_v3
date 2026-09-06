@@ -1,5 +1,5 @@
-"""Uniform error handling — copied from the platform core so every service returns
-the SAME JSON envelope and the SAME stable machine-readable codes:
+"""Uniform error handling, copied from core so every service returns the same
+JSON envelope and the same stable machine-readable codes:
 
     { "error": { "code": "NOT_FOUND", "message": "...", "details": {...}? } }
 
@@ -86,7 +86,7 @@ _HTTP_CODE_MAP = {
 }
 
 
-# Pydantic's own wording for the constraints we use most, rewritten for a person
+# Pydantic's wording for the constraints we use most, rewritten for a person
 # reading a toast. Anything not listed falls back to pydantic's `msg`.
 _VALIDATION_WORDING = {
     "missing": "is required",
@@ -98,10 +98,8 @@ _VALIDATION_WORDING = {
 
 def _field_label(loc: tuple) -> str:
     """"Full name" from ``("body", "full_name")`` — the last named part of the path.
-
     A ``*_id`` foreign key is labelled by what it points at ("Role", not "Role id"),
-    which is what the form calls it.
-    """
+    which is what the form calls it."""
     parts = [p for p in loc if isinstance(p, str) and p not in ("body", "query", "path")]
     name = parts[-1] if parts else "request"
     if name.endswith("_id") and len(name) > 3:
@@ -112,10 +110,9 @@ def _field_label(loc: tuple) -> str:
 def _validation_message(errors: list[dict]) -> str:
     """Turn pydantic's error list into one readable sentence.
 
-    "Request validation failed" tells an operator nothing about WHICH field is
-    wrong — the UI showed it verbatim in a toast. Name the fields instead, at most
-    three so the toast stays a toast; ``details`` still carries the full list.
-    (Kept in step with core's app/core/errors.py — same envelope, same wording.)
+    The UI shows this verbatim in a toast, so name the offending fields — at most
+    three, with ``details`` carrying the full list. Kept in step with core's
+    app/core/errors.py.
     """
     parts: list[str] = []
     for err in errors[:3]:

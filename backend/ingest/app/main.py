@@ -1,63 +1,44 @@
 """Ingest service — the platform's inbound edge for third-party event producers.
 
-This docstring said "bootable skeleton. No business logic yet ... real ingestion
-is ported on top of this later" from the day the service split was proved until
-2026-09-05. The porting happened long ago and nobody came back to the header, so
-the module that a reader opens FIRST claimed the service was a stub while
-``app/ingest/`` held 3.2k lines of pipeline. It is written out here in full
-because the cost of that lie is a rebuild of something that already works.
-
-WHAT IT ACTUALLY IS
--------------------
-
 Devices and third-party systems (NVRs, alarm panels, vendor clouds) POST to a
 public webhook URL. This service authenticates that POST against per-webhook
 credentials, validates and reshapes the vendor's body into a platform event, and
-publishes it to NATS. Nothing downstream ever speaks to the vendor: the spine is
-the only coupling. Owns ``neubit_ingest``.
+publishes it to NATS. Nothing downstream ever speaks to the vendor. Owns
+``neubit_ingest``.
 
-THE TWO SURFACES, WHICH IS THE WHOLE DESIGN
--------------------------------------------
-
-They are split by TRUST, not by convenience, and this module mounts them
-differently on purpose:
+Two surfaces, split by trust and mounted differently:
 
 * ``config_router`` — the authed operator API under ``{api_prefix}/ingest``:
-  categories, webhooks, event rules, the event log and a replay. JWT-verified
-  locally by the kernel, gated on ``ingest.read`` / ``ingest.manage``, tenant
-  scoped, and additionally gated below on the tenant's ``workflow`` module plus
-  an unexpired licence.
+  categories, webhooks, event rules, the event log and replay. JWT-verified
+  locally, gated on ``ingest.read`` / ``ingest.manage``, tenant scoped, and gated
+  below on the tenant's ``workflow`` module plus an unexpired licence.
+* the public receiver — ``GET|POST /ingest/hooks/{slug}``, no prefix and no JWT.
+  A device carries no principal, so it cannot be feature-gated here; the slug
+  identifies the webhook and the webhook's ``auth_type`` authorizes the caller.
 
-* the PUBLIC receiver — ``GET|POST /ingest/hooks/{slug}``, mounted with NO
-  prefix and NO JWT dependency. A device carries no principal, so it CANNOT be
-  feature-gated here; the slug identifies the webhook and the webhook's own
-  ``auth_type`` authorizes the caller. See the note at the include_router below.
-
-THE PIPELINE (app/ingest/service.py :: ReceiverService)
--------------------------------------------------------
+The pipeline (app/ingest/service.py :: ReceiverService):
 
   slug lookup → per-webhook auth → JSON-Schema validation → rule match or
   webhook transform → publish ``tenant.<tid>.<domain>.event.received``
 
-and every stage's verdict is written to ``ingest_event_logs`` BEFORE the request
-is answered — including rejections on an unknown slug, which is how an operator
+Every stage's verdict is written to ``ingest_event_logs`` before the request is
+answered, including rejections on an unknown slug — that is how an operator
 diagnoses a device that "isn't sending anything". A stored raw payload can be
-re-run through the whole pipeline by the authed replay endpoint, which is why
-this module hands the router the live bus (``bind_event_bus``).
+re-run through the pipeline by the authed replay endpoint, which is why this
+module hands the router the live bus (``bind_event_bus``).
 
-The pieces, each its own module with its own header worth reading:
+The pieces, each with its own header:
 
   * ``security.py``  — per-webhook auth: none / api_key / basic / bearer / hmac.
-    Most secrets are stored as a salted SHA-256; HMAC secrets are the exception
-    and are stored REVERSIBLY ENCRYPTED, because verifying a vendor signature
-    needs the original secret back. Every rejection returns the same bare 401.
+    Most secrets are stored as a salted SHA-256; HMAC secrets are stored
+    reversibly encrypted, since verifying a vendor signature needs the original
+    back. Every rejection returns the same bare 401.
   * ``transform.py`` — JSON Schema validation and the JMESPath
-    ``{target_field: expr}`` field map. Pure, collects errors instead of raising,
-    so a misconfigured webhook is a 422 and not a 500.
-  * ``matcher.py``   — the rule engine. Conditions (exists/equals/contains/…)
-    over the RAW payload; first rule by priority wins and REPLACES the
-    webhook-level transform. A webhook with rules and no match rejects rather
-    than publishing an unrouted event.
+    ``{target_field: expr}`` field map. Pure, and collects errors instead of
+    raising, so a misconfigured webhook is a 422 and not a 500.
+  * ``matcher.py``   — the rule engine. Conditions over the raw payload; the
+    first rule by priority wins and replaces the webhook-level transform. A
+    webhook with rules and no match rejects rather than publishing unrouted.
   * ``bootstrap.py`` — optional idempotent brand seeds (``VE_INGEST_AUTO_SEED``).
 
 Run:   uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -119,8 +100,8 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Neubit Ingest", lifespan=lifespan)
     register_error_handlers(app)
 
-    # CORS — the operator UI may call this satellite directly (dev :3000) instead of
-    # through the gateway. Mirror core's policy (shared kernel settings).
+    # The operator UI may call this satellite directly (dev :3000) rather than
+    # through the gateway. Mirrors core's policy via shared kernel settings.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -150,17 +131,15 @@ def create_app() -> FastAPI:
 
     # Give the authed router the live event bus (its replay endpoint re-publishes).
     bind_event_bus(bus)
-    # Authed config API (category + webhook CRUD) under the versioned prefix — gated
-    # by the tenant's "workflow" module (ingest belongs to the workflow context) + an
-    # unexpired license (super-admins bypass).
+    # Gated on the tenant's "workflow" module — ingest belongs to that context —
+    # plus an unexpired license. Super-admins bypass both.
     app.include_router(
         config_router,
         prefix=settings.api_prefix,
         dependencies=[Depends(require_feature("workflow")), Depends(require_active_license())],
     )
-    # PUBLIC receiver — NO JWT (per-webhook secret auth), so it is NOT feature-gated
-    # here: a device POST carries no principal. Tenant/entitlement enforcement for
-    # inbound events belongs on the webhook row, not this route.
+    # Public receiver: per-webhook secret auth, no JWT, so no feature gate here —
+    # a device POST carries no principal. Entitlement lives on the webhook row.
     app.include_router(build_public_router(bus))
 
     return app

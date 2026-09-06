@@ -1,10 +1,7 @@
 """Rule evaluation for the ingest pipeline.
 
-Ported 1:1 from neubit_v2's ingest ``matcher``. Pure functions — given a payload
-and a list of rules, decide which (if any) matches. No DB, no IO.
-
-Match semantics
----------------
+Pure functions: given a payload and a list of rules, decide which one matches.
+No DB, no IO.
 
 A rule matches when **all** of its ``match_conditions`` hold. Each condition is
 ``{path, op, value}``; ``path`` is a JMESPath expression (typically a simple
@@ -47,11 +44,8 @@ def _is_empty(v: Any) -> bool:
 
 
 def _evaluate_condition(payload: Any, cond: dict[str, Any]) -> dict[str, Any]:
-    """Return ``{ok, op, path, actual, expected}`` for one condition.
-
-    The dict is consumed by the rule-test endpoint so the operator sees exactly
-    why a rule did / didn't match in the UI.
-    """
+    """Return ``{ok, op, path, actual, expected}`` for one condition. The rule-test
+    endpoint renders this, so the operator sees why a rule did or didn't match."""
     op = cond.get("op", "exists")
     path = cond.get("path", "")
     expected = cond.get("value")
@@ -88,12 +82,11 @@ def evaluate_rule(
     payload: Any,
     conditions: list[dict[str, Any]],
 ) -> tuple[bool, list[dict[str, Any]]]:
-    """Evaluate a single rule's conditions.
+    """Evaluate a single rule's conditions → ``(matched, results)``.
 
-    Returns ``(matched, results)`` — ``results`` always has one entry per
-    condition for UI feedback. Evaluation does NOT short-circuit so the operator
-    sees every condition's outcome at once. A rule with no conditions matches
-    everything (a useful low-priority catch-all/default).
+    ``results`` always has one entry per condition, because evaluation does not
+    short-circuit — the operator sees every outcome at once. A rule with no
+    conditions matches everything, which makes a useful low-priority catch-all.
     """
     if not conditions:
         return True, []
@@ -106,12 +99,11 @@ def match_first(
     payload: Any,
     rules: list[Any],
 ) -> tuple[Optional[Any], list[dict[str, Any]]]:
-    """Walk rules in order, return the first one that matches.
+    """Walk rules in order, return the first match as
+    ``(rule_or_None, results_for_matched_rule_or_empty)``.
 
-    Rules are expected to be already ordered (priority ASC, created_at ASC) by
-    the caller — we don't re-sort here. Disabled rules are skipped.
-
-    Returns ``(rule_or_None, results_for_matched_rule_or_empty)``.
+    The caller orders them (priority ASC, created_at ASC); this does not re-sort.
+    Disabled rules are skipped.
     """
     for rule in rules:
         if not getattr(rule, "enabled", True):

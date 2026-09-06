@@ -11,25 +11,17 @@ Today's seeds:
       matches the subtype's marker key in the raw payload and extracts only that
       subtype's fields.
 
-The auth secret is NOT seeded — the webhook is created with ``auth_type="none"``
-and the operator switches it to HMAC via the UI before exposing it. This mirrors
-v2, and is why the seed is off by default.
+No auth secret is seeded: the webhook is created with ``auth_type="none"`` and
+the operator switches it to HMAC before exposing it, which is why the seed is off
+by default.
 
-Ported from neubit_v2's ``bootstrap.py`` with three deliberate changes:
+Event types are namespaced (``lumina.motion``) so another vendor can also have a
+"motion". Seeded rows are platform rows (``tenant_id=None``); a tenant that wants
+Lumina copies or recreates it.
 
-* **Event types.** v2 published the rule's *name* as the event type, so these
-  rules emitted a bare ``"motion"`` / ``"frs"``. v3 rules carry an explicit
-  ``event_type``, so they are namespaced (``lumina.motion``) — matching v3's own
-  dotted default and leaving room for another vendor to have "motion" too.
-* **Tenancy.** Seeded rows are platform rows (``tenant_id=None``), visible to
-  super-admins. A tenant that wants Lumina copies or recreates it.
-* Dropped ``target_topic`` (v3 routes by the category's ``target_domain``) and
-  ``workflow_id`` (v2 stamped it on the event and nothing ever read it; SOP
-  binding is a workflow trigger matching on ``event_type``).
-
-Safe to re-run: every operation is "create if absent". Schema/transform edits on
-a later boot are deliberately NOT applied — an operator's tuned config outranks
-the seed.
+Safe to re-run — every operation is "create if absent". Schema and transform
+edits on a later boot are deliberately not applied: an operator's tuned config
+outranks the seed.
 """
 
 from __future__ import annotations
@@ -75,10 +67,9 @@ _LUMINA_PAYLOAD_SCHEMA: dict[str, Any] = {
     },
 }
 
-# The webhook-level fallback map: used only when NO rule matches... which, with
-# rules configured, never publishes (see ReceiverService.run_pipeline). Kept as
-# documentation of the envelope, and as the map the webhook would use if an
-# operator disabled every rule.
+# The webhook-level fallback map. With rules configured it never publishes (see
+# ReceiverService.run_pipeline); it documents the envelope, and is what the
+# webhook would use if an operator disabled every rule.
 _LUMINA_TRANSFORM: dict[str, str] = {
     "device_name": "data.dev_net_info[0].device_name",
     "device_mac": "data.dev_net_info[0].mac",
@@ -265,12 +256,9 @@ async def seed_lumina(db: AsyncSession) -> None:
 async def bootstrap_ingest_seeds(db: AsyncSession) -> None:
     """Run every brand seed. Called once at service startup.
 
-    Gated on ``VE_INGEST_AUTO_SEED`` — off by default, so an operator learns the
-    module by configuring it rather than inheriting rows they did not write (and
-    so no open endpoint appears on a stack nobody asked for one on).
-
-    Idempotent: creates only missing rows. Never raises — a seed failure must not
-    stop the service from starting.
+    Gated on ``VE_INGEST_AUTO_SEED``, off by default so no open endpoint appears
+    on a stack nobody asked for one on. Idempotent (creates only missing rows) and
+    never raises — a seed failure must not stop the service booting.
     """
     flag = (os.getenv("VE_INGEST_AUTO_SEED") or "").strip().lower()
     if flag not in {"1", "true", "yes", "on"}:

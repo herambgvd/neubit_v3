@@ -1,9 +1,8 @@
 """NATS + JetStream event bus client, shared across neubit_v3 services.
 
-Mirrors the platform core's ``app.core.events_nats`` so every service connects to
-the same JetStream ``EVENTS`` stream (subjects: see ``EVENTS_SUBJECTS``) and publishes with a
-consistent subject scheme + envelope. Cross-domain communication between core,
-ingest, and workflow rides on this spine.
+Mirrors core's ``app.core.events_nats`` so every service connects to the same
+JetStream ``EVENTS`` stream (subjects: see ``EVENTS_SUBJECTS``) with the same
+subject scheme and envelope.
 
 Subjects:  ``tenant.<id>.<domain>.<event>``  (per-tenant events)
            ``tenant.platform.<domain>.<event>``  (tenant_id is None → platform)
@@ -20,16 +19,12 @@ runs standalone without a broker.
     await bus.publish(subject(tenant_id, "fire", "alarm.raised"), {"zone": 3})
     await bus.subscribe("tenant.*.fire.>", handler, durable="workflow-fire")
 
-HANDLER FAILURES COME IN TWO KINDS, AND A HANDLER MUST SAY WHICH. On a durable
-subscription the handler's exit is the ack decision: return → ack, raise → NAK
-and retry with backoff up to MAX_DELIVER, then dead-letter. Raising
-:class:`Unprocessable` instead — ``raise Unprocessable(f"…: {exc}") from exc``
-to wrap a caught error, or raise it directly — says redelivery cannot change the
-outcome, and the message is dead-lettered + terminated on its FIRST delivery
-rather than after five identical failures. Use it for a tenant mismatch, a
-malformed payload, a record already in a terminal state; never for a failure a
-working dependency would have made succeed. An unmarked exception stays
-retryable, which is the safe default. Same semantics as the Go bus's
+On a durable subscription the handler's exit is the ack decision: return acks,
+raise NAKs and retries with backoff up to MAX_DELIVER then dead-letters. Raise
+:class:`Unprocessable` when redelivery cannot change the outcome (tenant
+mismatch, malformed payload, already-terminal record) and the message is
+dead-lettered on its first delivery instead of its fifth. An unmarked exception
+stays retryable, the safe default. Same semantics as the Go bus's
 ``events.Unprocessable`` / ``Retryable`` (nvr repo, gokernel/events).
 """
 
@@ -47,23 +42,16 @@ from .config import get_settings
 log = logging.getLogger("kernel.events")
 
 # ── the EVENTS stream's subject list ─────────────────────────────────────────
-# EVENTS used to capture ``tenant.>`` — literally every subject on the platform.
-# That stopped being safe when the IoT bridge went live: a sensor feed on a
-# stream configured ``max_msgs=-1, max_bytes=-1, max_age=0`` is an unbounded
-# disk leak, and EVENTS has to stay unbounded-ish because it carries low-volume
-# domain events that are worth keeping.
+# An explicit domain list, not ``tenant.>``: EVENTS is effectively unbounded
+# (it keeps low-volume domain events), and NATS refuses overlapping subjects
+# between streams, so the high-volume sensor feed can only get its own bounded
+# IOT_READINGS stream if EVENTS stops claiming everything. ``tenant.*.iot.>``
+# lives there (deploy/README-nats.md, pipeline contract §4).
 #
-# NATS refuses overlapping subjects between two streams on one account, so the
-# sensor feed cannot get its own bounded stream while EVENTS still claims
-# ``tenant.>``. EVENTS is therefore narrowed to an EXPLICIT list of domains, and
-# ``tenant.*.iot.>`` belongs to the bounded ``IOT_READINGS`` stream instead
-# (see deploy/README-nats.md and the pipeline contract §4).
-#
-# ⚠ ADDING A NEW DOMAIN? Add it here, or its events are published to a subject
-# no stream captures: core NATS delivery (the realtime SSE relays) still works,
-# but there is no JetStream persistence and no durable consumer can be created
-# on it. This list is the one place to change — kernel, core and gokernel all
-# ensure the same stream.
+# ⚠ Adding a domain? Add it here, or its events land on a subject no stream
+# captures: core NATS delivery still works, but nothing is persisted and no
+# durable consumer can be created. kernel, core and gokernel all ensure the
+# same stream from this list.
 EVENTS_STREAM = "EVENTS"
 EVENTS_SUBJECTS = [
     "tenant.*.access.>",
@@ -83,32 +71,22 @@ EVENTS_SUBJECTS = [
 
 # ── delivery / ack policy ────────────────────────────────────────────────────
 #
-# A durable JetStream subscription is at-least-once: the server holds a message
-# until the consumer acknowledges it, and redelivers every AckWait until it does.
-# nats-py's default `manual_ack=False` acks a message BEFORE the callback's
-# outcome is known, so a handler that raises had its message acknowledged and
-# discarded — the failure existed only as a log line and the event was gone. That
-# is silent data loss, and it is what this bus did until this comment was written.
+# Durable subscriptions use manual acks. nats-py's default acks BEFORE the
+# callback's outcome is known, so a raising handler loses its message silently —
+# don't go back to it. Every durable delivery ends in exactly one of:
 #
-# Every durable subscription now ends in exactly one of three terminal states:
+#   ack()   the handler returned, i.e. the work is durably done. Only then.
+#   nak()   retryable error; retry with exponential backoff, up to MAX_DELIVER.
+#   term()  can never succeed (undecodable, refused via `Unprocessable`, or the
+#           retry budget is spent). Copied to EVENTS_DLQ first, then dropped.
 #
-#   ack()   the handler returned normally, i.e. the work is durably done. Only then.
-#   nak()   the handler raised a RETRYABLE error; retry with exponential backoff,
-#           up to MAX_DELIVER.
-#   term()  the message can never succeed (undecodable, refused via
-#           `Unprocessable`, or the retry budget is spent). It is copied to
-#           EVENTS_DLQ first, so terminating is not silent loss, then dropped so
-#           it stops being redelivered forever.
+# The Go bus (nvr repo, gokernel/events/events.go) uses the same EVENTS_DLQ
+# stream, `dlq.<original subject>` subjects and `Nbt-Dlq-*` headers, so one
+# dead-letter view covers both languages.
 #
-# This mirrors the Go bus in the nvr repo (gokernel/events/events.go) deliberately:
-# both sides consume the same EVENTS stream and park failures in the same
-# EVENTS_DLQ stream under the same `dlq.<original subject>` subject and the same
-# `Nbt-Dlq-*` headers, so one dead-letter view covers both languages.
-#
-# THE CONTRACT FOR HANDLERS: raising is how a handler says "not done, retry me".
-# A handler must not return normally until its work is durably persisted, and
-# must not catch-and-swallow its own failures. It must also be IDEMPOTENT — a
-# redelivery after a partial success is expected, not exceptional.
+# Handler contract: raising means "not done, retry me". Don't return before the
+# work is persisted, don't swallow your own failures, and be idempotent —
+# redelivery after a partial success is expected.
 ACK_WAIT = 30.0        # seconds before JetStream redelivers an unacked message
 MAX_DELIVER = 5        # retry budget before a message is dead-lettered
 NAK_BASE_DELAY = 2.0   # first retry delay, in seconds; doubles per attempt
@@ -122,36 +100,27 @@ DLQ_SUBJECT_PREFIX = "dlq."
 
 # ── retryable vs. non-retryable handler failures ─────────────────────────────
 #
-# NAK means "try me again", and the retry budget exists because SOME failures
-# are transient — the database is down, a dependency is briefly unreachable, a
-# lock timed out. Those genuinely may succeed next time.
+# The retry budget is for transient failures — DB down, dependency unreachable,
+# lock timeout. A failure that depends only on the message and stored state
+# (tenant mismatch, missing record, terminal record, unparseable payload) fails
+# identically five times and reaches the DLQ anyway, minutes late and with a
+# delivery count that looks like a flaky dependency.
 #
-# A failure that depends on nothing but the message and the stored state does
-# NOT change on redelivery. A cross-tenant mismatch, a record that does not
-# exist, a record already in a terminal state, a payload the handler cannot make
-# sense of: the next four deliveries fail identically, a backoff apart, and the
-# message reaches the DLQ anyway — five times the work, five times the log
-# noise, and the dead letter arrives minutes late carrying a delivery count that
-# suggests a flaky dependency rather than a refusal.
-#
-# So a handler must SAY which kind its error is. Raising `Unprocessable` marks
-# the non-retryable kind and `_deliver` dead-letters + terminates it on the
-# first delivery. A bare exception stays retryable, which is the safe default:
-# retrying something doomed costs latency, whereas terminating something
-# transient is data loss dressed up as a decision. This mirrors the Go bus's
-# `events.Unprocessable` / `Retryable` exactly, so the two languages' consumers
-# park refusals the same way.
+# So a handler says which kind it hit: `Unprocessable` is dead-lettered and
+# terminated on the first delivery, anything else stays retryable. Retryable is
+# the default because retrying a doomed message only costs latency, while
+# terminating a transient one is data loss. Matches the Go bus's
+# `events.Unprocessable` / `Retryable`.
 class Unprocessable(Exception):
     """A handler failure that redelivery cannot change — dead-letter, don't retry.
 
-    Raise it directly with the refusal reason, or wrap a caught exception::
+    Raise it directly with the reason, or wrap a caught exception::
 
         raise Unprocessable(f"tenant_id {tid!r} is not a uuid") from exc
 
-    The durable delivery path (`EventBus._deliver`) parks the message in
-    EVENTS_DLQ with this reason in the `Nbt-Dlq-Reason` header and terminates it
-    on the CURRENT delivery. Never use it for a failure that a working
-    dependency would have made succeed — that kind must stay a bare raise.
+    `EventBus._deliver` parks the message in EVENTS_DLQ with this reason in the
+    `Nbt-Dlq-Reason` header and terminates it on the current delivery. Not for a
+    failure a working dependency would have made succeed — leave those a bare raise.
     """
 
 
@@ -163,10 +132,7 @@ def retryable(exc: BaseException) -> bool:
 
 def _env_int(name: str, default: int) -> int:
     """An int from the environment, falling back rather than failing on rubbish.
-
-    The same shape as the reading-writer's `_int` (`VE_IOT_STREAM_*`), so the two
-    stream-limit knobs on this platform are configured the same way.
-    """
+    Same shape as the reading-writer's `_int` (`VE_IOT_STREAM_*`)."""
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return default
@@ -179,52 +145,28 @@ def _env_int(name: str, default: int) -> int:
 
 # ── EVENTS_DLQ's limits, and who owns them ───────────────────────────────────
 #
-# The DLQ was created with the SAME shape that forced EVENTS to be narrowed:
-# `max_msgs=-1, max_bytes=-1, max_age=0`, file storage. Unbounded, on disk,
-# forever. Nothing had gone wrong with it yet only because little had been
-# dead-lettered — which is not a limit, it is luck.
+# Two sides create this stream, so bounding it is a coordination problem. The Go
+# bus (nvr repo, gokernel/events, ensureStream) is create-only and treats
+# "stream name already in use" as benign, so it can create EVENTS_DLQ but never
+# change it. Python therefore owns convergence — `ensure_dlq_stream` below
+# updates an existing stream onto these limits — and Go must stay create-only,
+# or the two would rewrite each other's config on every restart.
 #
-# TWO SIDES CREATE THIS STREAM, so bounding it is a coordination problem before
-# it is a config change. The Go bus in the nvr repo calls `AddStream` and nothing
-# else (`gokernel/events/events.go`, ensureStream): create-only, and its
-# `streamExists()` treats "stream name already in use" — which is exactly what
-# `AddStream` returns when an existing stream's config differs — as benign and
-# returns. So Go can create this stream but can never CHANGE it.
+# Known gap, fixable only on the Go side: `ensureStream` passes no limits, so a
+# STANDALONE NVR with no Python service behind it creates EVENTS_DLQ unbounded.
+# The fix is a bounded `nats.StreamConfig` at CREATE time matching the defaults
+# below — not an UpdateStream call.
 #
-# The split that follows from that, and the only one that cannot flap:
+# Sizing: the DLQ takes this bus's terminal failures plus IoT poison (the
+# reading-writer and projector run `max_deliver=-1` and park malformed messages
+# here directly). Poison is refusal-rate, not feed-rate — a gateway publishing
+# 100% garbage at 37 msg/min is ~24 MB/day against 1 GiB, roughly two million
+# dead letters at ~530 B each. Age is the limit that actually binds: 30 days
+# keeps evidence around without leaking disk forever. `max_msgs` stays -1.
 #
-#   * **Python owns convergence.** This is already where EVENTS' and
-#     IOT_READINGS' convergence lives, and the platform always runs Python.
-#     `ensure_dlq_stream` below updates an existing stream onto these limits.
-#   * **Go stays create-only and tolerant.** It never calls UpdateStream, so it
-#     cannot fight this. Nothing on the Go side needs to change for the limits
-#     to hold on this platform.
-#
-# KNOWN GAP, and it is a Go-side change this repo cannot make: `ensureStream`
-# passes NO limits, so an NVR booting STANDALONE — with no Python service to
-# converge behind it — creates EVENTS_DLQ unbounded and it stays that way. The
-# fix there is to give the DLQ its own bounded `nats.StreamConfig` at CREATE
-# time, matching the defaults below; it must NOT gain an UpdateStream call, or
-# the two sides would rewrite each other's config on every restart.
-#
-# SIZING. The DLQ receives this bus's terminal failures plus the IoT pipelines'
-# POISON — the reading-writer and the projector run `max_deliver=-1`, so their
-# malformed messages are parked here explicitly (module-level `dead_letter`) on
-# first delivery rather than by any redelivery budget. Poison is refusal-rate,
-# not feed-rate: a healthy gateway contributes nothing, and a gateway publishing
-# 100% garbage at the measured 37 msg/min is still only ~24 MB/day against 1 GiB.
-# EVENTS itself holds ~137 messages / 72 KB in steady state at ~530 B an
-# envelope, so 1 GiB is on the order of two million dead letters: a number a
-# working system cannot reach, and a hard stop for a poison-message storm.
-# AGE is the limit that will actually bind: 30 days is long enough that nobody
-# loses evidence of a failure they have not looked at yet, and short enough that
-# a forgotten DLQ is not a permanent disk leak. `max_msgs` stays -1 because two
-# limits that both bind are one more thing to reason about for no gain.
-#
-# `discard: old` is NOT negotiable. With `discard: new` a full DLQ makes the
-# dead-letter publish FAIL, and both buses then log "message dropped" and
-# terminate the message anyway — parked messages would become lost ones. A dead
-# letter queue must never become backpressure on the thing that feeds it.
+# `discard: old` is not negotiable: with `discard: new` a full DLQ makes the
+# dead-letter publish fail, and both buses then drop the message. A DLQ must
+# never become backpressure on what feeds it.
 DLQ_MAX_AGE_SEC = _env_int("VE_DLQ_STREAM_MAX_AGE_SEC", 30 * 24 * 3600)
 DLQ_MAX_BYTES = _env_int("VE_DLQ_STREAM_MAX_BYTES", 1024**3)
 DLQ_MAX_MSGS = _env_int("VE_DLQ_STREAM_MAX_MSGS", -1)
@@ -238,18 +180,15 @@ def _nak_delay(delivery: int) -> float:
 async def dead_letter(js, msg, *, consumer: str, reason: str, delivery: int) -> bool:
     """Copy a refused message to EVENTS_DLQ under ``dlq.<original subject>``.
 
-    The parking half of ``term()``: a message about to be terminated is published
-    to the DLQ stream first, with the refusal reason in its headers, so "stop
-    redelivering" never becomes "throw away". Module-level rather than a bus
-    method because the IoT pipelines (reading-writer, projector) consume raw
-    JetStream without an :class:`EventBus` and must park poison the SAME way —
-    the ``dlq.`` subject prefix and the ``Nbt-Dlq-*`` header names below match
-    the Go bus (nvr repo, ``gokernel/events``) byte for byte, so one dead-letter
-    view reads both languages.
+    The parking half of ``term()``, so "stop redelivering" never means "throw
+    away". Module-level rather than a bus method because the IoT pipelines
+    consume raw JetStream without an :class:`EventBus` and must park poison the
+    same way. The subject prefix and ``Nbt-Dlq-*`` headers match the Go bus
+    (nvr repo, ``gokernel/events``) byte for byte.
 
-    Returns True when the message was parked. A DLQ write failure is logged
-    loudly and returns False — and the caller must STILL terminate, because a
-    message we cannot park is still a message we must stop redelivering.
+    Returns True when parked. On a DLQ write failure it logs and returns False,
+    and the caller must terminate anyway — an unparkable message still has to
+    stop being redelivered.
     """
     if js is None:
         return False
@@ -278,15 +217,9 @@ async def dead_letter(js, msg, *, consumer: str, reason: str, delivery: int) -> 
 async def ensure_dlq_stream(js) -> None:
     """Create EVENTS_DLQ bounded, or converge an existing one onto the limits.
 
-    Structurally identical to :func:`ensure_events_stream`, and for the same
-    reason: `add_stream` only ever CREATES, so a stream that already exists — as
-    this one does on every deployment that has run before today — would never
-    hear about a limit change. Without the update below, bounding the DLQ would
-    be a change that reaches only brand-new installations.
-
-    Only Python converges (see the note above the limits): the Go bus creates and
-    never updates, so this cannot become two services rewriting one config on
-    every restart.
+    `add_stream` only creates, so without the explicit update a limit change
+    would reach new installations only. Only Python converges — see the note
+    above the limits.
 
     Never raises: a service must still boot when JetStream is unhappy.
     """
@@ -302,9 +235,7 @@ async def ensure_dlq_stream(js) -> None:
             await js.add_stream(
                 name=DLQ_STREAM,
                 subjects=[DLQ_SUBJECT_PREFIX + ">"],
-                # `discard` is left at its default, `old`. See the note above:
-                # `new` would turn a full DLQ into a failed dead-letter publish,
-                # and both buses drop the message when that publish fails.
+                # `discard` stays at its default `old` — see the note above.
                 **want,
             )
             log.info(
@@ -319,8 +250,7 @@ async def ensure_dlq_stream(js) -> None:
     drift = {
         k: v
         for k, v in want.items()
-        # `max_age` comes back as a float of seconds and the others as ints, so
-        # compare as floats throughout rather than trusting the types to match.
+        # max_age comes back as a float, the others as ints — compare as floats.
         if float(getattr(cfg, k, 0) or 0) != float(v)
     }
     if not drift:
@@ -337,10 +267,9 @@ async def ensure_dlq_stream(js) -> None:
 async def ensure_events_stream(js) -> None:
     """Create EVENTS, or converge an existing one onto :data:`EVENTS_SUBJECTS`.
 
-    ``add_stream`` only ever CREATES — on an existing stream it raises and every
-    caller here used to swallow that, so a subject-list change would never reach
-    a running deployment. Update explicitly, and only when the list differs, so
-    this stays a no-op on a converged stack.
+    ``add_stream`` only creates and raises on an existing stream, so a
+    subject-list change needs an explicit update. Only when the list differs, so
+    this is a no-op on a converged stack.
 
     Never raises: a service must still boot when JetStream is unhappy.
     """
@@ -404,8 +333,7 @@ class EventBus:
             self._nc = await nats.connect(url, name=f"neubit-{self.source}")
             self._js = self._nc.jetstream()
             await ensure_events_stream(self._js)
-            # The dead-letter stream a poisoned message is parked in, so `term()`
-            # below is "stop redelivering" and not "throw away".
+            # Where `term()` parks a poisoned message instead of dropping it.
             await ensure_dlq_stream(self._js)
             log.info("NATS connected: %s", url)
         except Exception as e:  # broker down / lib missing → degrade gracefully
@@ -447,23 +375,19 @@ class EventBus:
     ) -> None:
         """Subscribe to a subject pattern; handler receives the decoded envelope dict.
 
-        Pass ``durable`` for an at-least-once JetStream durable consumer (survives
-        restarts); omit it for an ephemeral core subscription.
+        Pass ``durable`` for an at-least-once JetStream consumer that survives
+        restarts; omit it for an ephemeral core subscription.
 
-        On the durable path the HANDLER'S OUTCOME IS THE ACK DECISION: returning
-        normally acks; raising retries with backoff up to :data:`MAX_DELIVER` and
-        then dead-letters to ``EVENTS_DLQ``; raising :class:`Unprocessable`
-        dead-letters + terminates on the FIRST delivery, for a refusal redelivery
-        cannot change. See the delivery/ack policy note above — a handler must not
-        return until its work is durably persisted, must let its failures
-        propagate rather than swallowing them, and must be idempotent.
+        On the durable path the handler's outcome is the ack decision: returning
+        acks, raising retries up to :data:`MAX_DELIVER` then dead-letters, and
+        :class:`Unprocessable` dead-letters on the first delivery. See the
+        delivery/ack policy note above for the handler contract.
         """
         if self._nc is None:
             return
 
         if durable is None or self._js is None:
-            # Core NATS has no acks at all — at-most-once, nothing to acknowledge,
-            # so a handler failure genuinely can only be logged.
+            # Core NATS is at-most-once with no acks, so a failure can only be logged.
             async def _ephemeral_cb(msg):
                 try:
                     await handler(json.loads(msg.data.decode()))
@@ -483,15 +407,11 @@ class EventBus:
             ack_wait=ACK_WAIT,
             max_deliver=MAX_DELIVER,
         )
-        # Reconcile BEFORE binding, not as a fallback on error. nats-py's
-        # `js.subscribe` looks the durable up first and, when it already exists,
-        # binds to it and IGNORES the `config` argument entirely — no exception,
-        # no complaint, and the pre-existing `max_deliver=-1` stays. That is the
-        # dangerous half of the bug: `manual_ack` alone (which is client-side and
-        # does take effect) turns silent discard into an INFINITE redelivery loop,
-        # because without a delivery budget nothing ever reaches `term()`. The
-        # budget lives on the server-side consumer, so it has to be put there
-        # explicitly on an existing durable.
+        # Reconcile BEFORE binding, not as a fallback on error: `js.subscribe`
+        # silently ignores `config` when the durable already exists, leaving an
+        # old `max_deliver=-1` in place. `manual_ack` is client-side and does
+        # take effect, so that combination is an infinite redelivery loop —
+        # nothing ever reaches `term()` without a server-side delivery budget.
         await self._reconcile_consumer(durable, pattern, config)
         await self._js.subscribe(
             pattern, cb=_cb, durable=durable, manual_ack=True, config=config
@@ -500,16 +420,15 @@ class EventBus:
     async def _reconcile_consumer(self, durable: str, pattern: str, config) -> bool:
         """Bring an existing durable onto the current ack policy. True if it changed.
 
-        `ack_wait` and `max_deliver` are updatable in place on a live consumer, so
-        this is an `add_consumer` on the same durable name rather than a delete —
-        deleting would reset the ack floor and replay the whole retained backlog.
+        `ack_wait` and `max_deliver` update in place, so this re-adds the same
+        durable name rather than deleting it — a delete would reset the ack floor
+        and replay the whole retained backlog.
 
-        The one case that DOES need a recreate is a durable left by a never-acking
-        bug: unlimited max_deliver and an ack floor of 0 despite deliveries. Every
-        backlogged message there is already past the new budget, so stamping the
-        budget on would make JetStream stop redelivering them without ever handling
-        or dead-lettering them — turning a redelivery loop into silent loss. Nothing
-        on such a consumer was ever acked, so nothing is lost by starting it over.
+        The one case needing a recreate is a never-acking durable (unlimited
+        max_deliver, ack floor 0 despite deliveries): its backlog is already past
+        the new budget, so stamping the budget on would stop redelivery without
+        ever handling or dead-lettering those messages. Nothing there was acked,
+        so nothing is lost by starting over.
         """
         try:
             info = await self._js.consumer_info(EVENTS_STREAM, durable)
@@ -557,8 +476,7 @@ class EventBus:
         try:
             env = json.loads(msg.data.decode())
         except Exception as e:
-            # Undecodable now is undecodable on every redelivery. Retrying is a
-            # guaranteed-losing loop, so park it and terminate immediately.
+            # Undecodable now is undecodable on every redelivery — park and stop.
             log.error(
                 "event decode error on %s (%s): %s — dead-lettering", pattern, durable, e
             )
@@ -569,9 +487,7 @@ class EventBus:
         try:
             await handler(env)
         except Unprocessable as e:
-            # Non-retryable by the handler's own word: the next four deliveries
-            # would fail identically. Park it and stop, on delivery 1 rather
-            # than delivery 5.
+            # The handler says redelivery won't help — park it on delivery 1.
             event_id = env.get("event_id") if isinstance(env, dict) else None
             log.error(
                 "event handler REFUSED %s (%s) event=%s on delivery %d: %s — "
@@ -612,8 +528,8 @@ class EventBus:
 async def _quiet(awaitable) -> None:
     """Await an ack/nak/term, logging rather than raising if the server rejects it.
 
-    A failed ack is worth knowing about (the message will be redelivered) but must
-    not escape into the nats-py callback runner, which would only log it anyway.
+    A failed ack matters (the message gets redelivered) but must not escape into
+    the nats-py callback runner, which would only log it anyway.
     """
     try:
         await awaitable

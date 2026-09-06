@@ -1,15 +1,12 @@
 """The offboard handler's failure contract, end to end through the bus.
 
-A tenant offboard is a GDPR/DPDP right-to-erase. The handler used to catch every
-exception and return — under manual ack that meant an erasure that failed on a
-database OUTAGE was acked and never retried: silently not honoured. These tests
-pin the honest behaviour by composing the real pieces exactly as production
-does — ``subscribe_tenant_offboard`` builds the handler, ``EventBus._deliver``
-makes the ack decision:
+An offboard is a right-to-erase, so a failed erasure must never be acked. Real
+pieces composed as production does — ``subscribe_tenant_offboard`` builds the
+handler, ``EventBus._deliver`` makes the ack decision:
 
-* database down (transient)  → the message is NAK'd for redelivery, never acked;
-* tenant id that cannot parse (permanent) → refused via ``Unprocessable``:
-  dead-lettered to EVENTS_DLQ and terminated on the FIRST delivery;
+* database down (transient) → NAK'd for redelivery, never acked;
+* unparseable tenant id (permanent) → refused via ``Unprocessable``, parked in
+  EVENTS_DLQ and terminated on the first delivery;
 * no tenant / platform scope → a clean skip, acked.
 """
 
@@ -29,8 +26,8 @@ def _run(coro):
 
 
 class CapturingBus:
-    """Stands in for EventBus at SUBSCRIBE time only — it captures the handler
-    lifecycle wires, which the tests then drive through the REAL _deliver."""
+    """Stands in for EventBus at subscribe time only: captures the handler
+    lifecycle wires, which the tests then drive through the real _deliver."""
 
     def __init__(self) -> None:
         self.handler = None
@@ -72,8 +69,7 @@ def test_offboard_naks_on_a_database_outage():
     msg = _offboard_msg("6a3f6a1e-6f0f-4a3e-9f5d-0d3f2a9b7c11", delivery=1)
     _run(bus._deliver("tenant.*.tenant.offboarded", "svc-offboard", handler, msg))
 
-    # The erasure is NOT done, so the message must come back: NAK, no ack, no
-    # term, nothing parked. JetStream will redeliver it when the DB is back.
+    # The erasure did not happen, so the message must come back for redelivery.
     assert msg.naked and not msg.acked and not msg.termed
     assert js.published == []
 
@@ -87,7 +83,7 @@ def test_offboard_refuses_an_unparseable_tenant_on_first_delivery():
     msg = _offboard_msg("not-a-uuid", delivery=1)
     _run(bus._deliver("tenant.*.tenant.offboarded", "svc-offboard", handler, msg))
 
-    # Redelivery cannot make "not-a-uuid" parse: parked + terminated at once.
+    # Redelivery cannot make "not-a-uuid" parse: parked and terminated at once.
     assert msg.termed and not msg.acked and not msg.naked
     assert len(js.published) == 1
     subj, data, headers = js.published[0]
@@ -107,6 +103,6 @@ def test_offboard_skips_platform_scope_cleanly():
     msg = FakeMsg("tenant.platform.tenant.offboarded", json.dumps(body).encode(), 1)
     _run(bus._deliver("tenant.*.tenant.offboarded", "svc-offboard", handler, msg))
 
-    # Nothing to erase is a SUCCESS, not a failure: acked, nothing parked.
+    # Nothing to erase is a success, not a failure.
     assert msg.acked and not msg.naked and not msg.termed
     assert js.published == []

@@ -5,12 +5,11 @@ super-admin acts:
 
     tenant.<id>.tenant.provisioned | .suspended | .reactivated | .offboarded
 
-The important cross-service reaction is **offboard** (DPDP right-to-erase): when a
-tenant is deleted, every service must wipe that tenant's data from its OWN database.
-This module gives a service a one-line durable subscription that does exactly that,
-generically — it deletes every row whose table carries a ``tenant_id`` column, in
-FK-safe (child-before-parent) order, so there is NO per-service model list to keep in
-sync. Suspension/expiry are already enforced live via the token gate
+The one that matters cross-service is **offboard** (DPDP right-to-erase): every
+service must wipe the tenant's data from its own database. This module is the
+one-line durable subscription for that — it deletes every row whose table has a
+``tenant_id`` column, child-before-parent, so no per-service model list has to
+stay in sync. Suspension and expiry are enforced live by the token gate
 (``require_tenant_access``); provisioning hooks land with DB-per-tenant (Phase 7).
 """
 
@@ -39,11 +38,9 @@ def _per_tenant_enabled() -> bool:
 def _require_tenant_uuid(tid: Any) -> None:
     """Refuse a tenant id that can never become a uuid.
 
-    Both the erase (``erase_tenant_data``) and the per-tenant drop
-    (``tenant_db_name``) parse it with ``uuid.UUID``, so a malformed id fails
-    identically on every redelivery — that is :class:`Unprocessable` by
-    definition, and the bus parks it in EVENTS_DLQ on the first delivery
-    instead of burning the retry budget.
+    Both the erase and the per-tenant drop parse it with ``uuid.UUID``, so a
+    malformed id fails identically on every redelivery — :class:`Unprocessable`,
+    so the bus parks it on the first delivery instead of burning the budget.
     """
     try:
         uuid.UUID(str(tid))
@@ -80,20 +77,15 @@ async def subscribe_tenant_offboard(bus: Any, database: Any, *, durable: str) ->
         from app.db import database
         await subscribe_tenant_offboard(bus, database, durable="workflow-offboard")
 
-    Durable → an offboard that arrives while the service is down is still processed
-    on restart (JetStream at-least-once).
+    Durable, so an offboard arriving while the service is down is still processed
+    on restart.
 
-    FAILURES PROPAGATE, deliberately. This handler used to catch-and-log every
-    exception — a hangover from the auto-ack era, when raising killed nothing
-    and saved nothing. Under manual ack that catch became the bug: an erasure
-    that failed because the database was DOWN was acked and never retried, i.e.
-    a GDPR/DPDP right-to-erase silently not honoured. Now a transient failure
-    raises and the bus NAKs + retries it (and after the budget, parks it in
-    EVENTS_DLQ — visible, not vanished), while a tenant id that can never parse
-    is refused via :class:`Unprocessable` on the first delivery. The erase is
-    idempotent (DELETE by tenant_id / DROP IF EXISTS), so redelivery after a
-    partial failure is safe. The consumer itself is never at risk: the bus
-    catches every handler exception to make its ack decision.
+    Failures propagate on purpose — do not wrap this in a try/except. A failed
+    erasure that gets acked is a right-to-erase silently not honoured, so a
+    transient failure raises and the bus retries then dead-letters it, while an
+    unparseable tenant id is refused via :class:`Unprocessable`. The erase is
+    idempotent, so redelivery after a partial failure is safe, and the bus
+    catches handler exceptions itself, so the consumer is never at risk.
     """
 
     async def _handler(envelope: dict) -> None:
@@ -102,7 +94,7 @@ async def subscribe_tenant_offboard(bus: Any, database: Any, *, durable: str) ->
             return
         _require_tenant_uuid(tid)
         if _per_tenant_enabled():
-            # DB-per-tenant: dropping the database IS the erase (complete + trivial).
+            # In DB-per-tenant mode, dropping the database is the erase.
             from .provisioning import drop_tenant_db
 
             await drop_tenant_db(database.database_url, tid)
@@ -120,13 +112,10 @@ async def subscribe_tenant_provisioned(bus: Any, database: Any, *, durable: str)
     no provisioning). Call once in the service's startup lifespan, like the offboard
     consumer.
 
-    Same failure contract as the offboard handler: a transient failure (Postgres
-    briefly down at the moment a tenant was created) raises and is retried by
-    the bus — a tenant whose database silently never got provisioned is a
-    correctness bug, not a log line — while an unparseable tenant id is refused
-    via :class:`Unprocessable`. ``provision_tenant_schema`` is idempotent (the
-    CREATE DATABASE is existence-checked, ``create_all`` is checkfirst), so
-    redelivery is safe.
+    Same failure contract as the offboard handler: transient failures raise and
+    are retried (a tenant whose database never got provisioned is a correctness
+    bug, not a log line), an unparseable tenant id is refused via
+    :class:`Unprocessable`, and ``provision_tenant_schema`` is idempotent.
     """
 
     async def _handler(envelope: dict) -> None:

@@ -6,9 +6,9 @@ Two router objects, split by trust boundary:
   ``{prefix}/ingest/categories`` + ``{prefix}/ingest/webhooks``. JWT + permission
   gated (``ingest.read`` / ``ingest.manage``) and tenant-scoped.
 
-* ``public_router`` — the PUBLIC receiver ``POST /ingest/hooks/{slug}``. NO JWT:
-  authenticated by the webhook's own per-webhook auth. Returns 202 on accept.
-  The slug identifies the webhook; ``auth_type`` is what authorizes the caller.
+* ``public_router`` — the public receiver ``POST /ingest/hooks/{slug}``. No JWT;
+  authenticated by the webhook's own per-webhook auth, 202 on accept. The slug
+  identifies the webhook, ``auth_type`` authorizes the caller.
 """
 
 from __future__ import annotations
@@ -62,9 +62,9 @@ from .service import (
 PERM_READ = "ingest.read"
 PERM_MANAGE = "ingest.manage"
 
-# The service-wide EventBus, injected by main via ``bind_event_bus`` at app build.
-# Used by the authed replay endpoint (which re-publishes to NATS). Falls back to a
-# fresh, unconnected bus so imports never fail if binding is skipped (tests).
+# The service-wide EventBus, injected by main via ``bind_event_bus``; the authed
+# replay endpoint re-publishes through it. Falls back to a fresh unconnected bus
+# so imports never fail when binding is skipped (tests).
 _bus: EventBus = EventBus(source="ingest")
 
 
@@ -424,9 +424,9 @@ public_router = APIRouter(prefix="/ingest", tags=["Ingest (public)"])
 def build_public_router(bus: EventBus) -> APIRouter:
     """Bind the receiver to the service's EventBus and return the public router.
 
-    Mounted for BOTH GET and POST: the service enforces the webhook's configured
-    ``request_method``. For GET the payload is read from query params (repeated
-    keys become arrays); for POST from the JSON body.
+    Mounted for both GET and POST — the service enforces the webhook's configured
+    ``request_method``. GET reads the payload from query params (repeated keys
+    become arrays), POST from the JSON body.
     """
 
     @public_router.api_route(

@@ -6,12 +6,12 @@ Two responsibilities, split by trust boundary:
   (every read through ``scoped``, every by-id fetch through ``assert_owned``);
   new rows are stamped with the caller's ``tenant_id``. Secrets are hashed here.
 
-* ``ReceiverService`` — the PUBLIC ``POST /ingest/hooks/{slug}`` pipeline:
-  look up webhook by slug (NOT tenant-scoped — the receiver carries no JWT, so
-  the globally-unique slug is its only key; it identifies, it does not authorize),
+* ``ReceiverService`` — the public ``POST /ingest/hooks/{slug}`` pipeline:
+  look up webhook by slug (not tenant-scoped: the receiver carries no JWT, so the
+  globally-unique slug is its only key — it identifies, it does not authorize),
   verify per-webhook auth → validate JSON schema → apply JMESPath transform →
-  PUBLISH a normalized event to NATS on ``tenant.<tid>.<domain>.event.received``.
-  Failures raise the generic kernel errors (401/422) with no info leak.
+  publish to ``tenant.<tid>.<domain>.event.received``. Failures raise the generic
+  kernel errors (401/422) with no info leak.
 """
 
 from __future__ import annotations
@@ -105,11 +105,10 @@ def _validate_auth_inputs(
 ) -> None:
     """Reject an unusable auth configuration at create/update time.
 
-    Runs on BOTH paths: without it a PATCH can leave a webhook in a shape the
-    receiver rejects every request for (``basic`` with no username, ``hmac`` with
-    no secret) and the operator only finds out from the event log. The secret
-    checks are create-only because an update legitimately omits the secret to
-    mean "keep the stored one" — the caller checks the stored hash instead.
+    Runs on both paths, or a PATCH can leave a webhook the receiver rejects every
+    request for (``basic`` with no username, ``hmac`` with no secret) and the
+    operator only finds out from the event log. The secret checks are create-only,
+    since an update omitting the secret means "keep the stored one".
     """
     if auth_type == "none":
         return
@@ -161,11 +160,8 @@ class CategoryService:
         )
 
     async def _assert_name_free(self, name: str, *, exclude_id: str | None = None) -> None:
-        """409 on a duplicate category name within the caller's tenant.
-
-        Backs the unique index with a friendly error — a bare IntegrityError from
-        the constraint would surface as a 500.
-        """
+        """409 on a duplicate category name within the caller's tenant. Backs the
+        unique index, whose bare IntegrityError would otherwise be a 500."""
         stmt = scoped(
             select(IngestCategory.id).where(IngestCategory.name == name),
             IngestCategory,
@@ -339,9 +335,8 @@ class WebhookService:
             effective_auth = body.auth_type.value
             update["auth_type"] = effective_auth
 
-        # "" and None both mean "keep the stored secret"; only a real string rotates.
-        # (Without the falsy check an empty string would be hashed and stored as a
-        # real — permanently unmatchable — secret.)
+        # "" and None both mean "keep the stored secret"; only a real string
+        # rotates. Without the falsy check "" would be stored as an unmatchable one.
         new_secret = body.auth_secret or None
         effective_username = (
             body.auth_username if body.auth_username is not None else row.auth_username
@@ -355,10 +350,9 @@ class WebhookService:
             if not new_secret:
                 if not row.auth_secret_hash:
                     raise ValidationError(f"{effective_auth} auth requires auth_secret")
-                # store_secret encodes per type — hmac reversibly (enc:...), the rest
-                # as a one-way hash — so a stored secret cannot be reinterpreted
-                # under a different type. Demand a fresh one instead of silently
-                # leaving the receiver rejecting every request.
+                # store_secret encodes per type (hmac reversibly, the rest hashed),
+                # so a stored secret can't be reinterpreted under a new type.
+                # Demand a fresh one rather than leaving the receiver rejecting.
                 if type_changed and "hmac" in (effective_auth, row.auth_type):
                     raise ValidationError(
                         f"changing auth_type from {row.auth_type} to {effective_auth} "
@@ -391,14 +385,13 @@ class WebhookService:
     async def test(self, webhook_id: str, payload: Any) -> WebhookTestResponse:
         """Dry-run: validate + transform a sample payload. No publish, no log.
 
-        Mirrors ``ReceiverService.run_pipeline`` stage for stage — same rule
-        input (the RAW payload), same field_map precedence, same reject rules. A
-        dry-run that took a different path than the receiver would be worse than
-        no dry-run at all: it would confidently green-light a webhook that then
-        drops every delivery.
+        Mirrors ``ReceiverService.run_pipeline`` stage for stage — same rule input
+        (the raw payload), same field_map precedence, same reject rules. Keep it
+        that way: a dry-run on a different path would green-light a webhook that
+        then drops every delivery.
 
-        Skips actual inbound auth (there's no request) but reports the auth_type
-        so the operator knows what the live receiver will require.
+        Skips inbound auth (there is no request) but reports the auth_type so the
+        operator knows what the live receiver will require.
         """
         row = await self._get_row(webhook_id)
 
@@ -454,12 +447,11 @@ class WebhookService:
         )
 
     async def rotate_secret(self, webhook_id: str, *, actor) -> RotateSecretResponse:
-        """Mint a fresh auth secret. Returned ONCE — only the hash is persisted.
+        """Mint a fresh auth secret. Returned once — only the hash is persisted.
 
-        The URL is deliberately untouched: the slug is an operator-chosen
-        identifier that integrators already hold, not a credential. Rotating the
-        credential is the useful half; re-minting the URL would just break every
-        sender. A webhook with auth_type="none" has no secret to rotate.
+        The URL is left alone: the slug is an operator-chosen identifier that
+        integrators already hold, not a credential, so re-minting it would break
+        every sender for nothing. auth_type="none" has no secret to rotate.
         """
         row = await self._get_row(webhook_id)
         if row.auth_type == "none":
@@ -657,9 +649,8 @@ class EventLogService:
     async def replay(self, log_id: str) -> IngestEventLog:
         """Re-run a stored raw payload through its webhook's pipeline.
 
-        Writes a NEW log row (``is_replay=True``). Only replays when the webhook
-        still exists; a replay of a truncated payload is refused (the raw body
-        is no longer faithful).
+        Writes a new log row (``is_replay=True``). Needs the webhook to still
+        exist, and refuses a truncated payload — the raw body is no longer faithful.
         """
         src = await self._get_row(log_id)
         if not src.webhook_id:
@@ -688,12 +679,12 @@ class EventLogService:
 
 
 class ReceiverService:
-    """Handles ``POST /ingest/hooks/{slug}`` — NO JWT; the slug is the lookup key.
+    """Handles ``POST /ingest/hooks/{slug}``. No JWT; the slug is the lookup key.
 
-    Every inbound request produces exactly ONE ``IngestEventLog`` row (auth
-    failures + unknown tokens included), written in the same session/txn as the
-    accept so the audit trail never lags. On a rejected stage the log is
-    committed and the corresponding kernel error (401/422) is re-raised.
+    Every inbound request produces exactly one ``IngestEventLog`` row, auth
+    failures and unknown tokens included, written in the same txn as the accept so
+    the audit trail never lags. A rejected stage commits the log, then re-raises
+    the kernel error (401/422).
     """
 
     def __init__(self, db: AsyncSession, bus: EventBus) -> None:
@@ -820,10 +811,9 @@ class ReceiverService:
     ) -> IngestEventLog:
         """Validate → transform → publish for a known, authed webhook.
 
-        Records + returns ONE ``IngestEventLog`` row. Never raises on a
-        validation/transform failure — the caller inspects ``row.published`` /
-        ``row.error`` and decides the HTTP status. (A publish failure is logged
-        with published=False and error set.)
+        Records and returns one ``IngestEventLog`` row. Never raises on a
+        validation or transform failure — the caller reads ``row.published`` /
+        ``row.error`` and picks the HTTP status.
         """
         if raw_stored is None and raw_truncated is None:
             raw_stored, raw_truncated = _cap_raw(payload)
@@ -851,12 +841,11 @@ class ReceiverService:
             log.error = "schema: " + "; ".join(v.errors[:10])
             return await self._record(log)
 
-        # 2. Payload-driven routing. Rules are evaluated against the RAW payload:
-        #    that is the shape the operator wrote their paths against (they paste a
-        #    vendor sample into the rule builder), and the webhook transform may
-        #    well have dropped the very field a condition tests. The winning rule's
-        #    field_map REPLACES the webhook transform rather than chaining onto it
-        #    — a rule extracts from the vendor body, not from another extraction.
+        # 2. Payload-driven routing, evaluated against the RAW payload — that is
+        #    the shape the operator wrote their paths against, and the webhook
+        #    transform may have dropped the field a condition tests. The winning
+        #    rule's field_map replaces the webhook transform rather than chaining
+        #    onto it: a rule extracts from the vendor body, not from an extraction.
         category = await self.db.get(IngestCategory, webhook.category_id)
         cat_domain = (category.target_domain if category else None) or "ingest"
         domain = cat_domain
@@ -867,10 +856,9 @@ class ReceiverService:
         if rules:
             rule, _results = match_first(payload, rules)
             if rule is None:
-                # A webhook that routes by rules has no route for an unmatched
-                # payload. Publishing it under the default type would emit an
-                # event no consumer is configured for, and the vendor would never
-                # learn its payload went nowhere.
+                # A rule-routed webhook has no route for an unmatched payload.
+                # Publishing under the default type would emit an event no
+                # consumer is configured for, silently.
                 log.status = EventStatus.NO_RULE_MATCH.value
                 log.error = "no rule matched this payload"
                 return await self._record(log)
@@ -894,13 +882,11 @@ class ReceiverService:
         # Stash the resolved type so handle()/replay callers can read it.
         self._resolved_event_type = event_type
 
-        # 4. Device identity. v2 resolved this against its devices table here and
-        #    enriched the event with device_id/site_id/device_kind. v3 has no
-        #    device registry (see Webhook.device_lookup_expr), so the raw value
-        #    ships with the event for a downstream consumer to resolve. Note v2
-        #    also REJECTED (unresolved_device) when a lookup found no device —
-        #    not ported, since with no registry that would drop every delivery
-        #    from a webhook that configures a lookup.
+        # 4. Device identity. v3 has no device registry (see
+        #    Webhook.device_lookup_expr), so the raw value ships with the event
+        #    for a downstream consumer to resolve. v2's unresolved_device
+        #    rejection is not ported: with no registry it would drop every
+        #    delivery from a webhook that configures a lookup.
         lookup_value = evaluate_lookup_expr(payload, webhook.device_lookup_expr)
         log.device_lookup_value = lookup_value[:256] if lookup_value else None
 

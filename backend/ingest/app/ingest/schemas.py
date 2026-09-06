@@ -16,11 +16,9 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
 _SLUG_ERROR = "slug must be lowercase alphanumeric with -/_ (3-64 chars)"
 
 # The receiver's public origin (e.g. "https://ingest.acme.com"), so the operator
-# UI can show a URL that is copy-pasteable straight into a vendor's config. This
-# is v2's ``settings.frontend_base_url`` under a service-scoped name. Unset → the
-# bare path, which the frontend resolves against its own origin. Kept local to
-# ingest rather than added to the shared kernel Settings: no other service
-# publishes an externally-callable URL today.
+# UI shows a URL that pastes straight into a vendor's config. Unset → the bare
+# path, which the frontend resolves against its own origin. Local to ingest
+# rather than in kernel Settings: no other service publishes a callable URL.
 _PUBLIC_BASE_URL = (os.environ.get("VE_INGEST_PUBLIC_BASE_URL") or "").rstrip("/")
 
 
@@ -43,12 +41,9 @@ class InboundMethod(str, Enum):
 
 
 class EventStatus(str, Enum):
-    """The single-value verdict on an inbound delivery (v2's event-log status).
-
-    The operator UI filters on exactly these. ``UNRESOLVED_DEVICE`` is declared
-    but never written until v3 grows a device registry — see
-    ``Webhook.device_lookup_expr``.
-    """
+    """The single-value verdict on an inbound delivery; the operator UI filters on
+    exactly these. ``UNRESOLVED_DEVICE`` is declared but never written until v3
+    grows a device registry — see ``Webhook.device_lookup_expr``."""
 
     ACCEPTED = "accepted"
     REJECTED_AUTH = "rejected_auth"
@@ -361,9 +356,8 @@ class WebhookTestResponse(BaseModel):
     schema_errors: list[str] = Field(default_factory=list)
     transformed: Optional[Any] = None
     transform_errors: list[str] = Field(default_factory=list)
-    # Whether the live receiver would accept + publish this sample. False also
-    # covers "the webhook has rules and none of them matched" — a case neither
-    # schema_valid nor transform_errors expresses.
+    # Whether the live receiver would accept and publish this sample. False also
+    # covers "has rules, none matched", which no other field here expresses.
     would_publish: bool = True
     reject_reason: Optional[str] = None
     would_publish_subject: Optional[str] = None
@@ -497,12 +491,11 @@ class RotateSecretRequest(BaseModel):
 
 
 class RotateSecretResponse(BaseModel):
-    """Returned ONCE — the plaintext secret is never retrievable again.
+    """Returned once — the plaintext secret is never retrievable again.
 
-    Rotates the AUTH SECRET only. The URL is not touched: its slug is an
-    operator-chosen identifier, not a credential, so re-minting it would break
-    every integrator's config to no security benefit. To retire a URL, disable
-    or delete the webhook.
+    Rotates the auth secret only. The slug is an operator-chosen identifier, not a
+    credential, so re-minting the URL would break every integrator for nothing. To
+    retire a URL, disable or delete the webhook.
     """
 
     id: str

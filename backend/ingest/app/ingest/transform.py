@@ -1,7 +1,7 @@
 """Payload validation + raw→normalized transform (pure functions, no DB / no IO).
 
-Ported from neubit_v2's ingest ``transformer``. The service layer orchestrates the
-DB lookup and the NATS publish; this module only owns the data-shape transform:
+The service layer orchestrates the DB lookup and the NATS publish; this module
+owns only the data-shape transform:
 
 * ``validate_payload``      — gate the raw body against an (optional) JSON Schema.
 * ``apply_transform``       — map ``{target_field: "jmespath_expr"}`` over the payload.
@@ -35,11 +35,9 @@ class ValidationResult:
 
 
 def validate_payload(payload: Any, schema: dict[str, Any] | None) -> ValidationResult:
-    """Validate ``payload`` against an optional JSON Schema.
-
-    Empty/absent schema ({}) accepts anything. An invalid schema is treated as a
-    webhook misconfiguration — surfaced as an error, never crashes the handler.
-    """
+    """Validate ``payload`` against an optional JSON Schema. An empty schema
+    accepts anything; an invalid one is a webhook misconfiguration, surfaced as an
+    error rather than crashing the handler."""
     if not schema:
         return ValidationResult(True, [])
     try:
@@ -66,10 +64,10 @@ def apply_transform(
 ) -> TransformResult:
     """Apply ``{target_field: "jmespath_expr"}`` against ``payload``.
 
-    Empty map → return the raw payload as-is (passthrough). Per-field JMESPath
-    failures are collected, not raised — a partial transform still produces a
-    value. ``cap.``-prefixed target keys materialize nested objects/arrays; every
-    other key (dotted or not) stays a flat literal — see ``_assign_target``.
+    An empty map passes the raw payload through. Per-field JMESPath failures are
+    collected rather than raised, so a partial transform still produces a value.
+    ``cap.``-prefixed keys materialize nested objects/arrays; every other key,
+    dotted or not, stays a flat literal — see ``_assign_target``.
     """
     if not transform_map:
         if not isinstance(payload, dict):
@@ -96,10 +94,9 @@ def apply_transform(
 def _assign_target(out: dict[str, Any], target: str, value: Any) -> None:
     """``cap.``-prefixed key → nested object/array path; anything else → flat literal.
 
-    Only the CAP namespace is interpreted as a path. A vendor payload routinely
-    wants a flat output key that happens to contain a dot (``data.mac``), so
-    treating every dotted key as nested would silently reshape those maps — and
-    every ingest transform written against v2 is a map of exactly that kind.
+    Only the cap namespace is a path. Vendor payloads routinely want a flat output
+    key containing a dot (``data.mac``), so treating every dotted key as nested
+    would silently reshape those maps.
     """
     if not target.startswith("cap."):
         out[target] = value
@@ -148,8 +145,8 @@ def _assign_nested(root: dict[str, Any], path: str, value: Any) -> None:
 def evaluate_lookup_expr(payload: Any, expr: str | None) -> str | None:
     """Pull the device-identifying value (e.g. a MAC) out of the raw payload.
 
-    A bad expression is a webhook misconfiguration, not a client error: log-free
-    ``None`` here, and the caller carries on without device context rather than
+    A bad expression is a webhook misconfiguration, not a client error, so it
+    returns None and the caller carries on without device context rather than
     rejecting a delivery the vendor cannot fix.
     """
     if not expr:

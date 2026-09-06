@@ -1,20 +1,15 @@
 """Delivery / ack-policy pins for ``kernel.events.EventBus._deliver``.
 
-The two-kind failure taxonomy (module docstring, ``HANDLER FAILURES COME IN TWO
-KINDS``) is behaviour, not documentation, and these tests pin it:
-
 * an :class:`~kernel.events.Unprocessable` refusal is dead-lettered to
   ``EVENTS_DLQ`` — body intact, ``Nbt-Dlq-*`` headers matching the Go bus — and
-  ``term()``'d on the FIRST delivery;
-* an UNMARKED exception stays retryable (the safe default): NAK'd with backoff
-  through the whole MAX_DELIVER budget, dead-lettered + terminated only on the
-  final delivery;
+  ``term()``'d on the first delivery;
+* an unmarked exception stays retryable: NAK'd with backoff through the whole
+  MAX_DELIVER budget, dead-lettered and terminated only on the last delivery;
 * an undecodable body terminates immediately, also parked first;
 * a clean return acks, and nothing else does.
 
-No broker: a fake JetStream context records publishes, a fake message records
-its terminal ack state. ``_deliver`` is exercised directly, exactly as the
-subscribe callback calls it.
+No broker: a fake JetStream context records publishes and a fake message records
+its terminal ack state, with ``_deliver`` driven exactly as subscribe calls it.
 """
 
 from __future__ import annotations
@@ -96,8 +91,7 @@ def test_unprocessable_dead_letters_and_terms_on_first_delivery():
 
     _run(bus._deliver("p", "d1", handler, msg))
 
-    # Parked exactly once, under dlq.<original subject>, body byte-identical,
-    # with the Go bus's header names and the refusal reason — on delivery 1.
+    # Parked once under dlq.<original subject>, body intact, Go-bus headers.
     assert len(js.published) == 1
     subj, data, headers = js.published[0]
     assert subj == DLQ_SUBJECT_PREFIX + msg.subject
@@ -117,7 +111,7 @@ def test_unmarked_error_retries_through_the_whole_budget():
     async def handler(env: dict) -> None:
         raise RuntimeError("database is down")
 
-    # Deliveries 1 .. MAX_DELIVER-1: NAK with a growing delay, nothing parked.
+    # Deliveries 1..MAX_DELIVER-1: NAK with a growing delay, nothing parked.
     delays = []
     for delivery in range(1, MAX_DELIVER):
         msg = _msg(delivery=delivery)

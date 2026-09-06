@@ -1,17 +1,16 @@
 """Per-tenant database provisioning (DB-per-tenant, ARCHITECTURE.md §10).
 
-When ``db_per_tenant`` is on, each tenant's operational data lives in its OWN
-physical database per service — ``<base_db>_t_<tenant_hex>``. Provisioning a tenant
-= ``CREATE DATABASE`` + build the schema; offboarding = ``DROP DATABASE`` (a trivial,
-complete erase — the strongest right-to-erase story).
+When ``db_per_tenant`` is on, each tenant's data lives in its own physical
+database per service — ``<base_db>_t_<tenant_hex>``. Provisioning is CREATE
+DATABASE plus the schema; offboarding is DROP DATABASE, which is a complete erase.
 
-These are the low-level primitives; the request-time router lives in ``kernel.db``
-and the lifecycle wiring in ``kernel.lifecycle``. DDL uses a raw asyncpg admin
-connection to the ``postgres`` maintenance database (CREATE/DROP DATABASE cannot run
-inside a transaction, and asyncpg connections are autocommit by default).
+These are the primitives; the request-time router is in ``kernel.db`` and the
+lifecycle wiring in ``kernel.lifecycle``. DDL goes through a raw asyncpg admin
+connection to the ``postgres`` database, because CREATE/DROP DATABASE cannot run
+in a transaction and asyncpg is autocommit by default.
 
-The derived name is UUID-hex based (safe chars only, ≤63 for Postgres), so string
-interpolation of the identifier carries no injection risk.
+The derived name is UUID-hex (safe chars, ≤63 for Postgres), so interpolating the
+identifier carries no injection risk.
 """
 
 from __future__ import annotations

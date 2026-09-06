@@ -1,12 +1,11 @@
 """Shared settings for neubit_v3 services.
 
-Mirrors the relevant subset of the platform core's ``app.core.config.Settings``
-(same ``VE_`` env prefix, same field names) so that every service reads the SAME
-env vars the core does — tokens, events, and DB URLs stay compatible across
-services without duplicating config conventions.
+Mirrors the relevant subset of core's ``app.core.config.Settings`` — same ``VE_``
+prefix, same field names — so tokens, events and DB URLs stay compatible and one
+shared ``.env`` serves everything.
 
 Each service instantiates this once (cached) and passes ``database_url`` to the
-db factory. Fields intentionally match core so a shared ``.env`` Just Works.
+db factory.
 """
 
 from __future__ import annotations
@@ -27,28 +26,21 @@ class Settings(BaseSettings):
 
     # --- Databases (this service's OWN db) ---------------------------------
     database_url: str = "postgresql+asyncpg://neubit:neubit@localhost:5432/neubit"
-    # DB-per-tenant (strong isolation, ARCHITECTURE.md §10). OFF = the shared-DB +
-    # tenant_id row-scoping model (today's default; on-prem is naturally one tenant).
-    # ON = each tenant's operational data lives in its OWN physical database
-    # (``<base>_t_<tenant_hex>``): requests route by the JWT tenant claim, provisioning
-    # creates the DB, offboard drops it. Flipping this is a DELIBERATE cutover (needs a
-    # data migration of existing tenants) — never a hot toggle on a populated stack.
+    # DB-per-tenant (ARCHITECTURE.md §10). Off: shared DB with tenant_id row
+    # scoping, today's default. On: each tenant gets its own physical database
+    # (``<base>_t_<tenant_hex>``), routed by the JWT tenant claim, created on
+    # provision and dropped on offboard. Flipping it is a cutover needing a data
+    # migration, never a hot toggle on a populated stack.
     db_per_tenant: bool = False
-    # Server-side `statement_timeout` (milliseconds) applied to every connection
-    # this service opens. 0 = unlimited, Postgres's own default.
+    # Server-side `statement_timeout` (ms) on every connection this service opens.
+    # 0 = unlimited, Postgres's default. Set it on write paths: a query with no
+    # timeout hangs forever and nothing reports it — a writer blocked on a lock
+    # keeps /readyz green while nothing is written. The timeout turns that silence
+    # into an exception the retry/NAK path already handles.
     #
-    # WHY IT IS NOT 0 FOR THE WRITE PATHS: a query with no timeout can hang
-    # forever, and a hang is worse than an error because nothing reports it. A
-    # writer blocked on a lock keeps its health flag TRUE (the last write
-    # succeeded, and the current one has not failed — it just has not returned),
-    # so /readyz stays green while nothing at all is being written. A statement
-    # timeout converts that silence into an exception the retry/NAK path already
-    # knows how to handle and the health flag already reflects.
-    #
-    # It is NOT a complete answer on its own: `docker compose pause postgres`
-    # SIGSTOPs the server, so the server-side timer is frozen too and never
-    # fires. That case needs the client-side stall detector in the pipelines.
-    # The two cover different halves of "the database stopped answering".
+    # Not a complete answer: a SIGSTOPped server (`docker compose pause postgres`)
+    # freezes the server-side timer too, which is what the pipelines' client-side
+    # stall detector covers.
     db_statement_timeout_ms: int = 0
     # Redis — Celery broker/result backend + realtime pub/sub.
     redis_url: str = "redis://localhost:6379/0"
@@ -61,18 +53,16 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-prod"
 
     # --- Secrets at rest (kernel.secrets) ----------------------------------
-    # Master key for credentials a service stores in its OWN database (SMTP
-    # passwords, provider API tokens). Same env var, name and default as core's
-    # setting of the same name, so one `.env` keys both and neither invents its own
-    # convention. Additive: a service that encrypts nothing never reads it.
-    # ROTATING IT RE-KEYS EVERY TENANT — see kernel/secrets.py, where a value that
-    # no longer decrypts raises rather than being handed back as if it were plaintext.
+    # Master key for credentials a service stores in its own database (SMTP
+    # passwords, provider API tokens). Same env var, name and default as core's,
+    # so one `.env` keys both. Rotating it re-keys every tenant, and a value that
+    # no longer decrypts raises — see kernel/secrets.py.
     secrets_key: str = "change-me-secret"
 
     # --- CORS (frontend origins) ------------------------------------------
     cors_origins: list[str] = ["http://localhost:3000"]
-    # Default allows any http(s) origin so a service opens from the LAN without
-    # friction; the specific origin is echoed back (compatible with credentials).
+    # Any http(s) origin by default so a service opens from the LAN; the specific
+    # origin is echoed back, which keeps credentialed requests working.
     cors_origin_regex: str = r"https?://.*"
 
 

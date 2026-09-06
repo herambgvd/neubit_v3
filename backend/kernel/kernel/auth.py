@@ -1,10 +1,8 @@
 """Local JWT authorization + tenant scoping for satellite services.
 
-The platform core is the ONLY token issuer (login / refresh). Every other service
-validates the core-minted access token LOCALLY (no round-trip to core): same
-HS256 secret (VE_JWT_SECRET), same claims. The core now bakes an effective
-``permissions`` list into the access token, so a service can authorize a request
-without querying the control DB.
+Core is the only token issuer; every other service validates the token locally
+(same HS256 secret VE_JWT_SECRET, same claims), so authorizing a request needs no
+round-trip and no control DB.
 
 Claims consumed (minted by core's ``create_access_token``):
     sub           user id (uuid str)
@@ -24,10 +22,9 @@ Usage in a service route:
     @router.post("/things", dependencies=[Depends(require_permission("thing.create"))])
     async def create_thing(principal: Principal = Depends(get_principal)): ...
 
-Authoritative note: unlike core (which re-reads the live user row each request),
-these services trust the token claims — a permission/tenant change takes effect
-when the short-lived access token is refreshed. That's the deliberate trade for a
-DB-free authorization path in the satellite services.
+Unlike core, which re-reads the live user row each request, these services trust
+the claims: a permission or tenant change takes effect on the next token refresh.
+That is the deliberate cost of the DB-free path.
 """
 
 from __future__ import annotations
@@ -58,27 +55,24 @@ class Principal:
     tenant_id: uuid.UUID | None
     is_superadmin: bool
     permissions: list[str] = field(default_factory=list)
-    # The caller's role id, as an opaque core subject id (not uuid-parsed here).
-    # Present so we can resolve ROLE-subject per-camera ACL grants statelessly;
-    # None for a legacy token minted before the claim existed, or a role-less user.
+    # Opaque core subject id, not uuid-parsed. Lets us resolve role-subject ACL
+    # grants statelessly. None for a role-less user or a token predating the claim.
     role_id: str | None = None
-    # Tenant entitlements baked into the token by core (empty for super-admins, who
-    # bypass). ``features`` is {module_key: bool}; ``limits`` is {resource: number}.
-    # ``license_state`` is "active" | "grace" | "expired" (super-admins/on missing
-    # claim → "active", i.e. fail-open on license so a rollout never locks users out).
+    # Tenant entitlements from core; empty for super-admins, who bypass.
+    # features is {module_key: bool}, limits is {resource: number}.
+    # license_state is "active" | "grace" | "expired"; a missing claim means
+    # "active" so a rollout can't lock everyone out.
     features: dict = field(default_factory=dict)
     limits: dict = field(default_factory=dict)
     license_state: str = "active"
     tenant_status: str = "active"  # "active" | "suspended"
-    # The caller's SITE ACCESS SCOPE (core subject "site" ids as opaque strings).
-    # EMPTY = unrestricted (all sites in the tenant). Non-empty = the caller may only
-    # see data belonging to these sites. Super-admins ignore it (they bypass).
+    # Site access scope: opaque core "site" subject ids. Empty means all sites in
+    # the tenant. Super-admins ignore it.
     site_ids: list[str] = field(default_factory=list)
 
     def site_scoped(self) -> bool:
-        """True when this caller is confined to a subset of sites (non-superadmin
-        with a non-empty site list). Callers use it to decide whether to apply the
-        ``Camera.site_id IN site_ids`` restriction."""
+        """True when the caller is confined to a subset of sites, so the caller
+        should apply a ``site_id IN site_ids`` restriction."""
         return not self.is_superadmin and bool(self.site_ids)
 
     def grants(self, permission: str) -> bool:
@@ -89,45 +83,43 @@ class Principal:
         )
 
     def subjects(self) -> list[str]:
-        """The core subject ids this caller matches, for per-camera ACL resolution.
-
-        Format: "user:<uuid>" always; "role:<uuid>" when the token carries a role_id.
-        """
+        """Core subject ids this caller matches, for ACL resolution: always
+        "user:<uuid>", plus "role:<uuid>" when the token carries a role_id."""
         subs = [f"user:{self.user_id}"]
         if self.role_id:
             subs.append(f"role:{self.role_id}")
         return subs
 
     def feature_enabled(self, key: str) -> bool:
-        """Whether the caller's tenant has module ``key`` enabled (super-admin → always)."""
+        """Whether the tenant has module ``key`` enabled. Super-admin: always."""
         return self.is_superadmin or bool(self.features.get(key))
 
     def limit(self, name: str, default=None):
-        """A tenant quota value (super-admin → ``default``, i.e. unlimited)."""
+        """A tenant quota value. Super-admin: ``default``, i.e. unlimited."""
         return default if self.is_superadmin else self.limits.get(name, default)
 
     @property
     def license_expired(self) -> bool:
-        """True only when the tenant's license is past its grace window (super-admin → never)."""
+        """True past the grace window. Super-admin: never."""
         return not self.is_superadmin and self.license_state == "expired"
 
     @property
     def tenant_suspended(self) -> bool:
-        """True when the caller's tenant is suspended by a super-admin (super-admin → never)."""
+        """True when the tenant is suspended. Super-admin: never."""
         return not self.is_superadmin and self.tenant_status == "suspended"
 
 
 def verify_token(token: str) -> Principal:
-    """Decode + verify the access token (HS256, VE_JWT_SECRET) → Principal.
+    """Decode and verify an access token (HS256, VE_JWT_SECRET) into a Principal.
 
-    Raises UnauthorizedError on any signature/expiry/type problem.
+    Raises UnauthorizedError on any signature, expiry or type problem.
     """
     try:
         payload = jwt.decode(
             token,
             get_settings().jwt_secret,
             algorithms=["HS256"],
-            options={"verify_aud": False},  # aud is checked by core's admin realm, not here
+            options={"verify_aud": False},  # aud is core's admin realm's business
         )
     except jwt.PyJWTError:
         raise UnauthorizedError("invalid or expired token")
@@ -137,8 +129,7 @@ def verify_token(token: str) -> Principal:
     if not sub:
         raise UnauthorizedError("token missing subject")
     tid = payload.get("tenant_id")
-    # role_id is optional & opaque (a raw string, not uuid-parsed): a pre-change
-    # token simply omits it → None. Used only for role-subject ACL resolution.
+    # Optional and opaque; an older token just omits it.
     role_id = payload.get("role_id")
     return Principal(
         user_id=uuid.UUID(str(sub)),
@@ -160,11 +151,9 @@ async def get_principal(
 ) -> Principal:
     """FastAPI dependency: the authenticated caller (Bearer JWT).
 
-    Defense-in-depth: when the gateway's ForwardAuth injected a trusted
-    ``X-Tenant-Id`` (strip-identity removes any client-supplied one first), it MUST
-    match the JWT's tenant claim — a mismatch means header tampering and is rejected.
-    The JWT stays the authority; the header is only an extra edge cross-check. A
-    request with no such header (a direct/in-cluster call) is unaffected.
+    If the gateway injected an ``X-Tenant-Id``, it must match the JWT's tenant
+    claim; a mismatch means header tampering. The JWT stays the authority, the
+    header is only a cross-check, and a request without one is unaffected.
     """
     if cred is None:
         raise UnauthorizedError("missing bearer token")
@@ -192,12 +181,11 @@ def require_permission(*permissions: str):
 def require_feature(*keys: str):
     """Dependency factory: the caller's tenant must have ALL of ``keys`` enabled.
 
-    Gate a whole service/router behind its module, e.g. on ``include_router``:
+    Gate a whole router behind its module:
 
         app.include_router(r, dependencies=[Depends(require_feature("vms"))])
 
-    Super-admins bypass. A tenant without the module gets 403 FEATURE_DISABLED.
-    (Reads the token claim — a satellite authorises locally, no round-trip to core.)
+    Super-admins bypass; a tenant without the module gets 403 FEATURE_DISABLED.
     """
 
     async def _dep(principal: Principal = Depends(get_principal)) -> Principal:
@@ -213,13 +201,12 @@ def require_feature(*keys: str):
 
 
 def require_tenant_access():
-    """Dependency: block when the caller's tenant can't operate — it is SUSPENDED by
-    a super-admin, or its license is EXPIRED (past grace).
+    """Dependency: block a suspended tenant (403 TENANT_SUSPENDED) or one whose
+    license is past grace (403 LICENSE_EXPIRED). ``grace`` itself is allowed.
 
-    ``grace`` is allowed (the UI warns). Suspended → 403 TENANT_SUSPENDED; expired →
-    403 LICENSE_EXPIRED. Super-admins bypass. Core already blocks both at login; this
-    closes the window where a token minted before the change keeps working. Apply
-    alongside ``require_feature`` on a service's protected routers.
+    Super-admins bypass. Core blocks both at login; this closes the window where a
+    token minted before the change keeps working. Apply alongside
+    ``require_feature`` on a service's protected routers.
     """
 
     async def _dep(principal: Principal = Depends(get_principal)) -> Principal:
@@ -238,19 +225,18 @@ def require_tenant_access():
     return _dep
 
 
-# Back-compat alias: the gate now covers suspension too, but services wired it under
-# the original name. Both resolve to the same combined tenant-access check.
+# The gate covers suspension too now, but services wired it under the old name.
 require_active_license = require_tenant_access
 
 
 def enforce_limit(principal: Principal, resource: str, current: int) -> None:
-    """Raise CONFLICT if creating one more ``resource`` would exceed the tenant quota.
+    """Raise CONFLICT if one more ``resource`` would exceed the tenant quota.
 
     Call before a create, passing the live count from the service's own DB:
 
         enforce_limit(principal, "max_cameras", await count_cameras(scope))
 
-    A missing/negative limit means unlimited; super-admins are always unlimited.
+    A missing or negative limit means unlimited, as does super-admin.
     """
     cap = principal.limit(resource)
     if isinstance(cap, (int, float)) and cap >= 0 and current >= cap:
@@ -296,32 +282,21 @@ def scoped(stmt: Select, model: Any, scope: Scope) -> Select:
 
 
 def owns(obj: Any, scope: Scope, *, allow_shared: bool = True) -> bool:
-    """Whether ``scope`` may act on ``obj`` (a row with a ``tenant_id``).
+    """Whether ``scope`` may act on ``obj``. Super-admin owns everything; a tenant
+    owns a row whose tenant_id matches.
 
-    Super-admin owns everything. A tenant-admin owns a row iff its tenant_id
-    matches theirs.
+    ``allow_shared`` decides what a NULL tenant_id means. It defaults True (NULL is
+    a shared platform row) because nine services import this and flipping it would
+    change all of them at once. Most tables want False: ``scoped()`` excludes NULL
+    rows from listings, so a True default leaves a platform row invisible in lists
+    but reachable by id — and the by-id path is also the write/delete path. The
+    same predicate on core's ``users`` let a tenant-admin reset the super-admin's
+    password (core 36a7798).
 
-    ``allow_shared`` decides what a NULL tenant_id means, and the default is the
-    behaviour every satellite has had until now: NULL is a shared/platform row,
-    readable by everyone. That default is WRONG for most tables and is kept only
-    because this module is imported by nine services and flipping it blind would
-    change behaviour in all of them at once.
-
-    Why it is wrong: ``scoped()`` above EXCLUDES NULL rows from a listing, so with
-    ``allow_shared=True`` a platform row is invisible in every list and reachable
-    by id — and every by-id caller here is also the write/delete path. In core the
-    identical predicate on the ``users`` table let a tenant-admin fetch the
-    super-admin by id and reset its password (core commit 36a7798). In a satellite
-    the equivalent is a platform-scoped controller instance that any tenant can
-    re-credential and send commands to.
-
-    Why it is not simply flipped: a few call sites rely on the permissive read ON
-    PURPOSE — vision assigns cameras to shared platform media nodes and checks them
-    with this predicate. Those sites now say ``allow_shared=True`` explicitly, so
-    the reliance is a statement rather than an accident. A service that wants the
-    correct semantics passes ``allow_shared=False`` at every site and pins that
-    with a test (see access's ``tests/test_ownership_is_strict.py``). When every
-    satellite has done so, the default flips and this paragraph goes.
+    Sites that want the permissive read deliberately — vision's shared platform
+    media nodes — now pass ``allow_shared=True`` explicitly. A service that wants
+    strict ownership passes False everywhere and pins it with a test (see access's
+    ``tests/test_ownership_is_strict.py``). Once all of them do, the default flips.
     """
     if scope.is_platform:
         return True
@@ -336,11 +311,9 @@ def assert_owned(
 ) -> None:
     """Raise NotFound if ``scope`` may not access this by-id object.
 
-    NOT_FOUND (not FORBIDDEN) on purpose: a tenant-admin must not be able to tell
-    whether an id exists in another tenant. Super-admin always passes.
-
-    ``allow_shared`` is forwarded to :func:`owns` — read its docstring before
-    leaving the default in a new call site.
+    NOT_FOUND rather than FORBIDDEN so a tenant-admin can't probe for ids in
+    another tenant. ``allow_shared`` is forwarded to :func:`owns` — read that
+    docstring before leaving the default in a new call site.
     """
     if obj is None or not owns(obj, scope, allow_shared=allow_shared):
         raise NotFoundError(message)

@@ -1,9 +1,8 @@
 """Async SQLAlchemy engine / sessionmaker / get_db / Base factory.
 
-Mirrors the platform core's ``app.db.base`` but takes the ``database_url`` as an
-argument (or reads it from the shared Settings) so each service points at its OWN
-Postgres database. A service builds one ``Database`` at import time and depends on
-``db.get_db`` in its routes.
+Mirrors core's ``app.db.base`` but takes the ``database_url`` as an argument, so
+each service points at its own Postgres database. A service builds one
+``Database`` at import time and depends on ``db.get_db`` in its routes.
 
     from kernel.db import Database
     from kernel.config import get_settings
@@ -12,9 +11,9 @@ Postgres database. A service builds one ``Database`` at import time and depends 
     Base = database.Base            # every ORM model inherits from this
     get_db = database.get_db        # FastAPI dependency
 
-IMPORTANT: sessions do NOT auto-commit — a service that writes must call
-``await session.commit()`` explicitly. Engine/sessionmaker are created lazily so
-importing this module never requires a live database (tests/tooling import freely).
+Sessions do NOT auto-commit: a service that writes must call
+``await session.commit()``. Engine and sessionmaker are lazy, so importing this
+module never needs a live database.
 """
 
 from __future__ import annotations
@@ -43,10 +42,9 @@ class Database:
     """Per-service async DB handle: lazy engine, sessionmaker, Base, get_db dep.
 
     Also the DB-per-tenant router: ``sessionmaker_for(tenant_id)`` returns a pooled
-    sessionmaker bound to the tenant's OWN database when ``db_per_tenant`` is on, and
-    falls back to the shared engine otherwise (or when tenant_id is None). The shared
-    ``get_db`` is unchanged — services on the default (shared-DB) model keep working
-    exactly as before; the per-tenant path only engages once the flag is flipped.
+    sessionmaker on the tenant's own database when ``db_per_tenant`` is on, and the
+    shared one otherwise. ``get_db`` always uses the shared engine, so the
+    per-tenant path stays dormant until the flag is flipped.
     """
 
     def __init__(
@@ -59,12 +57,10 @@ class Database:
         self.database_url = database_url
         # None → read the shared setting; an explicit value overrides it. 0 = off.
         self.statement_timeout_ms = statement_timeout_ms
-        # Both None → SQLAlchemy's defaults, which is every existing caller. They
-        # exist for a process that runs TWO independent writers against one store
-        # and must not let either exhaust the other's connections; a shared pool
-        # turns "the projections are slow" into "readings stopped", because the
-        # blocking happens in the pool checkout where no health flag is watching.
-        # Not applied to sqlite, which pools on entirely different classes.
+        # Both None → SQLAlchemy's defaults. Set them when a process runs two
+        # independent writers against one store, so neither can exhaust the
+        # other's connections — a shared pool blocks in the checkout, where no
+        # health flag is watching. Not applied to sqlite, which pools differently.
         self.pool_size = pool_size
         self.max_overflow = max_overflow
         self._engine: AsyncEngine | None = None
@@ -83,11 +79,9 @@ class Database:
     def _engine_kwargs(self) -> dict:
         """Engine kwargs, carrying `statement_timeout` when one is configured.
 
-        asyncpg applies `server_settings` with a `SET` on every new connection, so
-        the timeout covers the whole pool without any per-session bookkeeping. A
-        query that exceeds it raises `QueryCanceledError` — which is the point: a
-        hung write must become a FAILED write, because a failed write is retried,
-        NAK'd and reported, and a hung one is silent.
+        asyncpg SETs `server_settings` on every new connection, so the timeout
+        covers the whole pool. Exceeding it raises `QueryCanceledError`, which is
+        the point: a failed write is retried and reported, a hung one is silent.
         """
         kwargs: dict = {}
         if "sqlite" not in self.database_url:

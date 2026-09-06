@@ -1,63 +1,32 @@
 """One log line shape for every service that carries the kernel.
 
-WHAT WAS WRONG. ``logging.basicConfig(level=logging.INFO)`` — which access, vision
-and ingest each spell out for themselves, and which reading-writer half-fixed with
-a fourth private format string — emits
-``INFO:workflow.correlation:...``: no timestamp, no service, no process role. In a
-compose stack that is one interleaved stream in which the only way to tell who
-wrote a line is to recognise the logger name, and it is worse than that for
-workflow, whose api, worker and beat are THREE containers built from ONE image all
-writing the same shape. Every incident here starts with someone re-running
-``docker compose logs`` filtered by hand.
+``basicConfig`` emits ``INFO:workflow.correlation:...`` — no timestamp, no
+service, no process role — which is unreadable in an interleaved compose stream,
+especially for workflow, whose api, worker and beat are three containers from one
+image. :func:`configure` replaces that with a line that names its container.
 
-WHAT THIS COSTS, SINCE kernel IS IMPORTED BY NINE SERVICES. Nothing. This is a NEW
-module that no existing module imports — it is deliberately absent from
-``kernel/__init__.py``'s re-exports for that reason, exactly as ``kernel.secrets``
-is (see 43ff0f5, which reasoned about the same blast radius). Nothing here runs
-until a service calls :func:`configure`, and it adds no dependency: stdlib only.
+Adopt it with one call before anything else logs::
 
-WHY TEXT IS THE DEFAULT IN EVERY ENVIRONMENT, INCLUDING PRODUCTION
+    from kernel.logging import configure; configure("access", "api")
 
-``core``'s copy (``core/app/core/logging.py``) switches to JSON whenever ``env !=
-"dev"``, and workflow's local predecessor copied that rule. It is dropped here on
-purpose. This estate ships on-prem with no log shipper: ``docker compose logs`` is
-the only reader there is, and in production it is a human under time pressure. An
-env-conditional default means the format you debug against is never the format
-that is running when you actually need to read it, which is the one case that
-matters. So JSON is opt-in — set ``VE_LOG_FORMAT=json`` when a shipper exists to
-consume it — and until then the common case stays readable.
+Deliberately absent from ``kernel/__init__.py``'s re-exports, like
+``kernel.secrets``: nothing here runs until a service calls ``configure``.
+access, vision, ingest and reading-writer are still on ``basicConfig`` — adopting
+changes their line shape, and this repo's ops-agent pattern-matches container
+logs, so each wants its own commit and its own look at the parser.
 
-The JSON shape is core's shape plus ``service`` and ``role``. A shipper that
-already has a rule for core's lines parses these with the same rule; the two extra
-keys are additive.
+Text is the default in every environment, unlike core's copy, which flips to JSON
+off ``env``. This estate ships on-prem with no shipper, so ``docker compose logs``
+and a human are the only readers, and the format you debug against should be the
+one that is running. Set ``VE_LOG_FORMAT=json`` once a shipper exists; the JSON
+shape is core's plus ``service`` and ``role``, so a rule for core's lines parses
+these too.
 
-WHAT ADOPTING THIS COSTS THE SERVICES THAT HAVE NOT (deliberately: access, vision,
-ingest, reading-writer are LEFT on ``basicConfig`` by the commit that added this,
-so one commit changes one service's log shape rather than five)
-
-  * One import and one call, before anything else logs:
-    ``from kernel.logging import configure; configure("access", "api")``, replacing
-    the ``basicConfig`` line. Both are cheap; the cost is not in the code.
-  * Their log LINES change shape. Anything downstream that pattern-matches on
-    ``INFO:logger:message`` — this repo's ops-agent reads container logs — sees a
-    different prefix from that deploy on. That is the whole reason this is not
-    done for them here: it wants its own commit and its own look at the parser.
-  * ``VE_LOG_LEVEL`` starts working for the three that pin INFO (access, vision,
-    ingest), which is the payoff: turning DEBUG up on one container stops needing
-    a rebuild. reading-writer already reads that var and would gain only the shape.
-  * Nothing else. There is no new dependency, no new env var that must be set, and
-    a service that adopts this and sets nothing gets INFO-level text.
-
-WHAT IS DELIBERATELY NOT HERE
-
-  * No access-log middleware. Which HTTP requests are worth a line, and whether the
-    line is emitted at all, is a per-service decision; core has its own
-    ``RequestLoggingMiddleware`` and it stays core's. This module configures
-    handlers and nothing else, so it can be adopted by a Celery worker and a NATS
-    consumer as readily as by an ASGI app.
-  * ``core`` is not changed to import this. core's image does not carry the kernel
-    (core/pyproject.toml), so it cannot — the same constraint kernel.secrets ran
-    into. The formats are kept compatible instead of shared.
+No access-log middleware here: which requests deserve a line is per-service (core
+has its own ``RequestLoggingMiddleware``), and keeping this to handlers lets a
+Celery worker or NATS consumer use it as readily as an ASGI app. core can't
+import this at all — its image doesn't carry the kernel — so the formats are kept
+compatible rather than shared.
 """
 
 from __future__ import annotations
@@ -69,19 +38,17 @@ import sys
 from contextvars import ContextVar
 
 #: The current request/message correlation id, "-" outside one (startup, sweeps,
-#: consumers). Present because core's JSON lines carry ``request_id`` and a
-#: shipper rule that works for both must find the key in both. A service that
-#: never sets it pays one dict lookup per line.
+#: consumers). Always emitted, because core's JSON lines carry ``request_id`` and
+#: one shipper rule has to find the key in both.
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 
 
 class _ContextFilter(logging.Filter):
-    """Stamps service/role/request_id onto every record, including records from
-    libraries that know nothing about any of the three (uvicorn, celery, asyncpg).
+    """Stamps service/role/request_id onto every record, including ones from
+    libraries that know nothing about them (uvicorn, celery, asyncpg).
 
-    A filter on the HANDLER rather than fields baked into a Formatter, because the
-    text formatter and the JSON formatter both need them and neither should own
-    them.
+    On the handler rather than in a Formatter, since both formatters need these
+    fields and neither should own them.
     """
 
     def __init__(self, service: str, role: str) -> None:
@@ -117,10 +84,8 @@ class JsonFormatter(logging.Formatter):
 def _text_formatter(service: str, role: str) -> logging.Formatter:
     """``2026-09-05T15:46:04 INFO    [workflow/worker] workflow.jobs: message``
 
-    service/role are interpolated into the format string rather than read off the
-    record, so a line written by a logger the filter somehow missed still says
-    which container produced it — the one fact ``docker compose logs`` cannot
-    supply on its own once two containers share an image.
+    service/role go into the format string rather than being read off the record,
+    so a line from a logger the filter missed still names its container.
     """
     tag = f"{service}/{role}" if role else service
     return logging.Formatter(
@@ -141,12 +106,10 @@ def configure(
 
     ``level`` defaults to ``VE_LOG_LEVEL`` then INFO; ``fmt`` to ``VE_LOG_FORMAT``
     (``text`` | ``json``) then text. An unrecognised level falls back to INFO
-    rather than raising: a typo in an env var must not stop a service booting, and
-    the wrong verbosity is a smaller failure than no service.
+    rather than raising — an env-var typo must not stop a service booting.
 
-    Handlers are REPLACED, not appended. uvicorn and celery each install their own
-    on import, and stacking prints every line twice — which is its own small
-    observability failure, because a duplicated error reads as two errors.
+    Handlers are replaced, not appended: uvicorn and celery install their own on
+    import, and stacking prints every line twice.
     """
     level_name = (level or os.getenv("VE_LOG_LEVEL") or "INFO").upper()
     fmt_name = (fmt or os.getenv("VE_LOG_FORMAT") or "text").lower()
@@ -165,8 +128,7 @@ def configure(
 def bind_request_id(request_id: str):
     """Set the correlation id for the current context; returns the ContextVar token.
 
-    Deliberately not a context manager: the ASGI/consumer callers that want this
-    set it once per task and let the context die with the task, and a ``with``
-    block would imply a nesting discipline none of them have.
+    Not a context manager on purpose: callers set it once per task and let the
+    context die with the task.
     """
     return request_id_ctx.set(request_id)

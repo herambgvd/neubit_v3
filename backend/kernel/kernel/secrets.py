@@ -1,51 +1,18 @@
-"""Symmetric encryption for credentials that services store in their OWN database.
+"""Symmetric encryption for credentials a service stores in its own database.
 
-WHY THIS IS IN kernel AND NOT COPIED INTO THE SERVICE THAT NEEDED IT
+Ciphertext is stored as ``enc:v1:<fernet token>``. An unmarked value is legacy
+plaintext and passes through unchanged; a marked value that will not decrypt
+raises, because that means a rotated ``VE_SECRETS_KEY`` and an operator needs to
+see it rather than get ``gAAAAAB...`` handed to an SMTP server.
 
-``core`` already solved this (``core/app/core/secrets.py``) and ``ingest`` already
-solved the adjacent half of it (``ingest/app/ingest/security.py``). Workflow was
-about to be the third, and three hand-rolled Fernet derivations is not three
-implementations of one scheme — it is three schemes that agree today, drift on the
-first bug fix, and leave an auditor asking which of them the STQC per-tenant-key
-claim actually describes. So the derivation lives once, here, where every service
-that carries the kernel can reach it.
+Two services deliberately do not import this:
 
-WHAT THIS COSTS, SINCE kernel IS IMPORTED BY NINE SERVICES. Nothing at import
-time and nothing at runtime for the eight that do not use it: this is a NEW module
-that no existing module imports, so adding it cannot change any behaviour that is
-running today. It adds NO dependency either — ``cryptography`` is already in every
-kernel image via ``pyjwt[crypto]``. The one edit to shared code is a ``secrets_key``
-field on ``kernel.config.Settings``, additive and with the same name, prefix and
-default as core's, so a stack that already sets ``VE_SECRETS_KEY`` (deploy/.env
-does) needs no config change and a stack that does not keeps booting.
-
-WHAT IS DELIBERATELY NOT DONE HERE
-
- * core is NOT changed to import this. core's image deliberately does not carry the
-   kernel (see core/pyproject.toml), so it cannot; and rewriting a module that is
-   encrypting live tenant secrets, to gain nothing but tidiness, is a re-key risk
-   taken for style. The derivation below is byte-identical to core's on purpose —
-   same env var, same HMAC-SHA256 KDF, same Fernet — so the two are one scheme
-   reachable from two places, not two schemes.
- * ingest is NOT changed to import this either. ingest's choice is a DIFFERENT
-   choice, not a worse copy of this one: it HASHES the secrets it only ever needs
-   to compare, and reversibly encrypts only the HMAC shared secrets it must
-   recompute a signature from. Hashing where a one-way value suffices is stronger
-   than what is here. Do not "unify" that away.
-
-THE MARKER, AND WHY LENIENT DECRYPT IS NOT AN EXCEPTION HANDLER HERE
-
-Ciphertext is stored as ``enc:v1:<fernet token>`` (the ``enc:`` convention ingest
-already uses). Deployments have live rows written before encryption existed, and a
-deploy that cannot read what it wrote yesterday is an outage — so a value WITHOUT
-the marker is returned unchanged. core gets that same leniency by catching
-``InvalidToken``, which cannot tell "this is legacy plaintext" from "this is
-ciphertext I no longer hold the key for" and answers both by handing the caller the
-raw ciphertext. The first is a migration; the second is an operator who rotated
-``VE_SECRETS_KEY``, and quietly returning the ciphertext there means an SMTP
-password of ``gAAAAAB...`` is presented to a mail server and the log says
-"authentication failed". The marker separates the two: no marker is plaintext, a
-marker that will not decrypt raises. Fail loudly on the case an operator can fix.
+ * core keeps its own copy — its image does not carry the kernel, and rewriting a
+   module encrypting live tenant secrets is a re-key risk for no gain. The
+   derivation here is byte-identical (same env var, HMAC-SHA256 KDF, Fernet).
+ * ingest made a different, stronger choice: it hashes the secrets it only ever
+   compares, and encrypts only the HMAC secrets it must recompute from. Don't
+   "unify" that away.
 """
 
 from __future__ import annotations
@@ -59,32 +26,27 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from .config import get_settings
 
-#: Storage marker. Versioned so a future KDF/cipher change is distinguishable at
-#: rest instead of being a silent re-interpretation of existing rows.
+#: Storage marker. Versioned so a future KDF/cipher change is visible at rest
+#: instead of silently re-interpreting existing rows.
 ENC_PREFIX = "enc:v1:"
 
-#: Key material for rows whose ``tenant_id`` is NULL (platform / system rows).
-#: A literal, not the empty string, so it cannot collide with a real tenant id —
-#: tenant ids are UUIDs and no UUID renders as this.
+#: KDF input for rows with a NULL tenant_id. A literal rather than "" so it can
+#: never collide with a real tenant id.
 _GLOBAL_TENANT = "__platform__"
 
 
 class SecretDecryptError(RuntimeError):
-    """A value carried the ``enc:`` marker but would not decrypt under this key.
-
-    Almost always ``VE_SECRETS_KEY`` changed (or the row was restored from another
-    deployment's backup). The message deliberately carries NO part of the value.
-    """
+    """A marked value would not decrypt under this key — usually ``VE_SECRETS_KEY``
+    rotated, or the row came from another deployment. The message carries no part
+    of the value."""
 
 
 def _fernet_for(tenant_id: str | None) -> Fernet:
-    """A PER-TENANT Fernet key: HMAC-SHA256(master secret, "tenant:<id>").
+    """A per-tenant Fernet key: HMAC-SHA256(master secret, "tenant:<id>").
 
-    Per-tenant and not one global key because the data being protected is
-    per-tenant: one tenant's key must never decrypt another's credentials (the STQC
-    per-tenant-key / data-residency requirement core states in its own copy).
-    Rotating ``VE_SECRETS_KEY`` re-keys every tenant; swapping the KDF input for one
-    tenant re-keys that tenant alone.
+    Per-tenant so one tenant's key never decrypts another's credentials (STQC
+    requirement). Rotating ``VE_SECRETS_KEY`` re-keys everyone; changing the KDF
+    input for one tenant re-keys that tenant alone.
     """
     tid = str(tenant_id) if tenant_id else _GLOBAL_TENANT
     key = hmac.new(
@@ -101,10 +63,9 @@ def is_encrypted(value: Any) -> bool:
 def encrypt_secret_for(tenant_id: str | None, plaintext: str) -> str:
     """Encrypt under the tenant's own key. Already-encrypted input passes through.
 
-    The pass-through is what makes a partial update safe: an admin PATCHing a
-    channel's host without retyping its password hands back the ciphertext it was
-    shown, and re-encrypting that would produce a double-wrapped value that decrypts
-    to ciphertext.
+    The pass-through keeps partial updates safe: an admin PATCHing a channel's host
+    hands back the ciphertext they were shown, and re-encrypting it would
+    double-wrap.
     """
     if is_encrypted(plaintext):
         return plaintext
@@ -126,10 +87,9 @@ def decrypt_secret_for(tenant_id: str | None, value: str) -> str:
 
 # --- selective field encryption over a config blob ---------------------------
 #
-# The walkers are generic and the PREDICATE is the caller's, on purpose. Which key
-# names hold a credential is domain knowledge that belongs with the domain (see
-# workflow's notifications/secrets.py); which bytes get a cipher applied to them is
-# not, and that is the half that must not be re-implemented per service.
+# The walkers are generic, the predicate is the caller's: which key names hold a
+# credential is domain knowledge (see workflow's notifications/secrets.py), the
+# ciphering is not.
 
 
 def _walk(obj: Any, path: tuple[str, ...], is_secret, fn) -> Any:
@@ -147,11 +107,9 @@ def encrypt_fields(
 ) -> dict | None:
     """Return a copy of ``data`` with every string leaf ``is_secret`` selects encrypted.
 
-    Selective and not a blob-encrypt of the whole document: a blob makes the
-    non-secret half (SMTP host, webhook URL, port, TLS flag) unreadable to anyone
-    debugging a channel and unsearchable to any query, and buys nothing — the
-    attacker model is "can read the table", and the host was never the thing worth
-    hiding.
+    Selective rather than encrypting the whole document, so the non-secret half
+    (host, URL, port, TLS flag) stays readable and queryable. The threat model is
+    "can read the table", and the host was never worth hiding.
     """
     if not data:
         return data
@@ -172,9 +130,8 @@ def redact_fields(
 ) -> dict | None:
     """Return a copy safe to log or serialise: every secret leaf replaced wholesale.
 
-    Not a mask of the tail (``…abc123``): for a shared API token the tail IS a
-    usable identifier for an attacker correlating leaks, and there is no operator
-    workflow here that needs to recognise a secret by sight.
+    Wholesale, not a ``…abc123`` tail mask — the tail identifies a shared token to
+    anyone correlating leaks, and nothing here needs a secret recognisable by sight.
     """
     if not data:
         return data

@@ -5,18 +5,15 @@ never in plaintext: a salted SHA-256 (salt.hexdigest) — no shared encryption k
 needed, and a DB leak never exposes usable credentials. Verification recomputes
 the hash with the stored salt and compares in constant time.
 
-HMAC webhooks are the exception: verifying a GitHub-style ``X-Signature`` header
-requires the ORIGINAL shared secret to recompute the signature, so a one-way hash
-won't do. Those secrets are stored REVERSIBLY-ENCRYPTED (``enc:...``) with a
-stream cipher keyed off the kernel ``jwt_secret`` (no new dependency, no
-plaintext at rest). The auth field on the model still holds one opaque string;
-``hash_secret`` / ``verify_secret`` handle the hashed case and
-``encrypt_secret`` / ``decrypt_secret`` handle the reversible case.
+HMAC webhooks are the exception: recomputing a GitHub-style ``X-Signature``
+needs the original shared secret, so those are stored reversibly encrypted
+(``enc:...``) with a stream cipher keyed off the kernel ``jwt_secret``. The model
+column holds one opaque string either way — ``hash_secret`` / ``verify_secret``
+for the hashed case, ``encrypt_secret`` / ``decrypt_secret`` for the reversible one.
 
-The inbound verifier dispatches on the webhook's ``auth_type`` and reads the
-credential straight off the request. On any mismatch it returns a generic
-failure — the receiver route turns that into a bare 401 with no detail, so a
-caller can't distinguish "bad token" from "no such webhook".
+The inbound verifier dispatches on ``auth_type`` and reads the credential off the
+request. Any mismatch returns a generic failure that the route turns into a bare
+401, so a caller can't tell "bad token" from "no such webhook".
 """
 
 from __future__ import annotations
@@ -108,11 +105,8 @@ def decrypt_secret(stored: str | None) -> str | None:
 
 
 def store_secret(auth_type: str, plain: str) -> str:
-    """Encode a secret for storage per auth_type.
-
-    hmac needs the raw value back (to recompute signatures) → reversible
-    encryption; everything else is one-way hashed.
-    """
+    """Encode a secret for storage per auth_type: hmac reversibly encrypted, since
+    it needs the raw value back to recompute signatures, everything else hashed."""
     return encrypt_secret(plain) if auth_type == "hmac" else hash_secret(plain)
 
 
@@ -183,10 +177,8 @@ def _verify_bearer(request: Request, secret_hash: str | None) -> AuthResult:
 def _verify_hmac(
     request: Request, secret_enc: str | None, raw_body: bytes
 ) -> AuthResult:
-    """GitHub-style HMAC-SHA256 of the raw body vs ``X-Signature`` header.
-
-    Needs the ORIGINAL secret (reversibly encrypted at rest), not a hash.
-    """
+    """GitHub-style HMAC-SHA256 of the raw body vs the ``X-Signature`` header.
+    Needs the original secret, reversibly encrypted at rest, not a hash."""
     secret = decrypt_secret(secret_enc)
     if not secret:
         return _fail("webhook has no HMAC secret configured")
@@ -216,10 +208,8 @@ def verify_inbound(
     raw_body: bytes = b"",
 ) -> AuthResult:
     """Dispatch to the right verifier based on the webhook's ``auth_type``.
-
-    ``auth_secret_hash`` holds a SALTED HASH for api_key/basic/bearer and a
-    REVERSIBLE-ENCRYPTED value (``enc:...``) for hmac.
-    """
+    ``auth_secret_hash`` holds a salted hash for api_key/basic/bearer, and a
+    reversibly-encrypted value (``enc:...``) for hmac."""
     if auth_type == "none":
         return _OK
     if auth_type == "api_key":

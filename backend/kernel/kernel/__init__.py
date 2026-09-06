@@ -1,8 +1,8 @@
 """kernel — the shared kernel for neubit_v3 satellite services.
 
-Provides a config/auth/events/db/errors subset that is byte-compatible with the
-platform core, so tokens verify, events interoperate, and tenant scoping matches
-across services. Import what you need:
+A config/auth/events/db/errors subset byte-compatible with core, so tokens
+verify, events interoperate and tenant scoping matches across services. Import
+what you need:
 
     from kernel import (
         get_settings,
