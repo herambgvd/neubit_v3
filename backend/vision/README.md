@@ -64,7 +64,7 @@ fault, because events are then going nowhere silently.
 ./backend/vision/run-tests.sh
 ```
 
-744, offline: a throwaway container from the shipped image, tree mounted
+746, offline: a throwaway container from the shipped image, tree mounted
 read-only, no network. No live device is touched — every network boundary is
 monkeypatched with fabricated fixtures (SOAP shapes, ISAPI XML, Dahua CGI text,
 Lumina JSON).
@@ -80,11 +80,17 @@ arrive fails one line rather than three assertions that look unrelated.
 each. The static check that a gate is declared is a different question from
 whether it answers.
 
+**The ONVIF responder's own auth is tested through the route, not only through the
+helper.** Its WS-Security UsernameToken handling had five thorough tests —
+PasswordText, PasswordDigest, wrong password, absent token, disabled config — and
+every one of them called `authenticate` and `handle_soap` itself, in the order the
+route composes them. So the LOGIC was covered and the WIRING was not: removing the
+route's enforcement of what `authenticate` returned left all five passing, on six
+endpoints that take no JWT and are reachable from the internet. Two tests now go
+through the real HTTP endpoint, and they are the ones that fail when it does.
+
 ## Known gaps
 
-* The ONVIF responder's own authentication is WS-Security handled inside the SOAP
-  layer, and it is not covered by the route inventory above — that test asserts
-  those six endpoints are exempt, not that their own auth holds.
 * Camera and recorder reachability are reported, not alerted on, from here.
 
 ## Configuration

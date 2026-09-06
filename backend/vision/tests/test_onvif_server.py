@@ -384,3 +384,67 @@ async def test_duplicate_username_rejected(db, seeded):
             OnvifServerConfigUpdate(service_username="onvif-svc", service_password="x"),
             actor=_Actor(),
         )
+
+
+# ── the wiring, not the logic ────────────────────────────────────────────────
+#
+# Every auth test above calls `onvif_auth.authenticate` and `soap.handle_soap`
+# itself, in the order the route composes them. That tests the LOGIC thoroughly
+# and says nothing about the route: if the handler stopped calling `authenticate`,
+# or called it after dispatch, all of them would still pass and the six SOAP
+# endpoints would answer anyone.
+#
+# These two go through the real HTTP endpoint. They are also the reason those six
+# paths are exempt from `test_route_inventory.py` — that file asserts they are
+# EXEMPT, which is a different statement from their own auth holding.
+
+async def test_the_soap_endpoint_refuses_a_wrong_password_over_http(app, http_sessionmaker):
+    """401 and a NotAuthorized fault, from the route rather than from a helper."""
+    from .conftest import client
+
+    async with http_sessionmaker() as db:
+        await _seed_for_http(db)
+
+    body = _envelope(_body_get("GetDeviceInformation", NS_TDS), password="WRONG")
+    async with client(app) as c:
+        r = await c.post(
+            "/onvif/device_service",
+            content=body,
+            headers={"Content-Type": "application/soap+xml; charset=utf-8"},
+        )
+    assert r.status_code == 401, r.text
+    assert b"NotAuthorized" in r.content
+    assert b"Manufacturer" not in r.content
+
+
+async def test_the_soap_endpoint_refuses_no_token_at_all_over_http(app, http_sessionmaker):
+    """An unauthenticated POST to an internet-reachable SOAP endpoint is the case
+    that matters most, and it must not reach dispatch."""
+    from .conftest import client
+
+    async with http_sessionmaker() as db:
+        await _seed_for_http(db)
+
+    body = _envelope(_body_get("GetDeviceInformation", NS_TDS), username=None)
+    async with client(app) as c:
+        r = await c.post(
+            "/onvif/device_service",
+            content=body,
+            headers={"Content-Type": "application/soap+xml; charset=utf-8"},
+        )
+    assert r.status_code == 401, r.text
+    assert b"NotAuthorized" in r.content
+
+
+async def _seed_for_http(db):
+    """The minimum an authenticated request would match against."""
+    cfg = OnvifServerConfig(
+        tenant_id=uuid.uuid4(),
+        enabled=True,
+        exposed_camera_ids=["*"],
+        service_username="onvif-svc",
+        service_enc_password=encrypt_secret(PASSWORD),
+        device_name="Neubit VMS",
+    )
+    db.add(cfg)
+    await db.commit()
