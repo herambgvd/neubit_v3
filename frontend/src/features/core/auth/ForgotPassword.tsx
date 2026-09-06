@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
@@ -16,7 +16,7 @@ import NeubitAuthShell, {
 // An invite/reset email links here with ?token=... so we jump straight to step 2.
 export default function ForgotPasswordPage() {
   const router = useRouter();
-  const [step, setStep] = useState("request"); // "request" | "reset"
+  const [step, setStep] = useState<"request" | "reset">("request");
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
@@ -33,7 +33,7 @@ export default function ForgotPasswordPage() {
     }
   }, []);
 
-  async function requestReset(e) {
+  async function requestReset(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     try {
@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  async function doReset(e) {
+  async function doReset(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     try {

@@ -8,32 +8,35 @@
 // are re-implemented inline here in NeuBit tokens rather than editing the shared
 // component. Visual spec: design/mockups/neubit-vms-pulse.html.
 
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { LoadingBlock, SectionCard, ViewActions } from "@/components/console";
 import { api } from "@/lib/api";
+import type { GpuSample, SystemResourcesSnapshot } from "@/lib/types";
+import type { SystemHealthOut } from "../types";
 
-const DEP_META = {
+const DEP_META: Record<string, { label: string; icon: string }> = {
   database: { label: "Database", icon: "heroicons-outline:circle-stack" },
   redis: { label: "Redis", icon: "heroicons-outline:bolt" },
   storage: { label: "Object storage", icon: "heroicons-outline:server" },
 };
 
-function toGB(bytes) {
+function toGB(bytes: number | null | undefined): string {
   if (bytes == null) return "0";
   return (bytes / 1024 ** 3).toFixed(1);
 }
 
 // Gauge color ramp — blue healthy (the Configurations accent), amber warn, red critical.
-function ringColor(percent) {
+function ringColor(percent: number): string {
   if (percent >= 90) return "#f87171"; // nb.crit
   if (percent >= 70) return "#fbbf24"; // nb.warn
   return "#60a5fa"; // nb.blue — Configurations accent
 }
 
 /* ── Micro heading (mono / uppercase / faint) ─────────────────────────── */
-function SectionLabel({ children, count }: any) {
+function SectionLabel({ children, count }: { children?: ReactNode; count?: ReactNode }) {
   return (
     <div className="mb-3 flex items-center gap-3">
       <h2 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
@@ -48,7 +51,7 @@ function SectionLabel({ children, count }: any) {
 }
 
 /* ── Compact radial gauge — track ring + colored progress arc, % centered ─ */
-function Ring({ percent, size = 58, stroke = 6 }: any) {
+function Ring({ percent, size = 58, stroke = 6 }: { percent: number | null | undefined; size?: number; stroke?: number }) {
   const p = Math.min(100, Math.max(0, Math.round(percent ?? 0)));
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
@@ -89,7 +92,16 @@ function Ring({ percent, size = 58, stroke = 6 }: any) {
 }
 
 /* ── Navy glass resource tile ─────────────────────────────────────────── */
-function ResourceTile({ icon, label, percent, name, sub, iconColor = "#93c5fd" }: any) {
+interface ResourceTileProps {
+  icon: string;
+  label: ReactNode;
+  percent: number | null | undefined;
+  name?: string | null;
+  sub?: ReactNode;
+  iconColor?: string;
+}
+
+function ResourceTile({ icon, label, percent, name, sub, iconColor = "#93c5fd" }: ResourceTileProps) {
   return (
     <SectionCard className="flex items-center gap-3">
       <Ring percent={percent} />
@@ -111,7 +123,7 @@ function ResourceTile({ icon, label, percent, name, sub, iconColor = "#93c5fd" }
   );
 }
 
-function GpuTile({ gpus }: any) {
+function GpuTile({ gpus }: { gpus: GpuSample[] }) {
   if (!gpus.length) {
     return (
       <SectionCard className="flex items-center gap-3">
@@ -161,9 +173,9 @@ function SkeletonTile() {
 
 /* ── Live host resources (own query — mirrors shared SystemResources API) ─ */
 function HostResources() {
-  const res = useQuery<any>({
+  const res = useQuery({
     queryKey: ["system-resources"],
-    queryFn: () => api.get("/system/resources").then((r) => r.data),
+    queryFn: () => api.get<SystemResourcesSnapshot>("/system/resources").then((r) => r.data),
     refetchInterval: 3000,
   });
 
@@ -214,13 +226,13 @@ function HostResources() {
 }
 
 export default function HealthPage() {
-  const health = useQuery<any>({
+  const health = useQuery({
     queryKey: ["system-health"],
-    queryFn: () => api.get("/system/health").then((r) => r.data),
+    queryFn: () => api.get<SystemHealthOut>("/system/health").then((r) => r.data),
     refetchInterval: 10000,
   });
 
-  const checks = health.data?.checks || {};
+  const checks: Record<string, string> = health.data?.checks || {};
   const overall = health.data?.status;
   const healthy = overall === "healthy";
 
@@ -255,7 +267,7 @@ export default function HealthPage() {
           <LoadingBlock />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {Object.entries<any>(DEP_META).map(([key, meta]) => {
+            {Object.entries(DEP_META).map(([key, meta]) => {
               const state = checks[key] || "unknown";
               const ok = state === "ok";
               return (

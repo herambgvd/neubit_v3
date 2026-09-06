@@ -2,10 +2,11 @@
 
 // The audit entries table — time / actor / action badge / activity columns,
 // with loading + empty states. Presentational: parent owns the query + paging.
-import { Badge, Card, EmptyState, Spinner, Table } from "@/components/ui/kit";
+import { Badge, Card, EmptyState, Spinner, Table, type TableColumn } from "@/components/ui/kit";
+import type { AuditLogOut } from "../../types";
 import { actionColor, describe, formatTs } from "../auditFormat";
 
-const columns = [
+const columns: TableColumn<AuditLogOut>[] = [
   {
     key: "ts",
     label: "Time",
@@ -33,7 +34,7 @@ const columns = [
   },
 ];
 
-export default function AuditTable({ items, loading }: any) {
+export default function AuditTable({ items, loading }: { items: AuditLogOut[]; loading: boolean }) {
   return (
     <Card className="p-2">
       {loading ? (

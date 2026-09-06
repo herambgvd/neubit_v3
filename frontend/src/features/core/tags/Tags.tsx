@@ -19,16 +19,18 @@ import {
   CreateButton,
   EmptyPane,
 } from "@/components/console";
-import { ConfirmDialog } from "@/components/ui/kit";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { tags as tagsApi } from "@/lib/api/tags";
 import TagList from "./components/TagList";
 import TagDetail from "./components/TagDetail";
 import TagForm from "./components/TagForm";
 
+type PageMode = "view" | "create" | "edit";
+
 export default function TagsConfigPage() {
   const qc = useQueryClient();
-  const tagsQ = useQuery<any>({
+  const tagsQ = useQuery({
     queryKey: ["tags-list"],
     queryFn: () => tagsApi.list({ limit: 200 }),
   });
@@ -39,9 +41,9 @@ export default function TagsConfigPage() {
   const inactive = items.length - active;
 
   const [q, setQ] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [mode, setMode] = useState("view"); // view | create | edit
-  const [confirm, setConfirm] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<PageMode>("view");
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const filtered = useMemo(() => {
     const f = q.trim().toLowerCase();
@@ -64,8 +66,8 @@ export default function TagsConfigPage() {
     }
   }, [filtered, selected, mode]);
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => tagsApi.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => tagsApi.remove(id),
     onSuccess: () => {
       toast.success("Tag removed");
       qc.invalidateQueries({ queryKey: ["tags-list"] });

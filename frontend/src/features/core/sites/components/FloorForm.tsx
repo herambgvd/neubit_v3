@@ -3,7 +3,7 @@
 // Create/edit form for a floor (name, number, area, floor-plan image, description,
 // active). Handles the floor-plan file pick + preview and the create-with-upload
 // vs update(+optional replace) mutation split. Fills the Floors tab in-place.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -12,19 +12,43 @@ import { Button } from "@/components/ui/kit";
 import { FieldLabel, fieldClass } from "@/components/common";
 import { apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { FloorPublic, SitePublic } from "@/lib/types";
 import { FInput, FTextarea, FCheckbox, ImagePreviewCard } from "./FormControls";
 
-export default function FloorForm({ site, floor, onCancel, onSaved }: any) {
+export interface FloorFormProps {
+  site: SitePublic;
+  /** null = create. */
+  floor: FloorPublic | null;
+  onCancel: () => void;
+  onSaved: () => void;
+}
+
+/** The fields this form writes — `is_active` only on edit. */
+interface FloorFormBody {
+  name: string;
+  floor_number: number | null;
+  description: string | null;
+  total_area: number | null;
+  is_active?: boolean;
+}
+
+interface FloorFormErrors {
+  name?: string;
+  floorplan?: string;
+}
+
+export default function FloorForm({ site, floor, onCancel, onSaved }: FloorFormProps) {
   const isEdit = !!floor;
   const [name, setName] = useState(floor?.name || "");
-  const [floorNumber, setFloorNumber] = useState(floor?.floor_number ?? "");
+  // Raw field text once edited; the hydrated number until then.
+  const [floorNumber, setFloorNumber] = useState<string | number>(floor?.floor_number ?? "");
   const [description, setDescription] = useState(floor?.description || "");
-  const [floorplanFile, setFloorplanFile] = useState<any>(null);
+  const [floorplanFile, setFloorplanFile] = useState<File | null>(null);
   const [existingFloorplanUrl] = useState(floor?.floorplan_url || "");
   const [selectedPreview, setSelectedPreview] = useState("");
-  const [totalArea, setTotalArea] = useState(floor?.total_area ?? "");
+  const [totalArea, setTotalArea] = useState<string | number>(floor?.total_area ?? "");
   const [isActive, setIsActive] = useState(floor?.is_active !== false);
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<FloorFormErrors>({});
   const previewUrl = selectedPreview || (existingFloorplanUrl ? fileUrl(existingFloorplanUrl) : "");
 
   useEffect(() => {
@@ -37,9 +61,9 @@ export default function FloorForm({ site, floor, onCancel, onSaved }: any) {
     return () => URL.revokeObjectURL(url);
   }, [floorplanFile]);
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: async ({ body, file }: any) => {
-      if (isEdit) {
+  const saving = useMutation({
+    mutationFn: async ({ body, file }: { body: FloorFormBody; file: File | null }) => {
+      if (floor) {
         const updated = await sitesApi.floors.update(floor.floor_id, body);
         if (file) return sitesApi.floors.replaceFloorplan(floor.floor_id, file);
         return updated;
@@ -61,16 +85,16 @@ export default function FloorForm({ site, floor, onCancel, onSaved }: any) {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: FloorFormErrors = {};
     if (!name.trim()) next.name = "Name is required";
     if (!isEdit && !floorplanFile) next.floorplan = "Floor plan image is required";
     if (Object.keys(next).length) {
       setErrors(next);
       return;
     }
-    const body: any = {
+    const body: FloorFormBody = {
       name: name.trim(),
       floor_number: floorNumber === "" ? null : Number(floorNumber),
       description: description.trim() || null,
@@ -80,7 +104,7 @@ export default function FloorForm({ site, floor, onCancel, onSaved }: any) {
     saving.mutate({ body, file: floorplanFile });
   }
 
-  function onPick(e) {
+  function onPick(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] || null;
     if (!file) return;
     if (!/^image\/(png|jpe?g|webp|svg\+xml)$/i.test(file.type)) {

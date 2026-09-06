@@ -5,31 +5,47 @@
 // figure comes from an endpoint, and anything that isn't backed (lockout/password
 // values, encryption-at-rest, watermark, port-exposure, STQC scores) is deliberately
 // NOT shown. Config lives in the Security / License / Audit screens — this links out.
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import type { Entitlements, Page } from "@/lib/types";
+import type {
+  DirectoryConfigOut,
+  DualAuthRequestOut,
+  SecurityPolicyOut,
+  SettingsOut,
+  SsoConfigOut,
+  UserOut,
+} from "../types";
 
-function q(key, url, opts: any = {}) {
+// One read-only GET per posture figure. `T` names the response so each figure
+// below is typed by the endpoint it comes from.
+function q<T>(key: readonly unknown[], url: string, opts: { enabled?: boolean } = {}) {
   return {
     queryKey: key,
-    queryFn: () => api.get(url).then((r) => r.data),
+    queryFn: () => api.get<T>(url).then((r) => r.data),
     retry: false,
     staleTime: 30_000,
     ...opts,
   };
 }
 
-function Kpi({ icon, label, value, tone = "blue", sub }: any) {
-  const c = {
-    good: "text-nb-good",
-    warn: "text-nb-warn",
-    crit: "text-nb-crit",
-    blue: "text-nb-blueb",
-    faint: "text-nb-faint",
-  }[tone];
+type KpiTone = "good" | "warn" | "crit" | "blue" | "faint";
+
+const KPI_TONE: Record<KpiTone, string> = {
+  good: "text-nb-good",
+  warn: "text-nb-warn",
+  crit: "text-nb-crit",
+  blue: "text-nb-blueb",
+  faint: "text-nb-faint",
+};
+
+function Kpi({ icon, label, value, tone = "blue", sub }: { icon: string; label: ReactNode; value: ReactNode; tone?: KpiTone; sub?: ReactNode }) {
+  const c = KPI_TONE[tone];
   return (
     <div className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] px-4 py-3">
       <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[1.2px] text-nb-faint">
@@ -42,7 +58,7 @@ function Kpi({ icon, label, value, tone = "blue", sub }: any) {
   );
 }
 
-function Section({ icon, title, link, linkLabel, children }: any) {
+function Section({ icon, title, link, linkLabel, children }: { icon: string; title: ReactNode; link?: string; linkLabel?: string; children?: ReactNode }) {
   return (
     <div className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4">
       <div className="mb-2 flex items-center gap-2">
@@ -59,8 +75,12 @@ function Section({ icon, title, link, linkLabel, children }: any) {
   );
 }
 
-function Row({ label, value, tone = "ink", note }: any) {
-  const c = { ink: "text-nb-ink", good: "text-nb-good", warn: "text-nb-warn", crit: "text-nb-crit", faint: "text-nb-faint", blue: "text-nb-blueb" }[tone];
+type RowTone = KpiTone | "ink";
+
+const ROW_TONE: Record<RowTone, string> = { ink: "text-nb-ink", good: "text-nb-good", warn: "text-nb-warn", crit: "text-nb-crit", faint: "text-nb-faint", blue: "text-nb-blueb" };
+
+function Row({ label, value, tone = "ink", note }: { label: ReactNode; value: ReactNode; tone?: RowTone; note?: ReactNode }) {
+  const c = ROW_TONE[tone];
   return (
     <div className="flex items-center gap-3 border-b border-nb-line/40 py-2 last:border-b-0">
       <span className="text-[12px] text-nb-faint">{label}</span>
@@ -73,7 +93,7 @@ function Row({ label, value, tone = "ink", note }: any) {
 }
 
 const dash = "—";
-const fmtDate = (s) => {
+const fmtDate = (s: string | null | undefined): string => {
   if (!s) return dash;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? dash : d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
@@ -83,19 +103,20 @@ export default function SystemAssurance() {
   const { can } = useAuth();
   const canSec = can("security.manage");
 
-  const features = useQuery<any>(q(["features"], "/features"));
-  const policy = useQuery<any>(q(["security-policy"], "/security/policy", { enabled: canSec }));
-  const users = useQuery<any>(q(["users", "assurance"], "/auth/users?page_size=100", { enabled: can("user.read") }));
-  const dual = useQuery<any>(q(["dual-auth", "pending"], "/security/dual-auth?status=pending&page_size=1", { enabled: canSec }));
-  const evidence = useQuery<any>(q(["evidence", "active"], "/vms/evidence?active_only=true&limit=1", { enabled: can("vms.playback.view") }));
-  const directory = useQuery<any>(q(["directory"], "/security/directory", { enabled: canSec }));
-  const sso = useQuery<any>(q(["sso"], "/security/sso", { enabled: canSec }));
-  const settings = useQuery<any>(q(["settings-config"], "/settings", { enabled: can("settings.manage") }));
+  const features = useQuery(q<Entitlements>(["features"], "/features"));
+  const policy = useQuery(q<SecurityPolicyOut>(["security-policy"], "/security/policy", { enabled: canSec }));
+  const users = useQuery(q<Page<UserOut>>(["users", "assurance"], "/auth/users?page_size=100", { enabled: can("user.read") }));
+  const dual = useQuery(q<Page<DualAuthRequestOut>>(["dual-auth", "pending"], "/security/dual-auth?status=pending&page_size=1", { enabled: canSec }));
+  // `EvidenceLockListResponse` (vision) — only its `total` is read here.
+  const evidence = useQuery(q<{ total: number }>(["evidence", "active"], "/vms/evidence?active_only=true&limit=1", { enabled: can("vms.playback.view") }));
+  const directory = useQuery(q<DirectoryConfigOut | null>(["directory"], "/security/directory", { enabled: canSec }));
+  const sso = useQuery(q<SsoConfigOut | null>(["sso"], "/security/sso", { enabled: canSec }));
+  const settings = useQuery(q<SettingsOut>(["settings-config"], "/settings", { enabled: can("settings.manage") }));
 
   // License
   const lic = features.data;
   const licState = lic?.license_state; // active | grace | expired
-  const licTone = licState === "active" ? "good" : licState === "grace" ? "warn" : licState === "expired" ? "crit" : "faint";
+  const licTone: KpiTone = licState === "active" ? "good" : licState === "grace" ? "warn" : licState === "expired" ? "crit" : "faint";
   const modules = lic?.modules || [];
   const enabledMods = modules.filter((m) => m.enabled);
 
@@ -182,7 +203,7 @@ export default function SystemAssurance() {
           <Row label="Expiry" value={lic?.expires_at ? fmtDate(lic.expires_at) : lic ? "Perpetual" : dash} tone="ink" />
           <Row label="Modules enabled" value={lic ? `${enabledMods.length}/${modules.length}` : dash} tone="blue" note={enabledMods.slice(0, 4).map((m) => m.key).join(", ")} />
           {lic?.limits && Object.keys(lic.limits).length > 0 && (
-            <Row label="Limits" value={Object.entries<any>(lic.limits).map(([k, v]) => `${k}:${v}`).join(" · ")} tone="faint" />
+            <Row label="Limits" value={Object.entries(lic.limits).map(([k, v]) => `${k}:${v}`).join(" · ")} tone="faint" />
           )}
         </Section>
 

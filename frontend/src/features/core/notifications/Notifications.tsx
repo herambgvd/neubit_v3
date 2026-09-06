@@ -5,29 +5,30 @@ import { toast } from "sonner";
 
 import { Button, Card, EmptyState, PageHeader, Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
+import type { NotificationOut, Page } from "@/lib/types";
 
 import { NotificationItem } from "./components/NotificationItem";
 
 export default function NotificationsPage() {
   const qc = useQueryClient();
 
-  const notifications = useQuery<any>({
+  const notifications = useQuery({
     queryKey: ["messaging-notifications"],
     queryFn: () =>
-      api.get("/messaging/notifications", { params: { page_size: 100 } }).then((r) => r.data),
+      api.get<Page<NotificationOut>>("/messaging/notifications", { params: { page_size: 100 } }).then((r) => r.data),
     refetchInterval: 15000,
   });
 
   const items = notifications.data?.items || [];
   const unread = items.filter((n) => !n.read);
 
-  const markRead = useMutation<any>({
-    mutationFn: (id: any) => api.post(`/messaging/notifications/${id}/read`),
+  const markRead = useMutation({
+    mutationFn: (id: string) => api.post(`/messaging/notifications/${id}/read`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["messaging-notifications"] }),
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const markAll = useMutation<any>({
+  const markAll = useMutation({
     mutationFn: () => Promise.all(unread.map((n) => api.post(`/messaging/notifications/${n.id}/read`))),
     onSuccess: () => {
       toast.success("All notifications marked read");

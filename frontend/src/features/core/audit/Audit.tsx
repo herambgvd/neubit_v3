@@ -8,10 +8,12 @@ import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { ConfirmDialog, Spinner } from "@/components/ui/kit";
+import { ConfirmDialog, Spinner, type ConfirmState } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { actionColor, describe, formatTs } from "./auditFormat";
+import type { Page } from "@/lib/types";
+import type { AuditLogOut, AuditPurgeOut, AuditRetentionOut } from "../types";
+import { actionColor, describe, formatTs, type AuditColor } from "./auditFormat";
 
 const PAGE_SIZE = 25;
 
@@ -28,7 +30,7 @@ const CATEGORIES = [
   { key: "security", label: "Security", icon: "heroicons-outline:lock-closed" },
 ];
 
-const PILL = {
+const PILL: Record<AuditColor, string> = {
   green: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good",
   red: "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit",
   amber: "border-[rgba(251,191,36,.5)] bg-[rgba(251,191,36,.1)] text-nb-warn",
@@ -38,22 +40,22 @@ const PILL = {
 
 function RetentionControl() {
   const qc = useQueryClient();
-  const info = useQuery<any>({ queryKey: ["audit-retention"], queryFn: () => api.get("/audit/retention").then((r) => r.data) });
+  const info = useQuery({ queryKey: ["audit-retention"], queryFn: () => api.get<AuditRetentionOut>("/audit/retention").then((r) => r.data) });
   const [days, setDays] = useState("");
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   useEffect(() => { if (info.data) setDays(String(info.data.retention_days ?? 0)); }, [info.data]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["audit-retention"] });
     qc.invalidateQueries({ queryKey: ["audit"] });
   };
-  const savePolicy = useMutation<any>({
+  const savePolicy = useMutation({
     mutationFn: () => api.put("/settings", { values: { audit_retention_days: Number(days) || 0 } }),
     onSuccess: () => { invalidate(); toast.success("Retention policy saved"); },
     onError: (e) => toast.error(apiError(e)),
   });
-  const purge = useMutation<any>({
-    mutationFn: () => api.post("/audit/purge", {}),
+  const purge = useMutation({
+    mutationFn: () => api.post<AuditPurgeOut>("/audit/purge", {}),
     onSuccess: (r) => { invalidate(); setConfirm(null); toast.success(`Purged ${r.data.deleted} entr${r.data.deleted === 1 ? "y" : "ies"}`); },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -104,10 +106,10 @@ export default function AuditPage() {
   // Reset to page 1 whenever a filter changes.
   useEffect(() => { setPage(1); }, [cat, search]);
 
-  const audit = useQuery<any>({
+  const audit = useQuery({
     queryKey: ["audit", page, cat, search],
     queryFn: () =>
-      api.get("/audit", { params: { page, page_size: PAGE_SIZE, action: cat || undefined, q: search.trim() || undefined } }).then((r) => r.data),
+      api.get<Page<AuditLogOut>>("/audit", { params: { page, page_size: PAGE_SIZE, action: cat || undefined, q: search.trim() || undefined } }).then((r) => r.data),
     placeholderData: keepPreviousData,
     staleTime: 0,
     refetchOnMount: "always",

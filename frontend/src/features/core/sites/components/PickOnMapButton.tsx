@@ -21,14 +21,27 @@ const OfflineMapPicker = dynamic(() => import("./OfflineMapPicker"), {
 const WORLD_CENTER = { lat: 20, lng: 0 };
 const WORLD_ZOOM = 1.4;
 
-export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, onResult }) {
+/** A point as the form fields hold it — raw text, or the hydrated number. */
+export interface PickOnMapValue {
+  latitude: string | number;
+  longitude: string | number;
+}
+
+export interface PickOnMapButtonProps {
+  tilesUrl?: string;
+  value: PickOnMapValue;
+  onResult: (point: { latitude: number; longitude: number }) => void;
+}
+
+export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, onResult }: PickOnMapButtonProps) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<{ lat: number; lng: number } | null>(null);
 
   // Whatever is already in the form's lat/lng fields, but only when BOTH parse —
   // an empty string coerces to 0, and half a coordinate would open the picker in
   // the Gulf of Guinea rather than near the site.
-  const parsed = (v) => (v === "" || v == null || !Number.isFinite(+v) ? null : +v);
+  const parsed = (v: string | number | null | undefined) =>
+    v === "" || v == null || !Number.isFinite(+v) ? null : +v;
   const lat = parsed(value?.latitude);
   const lng = parsed(value?.longitude);
   const existing = lat !== null && lng !== null ? { lat, lng } : null;

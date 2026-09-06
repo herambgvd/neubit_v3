@@ -9,8 +9,8 @@ import { api, apiError } from "@/lib/api";
 import TwoFactorCard from "./TwoFactorCard";
 
 export default function SecurityTab() {
-  const [form, setForm] = useState<any>({ current_password: "", new_password: "", confirm: "" });
-  const change = useMutation<any>({
+  const [form, setForm] = useState({ current_password: "", new_password: "", confirm: "" });
+  const change = useMutation({
     mutationFn: () =>
       api.post("/auth/change-password", {
         current_password: form.current_password,

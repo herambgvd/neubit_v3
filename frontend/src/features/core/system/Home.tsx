@@ -11,7 +11,7 @@
 // (never a broken link, never a faked number). Building Intelligence is entirely
 // coming-soon in this phase.
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode, type SVGProps } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -20,13 +20,27 @@ import { toast } from "sonner";
 
 /* Inline SVG for the AI button so it never depends on the Iconify CDN — the
    launcher chrome must render even fully offline. */
-const IconSpark = (p) => (
+const IconSpark = (p: SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M12 2l1.9 5.6L19.5 9l-4.4 3.2 1.6 5.8L12 14.9 7.3 18l1.6-5.8L4.5 9l5.6-1.4z" /></svg>
 );
 
-import { LAUNCHER_MODES, gateTile } from "@/config/launcher";
+import { LAUNCHER_MODES, gateTile, type LauncherGroup, type LauncherTile, type LauncherTone } from "@/config/launcher";
 import { vms } from "@/features/vms/api";
 import { useAuth } from "@/lib/auth";
+import type { CameraPublic, FederatedCameraList, Paged } from "@/lib/types";
+
+/** The Live tile's online / offline split. */
+interface TileStats {
+  online: number;
+  offline: number;
+}
+
+/** A launcher tile plus the live figures only the Live tile carries. */
+interface TileProps extends LauncherTile {
+  count?: number;
+  sub?: ReactNode;
+  stats?: TileStats;
+}
 
 /* ── The NeuBit "soul" backdrop — aperture rings, plexus, horizon (decorative). */
 function Soul() {
@@ -78,23 +92,24 @@ function Soul() {
 }
 
 /* ── One metro tile ───────────────────────────────────────────────────── */
-function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: any) {
-  const toneRing = {
+function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: TileProps) {
+  const toneRing: Record<LauncherTone, string> = {
     teal: "hover:border-[rgba(34,211,238,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(34,211,238,.3)]",
     blue: "hover:border-[rgba(96,165,250,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(96,165,250,.3)]",
     hot: "border-[rgba(248,113,113,.5)] hover:border-[rgba(248,113,113,.75)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(248,113,113,.35)]",
     att: "border-[rgba(251,191,36,.45)] hover:border-[rgba(251,191,36,.7)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(251,191,36,.3)]",
   };
-  const toneBg = {
+  const toneBg: Record<LauncherTone, string> = {
     teal: "linear-gradient(155deg,rgba(34,211,238,.13),rgba(150,180,245,.05) 65%)",
     blue: "linear-gradient(155deg,rgba(96,165,250,.14),rgba(167,139,250,.06) 65%)",
     hot: "linear-gradient(155deg,rgba(248,113,113,.24),rgba(248,113,113,.07) 70%)",
     att: "linear-gradient(155deg,rgba(251,191,36,.20),rgba(251,191,36,.06) 70%)",
   };
-  const toneIcon = { teal: "#67e8f9", blue: "#93c5fd", hot: "#fca5a5", att: "#fcd34d" };
-  const countColor = { teal: "#67e8f9", blue: "#93c5fd", hot: "#f87171", att: "#fbbf24" };
+  const toneIcon: Record<LauncherTone, string> = { teal: "#67e8f9", blue: "#93c5fd", hot: "#fca5a5", att: "#fcd34d" };
+  const countColor: Record<LauncherTone, string> = { teal: "#67e8f9", blue: "#93c5fd", hot: "#f87171", att: "#fbbf24" };
 
-  if (soon) {
+  // No destination is the SOON state too (config/launcher: "never a broken link").
+  if (soon || !href) {
     return (
       <div
         aria-disabled="true"
@@ -153,7 +168,7 @@ function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: any
   );
 }
 
-function GroupHeading({ children, accent }: any) {
+function GroupHeading({ children, accent }: { children?: ReactNode; accent: string }) {
   return (
     <h4 className="mb-4 flex items-center gap-2 text-[13px] font-normal tracking-[.6px]" style={{ color: accent }}>
       <span className="h-[7px] w-[7px] rounded-full" style={{ background: accent, boxShadow: `0 0 8px ${accent}` }} />
@@ -162,7 +177,7 @@ function GroupHeading({ children, accent }: any) {
   );
 }
 
-function Group({ title, accent, tiles, soon }: any) {
+function Group({ title, accent, tiles, soon }: { title: string; accent: string; tiles: TileProps[]; soon?: boolean }) {
   return (
     <div>
       <GroupHeading accent={accent}>{title}</GroupHeading>
@@ -209,24 +224,25 @@ export default function HomePage() {
   // shareable; falls back to Surveillance for a missing/unknown value.
   const urlMode = searchParams.get("mode");
   const mode = urlMode && MODE_IDS.includes(urlMode) ? urlMode : "surv";
-  const setMode = (id) =>
+  const setMode = (id: string) =>
     router.replace(`/home?mode=${id}`, { scroll: false });
 
   const canVms = hasModule("vms");
   const canCam = canVms && can("vms.camera.read");
 
-  const camCountQ = useQuery<any>({
+  // features/vms/api is untyped; the return types name what the wire carries.
+  const camCountQ = useQuery({
     queryKey: ["home-camera-count"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
+    queryFn: (): Promise<Paged<CameraPublic>> => vms.cameras.list({ limit: 500 }),
     enabled: canCam,
     staleTime: 60_000,
     retry: false,
   });
   // Federated recorder-owned cameras aren't in vms.cameras — pull them so the Live
   // tile counts every camera the wall can show (local + all NVR nodes).
-  const fedCamQ = useQuery<any>({
+  const fedCamQ = useQuery({
     queryKey: ["home-federation-cameras"],
-    queryFn: () => vms.federation.cameras(),
+    queryFn: (): Promise<FederatedCameraList> => vms.federation.cameras(),
     enabled: canCam,
     staleTime: 60_000,
     retry: false,
@@ -244,9 +260,9 @@ export default function HomePage() {
 
   // The Live tile is the only one carrying live figures — the camera count + online /
   // offline split resolved above. Everything else is a plain launcher tile.
-  const decorate = (t) =>
+  const decorate = (t: LauncherTile): TileProps =>
     t.href === "/streaming" ? { ...t, count: cameraCount, stats: cameraStats } : t;
-  const tilesOf = (group) =>
+  const tilesOf = (group: LauncherGroup) =>
     group.tiles.map((t) => gateTile(decorate(t), { can, hasModule }));
 
   const activeMode = MODES.find((m) => m.id === mode) || MODES[0];

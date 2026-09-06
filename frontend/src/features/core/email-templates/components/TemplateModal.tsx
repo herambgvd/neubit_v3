@@ -9,14 +9,16 @@ import { toast } from "sonner";
 
 import { Button, Input, Modal, Spinner, Textarea } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
+import type { TemplateOut } from "../../types";
 
-export default function TemplateModal({ name, onClose }: any) {
+/** `name` is the template to edit; null closes the dialog. */
+export default function TemplateModal({ name, onClose }: { name: string | null; onClose: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<any>({ subject: "", html: "" });
+  const [form, setForm] = useState({ subject: "", html: "" });
 
-  const detail = useQuery<any>({
+  const detail = useQuery({
     queryKey: ["messaging-template", name],
-    queryFn: () => api.get(`/messaging/templates/${name}`).then((r) => r.data),
+    queryFn: () => api.get<TemplateOut>(`/messaging/templates/${name}`).then((r) => r.data),
     enabled: !!name,
   });
 
@@ -24,7 +26,7 @@ export default function TemplateModal({ name, onClose }: any) {
     if (detail.data) setForm({ subject: detail.data.subject || "", html: detail.data.html || "" });
   }, [detail.data]);
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => api.put(`/messaging/templates/${name}`, form),
     onSuccess: () => {
       toast.success("Template saved");
@@ -35,7 +37,7 @@ export default function TemplateModal({ name, onClose }: any) {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const revert = useMutation<any>({
+  const revert = useMutation({
     mutationFn: () => api.delete(`/messaging/templates/${name}`),
     onSuccess: () => {
       toast.success("Reverted to default");

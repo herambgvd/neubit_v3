@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/kit";
 
-export default function RecoveryCodes({ codes, onClose }: any) {
+export default function RecoveryCodes({ codes, onClose }: { codes: string[]; onClose: () => void }) {
   return (
     <div className="rounded-md border border-card-border bg-hover/40 p-4 space-y-3">
       <div className="flex items-start gap-2">

@@ -1,8 +1,25 @@
 "use client";
 
 import { Button, Input, Modal, Select } from "@/components/ui/kit";
+import type { SelectOption } from "@/components/common/SelectMenu";
 
-export default function CreateApiKeyModal({ open, onClose, form, setForm, roleOptions, onCreate, creating }: any) {
+/** The create dialog's fields (→ `ApiKeyCreateIn`, legacy role_id path). */
+export interface ApiKeyForm {
+  name: string;
+  role_id: string;
+}
+
+export interface CreateApiKeyModalProps {
+  open: boolean;
+  onClose: () => void;
+  form: ApiKeyForm;
+  setForm: (form: ApiKeyForm) => void;
+  roleOptions: SelectOption[];
+  onCreate: () => void;
+  creating: boolean;
+}
+
+export default function CreateApiKeyModal({ open, onClose, form, setForm, roleOptions, onCreate, creating }: CreateApiKeyModalProps) {
   return (
     <Modal
       open={open}

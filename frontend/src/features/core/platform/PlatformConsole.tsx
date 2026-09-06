@@ -4,6 +4,7 @@
 // frame: Notifications (delivery channels), Branding (white-label), System Health
 // (monitoring) and License (entitlements). The view is chosen by ?view= and the
 // header carries the Platform modtab + a 4-way segment (see Header).
+import type { ComponentType } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { ConsolePage, ConsoleScroll } from "@/components/console";
@@ -14,7 +15,8 @@ import Tags from "@/features/core/tags/Tags";
 import Health from "@/features/core/system-health/Health";
 import License from "@/features/core/license/License";
 
-const VIEWS = {
+// Partial: an unknown `?view=` reads as undefined and falls back to Channels.
+const VIEWS: Partial<Record<string, ComponentType>> = {
   notifications: Channels,
   branding: Branding,
   templates: EmailTemplates,

@@ -1,11 +1,23 @@
 "use client";
 
 import { Button, Input, Modal, Toggle } from "@/components/ui/kit";
+import type { UserOut } from "../../types";
+import type { CloneUserForm } from "../validation";
+
+export interface CloneUserModalProps {
+  /** The user being cloned; null closes the dialog. */
+  source: UserOut | null;
+  onClose: () => void;
+  form: CloneUserForm;
+  setForm: (form: CloneUserForm) => void;
+  onClone: () => void;
+  cloning: boolean;
+}
 
 // Fast onboarding: clone a source user's role, status and site scope into a new
 // account. Only identity is entered here — the backend copies everything else and
 // never copies a password (the new user sets their own via the emailed invite).
-export default function CloneUserModal({ source, onClose, form, setForm, onClone, cloning }: any) {
+export default function CloneUserModal({ source, onClose, form, setForm, onClone, cloning }: CloneUserModalProps) {
   return (
     <Modal
       open={!!source}

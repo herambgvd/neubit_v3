@@ -1,5 +1,5 @@
 // Friendly metadata per known template — icon + "when is this sent" description.
-export const TEMPLATE_META = {
+export const TEMPLATE_META: Record<string, { icon: string; desc: string }> = {
   alert: {
     icon: "heroicons-outline:bell-alert",
     desc: "Sent when an alert rule fires.",
@@ -14,6 +14,6 @@ export const TEMPLATE_META = {
   },
 };
 
-export function titleCase(name) {
+export function titleCase(name: string | null | undefined): string {
   return (name || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }

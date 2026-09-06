@@ -3,7 +3,7 @@
 // Create / edit form for a tag — name, color (native picker + hex text + preset
 // swatches), description and (edit-only) active toggle. Owns its own local form
 // state + save mutation; calls onSaved(saved) / onCancel back to the parent.
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -11,19 +11,33 @@ import { ActionButton, QuietButton, PaneForm } from "@/components/console";
 import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { tags as tagsApi } from "@/lib/api/tags";
+import type { CreateTagRequest, TagPublic } from "@/lib/types";
 import { DEFAULT_COLOR, HEX_RE, SWATCHES } from "../constants";
 import { checkboxClass } from "@/components/ui/kit";
 
-export default function TagForm({ tag, onCancel, onSaved }: any) {
+export interface TagFormProps {
+  /** null = create. */
+  tag: TagPublic | null;
+  onCancel: () => void;
+  onSaved: (saved: TagPublic) => void;
+}
+
+interface TagFormErrors {
+  name?: string;
+  color?: string;
+}
+
+export default function TagForm({ tag, onCancel, onSaved }: TagFormProps) {
   const isEdit = !!tag;
   const [name, setName] = useState(tag?.name || "");
   const [color, setColor] = useState(tag?.color || DEFAULT_COLOR);
   const [description, setDescription] = useState(tag?.description || "");
   const [isActive, setIsActive] = useState(tag?.is_active !== false);
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<TagFormErrors>({});
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: (body: any) => (isEdit ? tagsApi.update(tag.tag_id, body) : tagsApi.create(body)),
+  // The create body is a valid PATCH body too, so one shape serves both paths.
+  const saving = useMutation({
+    mutationFn: (body: CreateTagRequest) => (tag ? tagsApi.update(tag.tag_id, body) : tagsApi.create(body)),
     onSuccess: (saved) => {
       setErrors({});
       toast.success(isEdit ? "Tag updated" : "Tag created");
@@ -32,16 +46,16 @@ export default function TagForm({ tag, onCancel, onSaved }: any) {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: TagFormErrors = {};
     if (!name.trim()) next.name = "Name is required";
     if (!HEX_RE.test(color)) next.color = "Color must be a 6-digit hex (e.g. #3B82F6)";
     if (Object.keys(next).length) {
       setErrors(next);
       return;
     }
-    const body: any = {
+    const body: CreateTagRequest = {
       name: name.trim(),
       color,
       description: description.trim() || null,
@@ -50,7 +64,7 @@ export default function TagForm({ tag, onCancel, onSaved }: any) {
     saving.mutate(body);
   }
 
-  const clearErr = (key) => errors[key] && setErrors((p) => ({ ...p, [key]: undefined }));
+  const clearErr = (key: keyof TagFormErrors) => errors[key] && setErrors((p) => ({ ...p, [key]: undefined }));
 
   return (
     <PaneForm

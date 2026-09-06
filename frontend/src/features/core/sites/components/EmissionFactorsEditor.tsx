@@ -21,6 +21,7 @@ import { FInput } from "./FormControls";
 import { ActionButton, RowAction } from "@/components/console";
 import { apiError } from "@/lib/api";
 import sitesApi from "@/lib/api/sites";
+import type { SitePublic } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 
 type Row = {
@@ -39,12 +40,12 @@ function rowError(r: Row): string | null {
   return null;
 }
 
-export default function EmissionFactorsEditor({ site }: any) {
+export default function EmissionFactorsEditor({ site }: { site: SitePublic }) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const editable = can("sites.update");
 
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["site-emission-factors", site.site_id],
     queryFn: () => sitesApi.getEmissionFactors(site.site_id),
   });
@@ -57,7 +58,7 @@ export default function EmissionFactorsEditor({ site }: any) {
   useEffect(() => {
     if (q.data) {
       setRows(
-        (q.data.items || []).map((f: any) => ({
+        (q.data.items || []).map((f) => ({
           value: String(f.kg_co2_per_kwh),
           source: f.source,
           effective_from: f.effective_from,
@@ -129,15 +130,15 @@ export default function EmissionFactorsEditor({ site }: any) {
               key={i}
               className="grid grid-cols-2 items-end gap-x-3 gap-y-2 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2.5 md:grid-cols-[.9fr_2fr_1fr_auto]"
             >
-              <FInput label="kg CO₂ / kWh" mono inputMode="decimal" value={r.value} onChange={(v: any) => set(i, { value: v })} placeholder="0.716" />
+              <FInput label="kg CO₂ / kWh" mono inputMode="decimal" value={r.value} onChange={(v) => set(i, { value: v })} placeholder="0.716" />
               <FInput
                 label="Source (required)"
                 value={r.source}
-                onChange={(v: any) => set(i, { source: v })}
+                onChange={(v) => set(i, { source: v })}
                 placeholder="e.g. CEA CO₂ Baseline Database v19 (2023), grid average"
                 hint={i === 0 ? "Who published this number. A factor with no citation is refused." : undefined}
               />
-              <FInput label="Effective from" type="date" value={r.effective_from} onChange={(v: any) => set(i, { effective_from: v })} />
+              <FInput label="Effective from" type="date" value={r.effective_from} onChange={(v) => set(i, { effective_from: v })} />
               {editable && (
                 <RowAction
                   icon="heroicons-outline:trash"

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 import { LoadingBlock } from "@/components/console";
 import { api, apiError } from "@/lib/api";
+import type { LicenseStatus } from "../types";
 import LicenseOverview from "./components/LicenseOverview";
 import TenantEntitlements from "./components/TenantEntitlements";
 import UpdateLicensePanel from "./components/UpdateLicensePanel";
@@ -17,13 +18,14 @@ export default function LicensePage() {
   const qc = useQueryClient();
   const [token, setToken] = useState("");
 
-  const license = useQuery<any>({
+  const license = useQuery({
     queryKey: ["license"],
-    queryFn: () => api.get("/license").then((r) => r.data),
+    queryFn: () => api.get<LicenseStatus>("/license").then((r) => r.data),
   });
 
-  const apply = useMutation<any, any, any>({
-    mutationFn: (body: any) => api.post("/license", body),
+  // `LicenseUpdateIn` — the signed token.
+  const apply = useMutation({
+    mutationFn: (body: { token: string }) => api.post("/license", body),
     onSuccess: () => {
       toast.success("License updated");
       qc.invalidateQueries({ queryKey: ["license"] });

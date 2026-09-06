@@ -5,9 +5,16 @@
 // highlight + click handled by the parent Tags orchestrator.
 import { Icon } from "@iconify/react";
 
+import type { TagPublic } from "@/lib/types";
 import { DEFAULT_COLOR } from "../constants";
 
-export default function TagListItem({ tag, selected, onSelect }: any) {
+export interface TagListItemProps {
+  tag: TagPublic;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+export default function TagListItem({ tag, selected, onSelect }: TagListItemProps) {
   const t = tag;
   const color = t.color || DEFAULT_COLOR;
   return (

@@ -10,21 +10,22 @@ import { toast } from "sonner";
 import { ActionButton } from "@/components/console";
 import { Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
+import type { SettingCatalogItem, SettingValue, SettingsOut } from "../types";
 import SettingField from "./components/SettingField";
 
 export default function SettingsGeneralPage() {
   const qc = useQueryClient();
-  const cfg = useQuery<any>({
+  const cfg = useQuery({
     queryKey: ["settings-config"],
-    queryFn: () => api.get("/settings").then((r) => r.data),
+    queryFn: () => api.get<SettingsOut>("/settings").then((r) => r.data),
   });
 
-  const [values, setValues] = useState<any>({});
+  const [values, setValues] = useState<Record<string, SettingValue>>({});
   useEffect(() => {
     if (cfg.data?.values) setValues(cfg.data.values);
   }, [cfg.data]);
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => api.put("/settings", { values }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["settings-config"] });
@@ -34,16 +35,16 @@ export default function SettingsGeneralPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const catalog = cfg.data?.catalog || [];
-  const groups = [...new Set<any>(catalog.map((c) => c.group))];
+  const catalog: SettingCatalogItem[] = cfg.data?.catalog || [];
+  const groups = [...new Set(catalog.map((c) => c.group))];
   // "Google Maps" carries the most fields → give it its own full-width row; the
   // other groups flow three-per-row above it (four of them since "Maps" was added,
   // so the last one wraps).
   const WIDE = "Google Maps";
   const topGroups = groups.filter((g) => g !== WIDE);
   const wideGroup = groups.includes(WIDE) ? WIDE : null;
-  const fieldsOf = (group) => catalog.filter((c) => c.group === group);
-  const renderField = (item) => (
+  const fieldsOf = (group: string) => catalog.filter((c) => c.group === group);
+  const renderField = (item: SettingCatalogItem) => (
     <SettingField
       key={item.key}
       item={item}

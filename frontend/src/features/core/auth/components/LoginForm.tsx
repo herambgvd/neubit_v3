@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Icon } from "@iconify/react";
 
 import { NbLabel, NbInput, NbSubmit, NbError, NbFieldError } from "./NeubitAuthShell";
@@ -77,8 +77,13 @@ function SsoButton({ label, Glyph, wide, onClick }: any) {
    say which field is wrong, in that field's own words. */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function validate(email, password) {
-  const next: any = {};
+interface LoginFieldErrors {
+  email?: string;
+  password?: string;
+}
+
+function validate(email: string, password: string): LoginFieldErrors {
+  const next: LoginFieldErrors = {};
   const trimmed = email.trim();
   if (!trimmed) next.email = "Work email is required.";
   else if (!EMAIL_RE.test(trimmed)) next.email = "Enter a valid work email, e.g. you@company.com.";
@@ -86,14 +91,25 @@ function validate(email, password) {
   return next;
 }
 
-export function LoginForm({ email, setEmail, password, setPassword, error, busy, onSubmit }: any) {
+export interface LoginFormProps {
+  email: string;
+  setEmail: (value: string) => void;
+  password: string;
+  setPassword: (value: string) => void;
+  /** The sign-in error banner; "" hides it. */
+  error: string;
+  busy: boolean;
+  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+}
+
+export function LoginForm({ email, setEmail, password, setPassword, error, busy, onSubmit }: LoginFormProps) {
   const [show, setShow] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
-  const [fieldErrors, setFieldErrors] = useState<any>({});
+  const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
 
   // const notifySso = (label) => toast(`${label}: single sign-on unavailable`, { description: SSO_MESSAGE });
 
-  function handleSubmit(e) {
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
     const next = validate(email, password);
     setFieldErrors(next);
     if (Object.keys(next).length) {
@@ -105,7 +121,7 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
   }
 
   // Clear a field's complaint as soon as the operator starts fixing it.
-  const clearFieldError = (field) =>
+  const clearFieldError = (field: keyof LoginFieldErrors) =>
     setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
 
   return (

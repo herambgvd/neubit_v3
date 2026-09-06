@@ -10,8 +10,16 @@ import { useState } from "react";
 
 import { Input, Toggle } from "@/components/ui/kit";
 import { FieldLabel } from "@/components/common";
+import type { SettingCatalogItem, SettingValue } from "../../types";
 
-export default function SettingField({ item, value, onChange }: any) {
+export interface SettingFieldProps {
+  item: SettingCatalogItem;
+  /** undefined until the values map has loaded. */
+  value: SettingValue | undefined;
+  onChange: (value: SettingValue) => void;
+}
+
+export default function SettingField({ item, value, onChange }: SettingFieldProps) {
   const [reveal, setReveal] = useState(false);
 
   if (item.type === "bool") {
@@ -35,7 +43,7 @@ export default function SettingField({ item, value, onChange }: any) {
           <div className="relative">
             <input
               type={reveal ? "text" : "password"}
-              value={value ?? ""}
+              value={value == null ? "" : String(value)}
               placeholder={item.placeholder || ""}
               onChange={(e) => onChange(e.target.value)}
               className="w-full rounded-md border border-nb-line bg-transparent px-3 py-2 pr-10 text-sm text-nb-ink placeholder:text-nb-muted outline-hidden transition focus:border-nb-teal"
@@ -60,7 +68,7 @@ export default function SettingField({ item, value, onChange }: any) {
       <Input
         label={item.label}
         type={item.type === "number" ? "number" : "text"}
-        value={value ?? ""}
+        value={value == null ? "" : String(value)}
         placeholder={item.placeholder || ""}
         onChange={(e) => onChange(item.type === "number" ? Number(e.target.value) : e.target.value)}
         hint={item.description}

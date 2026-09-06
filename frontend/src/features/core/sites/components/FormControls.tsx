@@ -4,6 +4,8 @@
 // (FloorForm, ZoneForm, SiteFormModal). Built on the shared `FieldLabel` +
 // `fieldClass` / `areaClass` from @/components/common so labels and inputs match
 // the rest of the app — this replaces the old per-file label + input-class pair.
+import type { ComponentPropsWithoutRef, HTMLInputTypeAttribute, ReactNode } from "react";
+
 import { FieldLabel, fieldClass, areaClass } from "@/components/common";
 import SelectMenu from "@/components/common/SelectMenu";
 import { Checkbox } from "@/components/ui/kit";
@@ -12,9 +14,29 @@ import { Checkbox } from "@/components/ui/kit";
 // border, red message in place of the hint. `action` puts a control beside the
 // field (Regenerate) — that row used to be hand-built with its own input classes,
 // so the Location code box didn't match the Name box next to it.
+export interface FInputProps {
+  label: ReactNode;
+  required?: boolean;
+  /** Span both columns of the two-column grid. */
+  full?: boolean;
+  /** null/undefined render as "" so the input stays controlled. */
+  value: string | number | null | undefined;
+  /** Hands over the raw field text, not the event. */
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: HTMLInputTypeAttribute;
+  inputMode?: ComponentPropsWithoutRef<"input">["inputMode"];
+  step?: string | number;
+  min?: string | number;
+  error?: ReactNode;
+  hint?: ReactNode;
+  action?: ReactNode;
+  mono?: boolean;
+}
+
 export function FInput({
   label, required, full, value, onChange, placeholder, type = "text", inputMode, step, min, error, hint, action, mono,
-}: any) {
+}: FInputProps) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <FieldLabel required={required}>{label}</FieldLabel>
@@ -43,7 +65,16 @@ export function FInput({
   );
 }
 
-export function FTextarea({ label, full, value, onChange, rows, placeholder }: any) {
+export interface FTextareaProps {
+  label: ReactNode;
+  full?: boolean;
+  value: string | null | undefined;
+  onChange: (value: string) => void;
+  rows?: number;
+  placeholder?: string;
+}
+
+export function FTextarea({ label, full, value, onChange, rows, placeholder }: FTextareaProps) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <FieldLabel>{label}</FieldLabel>
@@ -61,13 +92,26 @@ export function FTextarea({ label, full, value, onChange, rows, placeholder }: a
 // `options` is [{ value, label }] — the same shape every other picker in the app
 // takes. This was a native <select> fed <option> children, which is why the site
 // forms showed an OS-styled dropdown next to the app's own everywhere else.
-export function FSelect({ label, full, required, value, onChange, options = [], placeholder }: any) {
+// Generic in the option value so a picker fed `SITE_TYPES` hands back a
+// `SiteType`, not a bare string, to its setState.
+export interface FSelectProps<V extends string> {
+  label: ReactNode;
+  full?: boolean;
+  required?: boolean;
+  value: V | "" | null | undefined;
+  onChange: (value: V) => void;
+  options?: { value: V; label: ReactNode }[];
+  placeholder?: string;
+}
+
+export function FSelect<V extends string = string>({ label, full, required, value, onChange, options = [], placeholder }: FSelectProps<V>) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <FieldLabel required={required}>{label}</FieldLabel>
       <SelectMenu
         value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
+        // SelectMenu only ever emits one of `options`' values, so the string is a V.
+        onChange={(e) => onChange(e.target.value as V)}
         options={options}
         placeholder={placeholder}
       />
@@ -75,7 +119,13 @@ export function FSelect({ label, full, required, value, onChange, options = [], 
   );
 }
 
-export function FCheckbox({ label, value, onChange }: any) {
+export interface FCheckboxProps {
+  label: ReactNode;
+  value: boolean;
+  onChange: (checked: boolean) => void;
+}
+
+export function FCheckbox({ label, value, onChange }: FCheckboxProps) {
   return (
     <div className="flex h-10 items-center rounded-lg border border-nb-line px-3">
       <Checkbox label={label} checked={value} onChange={onChange} />
@@ -83,7 +133,14 @@ export function FCheckbox({ label, value, onChange }: any) {
   );
 }
 
-export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }: any) {
+export interface ImagePreviewCardProps {
+  title: string;
+  subtitle?: ReactNode;
+  imageUrl?: string | null;
+  emptyText?: ReactNode;
+}
+
+export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }: ImagePreviewCardProps) {
   return (
     <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden">
       <div className="px-3 py-2 border-b border-nb-line bg-white/5">
@@ -106,7 +163,13 @@ export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }: any) 
 
 // Titled section wrapper for the site create/edit modal. `action` renders an
 // optional control (e.g. "Fetch from address") on the right of the heading.
-export function Section({ title, action, children }: any) {
+export interface SectionProps {
+  title: ReactNode;
+  action?: ReactNode;
+  children?: ReactNode;
+}
+
+export function Section({ title, action, children }: SectionProps) {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between gap-3">

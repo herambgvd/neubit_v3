@@ -20,6 +20,9 @@ import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { DEFAULT_TILES_URL } from "@/lib/map/config";
+import type { SitePublic } from "@/lib/types";
+import type { MapsConfigOut } from "../types";
+import type { SiteWithCoords } from "./constants";
 import { Loading } from "./components/MapChrome";
 
 // ssr:false — both SDKs touch `window`/`document` at module scope.
@@ -33,12 +36,12 @@ const DEFAULT_CENTER = { lat: 22.9734, lng: 78.6569 }; // India centre
 const DEFAULT_ZOOM = 5;
 
 export default function SitesMapPage() {
-  const cfgQ = useQuery<any>({
+  const cfgQ = useQuery({
     queryKey: ["maps-config"],
-    queryFn: () => api.get("/settings/maps").then((r) => r.data),
+    queryFn: () => api.get<MapsConfigOut>("/settings/maps").then((r) => r.data),
     staleTime: 5 * 60_000,
   });
-  const sitesQ = useQuery<any>({
+  const sitesQ = useQuery({
     queryKey: ["sites-map"],
     queryFn: () => sitesApi.list({ limit: 100 }),
   });
@@ -55,7 +58,7 @@ export default function SitesMapPage() {
   const sitesWithCoords = useMemo(
     () =>
       sites.filter(
-        (s) =>
+        (s: SitePublic): s is SiteWithCoords =>
           typeof s.coordinates?.latitude === "number" && typeof s.coordinates?.longitude === "number",
       ),
     [sites],
@@ -63,7 +66,7 @@ export default function SitesMapPage() {
 
   const filtered = sitesWithCoords;
 
-  const [selected, setSelected] = useState<any>(null);
+  const [selected, setSelected] = useState<SiteWithCoords | null>(null);
 
   const center = useMemo(() => {
     if (filtered.length === 0) {

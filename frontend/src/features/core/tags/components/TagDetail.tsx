@@ -5,11 +5,18 @@
 import { Icon } from "@iconify/react";
 
 import { DangerButton, QuietButton } from "@/components/console";
+import type { TagPublic } from "@/lib/types";
 import { DEFAULT_COLOR } from "../constants";
 
-const fmtTs = (ts) => (ts ? new Date(ts).toLocaleString() : "—");
+const fmtTs = (ts: string | null | undefined) => (ts ? new Date(ts).toLocaleString() : "—");
 
-export default function TagDetail({ tag, onEdit, onDelete }: any) {
+export interface TagDetailProps {
+  tag: TagPublic;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+export default function TagDetail({ tag, onEdit, onDelete }: TagDetailProps) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">

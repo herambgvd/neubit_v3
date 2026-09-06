@@ -3,17 +3,26 @@
 // Left column of the Branding page: app-name input, header-name toggle, primary
 // + accent color fields, and the logo upload card. Presentational — the parent
 // owns the form state and the upload mutation.
-import { useRef } from "react";
+import { useRef, type ChangeEvent } from "react";
 import { Icon } from "@iconify/react";
 
 import { QuietButton, SectionCard, SectionHead } from "@/components/console";
 import { Input, Toggle } from "@/components/ui/kit";
+import type { BrandingForm } from "../../types";
 import ColorField from "./ColorField";
 
-export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, uploading }: any) {
-  const fileRef = useRef<any>(null);
+export interface BrandingEditorProps {
+  form: BrandingForm;
+  setForm: (form: BrandingForm) => void;
+  logoUrl: string | null | undefined;
+  onUploadLogo: (file: File) => void;
+  uploading: boolean;
+}
 
-  function onPickLogo(e) {
+export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, uploading }: BrandingEditorProps) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function onPickLogo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) onUploadLogo(file);
     e.target.value = ""; // allow re-selecting the same file

@@ -3,8 +3,15 @@
 // A single role card in the left library (matches the Users list style): role icon,
 // name + System pill, description sub-line, and a user-count dot on the right.
 import { Icon } from "@iconify/react";
+import type { RoleOut } from "../../types";
 
-export default function RoleListItem({ role, selected, onSelect }: any) {
+export interface RoleListItemProps {
+  role: RoleOut;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+export default function RoleListItem({ role, selected, onSelect }: RoleListItemProps) {
   return (
     <button
       onClick={onSelect}

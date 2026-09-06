@@ -6,10 +6,12 @@ import { Icon } from "@iconify/react";
 
 import { SectionCard, SectionHead } from "@/components/console";
 import { Badge } from "@/components/ui/kit";
+import type { LicenseStatus } from "../../types";
 import { fmtDate, statusBadge } from "../licenseFormat";
 import Stat from "./Stat";
 
-export default function LicenseOverview({ lic }: any) {
+/** `lic` is undefined until GET /license answers. */
+export default function LicenseOverview({ lic }: { lic: LicenseStatus | undefined }) {
   return (
     <div className="space-y-3 lg:col-span-2">
       {/* Status */}
@@ -79,7 +81,7 @@ export default function LicenseOverview({ lic }: any) {
         <SectionHead icon="heroicons-outline:flag" title="Features" />
         {lic?.features && Object.keys(lic.features).length ? (
           <ul className="space-y-2">
-            {Object.entries<any>(lic.features).map(([key, val]) => {
+            {Object.entries(lic.features).map(([key, val]) => {
               const on = Boolean(val);
               return (
                 <li key={key} className="flex items-center gap-2 text-sm">

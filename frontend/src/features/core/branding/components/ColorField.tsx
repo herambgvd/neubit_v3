@@ -1,10 +1,19 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { FieldLabel } from "@/components/common";
+
+export interface ColorFieldProps {
+  label: ReactNode;
+  /** `#RRGGBB`. */
+  value: string;
+  onChange: (value: string) => void;
+}
 
 // A color swatch that wraps a native <input type="color"> in the kit look and
 // keeps a text field in sync for precise hex entry.
-export default function ColorField({ label, value, onChange }: any) {
+export default function ColorField({ label, value, onChange }: ColorFieldProps) {
   return (
     <div>
       <FieldLabel className="mb-1.5 block">{label}</FieldLabel>

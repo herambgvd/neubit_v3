@@ -9,17 +9,18 @@ import { useQuery } from "@tanstack/react-query";
 
 import { LoadingBlock } from "@/components/console";
 import { api } from "@/lib/api";
+import type { TemplateSummaryOut } from "../types";
 import TemplateCard from "./components/TemplateCard";
 import PreviewModal from "./components/PreviewModal";
 import TemplateModal from "./components/TemplateModal";
 
 export default function EmailTemplatesPage() {
-  const [openTemplate, setOpenTemplate] = useState<any>(null);
-  const [previewName, setPreviewName] = useState<any>(null);
+  const [openTemplate, setOpenTemplate] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState<string | null>(null);
 
-  const templates = useQuery<any>({
+  const templates = useQuery({
     queryKey: ["messaging-templates"],
-    queryFn: () => api.get("/messaging/templates").then((r) => r.data),
+    queryFn: () => api.get<TemplateSummaryOut[]>("/messaging/templates").then((r) => r.data),
   });
 
   return (

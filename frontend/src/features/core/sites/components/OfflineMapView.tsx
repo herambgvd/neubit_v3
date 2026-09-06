@@ -18,7 +18,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import { Spinner } from "@/components/ui/kit";
 import { DEFAULT_TILES_URL, offlineStyle, probeTiles } from "@/lib/map";
-import { THREAT_PIN } from "../constants";
+import { THREAT_PIN, type SiteWithCoords } from "../constants";
 import { PIN_H, PIN_SCALE, PIN_SCALE_SELECTED, PIN_TIP_Y, PIN_W, pinSvg } from "./pin";
 import SiteCard from "./SiteCard";
 
@@ -26,12 +26,12 @@ const LABEL_MAX = 26;
 const SINGLE_SITE_ZOOM = 14;
 
 /** A site's position as MapLibre wants it: [lng, lat]. */
-const lngLat = (site: any): [number, number] => [site.coordinates.longitude, site.coordinates.latitude];
+const lngLat = (site: SiteWithCoords): [number, number] => [site.coordinates.longitude, site.coordinates.latitude];
 
 // One marker's DOM: the pin art, plus the site name pinned below it. The label is
 // absolutely positioned so it never grows the element box — MapLibre anchors on
 // that box, and a taller box would lift the pin tip off its coordinate.
-function markerElement(site) {
+function markerElement(site: SiteWithCoords): HTMLDivElement {
   const label = site.name.length > LABEL_MAX ? `${site.name.slice(0, LABEL_MAX - 1)}…` : site.name;
 
   const el = document.createElement("div");
@@ -57,7 +57,7 @@ function markerElement(site) {
 // Re-draw an existing marker at the selected/unselected size, in place. Selection
 // changes on every click, and tearing down and rebuilding all the markers for it
 // made the whole pin layer blink.
-function paintMarker(marker, site, isSelected) {
+function paintMarker(marker: Marker, site: SiteWithCoords, isSelected: boolean) {
   const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
   const scale = isSelected ? PIN_SCALE_SELECTED : PIN_SCALE;
   const el = marker.getElement();
@@ -67,9 +67,10 @@ function paintMarker(marker, site, isSelected) {
   el.style.height = `${PIN_H * scale}px`;
   el.style.zIndex = isSelected ? "2" : "1";
 
-  const art = el.querySelector(".site-pin-art");
+  // Both nodes are built by markerElement above, so they are always present.
+  const art = el.querySelector(".site-pin-art") as HTMLDivElement;
   art.innerHTML = pinSvg(tone.color, isSelected);
-  const svg = art.firstElementChild;
+  const svg = art.firstElementChild as SVGElement;
   svg.setAttribute("width", `${PIN_W * scale}`);
   svg.setAttribute("height", `${PIN_H * scale}`);
   svg.style.display = "block";
@@ -79,7 +80,7 @@ function paintMarker(marker, site, isSelected) {
   marker.setOffset([0, (PIN_H - PIN_TIP_Y) * scale]);
 }
 
-function OfflineDisabled({ reason }) {
+function OfflineDisabled({ reason }: { reason?: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-20 text-center">
       <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-nb-muted">
@@ -148,6 +149,17 @@ function OfflineMapStyleFix() {
 /** What the map canvas is doing: probing the archive, missing it, or drawing. */
 type MapStatus = { state: "probing" | "missing" | "ready"; reason?: string };
 
+export interface OfflineMapViewProps {
+  tilesUrl?: string;
+  /** Initial view only — later changes do not re-centre the map. */
+  center: { lat: number; lng: number };
+  zoom: number;
+  sites: SiteWithCoords[];
+  selected: SiteWithCoords | null;
+  onSelect?: (site: SiteWithCoords) => void;
+  onClose?: () => void;
+}
+
 export default function OfflineMapView({
   tilesUrl = DEFAULT_TILES_URL,
   center,
@@ -156,10 +168,10 @@ export default function OfflineMapView({
   selected,
   onSelect,
   onClose,
-}) {
+}: OfflineMapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const markersRef = useRef(new Map());
+  const markersRef = useRef(new Map<string, Marker>());
   const popupRef = useRef<Popup | null>(null);
 
   const [status, setStatus] = useState<MapStatus>({ state: "probing" });

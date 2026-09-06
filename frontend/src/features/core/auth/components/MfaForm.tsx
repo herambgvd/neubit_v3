@@ -1,10 +1,21 @@
 "use client";
 
+import type { FormEvent } from "react";
 import { Icon } from "@iconify/react";
 
 import { NbLabel, NbInput, NbSubmit, NbError } from "./NeubitAuthShell";
 
-export function MfaForm({ code, setCode, error, busy, onSubmit, onBack }: any) {
+export interface MfaFormProps {
+  code: string;
+  setCode: (value: string) => void;
+  /** The verification error banner; "" hides it. */
+  error: string;
+  busy: boolean;
+  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  onBack: () => void;
+}
+
+export function MfaForm({ code, setCode, error, busy, onSubmit, onBack }: MfaFormProps) {
   return (
     <div>
       <h2 className="text-[19px] font-[650] tracking-[0.2px] text-[#f2f6ff]">Verify it&apos;s you</h2>

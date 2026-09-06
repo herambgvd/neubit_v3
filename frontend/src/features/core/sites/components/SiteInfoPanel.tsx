@@ -4,11 +4,13 @@
 // site image sidebar and inline TagPicker. `InfoField` is a small local display
 // helper (label + value) — distinct from the shared form `Field`, which is an
 // editable control.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { fileUrl } from "@/lib/api";
+import type { Address, SitePublic } from "@/lib/types";
 import TagPicker from "@/components/tags/TagPicker";
 
-function InfoField({ label, full, children }: any) {
+function InfoField({ label, full, children }: { label: ReactNode; full?: boolean; children?: ReactNode }) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{label}</div>
@@ -17,8 +19,8 @@ function InfoField({ label, full, children }: any) {
   );
 }
 
-export default function SiteInfoPanel({ site }: any) {
-  const a = site.address || {};
+export default function SiteInfoPanel({ site }: { site: SitePublic }) {
+  const a: Address = site.address || {};
   const fullAddress = [a.street, a.city, a.state, a.zip_code, a.country].filter(Boolean).join(", ");
   return (
     <div className="px-6 py-5 grid grid-cols-1 lg:grid-cols-5 gap-6">

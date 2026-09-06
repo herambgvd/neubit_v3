@@ -5,8 +5,19 @@
 // checkboxes. Read-only when viewing a system role.
 
 import { EmptyState, Spinner } from "@/components/ui/kit";
+import type { PermissionEntry, PermissionGroups } from "../../types";
 
-export default function PermissionSelector({ groups, selected, loading, readOnly, count, onToggleKey, onToggleGroup }: any) {
+export interface PermissionSelectorProps {
+  groups: PermissionGroups;
+  selected: Set<string>;
+  loading: boolean;
+  readOnly: boolean;
+  count: number;
+  onToggleKey: (key: string) => void;
+  onToggleGroup: (perms: PermissionEntry[], checkAll: boolean) => void;
+}
+
+export default function PermissionSelector({ groups, selected, loading, readOnly, count, onToggleKey, onToggleGroup }: PermissionSelectorProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -22,7 +33,7 @@ export default function PermissionSelector({ groups, selected, loading, readOnly
         <EmptyState title="No permissions available" />
       ) : (
         <div className="space-y-4">
-          {Object.entries<any>(groups).map(([category, perms]) => {
+          {Object.entries(groups).map(([category, perms]) => {
             const total = perms.length;
             const chosen = perms.filter((p) => selected.has(p.key)).length;
             const allOn = total > 0 && chosen === total;

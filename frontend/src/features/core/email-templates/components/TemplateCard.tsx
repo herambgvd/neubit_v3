@@ -6,9 +6,16 @@ import { Icon } from "@iconify/react";
 
 import { QuietButton, SectionCard } from "@/components/console";
 import { Badge } from "@/components/ui/kit";
+import type { TemplateSummaryOut } from "../../types";
 import { TEMPLATE_META, titleCase } from "../constants";
 
-export default function TemplateCard({ template, onPreview, onEdit }: any) {
+export interface TemplateCardProps {
+  template: TemplateSummaryOut;
+  onPreview: () => void;
+  onEdit: () => void;
+}
+
+export default function TemplateCard({ template, onPreview, onEdit }: TemplateCardProps) {
   const meta = TEMPLATE_META[template.name] || {
     icon: "heroicons-outline:envelope",
     desc: "Transactional email.",

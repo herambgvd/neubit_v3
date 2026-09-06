@@ -3,8 +3,23 @@
 import { useEffect, useState } from "react";
 
 import { Button, Input, Modal, PasswordInput, Select, Toggle } from "@/components/ui/kit";
-import SiteScopeField from "./SiteScopeField";
-import { PASSWORD_HINT, validateEditUser } from "../validation";
+import type { SelectOption } from "@/components/common/SelectMenu";
+import type { UserOut } from "../../types";
+import SiteScopeField, { type SiteOption } from "./SiteScopeField";
+import { PASSWORD_HINT, validateEditUser, type EditUserForm, type UserFormErrors } from "../validation";
+
+export interface EditUserModalProps {
+  /** The user being edited; null closes the dialog. */
+  editing: UserOut | null;
+  isSelf: boolean;
+  onClose: () => void;
+  form: EditUserForm;
+  setForm: (form: EditUserForm) => void;
+  roleOptions: SelectOption[];
+  sites?: SiteOption[];
+  onSave: () => void;
+  saving: boolean;
+}
 
 // Edit a user through a modal (the Users console mirrors Roles: the centre pane is
 // read-only, the pencil opens this form). Role and the Active switch are locked for
@@ -20,7 +35,7 @@ export default function EditUserModal({
   sites = [],
   onSave,
   saving,
-}: any) {
+}: EditUserModalProps) {
   const isAdminAccount = !!editing?.role?.is_system;
   const statusLocked = isSelf || isAdminAccount;
 
@@ -29,7 +44,7 @@ export default function EditUserModal({
   useEffect(() => { if (!editing) setSubmitted(false); }, [editing]);
 
   const errors = validateEditUser(form);
-  const show = (field) => (submitted ? errors[field] : undefined);
+  const show = (field: keyof UserFormErrors) => (submitted ? errors[field] : undefined);
   const emailChanged = !!editing && (form.email || "").trim() !== editing.email;
 
   function handleSave() {

@@ -26,7 +26,7 @@
 //     a person, and the panel records who and when.
 //   • A TARIFF NEEDS A CURRENCY. The server refuses the pair otherwise rather
 //     than assuming rupees; a bare 8.5 is not a price.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -34,6 +34,7 @@ import { FInput } from "./FormControls";
 import { ActionButton } from "@/components/console";
 import { apiError } from "@/lib/api";
 import sitesApi from "@/lib/api/sites";
+import type { SitePublic } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 
 import EmissionFactorsEditor from "./EmissionFactorsEditor";
@@ -41,7 +42,7 @@ import TariffSlabsEditor from "./TariffSlabsEditor";
 
 /** "" → null. The empty box is the operator saying "I have no reliable number",
  *  which is a fact the store must be able to hold. */
-function numOrNull(v: any): number | null {
+function numOrNull(v: string | number | null | undefined): number | null {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   if (!s) return null;
@@ -49,7 +50,7 @@ function numOrNull(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function Stat({ label, value, sub }: any) {
+function Stat({ label, value, sub }: { label: ReactNode; value: ReactNode; sub?: ReactNode }) {
   return (
     <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
       <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">{label}</p>
@@ -59,15 +60,16 @@ function Stat({ label, value, sub }: any) {
   );
 }
 
-export default function BuildingFactsPanel({ site }: any) {
+export default function BuildingFactsPanel({ site }: { site: SitePublic }) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const editable = can("sites.update");
 
-  const [area, setArea] = useState<any>("");
-  const [tariff, setTariff] = useState<any>("");
-  const [currency, setCurrency] = useState<any>("");
-  const [occupancy, setOccupancy] = useState<any>("");
+  // Raw field text once edited; the recorded number until then ("" = not recorded).
+  const [area, setArea] = useState<string | number>("");
+  const [tariff, setTariff] = useState<string | number>("");
+  const [currency, setCurrency] = useState<string>("");
+  const [occupancy, setOccupancy] = useState<string | number>("");
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 

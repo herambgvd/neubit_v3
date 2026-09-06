@@ -1,10 +1,11 @@
 "use client";
 
 // Column definitions for the API keys table.
-import { Badge, Button } from "@/components/ui/kit";
+import { Badge, Button, type TableColumn } from "@/components/ui/kit";
+import type { ApiKeyOut } from "../../types";
 import { fmtDate } from "../format";
 
-export function buildApiKeyColumns({ onRevoke }: any) {
+export function buildApiKeyColumns({ onRevoke }: { onRevoke: (key: ApiKeyOut) => void }): TableColumn<ApiKeyOut>[] {
   return [
     {
       key: "name",

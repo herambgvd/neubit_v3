@@ -6,24 +6,25 @@ import { toast } from "sonner";
 
 import { Badge, Button, Card, Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
+import type { SessionOut } from "../../types";
 import { deviceLabel, fmt } from "../format";
 
 export default function SessionsTab() {
   const qc = useQueryClient();
-  const sessions = useQuery<any>({
+  const sessions = useQuery({
     queryKey: ["my-sessions"],
-    queryFn: () => api.get("/auth/me/sessions").then((r) => r.data),
+    queryFn: () => api.get<SessionOut[]>("/auth/me/sessions").then((r) => r.data),
   });
 
-  const revoke = useMutation<any>({
-    mutationFn: (id: any) => api.delete(`/auth/me/sessions/${id}`),
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.delete(`/auth/me/sessions/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["my-sessions"] });
       toast.success("Session revoked");
     },
     onError: (e) => toast.error(apiError(e)),
   });
-  const revokeOthers = useMutation<any>({
+  const revokeOthers = useMutation({
     mutationFn: () => api.post("/auth/me/sessions/revoke-others"),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["my-sessions"] });

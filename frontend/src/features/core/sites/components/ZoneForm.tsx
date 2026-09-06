@@ -7,7 +7,7 @@
 // (Floors tab). A zone created here would have no geometry: invisible on the plan,
 // not selectable, and not a valid device drop target, with no way to add a shape
 // afterwards. So this form deliberately has no create mode and no floor picker.
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -16,23 +16,31 @@ import { Button } from "@/components/ui/kit";
 import { FieldLabel, fieldClass } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { ThreatLevel, UpdateZoneRequest, ZonePublic, ZoneType } from "@/lib/types";
 import { ZONE_TYPES, THREAT_LEVELS, capitalize } from "../constants";
 import { FInput, FTextarea, FSelect, FCheckbox } from "./FormControls";
 
-export default function ZoneForm({ zone, onCancel, onSaved }: any) {
-  const [name, setName] = useState(zone?.name || "");
-  const [description, setDescription] = useState(zone?.description || "");
-  const [zoneType, setZoneType] = useState(zone?.zone_type || "other");
-  const [threatLevel, setThreatLevel] = useState(zone?.threat_level || "normal");
-  const [color, setColor] = useState(zone?.color || "#6366F1");
-  const [maxOccupancy, setMaxOccupancy] = useState(zone?.max_occupancy ?? "");
-  const [alertOnEntry, setAlertOnEntry] = useState(!!zone?.alert_on_entry);
-  const [alertOnExit, setAlertOnExit] = useState(!!zone?.alert_on_exit);
-  const [isActive, setIsActive] = useState(zone?.is_active !== false);
-  const [errors, setErrors] = useState<any>({});
+export interface ZoneFormProps {
+  zone: ZonePublic;
+  onCancel: () => void;
+  onSaved: () => void;
+}
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: (body: any) => sitesApi.zones.update(zone.zone_id, body),
+export default function ZoneForm({ zone, onCancel, onSaved }: ZoneFormProps) {
+  const [name, setName] = useState(zone.name || "");
+  const [description, setDescription] = useState(zone.description || "");
+  const [zoneType, setZoneType] = useState(zone.zone_type || "other");
+  const [threatLevel, setThreatLevel] = useState(zone.threat_level || "normal");
+  const [color, setColor] = useState(zone.color || "#6366F1");
+  // Raw field text once edited; the hydrated number until then.
+  const [maxOccupancy, setMaxOccupancy] = useState<string | number>(zone.max_occupancy ?? "");
+  const [alertOnEntry, setAlertOnEntry] = useState(!!zone.alert_on_entry);
+  const [alertOnExit, setAlertOnExit] = useState(!!zone.alert_on_exit);
+  const [isActive, setIsActive] = useState(zone.is_active !== false);
+  const [errors, setErrors] = useState<{ name?: string }>({});
+
+  const saving = useMutation({
+    mutationFn: (body: UpdateZoneRequest) => sitesApi.zones.update(zone.zone_id, body),
     onSuccess: () => {
       setErrors({});
       toast.success("Zone updated");
@@ -41,7 +49,7 @@ export default function ZoneForm({ zone, onCancel, onSaved }: any) {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!name.trim()) {
       setErrors({ name: "Name is required" });
@@ -82,13 +90,13 @@ export default function ZoneForm({ zone, onCancel, onSaved }: any) {
           />
           {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
         </div>
-        <FSelect
+        <FSelect<ZoneType>
           label="Zone type"
           value={zoneType}
           onChange={setZoneType}
           options={ZONE_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, " ") }))}
         />
-        <FSelect
+        <FSelect<ThreatLevel>
           label="Threat level"
           value={threatLevel}
           onChange={setThreatLevel}

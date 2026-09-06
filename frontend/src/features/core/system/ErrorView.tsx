@@ -3,17 +3,28 @@
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 import { useEffect } from "react";
+import type { AxiosError } from "axios";
+
+import type { ApiErrorBody } from "@/lib/types";
+
+/** Next's error-boundary contract: the thrown error plus a segment re-render. */
+export interface ErrorViewProps {
+  error: Error & { digest?: string };
+  reset: () => void;
+}
 
 // Theme-aware error boundary. Shows a clear message + the underlying error, with
 // "Try again" (re-render the segment) and a route back to the dashboard.
-export default function Error({ error, reset }: any) {
+export default function Error({ error, reset }: ErrorViewProps) {
   useEffect(() => {
     console.error(error);
   }, [error]);
 
-  const status = error?.response?.status;
+  // An axios failure carries the API's error envelope; anything else has only a message.
+  const response = (error as Partial<AxiosError<ApiErrorBody>>).response;
+  const status = response?.status;
   const detail =
-    error?.response?.data?.error?.message || error?.message || "An unexpected error occurred.";
+    response?.data?.error?.message || error?.message || "An unexpected error occurred.";
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">

@@ -13,26 +13,27 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { RowAction } from "@/components/console";
-import { ConfirmDialog, Spinner } from "@/components/ui/kit";
+import { ConfirmDialog, Spinner, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { SitePublic, ZonePublic } from "@/lib/types";
 import TagPicker from "@/components/tags/TagPicker";
 import { THREAT_PILL } from "../constants";
 import ZoneForm from "./ZoneForm";
 import SelectMenu from "@/components/common/SelectMenu";
 
-export default function ZonesPanel({ site }: any) {
+export default function ZonesPanel({ site }: { site: SitePublic }) {
   const qc = useQueryClient();
-  const floorsQ = useQuery<any>({
+  const floorsQ = useQuery({
     queryKey: ["floors-list", site.site_id],
     queryFn: () => sitesApi.floors.list({ site_id: site.site_id, limit: 100 }),
   });
   const floors = floorsQ.data?.items || [];
 
   const [floorFilter, setFloorFilter] = useState("");
-  const [editing, setEditing] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
-  const zonesQ = useQuery<any>({
+  const [editing, setEditing] = useState<ZonePublic | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const zonesQ = useQuery({
     queryKey: ["zones-list", site.site_id, floorFilter],
     queryFn: () =>
       sitesApi.zones.list({
@@ -44,8 +45,8 @@ export default function ZonesPanel({ site }: any) {
 
   const items = zonesQ.data?.items || [];
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => sitesApi.zones.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => sitesApi.zones.remove(id),
     onSuccess: () => {
       toast.success("Zone removed");
       qc.invalidateQueries({ queryKey: ["zones-list", site.site_id] });

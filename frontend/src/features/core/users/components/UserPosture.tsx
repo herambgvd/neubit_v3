@@ -5,9 +5,20 @@
 // unlock when the account is locked). Reset-MFA + status live in the centre editor.
 import { Icon } from "@iconify/react";
 import { PanelAction as Action, PanelStat as Stat } from "@/components/console";
+import type { UserOut } from "../../types";
 import { fmtLogin } from "../format";
 
-export default function UserPosture({ user, canManage, busyAction, onClone, onForceSignOut, onUnlock }: any) {
+export interface UserPostureProps {
+  user: UserOut;
+  canManage: boolean;
+  /** Which admin action is in flight (its `key`), or null. */
+  busyAction: string | null;
+  onClone: () => void;
+  onForceSignOut: () => void;
+  onUnlock: () => void;
+}
+
+export default function UserPosture({ user, canManage, busyAction, onClone, onForceSignOut, onUnlock }: UserPostureProps) {
   const u = user;
   const locked = !!u.locked;
   return (

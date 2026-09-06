@@ -1,7 +1,7 @@
 // "Never", or a compact relative/absolute last-login time. Kept local (not the
 // shared fmtRelative) to preserve this view's exact labels: "Never" for empty
 // and a year-bearing date for older logins.
-export function fmtLogin(ts) {
+export function fmtLogin(ts: string | null | undefined): string {
   if (!ts) return "Never";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "—";

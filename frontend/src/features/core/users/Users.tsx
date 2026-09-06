@@ -6,7 +6,7 @@
 // through modals (same shape as the Roles console); status changes and admin
 // actions hit the backend directly from the detail pane.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
 import {
@@ -24,18 +24,33 @@ import {
 import { api, apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { useAuth } from "@/lib/auth";
+import type { Page } from "@/lib/types";
+import type { RoleOut, SecurityPolicyOut, UpdateUserIn, UserImportResult, UserOut } from "../types";
 import UserListItem from "./components/UserListItem";
-import UserDetail from "./components/UserDetail";
+import UserDetail, { type AccountStatus } from "./components/UserDetail";
 import UserPosture from "./components/UserPosture";
 import AddUserModal from "./components/AddUserModal";
 import EditUserModal from "./components/EditUserModal";
 import DeleteUserModal from "./components/DeleteUserModal";
 import CloneUserModal from "./components/CloneUserModal";
+import type { CloneUserForm, EditUserForm, NewUserForm } from "./validation";
 
-const EMPTY_CREATE = { email: "", password: "", full_name: "", role_id: "", send_invite: true, site_ids: [] };
-const EMPTY_CLONE = { email: "", full_name: "", send_invite: true };
+const EMPTY_CREATE: NewUserForm = { email: "", password: "", full_name: "", role_id: "", send_invite: true, site_ids: [] };
+const EMPTY_CLONE: CloneUserForm = { email: "", full_name: "", send_invite: true };
 // `password` is write-only and starts blank on every open: blank = leave it alone.
-const EMPTY_EDIT = { full_name: "", email: "", password: "", role_id: "", site_ids: [], is_active: true };
+const EMPTY_EDIT: EditUserForm = { full_name: "", email: "", password: "", role_id: "", site_ids: [], is_active: true };
+
+/** A PATCH plus the UI-only `close` flag (see saveEdit). */
+type SaveEditVars = UpdateUserIn & { id: string; close?: boolean };
+
+/** One of the POST /auth/users/{id}/{action} admin actions. `key` names the
+ *  busy state for the button that fired it; `done` is the success toast. */
+interface AdminActionVars {
+  id: string;
+  action: "lock" | "unlock" | "reset-mfa" | "revoke-sessions";
+  key: string;
+  done: string;
+}
 
 export default function UsersPage() {
   const qc = useQueryClient();
@@ -43,16 +58,16 @@ export default function UsersPage() {
   const canManage = can("user.manage");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_CREATE);
-  const [editing, setEditing] = useState<any>(null);
+  const [editing, setEditing] = useState<UserOut | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_EDIT);
-  const [deleting, setDeleting] = useState<any>(null);
+  const [deleting, setDeleting] = useState<UserOut | null>(null);
   const [delPassword, setDelPassword] = useState("");
-  const [cloning, setCloning] = useState<any>(null);
+  const [cloning, setCloning] = useState<UserOut | null>(null);
   const [cloneForm, setCloneForm] = useState(EMPTY_CLONE);
-  const [busyAction, setBusyAction] = useState<any>(null);
-  const importRef = useRef<any>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   async function exportUsers() {
     try {
@@ -68,11 +83,11 @@ export default function UsersPage() {
     }
   }
 
-  const importUsers = useMutation<any>({
-    mutationFn: (file: any) => {
+  const importUsers = useMutation({
+    mutationFn: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
-      return api.post("/auth/users/import", fd).then((r) => r.data);
+      return api.post<UserImportResult>("/auth/users/import", fd).then((r) => r.data);
     },
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -81,35 +96,34 @@ export default function UsersPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function onPickImport(e) {
+  function onPickImport(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (file) importUsers.mutate(file);
   }
 
-  const users = useQuery<any>({
+  const users = useQuery({
     queryKey: ["users"],
-    queryFn: () => api.get("/auth/users", { params: { page_size: 100 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<UserOut>>("/auth/users", { params: { page_size: 100 } }).then((r) => r.data),
   });
-  const roles = useQuery<any>({
+  const roles = useQuery({
     queryKey: ["roles"],
-    queryFn: () => api.get("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<RoleOut>>("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
   });
   const roleOptions = (roles.data?.items || []).map((r) => ({ value: r.id, label: r.name }));
-  const sitesQ = useQuery<any>({
+  const sitesQ = useQuery({
     queryKey: ["sites", "scope-picker"],
     queryFn: () => sitesApi.list({ page_size: 200 }),
     staleTime: 60_000,
   });
-  const siteList = useMemo(() => {
-    const d = sitesQ.data;
-    const arr = Array.isArray(d) ? d : d?.items || [];
-    return arr.map((s) => ({ site_id: s.site_id, name: s.name }));
-  }, [sitesQ.data]);
+  const siteList = useMemo(
+    () => (sitesQ.data?.items || []).map((s) => ({ site_id: s.site_id, name: s.name })),
+    [sitesQ.data],
+  );
   // Effective session-idle timeout (tenant policy) for the editor's read-only field.
-  const policyQ = useQuery<any>({
+  const policyQ = useQuery({
     queryKey: ["security-policy"],
-    queryFn: () => api.get("/security/policy").then((r) => r.data),
+    queryFn: () => api.get<SecurityPolicyOut>("/security/policy").then((r) => r.data),
     staleTime: 60_000,
     retry: false,
   });
@@ -133,8 +147,8 @@ export default function UsersPage() {
 
   const selected = useMemo(() => items.find((u) => u.id === effectiveId) || null, [items, effectiveId]);
 
-  const create = useMutation<any, any, any>({
-    mutationFn: (body: any) => api.post("/auth/users", body),
+  const create = useMutation({
+    mutationFn: (body: NewUserForm) => api.post("/auth/users", body),
     onSuccess: () => {
       toast.success("User created");
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -146,8 +160,8 @@ export default function UsersPage() {
   // `close` is a UI-only flag (the edit modal wants to dismiss on success) — it is
   // destructured out so it never reaches the PATCH body. An empty `password` means
   // "keep the current one", so it is dropped rather than sent as "".
-  const saveEdit = useMutation<any, any, any>({
-    mutationFn: ({ id, close: _close, ...body }: any) => {
+  const saveEdit = useMutation({
+    mutationFn: ({ id, close: _close, ...body }: SaveEditVars) => {
       if (!body.password) delete body.password;
       return api.patch(`/auth/users/${id}`, body);
     },
@@ -160,8 +174,9 @@ export default function UsersPage() {
     onError: (e) => toast.error(apiError(e)),
     onSettled: () => setBusyAction(null),
   });
-  const remove = useMutation<any, any, any>({
-    mutationFn: ({ id, password }: any) => api.delete(`/auth/users/${id}`, { data: { password } }),
+  const remove = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.delete(`/auth/users/${id}`, { data: { password } }),
     onSuccess: (_d, vars) => {
       toast.success("User deleted");
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -171,9 +186,9 @@ export default function UsersPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
-  const adminAction = useMutation<any, any, any>({
-    mutationFn: ({ id, action }: any) => api.post(`/auth/users/${id}/${action}`),
-    onMutate: ({ key }: any) => setBusyAction(key),
+  const adminAction = useMutation({
+    mutationFn: ({ id, action }: AdminActionVars) => api.post(`/auth/users/${id}/${action}`),
+    onMutate: ({ key }) => setBusyAction(key),
     onSuccess: (_d, vars) => {
       toast.success(vars.done);
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -181,8 +196,8 @@ export default function UsersPage() {
     onError: (e) => toast.error(apiError(e)),
     onSettled: () => setBusyAction(null),
   });
-  const clone = useMutation<any, any, any>({
-    mutationFn: ({ id, ...body }: any) => api.post(`/auth/users/${id}/clone`, body),
+  const clone = useMutation({
+    mutationFn: ({ id, ...body }: CloneUserForm & { id: string }) => api.post(`/auth/users/${id}/clone`, body),
     onSuccess: () => {
       toast.success("User cloned");
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -192,7 +207,7 @@ export default function UsersPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function openEdit(u) {
+  function openEdit(u: UserOut) {
     setEditForm({
       full_name: u.full_name || "",
       email: u.email || "",
@@ -207,13 +222,13 @@ export default function UsersPage() {
     setEditing(null);
     setEditForm(EMPTY_EDIT);
   }
-  function openClone(u) {
+  function openClone(u: UserOut) {
     setCloneForm({ ...EMPTY_CLONE, full_name: `${u.full_name || u.email} (copy)` });
     setCloning(u);
   }
   // Account-status segment → the right backend action.
-  function setStatus(u, next) {
-    const cur = u.locked ? "locked" : u.is_active ? "active" : "disabled";
+  function setStatus(u: UserOut, next: AccountStatus) {
+    const cur: AccountStatus = u.locked ? "locked" : u.is_active ? "active" : "disabled";
     if (next === cur) return;
     // Never let the signed-in admin lock themselves out of their own console,
     // and never let an Administrator account (the way back in) be shut off.
@@ -335,7 +350,7 @@ export default function UsersPage() {
         setForm={setEditForm}
         roleOptions={roleOptions}
         sites={siteList}
-        onSave={() => saveEdit.mutate({ id: editing.id, ...editForm, close: true })}
+        onSave={() => editing && saveEdit.mutate({ id: editing.id, ...editForm, close: true })}
         saving={saveEdit.isPending}
       />
       <CloneUserModal
@@ -343,7 +358,7 @@ export default function UsersPage() {
         onClose={() => { setCloning(null); setCloneForm(EMPTY_CLONE); }}
         form={cloneForm}
         setForm={setCloneForm}
-        onClone={() => clone.mutate({ id: cloning.id, ...cloneForm })}
+        onClone={() => cloning && clone.mutate({ id: cloning.id, ...cloneForm })}
         cloning={clone.isPending}
       />
       <DeleteUserModal
@@ -351,7 +366,7 @@ export default function UsersPage() {
         onClose={() => { setDeleting(null); setDelPassword(""); }}
         password={delPassword}
         setPassword={setDelPassword}
-        onConfirm={() => remove.mutate({ id: deleting.id, password: delPassword })}
+        onConfirm={() => deleting && remove.mutate({ id: deleting.id, password: delPassword })}
         removing={remove.isPending}
       />
     </ConsolePage>

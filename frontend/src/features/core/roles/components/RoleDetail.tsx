@@ -7,9 +7,19 @@
 import { Icon } from "@iconify/react";
 import { PaneAction, PaneDeleteAction } from "@/components/console";
 import { EmptyState } from "@/components/ui/kit";
+import type { PermissionGroups, RoleOut } from "../../types";
 
-export default function RoleDetail({ role, groups, catalogLoading, canManage, onEdit, onDelete }: any) {
-  const granted = new Set<any>(role.permissions || []);
+export interface RoleDetailProps {
+  role: RoleOut;
+  groups: PermissionGroups;
+  catalogLoading: boolean;
+  canManage: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+export default function RoleDetail({ role, groups, catalogLoading, canManage, onEdit, onDelete }: RoleDetailProps) {
+  const granted = new Set<string>(role.permissions || []);
   const all = granted.has("*");
 
   return (
@@ -74,7 +84,7 @@ export default function RoleDetail({ role, groups, catalogLoading, canManage, on
             <EmptyState title="No permissions" subtitle="This role has no permissions assigned." />
           ) : (
             <div className="space-y-3">
-              {Object.entries<any>(groups).map(([category, perms]) => {
+              {Object.entries(groups).map(([category, perms]) => {
                 const chosen = perms.filter((p) => granted.has(p.key));
                 if (chosen.length === 0) return null;
                 return (

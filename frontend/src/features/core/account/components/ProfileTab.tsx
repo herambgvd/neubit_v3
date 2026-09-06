@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
 import { Avatar, Badge, Button, Card, Input } from "@/components/ui/kit";
@@ -12,11 +12,11 @@ export default function ProfileTab() {
   const { user, reload } = useAuth();
   const [name, setName] = useState(user?.full_name || "");
   const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<any>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setName(user?.full_name || ""), [user?.full_name]);
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => api.patch("/auth/me", { full_name: name }),
     onSuccess: async () => {
       await reload();
@@ -25,7 +25,7 @@ export default function ProfileTab() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  async function onPickAvatar(e) {
+  async function onPickAvatar(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;

@@ -8,14 +8,15 @@ import { Icon } from "@iconify/react";
 
 import { SectionCard } from "@/components/console";
 import { useAuth } from "@/lib/auth";
+import type { Entitlements } from "@/lib/types";
 
-const STATE_META = {
+const STATE_META: Record<NonNullable<Entitlements["license_state"]>, { tone: string; label: string; icon: string }> = {
   active: { tone: "text-nb-good bg-nb-good/10 border-nb-good/25", label: "Active", icon: "heroicons-outline:check-badge" },
   grace: { tone: "text-nb-warn bg-nb-warn/10 border-nb-warn/25", label: "Grace period", icon: "heroicons-outline:exclamation-triangle" },
   expired: { tone: "text-nb-crit bg-nb-crit/10 border-nb-crit/25", label: "Expired", icon: "heroicons-outline:x-circle" },
 };
 
-function humanize(key) {
+function humanize(key: string): string {
   return key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).trim();
 }
 
@@ -27,7 +28,7 @@ export default function TenantEntitlements() {
   const state = STATE_META[license_state ?? "active"] || STATE_META.active;
   const enabled = modules.filter((m) => m.enabled);
   const disabled = modules.filter((m) => !m.enabled);
-  const limitRows = Object.entries<any>(limits);
+  const limitRows = Object.entries(limits);
 
   return (
     <SectionCard>

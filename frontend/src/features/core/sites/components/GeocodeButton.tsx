@@ -12,7 +12,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 // Google's geocoder statuses, translated into something an operator can act on.
-const STATUS_MESSAGE = {
+const STATUS_MESSAGE: Record<string, string> = {
   ZERO_RESULTS: "No place matched that address — add more detail and try again.",
   REQUEST_DENIED:
     "This Maps key may not geocode. Enable the Geocoding API for it in Google Cloud Console.",
@@ -21,8 +21,30 @@ const STATUS_MESSAGE = {
   UNKNOWN_ERROR: "Google could not be reached — try again.",
 };
 
+/** The address lines as the site form holds them (raw field text). */
+export interface GeocodeAddress {
+  street: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+}
+
+/** What a successful lookup hands back. */
+export interface GeocodeResult {
+  latitude: number;
+  longitude: number;
+  formatted: string;
+}
+
+export interface GeocodeButtonProps {
+  apiKey: string;
+  address: GeocodeAddress;
+  onResult: (result: GeocodeResult) => void;
+}
+
 // [form field, human label] — all of them must be filled before the lookup runs.
-const ADDRESS_PARTS = [
+const ADDRESS_PARTS: [keyof GeocodeAddress, string][] = [
   ["street", "street"],
   ["city", "city"],
   ["state", "state / region"],
@@ -30,7 +52,7 @@ const ADDRESS_PARTS = [
   ["country", "country"],
 ];
 
-export default function GeocodeButton({ apiKey, address, onResult }: any) {
+export default function GeocodeButton({ apiKey, address, onResult }: GeocodeButtonProps) {
   // Same loader id as the Sites Map so the script is shared, never injected twice.
   const { isLoaded, loadError } = useJsApiLoader({ googleMapsApiKey: apiKey, id: "neubit-google-map" });
   const [busy, setBusy] = useState(false);
@@ -60,7 +82,8 @@ export default function GeocodeButton({ apiKey, address, onResult }: any) {
       });
       toast.success("Coordinates filled from the address");
     } catch (e) {
-      toast.error(STATUS_MESSAGE[e.message] || `Could not fetch coordinates (${e.message})`);
+      const status = e instanceof Error ? e.message : String(e);
+      toast.error(STATUS_MESSAGE[status] || `Could not fetch coordinates (${status})`);
     } finally {
       setBusy(false);
     }

@@ -32,13 +32,29 @@ function pickerMarkerElement() {
 /** What the map canvas is doing: probing the archive, missing it, or drawing. */
 type MapStatus = { state: "probing" | "missing" | "ready"; reason?: string };
 
+/** A point as MapLibre and the picker's chrome hold it. */
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+export interface OfflineMapPickerProps {
+  tilesUrl?: string;
+  /** Where the map opens when there is no `value` yet. */
+  center: LatLng;
+  zoom?: number;
+  /** The dropped pin, or null before the first click. */
+  value: LatLng | null;
+  onChange: (point: { latitude: number; longitude: number }) => void;
+}
+
 export default function OfflineMapPicker({
   tilesUrl = DEFAULT_TILES_URL,
   center,
   zoom = 4,
   value,
   onChange,
-}) {
+}: OfflineMapPickerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);

@@ -13,7 +13,7 @@ export const PIN_TIP_Y = 44;
 export const PIN_SCALE = 0.9;
 export const PIN_SCALE_SELECTED = 1.15;
 
-export function pinSvg(color, selected) {
+export function pinSvg(color: string, selected: boolean): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${PIN_W}" height="${PIN_H}" viewBox="0 0 ${PIN_W} ${PIN_H}">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">

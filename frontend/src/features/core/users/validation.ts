@@ -13,11 +13,41 @@ const PASSWORD_HINT = "At least 8 characters, with a letter and a number.";
 
 export { PASSWORD_HINT };
 
-export function nameError(value) {
+/** The Add-user dialog's fields (→ `CreateUserIn`). */
+export interface NewUserForm {
+  email: string;
+  password: string;
+  full_name: string;
+  role_id: string;
+  send_invite: boolean;
+  site_ids: string[];
+}
+
+/** The Edit-user dialog's fields (→ `UpdateUserIn`); blank password = unchanged. */
+export interface EditUserForm {
+  full_name: string;
+  email: string;
+  password: string;
+  role_id: string;
+  site_ids: string[];
+  is_active: boolean;
+}
+
+/** The Clone-user dialog's fields (→ `CloneUserIn`). */
+export interface CloneUserForm {
+  email: string;
+  full_name: string;
+  send_invite: boolean;
+}
+
+/** Per-field complaints; a missing key means the field is fine. */
+export type UserFormErrors = Partial<Record<"full_name" | "email" | "password" | "role_id", string>>;
+
+export function nameError(value: string | null | undefined): string | undefined {
   return value?.trim() ? undefined : "Full name is required.";
 }
 
-export function emailError(value) {
+export function emailError(value: string | null | undefined): string | undefined {
   const email = value?.trim() || "";
   if (!email) return "Email is required.";
   // Called out separately: "invalid address" next to a field that looks fine to the
@@ -28,7 +58,7 @@ export function emailError(value) {
 }
 
 // `optional` = the edit form, where a blank field means "keep the current password".
-export function passwordError(value, { optional = false }: any = {}) {
+export function passwordError(value: string | null | undefined, { optional = false }: { optional?: boolean } = {}): string | undefined {
   const pw = value || "";
   if (!pw) return optional ? undefined : "Password is required.";
   if (pw.length < 8) return "Password must be at least 8 characters.";
@@ -36,11 +66,11 @@ export function passwordError(value, { optional = false }: any = {}) {
   return undefined;
 }
 
-function compact(errors) {
-  return Object.fromEntries(Object.entries<any>(errors).filter(([, v]) => v));
+function compact(errors: Record<keyof UserFormErrors, string | undefined>): UserFormErrors {
+  return Object.fromEntries(Object.entries(errors).filter(([, v]) => v));
 }
 
-export function validateNewUser(form) {
+export function validateNewUser(form: NewUserForm): UserFormErrors {
   return compact({
     full_name: nameError(form.full_name),
     email: emailError(form.email),
@@ -49,7 +79,7 @@ export function validateNewUser(form) {
   });
 }
 
-export function validateEditUser(form) {
+export function validateEditUser(form: EditUserForm): UserFormErrors {
   return compact({
     full_name: nameError(form.full_name),
     email: emailError(form.email),

@@ -8,19 +8,20 @@ import { toast } from "sonner";
 import { ActionButton, QuietButton, SectionCard } from "@/components/console";
 import { Badge, Input, Toggle } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
+import type { ChannelOut } from "../../types";
 
 import { CHANNEL_FIELDS, CHANNEL_META } from "../constants";
 
-export function ChannelCard({ channel }: any) {
+export function ChannelCard({ channel }: { channel: ChannelOut }) {
   const qc = useQueryClient();
   const fields = CHANNEL_FIELDS[channel.channel] || [];
   const meta = CHANNEL_META[channel.channel] || { title: channel.channel, icon: "heroicons-outline:cog-6-tooth" };
 
   const [enabled, setEnabled] = useState(channel.enabled);
-  const [config, setConfig] = useState(channel.config || {});
+  const [config, setConfig] = useState<Record<string, unknown>>(channel.config || {});
   // Track which fields the admin actually edited, so we can avoid re-sending
   // masked secrets (value "***" means unchanged).
-  const [dirty, setDirty] = useState<any>({});
+  const [dirty, setDirty] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setEnabled(channel.enabled);
@@ -28,9 +29,9 @@ export function ChannelCard({ channel }: any) {
     setDirty({});
   }, [channel]);
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => {
-      const out: any = {};
+      const out: Record<string, unknown> = {};
       for (const f of fields) {
         const v = config[f.key];
         if (f.type === "password") {
@@ -48,13 +49,13 @@ export function ChannelCard({ channel }: any) {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const test = useMutation<any>({
+  const test = useMutation({
     mutationFn: () => api.post(`/messaging/channels/${channel.channel}/test`),
     onSuccess: () => toast.success("Test message sent"),
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const setField = (key, value) => {
+  const setField = (key: string, value: unknown) => {
     setConfig((c) => ({ ...c, [key]: value }));
     setDirty((d) => ({ ...d, [key]: true }));
   };
@@ -84,7 +85,8 @@ export function ChannelCard({ channel }: any) {
               key={f.key}
               label={f.label}
               type={f.type || "text"}
-              value={config[f.key] ?? ""}
+              // Text fields hold strings on the wire (a masked secret is "***").
+              value={String(config[f.key] ?? "")}
               placeholder={f.placeholder}
               onChange={(e) => setField(f.key, e.target.value)}
             />

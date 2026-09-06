@@ -6,17 +6,18 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { ActionButton } from "@/components/console";
-import { Button, Card, ConfirmDialog, Input } from "@/components/ui/kit";
+import { Button, Card, ConfirmDialog, Input, type ConfirmState } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
+import type { AuditPurgeOut, AuditRetentionOut } from "../../types";
 
 export default function RetentionCard() {
   const qc = useQueryClient();
-  const info = useQuery<any>({
+  const info = useQuery({
     queryKey: ["audit-retention"],
-    queryFn: () => api.get("/audit/retention").then((r) => r.data),
+    queryFn: () => api.get<AuditRetentionOut>("/audit/retention").then((r) => r.data),
   });
   const [days, setDays] = useState("");
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   useEffect(() => {
     if (info.data) setDays(String(info.data.retention_days ?? 0));
   }, [info.data]);
@@ -26,7 +27,7 @@ export default function RetentionCard() {
     qc.invalidateQueries({ queryKey: ["audit"] });
   };
 
-  const savePolicy = useMutation<any>({
+  const savePolicy = useMutation({
     mutationFn: () => api.put("/settings", { values: { audit_retention_days: Number(days) || 0 } }),
     onSuccess: () => {
       invalidate();
@@ -35,8 +36,8 @@ export default function RetentionCard() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const purge = useMutation<any>({
-    mutationFn: () => api.post("/audit/purge", {}),
+  const purge = useMutation({
+    mutationFn: () => api.post<AuditPurgeOut>("/audit/purge", {}),
     onSuccess: (r) => {
       invalidate();
       setConfirm(null);

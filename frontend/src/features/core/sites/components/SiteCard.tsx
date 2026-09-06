@@ -6,9 +6,16 @@
 // `h3 { …dark:text-slate-300 }` rule in _typography.scss outranks a plain class,
 // which washed the site name out to grey on the white popup.
 import { Icon } from "@iconify/react";
+
+import type { SitePublic } from "@/lib/types";
 import { THREAT_PIN } from "../constants";
 
-export default function SiteCard({ site, onClose }: any) {
+export interface SiteCardProps {
+  site: SitePublic;
+  onClose?: () => void;
+}
+
+export default function SiteCard({ site, onClose }: SiteCardProps) {
   const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
   return (
     <div className="relative min-w-[240px] max-w-[280px] space-y-2 rounded-lg border border-slate-200 bg-white p-2 text-slate-800">

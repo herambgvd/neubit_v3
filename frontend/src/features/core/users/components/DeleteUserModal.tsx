@@ -3,9 +3,20 @@
 import { Icon } from "@iconify/react";
 
 import { Button, Modal, PasswordInput } from "@/components/ui/kit";
+import type { UserOut } from "../../types";
+
+export interface DeleteUserModalProps {
+  /** The user being deleted; null closes the dialog. */
+  deleting: UserOut | null;
+  onClose: () => void;
+  password: string;
+  setPassword: (value: string) => void;
+  onConfirm: () => void;
+  removing: boolean;
+}
 
 // Delete user — requires the admin to re-enter their password.
-export default function DeleteUserModal({ deleting, onClose, password, setPassword, onConfirm, removing }: any) {
+export default function DeleteUserModal({ deleting, onClose, password, setPassword, onConfirm, removing }: DeleteUserModalProps) {
   return (
     <Modal
       open={!!deleting}

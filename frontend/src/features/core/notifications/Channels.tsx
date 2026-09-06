@@ -4,13 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 
 import { LoadingBlock } from "@/components/console";
 import { api } from "@/lib/api";
+import type { ChannelOut } from "../types";
 
 import { ChannelCard } from "./components/ChannelCard";
 
 export default function ChannelsPage() {
-  const channels = useQuery<any>({
+  const channels = useQuery({
     queryKey: ["messaging-channels"],
-    queryFn: () => api.get("/messaging/channels").then((r) => r.data),
+    queryFn: () => api.get<ChannelOut[]>("/messaging/channels").then((r) => r.data),
   });
 
   return (

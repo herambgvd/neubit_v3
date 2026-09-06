@@ -5,8 +5,9 @@
 import { Icon } from "@iconify/react";
 
 import { SectionCard, SectionHead } from "@/components/console";
+import type { BrandingForm } from "../../types";
 
-export default function BrandingPreview({ form, logoUrl }: any) {
+export default function BrandingPreview({ form, logoUrl }: { form: BrandingForm; logoUrl?: string | null }) {
   return (
     <SectionCard className="!p-0 overflow-hidden">
       <SectionHead icon="heroicons-outline:eye" title="Live preview" className="!mb-0 px-4 pt-4" />

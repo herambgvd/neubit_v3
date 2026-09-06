@@ -6,11 +6,17 @@
 // timeout, password age). The editable fields — name, role, scope, active flag —
 // are changed through EditUserModal, not here. Status and MFA stay as immediate
 // admin actions, since they are one-click operations rather than form edits.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { PaneAction, PaneDeleteAction } from "@/components/console";
 import { Avatar } from "@/components/ui/kit";
+import type { UserOut } from "../../types";
+import type { SiteOption } from "./SiteScopeField";
 
-function Section({ icon, children, note }: any) {
+/** The three states the status segment can put an account in. */
+export type AccountStatus = "active" | "disabled" | "locked";
+
+function Section({ icon, children, note }: { icon: string; children?: ReactNode; note?: ReactNode }) {
   return (
     <div className="mb-2 mt-5 flex items-center gap-2 first:mt-0">
       <Icon icon={icon} className="text-sm text-nb-blueb" />
@@ -21,7 +27,7 @@ function Section({ icon, children, note }: any) {
   );
 }
 
-function Row({ label, children }: any) {
+function Row({ label, children }: { label: ReactNode; children?: ReactNode }) {
   return (
     <div className="flex items-start gap-4 border-b border-nb-line/40 py-1.5 last:border-b-0">
       <span className="w-[130px] shrink-0 pt-1.5 text-[11.5px] text-nb-faint">{label}</span>
@@ -30,11 +36,24 @@ function Row({ label, children }: any) {
   );
 }
 
-function daysSince(ts) {
+function daysSince(ts: string | null | undefined): number | null {
   if (!ts) return null;
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return null;
   return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+export interface UserDetailProps {
+  user: UserOut;
+  canManage: boolean;
+  isSelf: boolean;
+  sites?: SiteOption[];
+  /** Tenant policy idle timeout; 0 = not set. */
+  sessionIdleMinutes: number;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSetStatus: (status: AccountStatus) => void;
+  onResetMfa: () => void;
 }
 
 export default function UserDetail({
@@ -45,19 +64,19 @@ export default function UserDetail({
   sessionIdleMinutes,
   onEdit,
   onDelete,
-  onSetStatus, // (status) => void   status: "active" | "disabled" | "locked"
+  onSetStatus,
   onResetMfa,
-}: any) {
+}: UserDetailProps) {
   const u = user;
-  const status = u.locked ? "locked" : u.is_active ? "active" : "disabled";
+  const status: AccountStatus = u.locked ? "locked" : u.is_active ? "active" : "disabled";
   // Accounts on the built-in Administrator role are the console's last way back
   // in — they stay enabled no matter who is looking at them.
   const isAdminAccount = !!u.role?.is_system;
   const pwAge = daysSince(u.password_changed_at);
-  const scoped = new Set<any>(u.site_ids || []);
+  const scoped = new Set<string>(u.site_ids || []);
   const scopeNames = sites.filter((s) => scoped.has(s.site_id)).map((s) => s.name);
 
-  const statusBtn = (val, label, tone) => {
+  const statusBtn = (val: AccountStatus, label: string, tone: AccountStatus) => {
     const on = status === val;
     // You can never take your own access away — signing yourself out of the
     // console (disabled or locked) would leave nobody able to undo it. An
@@ -65,11 +84,11 @@ export default function UserDetail({
     const selfLockout = isSelf && val !== "active";
     const adminLockout = isAdminAccount && val !== "active";
     const blocked = selfLockout || adminLockout;
-    const activeCls = {
+    const activeCls: Record<AccountStatus, string> = {
       active: "bg-[rgba(52,211,153,.18)] text-nb-good",
       disabled: "bg-[rgba(120,140,180,.2)] text-nb-muted",
       locked: "bg-[rgba(248,113,113,.18)] text-nb-crit",
-    }[tone];
+    };
     return (
       <button
         type="button"
@@ -84,7 +103,7 @@ export default function UserDetail({
         onClick={() => onSetStatus(val)}
         className={`px-3 py-1.5 text-[10.5px] tracking-[.5px] transition disabled:opacity-40 ${
           blocked ? "disabled:cursor-not-allowed" : ""
-        } ${on ? activeCls : "text-nb-faint hover:text-nb-muted"}`}
+        } ${on ? activeCls[tone] : "text-nb-faint hover:text-nb-muted"}`}
       >
         {label}
       </button>

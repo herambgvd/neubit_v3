@@ -5,7 +5,14 @@
 import { ActionButton, SectionCard, SectionHead } from "@/components/console";
 import { Textarea } from "@/components/ui/kit";
 
-export default function UpdateLicensePanel({ token, setToken, onApply, applying }: any) {
+export interface UpdateLicensePanelProps {
+  token: string;
+  setToken: (value: string) => void;
+  onApply: () => void;
+  applying: boolean;
+}
+
+export default function UpdateLicensePanel({ token, setToken, onApply, applying }: UpdateLicensePanelProps) {
   return (
     <SectionCard className="space-y-3">
       <SectionHead icon="heroicons-outline:key" title="Update license" />

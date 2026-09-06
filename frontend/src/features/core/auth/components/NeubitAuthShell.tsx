@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 
@@ -136,7 +137,7 @@ function Hero() {
   );
 }
 
-export default function NeubitAuthShell({ children }: any) {
+export default function NeubitAuthShell({ children }: { children?: ReactNode }) {
   return (
     <div
       className="relative grid h-screen w-full overflow-hidden text-[#f2f6ff] antialiased lg:grid-cols-[1.25fr_1fr]"
@@ -199,13 +200,18 @@ export default function NeubitAuthShell({ children }: any) {
 /* ------------------------------------------------------------------ */
 /* Shared NeuBit-styled primitives for the login + MFA forms.          */
 /* ------------------------------------------------------------------ */
-export function NbLabel({ children }: any) {
+export function NbLabel({ children }: { children?: ReactNode }) {
   return (
     <label className="mb-[5px] block font-mono text-[10px] tracking-[0.8px] text-[#9a92c8]">{children}</label>
   );
 }
 
-export function NbInput({ className = "", invalid = false, ...props }: any) {
+export interface NbInputProps extends ComponentPropsWithoutRef<"input"> {
+  /** Red border + aria-invalid; the message itself is NbFieldError below. */
+  invalid?: boolean;
+}
+
+export function NbInput({ className = "", invalid = false, ...props }: NbInputProps) {
   return (
     <input
       {...props}
@@ -222,7 +228,7 @@ export function NbInput({ className = "", invalid = false, ...props }: any) {
 }
 
 /* Per-field validation message — sits directly under its input. */
-export function NbFieldError({ id, children }: any) {
+export function NbFieldError({ id, children }: { id?: string; children?: ReactNode }) {
   if (!children) return null;
   return (
     <p id={id} className="mt-[5px] flex items-center gap-[5px] text-[11px] text-red-300">
@@ -232,7 +238,7 @@ export function NbFieldError({ id, children }: any) {
   );
 }
 
-export function NbSubmit({ children, loading, disabled }: any) {
+export function NbSubmit({ children, loading, disabled }: { children?: ReactNode; loading?: boolean; disabled?: boolean }) {
   return (
     <button
       type="submit"
@@ -246,7 +252,7 @@ export function NbSubmit({ children, loading, disabled }: any) {
   );
 }
 
-export function NbError({ children }: any) {
+export function NbError({ children }: { children?: ReactNode }) {
   if (!children) return null;
   return (
     <div

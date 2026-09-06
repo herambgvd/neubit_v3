@@ -2,7 +2,7 @@
 // this view's full locale date-time strings and the UA → device label parsing.
 
 // Friendly device label parsed from a User-Agent string.
-export function deviceLabel(ua) {
+export function deviceLabel(ua: string | null | undefined): string {
   if (!ua) return "Unknown device";
   const os = /Windows/i.test(ua)
     ? "Windows"
@@ -27,13 +27,13 @@ export function deviceLabel(ua) {
   return `${browser} on ${os}`;
 }
 
-export function fmt(ts) {
+export function fmt(ts: string | null | undefined): string {
   if (!ts) return "—";
   const d = new Date(ts);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
 }
 
 // Groups a base32 secret into 4-char blocks for easier manual entry.
-export function groupSecret(s) {
+export function groupSecret(s: string | null | undefined): string {
   return (s || "").replace(/(.{4})/g, "$1 ").trim();
 }

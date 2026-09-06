@@ -19,21 +19,17 @@ import {
   CreateButton,
   EmptyPane,
 } from "@/components/console";
-import { ConfirmDialog } from "@/components/ui/kit";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import type { Page } from "@/lib/types";
+import type { PermissionCatalog, PermissionEntry, PermissionGroups, RoleBody, RoleOut } from "../types";
 import RoleListItem from "./components/RoleListItem";
 import RoleDetail from "./components/RoleDetail";
 import RolePanel from "./components/RolePanel";
 import RoleFormModal from "./components/RoleFormModal";
 import CloneRoleModal from "./components/CloneRoleModal";
-
-interface RoleForm {
-  name: string;
-  description: string;
-  /** Permission keys, e.g. "vms.camera.read". */
-  permissions: string[];
-}
+import type { RoleForm } from "./validation";
 
 const EMPTY: RoleForm = { name: "", description: "", permissions: [] };
 
@@ -42,23 +38,23 @@ export default function RolesPage() {
   const { can } = useAuth();
   const canManage = can("role.manage");
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
+  const [editing, setEditing] = useState<RoleOut | null>(null);
   const [form, setForm] = useState(EMPTY);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [cloneSrc, setCloneSrc] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [cloneSrc, setCloneSrc] = useState<RoleOut | null>(null);
   const [cloneName, setCloneName] = useState("");
 
-  const roles = useQuery<any>({
+  const roles = useQuery({
     queryKey: ["roles"],
-    queryFn: () => api.get("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<RoleOut>>("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
   });
-  const catalog = useQuery<any>({
+  const catalog = useQuery({
     queryKey: ["permissions"],
-    queryFn: () => api.get("/auth/permissions").then((r) => r.data),
+    queryFn: () => api.get<PermissionCatalog>("/auth/permissions").then((r) => r.data),
   });
-  const groups = catalog.data?.groups || {};
+  const groups: PermissionGroups = catalog.data?.groups || {};
   const readOnly = !!editing?.is_system;
 
   const items = roles.data?.items || [];
@@ -83,18 +79,18 @@ export default function RolesPage() {
     setEditing(null);
     setForm(EMPTY);
   };
-  const create = useMutation<any, any, any>({
-    mutationFn: (body: any) => api.post("/auth/roles", body),
+  const create = useMutation({
+    mutationFn: (body: RoleBody) => api.post("/auth/roles", body),
     onSuccess: () => { toast.success("Role created"); invalidate(); },
     onError: (e) => toast.error(apiError(e)),
   });
-  const patch = useMutation<any, any, any>({
-    mutationFn: ({ id, ...body }: any) => api.patch(`/auth/roles/${id}`, body),
+  const patch = useMutation({
+    mutationFn: ({ id, ...body }: RoleBody & { id: string }) => api.patch(`/auth/roles/${id}`, body),
     onSuccess: () => { toast.success("Role updated"); invalidate(); },
     onError: (e) => toast.error(apiError(e)),
   });
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => api.delete(`/auth/roles/${id}`),
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete(`/auth/roles/${id}`),
     onSuccess: (_d, id) => {
       toast.success("Role deleted");
       qc.invalidateQueries({ queryKey: ["roles"] });
@@ -103,8 +99,8 @@ export default function RolesPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
-  const cloneRole = useMutation<any, any, any>({
-    mutationFn: ({ id, name }: any) => api.post(`/auth/roles/${id}/clone`, { name }),
+  const cloneRole = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.post<RoleOut>(`/auth/roles/${id}/clone`, { name }),
     onSuccess: (res) => {
       toast.success("Role cloned");
       qc.invalidateQueries({ queryKey: ["roles"] });
@@ -116,13 +112,13 @@ export default function RolesPage() {
   });
 
   function openCreate() { setEditing(null); setForm(EMPTY); setOpen(true); }
-  function openEdit(role) {
+  function openEdit(role: RoleOut) {
     setEditing(role);
     setForm({ name: role.name || "", description: role.description || "", permissions: [...(role.permissions || [])] });
     setOpen(true);
   }
-  function openClone(role) { setCloneName(`${role.name} (copy)`); setCloneSrc(role); }
-  function handleDelete(role) {
+  function openClone(role: RoleOut) { setCloneName(`${role.name} (copy)`); setCloneSrc(role); }
+  function handleDelete(role: RoleOut) {
     setConfirm({
       title: "Delete role",
       message: (<>Delete role <strong>{role.name}</strong>? This can’t be undone.</>),
@@ -131,19 +127,19 @@ export default function RolesPage() {
     });
   }
 
-  const selectedPerms = useMemo(() => new Set<any>(form.permissions), [form.permissions]);
-  function toggleKey(key) {
+  const selectedPerms = useMemo(() => new Set<string>(form.permissions), [form.permissions]);
+  function toggleKey(key: string) {
     if (readOnly) return;
     setForm((f) => {
-      const next = new Set<any>(f.permissions);
+      const next = new Set<string>(f.permissions);
       next.has(key) ? next.delete(key) : next.add(key);
       return { ...f, permissions: [...next] };
     });
   }
-  function toggleGroup(perms, checkAll) {
+  function toggleGroup(perms: PermissionEntry[], checkAll: boolean) {
     if (readOnly) return;
     setForm((f) => {
-      const next = new Set<any>(f.permissions);
+      const next = new Set<string>(f.permissions);
       perms.forEach((p) => (checkAll ? next.add(p.key) : next.delete(p.key)));
       return { ...f, permissions: [...next] };
     });
@@ -242,7 +238,7 @@ export default function RolesPage() {
         onClose={() => { setCloneSrc(null); setCloneName(""); }}
         name={cloneName}
         setName={setCloneName}
-        onClone={() => cloneRole.mutate({ id: cloneSrc.id, name: cloneName.trim() })}
+        onClone={() => cloneSrc && cloneRole.mutate({ id: cloneSrc.id, name: cloneName.trim() })}
         cloning={cloneRole.isPending}
       />
 

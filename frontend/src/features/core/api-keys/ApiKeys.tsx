@@ -8,34 +8,36 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ActionButton } from "@/components/console";
-import { Card, ConfirmDialog, Spinner, Table } from "@/components/ui/kit";
+import { Card, ConfirmDialog, Spinner, Table, type ConfirmState } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
+import type { Page } from "@/lib/types";
+import type { ApiKeyCreatedOut, ApiKeyOut, RoleOut } from "../types";
 import { buildApiKeyColumns } from "./components/ApiKeyColumns";
-import CreateApiKeyModal from "./components/CreateApiKeyModal";
+import CreateApiKeyModal, { type ApiKeyForm } from "./components/CreateApiKeyModal";
 import RevealKeyModal from "./components/RevealKeyModal";
 
-const EMPTY = { name: "", role_id: "" };
+const EMPTY: ApiKeyForm = { name: "", role_id: "" };
 
 export default function ApiKeysPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
-  const [revealed, setRevealed] = useState<any>(null); // the newly-created key object with raw `key`
+  const [revealed, setRevealed] = useState<ApiKeyCreatedOut | null>(null); // the newly-created key object with raw `key`
   const [copied, setCopied] = useState(false);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const keys = useQuery<any>({
+  const keys = useQuery({
     queryKey: ["api-keys"],
-    queryFn: () => api.get("/auth/api-keys", { params: { page_size: 100 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<ApiKeyOut>>("/auth/api-keys", { params: { page_size: 100 } }).then((r) => r.data),
   });
-  const roles = useQuery<any>({
+  const roles = useQuery({
     queryKey: ["roles"],
-    queryFn: () => api.get("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<RoleOut>>("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
   });
   const roleOptions = (roles.data?.items || []).map((r) => ({ value: r.id, label: r.name }));
 
-  const create = useMutation<any, any, any>({
-    mutationFn: (body: any) => api.post("/auth/api-keys", body).then((r) => r.data),
+  const create = useMutation({
+    mutationFn: (body: ApiKeyForm) => api.post<ApiKeyCreatedOut>("/auth/api-keys", body).then((r) => r.data),
     onSuccess: (data) => {
       toast.success("API key created");
       qc.invalidateQueries({ queryKey: ["api-keys"] });
@@ -46,8 +48,8 @@ export default function ApiKeysPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
-  const revoke = useMutation<any>({
-    mutationFn: (id: any) => api.delete(`/auth/api-keys/${id}`),
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.delete(`/auth/api-keys/${id}`),
     onSuccess: () => {
       toast.success("API key revoked");
       qc.invalidateQueries({ queryKey: ["api-keys"] });
@@ -56,7 +58,7 @@ export default function ApiKeysPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function handleRevoke(row) {
+  function handleRevoke(row: ApiKeyOut) {
     setConfirm({
       title: "Revoke API key",
       message: <>Revoke <strong>{row.name}</strong>? Applications using it will stop working.</>,
@@ -66,6 +68,7 @@ export default function ApiKeysPage() {
   }
 
   async function copyKey() {
+    if (!revealed) return; // the Copy button only exists inside the reveal dialog
     try {
       await navigator.clipboard.writeText(revealed.key);
       setCopied(true);

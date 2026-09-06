@@ -3,17 +3,29 @@
 import { useEffect, useState } from "react";
 
 import { Button, Input, Modal, PasswordInput, Select, Toggle } from "@/components/ui/kit";
-import SiteScopeField from "./SiteScopeField";
-import { PASSWORD_HINT, validateNewUser } from "../validation";
+import type { SelectOption } from "@/components/common/SelectMenu";
+import SiteScopeField, { type SiteOption } from "./SiteScopeField";
+import { PASSWORD_HINT, validateNewUser, type NewUserForm, type UserFormErrors } from "../validation";
 
-export default function AddUserModal({ open, onClose, form, setForm, roleOptions, sites = [], onCreate, creating }: any) {
+export interface AddUserModalProps {
+  open: boolean;
+  onClose: () => void;
+  form: NewUserForm;
+  setForm: (form: NewUserForm) => void;
+  roleOptions: SelectOption[];
+  sites?: SiteOption[];
+  onCreate: () => void;
+  creating: boolean;
+}
+
+export default function AddUserModal({ open, onClose, form, setForm, roleOptions, sites = [], onCreate, creating }: AddUserModalProps) {
   // Errors appear on the first Create attempt, then track the field as it is fixed —
   // so the dialog never opens already shouting at an untouched form.
   const [submitted, setSubmitted] = useState(false);
   useEffect(() => { if (!open) setSubmitted(false); }, [open]);
 
   const errors = validateNewUser(form);
-  const show = (field) => (submitted ? errors[field] : undefined);
+  const show = (field: keyof UserFormErrors) => (submitted ? errors[field] : undefined);
 
   function handleCreate() {
     setSubmitted(true);

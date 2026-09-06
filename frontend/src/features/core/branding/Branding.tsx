@@ -9,18 +9,20 @@ import { toast } from "sonner";
 
 import { ActionButton, LoadingBlock, ViewActions } from "@/components/console";
 import { api, apiError } from "@/lib/api";
+import type { BrandingOut } from "@/lib/types";
+import type { BrandingForm } from "../types";
 import BrandingEditor from "./components/BrandingEditor";
 import BrandingPreview from "./components/BrandingPreview";
 
-const DEFAULTS = { app_name: "", primary_color: "#4f46e5", accent_color: "#22d3ee", name_in_header: false };
+const DEFAULTS: BrandingForm = { app_name: "", primary_color: "#4f46e5", accent_color: "#22d3ee", name_in_header: false };
 
 export default function BrandingPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState(DEFAULTS);
 
-  const branding = useQuery<any>({
+  const branding = useQuery({
     queryKey: ["branding"],
-    queryFn: () => api.get("/branding").then((r) => r.data),
+    queryFn: () => api.get<BrandingOut>("/branding").then((r) => r.data),
   });
 
   // Hydrate the form whenever the server data lands / refreshes.
@@ -35,8 +37,8 @@ export default function BrandingPage() {
     }
   }, [branding.data]);
 
-  const save = useMutation<any, any, any>({
-    mutationFn: (body: any) => api.put("/branding", body),
+  const save = useMutation({
+    mutationFn: (body: BrandingForm) => api.put("/branding", body),
     onSuccess: () => {
       toast.success("Branding saved");
       qc.invalidateQueries({ queryKey: ["branding"] });
@@ -44,8 +46,8 @@ export default function BrandingPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const uploadLogo = useMutation<any>({
-    mutationFn: (file: any) => {
+  const uploadLogo = useMutation({
+    mutationFn: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
       return api.post("/branding/logo", fd, {

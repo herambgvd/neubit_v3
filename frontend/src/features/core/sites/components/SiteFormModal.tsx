@@ -3,7 +3,7 @@
 // Full site create/edit modal — identity, address, coordinates, and contact
 // sections plus an image upload/preview. Auto-generates a location code from the
 // site type on create. On save, creates/updates then optionally uploads the image.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -13,19 +13,38 @@ import { FieldLabel } from "@/components/common";
 import { api, apiError, fileUrl } from "@/lib/api";
 import { DEFAULT_TILES_URL } from "@/lib/map/config";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { Address, Coordinates, CreateSiteRequest, SitePublic, SiteType, ThreatLevel } from "@/lib/types";
+import type { MapsConfigOut } from "../../types";
 import { SITE_TYPES, THREAT_LEVELS, capitalize, generateLocationCode } from "../constants";
 import { FInput, FTextarea, FSelect, ImagePreviewCard, Section } from "./FormControls";
 import GeocodeButton from "./GeocodeButton";
 import PickOnMapButton from "./PickOnMapButton";
-import { sanitizePhone, sanitizeZip, validateSite } from "../validation";
+import { sanitizePhone, sanitizeZip, validateSite, type SiteFormErrors } from "../validation";
 
 const FORM_ID = "site-form";
 
-export default function SiteFormModal({ site, allSites, onCancel, onSaved }: any) {
+export interface SiteFormModalProps {
+  /** null = create. */
+  site: SitePublic | null;
+  /** Parent-site choices (the site itself is filtered out). */
+  allSites: SitePublic[];
+  onCancel: () => void;
+  onSaved: (saved: SitePublic) => void;
+}
+
+/** What the save mutation takes: the request body plus an optional image to upload after. */
+interface SaveVars {
+  body: CreateSiteRequest;
+  file: File | null;
+}
+
+export default function SiteFormModal({ site, allSites, onCancel, onSaved }: SiteFormModalProps) {
   const isEdit = !!site;
   const [name, setName] = useState(site?.name || "");
   const [locationCode, setLocationCode] = useState(
-    site?.location_code || (isEdit ? "" : generateLocationCode(site?.site_type || "building")),
+    // Create only (site is null there), so the code is always seeded from the
+    // default type — the operator regenerates after picking another.
+    site?.location_code || (isEdit ? "" : generateLocationCode("building")),
   );
   const [description, setDescription] = useState(site?.description || "");
   const [siteType, setSiteType] = useState(site?.site_type || "building");
@@ -36,16 +55,18 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: any
   const [state, setState] = useState(site?.address?.state || "");
   const [zipCode, setZipCode] = useState(site?.address?.zip_code || "");
   const [country, setCountry] = useState(site?.address?.country || "India");
-  const [latitude, setLatitude] = useState(site?.coordinates?.latitude ?? "");
-  const [longitude, setLongitude] = useState(site?.coordinates?.longitude ?? "");
+  // Raw field text once edited; the hydrated number until then.
+  const [latitude, setLatitude] = useState<string | number>(site?.coordinates?.latitude ?? "");
+  const [longitude, setLongitude] = useState<string | number>(site?.coordinates?.longitude ?? "");
   const [contactPerson, setContactPerson] = useState(site?.contact_person || "");
   const [contactPhone, setContactPhone] = useState(site?.contact_phone || "");
   const [emailAddress, setEmailAddress] = useState(site?.email_address || "");
   const [geoMatch, setGeoMatch] = useState("");
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<SiteFormErrors>({});
   // Clear a field's complaint as soon as the operator starts fixing it.
-  const clearError = (field) => setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
-  const [imageFile, setImageFile] = useState<any>(null);
+  const clearError = (field: keyof SiteFormErrors) =>
+    setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [existingImageUrl] = useState(site?.image_url || "");
   const [selectedPreview, setSelectedPreview] = useState("");
   const previewUrl = selectedPreview || (existingImageUrl ? fileUrl(existingImageUrl) : "");
@@ -67,18 +88,18 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: any
   // geocoding; otherwise they drop a pin on the offline basemap, which needs no
   // internet. Either way there is always a way to fill the fields without typing
   // decimals by hand.
-  const mapsQ = useQuery<any>({
+  const mapsQ = useQuery({
     queryKey: ["maps-config"],
-    queryFn: () => api.get("/settings/maps").then((r) => r.data),
+    queryFn: () => api.get<MapsConfigOut>("/settings/maps").then((r) => r.data),
     staleTime: 5 * 60_000,
     retry: false,
   });
   const mapsKey = (mapsQ.data?.enabled && mapsQ.data?.api_key) || "";
   const tilesUrl = mapsQ.data?.tiles_url || DEFAULT_TILES_URL;
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: async ({ body, file }: any) => {
-      const saved = isEdit ? await sitesApi.update(site.site_id, body) : await sitesApi.create(body);
+  const saving = useMutation({
+    mutationFn: async ({ body, file }: SaveVars) => {
+      const saved = site ? await sitesApi.update(site.site_id, body) : await sitesApi.create(body);
       if (file) return sitesApi.uploadImage(saved.site_id, file);
       return saved;
     },
@@ -90,17 +111,17 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: any
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function buildAddress() {
-    const obj = {
+  function buildAddress(): Address | null {
+    const obj: Address = {
       street: street.trim() || null,
       city: city.trim() || null,
       state: state.trim() || null,
       zip_code: zipCode.trim() || null,
       country: country.trim() || null,
     };
-    return Object.values<any>(obj).some(Boolean) ? obj : null;
+    return Object.values(obj).some(Boolean) ? obj : null;
   }
-  function buildCoords() {
+  function buildCoords(): Coordinates | null {
     if (latitude === "" || longitude === "") return null;
     const lat = Number(latitude);
     const lng = Number(longitude);
@@ -108,7 +129,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: any
     return { latitude: lat, longitude: lng };
   }
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const found = validateSite({ name, emailAddress, latitude, longitude, zipCode, contactPhone });
     setErrors(found);
@@ -131,7 +152,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: any
     });
   }
 
-  function onPickImage(e) {
+  function onPickImage(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] || null;
     if (!file) return;
     if (!/^image\/(png|jpe?g|webp|svg\+xml)$/i.test(file.type)) {
@@ -193,13 +214,13 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: any
                 ) : null
               }
             />
-            <FSelect
+            <FSelect<SiteType>
               label="Site type"
               value={siteType}
               onChange={setSiteType}
               options={SITE_TYPES.map((t) => ({ value: t, label: capitalize(t) }))}
             />
-            <FSelect
+            <FSelect<ThreatLevel>
               label="Threat level"
               value={threatLevel}
               onChange={setThreatLevel}
@@ -245,7 +266,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: any
               <GeocodeButton
                 apiKey={mapsKey}
                 address={{ street, city, state, zipCode, country }}
-                onResult={({ latitude: lat, longitude: lng, formatted }: any) => {
+                onResult={({ latitude: lat, longitude: lng, formatted }) => {
                   setLatitude(lat.toFixed(6));
                   setLongitude(lng.toFixed(6));
                   setGeoMatch(formatted);

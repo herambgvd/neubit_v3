@@ -4,8 +4,15 @@
 // or map-pin, name + type pill, city sub-line, and an active-status dot.
 import { Icon } from "@iconify/react";
 import { fileUrl } from "@/lib/api";
+import type { SitePublic } from "@/lib/types";
 
-export default function SiteListItem({ site, selected, onSelect }: any) {
+export interface SiteListItemProps {
+  site: SitePublic;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+export default function SiteListItem({ site, selected, onSelect }: SiteListItemProps) {
   const s = site;
   const city = [s.address?.city, s.address?.state].filter(Boolean).join(", ");
   return (

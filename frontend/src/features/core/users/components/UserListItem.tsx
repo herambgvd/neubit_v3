@@ -3,8 +3,15 @@
 // A single user card in the left library (VMS mockup .rl): avatar with initials,
 // name + role sub-line, and a status dot (active/locked/disabled) on the right.
 import { Avatar } from "@/components/ui/kit";
+import type { UserOut } from "../../types";
 
-export default function UserListItem({ user, selected, onSelect }: any) {
+export interface UserListItemProps {
+  user: UserOut;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+export default function UserListItem({ user, selected, onSelect }: UserListItemProps) {
   const u = user;
   const dot = u.locked
     ? "bg-nb-crit shadow-[0_0_5px_#f87171]"

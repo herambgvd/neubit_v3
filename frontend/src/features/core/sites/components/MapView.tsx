@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
 import { Icon } from "@iconify/react";
 
-import { THREAT_PIN } from "../constants";
+import { THREAT_PIN, type SiteWithCoords } from "../constants";
 import { Loading } from "./MapChrome";
 import { PIN_H, PIN_SCALE, PIN_SCALE_SELECTED, PIN_TIP_Y, PIN_W, pinSvg } from "./pin";
 import SiteCard from "./SiteCard";
@@ -19,7 +19,7 @@ const LABEL_MAX = 26;
 
 // Google needs a fresh Size/Point per icon, so this must run after the JS API is
 // loaded (i.e. inside the rendered map, never at module scope).
-function pinIcon(color, selected) {
+function pinIcon(color: string, selected: boolean): google.maps.Icon {
   const s = selected ? PIN_SCALE_SELECTED : PIN_SCALE;
   const w = PIN_W * s;
   const h = PIN_H * s;
@@ -57,13 +57,23 @@ function MapPopupStyleFix() {
   );
 }
 
-export default function MapView({ apiKey, center, zoom, sites, selected, onSelect, onClose }: any) {
+export interface MapViewProps {
+  apiKey: string;
+  center: { lat: number; lng: number };
+  zoom: number;
+  sites: SiteWithCoords[];
+  selected: SiteWithCoords | null;
+  onSelect: (site: SiteWithCoords) => void;
+  onClose: () => void;
+}
+
+export default function MapView({ apiKey, center, zoom, sites, selected, onSelect, onClose }: MapViewProps) {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: apiKey,
     id: "neubit-google-map",
   });
 
-  const [mapInstance, setMapInstance] = useState<any>(null);
+  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
 
   // Bumped on every marker click so the InfoWindow below remounts even when the
   // same site is picked twice. Without it, clicking a site → clicking elsewhere
@@ -71,7 +81,7 @@ export default function MapView({ apiKey, center, zoom, sites, selected, onSelec
   // left `selected` referentially unchanged, so React re-rendered nothing and the
   // card never came back until a page refresh.
   const [openNonce, setOpenNonce] = useState(0);
-  const openSite = (s) => {
+  const openSite = (s: SiteWithCoords) => {
     setOpenNonce((n) => n + 1);
     onSelect(s);
   };

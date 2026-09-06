@@ -8,27 +8,28 @@ import { toast } from "sonner";
 import { Badge, Button, Card, Input, Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import type { RecoveryCodesOut, TotpSetupOut, TotpStatusOut } from "../../types";
 import { groupSecret } from "../format";
 import RecoveryCodes from "./RecoveryCodes";
 
 export default function TwoFactorCard() {
   const qc = useQueryClient();
   const { reload } = useAuth();
-  const status = useQuery<any>({
+  const status = useQuery({
     queryKey: ["my-2fa"],
-    queryFn: () => api.get("/auth/me/2fa").then((r) => r.data),
+    queryFn: () => api.get<TotpStatusOut>("/auth/me/2fa").then((r) => r.data),
   });
   const enabled = status.data?.enabled;
 
   // Local flow state: 'idle' | 'enrolling' (secret shown, awaiting code) | codes shown.
-  const [setup, setSetup] = useState<any>(null); // { secret, otpauth_uri }
+  const [setup, setSetup] = useState<TotpSetupOut | null>(null);
   const [code, setCode] = useState("");
-  const [newCodes, setNewCodes] = useState<any>(null);
+  const [newCodes, setNewCodes] = useState<string[] | null>(null);
   // For the enabled state: disabling / regenerating both need a current code.
   const [manageCode, setManageCode] = useState("");
 
-  const begin = useMutation<any>({
-    mutationFn: () => api.post("/auth/me/2fa/setup").then((r) => r.data),
+  const begin = useMutation({
+    mutationFn: () => api.post<TotpSetupOut>("/auth/me/2fa/setup").then((r) => r.data),
     onSuccess: (d) => {
       setSetup(d);
       setCode("");
@@ -36,8 +37,8 @@ export default function TwoFactorCard() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const confirm = useMutation<any>({
-    mutationFn: () => api.post("/auth/me/2fa/confirm", { code: code.trim() }).then((r) => r.data),
+  const confirm = useMutation({
+    mutationFn: () => api.post<RecoveryCodesOut>("/auth/me/2fa/confirm", { code: code.trim() }).then((r) => r.data),
     onSuccess: async (d) => {
       setSetup(null);
       setNewCodes(d.recovery_codes);
@@ -47,7 +48,7 @@ export default function TwoFactorCard() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const disable = useMutation<any>({
+  const disable = useMutation({
     mutationFn: () => api.post("/auth/me/2fa/disable", { code: manageCode.trim() }),
     onSuccess: async () => {
       setManageCode("");
@@ -57,9 +58,9 @@ export default function TwoFactorCard() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const regen = useMutation<any>({
+  const regen = useMutation({
     mutationFn: () =>
-      api.post("/auth/me/2fa/recovery-codes", { code: manageCode.trim() }).then((r) => r.data),
+      api.post<RecoveryCodesOut>("/auth/me/2fa/recovery-codes", { code: manageCode.trim() }).then((r) => r.data),
     onSuccess: async (d) => {
       setManageCode("");
       setNewCodes(d.recovery_codes);

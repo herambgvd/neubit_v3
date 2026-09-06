@@ -2,19 +2,20 @@
 
 import { Icon } from "@iconify/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { api, apiError, tokens } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import AuthShell, { AuthInput, AuthLabel, AuthSubmit } from "@/components/AuthShell";
+import type { SetupStatus, TokenOut } from "../types";
 
 // First-run wizard: creates the very first administrator, then signs them in.
 // Only reachable while the deployment has zero users (backend enforces this too).
 export default function SetupPage() {
   const router = useRouter();
   const { reload } = useAuth();
-  const [form, setForm] = useState<any>({ full_name: "", email: "", password: "", confirm: "" });
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", confirm: "" });
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -22,7 +23,7 @@ export default function SetupPage() {
   // If setup is already done, don't show the wizard.
   useEffect(() => {
     api
-      .get("/auth/setup-status")
+      .get<SetupStatus>("/auth/setup-status")
       .then((r) => {
         if (!r.data?.needs_setup) router.replace("/login");
         else setChecking(false);
@@ -33,11 +34,11 @@ export default function SetupPage() {
   const mismatch = form.confirm.length > 0 && form.password !== form.confirm;
   const canSubmit = form.email && form.password && !mismatch && !busy;
 
-  async function onSubmit(e) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     try {
-      const { data } = await api.post("/auth/setup", {
+      const { data } = await api.post<TokenOut>("/auth/setup", {
         email: form.email,
         password: form.password,
         full_name: form.full_name || null,

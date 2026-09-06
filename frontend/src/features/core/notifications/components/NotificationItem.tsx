@@ -1,10 +1,11 @@
 "use client";
 
 import { Button, Card } from "@/components/ui/kit";
+import type { NotificationOut } from "@/lib/types";
 
 // Compact relative time for the notification feed. Kept local (not @/lib/format's
 // fmtRelative) to preserve the exact "just now / 5m / 3h / 2d ago" wording.
-function formatTime(ts) {
+function formatTime(ts: string | null | undefined): string {
   if (!ts) return "";
   const d = new Date(ts);
   if (isNaN(d.getTime())) return String(ts);
@@ -19,7 +20,13 @@ function formatTime(ts) {
   return d.toLocaleString();
 }
 
-export function NotificationItem({ notification, onMarkRead, marking }: any) {
+export interface NotificationItemProps {
+  notification: NotificationOut;
+  onMarkRead: (id: string) => void;
+  marking: boolean;
+}
+
+export function NotificationItem({ notification, onMarkRead, marking }: NotificationItemProps) {
   const n = notification;
   return (
     <Card

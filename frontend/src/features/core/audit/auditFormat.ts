@@ -1,7 +1,11 @@
 // Audit-specific formatting helpers: badge color per action, human-readable
 // phrasing per action code, and a one-line sentence describing an entry.
+import type { AuditLogOut } from "../types";
 
-const ACTION_COLORS = {
+/** The badge tones an action can map to — a subset of the kit's BadgeColor. */
+export type AuditColor = "green" | "amber" | "red" | "blue" | "slate";
+
+const ACTION_COLORS: Record<string, AuditColor> = {
   create: "green",
   update: "amber",
   delete: "red",
@@ -10,16 +14,16 @@ const ACTION_COLORS = {
   logout: "slate",
 };
 
-export function actionColor(action) {
+export function actionColor(action: string | null | undefined): AuditColor {
   const key = (action || "").toLowerCase();
-  for (const [needle, color] of Object.entries<any>(ACTION_COLORS)) {
+  for (const [needle, color] of Object.entries(ACTION_COLORS)) {
     if (key.includes(needle)) return color;
   }
   return "slate";
 }
 
 // Human-readable phrasing per action code.
-const ACTION_VERB = {
+const ACTION_VERB: Record<string, string> = {
   "auth.login": "Signed in",
   "auth.logout": "Signed out",
   "user.create": "Created user",
@@ -33,7 +37,7 @@ const ACTION_VERB = {
   "branding.update": "Updated branding",
 };
 
-function humanizeAction(action) {
+function humanizeAction(action: string | null | undefined): string {
   if (!action) return "Activity";
   const [obj, verb] = action.split(".");
   const v = verb ? verb.charAt(0).toUpperCase() + verb.slice(1) : "";
@@ -42,14 +46,14 @@ function humanizeAction(action) {
 
 // Turn a raw entry into a plain-English sentence, pulling the specific target
 // (name/email) out of `meta` so it reads like "Created user jane@example.com".
-export function describe(r) {
+export function describe(r: Pick<AuditLogOut, "action" | "meta">): string {
   const base = ACTION_VERB[r.action] || humanizeAction(r.action);
   const m = r.meta || {};
   const detail = m.email || m.name || m.title || null;
-  return detail ? `${base} · ${detail}` : base;
+  return detail ? `${base} · ${String(detail)}` : base;
 }
 
-export function formatTs(ts) {
+export function formatTs(ts: string | null | undefined): string {
   if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts;

@@ -25,7 +25,7 @@ import { FInput } from "./FormControls";
 import { ActionButton, RowAction } from "@/components/console";
 import { apiError } from "@/lib/api";
 import sitesApi from "@/lib/api/sites";
-import type { TariffSlabIn } from "@/lib/types";
+import type { SitePublic, TariffSlabIn, TariffSlabPublic } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 
 /** "22", "22:00", "22:30", "24:00" → minutes since midnight; null = unparseable. */
@@ -83,7 +83,7 @@ type Row = {
   effective_from: string; // YYYY-MM-DD
 };
 
-function fromApi(item: any): Row {
+function fromApi(item: TariffSlabPublic): Row {
   return {
     name: item.name,
     start: toHHMM(item.start_minute),
@@ -109,12 +109,12 @@ function rowError(r: Row): string | null {
   return null;
 }
 
-export default function TariffSlabsEditor({ site }: any) {
+export default function TariffSlabsEditor({ site }: { site: SitePublic }) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const editable = can("sites.update");
 
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["site-tariff-slabs", site.site_id],
     queryFn: () => sitesApi.getTariffSlabs(site.site_id),
   });
@@ -207,12 +207,12 @@ export default function TariffSlabsEditor({ site }: any) {
               key={i}
               className="grid grid-cols-2 items-end gap-x-3 gap-y-2 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2.5 md:grid-cols-[1.4fr_.8fr_.8fr_.8fr_.7fr_1fr_auto]"
             >
-              <FInput label="Slab name" value={r.name} onChange={(v: any) => set(i, { name: v })} placeholder="Off-Peak" />
-              <FInput label="From" mono value={r.start} onChange={(v: any) => set(i, { start: v })} placeholder="22:00" />
-              <FInput label="To" mono value={r.end} onChange={(v: any) => set(i, { end: v })} placeholder="06:00" />
-              <FInput label="Rate / kWh" mono inputMode="decimal" value={r.rate} onChange={(v: any) => set(i, { rate: v })} placeholder="4.20" />
-              <FInput label="Currency" value={r.currency} onChange={(v: any) => set(i, { currency: v })} placeholder="INR" />
-              <FInput label="Effective from" type="date" value={r.effective_from} onChange={(v: any) => set(i, { effective_from: v })} />
+              <FInput label="Slab name" value={r.name} onChange={(v) => set(i, { name: v })} placeholder="Off-Peak" />
+              <FInput label="From" mono value={r.start} onChange={(v) => set(i, { start: v })} placeholder="22:00" />
+              <FInput label="To" mono value={r.end} onChange={(v) => set(i, { end: v })} placeholder="06:00" />
+              <FInput label="Rate / kWh" mono inputMode="decimal" value={r.rate} onChange={(v) => set(i, { rate: v })} placeholder="4.20" />
+              <FInput label="Currency" value={r.currency} onChange={(v) => set(i, { currency: v })} placeholder="INR" />
+              <FInput label="Effective from" type="date" value={r.effective_from} onChange={(v) => set(i, { effective_from: v })} />
               {editable && (
                 <RowAction
                   icon="heroicons-outline:trash"

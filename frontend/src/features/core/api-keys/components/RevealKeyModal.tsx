@@ -4,9 +4,18 @@ import { Icon } from "@iconify/react";
 
 import { Button, Modal } from "@/components/ui/kit";
 import { FieldLabel } from "@/components/common";
+import type { ApiKeyCreatedOut } from "../../types";
+
+export interface RevealKeyModalProps {
+  /** The just-created key (with its raw secret); null closes the dialog. */
+  revealed: ApiKeyCreatedOut | null;
+  onClose: () => void;
+  copied: boolean;
+  onCopy: () => void;
+}
 
 // Shows the freshly-created secret key once, with a copy button.
-export default function RevealKeyModal({ revealed, onClose, copied, onCopy }: any) {
+export default function RevealKeyModal({ revealed, onClose, copied, onCopy }: RevealKeyModalProps) {
   return (
     <Modal
       open={!!revealed}

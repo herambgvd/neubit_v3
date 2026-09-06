@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -7,7 +8,7 @@ import { Card, Toggle } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-function PrefRow({ title, desc, children }: any) {
+function PrefRow({ title, desc, children }: { title: ReactNode; desc?: ReactNode; children?: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 py-3 border-b border-card-border last:border-0">
       <div className="min-w-0">
@@ -23,8 +24,9 @@ export default function PreferencesTab() {
   const { user, reload } = useAuth();
   const prefs = user?.preferences || {};
 
-  const save = useMutation<any, any, any>({
-    mutationFn: (patch: any) => api.patch("/auth/me/preferences", { preferences: patch }),
+  // `PreferencesIn` — a partial merge; only the sent keys change.
+  const save = useMutation({
+    mutationFn: (patch: Record<string, unknown>) => api.patch("/auth/me/preferences", { preferences: patch }),
     onSuccess: async () => {
       await reload();
       toast.success("Preferences saved");

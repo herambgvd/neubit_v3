@@ -4,14 +4,22 @@
 // least-privilege stats derived from the live catalog + clone action + notes.
 import { Icon } from "@iconify/react";
 import { PanelAction as Action, PanelStat as Stat } from "@/components/console";
+import type { PermissionGroups, RoleOut } from "../../types";
 
-export default function RolePanel({ role, groups, canManage, onClone }: any) {
-  const granted = new Set<any>(role.permissions || []);
+export interface RolePanelProps {
+  role: RoleOut;
+  groups: PermissionGroups;
+  canManage: boolean;
+  onClone: () => void;
+}
+
+export default function RolePanel({ role, groups, canManage, onClone }: RolePanelProps) {
+  const granted = new Set<string>(role.permissions || []);
   const all = granted.has("*");
-  const allPerms = Object.values<any>(groups).flat();
+  const allPerms = Object.values(groups).flat();
   const totalCaps = allPerms.length;
   const full = all ? totalCaps : allPerms.filter((p) => granted.has(p.key)).length;
-  const areas = Object.values<any>(groups).filter((perms) =>
+  const areas = Object.values(groups).filter((perms) =>
     all ? perms.length : perms.some((p) => granted.has(p.key)),
   ).length;
 

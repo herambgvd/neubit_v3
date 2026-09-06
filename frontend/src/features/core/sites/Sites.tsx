@@ -21,16 +21,19 @@ import {
   CreateButton,
   EmptyPane,
 } from "@/components/console";
-import { ConfirmDialog } from "@/components/ui/kit";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { ThreatLevel } from "@/lib/types";
 import SiteListItem from "./components/SiteListItem";
-import SiteDetail from "./components/SiteDetail";
+import SiteDetail, { type SiteDetailTab } from "./components/SiteDetail";
 import SiteFormModal from "./components/SiteFormModal";
+
+type PageMode = "view" | "create" | "edit";
 
 export default function SitesConfigPage() {
   const qc = useQueryClient();
-  const sitesQ = useQuery<any>({
+  const sitesQ = useQuery({
     queryKey: ["sites-list"],
     queryFn: () => sitesApi.list({ limit: 100 }),
   });
@@ -41,11 +44,11 @@ export default function SitesConfigPage() {
   const inactive = items.length - active;
 
   const [q, setQ] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [mode, setMode] = useState("view"); // view | create | edit
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<PageMode>("view");
   const [closed, setClosed] = useState(false);
-  const [tab, setTab] = useState("info"); // info | floors | zones
-  const [confirm, setConfirm] = useState<any>(null);
+  const [tab, setTab] = useState<SiteDetailTab>("info");
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const filtered = useMemo(() => {
     const f = q.trim().toLowerCase();
@@ -74,8 +77,8 @@ export default function SitesConfigPage() {
     setTab("info");
   }, [selectedId]);
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => sitesApi.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => sitesApi.remove(id),
     onSuccess: () => {
       toast.success("Site removed");
       qc.invalidateQueries({ queryKey: ["sites-list"] });
@@ -84,8 +87,8 @@ export default function SitesConfigPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const setThreatLevel = useMutation<any, any, any>({
-    mutationFn: ({ id, level }: any) => sitesApi.setThreatLevel(id, level),
+  const setThreatLevel = useMutation({
+    mutationFn: ({ id, level }: { id: string; level: ThreatLevel }) => sitesApi.setThreatLevel(id, level),
     onSuccess: () => {
       toast.success("Threat level updated");
       qc.invalidateQueries({ queryKey: ["sites-list"] });

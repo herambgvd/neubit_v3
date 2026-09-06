@@ -3,12 +3,23 @@
 import { useEffect, useState } from "react";
 
 import { Button, Input, Modal } from "@/components/ui/kit";
+import type { RoleOut } from "../../types";
 import { roleNameError } from "../validation";
+
+export interface CloneRoleModalProps {
+  /** The role being cloned; null closes the dialog. */
+  source: RoleOut | null;
+  onClose: () => void;
+  name: string;
+  setName: (value: string) => void;
+  onClone: () => void;
+  cloning: boolean;
+}
 
 // Copy a role's permissions under a new name — a fast starting point you then trim
 // down. Lives in its own file (rather than inline in Roles.jsx) so it matches
 // CloneUserModal: the two clone dialogs are the same dialog with different nouns.
-export default function CloneRoleModal({ source, onClose, name, setName, onClone, cloning }: any) {
+export default function CloneRoleModal({ source, onClose, name, setName, onClone, cloning }: CloneRoleModalProps) {
   const [submitted, setSubmitted] = useState(false);
   useEffect(() => { if (!source) setSubmitted(false); }, [source]);
 

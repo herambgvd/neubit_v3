@@ -12,12 +12,25 @@ const PHONE_RE = /^\+?[\d\s()-]+$/;
 
 // Strip anything that can't belong in the field as the operator types, so a
 // letter never lands in the box in the first place.
-export const sanitizeZip = (v) => v.replace(/\D/g, "").slice(0, 10);
-export const sanitizePhone = (v) =>
+export const sanitizeZip = (v: string): string => v.replace(/\D/g, "").slice(0, 10);
+export const sanitizePhone = (v: string): string =>
   // A "+" is only meaningful as a country-code prefix, so keep it at the front only.
   (v.startsWith("+") ? "+" : "") + v.replace(/[^\d\s()-]/g, "").slice(0, 24);
 
-function coordError(value, label, limit) {
+/** What the site form hands over for checking — coordinates are still the raw
+ *  field text (or the number hydrated from an existing site). */
+export interface SiteFormValues {
+  name: string;
+  emailAddress: string;
+  latitude: string | number;
+  longitude: string | number;
+  zipCode: string;
+  contactPhone: string;
+}
+
+export type SiteFormErrors = Partial<Record<keyof SiteFormValues, string>>;
+
+function coordError(value: string | number, label: string, limit: number): string | undefined {
   if (value === "" || value == null) return undefined; // coordinates are optional
   const n = Number(value);
   if (Number.isNaN(n)) return `${label} must be a number.`;
@@ -25,8 +38,8 @@ function coordError(value, label, limit) {
   return undefined;
 }
 
-export function validateSite({ name, emailAddress, latitude, longitude, zipCode, contactPhone }: any) {
-  const errors: any = {};
+export function validateSite({ name, emailAddress, latitude, longitude, zipCode, contactPhone }: SiteFormValues): SiteFormErrors {
+  const errors: SiteFormErrors = {};
   if (!name?.trim()) errors.name = "Site name is required.";
 
   const zip = zipCode?.trim() || "";

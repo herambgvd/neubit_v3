@@ -6,6 +6,7 @@
 import { Icon } from "@iconify/react";
 import { IconButton, PaneAction, PaneDeleteAction } from "@/components/console";
 import { TabBar } from "@/components/common";
+import type { SitePublic, ThreatLevel } from "@/lib/types";
 import { THREAT_PILL, THREAT_LEVELS, capitalize } from "../constants";
 import SiteInfoPanel from "./SiteInfoPanel";
 import BuildingFactsPanel from "./BuildingFactsPanel";
@@ -13,7 +14,7 @@ import FloorsPanel from "./FloorsPanel";
 import ZonesPanel from "./ZonesPanel";
 import SelectMenu from "@/components/common/SelectMenu";
 
-const TABS = [
+const TABS: { key: SiteDetailTab; label: string; icon: string }[] = [
   { key: "info", label: "Site info", icon: "heroicons-outline:building-office-2" },
   // The physical/commercial facts about the building — area, tariff, occupancy.
   // They live beside the address rather than on a Building Intelligence screen
@@ -24,7 +25,19 @@ const TABS = [
   { key: "zones", label: "Zones", icon: "heroicons-outline:square-2-stack" },
 ];
 
-export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onChangeThreat }: any) {
+export type SiteDetailTab = "info" | "building" | "floors" | "zones";
+
+export interface SiteDetailProps {
+  site: SitePublic;
+  tab: SiteDetailTab;
+  onTabChange: (tab: SiteDetailTab) => void;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onChangeThreat: (level: ThreatLevel) => void;
+}
+
+export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onChangeThreat }: SiteDetailProps) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
@@ -58,7 +71,8 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
           <span className="w-32" title="Set threat level">
             <SelectMenu
               value={site.threat_level || "normal"}
-              onChange={(e) => onChangeThreat(e.target.value)}
+              // The options are THREAT_LEVELS, so the picked string is a ThreatLevel.
+              onChange={(e) => onChangeThreat(e.target.value as ThreatLevel)}
               options={THREAT_LEVELS.map((t) => ({ value: t, label: capitalize(t) }))}
               className="!mt-0 !h-8 !text-xs"
             />

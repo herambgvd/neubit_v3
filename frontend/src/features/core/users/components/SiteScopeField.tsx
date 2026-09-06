@@ -6,11 +6,25 @@
 // from GET /sites are offered; nothing is fabricated.
 import { Icon } from "@iconify/react";
 
-export default function SiteScopeField({ sites, value, onChange, disabled }: any) {
-  const selected = new Set<any>(value || []);
-  const toggle = (id) => {
+/** The slice of a site the scope picker needs. */
+export interface SiteOption {
+  site_id: string;
+  name: string;
+}
+
+export interface SiteScopeFieldProps {
+  sites: SiteOption[];
+  /** Selected site ids; EMPTY = unrestricted. */
+  value: string[];
+  onChange: (ids: string[]) => void;
+  disabled?: boolean;
+}
+
+export default function SiteScopeField({ sites, value, onChange, disabled }: SiteScopeFieldProps) {
+  const selected = new Set<string>(value || []);
+  const toggle = (id: string) => {
     if (disabled) return;
-    const next = new Set<any>(selected);
+    const next = new Set<string>(selected);
     next.has(id) ? next.delete(id) : next.add(id);
     onChange([...next]);
   };

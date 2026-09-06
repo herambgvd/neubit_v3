@@ -6,9 +6,20 @@
 import { Icon } from "@iconify/react";
 
 import { Spinner } from "@/components/ui/kit";
+import type { TagPublic } from "@/lib/types";
 import TagListItem from "./TagListItem";
 
-export default function TagList({ items, loading, query, selectedId, mode, onSelect }: any) {
+export interface TagListProps {
+  items: TagPublic[];
+  loading: boolean;
+  query: string;
+  selectedId: string | null;
+  /** The page mode; "create" un-highlights the list. */
+  mode: string;
+  onSelect: (id: string) => void;
+}
+
+export default function TagList({ items, loading, query, selectedId, mode, onSelect }: TagListProps) {
   if (loading) {
     return (
       <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-muted">

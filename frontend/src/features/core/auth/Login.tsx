@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { api, apiError, tokens } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { FullPageLoader } from "@/components/ui/kit";
+import type { SetupStatus } from "../types";
 
 import NeubitAuthShell from "./components/NeubitAuthShell";
 import { LoginForm } from "./components/LoginForm";
@@ -19,7 +20,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [mfaToken, setMfaToken] = useState<any>(null);
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
   // Set post-mount only — reading localStorage during render would desync SSR.
   const [hadToken, setHadToken] = useState(false);
@@ -33,7 +34,7 @@ export default function LoginPage() {
 
   // First run (no users yet) → setup wizard.
   useEffect(() => {
-    api.get("/auth/setup-status").then((r) => {
+    api.get<SetupStatus>("/auth/setup-status").then((r) => {
       if (r.data?.needs_setup) router.replace("/setup");
     }).catch(() => {});
   }, [router]);
@@ -44,7 +45,7 @@ export default function LoginPage() {
     return <FullPageLoader label="Redirecting" />;
   }
 
-  async function onSubmit(e) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
     setError("");
@@ -52,7 +53,7 @@ export default function LoginPage() {
     try {
       const res = await login(email.trim(), password);
       if (res?.mfaRequired) {
-        setMfaToken(res.mfaToken);
+        setMfaToken(res.mfaToken ?? null);
         setCode("");
         return;
       }
@@ -67,9 +68,10 @@ export default function LoginPage() {
     }
   }
 
-  async function onSubmitCode(e) {
+  async function onSubmitCode(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (busy) return;
+    // The MFA form only renders while a challenge token is held (see below).
+    if (busy || !mfaToken) return;
     setError("");
     setBusy(true);
     try {

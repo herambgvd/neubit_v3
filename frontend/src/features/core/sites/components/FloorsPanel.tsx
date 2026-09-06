@@ -9,27 +9,28 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ActionButton, RowAction } from "@/components/console";
-import { ConfirmDialog, Spinner } from "@/components/ui/kit";
+import { ConfirmDialog, Spinner, type ConfirmState } from "@/components/ui/kit";
 import { apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { FloorPublic, SitePublic } from "@/lib/types";
 import { FloorPlanEditorModal } from "@/components/floor-builder/floor-plan-editor";
 import FloorForm from "./FloorForm";
 
-export default function FloorsPanel({ site }: any) {
+export default function FloorsPanel({ site }: { site: SitePublic }) {
   const qc = useQueryClient();
-  const floorsQ = useQuery<any>({
+  const floorsQ = useQuery({
     queryKey: ["floors-list", site.site_id],
     queryFn: () => sitesApi.floors.list({ site_id: site.site_id, limit: 100 }),
   });
 
   const items = floorsQ.data?.items || [];
-  const [editing, setEditing] = useState<any>(null);
+  const [editing, setEditing] = useState<FloorPublic | null>(null);
   const [creating, setCreating] = useState(false);
-  const [editorFloor, setEditorFloor] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [editorFloor, setEditorFloor] = useState<FloorPublic | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => sitesApi.floors.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => sitesApi.floors.remove(id),
     onSuccess: () => {
       toast.success("Floor removed");
       qc.invalidateQueries({ queryKey: ["floors-list", site.site_id] });

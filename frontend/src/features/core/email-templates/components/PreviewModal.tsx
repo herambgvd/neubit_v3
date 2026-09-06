@@ -6,12 +6,14 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Button, Modal, Spinner } from "@/components/ui/kit";
 import { api } from "@/lib/api";
+import type { TemplatePreviewOut } from "../../types";
 
-export default function PreviewModal({ name, onClose }: any) {
+/** `name` is the template to show; null closes the dialog. */
+export default function PreviewModal({ name, onClose }: { name: string | null; onClose: () => void }) {
   // Rendered with sample data + branded shell on the server (not raw Jinja).
-  const detail = useQuery<any>({
+  const detail = useQuery({
     queryKey: ["messaging-template-preview", name],
-    queryFn: () => api.get(`/messaging/templates/${name}/preview`).then((r) => r.data),
+    queryFn: () => api.get<TemplatePreviewOut>(`/messaging/templates/${name}/preview`).then((r) => r.data),
     enabled: !!name,
   });
   const d = detail.data;

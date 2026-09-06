@@ -4,8 +4,27 @@ import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { Button, Input, Modal } from "@/components/ui/kit";
+import type { PermissionEntry, PermissionGroups, RoleOut } from "../../types";
 import PermissionSelector from "./PermissionSelector";
-import { validateRole } from "../validation";
+import { validateRole, type RoleForm, type RoleFormErrors } from "../validation";
+
+export interface RoleFormModalProps {
+  open: boolean;
+  onClose: () => void;
+  /** null = create. */
+  editing: RoleOut | null;
+  /** System roles open view-only. */
+  readOnly: boolean;
+  form: RoleForm;
+  setForm: (form: RoleForm) => void;
+  groups: PermissionGroups;
+  selected: Set<string>;
+  catalogLoading: boolean;
+  onToggleKey: (key: string) => void;
+  onToggleGroup: (perms: PermissionEntry[], checkAll: boolean) => void;
+  onSave: () => void;
+  saving: boolean;
+}
 
 export default function RoleFormModal({
   open,
@@ -21,13 +40,13 @@ export default function RoleFormModal({
   onToggleGroup,
   onSave,
   saving,
-}: any) {
+}: RoleFormModalProps) {
   // Same submit-then-validate flow as the Add/Edit user dialogs.
   const [submitted, setSubmitted] = useState(false);
   useEffect(() => { if (!open) setSubmitted(false); }, [open]);
 
   const errors = validateRole(form);
-  const show = (field) => (submitted ? errors[field] : undefined);
+  const show = (field: keyof RoleFormErrors) => (submitted ? errors[field] : undefined);
 
   function handleSave() {
     setSubmitted(true);
