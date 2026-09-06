@@ -58,18 +58,60 @@ class EventStatus(str, Enum):
 # ── Category ────────────────────────────────────────────────────────
 
 
+
+#: Domains another SERVICE is the authority for. A `target_domain` is interpolated
+#: into the NATS subject an ingest rule publishes on, so naming one of these makes
+#: this service emit events that look like they came from access, vision, core or
+#: workflow — and every consumer of those subjects would believe them.
+#:
+#: The shape check below is not this check. `access` is a perfectly well-formed
+#: domain name; the question is whose it is. The broker cannot answer it either:
+#: ingest's NATS grant is `tenant.*.*.>` precisely BECAUSE this field is
+#: tenant-configured, so the constraint has to live here, at the edge where a rule
+#: is saved.
+#:
+#: What is NOT reserved is deliberate. `ingest` is this service's own. `fire` is
+#: subscribed to by workflow's correlation engine and published by nothing — an
+#: external fire panel arriving on a webhook is exactly what it is waiting for.
+#: And an unlisted domain (`bms`, `hvac`) is a tenant routing to its own namespace,
+#: which impersonates nobody.
+RESERVED_DOMAINS = frozenset({
+    "access",    # access control
+    "core",      # the platform authority
+    "device",    # core / vision
+    "erasure",   # core, right-to-erase receipts
+    "notify",    # workflow
+    "sites",     # core
+    "tags",      # core
+    "tenant",    # core, tenant lifecycle — the offboard subject lives here
+    "vms",       # vision
+    "workflow",  # workflow
+})
+
+
+def _target_domain(v):
+    """Shape, then ownership. Shared by the category and the rule, which override
+    each other — validating one and not the other is how the rule's copy went
+    unchecked in the first place."""
+    if v is None:
+        return None
+    if not re.match(r"^[a-z][a-z0-9_]{0,63}$", v):
+        raise ValueError("target_domain must be lowercase [a-z0-9_], starting with a letter")
+    if v in RESERVED_DOMAINS:
+        raise ValueError(
+            f"target_domain {v!r} belongs to another service — an ingest rule "
+            f"publishing there would emit events that look like its own"
+        )
+    return v
+
+
 class CategoryCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=128)
     description: Optional[str] = Field(default=None, max_length=1024)
     target_domain: str = Field(default="ingest", min_length=1, max_length=64)
 
-    @field_validator("target_domain")
-    @classmethod
-    def _domain(cls, v: str) -> str:
-        if not re.match(r"^[a-z][a-z0-9_]{0,63}$", v):
-            raise ValueError("target_domain must be lowercase [a-z0-9_], starting with a letter")
-        return v
+    _check_domain = field_validator("target_domain")(_target_domain)
 
 
 class CategoryUpdate(BaseModel):
@@ -79,12 +121,7 @@ class CategoryUpdate(BaseModel):
     target_domain: Optional[str] = Field(default=None, min_length=1, max_length=64)
     is_active: Optional[bool] = None
 
-    @field_validator("target_domain")
-    @classmethod
-    def _domain(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and not re.match(r"^[a-z][a-z0-9_]{0,63}$", v):
-            raise ValueError("target_domain must be lowercase [a-z0-9_], starting with a letter")
-        return v
+    _check_domain = field_validator("target_domain")(_target_domain)
 
 
 class CategoryPublic(BaseModel):
@@ -415,6 +452,8 @@ class EventRuleCreate(BaseModel):
     target_domain: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     enabled: bool = True
 
+    _check_domain = field_validator("target_domain")(_target_domain)
+
 
 class EventRuleUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -430,6 +469,8 @@ class EventRuleUpdate(BaseModel):
     # "access" or "vms.camera".
     target_domain: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     enabled: Optional[bool] = None
+
+    _check_domain = field_validator("target_domain")(_target_domain)
 
 
 class EventRulePublic(BaseModel):

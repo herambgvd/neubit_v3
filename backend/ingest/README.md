@@ -58,8 +58,26 @@ verbatim customer payloads, so keeping them forever was a data-protection proble
 as much as a disk one.
 
 **A rule's `target_domain` is interpolated into the NATS subject.** It is
-pattern-validated now — it was not, while the same field on a category was, and a
-rule's value overrides the category's. A dot or a wildcard there changes the
+pattern-validated — it was not, while the same field on a category was, and a
+rule's value overrides the category's.
+
+Shape was only half the question. `access` is a perfectly well-formed domain name;
+whose it is, is the other half. A holder of `ingest.manage` could name it and this
+service would publish on access control's own subject, which workflow's
+correlation engine and the reporting projector both consume and would believe. The
+ten domains another service is the authority for are refused by name now, on all
+four input schemas — the rule's AND the category's, because the rule's value is
+the one that wins.
+
+`ingest` and `fire` are deliberately not reserved: the first is this service's own,
+and `tenant.*.fire.>` is subscribed to by workflow and published by nothing, which
+is exactly what an external fire panel on a webhook is for. An unlisted domain
+(`bms`) is a tenant routing to its own namespace and impersonates nobody.
+
+The broker cannot enforce this. ingest's NATS grant is `tenant.*.*.>` precisely
+BECAUSE the field is tenant-configured — a fixed list there would break a
+legitimate rule the moment somebody added one. That is why the constraint is here,
+at the edge where a rule is saved. A dot or a wildcard there changes the
 subject's shape and reaches another module's consumers.
 
 `kernel.events.subject()` validates the domain too, so a value carrying `.`, `*` or
@@ -77,18 +95,40 @@ from listings. Every `assert_owned` here passes `allow_shared=False`.
 ./backend/ingest/run-tests.sh
 ```
 
-28, offline: a throwaway container from the shipped image, tree mounted read-only,
+74, offline: a throwaway container from the shipped image, tree mounted read-only,
 no network. The kernel comes from the working tree, not the image's build-time
 snapshot.
 
+## Closed since this list was written
+
+All three, and one of them was worse than it says here.
+
+* **`source_ip` took the first `X-Forwarded-For` hop unconditionally** — a header
+  the caller writes, on a receiver that takes no JWT, recorded as the only trace of
+  who called. It goes through `kernel.client_ip` now: the header is believed only
+  when the socket peer is a configured proxy, and the hop taken is the rightmost
+  one that is not ours, because Traefik appends rather than replaces.
+
+* **A tenant-supplied JSON Schema could crash the receiver, four ways.** The old
+  note called it "a DoS and an audit hole, not SSRF" on the grounds that remote
+  `$ref`s are not fetched. That was wrong: jsonschema 4.x resolves them through
+  `referencing`, which DOES fetch on a host with network egress — it was safe here
+  only because the sandbox has none, which is not a control. Remote `$ref` is
+  refused by name now. The other three — a non-string `type`, an unresolvable local
+  `$ref`, and `{"$ref": "#"}` blowing the stack on every delivery — all became a 500
+  with nothing logged, because the `except SchemaError` sat on the constructor,
+  which does not check the schema at all.
+
+* **`cors_origin_regex` allowed every origin, with credentials.** Fixed in the
+  kernel and in core together; see `backend/kernel/README.md`.
+
 ## Known gaps
 
-* `source_ip` takes the first `X-Forwarded-For` hop unconditionally. Safe behind
-  this gateway, which overwrites the header, but not by its own construction.
-* An unresolvable `$ref` in a tenant-supplied JSON schema raises past the handler
-  as a 500 with no log row. Remote refs are not fetched, so it is a DoS and an
-  audit hole, not SSRF.
-* `cors_origin_regex` defaults to any http(s) origin, with credentials.
+* ingest's NATS grant is `tenant.*.*.>`, and it has to be: `target_domain` is
+  tenant-configured, so a fixed list at the broker would break a legitimate rule.
+  The ownership check is at the edge instead (above), which means it holds for
+  rules saved through the API and not for anything that writes the column
+  directly.
 
 ## Configuration
 
