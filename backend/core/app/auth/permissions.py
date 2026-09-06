@@ -161,6 +161,8 @@ class CorePerm:
     # in the repo and fails on a key missing from this catalog.
     ACCESS_READ = "access.read"
     ACCESS_MANAGE = "access.manage"
+    ACCESS_CREDENTIAL = "access.credential"
+    ACCESS_COMMAND = "access.command"
     # --- Workflow (SOPs, triggers, incidents, forms, notifications) --------
     # Enforced by the `workflow` service across 21 distinct keys. Same story.
     WORKFLOW_SOP_READ = "workflow.sop.read"
@@ -287,6 +289,22 @@ PERMISSIONS.register(
         "Access control",
         "Read the access-control estate served by the access service — the "
         "integration layer in front of DDS, IDCube, Spectra and the rest.",
+    ),
+    Permission(
+        CorePerm.ACCESS_CREDENTIAL,
+        "Issue and revoke access credentials",
+        "Access control",
+        "Create, edit and suspend cardholders and their cards — who may enter. "
+        "Separate from access.manage because deciding who gets in is a different "
+        "job from wiring up the controller.",
+    ),
+    Permission(
+        CorePerm.ACCESS_COMMAND,
+        "Operate doors and alarm zones",
+        "Access control",
+        "Unlock a door, activate an output, arm or disarm a zone — act on the "
+        "hardware now. Split from access.manage so that configuring the system "
+        "does not carry the ability to open every door in the estate.",
     ),
     Permission(
         CorePerm.ACCESS_MANAGE,

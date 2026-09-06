@@ -67,6 +67,11 @@ from .writethrough import DDSError, WriteThroughService
 # (or "*"/super-admin) — no local permission registry needed on a satellite.
 PERM_READ = "access.read"
 PERM_MANAGE = "access.manage"
+# Split out of PERM_MANAGE. Configuring an access system and USING it are
+# different jobs: with one key, whoever could add a controller could also open
+# every door in the estate.
+PERM_CREDENTIAL = "access.credential"   # who may enter — cardholders and cards
+PERM_COMMAND = "access.command"         # act on the hardware now — doors, outputs, zones
 
 router = APIRouter(prefix="/access", tags=["Access Control"])
 
@@ -285,7 +290,7 @@ async def create_cardholder(
     instance_id: str,
     body: CardholderCreate,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     payload = body.model_dump(exclude_none=True)
     if not payload.get("name") and not payload.get("first_name") and not payload.get("last_name"):
@@ -302,7 +307,7 @@ async def update_cardholder(
     cardholder_id: str,
     body: CardholderUpdate,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     payload = body.model_dump(exclude_none=True)
     if not payload:
@@ -321,7 +326,7 @@ async def delete_cardholder(
     instance_id: str,
     cardholder_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> Response:
     try:
         await svc.delete_cardholder(instance_id, cardholder_id)
@@ -335,7 +340,7 @@ async def suspend_cardholder(
     instance_id: str,
     cardholder_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     try:
         return await svc.set_cardholder_status(instance_id, cardholder_id, "Invalidated")
@@ -348,7 +353,7 @@ async def reinstate_cardholder(
     instance_id: str,
     cardholder_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     try:
         return await svc.set_cardholder_status(instance_id, cardholder_id, "Validated")
@@ -362,7 +367,7 @@ async def cardholder_add_card(
     cardholder_id: str,
     body: AssignCardBody,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     try:
         return await svc.assign_card(instance_id, cardholder_id, body.card_id)
@@ -376,7 +381,7 @@ async def cardholder_remove_card(
     cardholder_id: str,
     card_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     try:
         return await svc.detach_card(instance_id, cardholder_id, card_id)
@@ -390,7 +395,7 @@ async def cardholder_add_group(
     cardholder_id: str,
     body: AssignGroupBody,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     try:
         return await svc.assign_cardholder_to_group(
@@ -408,7 +413,7 @@ async def cardholder_remove_group(
     cardholder_id: str,
     group_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     try:
         return await svc.remove_cardholder_from_group(
@@ -429,7 +434,7 @@ async def create_card(
     instance_id: str,
     body: CardCreate,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     try:
         return await svc.create_card(instance_id, body.model_dump(exclude_none=True))
@@ -443,7 +448,7 @@ async def update_card(
     card_id: str,
     body: CardUpdate,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     payload = body.model_dump(exclude_none=True)
     if not payload:
@@ -460,7 +465,7 @@ async def set_card_status(
     card_id: str,
     body: CardStatusBody,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> dict:
     try:
         return await svc.set_card_status(instance_id, card_id, body.status)
@@ -476,7 +481,7 @@ async def delete_card(
     instance_id: str,
     card_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
 ) -> Response:
     try:
         await svc.delete_card(instance_id, card_id)
@@ -710,7 +715,7 @@ async def delete_door(
 async def unlock_door(
     door_id: str,
     svc: Annotated[DoorService, Depends(_door_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.command(door_id, "unlock")
@@ -722,7 +727,7 @@ async def unlock_door(
 async def lock_door(
     door_id: str,
     svc: Annotated[DoorService, Depends(_door_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.command(door_id, "lock")
@@ -742,7 +747,7 @@ async def cmd_output_activate(
     instance_id: str,
     body: OutputTargets,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.output_activate(instance_id, body.uids, body.api_keys, body.period)
@@ -755,7 +760,7 @@ async def cmd_output_activate_continuous(
     instance_id: str,
     body: OutputTargets,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.output_activate_continuous(instance_id, body.uids, body.api_keys)
@@ -768,7 +773,7 @@ async def cmd_output_deactivate(
     instance_id: str,
     body: OutputTargets,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.output_deactivate(instance_id, body.uids, body.api_keys)
@@ -781,7 +786,7 @@ async def cmd_output_return_to_normal(
     instance_id: str,
     body: OutputTargets,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.output_return_to_normal(instance_id, body.uids, body.api_keys)
@@ -793,7 +798,7 @@ async def cmd_output_return_to_normal(
 async def cmd_output_open_all(
     instance_id: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.output_open_all_doors(instance_id)
@@ -805,7 +810,7 @@ async def cmd_output_open_all(
 async def cmd_output_return_all(
     instance_id: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.output_return_to_normal_all(instance_id)
@@ -819,7 +824,7 @@ async def cmd_arm_zone(
     dds_uid: str,
     body: ArmBody,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.alarm_zone_arm(
@@ -835,7 +840,7 @@ async def cmd_disarm_zone(
     dds_uid: str,
     body: DisarmBody,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.alarm_zone_disarm(
@@ -850,7 +855,7 @@ async def cmd_return_zone(
     instance_id: str,
     dds_uid: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.alarm_zone_return_to_schedule(instance_id, dds_uid)
@@ -863,7 +868,7 @@ async def cmd_init_controller(
     instance_id: str,
     dds_uid: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.controller_initialize(instance_id, dds_uid)
@@ -876,7 +881,7 @@ async def cmd_site_start_polling(
     instance_id: str,
     dds_uid: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.site_start_polling(instance_id, dds_uid)
@@ -889,7 +894,7 @@ async def cmd_site_stop_polling(
     instance_id: str,
     dds_uid: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
 ) -> dict:
     try:
         return await svc.site_stop_polling(instance_id, dds_uid)

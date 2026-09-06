@@ -19,7 +19,9 @@ from app.access.models import Instance
 
 pytestmark = pytest.mark.asyncio
 
-PERMS = ["access.read", "access.manage"]
+# All four, so an ownership test fails on OWNERSHIP and not on a missing
+# permission — the permission gate runs first and would answer 403.
+PERMS = ["access.read", "access.manage", "access.credential", "access.command"]
 TENANT_A = uuid.uuid4()
 TENANT_B = uuid.uuid4()
 
