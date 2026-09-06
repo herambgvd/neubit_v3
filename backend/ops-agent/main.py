@@ -7,7 +7,8 @@ WHY THIS EXISTS
     We DO NOT want that power inside the core API (it's internet-facing behind
     Traefik and runs tenant code paths). So we isolate it here:
 
-      * This is the ONLY service that mounts /var/run/docker.sock.
+      * It is the only service that mounts /var/run/docker.sock. (The gateway
+        used to mount it too, unused, while claiming otherwise here.)
       * It has NO host port and NO Traefik labels — it is reachable only from the
         internal `neubit` docker network (i.e. from `core`).
       * Every request must carry header  X-Ops-Token == env OPS_AGENT_TOKEN, else 401.
@@ -21,10 +22,14 @@ WHY THIS EXISTS
 
 from __future__ import annotations
 
+import hmac
 import io
+from concurrent.futures import ThreadPoolExecutor
+import logging
 import os
 import re
 import tarfile
+import uuid
 
 import docker
 from docker.errors import APIError, NotFound
@@ -51,6 +56,16 @@ DB_USER = os.getenv("POSTGRES_USER", "neubit")
 DB_NAME = os.getenv("POSTGRES_DB", "neubit_control")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 
+logging.basicConfig(
+    level=os.getenv("VE_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+)
+log = logging.getLogger("ops-agent")
+
+#: Cap on an uploaded SQL dump. The agent is the most privileged container in the
+#: stack; letting one request decide its memory use is not a trade worth making.
+MAX_DUMP_BYTES = int(os.getenv("OPS_AGENT_MAX_DUMP_BYTES", 512 * 1024 * 1024))
+
 app = FastAPI(title="neubit-ops-agent", docs_url=None, redoc_url=None)
 
 # One shared Docker client for the process, created lazily so the app can import
@@ -68,13 +83,26 @@ def get_docker() -> docker.DockerClient:
 
 
 # --- Auth --------------------------------------------------------------------
-async def require_token(x_ops_token: str | None = Header(default=None)) -> None:
-    """Fail closed: 401 unless the header exactly matches the configured token.
+async def require_token(
+    request: Request, x_ops_token: str | None = Header(default=None)
+) -> None:
+    """Fail closed: 401 unless the header matches the configured token.
 
-    If OPS_AGENT_TOKEN is unset we reject everything — an unauthenticated
-    docker-control endpoint must never be reachable.
+    An unset token rejects everything — an unauthenticated docker-control endpoint
+    must never be reachable.
+
+    Compared with compare_digest, and every refusal is logged with the peer. There
+    was no record of a failed attempt at all, so an online guessing loop against
+    the most privileged container in the stack was invisible.
     """
-    if not OPS_AGENT_TOKEN or x_ops_token != OPS_AGENT_TOKEN:
+    ok = bool(OPS_AGENT_TOKEN) and hmac.compare_digest(x_ops_token or "", OPS_AGENT_TOKEN)
+    if not ok:
+        peer = request.client.host if request.client else "?"
+        log.warning(
+            "refused %s %s from %s (%s)",
+            request.method, request.url.path, peer,
+            "token not configured" if not OPS_AGENT_TOKEN else "bad token",
+        )
         raise HTTPException(status_code=401, detail="invalid or missing X-Ops-Token")
 
 
@@ -209,15 +237,62 @@ def _serialize(container, *, with_stats: bool = True) -> dict:
 # --- Endpoints ---------------------------------------------------------------
 @app.get("/health")
 async def health() -> dict:
-    """Unauthenticated liveness probe (no docker access, no secrets)."""
-    return {"ok": True, "service": "ops-agent", "project": COMPOSE_PROJECT}
+    """Liveness: the process is up. Touches nothing, so it cannot fail for a
+    dependency outage — restarting would not fix one."""
+    return {"ok": True, "service": "ops-agent"}
+
+
+@app.get("/readyz")
+def readyz() -> Response:
+    """Readiness: can this agent actually reach the docker daemon?
+
+    The agent's whole purpose is the socket. Without this the container reported
+    running while every request 502'd. A plain `def` — daemon calls block.
+
+    Unauthenticated, like /health, and it returns only up/down: an orchestrator
+    has no token, and the answer says nothing a caller could not learn by being
+    refused.
+    """
+    import json
+
+    try:
+        get_docker().ping()
+    except Exception as exc:  # noqa: BLE001 — any failure is "not ready"
+        log.warning("readiness: docker daemon unreachable: %s", exc)
+        return Response(
+            content=json.dumps({"status": "not_ready", "checks": {"docker": "unreachable"}}),
+            status_code=503,
+            media_type="application/json",
+        )
+    return Response(
+        content=json.dumps({"status": "ok", "checks": {"docker": "ok"}}),
+        status_code=200,
+        media_type="application/json",
+    )
 
 
 @app.get("/containers", dependencies=[Depends(require_token)])
-async def list_containers() -> list[dict]:
-    """Every container in the neubit-v3 compose project, with live cpu/mem stats."""
+def list_containers() -> list[dict]:
+    """Every container in the compose project, with live cpu/mem stats.
+
+    Two things had to change for this to work at all.
+
+    It is a plain `def`, so FastAPI runs it in a threadpool. As `async def` the
+    docker SDK's blocking calls ran ON the event loop, so for the duration nothing
+    else the agent served could make progress — including /health and any restart.
+
+    And the per-container stats calls run concurrently. Each takes ~1.5s (the
+    daemon samples twice), so sequentially 20 containers measured 35.3s against
+    core's 30s client timeout: a super-admin's container list always failed.
+    """
     client = get_docker()
-    return [_serialize(c) for c in _project_containers(client)]
+    containers = _project_containers(client)
+    if not containers:
+        return []
+    # One thread per container, capped. These are all waiting on the daemon, not
+    # burning CPU, so the cap is about not opening 200 sockets at once.
+    with ThreadPoolExecutor(max_workers=min(len(containers), 16)) as pool:
+        return list(pool.map(_serialize, containers))
 
 
 class LogsOut(BaseModel):
@@ -225,7 +300,7 @@ class LogsOut(BaseModel):
 
 
 @app.get("/containers/{name}/logs", dependencies=[Depends(require_token)])
-async def container_logs(name: str = Path(...), tail: int = 200) -> LogsOut:
+def container_logs(name: str = Path(...), tail: int = 200) -> LogsOut:
     """Tail the last `tail` log lines of a project container (raw, newest-last)."""
     tail = max(1, min(int(tail), 5000))  # clamp — don't let a caller pull GBs
     client = get_docker()
@@ -251,22 +326,26 @@ def _lifecycle(name: str, verb: str) -> OkOut:
     try:
         getattr(container, verb)()
     except APIError as exc:
+        log.error("%s %s failed: %s", verb, name, exc)
         raise HTTPException(status_code=502, detail=f"docker {verb} failed: {exc}") from exc
+    # The agent had no record of its own actions. Core audits its side, but core
+    # is not the only caller that can reach this port.
+    log.info("%s %s", verb, name)
     return OkOut(ok=True)
 
 
 @app.post("/containers/{name}/restart", dependencies=[Depends(require_token)])
-async def restart_container(name: str = Path(...)) -> OkOut:
+def restart_container(name: str = Path(...)) -> OkOut:
     return _lifecycle(name, "restart")
 
 
 @app.post("/containers/{name}/stop", dependencies=[Depends(require_token)])
-async def stop_container(name: str = Path(...)) -> OkOut:
+def stop_container(name: str = Path(...)) -> OkOut:
     return _lifecycle(name, "stop")
 
 
 @app.post("/containers/{name}/start", dependencies=[Depends(require_token)])
-async def start_container(name: str = Path(...)) -> OkOut:
+def start_container(name: str = Path(...)) -> OkOut:
     return _lifecycle(name, "start")
 
 
@@ -276,40 +355,25 @@ class ScaleIn(BaseModel):
 
 @app.post("/services/{name}/scale", dependencies=[Depends(require_token)])
 async def scale_service(name: str = Path(...), body: ScaleIn | None = None) -> OkOut:
-    """Best-effort horizontal scale of a compose *service* by cloning replicas.
+    """Not implemented — 501.
 
-    CAVEAT (read carefully):
-        Safely reproducing a container's full config (env, mounts, networks,
-        healthcheck, labels, command) to spin up extra replicas is only sound for
-        STATELESS worker services. Stateful services (postgres, redis, nats, the
-        core API bound to :8000, the gateway) MUST NOT be naively cloned — doing
-        so causes port clashes and data corruption.
+    It used to return 200 with ok=false, so core audit-logged `infra.service.scale`
+    as though something had happened. A 501 says the same thing in the one place a
+    caller cannot ignore.
 
-        neubit-v3 does not yet have media/ingest worker services to scale, so
-        rather than risk cloning a stateful service, we DO NOT attempt a clone
-        here. We return ok=false with an explanatory detail. This endpoint is a
-        stable placeholder: when real stateless workers exist (e.g. an
-        ingest-worker or media-transcode-worker), wire the clone logic here
-        (docker SDK: read the template container's HostConfig + NetworkingConfig +
-        Env, then containers.run(..., name=f"{project}-{service}-{n}") for the
-        delta, or `container.remove()` down to `replicas`). Guard it to a known
-        allow-list of stateless service names.
-
-    The endpoint intentionally NEVER crashes on an unsupported service.
+    Cloning a container's full config is only sound for stateless workers; doing it
+    to postgres, redis, nats or the API means port clashes and data corruption.
+    There are no stateless workers to scale yet. When there are, guard it with an
+    allow-list of service names.
     """
-    replicas = body.replicas if body else 0
-    return OkOut(
-        ok=False,
-        detail=(
-            f"scaling requested for service {name!r} -> {replicas} replicas, but "
-            "scaling applies to stateless worker services; wire when media/ingest "
-            "workers exist"
-        ),
+    raise HTTPException(
+        status_code=501,
+        detail=f"scaling {name!r} is not implemented — no stateless worker services yet",
     )
 
 
 @app.get("/host", dependencies=[Depends(require_token)])
-async def host_summary() -> dict:
+def host_summary() -> dict:
     """Host/stack summary: project container counts (+ optional host cpu/mem/disk)."""
     client = get_docker()
     containers = _project_containers(client)
@@ -340,25 +404,67 @@ def _pg_env() -> dict[str, str]:
     return {"PGPASSWORD": DB_PASSWORD} if DB_PASSWORD else {}
 
 
-# Lines a pg_dump of the control DB emits that break a restore into the *live*
-# database and must be rewritten/removed before replay:
-#   * timescaledb extension DDL — the extension is already installed (and cannot
-#     be dropped while in use); re-applying it mid-restore errors.
-#   * SET (lock|statement)_timeout = 0 — pg_dump disables the timeouts we rely on,
-#     which would let a DROP hang forever if the app holds a lock. We give them
-#     finite, generous values so the restore waits for a lock gap but never hangs.
+# Lines a pg_dump emits that must be rewritten before replaying into the LIVE
+# database. The extension is already installed and cannot be dropped while in use;
+# pg_dump's timeout=0 would let a DROP hang forever behind an app-held lock.
 _TS_EXT_RE = re.compile(r"^\s*(DROP|CREATE)\s+EXTENSION.*timescaledb", re.IGNORECASE)
 _TS_COMMENT_RE = re.compile(r"^\s*COMMENT\s+ON\s+EXTENSION\s+timescaledb", re.IGNORECASE)
-_RESTRICT_RE = re.compile(r"^\s*\\(restrict|unrestrict)\b", re.IGNORECASE)
+
+# psql meta-commands pg_dump legitimately emits. Anything else is refused.
+#
+# This matters more than it looks: `psql -f` executes meta-commands, and a shell
+# escape runs
+# a command inside the postgres container — the one holding pgdata. So this
+# endpoint's real capability was "run anything as root in the database container",
+# not "restore a backup". Verified against the live container.
+#
+# `\.` terminates a COPY block and appears ~56 times in a real dump. `\restrict`
+# and `\unrestrict` appear on PG 17+. `\connect` appears in some dump modes.
+_ALLOWED_META = {"\\.", "\\restrict", "\\unrestrict", "\\connect"}
+
+_COPY_START_RE = re.compile(r"^\s*COPY\s.+\sFROM\s+stdin;", re.IGNORECASE)
+
+
+def _meta_command(line: str) -> str | None:
+    """The meta-command a line invokes, or None if it is not one."""
+    stripped = line.lstrip()
+    if not stripped.startswith("\\"):
+        return None
+    return stripped.split(None, 1)[0].rstrip("\n")
 
 
 def _sanitize_dump(sql: bytes) -> bytes:
-    """Make a plain pg_dump safe to replay into the live control database."""
+    r"""Make a plain pg_dump safe to replay, or refuse it.
+
+    Refuses rather than strips an unexpected meta-command. Quietly editing what
+    someone believes they are restoring is its own problem, and a dump containing
+    `\!` is not a dump.
+    """
     text = sql.decode("utf-8", "replace")
     out: list[str] = []
-    for line in text.splitlines(keepends=True):
-        if _TS_EXT_RE.match(line) or _TS_COMMENT_RE.match(line) or _RESTRICT_RE.match(line):
-            continue  # drop timescaledb ext DDL + psql \restrict meta-commands
+    in_copy = False
+
+    for lineno, line in enumerate(text.splitlines(keepends=True), 1):
+        if in_copy:
+            # COPY data. A line here can begin with anything; only `\.` ends the
+            # block, so nothing inside it is a meta-command.
+            out.append(line)
+            if line.rstrip("\r\n") == "\\.":
+                in_copy = False
+            continue
+
+        meta = _meta_command(line)
+        if meta is not None and meta not in _ALLOWED_META:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"refusing dump: psql meta-command {meta!r} on line {lineno}. "
+                    "Only pg_dump's own meta-commands are accepted."
+                ),
+            )
+
+        if _TS_EXT_RE.match(line) or _TS_COMMENT_RE.match(line):
+            continue
         stripped = line.strip()
         if stripped == "SET lock_timeout = 0;":
             out.append("SET lock_timeout = '120s';\n")
@@ -368,7 +474,30 @@ def _sanitize_dump(sql: bytes) -> bytes:
             continue  # unsupported on some server versions
         else:
             out.append(line)
+            if _COPY_START_RE.match(line):
+                in_copy = True
+
     return "".join(out).encode("utf-8")
+
+
+async def _read_capped(request: Request) -> bytes:
+    """Read the body in chunks, refusing it once it passes MAX_DUMP_BYTES.
+
+    `await request.body()` read the whole thing first, and _sanitize_dump then held
+    the text, the split lines and the joined result — three more copies. An
+    uncapped POST could OOM the container that holds the docker socket.
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_DUMP_BYTES:
+        raise HTTPException(status_code=413, detail="SQL dump too large")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_DUMP_BYTES:
+            raise HTTPException(status_code=413, detail="SQL dump too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @app.get("/db/export", dependencies=[Depends(require_token)])
@@ -398,7 +527,7 @@ async def db_import(request: Request) -> dict:
     The SQL is written into the container and applied with ON_ERROR_STOP so a bad
     statement aborts the whole restore instead of leaving a half-applied DB.
     """
-    sql = await request.body()
+    sql = await _read_capped(request)
     if not sql:
         raise HTTPException(status_code=400, detail="empty SQL body")
 
@@ -407,8 +536,12 @@ async def db_import(request: Request) -> dict:
     client = get_docker()
     container = _service_container(client, DB_SERVICE)
 
-    # Ship the dump into /tmp inside the postgres container as a tar archive.
-    path = "/tmp/neubit_restore.sql"
+    # A unique name, not a fixed one. The old path was predictable and the file
+    # was never removed, so a full control-DB dump — password hashes, encrypted
+    # tenant secrets, the audit log — sat in the postgres container readable by
+    # anything that could exec in, until the container was recreated. Two
+    # concurrent restores also interleaved into the same file.
+    path = f"/tmp/neubit_restore_{uuid.uuid4().hex}.sql"
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode="w") as tar:
         info = tarfile.TarInfo(name="neubit_restore.sql")
@@ -439,7 +572,15 @@ async def db_import(request: Request) -> dict:
             demux=True,
         )
     except APIError as exc:
+        log.error("db import failed: %s", exc)
         raise HTTPException(status_code=502, detail=f"docker error: {exc}") from exc
+    finally:
+        # Always, including on failure — the staged file holds the whole dump.
+        try:
+            container.exec_run(["rm", "-f", path])
+        except APIError as exc:  # noqa: BLE001 — cleanup must not mask the result
+            log.warning("could not remove staged dump %s: %s", path, exc)
     stdout, stderr = streams if isinstance(streams, tuple) else (streams, b"")
     tail = ((stderr or b"") + (stdout or b""))[-2000:].decode("utf-8", "replace")
+    log.info("db import finished exit=%s bytes=%d", exit_code, len(sql))
     return {"ok": exit_code == 0, "exit_code": exit_code, "output": tail}

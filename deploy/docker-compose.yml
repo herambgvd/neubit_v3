@@ -45,7 +45,12 @@ services:
     volumes:
       - ../gateway/traefik.yml:/etc/traefik/traefik.yml:ro
       - ../gateway/dynamic:/etc/traefik/dynamic:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # NO docker socket. The label provider is disabled (gateway/traefik.yml) and
+      # routing comes from the file provider, so the mount was unused — and `:ro`
+      # only makes the socket FILE read-only, not the daemon API behind it. This is
+      # the internet-facing container; it had root-equivalent access to the host
+      # for nothing. If the label provider is ever enabled, put a socket proxy in
+      # front of it rather than mounting this again.
     networks: [neubit]
 
   # ── data ────────────────────────────────────────────────────────
@@ -166,12 +171,28 @@ services:
   # docker socket into core.
   ops-agent:
     build: ../backend/ops-agent
-    env_file: .env
+    # NO env_file. This container holds the docker socket; `.env` would hand it
+    # VE_JWT_SECRET, VE_SECRETS_KEY and every other platform credential it has no
+    # use for. It reads exactly these eight variables — grep os.getenv in main.py.
     environment:
       OPS_AGENT_TOKEN: ${OPS_AGENT_TOKEN}
       COMPOSE_PROJECT: neubit-v3
+      DB_SERVICE: postgres
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB:-neubit_control}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      VE_LOG_LEVEL: ${VE_LOG_LEVEL:-INFO}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    # /readyz pings the daemon. /health only says the process is up, and the
+    # agent's entire purpose is the socket — without this the container reported
+    # running while every request 502'd. No curl in the image, so python does it.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9000/readyz',timeout=4).status==200 else 1)\" || exit 1"]
+      interval: 15s
+      timeout: 6s
+      retries: 4
+      start_period: 20s
     networks: [neubit]
     restart: unless-stopped
 

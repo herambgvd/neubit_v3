@@ -1,0 +1,7 @@
+# The shipped ops-agent image plus a test runner. One networked build, then the
+# suite runs offline. Local only.
+ARG OPS_IMAGE=neubit-v3-ops-agent:latest
+FROM ${OPS_IMAGE}
+
+COPY requirements-test.txt /tmp/requirements-test.txt
+RUN pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements-test.txt
