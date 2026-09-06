@@ -1,0 +1,10 @@
+# The shipped vision image plus a test runner. One networked build, then the suite
+# runs offline. Local only — never pushed, never in the appliance.
+#
+# FROM the service image rather than a fresh python base, so the suite runs against
+# the same fastapi/sqlalchemy/onvif-zeep the service does.
+ARG VISION_IMAGE=neubit-v3-vision:latest
+FROM ${VISION_IMAGE}
+
+COPY requirements-test.txt /tmp/requirements-test.txt
+RUN pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements-test.txt

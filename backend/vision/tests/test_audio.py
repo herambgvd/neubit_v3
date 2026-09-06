@@ -41,12 +41,16 @@ class _Actor:
 class _RecBody:
     """RecordingConfigBody-shaped object for RecordingService.set_config."""
 
-    def __init__(self, mode="continuous", audio_enabled=False, record_substream=False):
+    def __init__(self, mode="continuous", audio_enabled=False, record_substream=False,
+                 storage_pool_id=None):
         self.mode = mode
         self.schedule = {}
         self.retention_days = 30
         self.record_substream = record_substream
         self.audio_enabled = audio_enabled
+        # Per-camera storage pool. Present because the real body has it and
+        # `set_config` reads it — see test_the_doubles_match_the_real_signatures.
+        self.storage_pool_id = storage_pool_id
 
 
 class _StubNvr:
@@ -54,9 +58,11 @@ class _StubNvr:
         self.started: list[dict] = []
         self.stopped: list[tuple[str, str]] = []
 
-    async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous", audio=False):
+    async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous",
+                              audio=False, record_dir=None):
         self.started.append(
-            {"camera_id": camera_id, "profile": profile, "trigger": trigger, "audio": audio}
+            {"camera_id": camera_id, "profile": profile, "trigger": trigger,
+             "audio": audio, "record_dir": record_dir}
         )
         return {"camera_id": camera_id, "profile": profile, "recording": True, "trigger_type": trigger}
 
@@ -255,3 +261,31 @@ async def test_talk_session_tenant_isolation(db, monkeypatch):
 
     with pytest.raises(NotFoundError):
         await _talk_svc(db, tenant=OTHER_TENANT).start_talk(cam.id, "main", actor=_Actor())
+
+
+# ── the check that keeps the doubles honest ──────────────────────────────────
+
+def test_the_doubles_match_the_real_signatures():
+    """A stub whose signature has drifted from the thing it stands in for tests
+    nothing, and says so only by raising TypeError deep inside the code under test.
+
+    Both doubles above had drifted. `RecordingConfigBody` gained `storage_pool_id`
+    and `NvrClient.start_recording` gained `record_dir`; neither reached here, and
+    three tests in this file had been failing — invisibly, because until now
+    nothing in this repository could RUN the vision suite at all.
+
+    Derived from the real definitions rather than restated, so the next field to
+    arrive fails this one line instead of three assertions that look unrelated.
+    """
+    import inspect
+
+    from app.vms.common.nvr_client import NvrClient
+    from app.vms.recording.schemas import RecordingConfigBody
+
+    real = set(inspect.signature(NvrClient.start_recording).parameters) - {"self"}
+    stub = set(inspect.signature(_StubNvr.start_recording).parameters) - {"self"}
+    assert real <= stub, f"_StubNvr.start_recording is missing {sorted(real - stub)}"
+
+    body_fields = set(RecordingConfigBody.model_fields)
+    have = set(inspect.signature(_RecBody.__init__).parameters) | {"schedule", "retention_days"}
+    assert body_fields <= have, f"_RecBody is missing {sorted(body_fields - have)}"
