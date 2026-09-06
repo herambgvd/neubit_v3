@@ -134,11 +134,13 @@ with an identical response.
 
 ## Known gaps
 
-* The reconcile scheduler is OFF by default. It ticks now (it was a stub that
-  logged "later phase" while every controller carried a `reconciler_cron` nothing
-  fired), but a background writer that talks to a customer's access hardware is
-  opt-in: `VE_ACCESS_RECONCILE_SCHEDULER=1`, tick interval
-  `VE_ACCESS_RECONCILE_TICK_SEC` (60).
+* The reconcile scheduler is off in the CODE and ON for this deployment
+  (`VE_ACCESS_RECONCILE_SCHEDULER` in `deploy/docker-compose.yml`). It was a stub
+  that logged "later phase" while every controller carried a `reconciler_cron`
+  nothing fired. The split is deliberate: a background writer that talks to a
+  customer's access hardware should be a deployment's choice, not something an
+  upgrade turns on. Tick interval `VE_ACCESS_RECONCILE_TICK_SEC` (60); set the
+  flag to 0 to stop it.
 
   Its claim is a Postgres advisory lock per instance, so two replicas cannot both
   pull one controller. On a database with no advisory locks it says so at startup
@@ -149,9 +151,11 @@ with an identical response.
   is tested directly because no HTTP path can reach it.
 * Command failures return the connector's own message, which can name the
   controller host.
-* NATS has no authorisation, so a holder of `access.manage` on one module cannot
-  be stopped from publishing on another module's subject by anything in this
-  service. See the kernel's README.
+* This service's broker grant is `tenant.*.access.>` — it cannot publish as
+  another module. What the broker cannot decide is whether a holder of
+  `access.manage` should be issuing a particular access event at all; that stays a
+  permission-model question. (The bus had NO authentication at all when this line
+  was first written; see the kernel's README.)
 
 ## Configuration
 

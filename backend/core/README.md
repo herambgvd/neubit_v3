@@ -146,6 +146,15 @@ constraints and indexes by kind, so a UniqueConstraint in the model against a un
 index in the database is reported as one dropped and one added forever. That drift
 once proposed dropping the uniqueness `authenticate_api_key` depends on.
 
+## Known gaps
+
+* The broker grant for this service is scoped per subject, but `$JS.API.>` is
+  granted whole — stream DELETE and PURGE are denied and consumer operations are
+  not scopable per durable. See `backend/kernel/README.md` for why.
+* `/readyz` answers 503 without a database, Redis or storage, which is correct and
+  means it cannot be used as a liveness signal. `gateway/dynamic/routes.yml` must
+  route it or nothing probes it at all.
+
 ## Configuration
 
 `VE_`-prefixed and shared with the rest of the estate through `deploy/.env` —

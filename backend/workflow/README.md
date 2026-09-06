@@ -184,6 +184,17 @@ object per line.
 it goes noisy again that noise is real drift, and the next person will not be able
 to review a schema change through it. Fix it rather than learning to read past it.
 
+## Known gaps
+
+* Four tests SKIP without a real Postgres — the notification-outbox claim is
+  `SELECT ... FOR UPDATE SKIP LOCKED` and SQLite has no row locks, so they would
+  pass against broken code. `run-tests.sh --pg` runs them; a plain run does not,
+  and says so.
+* Two ownership checks stay shared-readable on purpose and are annotated where
+  they are: validating that a reference TARGET exists, and starting an instance
+  FROM a platform SOP. Both are reads. Every path that CHANGES a row passes
+  `for_write=True`.
+
 ## Configuration
 
 Everything is `VE_`-prefixed and shared with the rest of the estate through

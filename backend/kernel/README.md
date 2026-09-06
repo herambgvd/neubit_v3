@@ -122,15 +122,37 @@ The suite drives the real `EventBus._deliver` and the real handler
 `subscribe_tenant_offboard` builds, against hand-written fakes. No broker, and
 nothing mocking the code under test.
 
+## Closed since this list was written
+
+Every item that stood here is fixed, and the list is rewritten rather than ticked
+because a gap document that names solved problems sends the next planning session
+at work that is already done. Checked against the code, not from memory:
+
+* **NATS had no authentication.** It authenticates every client now, one user per
+  service, with publish scoped per service and no anonymous fallback
+  (`deploy/nats/nats.conf`, and the section above).
+* **`erase_tenant_data` walked `Base.metadata`, missing eight tables in
+  `reporting`.** Six are ORM-mapped now; the other two are projection relations
+  created at runtime and cannot be. `subscribe_tenant_offboard` takes an `erase`
+  override for exactly that case, and `reporting/erasure.py` asks the database
+  which relations carry the tenant instead of trusting the metadata.
+* **A failed initial NATS connect was permanent.** `max_reconnect_attempts=-1`
+  keeps the first connect retrying in the background, and access, ingest and
+  vision all consult the bus in `/readyz` — a CONFIGURED bus that is not connected
+  is a readiness fault; an unset one is not, because a standalone deployment runs
+  with no spine.
+* **`_tenant_sessionmakers` was an unbounded per-tenant engine cache.** Bounded by
+  `max_tenant_pools` (VE_MAX_TENANT_POOLS, 32) with LRU eviction that disposes the
+  evicted engine, plus `forget_tenant()` for a dropped database.
+* **`jwt_secret` and `secrets_key` had guessable defaults and nothing refused to
+  boot on them.** `_check_secrets` refuses outside dev: RFC 7518's 32-byte floor
+  for the JWT secret, 16 for the secrets key, and any value containing
+  "change-me", because the exact-match list it replaced missed both placeholders
+  `deploy/.env.example` actually ships.
+
 ## Known gaps
 
-* NATS has no authentication (above).
-* `erase_tenant_data` walks `Base.metadata` for a `tenant_id` column, so a table
-  created by raw SQL in a migration and never ORM-mapped is silently skipped.
-  `reporting` has eight such tables.
-* A failed initial NATS connect is permanent — there is no reconnect loop, and
-  `is_connected()` is not consulted by any readiness probe.
-* `_tenant_sessionmakers` is an unbounded per-tenant engine cache. Dormant while
-  `db_per_tenant` is off, which it is.
-* `jwt_secret` and `secrets_key` have guessable defaults and nothing refuses to
-  boot with them.
+* `$JS.API.>` is granted whole to every service. Stream DELETE and PURGE are
+  denied, which is the part that can be split without guesswork; scoping consumer
+  operations per durable is not expressible, because a durable name is one subject
+  token and NATS has no partial-token wildcard.

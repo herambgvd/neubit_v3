@@ -83,6 +83,15 @@ said so. Everything not in `PUBLIC` (the two probes and the docs) has to refuse 
 missing, empty and wrong token; adding an ungated route now fails three tests
 instead of none.
 
+## Known gaps
+
+* The dump sanitizer's allowlist is what `pg_dump` itself emits. A dump from
+  another tool that legitimately uses a different meta-command is REFUSED rather
+  than stripped — deliberate, because quietly editing what someone believes they
+  are restoring is its own problem, but it does mean the import is pg_dump-shaped.
+* `/db/export` and `/db/import` stream through the agent, so a restore is bounded
+  by `OPS_AGENT_MAX_DUMP_BYTES` (512 MiB) rather than by the database's size.
+
 ## Configuration
 
 `OPS_AGENT_TOKEN` (required — unset means every request is refused),

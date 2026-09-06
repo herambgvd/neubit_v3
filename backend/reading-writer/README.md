@@ -79,6 +79,18 @@ if you scale beyond one.
 136, offline: a throwaway container from the shipped image, tree mounted read-only,
 no network. Pure — nothing here touches a database.
 
+## Known gaps
+
+* `/bi/datasets`, `/bi/datasets/{key}`, `/bi/datasets/{key}/values`, `/bi/query`
+  and `/bi/query/capabilities` reach the store before they know which permission
+  applies, because a dataset declares its own permission key in the registry
+  TABLE — that is the point of the registry, and it means the gate cannot be a
+  fixed dependency. They filter rather than refuse: `/bi/datasets` OMITS what the
+  caller may not read, which is asserted in `test_route_inventory.py`.
+* The suite is otherwise pure and needs no database. Anything that needs the real
+  schema needs Postgres: the reporting models use JSONB, which SQLite cannot
+  compile, so `create_all` against sqlite fails outright.
+
 ## Configuration
 
 `VE_DATABASE_URL`, `VE_NATS_URL`, `VE_JWT_SECRET`, plus the pipeline knobs in
