@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from kernel.auth import Scope, assert_owned, scoped
+from kernel.client_ip import UNKNOWN as CLIENT_IP_UNKNOWN, client_ip
 from kernel.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
 from kernel.events import EventBus, subject
 
@@ -74,14 +75,24 @@ def _utcnow() -> datetime:
 
 
 def _client_ip(request: Request | None) -> str | None:
-    """Best-effort source IP: first X-Forwarded-For hop, else the socket peer."""
+    """The caller's source IP, for the delivery log.
+
+    Was: the FIRST `X-Forwarded-For` hop, unconditionally. That hop is whatever
+    the caller put there — this receiver is unauthenticated and internet-facing,
+    so anyone could choose the address recorded against their own delivery, and
+    the log is the only record of who called. `kernel.client_ip` believes the
+    header only when the socket peer is a configured proxy, and then takes the
+    rightmost hop that is not one of ours. Shared with core so one deployment has
+    one definition of the caller's address.
+
+    Truncated to 64 because that is the column.
+    """
     if request is None:
         return None
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()[:64]
-    client = request.client
-    return client.host[:64] if client else None
+    resolved = client_ip(request)
+    if resolved == CLIENT_IP_UNKNOWN:
+        return None
+    return resolved[:64]
 
 
 def _cap_raw(payload: Any) -> tuple[Any, bool]:

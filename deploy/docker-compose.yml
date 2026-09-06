@@ -294,6 +294,12 @@ services:
       # would serve the operator UI instead of the receiver. Override per
       # deployment with the real public hostname.
       VE_INGEST_PUBLIC_BASE_URL: ${VE_INGEST_PUBLIC_BASE_URL:-http://localhost}
+      # Whose X-Forwarded-For the receiver may believe. Same value and meaning as
+      # core's: the compose network, which is where Traefik sits. Empty (the
+      # default) means trust nothing and record the socket peer — safe, but every
+      # delivery would be attributed to the gateway. NOT in .env, which is
+      # gitignored and therefore absent from a fresh checkout.
+      VE_TRUSTED_PROXY_CIDRS: '["172.19.0.0/16"]'
     depends_on:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
