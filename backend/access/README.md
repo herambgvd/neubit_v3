@@ -94,10 +94,16 @@ listener count alongside the database and event-bus checks.
 ./backend/access/run-tests.sh
 ```
 
-200, offline: a throwaway container from the shipped image, tree mounted
+211, offline: a throwaway container from the shipped image, tree mounted
 read-only, no network. In-memory SQLite built from the real `Base.metadata`, with
 `get_db` overridden — routes run their real scope and ownership code, and nothing
 below the HTTP edge is mocked.
+
+The one exception is the controller itself. `get_connector` is monkeypatched in
+`test_write_through.py`, which is what makes the cardholder and card routes
+testable at all — and what lets the suite assert that the DECRYPTED secret is
+what reaches the connector, and that another tenant's request never causes a
+connector to be built in the first place.
 
 ## Known gaps
 
