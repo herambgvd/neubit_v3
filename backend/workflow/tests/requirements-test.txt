@@ -1,0 +1,8 @@
+# Test-only deps. Kept out of the image — a test runner has no business in an
+# artifact that ships to a customer.
+#
+# No pytest-asyncio: the suite drives async code from synchronous tests via
+# conftest.run_async, deliberately (see tests/conftest.py).
+pytest>=8.0
+aiosqlite>=0.20
+httpx>=0.27

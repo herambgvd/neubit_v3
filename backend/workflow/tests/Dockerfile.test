@@ -1,0 +1,7 @@
+# The shipped workflow image plus a test runner. One networked build, then the
+# suite runs offline. Local only — never pushed, never in the appliance.
+ARG WORKFLOW_IMAGE=neubit-v3-workflow:latest
+FROM ${WORKFLOW_IMAGE}
+
+COPY requirements-test.txt /tmp/requirements-test.txt
+RUN pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements-test.txt
