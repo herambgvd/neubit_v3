@@ -1,15 +1,8 @@
-"""The link to a physical access controller carries its password. Say what it is.
+"""The link to a controller carries its password, so say when it is unprotected.
 
-`verify_tls` defaulted to False, and it goes straight to
-``httpx.AsyncClient(verify=...)``. So an operator who never thought about TLS got a
-connection that was encrypted but UNAUTHENTICATED: anything able to intercept it
-presents its own certificate and reads the Basic-auth password. `base_url` also
-accepts `http://`, where the password is base64 in a header and nothing else.
-
-Neither is BLOCKED, deliberately — an access controller is usually a box on a
-building LAN with a self-signed certificate, and refusing to talk to it would make
-this service unusable and get the integration bypassed rather than fixed. What was
-wrong is that both were silent. These tests pin the default and pin the noise.
+verify_tls feeds httpx's `verify=` and defaulted to False; base_url also accepts
+http://. Neither is blocked — controllers are usually LAN boxes with self-signed
+certs — but both are now logged. These pin the default and the warnings.
 """
 
 from __future__ import annotations

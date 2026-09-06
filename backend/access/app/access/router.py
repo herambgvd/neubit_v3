@@ -1,29 +1,15 @@
-"""Access-control routers — permission-gated, tenant-scoped.
+"""Access-control routes, under /api/v1/access.
 
-Mounted under the service api_prefix (``/api/v1``) with an ``/access`` domain
-prefix, so paths are ``/api/v1/access/...``. Every endpoint is gated by an
-``access.*`` permission via ``kernel.auth.require_permission`` and runs inside the
-caller's tenant scope (``get_scope``).
+Every endpoint is gated by an access.* permission and runs in the caller's tenant
+scope. Covers: instance CRUD + test-connection + reconcile, mirror reads,
+write-through cardholder/card CRUD, local access-group/schedule/door catalogs, and
+controller commands.
 
-FOUNDATION (Phase 1):
-  * Instance CRUD (list/get/create/update/delete).
-  * POST /instances/{id}/test-connection — connector ping (graceful on failure).
-  * POST /instances/{id}/reconcile — full-sync → mirror + SyncJob (graceful).
-  * GET  /instances/{id}/sync-jobs — reconcile history.
-  * GET  /instances/{id}/{cardholders|cards} — DDS mirror reads.
+The access-group and schedule routes require an instance_id query param — they are
+local catalogs, not DDS entities (see catalog.py).
 
-PHASE 2 (this file, ported from v2 gates):
-  * Write-through CRUD for cardholders/cards + assignment/status ops (v2 cardholder/
-    card routes).
-  * LOCAL access-group + schedule catalogs at top-level /access-groups + /schedules
-    (v2 access_groups module — repository CRUD, NOT DDS write-through; see
-    catalog.py). Both REQUIRE an ``instance_id`` query param.
-  * Doors CRUD (local, tenant-scoped) + door commands (v2 door/routes).
-  * Commands: outputs/alarm-zones/controllers/sites OData actions (v2 commands).
-  * Hardware proxy (v2 hardware/routes). Events read API (v2 event/routes).
-
-DDS is unreachable in dev → write/command/hardware endpoints return a CLEAN error
-(never a 500 crash-loop); reads + doors CRUD are fully local and testable.
+With no live controller, write/command/hardware endpoints return a clean error
+rather than a 500; reads and door CRUD are local and work anyway.
 """
 
 from __future__ import annotations

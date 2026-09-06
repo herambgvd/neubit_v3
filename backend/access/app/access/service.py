@@ -1,13 +1,8 @@
-"""Access-control services — tenant-scoped instance CRUD, reconcile, mirror reads.
+"""Instance CRUD, connection test and reconcile — all tenant-scoped.
 
-Every read goes through ``kernel.auth.scoped``; every by-id fetch through
-``assert_owned``; new rows are stamped with the caller's ``tenant_id``. The
-controller secret is encrypted here (reversibly — the connector needs it back).
-
-The reconcile + connection paths DEGRADE GRACEFULLY when the controller is
-unreachable: ``test_connection`` returns an error result (never raises), and
-``reconcile`` records a FAILED ``SyncJob`` instead of 500-ing. This is faithful to
-v2's reconciler (per-collection try/except + a job status of failed/partial).
+Reconcile pulls each mirror collection from the controller and upserts it into
+AccessMirror, recording the outcome as a SyncJob. A failed collection is recorded,
+not raised — one dead entity set must not abort the whole sync.
 """
 
 from __future__ import annotations

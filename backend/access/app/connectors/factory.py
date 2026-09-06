@@ -1,13 +1,8 @@
-"""Connector factory — pick a ControllerConnector by ``instance.brand``.
+"""Pick a ControllerConnector by instance.brand.
 
-This is the seam that makes future controller brands pluggable. v2 hardcoded DDS
-everywhere; here the service layer only ever calls ``get_connector(instance,
-secret)`` and gets back something implementing ``ControllerConnector``. Adding a
-brand (ESSL, …) = add a module + one line here, no service changes.
-
-The caller decrypts the instance secret first (the factory/connector never touch
-the DB or the encryption key). ``secret`` may be empty for an unconfigured
-instance — the connector will simply fail ``test_connection`` gracefully.
+The caller decrypts the instance secret first — the factory and connectors never
+touch the DB or the encryption key. An unknown brand raises rather than falling
+back silently.
 """
 
 from __future__ import annotations
@@ -22,32 +17,25 @@ log = logging.getLogger("access.connector")
 
 
 def _warn_about_transport(instance: Any, verify_tls: bool) -> None:
-    """Say, out loud and per connector build, when a controller link is unprotected.
+    """Warn when a controller link is unprotected. Both cases send the password.
 
-    Neither case below is BLOCKED, and that is deliberate: an access controller is
-    usually a box on a building LAN with a self-signed certificate or no TLS at
-    all, and refusing to talk to it would not make the deployment safer — it would
-    make this service unusable and get the whole integration bypassed. What was
-    wrong was that both were SILENT.
-
-    Both send the controller's password. `_auth()` puts it in an HTTP Basic header,
-    which is base64, not encryption.
+    Not blocked: controllers are usually LAN boxes with self-signed certs, and
+    refusing them would get the integration bypassed rather than fixed. Loud, not
+    forbidden.
     """
     base_url = str(getattr(instance, "base_url", "") or "")
     name = getattr(instance, "name", None) or getattr(instance, "id", "?")
 
     if base_url.startswith("http://"):
         log.warning(
-            "access instance %s talks to its controller over PLAIN HTTP (%s) — the "
-            "controller password is sent base64-encoded in a Basic auth header and "
-            "is readable by anything on the path",
+            "access instance %s uses PLAIN HTTP (%s) — the controller password is "
+            "sent as base64 in a Basic auth header",
             name, base_url,
         )
     elif not verify_tls:
         log.warning(
-            "access instance %s has TLS verification DISABLED (%s) — the connection "
-            "is encrypted but unauthenticated, so anything that can intercept it can "
-            "present its own certificate and read the controller password",
+            "access instance %s has TLS verification DISABLED (%s) — encrypted but "
+            "unauthenticated; an interceptor can present its own cert",
             name, base_url,
         )
 
@@ -62,9 +50,7 @@ def get_connector(instance: Any, *, secret: str = "") -> ControllerConnector:
     brand = (getattr(instance, "brand", None) or "dds").lower()
 
     if brand == "dds":
-        # Default TRUE when the attribute is missing. It used to default False
-        # here and in the schema, so an operator who never thought about TLS got
-        # an unauthenticated connection and no indication of it.
+        # Default True: an operator with no opinion should get a verified link.
         verify_tls = bool(getattr(instance, "verify_tls", True))
         _warn_about_transport(instance, verify_tls)
         return DDSConnector(

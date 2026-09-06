@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 #
-# Run access's test suite. The documented, reproducible way to do it.
+# Run access's test suite.
 #
-#     ./backend/access/run-tests.sh                 # the whole suite
-#     ./backend/access/run-tests.sh -q -p no:warnings
-#     ./backend/access/run-tests.sh tests/test_tenant_isolation.py
+#     ./backend/access/run-tests.sh                 # everything
+#     ./backend/access/run-tests.sh tests/test_x.py # pytest args pass through
 #
-# Same shape as backend/core/run-tests.sh, and for the same reasons — read that
-# file's header. The two differences: this image already CARRIES the kernel at
-# /opt/kernel (every satellite does; core deliberately does not), and the working
-# tree is mounted over the whole of backend/ so a test can also read the sibling
-# services' source where an invariant spans them.
+# Same shape as backend/core/run-tests.sh: a throwaway container from the shipped
+# image plus a test runner. Two differences — this image already carries the
+# kernel at /opt/kernel, and the whole of backend/ is mounted so a test can read a
+# sibling service.
 #
-# The tree is mounted READ-ONLY and the container has NO network. A test that
-# needs either is a test that would pass for the wrong reason on a CI runner.
+# Mounted read-only, no network: a test that needs either would pass for the wrong
+# reason on CI.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

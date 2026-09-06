@@ -1,31 +1,17 @@
-"""DDS write-through CRUD for mirrored entities — ported from neubit_v2 gates.
+"""DDS write-through CRUD for cardholders and cards.
 
-Every mutation (create / update / delete / assign / status) is pushed to the DDS
-controller FIRST (via the brand connector's OData write methods); on success the
-returned DTO is upserted into the local ``AccessMirror`` so reads stay consistent
-(reads are still served from the mirror — v2 semantics). This is the faithful v3
-port of:
+Every mutation goes to the controller FIRST; only on success is the returned DTO
+upserted into AccessMirror. Reads are served from the mirror, so this ordering is
+what stops the mirror claiming something the controller never accepted.
 
-  * ``neubit_v2/backend/gates/app/module/cardholder/routes.py`` (create/update/
-    delete/suspend/reinstate + card assign/detach; ``_to_dds``/``_from_dds`` field
-    maps kept VERBATIM).
-  * ``neubit_v2/backend/gates/app/module/card/{routes,schemas}.py`` (card CRUD +
-    status; the deterministic create→patch flow and camelCase fallbacks kept).
+Access-groups and schedules are NOT here — they are local catalogs (catalog.py).
+Only the cardholder↔access-group assignment is a write-through.
 
-NOTE: access-groups + schedules are NOT write-through here. In v2 they are LOCAL,
-instance-scoped repository catalogs (``module/access_groups``) — ported to
-``catalog.py`` (``AccessGroupCatalog`` / ``ScheduleCatalog``). Only the cardholder↔
-access-group ASSIGNMENT (mutating a cardholder's ``AccessGroupUIDs`` on the
-controller) remains a write-through and stays in this file.
+The owning instance is fetched through assert_owned, so an instance in another
+tenant reads as 404. Mirror rows carry the instance's tenant_id.
 
-Tenant-scoping: the owning instance is fetched through ``assert_owned`` (an
-instance in another tenant reads as 404), so every write-through op is confined to
-the caller's tenant. Mirror rows are stamped with the instance's ``tenant_id``.
-
-Graceful degradation: a DDS transport failure surfaces as ``DDSHTTPError`` which
-the router translates to a CLEAN HTTP error (502/original status) — never a 500
-crash-loop. The dev environment has no live controller, so writes return a clean
-error there.
+A transport failure surfaces as DDSHTTPError, which the router turns into a clean
+502 rather than a 500.
 """
 
 from __future__ import annotations

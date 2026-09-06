@@ -1,15 +1,12 @@
-"""Access-control (gates) service — controller instances + event ingestion.
+"""Access-control service — controller instances plus event ingestion.
 
-Boots the FastAPI app on ``kernel`` (config/auth/events/errors), mounts the
-tenant-scoped, ``access.*``-gated REST API under the service api_prefix, connects
-the NATS event bus, and starts the SignalR event-ingestion supervisor (one
-listener per active controller instance).
+Boots FastAPI on the kernel, mounts the tenant-scoped access.* API behind the
+tenant's "access" module and licence, connects NATS, and starts one SignalR
+listener per active instance.
 
-The listener starts, logs, and RETRIES without crashing the service even when
-there is no live controller in dev — see ``app.access.ingestion``. A periodic
-reconcile trigger is stubbed here (entrypoint wired, scheduler is a later phase).
-
-Run:   uvicorn app.main:app --host 0.0.0.0 --port 8000
+The listener retries without crashing the service when there is no live
+controller. The reconcile scheduler is a stub — the wire point exists, the ticker
+does not.
 """
 
 from __future__ import annotations

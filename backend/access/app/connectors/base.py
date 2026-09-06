@@ -1,36 +1,11 @@
-"""Controller-connector abstraction — the v3 improvement over v2's hardcoded DDS.
+"""Controller-connector interface — the seam that makes brands pluggable.
 
-v2's access-control module (``neubit_v2/backend/gates``) talked to the DDS
-controller directly: ``app.adapter.dds`` (OData REST) + ``app.adapter.signalr``
-(the EventsHub) were imported straight into the reconciler, routes, and ingestion
-worker. There was no seam — adding a second brand (ESSL, etc.) would have meant
-forking every call site.
+The service layer only ever calls factory.get_connector(instance, secret) and gets
+back something implementing ControllerConnector. Adding a brand is a module plus
+one line in the factory. Only DDS exists today.
 
-v3 introduces a brand-agnostic seam: every controller integration implements
-``ControllerConnector``. The service layer (instance CRUD, reconcile, mirror
-listing, event ingestion) depends ONLY on this interface; ``factory.get_connector``
-picks the concrete class by ``instance.brand``. Only DDS is implemented for now;
-new brands drop in without touching the service.
-
-The interface is intentionally the SUBSET the foundation phase needs:
-
-* ``test_connection`` — probe reachability/auth (used by POST .../test-connection).
-* ``list_<collection>`` (via ``list_collection``) — pull an entity set for the
-  reconciler → AccessMirror upsert. The concrete connector maps a logical
-  collection name (``cardholders`` / ``cards`` / ``access_groups`` / ``schedules``
-  / ``scheduled_mags`` / ``scheduled_readers``) to its own remote entity set.
-* ``subscribe_events`` — open the real-time event stream (DDS SignalR) and invoke
-  the async callback per event; runs until cancelled, reconnecting internally.
-* ``invoke_action`` — OData-action / command passthrough (door unlock, zone
-  arm/disarm, …). Defined here so the seam is complete, but NOT wired to any
-  endpoint in this phase (commands are a LATER phase).
-* ``list_hardware`` — read-only hardware-set proxy (controllers/readers/…). Also
-  part of the seam; NOT wired to an endpoint this phase (hardware proxy = later).
-
-All methods are async. Connectors degrade GRACEFULLY: ``test_connection`` returns
-an error result instead of raising, and the reconcile path catches per-collection
-fetch failures. ``subscribe_events`` reconnects with backoff and only raises if it
-gives up permanently, so the listener supervisor can restart it.
+Connectors degrade gracefully: test_connection returns an error result rather than
+raising, and subscribe_events reconnects internally, raising only if it gives up.
 """
 
 from __future__ import annotations

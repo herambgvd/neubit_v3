@@ -1,21 +1,10 @@
-"""SignalR event-ingestion supervisor.
+"""SignalR event-ingestion supervisor — one listener per active instance.
 
-For each ACTIVE instance the service opens the controller's real-time event
-stream (DDS SignalR EventsHub, via the connector) and, per event:
+Discovery and connect failures are swallowed and retried, so a dev box with no
+controller does not stop the service booting.
 
-  1. persists an ``AccessEvent`` row (audit trail — v2 ``events`` table), then
-  2. publishes it on the NATS spine at
-     ``tenant.<tenant_id>.access.<category>.<event_type>`` so the workflow
-     correlation engine (``tenant.*.access.>``) can trigger SOPs.
-
-This is the v3 port of v2's ``ingestion/signalr_supervisor.py`` +
-``signalr_handlers.py`` (which persisted to Postgres and published to Kafka).
-
-Robustness contract (per the task): the listener MUST start, log, and RETRY
-without crashing the service even when there is no live controller in dev. The
-connector's ``subscribe_events`` already reconnects with backoff internally; this
-supervisor additionally wraps each instance's listen loop so a permanent failure
-only restarts that one loop (with backoff) and never propagates.
+Events are attributed to the tenant of the INSTANCE the listener belongs to, never
+to anything in the payload.
 """
 
 from __future__ import annotations

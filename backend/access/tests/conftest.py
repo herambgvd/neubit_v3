@@ -1,22 +1,11 @@
-"""Shared setup for the access suite — the first tests this service has.
+"""Shared setup for the access suite.
 
-The pattern is core's (backend/core/tests/conftest.py), adapted to a satellite:
+Access verifies core-minted JWTs with the kernel and has no user table, so tests
+mint a token with the same HS256 secret instead of logging in.
 
-  * Access verifies core-minted JWTs locally with the kernel — there is no user
-    table here — so a test does not "log in", it MINTS a token with the same
-    HS256 secret the running service verifies against (VE_JWT_SECRET, set by
-    run-tests.sh). ``token()`` builds one for a given tenant / permission set;
-    that is the whole auth surface.
-
-  * The DB is an in-memory aiosqlite engine holding ONLY the access tables, built
-    from the real ``Base.metadata``. The app's ``get_db`` is overridden to it, so
-    the routes run their real service/scope/ownership code against a real (if
-    ephemeral) database — nothing is mocked below the HTTP edge.
-
-  * NATS is off (VE_NATS_URL empty): ``bus.connect`` is a no-op and ``emit`` is
-    best-effort, so event publishing neither blocks nor fails a test. The
-    ingestion supervisor is never started because tests drive ``create_app`` and
-    the ASGI transport directly, not the lifespan.
+The DB is in-memory SQLite built from the real Base.metadata, with get_db
+overridden — routes run their real scope/ownership code, nothing below the HTTP
+edge is mocked. NATS is off, so event publishing is a no-op.
 """
 
 from __future__ import annotations
@@ -27,13 +16,8 @@ import sys
 import uuid
 from pathlib import Path
 
-# --- the kernel under test is the WORKING TREE's, not the image's ------------
-#
-# Every satellite image installs the kernel editable from /opt/kernel, a snapshot
-# taken at build time. run-tests.sh mounts the working tree at /src, so without
-# this the suite would import the kernel the image was BUILT with and quietly pass
-# against code that is not the code being changed — the exact shape of "green for
-# the wrong reason" these tests exist to prevent. Prepended, so /src/kernel wins.
+# Import the kernel from the working tree, not the image's build-time snapshot at
+# /opt/kernel — otherwise the suite tests code that is not the code being changed.
 _KERNEL = Path(os.environ.get("VE_KERNEL_PATH") or "/src/kernel")
 if (_KERNEL / "kernel" / "__init__.py").is_file():
     sys.path.insert(0, str(_KERNEL))
@@ -99,9 +83,8 @@ def token(
 ) -> str:
     """A core-shaped access token the kernel will verify.
 
-    `features`/`license_state` are set so `require_feature("access")` and
-    `require_active_license()` — the two gates main.py mounts the whole API behind
-    — pass; a test is not exercising those here.
+    features/license_state are set so the two gates main.py mounts the API behind
+    pass; these tests are not exercising them.
     """
     now = dt.datetime.now(dt.timezone.utc)
     claims = {

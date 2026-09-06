@@ -1,20 +1,11 @@
-"""Access domain-event publishing on the NATS spine.
+"""Access domain events on the NATS spine.
 
-Subjects follow the platform convention
-``tenant.<tenant_id>.access.<category>.<event_type>`` (built by
-``kernel.events.subject``). This is the contract the workflow correlation engine
-already subscribes to (``tenant.*.access.>`` — see
-``backend/workflow/app/workflow/correlation.py``), so access events flow straight
-into SOP triggering with no extra wiring.
+Subjects are tenant.<tenant_id>.access.<category>.<event_type>. The workflow
+correlation engine already subscribes to tenant.*.access.>, so these feed SOP
+triggering with no extra wiring.
 
-v2 published these to Kafka ``neubit.access.events`` with type
-``access.<category>.<type>`` (or ``access.device.<category>`` for io/health) —
-see ``neubit_v2/backend/gates/app/ingestion/signalr_handlers.py``. v3 keeps the
-same category/type taxonomy but rides the NATS spine instead of Kafka.
-
-Publishing is best-effort and a no-op when NATS is disabled (``VE_NATS_URL``
-unset), so it never breaks ingestion. ``tenant_id`` NULL (a platform/system row)
-publishes under the reserved ``platform`` segment.
+Best-effort: a no-op when NATS is disabled, so publishing never breaks ingestion.
+A NULL tenant_id publishes under the reserved "platform" segment.
 """
 
 from __future__ import annotations

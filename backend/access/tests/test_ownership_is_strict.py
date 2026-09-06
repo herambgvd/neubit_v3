@@ -1,13 +1,11 @@
-"""A NULL tenant_id is a PLATFORM row, not a row owned by everyone.
+"""A NULL tenant_id is a platform row, not a row owned by everyone.
 
-kernel.auth.owns() still defaults to "NULL is readable by all" — the behaviour
-core proved was a privilege escalation (a tenant-admin fetching the super-admin by
-id). scoped() excludes NULL rows from a listing while owns() admitted them by id,
-and here every by-id path is also the write / re-credential / send-command path.
+kernel.auth.owns() defaults to treating NULL as readable by all, while scoped()
+excludes NULL from listings. Here every by-id path is also a write /
+re-credential / send-command path, so access passes allow_shared=False everywhere.
 
-Access passes allow_shared=False at every assert_owned site. These tests pin that:
-a platform-scoped controller instance is invisible AND untouchable to a tenant,
-and a super-admin still reaches it (so the fix is not "refuse everyone").
+These pin that, both ways: a tenant cannot touch a platform instance, and a
+super-admin still can.
 """
 
 from __future__ import annotations

@@ -1,22 +1,10 @@
-"""LOCAL access-group + schedule catalogs — faithful v2 port (NOT DDS).
+"""Local access-group and schedule catalogs.
 
-Ported from ``neubit_v2/backend/gates/app/module/access_groups`` (``repositories.py``
-+ ``routes.py``): these two are LOCAL, instance-scoped catalogs managed by plain
-repository CRUD — they are NOT DDS write-through (unlike cardholders/cards, which
-stay in ``writethrough.py``). The operator UI's *Access Groups* tab binds directly
-to this surface (``GET/POST /access-groups?instance_id=`` etc.).
+These are LOCAL, instance-scoped repository CRUD — not DDS write-through. The
+operator UI's Access Groups tab manages them.
 
-Tenant + instance scoping lives here:
-  * The target ``instance_id`` is fetched through ``assert_owned`` → an instance in
-    another tenant reads as 404, so a caller can never operate on another tenant's
-    catalog.
-  * Every list/by-id query is additionally constrained by ``scoped`` (tenant) AND
-    ``instance_id`` (v2 was instance-scoped; v3 adds the tenant dimension).
-  * New rows are stamped with the caller's ``tenant_id`` + the instance ``id``.
-
-Faithful to v2: field names, defaults ("Door" / "Asia/Kolkata"), list ordering
-(groups by ``created_at``; schedules by ``name``), and the ``group_not_found`` /
-``schedule_not_found`` error codes.
+Both are scoped twice: the target instance is fetched through assert_owned, and
+every query is constrained by tenant AND instance_id.
 """
 
 from __future__ import annotations

@@ -1,15 +1,7 @@
-"""Local door catalog CRUD + door commands — ported from neubit_v2 gates.
+"""Local door catalog CRUD and door commands.
 
-v3 port of ``neubit_v2/backend/gates/app/module/door/routes.py`` (+ ``door/models``
-/ ``door/repository``). Doors are LOCAL rows (``access_doors``), tenant-scoped; a
-door's ``remote_ref`` points at the controller-side door/reader UID (v2's
-``controller_door_id``). CRUD is fully local (testable without a live controller).
-Door commands (unlock / lock) push to the controller via the brand connector's
-OData actions (v2 used ``dds_adapter.unlock_door``/``lock_door``); on an
-unreachable controller they surface a CLEAN error, never a 500.
-
-Tenant-scoping: list/get/create/update/delete all go through ``scoped`` /
-``assert_owned`` so a door in another tenant is invisible (reads as 404).
+Doors are stored here, not on the controller; remote_ref links a door to the
+controller relay a lock/unlock drives.
 """
 
 from __future__ import annotations

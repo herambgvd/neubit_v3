@@ -1,30 +1,11 @@
 """Access-control ORM — tenant-scoped, ported from neubit_v2 gates.
 
-Every table carries a nullable ``tenant_id`` (owning tenant; NULL = a
-platform/super-admin/system row) — the kernel multi-tenancy pattern. Reads and
-by-id lookups go through ``kernel.auth.scoped`` / ``assert_owned`` so isolation
-lives in one place.
+Every table carries a nullable tenant_id (NULL = a platform/system row). Instance
+secrets are stored reversibly encrypted (see crypto.py) because the connector needs
+the plaintext to authenticate.
 
-Mapping to v2 (``neubit_v2/backend/gates``):
-  * ``Instance``     ← ``module/instance/models.InstanceDocument`` (+ ``brand``,
-                       ``tenant_id`` added for v3; secret stored reversibly
-                       encrypted as one string instead of the v2 nonce/ct struct).
-  * ``AccessMirror`` ← ``module/mirror/orm.DDSMirrorORM`` (single JSONB DTO table,
-                       unique (instance_id, collection, remote_uid)).
-  * ``Door``         ← v2 ``module/door`` local door catalog (subset; floor/zone
-                       stubs nullable — floor-plan linkage is a later phase).
-  * ``AccessGroup``  ← v2 ``module/access_groups`` LOCAL access-group catalog
-                       (repository CRUD, NOT DDS write-through). Instance-scoped.
-  * ``Schedule``     ← v2 ``module/access_groups`` LOCAL schedule catalog (embedded
-                       TimeWindow array + holidays; repository CRUD). Instance-scoped.
-  * ``AccessEvent``  ← v2 ``module/event/orm.AccessEventORM`` + ``HubEventORM``
-                       (merged: persists the SignalR events; ``published`` flag
-                       tracks NATS emission).
-  * ``SyncJob``      ← v2 ``module/event/orm.SyncJobORM`` (reconcile run history).
-
-Portable generic types (String/Boolean/DateTime/Uuid/JSON) keep the model working
-on Postgres and SQLite (tests). No PG enum columns — plain strings dodge the
-asyncpg add-column enum footgun (see project memory).
+AccessMirror is a single JSONB table mirroring controller entities rather than a
+table per entity type — the controller owns the schema and it changes without us.
 """
 
 from __future__ import annotations
@@ -81,11 +62,8 @@ class Instance(Base):
     username: Mapped[str] = mapped_column(String(255), nullable=False, server_default=text("''"))
     # Reversibly-encrypted secret (enc:...); decrypted only to build a connector.
     secret_enc: Mapped[str | None] = mapped_column(String(1024))
-    # TRUE. This said false while the API schema said true — two places describing
-    # one column, disagreeing. The server_default only decides what a row inserted
-    # WITHOUT the column gets (the service always sets it explicitly), so this is
-    # about the two descriptions matching, not about changing a code path.
-    # Existing rows are deliberately not touched by 0003; see that migration.
+    # Matches the API schema default. Only affects rows inserted without the
+    # column; the service always sets it. Existing rows untouched (see 0003).
     verify_tls: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )

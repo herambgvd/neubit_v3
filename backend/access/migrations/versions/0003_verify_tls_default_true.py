@@ -4,23 +4,15 @@ Revision ID: 0003_verify_tls_default_true
 Revises: 0002_access_local_catalog
 Create Date: 2026-09-06
 
-`access_instances.verify_tls` defaulted to false, and the value goes straight to
-``httpx.AsyncClient(verify=...)``. So an operator who never thought about TLS got a
-connection to their access controller that was encrypted but UNAUTHENTICATED —
-anything able to intercept it presents its own certificate and reads the Basic-auth
-password in the clear.
+verify_tls fed httpx's `verify=`, so a False default meant an encrypted but
+unauthenticated link to the controller — an interceptor presents its own cert and
+reads the Basic-auth password.
 
-EXISTING ROWS ARE NOT TOUCHED, and that is the whole decision in this file. An
-access controller is usually a box on a building LAN with a self-signed
-certificate; flipping live rows to true would break every one of those deployments
-at the next reconcile, with no operator action and no warning. The insecure state
-is now VISIBLE instead — `connectors/factory.py` logs a warning every time it
-builds a connector over plain HTTP or with verification off — and an operator can
-fix each instance deliberately.
+Existing rows are NOT flipped. Controllers are usually LAN boxes with self-signed
+certs; changing live rows would break them at the next reconcile with no warning.
+The connector logs a warning for each unprotected link instead.
 
-So this changes exactly one thing: what a row inserted without the column gets.
-The service always sets it explicitly from the request schema (also now true), so
-in practice this keeps the model, the database and the API telling the same story.
+So this only changes what a row inserted without the column gets.
 """
 
 from alembic import op

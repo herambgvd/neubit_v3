@@ -1,11 +1,8 @@
-"""DDS connector — OData v4 REST + SignalR EventsHub, faithful to neubit_v2.
+"""DDS connector — OData v4 REST + SignalR EventsHub.
 
-Ported from neubit_v2's ``backend/gates/app/adapter/dds.py`` (OData client) and
-``backend/gates/app/adapter/signalr.py`` + ``ingestion/signalr_handlers.py``
-(SignalR EventsHub + event normalization). All the load-bearing shapes are kept
-VERBATIM from v2:
+Ported from neubit_v2's gates adapter; the wire shapes below are kept verbatim.
 
-OData (v2 ``dds.py``):
+OData:
     base:     GET/POST/PATCH/DELETE  {base_url}/odata/{EntitySet}
     by-id:    {base_url}/odata/{EntitySet}({uid})
     list:     ?$top=&$skip=  — vendor caps $top at 50 (DDS_ODATA_TOP_CAP)
@@ -19,7 +16,7 @@ OData (v2 ``dds.py``):
     auth (v2 ``dds._auth`` / ``_headers``):
         basic → HTTP Basic (username:secret) ; jwt → Bearer {secret}
 
-SignalR (v2 ``signalr.py`` / ``signalr_handlers.py``):
+SignalR:
     hub:      {base_url}/Hub/EventsHub   (signalrcore HubConnectionBuilder)
     auth:     HTTP Basic header (base64 username:api_key) — DDS recommends Basic
               for long-lived connections (their JWTs are short-lived)
@@ -30,8 +27,7 @@ SignalR (v2 ``signalr.py`` / ``signalr_handlers.py``):
               audit/general/io/health
     fields:   DateTime|dateTime|JournalUpdateDateTime, Type|type, UID|uid
 
-The DDS-side action names ported from v2 ``commands/routes.py`` (kept as
-constants for the LATER commands phase):
+DDS action names, kept as constants:
     Outputs: Activate, ActivateContinuously, Deactivate, ReturnToNormal,
              OpenAllDoorRelays, ReturnToNormalAllDoorRelays
     AlarmZones: ArmAlarmZone, DisarmAlarmZone, ReturnAlarmZoneToWeeklyProgram

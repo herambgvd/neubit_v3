@@ -1,19 +1,8 @@
-"""Operator commands + hardware proxy against the controller.
+"""Operator commands and read-only hardware proxy against the controller.
 
-v3 port of:
-  * ``neubit_v2/backend/gates/app/module/commands/routes.py`` — thin POST surface
-    mapping to DDS OData *action* endpoints (Outputs Activate/Deactivate/…,
-    AlarmZones Arm/Disarm/ReturnToWeeklyProgram, Controllers InitializeController,
-    Sites StartAllPolling/StopAllPolling). The action→(entity_set, action) map +
-    request body shapes are kept verbatim (DDS uids/apiKeys/period/armType/…).
-  * ``neubit_v2/backend/gates/app/module/hardware/routes.py`` — read-only OData
-    passthrough for sites/controllers/readers/inputs/outputs/alarm_zones/areas,
-    with the same camelCase→PascalCase field normalization for the frontend.
-
-Everything runs through the brand connector (``invoke_action`` / ``list_hardware``),
-so it stays brand-agnostic. Both degrade gracefully when the controller is
-unreachable (dev has no live DDS): a ``CommandError`` carrying the upstream status
-is raised and the router turns it into a CLEAN HTTP error — never a 500 crash.
+Every call resolves its instance through assert_owned first. A dead or unreachable
+controller becomes a CommandError the router turns into a clean 4xx/502, never a
+500.
 """
 
 from __future__ import annotations
