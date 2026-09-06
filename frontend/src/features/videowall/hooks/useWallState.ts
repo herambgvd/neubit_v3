@@ -18,6 +18,10 @@ import { useQuery } from "@tanstack/react-query";
 import { videowall } from "../api";
 import { useWallStream } from "./useWallStream";
 
+
+/** Stable stand-in for "no wall state yet" — see the note at the return.*/
+const EMPTY = {};
+
 export function useWallState(wallId, { enabled = true }: any = {}) {
   const [state, setState] = useState<any>(null);
 
@@ -71,7 +75,10 @@ export function useWallState(wallId, { enabled = true }: any = {}) {
   );
 
   return {
-    state: state || {},
+    // EMPTY, not `{}`: a fresh literal here changes identity on every render, so
+    // every consumer memo keyed on `state` recomputed every time — which is what
+    // the compiler meant by "existing memoization could not be preserved".
+    state: state || EMPTY,
     connected,
     lastFrame,
     loading: stateQ.isLoading && state === null,

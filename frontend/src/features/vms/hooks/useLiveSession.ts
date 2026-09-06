@@ -169,7 +169,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
       clearTimers();
       const cur = sessionRef.current;
       sessionRef.current = null;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- this is the CLEANUP path: the session is being torn down, so clearing it is the teardown itself, not a render-time sync.
+       
       setSession(null);
       // Fire-and-forget release so the MediaMTX path is reaped once nobody's
       // watching. Never awaited — unmount must not block.

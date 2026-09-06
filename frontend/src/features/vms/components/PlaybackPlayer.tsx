@@ -409,7 +409,7 @@ export default function PlaybackPlayer({
       disposed = true;
       cleanup();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [effHls, whepActive, useH265]);
 
   // ── WHEP / WebRTC attach (NVR footage) ─────────────────────────────────────
@@ -584,7 +584,7 @@ export default function PlaybackPlayer({
       setCurrent(ms);
       load({ from: iso(ms), to: iso(windowEnd) });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [load, windowEnd],
   );
 
@@ -647,7 +647,7 @@ export default function PlaybackPlayer({
     };
     v.addEventListener("timeupdate", onTime);
     return () => v.removeEventListener("timeupdate", onTime);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [windowStart, onClock, sourceFn]);
 
   // The WASM (h265web) decoder couldn't init → fall through to the /h264 ffmpeg transcode
@@ -744,7 +744,7 @@ export default function PlaybackPlayer({
             onError={onWasmError}
           />
         ) : (
-          // eslint-disable-next-line jsx-a11y/media-has-caption
+           
           <video ref={videoRef} className="h-full w-full object-contain" playsInline muted />
         )}
         {(loading || (!hlsUrl && !error)) && (
@@ -782,7 +782,7 @@ export default function PlaybackPlayer({
             onError={onWasmError}
           />
         ) : (
-          // eslint-disable-next-line jsx-a11y/media-has-caption
+           
           <video ref={videoRef} className="h-full w-full object-contain" playsInline muted />
         )}
 

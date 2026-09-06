@@ -108,13 +108,17 @@ export default function WallConsole({ wallId }: any) {
 
   // First empty (monitor, cell) across the wall — where a rail CLICK lands.
   const firstEmpty = useMemo(() => {
-    for (const mon of monitors) {
+    // Collect then take the first, rather than returning out of a nested loop:
+    // the compiler cannot preserve a memo it cannot follow, and a wall is at most
+    // a few dozen cells, so walking all of them costs nothing.
+    const empties = monitors.flatMap((mon: any) => {
       const cap = Number(mon.layout) || 1;
-      for (let i = 0; i < cap; i += 1) {
-        if (!state?.[mon.id]?.[String(i)]) return { monitorId: mon.id, cellIndex: i };
-      }
-    }
-    return null;
+      const cells = state?.[mon.id] ?? {};
+      return Array.from({ length: cap }, (_, i) => i)
+        .filter((i) => !cells[String(i)])
+        .map((i) => ({ monitorId: mon.id, cellIndex: i }));
+    });
+    return empties[0] ?? null;
   }, [monitors, state]);
 
   // ── mutations ──────────────────────────────────────────────────────────

@@ -57,9 +57,9 @@ export function evalOp(actual, op, expected) {
   try {
     switch (op) {
       case "eq":
-        return actual === expected || actual == expected; // eslint-disable-line eqeqeq
+        return actual === expected || actual == expected;  
       case "ne":
-        return actual !== expected && actual != expected; // eslint-disable-line eqeqeq
+        return actual !== expected && actual != expected;  
       case "gt":
         return actual != null && actual > expected;
       case "gte":

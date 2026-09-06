@@ -108,7 +108,7 @@ export default function MotionSearchModal({
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       if (abortRef.current) abortRef.current.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, cameraId, seedFrom, seedTo]);
 
   // ── Draw layer — drag to add a normalized rect ───────────────────────────

@@ -640,7 +640,7 @@ function TilePlayback({
   return (
     <div className="absolute inset-0 bg-black">
       {src && (
-        /* eslint-disable-next-line jsx-a11y/media-has-caption */
+         
         <video
           ref={videoRef}
           src={src}

@@ -840,7 +840,7 @@ function LivePlayer({
       onMouseEnter={() => !minimal && setShowChrome(true)}
       onMouseLeave={() => !minimal && setShowChrome(false)}
     >
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      { }
       <video
         ref={videoRef}
         className={`h-full w-full ${fitMode === "cover" ? "object-cover" : "object-contain"} ${zoom > 1 ? "cursor-grab active:cursor-grabbing" : ""}`}

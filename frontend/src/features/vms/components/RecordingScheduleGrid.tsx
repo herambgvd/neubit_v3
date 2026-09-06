@@ -42,7 +42,7 @@ export default function RecordingScheduleGrid({ value, onChange }: any) {
   // Re-hydrate when the parent swaps in a different camera's schedule.
   useEffect(() => {
     setSchedule(normalizeSchedule(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [value]);
 
   const push = useCallback(
