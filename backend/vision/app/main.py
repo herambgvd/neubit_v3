@@ -113,13 +113,19 @@ async def lifespan(app: FastAPI):
     # "the footage is clear". The console asks the owning recorder
     # (/vms/federation/…/motion-search).
 
-    # P5-A camera device-events: the event-supervisor opens one ONVIF/brand
-    # subscription per active ``onvif_events_enabled`` camera (re-scanned on a tick,
-    # like the health sampler discovers cameras), normalizes → dedupes → persists a
+    # P5-A camera device-events: the event-supervisor polls each registered
+    # RECORDER's own event ledger on a tick, normalizes → dedupes → persists a
     # VmsEvent → publishes ``tenant.<id>.vms.camera.<event_type>`` — the exact subject
     # the workflow correlation engine consumes (``tenant.*.vms.>`` → SOP incidents).
-    # Bounded concurrency; reconnect/backoff; graceful (a dead camera never stalls
-    # others; SDK-missing/unreachable → just no events). Own DB session per event.
+    #
+    # It used to open its own ONVIF PullPoint subscription per camera. The recorder
+    # that owns the camera already runs one, and many cameras permit exactly one — so
+    # the two competed, and the loser got silence rather than an error. Reading the
+    # recorder's ledger also means the estate sees the same events the recorder
+    # itself acted on.
+    #
+    # Bounded concurrency; graceful (an unreachable recorder never stalls the others
+    # and its watermark is not advanced, so nothing is skipped when it returns).
     event_supervisor = EventSupervisor(get_sessionmaker())
     await event_supervisor.start()
     app.state.event_supervisor = event_supervisor

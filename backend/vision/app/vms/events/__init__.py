@@ -12,9 +12,11 @@ Pieces:
     dedup-key + envelope builders (pure; unit-tested).
   * ``service``    — ``VmsEventService`` (persist+publish an event; the events feed +
     per-camera list + ack), tenant-scoped.
-  * ``supervisor`` — ``EventSupervisor`` (lifespan task): re-scans event-enabled
-    cameras on a tick, opens/reaps per-camera subscriptions (bounded concurrency,
-    reconnect/backoff, graceful), and drives each event through normalize→persist→publish.
+  * ``supervisor`` — ``EventSupervisor`` (lifespan task): polls each registered
+    recorder's own event ledger on a tick and drives what it finds through
+    normalize→dedupe→persist→publish. It does NOT subscribe to cameras — the recorder
+    that owns a camera does that, and a second subscriber on a device that permits one
+    gets silence, not an error.
   * ``router``     — the events REST surface (list / per-camera list / ack).
 
 The service's ``ingest_device_event`` is the single normalize→dedupe→persist→publish

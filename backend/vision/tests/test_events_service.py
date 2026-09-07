@@ -23,14 +23,13 @@ from kernel.auth import Scope
 from kernel.errors import NotFoundError
 
 from app.db import Base
-from app.vms.drivers.base import DeviceEvent
 from app.vms.events import normalize as norm
 from app.vms.events import service as events_svc
 from app.vms.events import supervisor as sup_mod
 from app.vms.events.normalize import dedup_key, normalize_event_type
 from app.vms.events.service import VmsEventService
-from app.vms.events.supervisor import EventSupervisor, _CameraSubscription
-from app.vms.models import Camera, VmsEvent
+from app.vms.events.supervisor import EventSupervisor
+from app.vms.models import Camera, MediaNode, VmsEvent
 
 TENANT = uuid.uuid4()
 OTHER_TENANT = uuid.uuid4()
@@ -257,88 +256,152 @@ async def test_ack_other_tenant_cannot(db, camera, capture):
         await other.ack(eid, actor=_Actor())
 
 
-# ── supervisor: reconcile lifecycle + fabricated-notification callback ──────
+# ── supervisor: polls each recorder's ledger ─────────────────────────────────
+#
+# The supervisor no longer subscribes to cameras — the recorder that owns a camera
+# does that, and a second subscriber on a device that permits one gets silence rather
+# than an error. So these exercise the poll: what it asks each node for, that it
+# ingests what comes back, that an overlapping re-read does NOT duplicate an event,
+# and that an unreachable recorder neither crashes the tick nor advances past events
+# it has not seen.
 
 
-async def test_subscription_callback_ingests_fabricated_event(engine, camera, capture):
-    """The per-subscription callback drives a FABRICATED ONVIF DeviceEvent through
-    normalize→persist→publish (the exact path the real driver callback uses)."""
+def _node_event(**over):
+    """One event shaped as the recorder serves it (store.Event)."""
+    ev = {
+        "id": "ev-1",
+        "camera_id": None,  # filled by the caller
+        "camera_name": "Gate",
+        "type": "motion",
+        "topic": "tns1:VideoSource/MotionAlarm",
+        "severity": "alarm",
+        "source": "onvif_pullpoint",
+        "payload": {"state": True},
+        "stateful": True,
+        "started_at": "2026-07-09T10:00:00Z",
+        "ended_at": None,
+        "created_at": "2026-07-09T10:00:01Z",
+    }
+    ev.update(over)
+    return ev
+
+
+def _stub_node_events(monkeypatch, batches):
+    """Answer list_events_node from `batches` (one per call), recording the asks."""
+    asks = []
+    seq = list(batches)
+
+    async def _list(api_url, *, since=None, limit=200, credential=None):
+        asks.append({"api_url": api_url, "since": since, "limit": limit, "credential": credential})
+        return {"items": seq.pop(0) if seq else [], "total": 0}
+
+    monkeypatch.setattr("app.vms.events.supervisor.fed.list_events_node", _list)
+    return asks
+
+
+async def _mk_node(db):
+    node = MediaNode(
+        id=str(uuid.uuid4()), tenant_id=TENANT, name="recorder-a", host="rec-a",
+        api_url="http://rec-a:8000", credential="scoped-key", status="online",
+    )
+    db.add(node)
+    await db.commit()
+    return node
+
+
+async def test_poll_ingests_a_recorder_event(engine, db, camera, capture, monkeypatch):
+    node = await _mk_node(db)
+    asks = _stub_node_events(monkeypatch, [[_node_event(camera_id=camera.id)]])
+
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    sub = _CameraSubscription(
-        camera_id=camera.id, tenant_id=camera.tenant_id, brand="onvif",
-        host="10.0.0.5", creds=None, topic_allow=[], sessionmaker=maker,
-    )
-    evt = DeviceEvent(
-        event_type="motion_detected", severity="alarm", title="Motion detected",
-        raw_topic="tns1:VideoSource/MotionAlarm", metadata={"onvif_topic": "tns1:VideoSource/MotionAlarm"},
-    )
-    await sub._on_event(evt)
+    sup = EventSupervisor(maker)
+    await sup._tick()
 
-    async with maker() as db:
-        svc = VmsEventService(db, PLATFORM)
-        listed = await svc.list_()
+    # It asked the right recorder, with the recorder's own scoped credential.
+    assert asks and asks[0]["api_url"] == "http://rec-a:8000"
+    assert asks[0]["credential"] == "scoped-key"
+
+    async with maker() as s:
+        listed = await VmsEventService(s, PLATFORM).list_()
     assert listed.total == 1 and listed.items[0].event_type == "motion"
     assert capture and capture[0][1] == "motion"
+    assert node.id in sup._watermark  # noqa: SLF001 — the watermark is the point
 
 
-async def test_supervisor_reconcile_opens_and_reaps(engine, camera, monkeypatch):
-    """Reconcile opens a subscription for an event-enabled camera and reaps it when the
-    camera is disabled — WITHOUT touching a real device (subscribe_events is stubbed to
-    idle)."""
-    import asyncio
+async def test_an_overlapping_poll_does_not_duplicate(engine, db, camera, monkeypatch):
+    """`since` is inclusive on the node, so consecutive polls overlap BY DESIGN.
 
-    async def _idle_subscribe(self, host, creds, callback):
-        # Simulate a live-but-quiet subscription: block until cancelled.
-        await asyncio.Event().wait()
+    The same event served twice must land once, and the reason is specific: the dedup
+    key buckets ``occurred_at``, and occurred_at is taken from the NODE's own
+    started_at — a fixed value, the same on every re-read.
 
-    monkeypatch.setattr("app.vms.drivers.onvif.OnvifDriver.subscribe_events", _idle_subscribe)
-
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    sup = EventSupervisor(maker)
-
-    active = await sup.reconcile()
-    assert active == 1 and camera.id in sup.active_camera_ids()
-
-    # Second reconcile is idempotent (no duplicate subscription).
-    assert await sup.reconcile() == 1
-
-    # Disable events → next reconcile reaps it.
-    async with maker() as db:
-        cam = await db.get(Camera, camera.id)
-        cam.onvif_events_enabled = False
-        await db.commit()
-    assert await sup.reconcile() == 0
-    await sup.stop()
-
-
-async def test_supervisor_graceful_when_sdk_missing(engine, camera, capture, monkeypatch):
-    """A camera whose driver raises NotImplementedError (no ONVIF SDK) → the worker
-    exits quietly; the supervisor keeps the sub slot but never crashes."""
-    async def _no_sdk(self, host, creds, callback):
-        raise NotImplementedError("python-onvif-zeep not installed")
-
-    monkeypatch.setattr("app.vms.drivers.onvif.OnvifDriver.subscribe_events", _no_sdk)
+    The two polls are deliberately separated by more than one dedup window (the
+    supervisor's clock is advanced an hour between them). Without that gap this test
+    passes whatever occurred_at is stamped with, because both ticks land in the same
+    bucket anyway — it proves nothing, which is exactly what an earlier version of it
+    did. With the gap, stamping the poll time instead of started_at puts the two
+    reads in different buckets and the alarm doubles.
+    """
+    await _mk_node(db)
+    ev = _node_event(camera_id=camera.id)
+    _stub_node_events(monkeypatch, [[ev], [ev]])
 
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     sup = EventSupervisor(maker)
-    active = await sup.reconcile()
-    # Subscription opened; the worker fails soft (no events, no crash).
-    assert active == 1
-    await sup.stop()
+    await sup._tick()
+
+    later = datetime.now(timezone.utc) + timedelta(hours=1)
+    monkeypatch.setattr(sup_mod, "_utcnow", lambda: later)
+    await sup._tick()
+
+    async with maker() as s:
+        listed = await VmsEventService(s, PLATFORM).list_()
+    assert listed.total == 1, "the same recorder event was ingested twice"
 
 
-async def test_supervisor_skips_camera_without_host(engine, db, monkeypatch):
-    """An event-enabled camera with no host is skipped (never opens a subscription)."""
-    cam = Camera(
-        id=str(uuid.uuid4()), tenant_id=TENANT, name="No Host", brand="onvif",
-        connection_type="rtsp", onvif_host=None, network_info={},
-        onvif_events_enabled=True,
+async def test_an_unreachable_recorder_does_not_advance_the_watermark(engine, db, monkeypatch):
+    """A recorder that is rebooting must not cause its events to be SKIPPED.
+
+    Advancing the watermark on a failed poll would ask for everything after a window
+    that was never read — the events in it are gone from the estate feed for good.
+    """
+    node = await _mk_node(db)
+    from app.vms.federation import client as fed_client
+
+    async def _down(api_url, *, since=None, limit=200, credential=None):
+        raise fed_client.NodeUnavailable("connection refused")
+
+    monkeypatch.setattr("app.vms.events.supervisor.fed.list_events_node", _down)
+
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    sup = EventSupervisor(maker)
+    await sup._tick()  # must not raise
+    assert node.id not in sup._watermark  # noqa: SLF001
+
+
+async def test_one_bad_recorder_does_not_stop_the_others(engine, db, camera, monkeypatch):
+    good = await _mk_node(db)
+    bad = MediaNode(
+        id=str(uuid.uuid4()), tenant_id=TENANT, name="recorder-b", host="rec-b",
+        api_url="http://rec-b:8000", credential="k2", status="online",
     )
-    db.add(cam)
+    db.add(bad)
     await db.commit()
 
+    from app.vms.federation import client as fed_client
+
+    async def _list(api_url, *, since=None, limit=200, credential=None):
+        if "rec-b" in api_url:
+            raise fed_client.NodeUnavailable("down")
+        return {"items": [_node_event(camera_id=camera.id)], "total": 1}
+
+    monkeypatch.setattr("app.vms.events.supervisor.fed.list_events_node", _list)
+
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     sup = EventSupervisor(maker)
-    active = await sup.reconcile()
-    assert active == 0  # no host → skipped, no crash
-    await sup.stop()
+    await sup._tick()
+
+    async with maker() as s:
+        listed = await VmsEventService(s, PLATFORM).list_()
+    assert listed.total == 1
+    assert good.id in sup._watermark and bad.id not in sup._watermark  # noqa: SLF001

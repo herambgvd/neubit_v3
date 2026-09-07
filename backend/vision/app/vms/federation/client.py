@@ -533,6 +533,30 @@ async def get_export_node(api_url: str, export_id: str, *, credential: str | Non
     return r.json() or {}
 
 
+async def list_events_node(
+    api_url: str,
+    *,
+    since: str | None = None,
+    limit: int = 200,
+    credential: str | None = None,
+) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/events → the recorder's OWN event ledger,
+    { items: [store.Event], total }.
+
+    This is how an estate gets one event feed without a second listener. The recorder
+    runs the ONVIF PullPoint subscription for its cameras; a central VMS that opened
+    its own would be the SECOND subscriber on a device that commonly permits one, and
+    the loser of that race gets nothing — silently, because a camera with no free
+    subscription slot simply never delivers.
+
+    ``since`` is RFC3339 and exclusive-ish (the node filters ``created_at >= since``),
+    so a poller must dedupe rather than assume no overlap."""
+    params: dict = {"limit": max(1, min(int(limit or 200), 500))}
+    if since:
+        params["since"] = since
+    return await _node_json("GET", api_url, "/events", credential=credential, params=params)
+
+
 async def verify_export_node(
     api_url: str, export_id: str, *, credential: str | None = None
 ) -> dict:
