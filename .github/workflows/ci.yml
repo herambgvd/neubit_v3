@@ -1,0 +1,196 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CI — the gate. Three independent job families, named for what they protect:
+#
+#   frontend        the operator console: types, lint errors, 409 tests, a build
+#   admin-frontend  the super-admin console: same four, 295 tests
+#   backend (×8)    one job per service that has a run-tests.sh, ~2,430 tests
+#
+# They do not depend on each other on purpose: a red X names the thing that
+# broke, not "CI".
+#
+# Every command here was run before it was written. See .github/workflows/README.md
+# for the one-liner that reproduces each job locally.
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # No .nvmrc and no `engines` in either package.json. The shipped image is
+  # node:20-alpine (frontend/Dockerfile), but vite 7 in the test toolchain wants
+  # ^20.19 || >=22.12, so CI runs 22 — verified: the whole console job passes on
+  # node 22.23 on linux.
+  NODE_VERSION: "22"
+
+jobs:
+  # ── The operator console ───────────────────────────────────────────────────
+  frontend:
+    name: frontend (console)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        # The FULL tree, not a sparse frontend/ checkout: src/test/contract.test.ts
+        # resolves `<repo>/backend/*/app` and reads the Pydantic response models
+        # off disk. Without backend/ present that file fails, loudly, 1000+ times.
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Strict `npm ci` — no --legacy-peer-deps. It used to be needed here: the
+      # lock hoists vite 7 while @vitejs/plugin-react 4's peer range stopped at
+      # ^6, so npm refused the lock outright. The plugin is on ^5 now, whose peer
+      # range includes vite 7, and `npm ci` resolves cleanly. If this step starts
+      # failing on peers again, fix the manifest rather than adding the flag back:
+      # the flag hides exactly the kind of drift this job exists to catch.
+      - run: npm ci --no-audit --no-fund
+
+      # typecheck && lint && test, in that order — the package's own `check`.
+      #
+      # LINT POLICY: errors fail, warnings do not. `eslint .` exits non-zero on
+      # errors only, and that is deliberate: the console carries ~242 warnings,
+      # ~100 of them react-hooks/set-state-in-effect, documented as a known,
+      # deliberate backlog in frontend/README.md ("Known gaps"). Clearing them is
+      # a refactor of ~89 forms, not a lint fix. DO NOT "harden" this by adding
+      # --max-warnings 0 — that turns a recorded backlog into a permanently red
+      # main branch. Error count is 0 today and that is the number this gates.
+      - run: npm run check
+
+      # The air-gap promise: the basemap glyphs and sprites are COMMITTED, and
+      # this verifies them offline (no network, no tile archive).
+      # The console must render with the network cable pulled, so every icon it
+      # uses has to be in the committed Iconify bundle. This check is offline; it
+      # fails naming any icon that would otherwise be fetched from
+      # api.iconify.design at runtime.
+      - run: npm run icons:check
+      - run: npm run map:assets:check
+
+      - run: npm run build
+
+  # ── The super-admin console ────────────────────────────────────────────────
+  admin-frontend:
+    name: admin-frontend (super-admin console)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-frontend
+    steps:
+      - uses: actions/checkout@v4
+        # Full tree again: src/test/contract.test.ts here reads backend/ too.
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: admin-frontend/package-lock.json
+
+      # Same lock/peer situation as the console above — same reason.
+      - run: npm ci --no-audit --no-fund
+
+      # Same lint policy: errors fail the build, warnings (1 today,
+      # react-hooks/incompatible-library on TanStack Table) do not.
+      - run: npm run check
+
+      - run: npm run build
+
+  # ── The Python services ────────────────────────────────────────────────────
+  #
+  # One job per backend/<service>/run-tests.sh. CI runs THAT SCRIPT, unchanged:
+  # it builds a throwaway test image from the service image, mounts the working
+  # tree read-only and runs pytest with --network none. Read backend/core/run-tests.sh
+  # for why it is shaped that way. There is no pip install step here and there
+  # must not be one — the service image IS the environment.
+  #
+  # No databases or service containers are started: every suite listed here runs
+  # --network none against sqlite/in-memory fakes. (workflow's script has an opt-in
+  # `--pg` mode that joins the compose network; CI does not use it — see the README.)
+  backend:
+    name: backend / ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # suite = backend/<suite>/run-tests.sh
+          # image = the compose service whose image that script needs
+          - { suite: core,           image: core }
+          - { suite: access,         image: access }
+          - { suite: ingest,         image: ingest }
+          - { suite: vision,         image: vision }
+          - { suite: workflow,       image: workflow }
+          - { suite: reading-writer, image: reading-writer }
+          - { suite: ops-agent,      image: ops-agent }
+          # kernel has no image of its own. Its script runs the shared kernel
+          # package inside access's TEST image, so this job builds access and
+          # then that test image before running kernel's suite.
+          - { suite: kernel,         image: access }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Docker layer cache. Verified locally with this exact mechanism: a cache
+      # written by one builder, then a BRAND NEW builder with only the cache
+      # available, produced CACHED layers and a loadable image.
+      - name: Restore Docker layer cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ matrix.image }}-${{ github.sha }}
+          restore-keys: |
+            buildx-${{ matrix.image }}-
+
+      # `docker compose build <service>` interpolates deploy/.env and hard-fails
+      # on a missing NATS_PASS_CORE, so the checked-in example supplies throwaway
+      # values. Nothing in this job runs the stack; these values are never used.
+      - name: Seed deploy/.env from the committed example
+        run: cp deploy/.env.example deploy/.env
+
+      # This is `docker compose build <service>` — same compose file, same build
+      # context and Dockerfile, same resulting image name (compose's project name
+      # is `neubit-v3`, so the tag is neubit-v3-<service>:latest, which is exactly
+      # what each run-tests.sh looks for by default). It goes through `buildx bake`
+      # only so the layers can be cached between runs; compose build cannot export
+      # a cache. BUILDX_BAKE_ENTITLEMENTS_FS=0 because the build contexts sit
+      # outside deploy/ (`context: ../backend`), which bake asks permission for.
+      - name: Build the ${{ matrix.image }} image
+        working-directory: deploy
+        env:
+          BUILDX_BAKE_ENTITLEMENTS_FS: "0"
+        run: |
+          docker buildx bake -f docker-compose.yml ${{ matrix.image }} \
+            --set "${{ matrix.image }}.tags=neubit-v3-${{ matrix.image }}:latest" \
+            --set "${{ matrix.image }}.cache-from=type=local,src=/tmp/.buildx-cache" \
+            --set "${{ matrix.image }}.cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max" \
+            --load
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      # kernel only: build the access test runner its script expects to find.
+      # This is the same `docker build` that backend/access/run-tests.sh performs.
+      - name: Build the access test image (kernel's runner)
+        if: matrix.suite == 'kernel'
+        run: |
+          docker build \
+            --build-arg ACCESS_IMAGE=neubit-v3-access:latest \
+            -t neubit-access-tests:latest \
+            -f backend/access/tests/Dockerfile.test \
+            backend/access/tests
+
+      - name: ./backend/${{ matrix.suite }}/run-tests.sh
+        run: ./backend/${{ matrix.suite }}/run-tests.sh

@@ -48,3 +48,16 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# --- e2e (Playwright, top-level e2e/) ---
+# The suite runs against a REAL stack, so its outputs are per-run artefacts of
+# one machine's environment — never source. `e2e/.env` is listed for the same
+# reason `deploy/.env` is: the operator credentials the suite reads live in the
+# environment and must never reach a commit.
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+e2e/.env
+e2e/.env.*
+!e2e/.env.example

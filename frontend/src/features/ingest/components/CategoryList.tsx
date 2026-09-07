@@ -4,6 +4,7 @@
 // header + count, search, selectable cards, and a dashed New Category button at
 // the bottom. Purely presentational — the page owns state + data.
 import { Icon } from "@iconify/react";
+import type { ReactNode } from "react";
 
 import type { CategoryPublic } from "../types";
 import {
@@ -21,6 +22,10 @@ export interface CategoryListProps {
   /** Unfiltered count, shown in the header. */
   total: number;
   loading?: boolean;
+  /** A load FAILURE. Distinct from `categories: []`, which means the estate is
+   *  genuinely empty — reading one as the other is what gets an operator to
+   *  re-create a category that already exists. */
+  error?: ReactNode;
   search: string;
   onSearch: (value: string) => void;
   selectedId: string | null;
@@ -36,6 +41,7 @@ export default function CategoryList({
   categories,
   total,
   loading,
+  error,
   search,
   onSearch,
   selectedId,
@@ -51,6 +57,7 @@ export default function CategoryList({
 
       <PanelList
         loading={loading}
+        error={error}
         empty={categories.length === 0}
         emptyText={search.trim() ? "No categories match your search" : "No categories yet"}
       >

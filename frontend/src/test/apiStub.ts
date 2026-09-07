@@ -38,11 +38,19 @@ export interface ApiStub {
   set: (routes: Routes) => void;
 }
 
-/** Reject a route the way the backend's error envelope does. */
-export function httpError(status: number, message = "boom"): never {
+/**
+ * Reject a route the way the backend's error envelope does.
+ *
+ * `code` is the MACHINE code from `{ error: { code } }` (kernel/errors.py). Some
+ * screens branch on it rather than on message text — a 409/CONFLICT on a webhook
+ * slug is reported on the slug field, any other failure is not — so a test of
+ * that branch has to be able to set it. Defaults to the generic "ERR", so every
+ * existing caller is unaffected.
+ */
+export function httpError(status: number, message = "boom", code = "ERR"): never {
   const err = new AxiosError(message, String(status));
   err.response = {
-    data: { error: { code: "ERR", message } },
+    data: { error: { code, message } },
     status,
     statusText: "ERR",
     headers: {},

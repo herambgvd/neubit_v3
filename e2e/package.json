@@ -1,0 +1,18 @@
+{
+  "name": "neubit-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "End-to-end suite for the Neubit operator console. Runs against a REAL running stack; deliberately not part of frontend/ or admin-frontend/.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report",
+    "install:browser": "playwright install chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

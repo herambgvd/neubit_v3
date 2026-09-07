@@ -367,6 +367,17 @@ function CategoryConsoleInner({ category }: { category: string }) {
                         </tr>
                       </thead>
                       <tbody>
+                        {/* A device with NO points and a device whose points
+                            failed to load must not both read as an empty table:
+                            the first is a fact about the estate and has to say
+                            so in words. */}
+                        {points.length === 0 && (
+                          <tr className="border-t border-nb-line/50">
+                            <td colSpan={4} className="px-3 py-6 text-center text-[11.5px] text-nb-faint">
+                              This device has reported no points
+                            </td>
+                          </tr>
+                        )}
                         {points.map((p: any) => {
                           const on = p.point_id === pointId;
                           return (

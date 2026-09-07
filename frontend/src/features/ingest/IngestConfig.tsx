@@ -82,6 +82,7 @@ export default function IngestConfigPage() {
           categories={filtered}
           total={cats.length}
           loading={catsQ.isLoading}
+          error={catsQ.error ? apiError(catsQ.error, "Could not load categories") : null}
           search={q}
           onSearch={setQ}
           selectedId={selectedId}

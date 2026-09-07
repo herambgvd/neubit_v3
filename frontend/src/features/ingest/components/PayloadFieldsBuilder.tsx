@@ -71,13 +71,21 @@ export default function PayloadFieldsBuilder({
     if (!sample) return;
     const leaves = collectLeafPaths(sample, "", []);
     const existing = new Map<string, BuilderField>(fields.map((f) => [f.path, f]));
-    const next = leaves.map((p) => {
+    // Built with a loop, not `map`, so each new name is deduped against the rows
+    // ALREADY produced by this pass as well as the operator's kept edits. With
+    // `fields` alone, `device.name` and `site.name` both became the output key
+    // `name` and the transform silently kept only one of them.
+    const next: BuilderField[] = [];
+    for (const p of leaves) {
       const prev = existing.get(p);
-      if (prev) return prev;
+      if (prev) {
+        next.push(prev);
+        continue;
+      }
       const tail = lastSegment(p);
       const auto = AUTO_PICK_NAMES.has(tail.toLowerCase());
-      return { path: p, name: dedupeName(tail, fields, p), checked: auto };
-    });
+      next.push({ path: p, name: dedupeName(tail, [...fields, ...next], p), checked: auto });
+    }
     onFieldsChange(next);
   };
 

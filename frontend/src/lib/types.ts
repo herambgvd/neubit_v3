@@ -53,6 +53,8 @@ export interface ModuleEntitlement {
   key: string;
   enabled: boolean;
   name?: string;
+  /** The catalog category the module is filed under. */
+  category?: string | null;
 }
 
 /** GET /features — `effective_entitlements` in backend/core/app/tenancy/entitlements.py. */
