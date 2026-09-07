@@ -3,7 +3,7 @@
 // Full site create/edit modal — identity, address, coordinates, and contact
 // sections plus an image upload/preview. Auto-generates a location code from the
 // site type on create. On save, creates/updates then optionally uploads the image.
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { Button, Modal } from "@/components/ui/kit";
 import { FieldLabel } from "@/components/common";
 import { api, apiError, fileUrl } from "@/lib/api";
 import { DEFAULT_TILES_URL } from "@/lib/map/config";
+import type { ResolvedAddress } from "@/lib/map/geocoder";
 import { sites as sitesApi } from "@/lib/api/sites";
 import type { Address, Coordinates, CreateSiteRequest, SitePublic, SiteType, ThreatLevel } from "@/lib/types";
 import type { MapsConfigOut } from "../../types";
@@ -19,6 +20,7 @@ import { SITE_TYPES, THREAT_LEVELS, capitalize, generateLocationCode } from "../
 import { FInput, FTextarea, FSelect, ImagePreviewCard, Section } from "./FormControls";
 import GeocodeButton from "./GeocodeButton";
 import PickOnMapButton from "./PickOnMapButton";
+import { mergePickedAddress, pickedAddressMessage, type AddressValues } from "../pickedAddress";
 import { sanitizePhone, sanitizeZip, validateSite, type SiteFormErrors } from "../validation";
 
 const FORM_ID = "site-form";
@@ -66,6 +68,33 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Sit
   // Clear a field's complaint as soon as the operator starts fixing it.
   const clearError = (field: keyof SiteFormErrors) =>
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+  /**
+   * The address values THIS FORM wrote from a map pin, so a later pick can
+   * replace them and a typed line is never overwritten. The rule itself lives in
+   * ../pickedAddress, where it can be read and tested on its own.
+   */
+  const filledFromMap = useRef<Partial<AddressValues>>({});
+
+  function applyPickedAddress(address: ResolvedAddress | null) {
+    const result = mergePickedAddress(
+      { street, city, state, zipCode, country },
+      address,
+      filledFromMap.current,
+    );
+    if (result.next.street !== street) setStreet(result.next.street);
+    if (result.next.city !== city) setCity(result.next.city);
+    if (result.next.state !== state) setState(result.next.state);
+    if (result.next.zipCode !== zipCode) {
+      setZipCode(result.next.zipCode);
+      clearError("zipCode");
+    }
+    if (result.next.country !== country) setCountry(result.next.country);
+    filledFromMap.current = result.fromMap;
+
+    const message = pickedAddressMessage(result);
+    if (message) toast.success(message);
+  }
+
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [existingImageUrl] = useState(site?.image_url || "");
   const [selectedPreview, setSelectedPreview] = useState("");
@@ -276,12 +305,13 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Sit
               <PickOnMapButton
                 tilesUrl={tilesUrl}
                 value={{ latitude, longitude }}
-                onResult={({ latitude: lat, longitude: lng }) => {
+                onResult={({ latitude: lat, longitude: lng, address }) => {
                   setLatitude(lat.toFixed(6));
                   setLongitude(lng.toFixed(6));
                   setGeoMatch("");
                   clearError("latitude");
                   clearError("longitude");
+                  applyPickedAddress(address);
                 }}
               />
             )

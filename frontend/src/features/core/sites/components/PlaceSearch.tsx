@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { geocode, isAbortError, probeGeocoder, type GeocodeHit } from "@/lib/map/geocoder";
+import { geocode, probeGeocoder, type GeocodeHit } from "@/lib/map/geocoder";
 import {
   loadGazetteer,
   looksNumeric,
@@ -111,39 +111,47 @@ export default function PlaceSearch({ onGo, near }: PlaceSearchProps) {
 
   // The address lookup. Debounced and abortable: an address is a dozen
   // keystrokes, and every one of them would otherwise be a query.
+  // A generation counter, and NOT an AbortController.
+  //
+  // Cancelling the request is the obvious way to drop a superseded lookup, and it
+  // is what this did. But aborting an in-flight fetch manufactures an AbortError,
+  // and in this app that error kept reaching Next's dev overlay as a runtime
+  // error even though the rejection was caught — twice, at two different lines.
+  // I could not reproduce it in jsdom, so rather than keep guessing at the
+  // mechanism: there is nothing to cancel, so there is no error to leak.
+  //
+  // The cost is real but small. The geocoder is same-origin and answers in
+  // milliseconds, and the debounce already means one request per pause in typing,
+  // so what is given up is aborting a local request that was about to finish.
+  const generation = useRef(0);
+
   useEffect(() => {
     if (!searching || !hasGeocoder) return;
 
-    const controller = new AbortController();
-    // Only a request that actually STARTED can be aborted. Most cleanups here run
-    // before the debounce even fires — that is the point of a debounce — and
-    // aborting a signal no fetch ever saw manufactures an AbortError with nothing
-    // waiting to catch it.
-    let started = false;
-
+    const mine = ++generation.current;
     const timer = setTimeout(() => {
-      started = true;
       setBusy(true);
-      geocode(query, { signal: controller.signal, near: nearRef.current ?? undefined })
+      geocode(query, { near: nearRef.current ?? undefined })
         .then((hits) => {
+          // A late answer to an older query must not overwrite a newer one.
+          if (mine !== generation.current) return;
           setFound(hits);
           setGeocoderFailed(false);
         })
-        .catch((error: unknown) => {
-          // An abort is the next keystroke, not a failure — say nothing. Anything
-          // else IS a failure, and has to be visible: a geocoder answering 503
-          // must not look like an address that is simply not on the map.
-          if (isAbortError(error)) return;
+        .catch(() => {
+          if (mine !== generation.current) return;
+          // Anything reaching here IS a failure, and has to be visible: a
+          // geocoder answering 503 must not look like an address that is simply
+          // not on the map.
           setFound(null);
           setGeocoderFailed(true);
         })
-        .finally(() => setBusy(false));
+        .finally(() => {
+          if (mine === generation.current) setBusy(false);
+        });
     }, DEBOUNCE_MS);
 
-    return () => {
-      clearTimeout(timer);
-      if (started) controller.abort();
-    };
+    return () => clearTimeout(timer);
   }, [query, searching, hasGeocoder]);
 
   // Stale results belong to the PREVIOUS query, so they are derived away rather

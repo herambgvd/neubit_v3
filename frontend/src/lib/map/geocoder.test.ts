@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { formatHit, geocode, isAbortError, probeGeocoder, resetGeocoder, toHit } from "./geocoder";
+import { formatHit, geocode, probeGeocoder, resetGeocoder, reverseGeocode, toAddress, toHit } from "./geocoder";
 
 const feature = (properties: Record<string, unknown>, coordinates = [77.0263, 28.4601]) => ({
   geometry: { coordinates, type: "Point" },
@@ -114,19 +114,63 @@ describe("geocode", () => {
   });
 });
 
-describe("isAbortError", () => {
-  it("recognises an abort however the environment spells it", () => {
-    expect(isAbortError(new DOMException("signal is aborted without reason", "AbortError"))).toBe(true);
-    const plain = new Error("aborted");
-    plain.name = "AbortError";
-    expect(isAbortError(plain)).toBe(true);
+describe("toAddress", () => {
+  it("maps Photon's fields onto the form's", () => {
+    expect(
+      toAddress({
+        housenumber: "12",
+        street: "NH 48",
+        city: "Gurugram",
+        state: "Haryana",
+        postcode: "122001",
+        country: "India",
+      }),
+    ).toMatchObject({
+      street: "12 NH 48",
+      city: "Gurugram",
+      state: "Haryana",
+      zipCode: "122001",
+      country: "India",
+    });
   });
 
-  it("does NOT swallow a real failure — that is the whole point of asking", () => {
-    expect(isAbortError(new Error("geocoder: HTTP 503"))).toBe(false);
-    expect(isAbortError(new TypeError("Failed to fetch"))).toBe(false);
-    expect(isAbortError("AbortError")).toBe(false);
-    expect(isAbortError(null)).toBe(false);
+  it("falls back rather than leaving a field blank over a naming difference", () => {
+    // No street and no city — OSM has plenty of both.
+    const address = toAddress({ name: "Star Mall", district: "Sector 30", state: "Haryana" });
+    expect(address.street).toBe("Star Mall");
+    expect(address.city).toBe("Sector 30");
+  });
+
+  it("is empty, not undefined, for a feature with nothing in it", () => {
+    expect(toAddress({})).toMatchObject({ street: "", city: "", state: "", zipCode: "", country: "" });
+  });
+});
+
+describe("reverseGeocode", () => {
+  it("asks Photon what is at the point", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      Response.json({ features: [feature({ street: "NH 48", city: "Gurugram", type: "street" })] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const address = await reverseGeocode(28.4614, 77.0527);
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]), "http://localhost");
+    expect(url.pathname).toBe("/geocode/reverse");
+    expect(url.searchParams.get("lat")).toBe("28.4614");
+    expect(url.searchParams.get("lon")).toBe("77.0527");
+    expect(address).toMatchObject({ street: "NH 48", city: "Gurugram" });
+  });
+
+  it("returns null instead of throwing — a point nobody can name is still a valid site", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ features: [] })));
+    expect(await reverseGeocode(0, 0)).toBeNull();
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("no", { status: 503 })));
+    expect(await reverseGeocode(0, 0)).toBeNull();
+
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("connection refused"); }));
+    expect(await reverseGeocode(0, 0)).toBeNull();
   });
 });
 

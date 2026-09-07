@@ -7,7 +7,7 @@
  * when it is precise: a city centre is not a site, and saving one as a building's
  * coordinates is the exact failure a geocoder was rejected for before.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -144,41 +144,52 @@ describe("PlaceSearch without the geocoder", () => {
   });
 });
 
-describe("PlaceSearch and the in-flight request", () => {
+describe("PlaceSearch and a superseded lookup", () => {
   /**
-   * The first version of the test below typed with `userEvent` and assumed the
-   * 250 ms debounce had not elapsed yet. True when this file ran alone; false
-   * under a loaded full suite, where typing itself outlasted the debounce. It
-   * failed twice in 1,611 and passed on a re-run — the worst way to be wrong.
-   *
-   * `fireEvent.change` is SYNCHRONOUS, so nothing between it and `unmount` can
-   * yield to a timer. No clock to race, and no fake timers to deadlock on either
-   * (the geocoder probe is a promise, and a faked clock hangs waiting for it).
+   * There is no AbortController any more — aborting an in-flight fetch kept
+   * leaking AbortErrors into the dev overlay. A generation counter drops the
+   * stale answer instead, which means the ONE thing that must hold is that a
+   * slow answer to an old query cannot overwrite a newer one.
    */
-  it("aborts nothing when the debounce never fired — there is no request to abort", async () => {
-    stubNetwork();
-    const abort = vi.spyOn(AbortController.prototype, "abort");
-    const { unmount } = render(<PlaceSearch onGo={onGo} />);
-    // The lookup effect only arms once the probe has answered; without this the
-    // test would pass because nothing had started YET, not because of the fix.
-    await screen.findByPlaceholderText(/Search an address/i);
+  it("ignores a slow answer to a query the operator has already moved past", async () => {
+    const slow = {
+      geometry: { coordinates: [72.8826, 19.0728], type: "Point" },
+      properties: { name: "Slow Answer", city: "Mumbai", type: "house" },
+    };
+    // null until the FIRST lookup is genuinely in flight. The first version of
+    // this test seeded it with a no-op, so `waitFor` passed instantly, the slow
+    // request was never actually issued, and releasing it did nothing — the test
+    // stayed green with the staleness guard deleted.
+    let releaseFirst: ((value: Response) => void) | null = null;
 
-    fireEvent.change(box(), { target: { value: "star" } });
-    unmount();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith("/geocode/status")) return Response.json({ status: "Ok" });
+        if (url.startsWith("/map/gazetteer")) return new Response(TSV, { status: 200 });
+        if (url.includes("q=slow")) {
+          return new Promise<Response>((resolve) => {
+            releaseFirst = resolve;
+          });
+        }
+        return Response.json({ features: [STAR_TOWER] });
+      }),
+    );
 
-    expect(abort).not.toHaveBeenCalled();
-  });
+    render(<PlaceSearch onGo={onGo} />);
+    await userEvent.type(box(), "slow");
+    await waitFor(() => expect(releaseFirst).not.toBeNull());
 
-  it("does abort the request it actually started", async () => {
-    stubNetwork();
-    const abort = vi.spyOn(AbortController.prototype, "abort");
-    const { unmount } = render(<PlaceSearch onGo={onGo} />);
-
+    // Move on before the first answer lands, then let it land.
+    await userEvent.clear(box());
     await userEvent.type(box(), "star tower");
-    await screen.findByText("Star Tower"); // the lookup has definitely run
-    unmount();
+    await screen.findByText("Star Tower");
+    releaseFirst!(Response.json({ features: [slow] }));
 
-    expect(abort).toHaveBeenCalled();
+    // The stale answer must never appear, and must not evict the current one.
+    await waitFor(() => expect(screen.queryByText("Slow Answer")).not.toBeInTheDocument());
+    expect(screen.getByText("Star Tower")).toBeInTheDocument();
   });
 
   it("says the service is down instead of looking like the address is unmapped", async () => {

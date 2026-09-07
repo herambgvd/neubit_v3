@@ -118,41 +118,25 @@ export function toHit(feature: {
   };
 }
 
-/**
- * Was this rejection just the NEXT KEYSTROKE, or a real failure?
- *
- * They have to be told apart. Swallowing both silently — which this did — hides a
- * geocoder returning 503 behind a UI that merely looks like it found nothing, and
- * an operator has no way to tell "not mapped" from "not working".
- *
- * Reads `name` and does NOT test `instanceof Error`. A browser abort is a
- * DOMException, which extends Error there but not in jsdom — so the instanceof
- * form passed in the browser and failed in the tests, which is the wrong way
- * round for something that decides whether an error is shown to an operator.
- */
-export function isAbortError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const name = (error as { name?: unknown }).name;
-  return name === "AbortError" || name === "TimeoutError";
-}
-
 export interface GeocodeOptions {
   limit?: number;
-  signal?: AbortSignal;
   /** Bias results towards where the map is looking. */
   near?: { lat: number; lng: number };
   baseUrl?: string;
 }
 
 export async function geocode(query: string, options: GeocodeOptions = {}): Promise<GeocodeHit[]> {
-  const { limit = 6, signal, near, baseUrl = GEOCODER_URL } = options;
+  const { limit = 6, near, baseUrl = GEOCODER_URL } = options;
   const params = new URLSearchParams({ q: query, limit: String(limit), lang: "en" });
   if (near) {
     params.set("lat", String(near.lat));
     params.set("lon", String(near.lng));
   }
 
-  const res = await fetch(`${baseUrl}/api?${params}`, { signal });
+  // No AbortSignal, deliberately: callers drop superseded answers with a
+  // generation counter instead (see PlaceSearch). Aborting a local, debounced
+  // request bought almost nothing and leaked AbortErrors into the dev overlay.
+  const res = await fetch(`${baseUrl}/api?${params}`);
   if (!res.ok) throw new Error(`geocoder: HTTP ${res.status}`);
   const body = (await res.json()) as { features?: unknown[] };
   const features = Array.isArray(body?.features) ? body.features : [];
@@ -161,7 +145,64 @@ export async function geocode(query: string, options: GeocodeOptions = {}): Prom
     .filter((hit): hit is GeocodeHit => hit !== null);
 }
 
+/** The address lines a site form holds, as this service can fill them. */
+export interface ResolvedAddress {
+  street: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+  /** One line for a confirmation message. */
+  label: string;
+}
+
 /**
+ * Photon's fields, mapped onto the form's. The fallbacks matter: OSM has plenty
+ * of places with a name and no street, or a district and no city, and a form
+ * field left blank because the source used a different word for the same thing
+ * is worse than one filled with the coarser answer.
+ */
+export function toAddress(props: PhotonProperties): ResolvedAddress {
+  const street = [props.housenumber, props.street].filter(Boolean).join(" ");
+  const { title, detail } = formatHit(props);
+  return {
+    street: street || props.name || props.locality || props.district || "",
+    city: props.city || props.county || props.district || "",
+    state: props.state || "",
+    zipCode: props.postcode || "",
+    country: props.country || "",
+    label: [title, detail].filter(Boolean).join(", "),
+  };
+}
+
+/**
+ * What is AT this point? Used after the operator drops a pin, so the site's
+ * address does not have to be typed twice.
+ *
+ * Returns null rather than throwing when there is nothing there or the service
+ * is absent: a pin in the middle of a field is a legitimate site location, and
+ * failing to name it must not stop the operator using the coordinates.
+ */
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+  options: { baseUrl?: string } = {},
+): Promise<ResolvedAddress | null> {
+  const { baseUrl = GEOCODER_URL } = options;
+  const params = new URLSearchParams({ lat: String(lat), lon: String(lng), lang: "en" });
+  try {
+    const res = await fetch(`${baseUrl}/reverse?${params}`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { features?: { properties?: PhotonProperties }[] };
+    const props = body?.features?.[0]?.properties;
+    return props ? toAddress(props) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Is the service installed at all?/**
  * Is the service installed at all? Cached for the session — the answer only
  * changes when someone provisions the index, which is a restart away anyway.
  * A failure is NOT cached, so a picker opened while the index was still

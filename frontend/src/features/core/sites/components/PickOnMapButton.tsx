@@ -3,12 +3,13 @@
 // "Pick on map" — the offline counterpart to GeocodeButton. Shown in the site
 // form whenever Google Maps is off, so an air-gapped operator can still set a
 // site's coordinates without typing decimals by hand.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@iconify/react";
 
-import { Button, Modal } from "@/components/ui/kit";
+import { Button, Modal, Spinner } from "@/components/ui/kit";
 import { DEFAULT_TILES_URL } from "@/lib/map/config";
+import { reverseGeocode, type ResolvedAddress } from "@/lib/map/geocoder";
 import { Loading } from "./MapChrome";
 
 // Code-split: MapLibre GL should not ride along in the site-form chunk.
@@ -30,12 +31,27 @@ export interface PickOnMapValue {
 export interface PickOnMapButtonProps {
   tilesUrl?: string;
   value: PickOnMapValue;
-  onResult: (point: { latitude: number; longitude: number }) => void;
+  /**
+   * `address` is what the geocoder says is AT the pin, or null when it says
+   * nothing (no service installed, or a pin in the middle of a field). The
+   * coordinates are always present — a point nobody can name is still a valid
+   * site location, so a failed lookup must never block the pick.
+   */
+  onResult: (result: {
+    latitude: number;
+    longitude: number;
+    address: ResolvedAddress | null;
+  }) => void;
 }
 
 export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, onResult }: PickOnMapButtonProps) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<{ lat: number; lng: number } | null>(null);
+  const [address, setAddress] = useState<ResolvedAddress | null>(null);
+  const [resolving, setResolving] = useState(false);
+  // Same generation counter as PlaceSearch, for the same reason: the operator can
+  // move the pin faster than the lookup answers, and the OLD answer must not win.
+  const lookup = useRef(0);
 
   // Whatever is already in the form's lat/lng fields, but only when BOTH parse —
   // an empty string coerces to 0, and half a coordinate would open the picker in
@@ -50,11 +66,30 @@ export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, o
 
   function openPicker() {
     setPicked(null);
+    setAddress(null);
     setOpen(true);
   }
 
+  // Resolved as soon as the pin lands, not when "Use this point" is clicked, so
+  // the operator can SEE what they picked before committing to it — and so the
+  // confirm stays instant.
+  function pinDropped(lat: number, lng: number) {
+    setPicked({ lat, lng });
+    setAddress(null);
+    const mine = ++lookup.current;
+    setResolving(true);
+    reverseGeocode(lat, lng)
+      .then((found) => {
+        if (mine !== lookup.current) return;
+        setAddress(found);
+      })
+      .finally(() => {
+        if (mine === lookup.current) setResolving(false);
+      });
+  }
+
   function confirm() {
-    if (picked) onResult({ latitude: picked.lat, longitude: picked.lng });
+    if (picked) onResult({ latitude: picked.lat, longitude: picked.lng, address });
     setOpen(false);
   }
 
@@ -92,8 +127,27 @@ export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, o
           center={existing || WORLD_CENTER}
           zoom={WORLD_ZOOM}
           value={current}
-          onChange={({ latitude, longitude }) => setPicked({ lat: latitude, lng: longitude })}
+          onChange={({ latitude, longitude }) => pinDropped(latitude, longitude)}
         />
+        {picked && (
+          <p className="mt-3 flex items-center gap-2 text-[11.5px] text-nb-muted">
+            {resolving ? (
+              <>
+                <Spinner className="!h-3 !w-3" /> Looking up what is here…
+              </>
+            ) : address ? (
+              <>
+                <Icon icon="heroicons-outline:map-pin" className="text-sm text-nb-blueb" />
+                <span className="text-nb-ink">{address.label}</span>
+                <span>— this fills the address fields</span>
+              </>
+            ) : (
+              // Not a failure worth an amber warning: plenty of real sites sit
+              // where OpenStreetMap has nothing to name.
+              <>Nothing mapped at this point — the coordinates are still used.</>
+            )}
+          </p>
+        )}
       </Modal>
     </>
   );
