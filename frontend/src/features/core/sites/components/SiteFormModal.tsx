@@ -172,7 +172,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Sit
     <Modal
       open
       onClose={onCancel}
-      size="xl"
+      size="2xl"
       hideScroll
       staticBackdrop
       title={isEdit ? `Edit ${site?.name || "site"}` : "Create site"}

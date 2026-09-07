@@ -31,7 +31,7 @@ shared by two features belongs in `components/` or `lib/`, never imported featur
 | `npm test` | Vitest (jsdom) |
 | `npm run check` | all three, in that order — run it before pushing |
 | `npm run icons` / `icons:check` | rebuild / audit the offline icon bundle (see below) |
-| `npm run map:assets` / `map:tiles` / `map:verify` | offline basemap assets (see below) |
+| `npm run map:assets` / `map:tiles` / `map:gazetteer` / `map:verify` | offline basemap assets (see below) |
 
 ## Auth — the model this console rests on
 
@@ -210,6 +210,23 @@ Google's geocoder has no offline equivalent worth its cost (self-hosted Nominati
 import — tens of GB and a second Postgres — to serve a few dozen sites). So with Google Maps off,
 the site form swaps "Fetch from address" for **Pick on map**: click the basemap, the pin's
 latitude and longitude fill into the form.
+
+Clicking is only reasonable if you can *get* to the right place first, so the picker has a search
+box over the canvas. It takes two kinds of query:
+
+- **a city** — matched against `public/map/gazetteer.tsv`, built by `npm run map:gazetteer` from
+  GeoNames `cities15000` (CC BY 4.0; ~34k places, 1.8 MB, about a third of that on the wire) and
+  committed for the same reason the glyphs are. Selecting one only *flies* the map: a city centre
+  is not a site, so the pin still has to be clicked.
+- **a pasted coordinate** — `28.6139, 77.2090`, and the forms people actually paste (space or
+  slash instead of a comma, a stray `°`). That one is the exact point, so it drops the pin too, and
+  never downloads the place list.
+
+It is a **city** gazetteer, not a street geocoder — that distinction is the whole reason it fits in
+1.8 MB. It gets you to the town; the last mile stays a click, which is the part a partial-address
+geocoder would have got wrong anyway.
+
+`npm run map:gazetteer:check` verifies the file offline, like `map:assets:check`.
 
 ## File naming
 

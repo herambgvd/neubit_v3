@@ -538,7 +538,16 @@ export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justi
 // sections). `wide` is the older boolean and still works. `subtitle` is the one
 // line of context under the title — SiteFormModal hand-rolled its whole shell to
 // get these two things, which is how it ended up with its own header and footer.
-const MODAL_WIDTH = { md: "max-w-md", wide: "max-w-2xl", xl: "max-w-3xl" };
+// The step above `xl` exists for forms with two columns of fields (the site form
+// at 3xl wrapped its address rows); `full` is for a modal whose CONTENT is the
+// point rather than the words — a map canvas is unusable at form width.
+const MODAL_WIDTH = {
+  md: "max-w-md",
+  wide: "max-w-2xl",
+  xl: "max-w-3xl",
+  "2xl": "max-w-4xl",
+  full: "max-w-6xl",
+};
 
 export type ModalSize = keyof typeof MODAL_WIDTH;
 

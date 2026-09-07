@@ -74,8 +74,8 @@ export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, o
         open={open}
         onClose={() => setOpen(false)}
         title="Pick the site location"
-        subtitle="Click the map to drop a pin. The coordinates fill into the form."
-        size="wide"
+        subtitle="Search for a place or paste coordinates, then click the map to drop the pin."
+        size="full"
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>

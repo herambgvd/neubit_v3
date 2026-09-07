@@ -16,6 +16,8 @@
     "map:assets": "node scripts/fetch-map-assets.mjs",
     "map:assets:check": "node scripts/fetch-map-assets.mjs --check",
     "map:tiles": "node scripts/fetch-planet-tiles.mjs",
+    "map:gazetteer": "node scripts/fetch-gazetteer.mjs",
+    "map:gazetteer:check": "node scripts/fetch-gazetteer.mjs --check",
     "map:verify": "node --no-warnings scripts/verify-map.mjs"
   },
   "dependencies": {
