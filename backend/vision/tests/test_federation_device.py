@@ -46,7 +46,7 @@ FED = f"{PREFIX}/vms/federation/nodes/{NODE_ID}/cameras/{CAM}"
 # whole surface and the gating tests can subtract exactly one of them.
 ALL_PERMS = [
     "vms.camera.read",
-    "vms.config.manage",
+    "vms.camera.tune",
     "vms.ptz.control",
     "vms.playback.view",
 ]
@@ -150,29 +150,25 @@ def _admin(tenant=TENANT_A):
 # not added here is a route with no 502/404/auth coverage, which is the failure mode
 # this shape is chosen to make loud.
 
+# NOTE the writes that are NOT here: encoder video/audio, OSD, privacy masks, motion
+# zones and a relay's IdleState. They were in this table and the router proxied them;
+# both are gone. The node refuses them to a federation credential on purpose
+# (vms.camera.manage is config authorship and federationGrants withholds it), so
+# proxying them was building a surface that could only ever 403. Those screens belong
+# to the owning node's own console. Driving a relay's STATE stays — that is tuning.
 SURFACE = [
     ("GET", "/imaging", None, "vms.camera.read"),
-    ("PUT", "/imaging", {"Brightness": 50}, "vms.config.manage"),
-    ("POST", "/imaging/focus/move", {"mode": "relative", "distance": 0.1}, "vms.config.manage"),
-    ("POST", "/imaging/focus/stop", None, "vms.config.manage"),
+    ("PUT", "/imaging", {"Brightness": 50}, "vms.camera.tune"),
+    ("POST", "/imaging/focus/move", {"mode": "relative", "distance": 0.1}, "vms.camera.tune"),
+    ("POST", "/imaging/focus/stop", None, "vms.camera.tune"),
     ("GET", "/video", None, "vms.camera.read"),
-    ("PUT", "/video", {"token": "vec0"}, "vms.config.manage"),
     ("GET", "/audio", None, "vms.camera.read"),
-    ("PUT", "/audio", {"token": "aec0"}, "vms.config.manage"),
     ("GET", "/osd", None, "vms.camera.read"),
-    ("POST", "/osd", {"type": "Text"}, "vms.config.manage"),
-    ("PUT", "/osd/osd1", {"type": "Text"}, "vms.config.manage"),
-    ("DELETE", "/osd/osd1", None, "vms.config.manage"),
     ("GET", "/masks", None, "vms.camera.read"),
-    ("POST", "/masks", {"enabled": True}, "vms.config.manage"),
-    ("PUT", "/masks/m1", {"enabled": True}, "vms.config.manage"),
-    ("DELETE", "/masks/m1", None, "vms.config.manage"),
     ("GET", "/backchannel", None, "vms.camera.read"),
     ("GET", "/motion", None, "vms.camera.read"),
-    ("PUT", "/motion", {"sensitivity": 50, "whole_frame": True, "zones": []}, "vms.config.manage"),
     ("GET", "/io", None, "vms.camera.read"),
-    ("PUT", "/io/relays/RelayToken_1", {"mode": "Bistable"}, "vms.config.manage"),
-    ("POST", "/io/relays/RelayToken_1/state", {"state": "active"}, "vms.config.manage"),
+    ("POST", "/io/relays/RelayToken_1/state", {"state": "active"}, "vms.camera.tune"),
     ("GET", "/ptz", None, "vms.camera.read"),
     ("GET", "/ptz/presets", None, "vms.camera.read"),
     ("POST", "/ptz/presets", {"name": "Gate"}, "vms.ptz.control"),
@@ -186,7 +182,7 @@ SURFACE = [
     ("PUT", "/ptz/tours/t1", {"name": "Lap"}, "vms.ptz.control"),
     ("DELETE", "/ptz/tours/t1", None, "vms.ptz.control"),
     ("POST", "/ptz/tours/t1/operate", {"operation": "Start"}, "vms.ptz.control"),
-    ("POST", "/talk", {}, "vms.config.manage"),
+    ("POST", "/talk", {}, "vms.camera.tune"),
     ("POST", "/motion-search", {"from": "2026-01-01T00:00:00Z", "to": "2026-01-01T01:00:00Z"},
      "vms.playback.view"),
 ]

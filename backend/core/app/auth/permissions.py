@@ -118,6 +118,13 @@ class CorePerm:
     VMS_RECORDING_CONTROL = "vms.recording.control"
     VMS_EXPORT = "vms.export"
     VMS_PTZ_CONTROL = "vms.ptz.control"
+    # Live-scene tuning on a camera: imaging + focus, driving a relay's state,
+    # push-to-talk. Deliberately NOT VMS_CONFIG_MANAGE — those acts end when the
+    # operator stops doing them, while writing the encoder, OSD, privacy masks,
+    # motion zones or a relay's IdleState persists and changes what every later act
+    # means. Mirrors the recorder's own vms.camera.tune, which is the permission a
+    # federation credential carries (nvr estate/core/perms.go).
+    VMS_CAMERA_TUNE = "vms.camera.tune"
     VMS_CONFIG_MANAGE = "vms.config.manage"
     # Video Wall (VW-A) — shared control-room display wall. VIEW = read walls /
     # monitors / live state / presets / tours; CONTROL = drive the live shared state
@@ -239,6 +246,7 @@ PERMISSIONS.register(
     Permission(CorePerm.VMS_RECORDING_CONTROL, "Start / stop / configure recording", "VMS"),
     Permission(CorePerm.VMS_EXPORT, "Export video / clips", "VMS"),
     Permission(CorePerm.VMS_PTZ_CONTROL, "Control PTZ", "VMS"),
+    Permission(CorePerm.VMS_CAMERA_TUNE, "Tune a live camera (imaging, focus, relay, talk)", "VMS"),
     Permission(CorePerm.VMS_CONFIG_MANAGE, "Edit camera config", "VMS"),
     Permission(CorePerm.VMS_WALL_VIEW, "View video walls + live state", "VMS"),
     Permission(CorePerm.VMS_WALL_CONTROL, "Drive video-wall live state (push / presets / tours)", "VMS"),

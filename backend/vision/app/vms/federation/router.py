@@ -671,7 +671,7 @@ async def federated_playback(
 # the same condition. That inconsistency predates this change and is left alone rather
 # than silently repointed under a client that may branch on it.)
 #
-# Permissions. Reads take PERM_READ; every device WRITE takes PERM_DEVICE_CONFIG
+# Permissions. Reads take PERM_READ; every device WRITE takes PERM_DEVICE_TUNE
 # (vms.config.manage) — the same right the local device-management UI gates on, and
 # the honest one: an OSD, a privacy mask, an encoder profile or a motion mask changes
 # what every future recording CONTAINS. Relay drive and talk are the exceptions worth
@@ -685,7 +685,17 @@ async def federated_playback(
 # own sentence); they pass only where the node still accepts the shared service JWT.
 # Widening that grant set is a node-side decision. The VMS surface is ready for it.
 
-PERM_DEVICE_CONFIG = "vms.config.manage"  # ONVIF device writes == the local deviceMgmt right
+# Live-scene TUNING, not config authorship — the VMS half of the node's
+# vms.camera.tune (nvr estate/core/perms.go). Imaging + focus, driving a relay's
+# state and push-to-talk are operator acts on a picture somebody is watching now.
+#
+# There is no PERM_DEVICE_TUNE any more, and that absence is the design. The
+# federated writes that DID author config — encoder video/audio, OSD, privacy
+# masks, motion zones, relay IdleState — are gone from this router entirely, not
+# re-gated: the node refuses them to a federation credential on purpose, because
+# a central VMS that can rewrite a recorder's camera configuration has become an
+# NVR. Those screens belong to the owning node's own console.
+PERM_DEVICE_TUNE = "vms.camera.tune"
 PERM_MOTION_SEARCH = "vms.playback.view"  # forensic search reads recorded footage
 
 
@@ -732,7 +742,7 @@ async def federated_imaging_get(
 
 @router.put(
     "/nodes/{node_id}/cameras/{camera_id}/imaging",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
+    dependencies=[Depends(require_permission(PERM_DEVICE_TUNE))],
 )
 async def federated_imaging_set(
     node_id: str,
@@ -754,7 +764,7 @@ async def federated_imaging_set(
 
 @router.post(
     "/nodes/{node_id}/cameras/{camera_id}/imaging/focus/move",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
+    dependencies=[Depends(require_permission(PERM_DEVICE_TUNE))],
 )
 async def federated_focus_move(
     node_id: str,
@@ -776,7 +786,7 @@ async def federated_focus_move(
 
 @router.post(
     "/nodes/{node_id}/cameras/{camera_id}/imaging/focus/stop",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
+    dependencies=[Depends(require_permission(PERM_DEVICE_TUNE))],
 )
 async def federated_focus_stop(
     node_id: str,
@@ -815,27 +825,6 @@ async def federated_video_get(
         raise _unreachable(e)
 
 
-@router.put(
-    "/nodes/{node_id}/cameras/{camera_id}/video",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_video_set(
-    node_id: str,
-    camera_id: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-    body: Annotated[dict, Body(...)],
-) -> dict:
-    """Apply ONE video encoder configuration to a federated camera, via its node.
-    video.go setVideo — the body MUST carry ``token``; it names the configuration to
-    change, and the node scopes it to this channel before writing."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_video_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
 @router.get(
     "/nodes/{node_id}/cameras/{camera_id}/audio",
     dependencies=[Depends(require_permission(PERM_READ))],
@@ -854,30 +843,6 @@ async def federated_audio_get(
         return _tag(node, await fed.get_audio_node(node.api_url, camera_id, credential=node.credential))
     except fed.NodeUnavailable as e:
         raise _unreachable(e)
-
-
-@router.put(
-    "/nodes/{node_id}/cameras/{camera_id}/audio",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_audio_set(
-    node_id: str,
-    camera_id: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-    body: Annotated[dict, Body(...)],
-) -> dict:
-    """Apply ONE audio encoder configuration to a federated camera, via its node.
-    audio.go setAudio — the body MUST carry ``token``. This alters what every recording
-    from this point on contains, which is why it takes the config gate."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_audio_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
-# ── OSD overlays + privacy masks (onvifapi/overlay.go) ────────────────────────
 
 
 @router.get(
@@ -899,68 +864,6 @@ async def federated_osd_list(
         raise _unreachable(e)
 
 
-@router.post(
-    "/nodes/{node_id}/cameras/{camera_id}/osd",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_osd_create(
-    node_id: str,
-    camera_id: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-    body: Annotated[dict, Body(...)],
-) -> dict:
-    """Create an overlay on a federated camera's channel, via its node. overlay.go
-    createOSD — the node forces ``config_token`` from its own scope and clears
-    ``token``, so a body naming another channel cannot place the overlay there."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.create_osd_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
-@router.put(
-    "/nodes/{node_id}/cameras/{camera_id}/osd/{osd_token}",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_osd_set(
-    node_id: str,
-    camera_id: str,
-    osd_token: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-    body: Annotated[dict, Body(...)],
-) -> dict:
-    """Rewrite one overlay on a federated camera, via its node (overlay.go setOSD)."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_osd_node(node.api_url, camera_id, osd_token, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
-@router.delete(
-    "/nodes/{node_id}/cameras/{camera_id}/osd/{osd_token}",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_osd_delete(
-    node_id: str,
-    camera_id: str,
-    osd_token: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-) -> dict:
-    """Remove one overlay from a federated camera, via its node. Delete IS the ONVIF
-    way to turn an overlay off (overlay.go deleteOSD), which is why it takes the same
-    gate as a rewrite rather than a lighter one."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.delete_osd_node(node.api_url, camera_id, osd_token, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
 @router.get(
     "/nodes/{node_id}/cameras/{camera_id}/masks",
     dependencies=[Depends(require_permission(PERM_READ))],
@@ -978,66 +881,6 @@ async def federated_masks_list(
     node = await _resolve_node(db, scope, node_id)
     try:
         return _tag(node, await fed.list_masks_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
-@router.post(
-    "/nodes/{node_id}/cameras/{camera_id}/masks",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_mask_create(
-    node_id: str,
-    camera_id: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-    body: Annotated[dict, Body(...)],
-) -> dict:
-    """Create a privacy mask on a federated camera, via its node (overlay.go createMask)."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.create_mask_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
-@router.put(
-    "/nodes/{node_id}/cameras/{camera_id}/masks/{mask_token}",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_mask_set(
-    node_id: str,
-    camera_id: str,
-    mask_token: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-    body: Annotated[dict, Body(...)],
-) -> dict:
-    """Rewrite one privacy mask on a federated camera, via its node (overlay.go setMask).
-    The node verifies the mask belongs to this channel before writing."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_mask_node(node.api_url, camera_id, mask_token, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
-@router.delete(
-    "/nodes/{node_id}/cameras/{camera_id}/masks/{mask_token}",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_mask_delete(
-    node_id: str,
-    camera_id: str,
-    mask_token: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-) -> dict:
-    """Remove one privacy mask from a federated camera, via its node. A mask removal
-    changes what every future recording SHOWS, so it takes the config gate."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.delete_mask_node(node.api_url, camera_id, mask_token, credential=node.credential))
     except fed.NodeUnavailable as e:
         raise _unreachable(e)
 
@@ -1086,31 +929,6 @@ async def federated_motion_get(
         raise _unreachable(e)
 
 
-@router.put(
-    "/nodes/{node_id}/cameras/{camera_id}/motion",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_motion_set(
-    node_id: str,
-    camera_id: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-    body: Annotated[dict, Body(...)],
-) -> dict:
-    """Write zones + sensitivity onto a federated camera's Cell Motion detector, via its
-    node. motion.go motionWriteReq { sensitivity, whole_frame, zones }. The node maps
-    the operator's rectangles onto the DEVICE's own grid and mirrors back what was
-    ACTUALLY written — relay that, not the request, or the two diverge silently."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_motion_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
-# ── digital I/O — inputs + relay outputs (onvifapi/io.go) ─────────────────────
-
-
 @router.get(
     "/nodes/{node_id}/cameras/{camera_id}/io",
     dependencies=[Depends(require_permission(PERM_READ))],
@@ -1132,32 +950,9 @@ async def federated_io_get(
         raise _unreachable(e)
 
 
-@router.put(
-    "/nodes/{node_id}/cameras/{camera_id}/io/relays/{token}",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
-)
-async def federated_relay_settings(
-    node_id: str,
-    camera_id: str,
-    token: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-    body: Annotated[dict, Body(...)],
-) -> dict:
-    """Reconfigure one relay on a federated camera's device, via its node. io.go
-    relaySettingsReq { mode?, idle_state?, delay_seconds? }. Gated as heavily as the
-    drive below, because ``idle_state`` decides which way "activate" drives the
-    contact — inverting it changes what every future command does."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_relay_settings_node(node.api_url, camera_id, token, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-
-
 @router.post(
     "/nodes/{node_id}/cameras/{camera_id}/io/relays/{token}/state",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
+    dependencies=[Depends(require_permission(PERM_DEVICE_TUNE))],
 )
 async def federated_relay_state(
     node_id: str,
@@ -1465,7 +1260,7 @@ async def federated_tour_operate(
 
 @router.post(
     "/nodes/{node_id}/cameras/{camera_id}/talk",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
+    dependencies=[Depends(require_permission(PERM_DEVICE_TUNE))],
 )
 async def federated_talk_begin(
     node_id: str,
@@ -1488,7 +1283,7 @@ async def federated_talk_begin(
 
 @router.post(
     "/nodes/{node_id}/cameras/{camera_id}/talk/uplink",
-    dependencies=[Depends(require_permission(PERM_DEVICE_CONFIG))],
+    dependencies=[Depends(require_permission(PERM_DEVICE_TUNE))],
 )
 async def federated_talk_uplink(
     node_id: str,

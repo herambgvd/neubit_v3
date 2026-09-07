@@ -714,35 +714,11 @@ async def get_video_node(api_url: str, camera_id: str, *, credential: str | None
     return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/video", credential=credential)
 
 
-async def set_video_node(
-    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
-) -> dict:
-    """PUT …/cameras/{id}/onvif/video → video.go setVideo. Body is ONE encoder config
-    and MUST carry ``token`` — it names the configuration to change. Returns
-    { config, media_service }."""
-    return await _node_json(
-        "PUT", api_url, f"/cameras/{camera_id}/onvif/video", credential=credential, json_body=body or {}
-    )
-
-
 async def get_audio_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
     """GET …/cameras/{id}/onvif/audio → audio.go getAudio: { configurations, has_audio,
     scoped, scope_reason?, scope_detail?, writable, device_total?, channel_profiles?,
     linked_profiles?, unlisted_encoders?, source? }."""
     return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/audio", credential=credential)
-
-
-async def set_audio_node(
-    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
-) -> dict:
-    """PUT …/cameras/{id}/onvif/audio → audio.go setAudio. Body is one
-    onvif.AudioEncoderConfig and MUST carry ``token``. Returns { config }."""
-    return await _node_json(
-        "PUT", api_url, f"/cameras/{camera_id}/onvif/audio", credential=credential, json_body=body or {}
-    )
-
-
-# ── OSD + privacy masks (internal/estate/onvifapi/overlay.go) ─────────────────
 
 
 async def list_osds_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
@@ -751,74 +727,11 @@ async def list_osds_node(api_url: str, camera_id: str, *, credential: str | None
     return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/osd", credential=credential)
 
 
-async def create_osd_node(
-    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
-) -> dict:
-    """POST …/cameras/{id}/onvif/osd → overlay.go createOSD. Body is an onvif.OSD; the
-    node FORCES config_token from its own scope and clears token (the device mints it),
-    so neither can be smuggled in. Returns { created: <token>, osds, config_token }."""
-    return await _node_json(
-        "POST", api_url, f"/cameras/{camera_id}/onvif/osd", credential=credential, json_body=body or {}
-    )
-
-
-async def set_osd_node(
-    api_url: str, camera_id: str, osd_token: str, body: dict, *, credential: str | None = None
-) -> dict:
-    """PUT …/cameras/{id}/onvif/osd/{osd} → overlay.go setOSD. Rewrites one overlay.
-    Returns { updated: <token>, osds, config_token }."""
-    return await _node_json(
-        "PUT", api_url, f"/cameras/{camera_id}/onvif/osd/{osd_token}",
-        credential=credential, json_body=body or {},
-    )
-
-
-async def delete_osd_node(
-    api_url: str, camera_id: str, osd_token: str, *, credential: str | None = None
-) -> dict:
-    """DELETE …/cameras/{id}/onvif/osd/{osd} → overlay.go deleteOSD (the ONVIF way to
-    turn an overlay OFF). Returns { deleted: <token>, osds, config_token }."""
-    return await _node_json(
-        "DELETE", api_url, f"/cameras/{camera_id}/onvif/osd/{osd_token}", credential=credential
-    )
-
-
 async def list_masks_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
     """GET …/cameras/{id}/onvif/masks → overlay.go getMasks: { masks: [onvif.Mask],
     config_token, coordinate_space { kind:"onvif_normalized", x_min:-1, x_max:1,
     y_min:-1, y_max:1, y_axis:"up" }, options, options_error? }."""
     return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/masks", credential=credential)
-
-
-async def create_mask_node(
-    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
-) -> dict:
-    """POST …/cameras/{id}/onvif/masks → overlay.go createMask. Body is an onvif.Mask;
-    configuration_token is forced from the node's scope. Returns { created, masks, … }."""
-    return await _node_json(
-        "POST", api_url, f"/cameras/{camera_id}/onvif/masks", credential=credential, json_body=body or {}
-    )
-
-
-async def set_mask_node(
-    api_url: str, camera_id: str, mask_token: str, body: dict, *, credential: str | None = None
-) -> dict:
-    """PUT …/cameras/{id}/onvif/masks/{mask} → overlay.go setMask. Returns
-    { updated, masks, … }."""
-    return await _node_json(
-        "PUT", api_url, f"/cameras/{camera_id}/onvif/masks/{mask_token}",
-        credential=credential, json_body=body or {},
-    )
-
-
-async def delete_mask_node(
-    api_url: str, camera_id: str, mask_token: str, *, credential: str | None = None
-) -> dict:
-    """DELETE …/cameras/{id}/onvif/masks/{mask} → overlay.go deleteMask. Returns
-    { deleted, masks, … }."""
-    return await _node_json(
-        "DELETE", api_url, f"/cameras/{camera_id}/onvif/masks/{mask_token}", credential=credential
-    )
 
 
 async def get_backchannel_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
@@ -840,22 +753,6 @@ async def get_motion_node(api_url: str, camera_id: str, *, credential: str | Non
     return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/motion", credential=credential)
 
 
-async def set_motion_node(
-    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
-) -> dict:
-    """PUT …/cameras/{id}/onvif/motion → motion.go motionWriteReq
-    { sensitivity: 0..100, whole_frame: bool, zones: [{…}] }. An empty ``zones`` with
-    ``whole_frame:false`` CLEARS the mask — a distinct intention from whole-frame, which
-    is why the request states which. Returns { written, columns, rows, sensitivity,
-    zones, note? }."""
-    return await _node_json(
-        "PUT", api_url, f"/cameras/{camera_id}/onvif/motion", credential=credential, json_body=body or {}
-    )
-
-
-# ── digital I/O — inputs + relays (internal/estate/onvifapi/io.go) ────────────
-
-
 async def get_io_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
     """GET …/cameras/{id}/onvif/io → io.go getIO. Note ``scope:"device"`` — this payload
     describes the DEVICE, not the channel, and ``channels_on_device`` / ``channel_names``
@@ -864,19 +761,6 @@ async def get_io_node(api_url: str, camera_id: str, *, credential: str | None = 
     relay_state_readable, relay_state_detail, digital_input_detail, digital_inputs,
     relay_outputs, device_io_supported, …_error?, …_unknown? }."""
     return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/io", credential=credential)
-
-
-async def set_relay_settings_node(
-    api_url: str, camera_id: str, token: str, body: dict, *, credential: str | None = None
-) -> dict:
-    """PUT …/cameras/{id}/onvif/io/relays/{token} → io.go relaySettingsReq
-    { mode?: "Bistable"|"Monostable", idle_state?: "closed"|"open", delay_seconds?: int
-    (WHOLE seconds) }. nil/absent leaves the device's own setting alone. Returns
-    { token, settings } re-read from the firmware."""
-    return await _node_json(
-        "PUT", api_url, f"/cameras/{camera_id}/onvif/io/relays/{token}",
-        credential=credential, json_body=body or {},
-    )
 
 
 async def set_relay_state_node(
