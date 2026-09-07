@@ -365,9 +365,14 @@ async def revoke_node_credential(api_url: str, cred_id: str) -> None:
 # node-owned camera. Everything else on a federated camera stays read-only; PTZ
 # and snapshot are proxied to the owning NVR, which runs the real device op.
 
-# The node's PTZ subroutes (estate/ptz.go). Allow-listed so a caller can never
-# smuggle an arbitrary path segment into the node URL.
-_PTZ_ACTIONS = frozenset({"move", "stop", "zoom", "focus"})
+# The node's PTZ subroutes (onvifapi/ptz_routes.go MountPTZ). Allow-listed so a caller
+# can never smuggle an arbitrary path segment into the node URL.
+#
+# move and stop are the ONLY two the node mounts under /cameras/{id}/ptz/. "zoom" and
+# "focus" were in this set and are not routes: zoom is a field inside the move body,
+# focus lives at /onvif/imaging/focus/*. Both 404'd rather than being refused here, so
+# the allow-list read as though it permitted more than the node could answer.
+_PTZ_ACTIONS = frozenset({"move", "stop"})
 
 
 async def ptz_node(
@@ -380,11 +385,11 @@ async def ptz_node(
 ) -> dict:
     """POST {api_url}/api/v1/nvr/estate/cameras/{id}/ptz/{action} → the node runs the
     real PTZ command on its own camera and returns { ok, result }. ``action`` names
-    the node subroute (move|stop|zoom|focus); ``body`` is the command payload the
-    node forwards to the device (pan/tilt/zoom/speed, or direction+speed). The node
-    gates PTZ on vms.ptz.control — a grant the SCOPED federation credential does not
-    carry (see federation.go federationGrants), so this only passes on a node still
-    falling back to the shared service JWT. NodeUnavailable (→ 502) on any non-2xx."""
+    the node subroute (move|stop); ``body`` is the command payload the node forwards
+    to the device (pan/tilt/zoom/speed, or direction+speed). The node gates PTZ on
+    vms.ptz.control, which the scoped federation credential DOES carry (federation.go
+    federationGrants), so this works over a federation credential alone — no shared
+    service JWT needed. NodeUnavailable (→ 502) on any non-2xx."""
     act = (action or "").strip().lower()
     if act not in _PTZ_ACTIONS:
         raise NodeUnavailable(f"unsupported ptz action: {action!r}")
