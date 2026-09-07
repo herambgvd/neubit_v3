@@ -129,7 +129,7 @@ export default function UsersPage() {
   });
   const sessionIdle = policyQ.data?.session_idle_minutes || 0;
 
-  const items = users.data?.items || [];
+  const items = useMemo(() => users.data?.items ?? [], [users.data]);
   const total = users.data?.total ?? items.length;
 
   const filtered = useMemo(() => {

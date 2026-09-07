@@ -70,6 +70,13 @@ export interface TransitionModalProps {
   onSaved: () => void;
 }
 
+// Pure, and therefore module scope. Declared in the component body these were a new
+// function every render: a memo listing one honestly would rebuild every time, and the
+// memo that omitted it was leaning on the omission being harmless. Stable here, so the
+// dependency can simply be declared.
+const uid = (u: AssignableUser): string => u.id;
+const display = (u: AssignableUser): string => u.full_name || u.email || uid(u);
+
 export default function TransitionModal({ sopId, states = [], transition, defaults, onClose, onSaved }: TransitionModalProps) {
   const isEdit = !!transition;
 
@@ -322,8 +329,6 @@ function UserMultiSelect({ label, selectedIds, onToggle, onClear }: UserMultiSel
   });
   const allUsers = useMemo<AssignableUser[]>(() => (usersQ.data ? asItems(usersQ.data) : []), [usersQ.data]);
 
-  const uid = (u: AssignableUser): string => u.id;
-  const display = (u: AssignableUser): string => u.full_name || u.email || uid(u);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

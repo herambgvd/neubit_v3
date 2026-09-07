@@ -896,7 +896,8 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                     const pbToggle = (k: string) =>
                       setPbCollapsed((prev) => {
                         const n = new Set<string>(prev);
-                        n.has(k) ? n.delete(k) : n.add(k);
+                        if (n.has(k)) n.delete(k);
+                        else n.add(k);
                         return n;
                       });
                     const renderCamRow = (c: VmsCameraPublic) => {

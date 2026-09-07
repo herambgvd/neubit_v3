@@ -41,7 +41,7 @@ export default function TagPicker({ entityType, entityId, size = "sm" }: TagPick
     enabled: open,
   });
 
-  const attached = attachedQ.data || [];
+  const attached = useMemo(() => attachedQ?.data ?? [], [attachedQ]);
   const attachedIds = useMemo(() => new Set<string>(attached.map((t) => t.tag_id)), [attached]);
   const available = (allQ.data?.items || []).filter((t) => !attachedIds.has(t.tag_id));
 

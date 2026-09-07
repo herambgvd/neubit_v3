@@ -38,7 +38,7 @@ export default function SitesConfigPage() {
     queryFn: () => sitesApi.list({ limit: 100 }),
   });
 
-  const items = sitesQ.data?.items || [];
+  const items = useMemo(() => sitesQ.data?.items ?? [], [sitesQ.data]);
   const total = sitesQ.data?.total ?? items.length;
   const active = items.filter((s) => s.is_active !== false).length;
   const inactive = items.length - active;

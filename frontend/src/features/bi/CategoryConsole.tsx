@@ -97,7 +97,7 @@ function CategoryConsoleInner({ category }: { category: string }) {
     ? sitesQ.data?.items?.find((x: any) => x.site_id === siteId)?.site_name || siteId
     : null;
 
-  const devices = devicesQ.data?.items || [];
+  const devices = useMemo(() => devicesQ.data?.items ?? [], [devicesQ.data]);
 
   // Equipment kinds present in THIS category, derived from what came back rather
   // than from a hard-coded list — the vocabulary is the gateway's, not ours.
@@ -135,7 +135,7 @@ function CategoryConsoleInner({ category }: { category: string }) {
     refetchInterval: 20_000,
   });
 
-  const points = pointsQ.data?.items || [];
+  const points = useMemo(() => pointsQ.data?.items ?? [], [pointsQ.data]);
 
   // Chart the first NUMERIC point of the device until the operator picks another.
   useEffect(() => {

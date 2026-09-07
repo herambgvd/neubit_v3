@@ -57,7 +57,7 @@ export default function RolesPage() {
   const groups: PermissionGroups = catalog.data?.groups || {};
   const readOnly = !!editing?.is_system;
 
-  const items = roles.data?.items || [];
+  const items = useMemo(() => roles.data?.items ?? [], [roles.data]);
   const total = roles.data?.total ?? items.length;
 
   const filtered = useMemo(() => {
@@ -132,7 +132,8 @@ export default function RolesPage() {
     if (readOnly) return;
     setForm((f) => {
       const next = new Set<string>(f.permissions);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return { ...f, permissions: [...next] };
     });
   }

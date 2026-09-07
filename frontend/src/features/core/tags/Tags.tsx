@@ -35,7 +35,7 @@ export default function TagsConfigPage() {
     queryFn: () => tagsApi.list({ limit: 200 }),
   });
 
-  const items = tagsQ.data?.items || [];
+  const items = useMemo(() => tagsQ.data?.items ?? [], [tagsQ.data]);
   const total = tagsQ.data?.total ?? items.length;
   const active = items.filter((t) => t.is_active !== false).length;
   const inactive = items.length - active;

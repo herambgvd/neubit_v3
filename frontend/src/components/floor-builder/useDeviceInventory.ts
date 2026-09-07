@@ -53,11 +53,11 @@ export function useDeviceInventory() {
     queryFn: () => iotInventory.devices().catch((): { items: BiDeviceRow[] } => ({ items: [] })),
   });
 
-  const instances = instancesQ.data?.items ?? [];
-  const doors = doorsQ.data?.items ?? [];
-  const cameras = camerasQ.data?.items ?? [];
-  const nvrDevices = nvrsQ.data?.items ?? [];
-  const iotDevices = iotQ.data?.items ?? [];
+  const instances = useMemo(() => instancesQ.data?.items ?? [], [instancesQ.data]);
+  const doors = useMemo(() => doorsQ.data?.items ?? [], [doorsQ.data]);
+  const cameras = useMemo(() => camerasQ.data?.items ?? [], [camerasQ.data]);
+  const nvrDevices = useMemo(() => nvrsQ.data?.items ?? [], [nvrsQ.data]);
+  const iotDevices = useMemo(() => iotQ.data?.items ?? [], [iotQ.data]);
 
   const inventory = useMemo((): PlaceableDevice[] => {
     // Access controllers/panels → placeable devices. Identifier field is `id`.

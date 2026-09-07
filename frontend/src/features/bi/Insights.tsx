@@ -92,7 +92,7 @@ export default function Insights() {
     queryFn: () => bi.devices({ limit: 500 }),
     refetchInterval: 120_000,
   });
-  const devices = devicesQ.data?.items || [];
+  const devices = useMemo(() => devicesQ.data?.items ?? [], [devicesQ.data]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();

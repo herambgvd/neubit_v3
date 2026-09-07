@@ -415,6 +415,11 @@ export default function Streaming() {
       if (next >= Date.now()) pb.goLive();
       else pb.playAt(next);
     },
+    // pb.playAt and pb.goLive, NOT pb. Both are useCallbacks inside useWallPlayback,
+    // so they are stable; `pb` itself is a fresh object literal every render, and
+    // depending on it — which is what the rule asks for — would rebuild this callback
+    // on every render and defeat the memo it exists to be.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [pb.playAt, pb.goLive],
   );
   const handlePickHere = useCallback(

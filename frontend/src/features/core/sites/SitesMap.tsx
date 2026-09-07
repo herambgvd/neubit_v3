@@ -46,7 +46,7 @@ export default function SitesMapPage() {
     queryFn: () => sitesApi.list({ limit: 100 }),
   });
 
-  const sites = sitesQ.data?.items || [];
+  const sites = useMemo(() => sitesQ.data?.items ?? [], [sitesQ.data]);
 
   const apiKey = cfgQ.data?.api_key || "";
   // Google only when a tenant has BOTH turned it on and saved a key; every other

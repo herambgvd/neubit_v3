@@ -208,6 +208,12 @@ export default function OfflineMapView({
     // MapLibre throws on a null container.
     setStatus({ state: "probing" });
 
+    // The marker Map, captured at SETUP. It is created once and only mutated, so
+    // reading markersRef.current in the cleanup would be equivalent — but the rule
+    // cannot know that, and a local says plainly which Map the cleanup empties: the
+    // one this run of the effect filled.
+    const markers = markersRef.current;
+
     (async () => {
       const probe = await probeTiles(tilesUrl);
       if (cancelled) return;
@@ -238,8 +244,8 @@ export default function OfflineMapView({
       cancelled = true;
       popupRef.current?.remove();
       popupRef.current = null;
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current.clear();
+      markers.forEach((m) => m.remove());
+      markers.clear();
       map?.remove();
       mapRef.current = null;
     };

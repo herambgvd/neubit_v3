@@ -76,7 +76,7 @@ export default function UnitsPanel() {
     queryFn: () => bi.units({ confirmed: view, search: search.trim() || undefined, limit: 500 }),
   });
 
-  const rows: any[] = q.data?.items || [];
+  const rows: any[] = useMemo(() => q.data?.items ?? [], [q.data]);
   const counts = q.data?.counts;
   const ids = Object.keys(picked).filter((k) => picked[k]);
 

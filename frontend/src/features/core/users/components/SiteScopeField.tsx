@@ -25,7 +25,8 @@ export default function SiteScopeField({ sites, value, onChange, disabled }: Sit
   const toggle = (id: string) => {
     if (disabled) return;
     const next = new Set<string>(selected);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     onChange([...next]);
   };
   const unrestricted = selected.size === 0;

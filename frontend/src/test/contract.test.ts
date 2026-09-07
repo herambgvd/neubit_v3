@@ -450,7 +450,7 @@ const DICTS: Record<string, DictEntry> = {
     open: "return {",
   },
   "lib/types.ts:FederatedCameraList": {
-    file: "backend/vision/app/vms/federation/router.py",
+    file: "backend/vision/app/vms/federation/estate.py",
     marker: "async def federated_cameras(",
     open: 'return {"items"',
   },
@@ -495,7 +495,7 @@ const DICTS: Record<string, DictEntry> = {
     open: 'return {"status"',
   },
   "features/vms/types.ts:FederationNode": {
-    file: "backend/vision/app/vms/federation/router.py",
+    file: "backend/vision/app/vms/federation/estate.py",
     marker: "async def list_nodes(",
     open: '"items": [',
   },
