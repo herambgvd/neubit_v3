@@ -48,7 +48,6 @@ from app.vms.events import EventSupervisor
 from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
 from app.vms.motion_search import MotionSearchWorker
-from app.vms.ptz import get_cycler
 from app.vms.linkage import LinkageConsumer
 from app.vms.media_nodes import NodeHeartbeatMonitor
 from app.vms.recording import RecordingConsumer, RecordingScheduler
@@ -167,18 +166,13 @@ async def lifespan(app: FastAPI):
     await anr_consumer.start()
     app.state.anr_consumer = anr_consumer
 
-    # G1 PTZ patrols: bind the process-local patrol cycler to the app sessionmaker and
-    # re-arm any patrol whose ``is_running`` flag survived a restart (goto-preset in order
-    # on dwell). Cycler tasks are process-local — a restart drops running tours; this
-    # re-arm resumes them from the persisted intent. Graceful (no cameras → no-op).
-    patrol_cycler = get_cycler()
-    patrol_cycler.bind(get_sessionmaker())
-    await patrol_cycler.rearm_running()
-    app.state.patrol_cycler = patrol_cycler
+    # No PTZ patrol cycler here any more. Patrols are HOST-DRIVEN by the recorder
+    # that owns the camera — it steps the head preset by preset and survives its own
+    # restarts. The VMS ran a second cycler against its own preset table, so two
+    # processes could drive the same head from two different stop lists.
 
     yield
 
-    await patrol_cycler.stop_all()
     await report_scheduler.stop()
     await event_supervisor.stop()
     await motion_search_worker.stop()

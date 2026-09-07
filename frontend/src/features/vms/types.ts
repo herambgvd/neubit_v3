@@ -426,43 +426,10 @@ export interface PtzResult {
   result?: unknown;
 }
 
-export interface PresetPublic {
-  id: string;
-  camera_id: string;
-  name: string;
-  preset_token?: string | null;
-  position?: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
-}
 
-export interface PatrolStop {
-  preset_id: string;
-  dwell_seconds: number;
-}
 
-export interface PatrolCreate {
-  name: string;
-  stops?: PatrolStop[];
-  speed?: number;
-  is_active?: boolean;
-  schedule?: Record<string, unknown> | null;
-}
 
-export type PatrolUpdate = Partial<PatrolCreate>;
 
-export interface PatrolPublic {
-  id: string;
-  camera_id: string;
-  name: string;
-  stops: PatrolStop[];
-  speed: number;
-  is_active: boolean;
-  is_running: boolean;
-  schedule?: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
-}
 
 /* --- live (backend/vision/app/vms/live/schemas.py) ------------------------- */
 
@@ -944,35 +911,9 @@ export interface MotionSearchJobPublic {
 
 /* --- device management (backend/vision/app/vms/devicemgmt/schemas.py) ------ */
 
-export interface FleetOpPublic {
-  ok: boolean;
-  supported: boolean;
-  detail?: string | null;
-  data: Record<string, unknown>;
-}
 
-export interface DeviceInfoPublic {
-  reachable: boolean;
-  manufacturer?: string | null;
-  model?: string | null;
-  firmware?: string | null;
-  serial_number?: string | null;
-  hardware_id?: string | null;
-  mac?: string | null;
-  channel_count: number;
-  error?: string | null;
-}
 
-export interface PasswordBody {
-  user: string;
-  new_password: string;
-}
 
-export interface UserAddBody {
-  user: string;
-  password: string;
-  level?: string;
-}
 
 /** `GET /cameras/{id}/users` — the ONVIF device accounts (driver-shaped rows;
  *  `{ items }` or a bare list, consumers go through `asItems`). */
@@ -983,22 +924,8 @@ export interface DeviceUserPublic {
   level?: string | null;
   [k: string]: unknown;
 }
-export type DeviceUsersResponse = ItemList<DeviceUserPublic> | DeviceUserPublic[];
 
-export interface BulkOpItem {
-  camera_id: string;
-  camera_name?: string | null;
-  ok: boolean;
-  supported: boolean;
-  detail?: string | null;
-}
 
-export interface BulkOpResult {
-  action: string;
-  total: number;
-  succeeded: number;
-  items: BulkOpItem[];
-}
 
 /* --- reports (backend/vision/app/vms/reports/schemas.py) ------------------- */
 
@@ -1312,13 +1239,67 @@ export interface FederatedPlaybackSession extends NodeTagged {
 
 /** `POST …/cameras/{id}/ptz` — `{ action, …payload }` forwarded to the node. */
 export interface FederatedPtzBody {
-  action: "move" | "stop" | "zoom" | "focus";
+  action: "move" | "stop";
   mode?: PtzMoveBody["mode"];
   pan?: number;
   tilt?: number;
   zoom?: number;
   speed?: number;
-  direction?: "in" | "out" | "near" | "far";
+}
+
+/** One preset as the CAMERA reports it (`GET …/ptz/presets`).
+ *
+ *  `token` is the device's own handle and the only thing a goto can be issued
+ *  against — there is no VMS-side preset row behind a federated camera, because the
+ *  preset lives in the camera's firmware and the recorder reads it from there. */
+export interface FederatedPreset {
+  token: string;
+  name?: string | null;
+  [k: string]: unknown;
+}
+
+/** `GET …/ptz/presets`. `supported:false` means the head has no preset service —
+ *  distinct from an empty list, which means it has one and nothing is stored. */
+export interface FederatedPresetList extends NodeTagged {
+  supported?: boolean;
+  items?: FederatedPreset[] | null;
+  total?: number | null;
+  detail?: string | null;
+}
+
+/** One stop in the recorder's host-driven patrol: dwell at a device preset. */
+export interface FederatedPatrolStop {
+  preset_token: string;
+  dwell_seconds?: number | null;
+}
+
+/** `GET …/ptz/patrol` — the HOST-DRIVEN patrol (`kind:"host_driven"`): the recorder
+ *  drives it, it is not stored on the camera.
+ *
+ *  There is exactly ONE per camera, not a list. That is the node's model and the
+ *  console follows it rather than inventing a multi-patrol shape the recorder would
+ *  have to fake. `native_tours_supported` ABSENT means "could not ask", not "no". */
+export interface FederatedPatrol extends NodeTagged {
+  enabled?: boolean;
+  stops?: FederatedPatrolStop[] | null;
+  default_dwell_seconds?: number | null;
+  random_order?: boolean;
+  runnable?: boolean;
+  last_tick_at?: string | null;
+  last_error?: string | null;
+  kind?: string | null;
+  note?: string | null;
+  native_tours_supported?: boolean;
+  presets?: FederatedPreset[] | null;
+  [k: string]: unknown;
+}
+
+/** `PUT …/ptz/patrol` — an absent field leaves the recorder's setting untouched. */
+export interface FederatedPatrolBody {
+  enabled?: boolean;
+  stops?: FederatedPatrolStop[];
+  default_dwell_seconds?: number;
+  random_order?: boolean;
 }
 
 /** A node-side operational result (record start/stop, reboot) — best-effort echo. */

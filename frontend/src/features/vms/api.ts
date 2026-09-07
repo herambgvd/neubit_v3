@@ -67,12 +67,17 @@ import type {
   FederatedHoldList,
   FederatedLiveSession,
   FederatedOpResult,
+  FederatedPatrol,
+  FederatedPatrolBody,
   FederatedPlaybackSession,
+  FederatedPreset,
+  FederatedPresetList,
   FederatedPtzBody,
   FederatedRecordingList,
   FederatedTimeline,
   FederationNodeList,
   HostCredentials,
+  ItemList,
   LinkageFireListResponse,
   LinkageRuleCreate,
   LinkageRuleListResponse,
@@ -102,18 +107,13 @@ import type {
   NvrUpdate,
   OnvifEventsBody,
   OsdBody,
-  PatrolCreate,
-  PatrolPublic,
-  PatrolUpdate,
   PatternCreate,
   PatternListResponse,
   PatternPublic,
   PatternUpdate,
   PlaybackSessionPublic,
-  PresetPublic,
   PrivacyMasksResponse,
   PtzBody,
-  PtzMoveBody,
   PtzResult,
   RecordedPlaybackPublic,
   RecordingDaysResponse,
@@ -128,10 +128,9 @@ import type {
   StreamPolicyResult,
   TalkSessionPublic,
   TimelineResponse,
-  VmsEventListResponse,
   VmsCameraPublic,
+  VmsEventListResponse,
   VmsEventPublic,
-  ItemList,
 } from "./types";
 
 const CAMERAS = "/vms/cameras";
@@ -237,14 +236,63 @@ export const vms = {
           `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/playback${qs({ from, to })}`,
         ),
       ),
-    // ── operate-THROUGH-node — the only two mutations on a node-owned camera ──
-    // PTZ a federated camera through its recorder. `body` = { action:"move"|"stop"|
-    // "zoom"|"focus", ...payload } (the node forwards the payload to the device).
-    // Node-side PTZ gates on vms.ptz.control; the scoped federation credential does
-    // NOT carry it, so this only passes while the node falls back to the shared
-    // service JWT (502 otherwise). Read-only surfaces stay read-only.
+    // ── operate-THROUGH-node — the operator command surface on a node-owned camera
+    // PTZ a federated camera through its recorder. `body` = { action:"move"|"stop",
+    // ...payload } (the node forwards the payload to the device). Zoom is the `zoom`
+    // velocity in a move body, not an action of its own.
+    //
+    // Node-side PTZ gates on vms.ptz.control, which the scoped federation credential
+    // DOES carry — so this works over federation alone. (It did not: the node gated
+    // these routes on vms.camera.manage, a permission deliberately withheld from a
+    // federation credential, so every federated PTZ command 403'd. Fixed node-side.)
     ptz: (nodeId: string, cameraId: string, body: FederatedPtzBody) =>
       unwrap(api.post<PtzResult>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz`, body)),
+
+    // Presets live in the CAMERA's firmware; the recorder reads and writes them there.
+    // So `token` is the device's handle, list/save/goto/remove all speak it, and there
+    // is no VMS-side preset row behind a federated camera to drift from it.
+    presets: {
+      list: (nodeId: string, cameraId: string) =>
+        unwrap(api.get<FederatedPresetList>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/presets`)),
+      // Empty token CREATES at the head's current position; a supplied token
+      // OVERWRITES that preset with it — two different intentions, so the caller
+      // states which.
+      save: (nodeId: string, cameraId: string, name: string, token?: string) =>
+        unwrap(api.post<FederatedPreset>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/presets`, { name, token })),
+      goto: (nodeId: string, cameraId: string, token: string, speed?: number) =>
+        unwrap(api.post<PtzResult>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/presets/${encodeURIComponent(token)}/goto`,
+          { speed })),
+      remove: (nodeId: string, cameraId: string, token: string) =>
+        unwrap(api.delete<void>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/presets/${encodeURIComponent(token)}`)),
+    },
+
+    // ONE host-driven patrol per camera — the recorder drives it, the camera does not
+    // store it. Not a list: that is the node's model, and inventing a multi-patrol
+    // shape here would mean asking the recorder to fake the other rows.
+    patrol: {
+      get: (nodeId: string, cameraId: string) =>
+        unwrap(api.get<FederatedPatrol>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/patrol`)),
+      set: (nodeId: string, cameraId: string, body: FederatedPatrolBody) =>
+        unwrap(api.put<FederatedPatrol>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/patrol`, body)),
+      operate: (nodeId: string, cameraId: string, operation: "start" | "stop") =>
+        unwrap(api.post<FederatedOpResult>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/patrol/operate`, { operation })),
+    },
+
+    // Focus is a MOTOR on the lens, not a PTZ head command, so it has its own
+    // routes. Same hold-to-move discipline as the pad: one move on press, one stop
+    // on release.
+    focus: {
+      move: (nodeId: string, cameraId: string, body: { direction: "near" | "far"; speed?: number }) =>
+        unwrap(api.post<FederatedOpResult>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/imaging/focus/move`, body)),
+      stop: (nodeId: string, cameraId: string) =>
+        unwrap(api.post<FederatedOpResult>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/imaging/focus/stop`, {})),
+    },
     // Snapshot URL for a federated camera (relative path — fetched as an authed
     // blob, same as cameras.snapshotUrl, since the endpoint needs the Bearer header).
     snapshotUrl: (nodeId: string, cameraId: string) =>
@@ -394,55 +442,6 @@ export const vms = {
     snapshotUrl: (id: string) => `${CAMERAS}/${id}/snapshot`,
   },
 
-  // ── PTZ operator control (G1) — live pan/tilt/zoom/focus + presets + patrols
-  // Only meaningful for a `ptz_capable` camera. Moves/preset-writes/patrol-writes
-  // gate on `vms.ptz.control`; reads (list presets/patrols) on `vms.live.view`.
-  //
-  //   Move:    POST /cameras/{id}/ptz/move { mode:"continuous"|"relative"|
-  //              "absolute", pan, tilt, zoom, speed } — for continuous, send ONE
-  //              move on press then ONE stop on release (don't stream calls).
-  //            POST /cameras/{id}/ptz/stop
-  //            POST /cameras/{id}/ptz/zoom  { direction:"in"|"out", speed }
-  //            POST /cameras/{id}/ptz/focus { direction:"near"|"far", speed }
-  //   Presets: GET  /cameras/{id}/ptz/presets → { items } (or bare array)
-  //            POST /cameras/{id}/ptz/presets { name } (stores CURRENT position)
-  //            POST /cameras/{id}/ptz/presets/{pid}/goto
-  //            DELETE /cameras/{id}/ptz/presets/{pid}
-  //   Patrols: GET  /cameras/{id}/ptz/patrols → { items }
-  //            POST /cameras/{id}/ptz/patrols { name, stops:[{preset_id,
-  //              dwell_seconds}], speed }
-  //            PATCH/DELETE /cameras/{id}/ptz/patrols/{pid}
-  //            POST /cameras/{id}/ptz/patrols/{pid}/start | /stop
-  ptz: {
-    // Continuous move: pan/tilt/zoom velocities in [-1,1], speed in (0,1].
-    // On release call stop (or send mode:"continuous" with 0 velocities via stop).
-    move: (id: string, body: PtzMoveBody) => unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/move`, body)),
-    stop: (id: string) => unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/stop`, {})),
-    zoom: (id: string, { direction, speed = 0.5 }: { direction: "in" | "out"; speed?: number }) =>
-      unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/zoom`, { direction, speed })),
-    focus: (id: string, { direction, speed = 0.5 }: { direction: "near" | "far"; speed?: number }) =>
-      unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/focus`, { direction, speed })),
-    presets: {
-      list: (id: string) => unwrap(api.get<ItemList<PresetPublic>>(`${CAMERAS}/${id}/ptz/presets`)),
-      // Stores the camera's CURRENT position under `name`.
-      create: (id: string, name: string) => unwrap(api.post<PresetPublic>(`${CAMERAS}/${id}/ptz/presets`, { name })),
-      goto: (id: string, presetId: string) =>
-        unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/presets/${presetId}/goto`, {})),
-      remove: (id: string, presetId: string) => unwrap(api.delete<void>(`${CAMERAS}/${id}/ptz/presets/${presetId}`)),
-    },
-    patrols: {
-      list: (id: string) => unwrap(api.get<ItemList<PatrolPublic>>(`${CAMERAS}/${id}/ptz/patrols`)),
-      // { name, stops:[{ preset_id, dwell_seconds }], speed }.
-      create: (id: string, body: PatrolCreate) => unwrap(api.post<PatrolPublic>(`${CAMERAS}/${id}/ptz/patrols`, body)),
-      update: (id: string, patrolId: string, body: PatrolUpdate) =>
-        unwrap(api.patch<PatrolPublic>(`${CAMERAS}/${id}/ptz/patrols/${patrolId}`, body)),
-      remove: (id: string, patrolId: string) => unwrap(api.delete<void>(`${CAMERAS}/${id}/ptz/patrols/${patrolId}`)),
-      start: (id: string, patrolId: string) =>
-        unwrap(api.post<PatrolPublic>(`${CAMERAS}/${id}/ptz/patrols/${patrolId}/start`, {})),
-      stop: (id: string, patrolId: string) =>
-        unwrap(api.post<PatrolPublic>(`${CAMERAS}/${id}/ptz/patrols/${patrolId}/stop`, {})),
-    },
-  },
 
 
   nvrs: {

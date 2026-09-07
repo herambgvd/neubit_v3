@@ -6,7 +6,13 @@
 //     to stop (pointer-down → one `move`, pointer-up/leave/blur → one `stop`);
 //   • zoom in/out + focus near/far — same hold-to-move → stop;
 //   • a preset bar — chips (click = goto), "＋ save preset", delete-on-hover;
-//   • a patrol menu — list, start/stop, and open the PatrolEditorModal.
+//   • a patrol panel — run state, start/stop, and open the PatrolEditorModal.
+//
+// EVERY command goes through the owning recorder (`/vms/federation/nodes/{node}/…`).
+// The VMS does not hold camera credentials and does not talk to a device: the
+// recorder owns the camera, and this overlay asks it to act. There used to be a
+// second, non-federated branch here that drove the VMS's own PTZ plane; it had no
+// caller, because the only thing that renders this overlay is FederatedCameraDetail.
 //
 // Network discipline: continuous mode sends exactly ONE move on press and ONE
 // stop on release — never a stream of calls. We ALWAYS send stop on release,
@@ -25,7 +31,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import vms from "../api";
-import type { PatrolPublic, PresetPublic, PtzMoveBody } from "../types";
+import type { FederatedPatrol, FederatedPreset, PtzMoveBody } from "../types";
 import PatrolEditorModal from "./PatrolEditorModal";
 
 const MOVE_SPEED = 0.6;
@@ -53,109 +59,116 @@ type HoldHandlers = Pick<
 type HoldPropsFn = (onStart: () => void) => HoldHandlers;
 
 export interface PtzOverlayProps {
+  /** The recorder that owns this camera. */
+  nodeId: string;
+  /** The camera's id ON THAT RECORDER, not its federated composite id. */
   cameraId: string;
   canControl: boolean;
-  /** Both set = FEDERATED mode (see below). */
-  fedNodeId?: string | null;
-  fedRealId?: string | null;
 }
 
-// `fedNodeId`/`fedRealId` (both set) put the overlay in FEDERATED mode: move/zoom/
-// focus/stop are proxied to the owning recorder via vms.federation.ptz (operate-
-// through-node) instead of the local vms.ptz. Presets + patrols are NOT proxied
-// through the node, so those sections are hidden in federated mode rather than
-// shown as controls that would fail — honest about what operate-through-node covers.
-export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fedRealId = null }: PtzOverlayProps) {
+export default function PtzOverlay({ nodeId, cameraId, canControl }: PtzOverlayProps) {
   const qc = useQueryClient();
-  const [showPatrols, setShowPatrols] = useState(false);
+  const [showPatrol, setShowPatrol] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editing, setEditing] = useState<PatrolPublic | null>(null);
-
-  const federated = !!(fedNodeId && fedRealId);
 
   // Tracks whether a hold is active so we only ever send a single trailing stop.
-  const movingRef = useRef(false);
+  const movingRef = useRef<"ptz" | "focus" | null>(null);
 
-  const presetsKey = ["vms", "ptz", "presets", cameraId];
-  const patrolsKey = ["vms", "ptz", "patrols", cameraId];
+  const ready = !!(nodeId && cameraId);
+  const presetsKey = ["vms", "federation", "presets", nodeId, cameraId];
+  const patrolKey = ["vms", "federation", "patrol", nodeId, cameraId];
 
   const presetsQ = useQuery({
     queryKey: presetsKey,
-    queryFn: () => vms.ptz.presets.list(cameraId),
-    enabled: !!cameraId && !federated,
+    queryFn: () => vms.federation.presets.list(nodeId, cameraId),
+    enabled: ready,
     staleTime: 30_000,
   });
-  const patrolsQ = useQuery({
-    queryKey: patrolsKey,
-    queryFn: () => vms.ptz.patrols.list(cameraId),
-    enabled: !!cameraId && !federated,
+  const patrolQ = useQuery({
+    queryKey: patrolKey,
+    queryFn: () => vms.federation.patrol.get(nodeId, cameraId),
+    enabled: ready,
     staleTime: 30_000,
   });
 
-  const presets: PresetPublic[] = asItems(presetsQ.data);
-  const patrols: PatrolPublic[] = asItems(patrolsQ.data);
+  // Presets come back straight off the camera, so `supported:false` (no preset
+  // service on this head) is a different state from an empty list, and the bar
+  // says so rather than showing "None saved" for a head that cannot store any.
+  const presets: FederatedPreset[] = asItems(presetsQ.data);
+  const presetsSupported = presetsQ.data?.supported !== false;
+  const patrol: FederatedPatrol | undefined = patrolQ.data;
+  const patrolRunning = !!patrol?.enabled;
 
   // ── hold-to-move plumbing ───────────────────────────────────────────────
   // Each command branches on the node ids themselves (not `federated`) so the
   // federated call sees them as strings.
+  // Focus is a separate motor with separate routes, so a hold has to be stopped on
+  // the surface that started it — sending a PTZ stop after a focus move leaves the
+  // lens driving. `movingRef` therefore records WHICH it was, not just that
+  // something is moving.
   const stop = useCallback(async () => {
-    if (!movingRef.current) return;
-    movingRef.current = false;
+    const what = movingRef.current;
+    if (!what) return;
+    movingRef.current = null;
     try {
-      if (fedNodeId && fedRealId) await vms.federation.ptz(fedNodeId, fedRealId, { action: "stop" });
-      else await vms.ptz.stop(cameraId);
+      if (what === "focus") await vms.federation.focus.stop(nodeId, cameraId);
+      else await vms.federation.ptz(nodeId, cameraId, { action: "stop" });
     } catch (e) {
       toast.error(apiError(e, "PTZ stop failed"));
     }
-  }, [cameraId, fedNodeId, fedRealId]);
+  }, [nodeId, cameraId]);
 
   const startPanTilt = useCallback(
     async (dir: PadDir) => {
       if (!canControl || movingRef.current) return;
-      movingRef.current = true;
+      movingRef.current = "ptz";
       const v = DIRS[dir];
       const cmd: PtzMoveBody = { mode: "continuous", pan: v.pan, tilt: v.tilt, zoom: 0, speed: MOVE_SPEED };
       try {
-        if (fedNodeId && fedRealId) await vms.federation.ptz(fedNodeId, fedRealId, { action: "move", ...cmd });
-        else await vms.ptz.move(cameraId, cmd);
+        await vms.federation.ptz(nodeId, cameraId, { action: "move", ...cmd });
       } catch (e) {
-        movingRef.current = false;
+        movingRef.current = null;
         toast.error(apiError(e, "PTZ move failed"));
       }
     },
-    [cameraId, canControl, fedNodeId, fedRealId]
+    [nodeId, cameraId, canControl]
   );
 
   const startZoom = useCallback(
     async (direction: "in" | "out") => {
       if (!canControl || movingRef.current) return;
-      movingRef.current = true;
+      movingRef.current = "ptz";
       try {
-        if (fedNodeId && fedRealId)
-          await vms.federation.ptz(fedNodeId, fedRealId, { action: "zoom", direction, speed: ZOOM_SPEED });
-        else await vms.ptz.zoom(cameraId, { direction, speed: ZOOM_SPEED });
+        // Zoom is the `zoom` velocity of a continuous move, not an action of its
+        // own — the recorder mounts move and stop under …/ptz and nothing else.
+        await vms.federation.ptz(nodeId, cameraId, {
+          action: "move",
+          mode: "continuous",
+          pan: 0,
+          tilt: 0,
+          zoom: direction === "in" ? ZOOM_SPEED : -ZOOM_SPEED,
+          speed: ZOOM_SPEED,
+        });
       } catch (e) {
-        movingRef.current = false;
+        movingRef.current = null;
         toast.error(apiError(e, "Zoom failed"));
       }
     },
-    [cameraId, canControl, fedNodeId, fedRealId]
+    [nodeId, cameraId, canControl]
   );
 
   const startFocus = useCallback(
     async (direction: "near" | "far") => {
       if (!canControl || movingRef.current) return;
-      movingRef.current = true;
+      movingRef.current = "focus";
       try {
-        if (fedNodeId && fedRealId)
-          await vms.federation.ptz(fedNodeId, fedRealId, { action: "focus", direction, speed: FOCUS_SPEED });
-        else await vms.ptz.focus(cameraId, { direction, speed: FOCUS_SPEED });
+        await vms.federation.focus.move(nodeId, cameraId, { direction, speed: FOCUS_SPEED });
       } catch (e) {
-        movingRef.current = false;
+        movingRef.current = null;
         toast.error(apiError(e, "Focus failed"));
       }
     },
-    [cameraId, canControl, fedNodeId, fedRealId]
+    [nodeId, cameraId, canControl]
   );
 
   // Safety net: always stop on window blur / tab hide / unmount so a held button
@@ -173,10 +186,13 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
   }, [stop]);
 
   // ── preset actions ──────────────────────────────────────────────────────
-  const gotoPreset = async (pid: string) => {
+  // `token` is the DEVICE's own preset handle. There is no VMS-side preset row to
+  // keep in step with it, which is the point: the preset lives in the camera's
+  // firmware and the recorder reads and writes it there.
+  const gotoPreset = async (token: string) => {
     if (!canControl) return;
     try {
-      await vms.ptz.presets.goto(cameraId, pid);
+      await vms.federation.presets.goto(nodeId, cameraId, token);
     } catch (e) {
       toast.error(apiError(e, "Could not recall preset"));
     }
@@ -186,17 +202,20 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
     const name = window.prompt("Name this preset (stores the current position):");
     if (!name || !name.trim()) return;
     try {
-      await vms.ptz.presets.create(cameraId, name.trim());
+      // No token = CREATE at the current position. Passing an existing token would
+      // OVERWRITE that preset instead, which silently moves where every other
+      // operator's recall of it points — so this path never sends one.
+      await vms.federation.presets.save(nodeId, cameraId, name.trim());
       toast.success("Preset saved");
       qc.invalidateQueries({ queryKey: presetsKey });
     } catch (e) {
       toast.error(apiError(e, "Could not save preset"));
     }
   };
-  const deletePreset = async (pid: string) => {
+  const deletePreset = async (token: string) => {
     if (!canControl) return;
     try {
-      await vms.ptz.presets.remove(cameraId, pid);
+      await vms.federation.presets.remove(nodeId, cameraId, token);
       qc.invalidateQueries({ queryKey: presetsKey });
     } catch (e) {
       toast.error(apiError(e, "Could not delete preset"));
@@ -204,30 +223,16 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
   };
 
   // ── patrol actions ──────────────────────────────────────────────────────
-  const startPatrol = async (id: string) => {
+  // One host-driven patrol per camera, run by the recorder. Start/stop is the
+  // whole operator surface; the stop list is edited in PatrolEditorModal.
+  const operatePatrol = async (operation: "start" | "stop") => {
+    if (!canControl) return;
     try {
-      await vms.ptz.patrols.start(cameraId, id);
-      toast.success("Patrol started");
-      qc.invalidateQueries({ queryKey: patrolsKey });
+      await vms.federation.patrol.operate(nodeId, cameraId, operation);
+      toast.success(operation === "start" ? "Patrol started" : "Patrol stopped");
+      qc.invalidateQueries({ queryKey: patrolKey });
     } catch (e) {
-      toast.error(apiError(e, "Could not start patrol"));
-    }
-  };
-  const stopPatrol = async (id: string) => {
-    try {
-      await vms.ptz.patrols.stop(cameraId, id);
-      toast.success("Patrol stopped");
-      qc.invalidateQueries({ queryKey: patrolsKey });
-    } catch (e) {
-      toast.error(apiError(e, "Could not stop patrol"));
-    }
-  };
-  const deletePatrol = async (id: string) => {
-    try {
-      await vms.ptz.patrols.remove(cameraId, id);
-      qc.invalidateQueries({ queryKey: patrolsKey });
-    } catch (e) {
-      toast.error(apiError(e, "Could not delete patrol"));
+      toast.error(apiError(e, `Could not ${operation} patrol`));
     }
   };
 
@@ -272,42 +277,40 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
         </div>
       )}
 
-      {/* No federated footnote here. Operate-through-node covers pan/tilt/zoom/
-          focus and nothing else, which is why the preset/patrol sections below are
-          gated on !federated — the ABSENCE of those controls already says it. On a
-          federated install every camera is federated, so the note printed a
-          permanent caption under every PTZ pad and ate overlay height on the
-          spotlight tile without ever telling the operator something new. */}
-      {/* Preset bar — local cameras only (not proxied through a node). */}
-      {!federated && (
+      {/* Preset bar */}
       <div className="flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-2">
         <span className="mr-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/45">
           Presets
         </span>
         {presetsQ.isLoading ? (
           <span className="text-[11px] text-white/50">Loading…</span>
+        ) : !presetsSupported ? (
+          /* The head has no preset service at all — a different thing from having
+             one with nothing stored, and the operator should not be invited to
+             save into it. */
+          <span className="text-[11px] text-white/40">Not supported by this camera</span>
         ) : presets.length === 0 ? (
           <span className="text-[11px] text-white/40">None saved</span>
         ) : (
           presets.map((p) => (
             <span
-              key={p.id}
+              key={p.token}
               className="group/preset inline-flex items-center rounded-full border border-white/10 bg-white/5 pl-2.5 pr-1 text-[11px] text-white/90 transition hover:border-white/25 hover:bg-white/10"
             >
               <button
                 type="button"
                 title={canControl ? "Go to preset" : "Preset"}
-                onClick={() => gotoPreset(p.id)}
+                onClick={() => gotoPreset(p.token)}
                 disabled={!canControl}
                 className="max-w-[9rem] truncate py-1 disabled:cursor-default"
               >
-                {p.name || `Preset ${p.id}`}
+                {p.name || `Preset ${p.token}`}
               </button>
               {canControl && (
                 <button
                   type="button"
                   title="Delete preset"
-                  onClick={() => deletePreset(p.id)}
+                  onClick={() => deletePreset(p.token)}
                   className="ml-1 rounded-full p-0.5 text-white/40 opacity-0 transition hover:bg-red-500/20 hover:text-red-300 group-hover/preset:opacity-100"
                 >
                   <Icon icon="heroicons-mini:x-mark" className="text-xs" />
@@ -316,7 +319,7 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
             </span>
           ))
         )}
-        {canControl && (
+        {canControl && presetsSupported && (
           <button
             type="button"
             onClick={savePreset}
@@ -328,50 +331,47 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
           </button>
         )}
 
-        {/* Patrol menu toggle */}
+        {/* Patrol panel toggle */}
         <div className="relative ml-auto">
           <button
             type="button"
-            onClick={() => setShowPatrols((s) => !s)}
+            onClick={() => setShowPatrol((v) => !v)}
             className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white/85 transition hover:bg-white/20"
           >
             <Icon icon="heroicons-outline:map" className="text-xs" />
-            Patrols
-            <Icon icon="heroicons-mini:chevron-down" className={`text-xs transition ${showPatrols ? "rotate-180" : ""}`} />
+            Patrol
+            {patrolRunning && (
+              <span className="rounded-sm bg-emerald-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-300">
+                On
+              </span>
+            )}
+            <Icon icon="heroicons-mini:chevron-down" className={`text-xs transition ${showPatrol ? "rotate-180" : ""}`} />
           </button>
 
-          {showPatrols && (
-            <PatrolMenu
-              patrols={patrols}
-              loading={patrolsQ.isLoading}
+          {showPatrol && (
+            <PatrolPanel
+              patrol={patrol}
+              loading={patrolQ.isLoading}
               canControl={canControl}
-              onStart={startPatrol}
-              onStop={stopPatrol}
-              onDelete={deletePatrol}
-              onEdit={(p) => {
-                setEditing(p);
+              onOperate={operatePatrol}
+              onEdit={() => {
                 setEditorOpen(true);
-                setShowPatrols(false);
+                setShowPatrol(false);
               }}
-              onNew={() => {
-                setEditing(null);
-                setEditorOpen(true);
-                setShowPatrols(false);
-              }}
-              onClose={() => setShowPatrols(false)}
+              onClose={() => setShowPatrol(false)}
             />
           )}
         </div>
       </div>
-      )}
 
-      {!federated && editorOpen && (
+      {editorOpen && (
         <PatrolEditorModal
+          nodeId={nodeId}
           cameraId={cameraId}
           presets={presets}
-          patrol={editing}
+          patrol={patrol}
           onClose={() => setEditorOpen(false)}
-          onSaved={() => qc.invalidateQueries({ queryKey: patrolsKey })}
+          onSaved={() => qc.invalidateQueries({ queryKey: patrolKey })}
         />
       )}
     </div>
@@ -449,19 +449,19 @@ function HoldGroup({ label, buttons, holdProps }: HoldGroupProps) {
   );
 }
 
-interface PatrolMenuProps {
-  patrols: PatrolPublic[];
+interface PatrolPanelProps {
+  patrol?: FederatedPatrol;
   loading: boolean;
   canControl: boolean;
-  onStart: (id: string) => void;
-  onStop: (id: string) => void;
-  onDelete: (id: string) => void;
-  onEdit: (patrol: PatrolPublic) => void;
-  onNew: () => void;
+  onOperate: (operation: "start" | "stop") => void;
+  onEdit: () => void;
   onClose?: () => void;
 }
 
-function PatrolMenu({ patrols, loading, canControl, onStart, onStop, onDelete, onEdit, onNew, onClose }: PatrolMenuProps) {
+// The recorder's ONE host-driven patrol, not a list. It shows what the recorder
+// will actually do — how many stops, whether it is running, and why it cannot run
+// if it cannot — instead of a roster of patrols the device has never heard of.
+function PatrolPanel({ patrol, loading, canControl, onOperate, onEdit, onClose }: PatrolPanelProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onDoc = (e: globalThis.MouseEvent) => {
@@ -471,80 +471,77 @@ function PatrolMenu({ patrols, loading, canControl, onStart, onStop, onDelete, o
     return () => document.removeEventListener("mousedown", onDoc);
   }, [onClose]);
 
+  const stops = patrol?.stops?.length ?? 0;
+  const running = !!patrol?.enabled;
+  // `runnable:false` means the recorder has a patrol it cannot step — usually a
+  // stop whose preset is gone from the camera. Saying so beats a Start button
+  // that reports success and moves nothing.
+  const blocked = patrol && patrol.runnable === false;
+
   return (
     <div
       ref={ref}
-      className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-lg border border-white/10 bg-[#0b0b0d]/95 p-1.5 shadow-2xl backdrop-blur-md"
+      className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-lg border border-white/10 bg-[#0b0b0d]/95 p-2 shadow-2xl backdrop-blur-md"
     >
-      <div className="max-h-56 overflow-y-auto">
-        {loading ? (
-          <p className="px-2 py-3 text-center text-[11px] text-white/50">Loading…</p>
-        ) : patrols.length === 0 ? (
-          <p className="px-2 py-3 text-center text-[11px] text-white/40">No patrols yet</p>
-        ) : (
-          patrols.map((p) => {
-            const running = !!p.is_running;
-            return (
-              <div
-                key={p.id}
-                className="flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-white/5"
-              >
-                <span className="min-w-0 flex-1 truncate text-[12px] text-white/90">
-                  {p.name || `Patrol ${p.id}`}
-                  {running && (
-                    <span className="ml-1.5 rounded-sm bg-emerald-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-300">
-                      Running
-                    </span>
-                  )}
-                </span>
-                {running ? (
-                  <MenuIcon icon="heroicons-outline:stop" title="Stop patrol" onClick={() => onStop(p.id)} />
-                ) : (
-                  <MenuIcon icon="heroicons-outline:play" title="Start patrol" onClick={() => onStart(p.id)} />
-                )}
-                {canControl && (
-                  <>
-                    <MenuIcon icon="heroicons-outline:pencil-square" title="Edit patrol" onClick={() => onEdit(p)} />
-                    <MenuIcon icon="heroicons-outline:trash" title="Delete patrol" onClick={() => onDelete(p.id)} danger />
-                  </>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
-      {canControl && (
-        <button
-          type="button"
-          onClick={onNew}
-          className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-white/20 px-2 py-1.5 text-[11px] text-white/70 transition hover:border-white/40 hover:text-white"
-        >
-          <Icon icon="heroicons-mini:plus" className="text-xs" />
-          New patrol
-        </button>
+      {loading ? (
+        <p className="px-1 py-3 text-center text-[11px] text-white/50">Loading…</p>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 px-1 pb-2">
+            <span className="min-w-0 flex-1 truncate text-[12px] text-white/90">
+              {stops === 0 ? "No stops set" : `${stops} stop${stops === 1 ? "" : "s"}`}
+            </span>
+            {running && (
+              <span className="rounded-sm bg-emerald-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-300">
+                Running
+              </span>
+            )}
+          </div>
+
+          {blocked && (
+            <p className="mb-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-[10px] leading-snug text-amber-200">
+              {patrol?.last_error || "The recorder cannot run this patrol as configured."}
+            </p>
+          )}
+
+          {canControl && (
+            <div className="flex items-center gap-1.5">
+              {running ? (
+                <PanelButton icon="heroicons-outline:stop" label="Stop" onClick={() => onOperate("stop")} />
+              ) : (
+                <PanelButton
+                  icon="heroicons-outline:play"
+                  label="Start"
+                  onClick={() => onOperate("start")}
+                  disabled={stops === 0 || blocked}
+                />
+              )}
+              <PanelButton icon="heroicons-outline:pencil-square" label="Edit" onClick={onEdit} />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-interface MenuIconProps {
+interface PanelButtonProps {
   icon: string;
-  title: string;
+  label: string;
   onClick: () => void;
-  danger?: boolean;
+  disabled?: boolean;
 }
 
-function MenuIcon({ icon, title, onClick, danger }: MenuIconProps) {
+function PanelButton({ icon, label, onClick, disabled }: PanelButtonProps) {
   return (
     <button
       type="button"
-      title={title}
       onClick={onClick}
-      className={`shrink-0 rounded-sm p-1 transition ${
-        danger ? "text-white/50 hover:bg-red-500/20 hover:text-red-300" : "text-white/60 hover:bg-white/10 hover:text-white"
-      }`}
+      disabled={disabled}
+      className="flex flex-1 items-center justify-center gap-1 rounded-md border border-white/15 px-2 py-1.5 text-[11px] text-white/80 transition hover:border-white/30 hover:text-white disabled:opacity-35"
     >
-      <Icon icon={icon} className="text-sm" />
+      <Icon icon={icon} className="text-xs" />
+      {label}
     </button>
   );
 }

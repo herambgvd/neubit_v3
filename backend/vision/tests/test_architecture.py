@@ -64,6 +64,7 @@ def test_the_route_scan_finds_something(app):
 RETIRED_MODULES = [
     "vms/onvif_server",  # an ONVIF *server* re-exporting cameras the NVR serves
     "vms/devicemgmt",    # camera NTP, user accounts, config backup/restore
+    "vms/ptz",           # a second PTZ plane, and a second patrol cycler on one head
 ]
 
 

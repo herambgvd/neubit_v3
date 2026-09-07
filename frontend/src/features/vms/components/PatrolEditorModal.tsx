@@ -1,57 +1,76 @@
 "use client";
 
-// PatrolEditorModal — create or edit a PTZ patrol (guard tour): an ordered list
-// of preset stops, each with a dwell time, cycled at a shared speed. Reuses the
-// camera's existing presets (loaded by the parent PtzOverlay and passed in).
+// PatrolEditorModal — edit the recorder's HOST-DRIVEN patrol for one federated
+// camera: an ordered list of preset stops, each with a dwell, optionally shuffled.
 //
-// Gated on `vms.ptz.control` by the parent — this modal only opens for operators
-// who can drive PTZ. On save it POSTs (create) or PATCHes (edit) via
-// vms.ptz.patrols and lets the parent refetch the list.
-import { useMemo, useState } from "react";
+// One patrol per camera, not a named list of them. That is the recorder's model
+// (`GET|PUT …/ptz/patrol`, kind:"host_driven") and the console follows it. The
+// earlier version of this modal created named patrol rows in the VMS's own table;
+// nothing on the camera or the recorder ever knew about them, so the console could
+// show a patrol the device would never run.
+//
+// "Host-driven" is the recorder stepping the head preset by preset, which is the
+// fallback for firmware with no native ONVIF preset tour. The stops therefore
+// reference DEVICE preset tokens — the same tokens the preset bar lists — because
+// the recorder recalls them on the camera itself.
+//
+// Gated on `vms.ptz.control` by the parent, which only opens it for operators who
+// can drive PTZ.
+import { useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 import { useMutation } from "@tanstack/react-query";
 
-import { Button, Modal, Input, Select } from "@/components/ui/kit";
+import { Button, Modal, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import vms from "../api";
-import type { PatrolCreate, PatrolPublic, PresetPublic } from "../types";
+import type { FederatedPatrol, FederatedPatrolStop, FederatedPreset } from "../types";
 
 // A stop while it is being edited — dwell binds to a number input, so it may be a
 // string until save coerces it.
 interface StopDraft {
-  preset_id: string;
+  preset_token: string;
   dwell_seconds: number | string;
 }
 
+const DEFAULT_DWELL = 5;
+
 export interface PatrolEditorModalProps {
+  nodeId: string;
   cameraId: string;
-  presets?: PresetPublic[];
-  /** Null/undefined = create a new patrol. */
-  patrol?: PatrolPublic | null;
+  presets?: FederatedPreset[];
+  patrol?: FederatedPatrol | null;
   onClose?: () => void;
   onSaved?: () => void;
 }
 
-export default function PatrolEditorModal({ cameraId, presets = [], patrol, onClose, onSaved }: PatrolEditorModalProps) {
-  const editing = !!patrol;
-  const [name, setName] = useState(patrol?.name || "");
-  const [speed, setSpeed] = useState<number | string>(patrol?.speed ?? 0.5);
+export default function PatrolEditorModal({
+  nodeId,
+  cameraId,
+  presets = [],
+  patrol,
+  onClose,
+  onSaved,
+}: PatrolEditorModalProps) {
+  const [randomOrder, setRandomOrder] = useState(!!patrol?.random_order);
+  const [defaultDwell, setDefaultDwell] = useState<number | string>(
+    patrol?.default_dwell_seconds ?? DEFAULT_DWELL
+  );
   const [stops, setStops] = useState<StopDraft[]>(() =>
-    (patrol?.stops || []).map((s) => ({
-      preset_id: s.preset_id,
-      dwell_seconds: s.dwell_seconds ?? 5,
+    (patrol?.stops || []).map((s: FederatedPatrolStop) => ({
+      preset_token: s.preset_token,
+      dwell_seconds: s.dwell_seconds ?? DEFAULT_DWELL,
     }))
   );
 
-  const presetOptions = useMemo(
-    () => presets.map((p) => ({ value: String(p.id), label: p.name || `Preset ${p.id}` })),
-    [presets]
-  );
+  const presetOptions = presets.map((p) => ({
+    value: p.token,
+    label: p.name || `Preset ${p.token}`,
+  }));
 
   const addStop = () => {
     const first = presets[0];
-    setStops((s) => [...s, { preset_id: first ? first.id : "", dwell_seconds: 5 }]);
+    setStops((s) => [...s, { preset_token: first ? first.token : "", dwell_seconds: DEFAULT_DWELL }]);
   };
   const removeStop = (i: number) => setStops((s) => s.filter((_, idx) => idx !== i));
   const patchStop = (i: number, patch: Partial<StopDraft>) =>
@@ -67,75 +86,77 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
   };
 
   const save = useMutation({
-    mutationFn: () => {
-      const body: PatrolCreate = {
-        name: name.trim(),
-        speed: Number(speed),
+    // `stops` REPLACES the recorder's list wholesale — an empty array clears it —
+    // so every field the modal owns is sent on every save. Sending a partial body
+    // would leave the recorder's copy of an untouched field in place, which reads
+    // as the edit silently not applying.
+    mutationFn: () =>
+      vms.federation.patrol.set(nodeId, cameraId, {
+        random_order: randomOrder,
+        default_dwell_seconds: Math.max(1, Number(defaultDwell) || DEFAULT_DWELL),
         stops: stops
-          .filter((s) => s.preset_id !== "" && s.preset_id != null)
+          .filter((s) => !!s.preset_token)
           .map((s) => ({
-            preset_id: s.preset_id,
-            dwell_seconds: Math.max(1, Number(s.dwell_seconds) || 1),
+            preset_token: s.preset_token,
+            dwell_seconds: Math.max(1, Number(s.dwell_seconds) || DEFAULT_DWELL),
           })),
-      };
-      return patrol
-        ? vms.ptz.patrols.update(cameraId, patrol.id, body)
-        : vms.ptz.patrols.create(cameraId, body);
-    },
+      }),
     onSuccess: () => {
-      toast.success(editing ? "Patrol updated" : "Patrol created");
+      toast.success("Patrol saved");
       onSaved?.();
       onClose?.();
     },
     onError: (e) => toast.error(apiError(e, "Could not save patrol")),
   });
 
-  const validStops = stops.filter((s) => s.preset_id !== "" && s.preset_id != null);
-  const canSave = name.trim() && validStops.length >= 1 && !save.isPending;
+  const validStops = stops.filter((s) => !!s.preset_token);
+  const canSave = validStops.length >= 1 && !save.isPending;
 
   return (
     <Modal
       open
       onClose={onClose}
       wide
-      title={patrol ? `Edit patrol — ${patrol.name}` : "New patrol"}
+      title="Patrol"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button variant="primary" onClick={() => save.mutate()} disabled={!canSave}>
-            {save.isPending ? "Saving…" : editing ? "Save changes" : "Create patrol"}
+            {save.isPending ? "Saving…" : "Save patrol"}
           </Button>
         </>
       }
     >
       {presets.length === 0 ? (
         <div className="rounded-lg border border-card-border bg-hover/40 px-4 py-6 text-center text-sm text-muted">
-          Save at least one preset before building a patrol.
+          Save at least one preset on this camera before building a patrol.
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <Input
-                label="Patrol name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Perimeter sweep"
-                autoFocus
-              />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-foreground">Default dwell</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={defaultDwell}
+                  onChange={(e) => setDefaultDwell(e.target.value)}
+                  className="w-20 rounded-md border border-field bg-transparent px-2 py-1.5 text-sm text-foreground outline-hidden focus:border-muted"
+                />
+                <span className="text-xs text-muted">seconds, for stops that set none</span>
+              </div>
             </div>
             <div>
-              <span className="mb-1.5 block text-sm font-medium text-foreground">Speed</span>
+              <span className="mb-1.5 block text-sm font-medium text-foreground">Order</span>
               <Select
-                value={String(speed)}
-                onChange={(e) => setSpeed(e.target.value)}
+                value={randomOrder ? "random" : "sequential"}
+                onChange={(e) => setRandomOrder(e.target.value === "random")}
                 options={[
-                  { value: "0.25", label: "Slow" },
-                  { value: "0.5", label: "Medium" },
-                  { value: "0.75", label: "Fast" },
-                  { value: "1", label: "Max" },
+                  { value: "sequential", label: "In order" },
+                  { value: "random", label: "Shuffled" },
                 ]}
               />
             </div>
@@ -167,8 +188,8 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
                     </span>
                     <div className="min-w-0 flex-1">
                       <Select
-                        value={String(s.preset_id)}
-                        onChange={(e) => patchStop(i, { preset_id: numericId(e.target.value, presets) })}
+                        value={s.preset_token}
+                        onChange={(e) => patchStop(i, { preset_token: e.target.value })}
                         options={presetOptions}
                       />
                     </div>
@@ -196,12 +217,6 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
       )}
     </Modal>
   );
-}
-
-// The Select emits string values; map back to the preset's real id type.
-function numericId(value: string, presets: PresetPublic[]): string {
-  const match = presets.find((p) => String(p.id) === String(value));
-  return match ? match.id : value;
 }
 
 interface IconBtnProps {

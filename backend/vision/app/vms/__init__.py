@@ -39,7 +39,6 @@ from app.vms.events.router import router as event_router
 from app.vms.federation.router import router as federation_router
 from app.vms.patterns.router import router as pattern_router
 from app.vms.playback.router import router as playback_router
-from app.vms.ptz.router import router as ptz_router
 from app.vms.recording.router import router as recording_router
 from app.vms.reports.router import router as reports_router
 # Storage pools/tier-rules/RAID (``/vms/storage/*``) are owned by the NVR — that
@@ -122,7 +121,6 @@ routers = [
     # before the camera ``/cameras/{camera_id}`` catch-all (FastAPI matches in registration
     # order). Distinct from the camera router's ``POST /cameras/{id}/ptz`` single-command
     # endpoint (kept for compatibility). vms.ptz.control (writes) / vms.live.view (reads).
-    ptz_router,
     # Device / fleet management (G7) — /vms/cameras/{id}/{device-info|reboot|ntp|password|
     # config-backup|config-restore} + /vms/cameras/bulk/{action}. Mounts BEFORE the camera
     # router: its ``/cameras/{id}/...`` fleet paths are deeper than the camera catch-all,

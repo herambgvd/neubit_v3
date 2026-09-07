@@ -130,14 +130,14 @@ export default function FederatedCameraDetail({ camera }: FederatedCameraDetailP
 
           {/* PTZ control THROUGH the node — the second (and last) mutation allowed
               on a node-owned camera. Only when the recorder reports a PTZ head.
-              Commands proxy via vms.federation.ptz; presets/patrols stay on the NVR. */}
+              Every command — pan/tilt/zoom, focus, presets, patrol — proxies through the
+              owning recorder. Presets are the camera's own; the patrol is the recorder's. */}
           {ptzCapable && (
             <div className="absolute bottom-3 left-3 z-30 max-w-[min(28rem,calc(100%-1.5rem))]">
               <PtzOverlay
+                nodeId={camera.node_id}
                 cameraId={camera.real_id}
                 canControl={can("vms.ptz.control")}
-                fedNodeId={camera.node_id}
-                fedRealId={camera.real_id}
               />
             </div>
           )}
