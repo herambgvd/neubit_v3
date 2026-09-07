@@ -22,7 +22,15 @@ import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
 import ReportScheduleModal from "./components/ReportScheduleModal";
 import ReportRunsPanel, { scheduleRunsKey } from "./components/ReportRunsPanel";
-import type { QueryParams, ReportCell, ReportRow, ReportSchedulePublic, ReportViewData } from "./types";
+import type {
+  AlarmSeverityBreakdown,
+  BreakdownMap,
+  QueryParams,
+  ReportCell,
+  ReportRow,
+  ReportSchedulePublic,
+  ReportViewData,
+} from "./types";
 
 /** The four accent tones a summary tile / bar can take. */
 type Tone = "ok" | "warn" | "bad" | "info";
@@ -740,9 +748,33 @@ function BarTable({
   );
 }
 
-function BreakdownCard({ title, data }: { title: string; data?: Record<string, number> }) {
-  const entries = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
-  const max = Math.max(1, ...entries.map(([, n]) => n));
+// A breakdown map is one of two wire shapes (backend/vision/app/vms/reports/
+// computations.py): `event-stats.by_type` / `by_severity` and
+// `operator-activity.by_action` are flat `{label: count}`, while
+// `alarm-response.by_severity` is `{severity: {alarms, acked, ack_rate_pct}}`.
+// Rendering the second as the first is what produced "[object Object]" rows with
+// NaN-width bars, so the card asks which it has instead of assuming.
+function isBreakdownRow(v: number | AlarmSeverityBreakdown): v is AlarmSeverityBreakdown {
+  return typeof v === "object" && v !== null;
+}
+
+function BreakdownCard({
+  title,
+  data,
+  /** Row maps only: which field drives the bar. `ack_rate_pct` is a percentage,
+   *  so its bar is scaled to 100 rather than to the largest value. */
+  metric = "alarms",
+}: {
+  title: string;
+  data?: BreakdownMap;
+  metric?: keyof AlarmSeverityBreakdown;
+}) {
+  const entries = Object.entries(data || {}) as [string, number | AlarmSeverityBreakdown][];
+  const barOf = (v: number | AlarmSeverityBreakdown) => (isBreakdownRow(v) ? v[metric] : v);
+  entries.sort((a, b) => barOf(b[1]) - barOf(a[1]));
+  const isRows = entries.some(([, v]) => isBreakdownRow(v));
+  const max =
+    isRows && metric === "ack_rate_pct" ? 100 : Math.max(1, ...entries.map(([, v]) => barOf(v)));
   return (
     <div className="rounded-xl border border-card-border bg-card p-4">
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h3>
@@ -750,13 +782,22 @@ function BreakdownCard({ title, data }: { title: string; data?: Record<string, n
         <p className="text-sm text-muted">No events.</p>
       ) : (
         <div className="space-y-2">
-          {entries.map(([label, n]) => (
+          {entries.map(([label, v]) => (
             <div key={label} className="flex items-center gap-3">
               <span className="w-32 truncate text-xs capitalize text-foreground">{label.replace(/_/g, " ")}</span>
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-hover">
-                <div className="h-full rounded-full bg-foreground/60" style={{ width: `${(n / max) * 100}%` }} />
+                <div className="h-full rounded-full bg-foreground/60" style={{ width: `${(barOf(v) / max) * 100}%` }} />
               </div>
-              <span className="w-8 text-right text-xs tabular-nums text-muted">{n}</span>
+              {isBreakdownRow(v) ? (
+                // The columns the row actually carries — no invented fields.
+                <span className="flex shrink-0 items-center gap-3 text-xs tabular-nums text-muted">
+                  <span className="w-8 text-right">{v.alarms}</span>
+                  <span className="w-16 text-right">{v.acked} ack</span>
+                  <span className="w-12 text-right">{v.ack_rate_pct}%</span>
+                </span>
+              ) : (
+                <span className="w-8 text-right text-xs tabular-nums text-muted">{v}</span>
+              )}
             </div>
           ))}
         </div>

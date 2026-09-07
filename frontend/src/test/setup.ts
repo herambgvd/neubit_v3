@@ -1,5 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 
+// Side-effect import: registers the bundled Iconify collections, exactly as
+// components/Providers.tsx does at runtime. Without it every <Icon> in a rendered
+// component falls back to @iconify/react's HTTP loader, which sets a timer and
+// then calls setState after the test file's jsdom has been torn down ("window is
+// not defined" from react-dom, attributed to whichever file ran last).
+import "@/lib/icons";
+
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 

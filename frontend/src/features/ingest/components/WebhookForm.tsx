@@ -13,11 +13,15 @@ import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
+import type { AxiosError } from "axios";
+
 import { Segmented, RowAction } from "@/components/console";
 import { Button, Checkbox } from "@/components/ui/kit";
 import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
+import type { ApiErrorBody } from "@/lib/types";
 import { ingest as ingestApi } from "../api";
+import { receiverUrl } from "../lib/receiverUrl";
 import { AUTH_TYPES, REQUEST_METHODS } from "../constants";
 import PayloadFieldsBuilder, {
   fieldsToTransform,
@@ -26,9 +30,42 @@ import PayloadFieldsBuilder, {
 import type { AuthType, BuilderField, InboundMethod, JsonObject, WebhookCreate, WebhookPublic, WebhookUpdate } from "../types";
 import type { FieldChangeEvent } from "@/components/common/Field";
 
+// The backend's slug rule, verbatim — `_SLUG_RE` / `_SLUG_ERROR` in
+// backend/ingest/app/ingest/schemas.py. Lowercase alphanumeric with -/_, 3-64
+// chars, first and last character alphanumeric. Same message, so a client-side
+// rejection reads exactly like a server-side one.
+const SLUG_RE = /^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$/;
+const SLUG_ERROR = "slug must be lowercase alphanumeric with -/_ (3-64 chars)";
+
+/** Name → a slug that satisfies SLUG_RE: lowercase, non-slug runs collapsed to a
+ *  single "-", trimmed to an alphanumeric at both ends, capped at 64. */
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 64)
+    .replace(/^-+|-+$/g, "");
+}
+
+/** The machine code from the uniform error envelope (`{ error: { code } }` —
+ *  backend/kernel/kernel/errors.py). ConflictError answers 409 with "CONFLICT",
+ *  which is how the slug clash is told apart from any other failure without
+ *  matching on message text. */
+function errorCode(e: unknown): string | undefined {
+  return (e as AxiosError<ApiErrorBody> | undefined)?.response?.data?.error?.code;
+}
+
+/** What `mutationFn` is handed: the two wire shapes are genuinely different —
+ *  create carries `slug` + `category_id`, update carries neither. */
+type SavePayload =
+  | { mode: "create"; body: WebhookCreate }
+  | { mode: "edit"; id: string; body: WebhookUpdate };
+
 /** The form's per-field validation messages. */
 interface WebhookFormErrors {
   name?: string;
+  slug?: string;
   authUsername?: string;
   authSecret?: string;
   schema?: string;
@@ -47,6 +84,12 @@ export interface WebhookFormProps {
 export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: WebhookFormProps) {
   const isEdit = !!webhook;
   const [name, setName] = useState(webhook?.name || "");
+  // The slug IS the last segment of the public receiver URL, and it is fixed at
+  // create time (WebhookUpdate has no slug field), so on edit it is display-only.
+  const [slug, setSlug] = useState(webhook?.slug || "");
+  // Suggest a slug from the name until the operator types one themselves — after
+  // that their value is never overwritten. On edit there is nothing to suggest.
+  const [slugTouched, setSlugTouched] = useState(isEdit);
   const [requestMethod, setRequestMethod] = useState<InboundMethod>(
     ((webhook?.request_method || "post").toLowerCase() as InboundMethod),
   );
@@ -84,20 +127,26 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
   }
 
   const saving = useMutation({
-    // The body is assembled field-by-field below, so it is a partial until the
-    // branch decides which wire shape it is. NOTE: this form does not collect
-    // `slug`, which WebhookCreate requires — see the create path.
-    mutationFn: (body: Partial<WebhookCreate>) => {
-      const id = webhook?.id ?? "";
-      return isEdit
-        ? ingestApi.webhooks.update(id, body as WebhookUpdate)
-        : ingestApi.webhooks.create(body as WebhookCreate);
-    },
+    // `submit` decides which wire shape it built, so neither branch needs a cast.
+    mutationFn: (p: SavePayload) =>
+      p.mode === "edit"
+        ? ingestApi.webhooks.update(p.id, p.body)
+        : ingestApi.webhooks.create(p.body),
     onSuccess: () => {
       toast.success(isEdit ? "Webhook updated" : "Webhook created");
       onSaved();
     },
-    onError: (e) => toast.error(apiError(e)),
+    onError: (e) => {
+      // The slug is globally unique across tenants; WebhookService.create raises
+      // ConflictError("slug already in use") → 409/CONFLICT. Keep the operator in
+      // the form with the clash marked on the field they can actually change.
+      if (!isEdit && errorCode(e) === "CONFLICT") {
+        setErrors((p) => ({ ...p, slug: "That slug is already taken — choose another." }));
+        toast.error("Slug already in use");
+        return;
+      }
+      toast.error(apiError(e));
+    },
   });
 
   // Per-auth-type secret metadata: label + hint for the secret input.
@@ -117,6 +166,12 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
     e.preventDefault();
     const next: WebhookFormErrors = {};
     if (!name.trim()) next.name = "Name is required";
+    // Create only — the slug is not editable (and not sent) on edit.
+    if (!isEdit) {
+      const s = slug.trim();
+      if (!s) next.slug = "Slug is required";
+      else if (!SLUG_RE.test(s)) next.slug = SLUG_ERROR;
+    }
 
     if (needsUsername && !authUsername.trim()) next.authUsername = "Username is required";
     if (needsSecret && !isEdit && !authSecret) {
@@ -142,25 +197,23 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
       return;
     }
 
-    const body: Partial<WebhookCreate> = {
+    // Fields both wire shapes share. Per-type secret(s): send only what applies;
+    // on edit, blank = keep existing.
+    const shared = {
       name: name.trim(),
       request_method: requestMethod,
       auth_type: authType,
       transform: parsedTransform,
       payload_schema: parsedSchema,
       is_active: isActive,
+      ...(needsUsername && authUsername.trim() ? { auth_username: authUsername.trim() } : {}),
+      ...(needsSecret && authSecret ? { auth_secret: authSecret } : {}),
     };
-    if (!isEdit) body.category_id = categoryId;
 
-    // Per-type secret(s). Send only what applies; on edit, blank = keep existing.
-    if (authType === "basic") {
-      if (authUsername.trim()) body.auth_username = authUsername.trim();
-      if (authSecret) body.auth_secret = authSecret;
-    } else if (needsSecret) {
-      if (authSecret) body.auth_secret = authSecret;
-    }
-
-    saving.mutate(body);
+    // The slug goes on create only: WebhookUpdate has no slug and forbids extras,
+    // so sending it on edit would 422 (backend/ingest/app/ingest/schemas.py).
+    if (isEdit) saving.mutate({ mode: "edit", id: webhook.id, body: shared });
+    else saving.mutate({ mode: "create", body: { ...shared, category_id: categoryId ?? "", slug: slug.trim() } });
   }
 
   const secretCfg = secretMeta[authType];
@@ -179,6 +232,8 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
           value={name}
           onChange={(e: FieldChangeEvent) => {
             setName(e.target.value);
+            // Suggest until the operator takes over the slug field themselves.
+            if (!slugTouched) setSlug(slugify(e.target.value));
             if (errors.name) setErrors((p) => ({ ...p, name: undefined }));
           }}
           placeholder="Enter webhook name"
@@ -192,6 +247,36 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
           options={REQUEST_METHODS}
           hint="POST reads a JSON body. GET reads query params as the payload."
         />
+      </div>
+
+      {/* ── Slug — the last segment of the public receiver URL ─────────── */}
+      <div>
+        <Field
+          label="Slug"
+          required={!isEdit}
+          value={slug}
+          readOnly={isEdit}
+          onChange={(e: FieldChangeEvent) => {
+            setSlugTouched(true);
+            setSlug(e.target.value);
+            if (errors.slug) setErrors((p) => ({ ...p, slug: undefined }));
+          }}
+          placeholder="acme-door-events"
+          autoComplete="off"
+          className={`font-mono${isEdit ? " opacity-70" : ""}`}
+          error={errors.slug}
+          hint={
+            isEdit
+              ? "Fixed at creation — the integrator already has this URL, so it is not sent on save."
+              : SLUG_ERROR
+          }
+        />
+        <p className="mt-1 text-[11px] text-nb-faint">
+          Receiver URL:{" "}
+          <code className="font-mono text-nb-ink">
+            {receiverUrl(slug || "<slug>", isEdit ? webhook.ingest_url : null)}
+          </code>
+        </p>
       </div>
 
       {/* ── Authentication ─────────────────────────────────────── */}

@@ -92,6 +92,8 @@ export default function TriggersTab() {
       <PanelSearch value={search} onChange={setSearch} placeholder="Search triggers…" />
       <PanelList
         loading={q.isLoading}
+        // A failed load must never read as "no triggers yet".
+        error={q.isError ? apiError(q.error, "Couldn't load triggers") : undefined}
         empty={filtered.length === 0}
         emptyText={search.trim() ? "No triggers match your search" : "No triggers yet"}
       >

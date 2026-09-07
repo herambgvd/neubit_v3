@@ -24,13 +24,13 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/kit";
-import { CanvasToolControls } from "@/components/floor-builder/canvas-tool-controls";
+import { CanvasToolControls } from "@/components/floor-builder/CanvasToolControls";
 import { EDITOR_MODES, TOOL_TYPES } from "@/components/floor-builder/constants";
 import { DeviceManagementSidebar } from "@/components/floor-builder/DeviceManagementSidebar";
 import { drawCameraPlacement } from "@/components/floor-builder/cameraRenderer";
-import { FloorPlanCanvas, type FloorPlanCanvasHandle } from "@/components/floor-builder/floor-plan-canvas";
-import { FloorPlanToolbar } from "@/components/floor-builder/floor-plan-toolbar";
-import { FloorUploadModal } from "@/components/floor-builder/floor-upload-modal";
+import { FloorPlanCanvas, type FloorPlanCanvasHandle } from "@/components/floor-builder/FloorPlanCanvas";
+import { FloorPlanToolbar } from "@/components/floor-builder/FloorPlanToolbar";
+import { FloorUploadModal } from "@/components/floor-builder/FloorUploadModal";
 import type {
   DevicePayload,
   EditorMode,
@@ -41,7 +41,7 @@ import type {
   ToolType,
 } from "@/components/floor-builder/types";
 import { useDeviceInventory } from "@/components/floor-builder/useDeviceInventory";
-import { ZoneManagementSidebar } from "@/components/floor-builder/zone-management-sidebar";
+import { ZoneManagementSidebar } from "@/components/floor-builder/ZoneManagementSidebar";
 import { apiError } from "@/lib/api";
 import { sites } from "@/lib/api/sites";
 import type { DevicePlacementPublic, FloorPublic, ZonePublic } from "@/lib/types";

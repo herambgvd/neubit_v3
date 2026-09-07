@@ -1,19 +1,128 @@
 # frontend — Neubit operator console
 
-Next.js modular monolith on the shared Vercel-theme UI library (`web/`, vendored from
-platform_base). Public landing at `/`, auth screens under `(auth)/`, the app under `(app)/`
-(pages re-export from `@/web/pages/*`).
+The per-tenant operator console: video, access control, incidents and workflow, ingest,
+analytics and the platform's own settings. Separate from the vendor super-admin panel
+(`admin-frontend/`), which is a different app with its own auth realm.
+
+- **Stack:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript (`strict`) · Tailwind ·
+  TanStack Query · MapLibre GL · Vitest + Testing Library.
+- **Served at** `http://<host>/` through the gateway; the API is same-origin at `/api/v1`.
 
 ```
-frontend/
-├── app/            routes — page.jsx (landing) · (auth)/* · (app)/*
-├── web/            shared UI library (theme, kit, pages, shell, api client) — @/web/*
-├── views/          app-local views (Home dashboard)
-├── menu.js         nav menu (permission-gated)
-└── tailwind.config.js · next.config.js
+frontend/src/
+├── app/            routes only — (app)/*, (auth)/*, impersonate/, wall-display/
+├── features/       one directory per domain: vms, access, workflow, ingest, core,
+│                   videowall, security, bi — each with api.ts, types.ts, components/, hooks/
+├── components/     cross-feature UI: ui/kit.tsx, common/, shell/, console/, floor-builder/
+├── lib/            api client, auth, wire types, formatting, icons, map, desktop bridge
+└── test/           setup + the tree-level guards (naming.test.ts)
 ```
 
-Talks to the core over `/api/*` through Traefik (`NEXT_PUBLIC_API_URL`). Dev: `npm run dev`.
+A route file under `app/` holds no logic: it renders the screen its feature exports. Anything
+shared by two features belongs in `components/` or `lib/`, never imported feature-to-feature.
+
+## Scripts
+
+| script | what |
+| --- | --- |
+| `npm run dev` / `build` / `start` | Next dev server / production build / serve the build |
+| `npm run typecheck` | `tsc --noEmit` — the project is `strict: true` and at zero errors |
+| `npm run lint` | ESLint 9 flat config (`eslint .`) — **not** `next lint`, which Next 16 removed |
+| `npm test` | Vitest (jsdom) |
+| `npm run check` | all three, in that order — run it before pushing |
+| `npm run icons` / `icons:check` | rebuild / audit the offline icon bundle (see below) |
+| `npm run map:assets` / `map:tiles` / `map:verify` | offline basemap assets (see below) |
+
+## Auth — the model this console rests on
+
+The **access token lives only in memory** (a module variable in `src/lib/api.ts`) and rides as a
+`Bearer` header. It is never written to `localStorage`, `sessionStorage` or a cookie, so an XSS
+cannot exfiltrate a durable credential. The **refresh token is the httpOnly `nb_refresh` cookie**
+the backend has always set at login (`backend/core/app/auth/cookies.py`), scoped to the `/auth`
+path and invisible to JavaScript.
+
+Consequences worth knowing before changing anything in `lib/api.ts`:
+
+- On a hard reload the in-memory token is gone, so the first call 401s and self-heals from the
+  cookie. That 401 is expected, not a fault.
+- `/auth/refresh` is a **session probe**: it answers `200` with a null token when there is no
+  session, so a signed-out visitor produces zero failing requests.
+- Concurrent 401s share a single refresh (single-flight), and a request is retried at most once.
+- `/auth/login`, `/auth/login/mfa`, `/auth/refresh` and `/auth/logout` are never themselves
+  retried — a 401 there means the session is genuinely gone.
+- An impersonation session (opened from the super-admin panel) is **access-only by design**: the
+  panel mints no refresh token for it, so it ends when the tab is reloaded. Re-open it from the
+  panel; every impersonation is audited.
+
+The server is authoritative for everything. `can()` and `hasModule()` from `lib/auth.tsx` decide
+what the console *renders*; they are a UX affordance over the backend's permission and
+entitlement checks, never a substitute.
+
+## Types
+
+Every screen is typed against the backend. `src/lib/types.ts` holds the wire types shared across
+features and each feature has its own `types.ts` for the rest — one interface per Pydantic model,
+with the backend file named in a comment. Dates cross the wire as ISO strings, so they are typed
+`string`, never `Date`.
+
+This is load-bearing rather than decorative: turning `strict` on found eight fields the UI read
+or sent that the API does not have — a site picker keyed on `id` instead of `site_id` (so the
+chosen site was never saved), door lists keyed on a v2 `door_id` (so access groups persisted
+arrays of `undefined`), report columns reading `actions` where the backend sends `total_actions`.
+None of them threw; they simply rendered nothing.
+
+## Testing
+
+409 tests. They live beside what they cover (`Component.test.tsx` next to `Component.tsx`) plus
+`src/test/` for the helpers and the tree-level guards. Each was verified by breaking the thing it
+guards and watching that test — and only that test — go red. A test nobody has seen fail is not
+yet a test.
+
+What the suite is actually for:
+
+- **The token model** (`lib/api.test.ts`, `lib/auth.test.tsx`) — storage, single-flight refresh,
+  retry-once, the endpoints that must never be retried, and that the session comes back from the
+  cookie after a reload.
+- **A failed load is never an empty result.** Every list screen must report the error; "No users
+  yet" while the user service is down is a lie about the data. This was wired on six screens that
+  had the branch and never passed anything to it.
+- **Destructive actions are gated.** Deleting a user, role, site, tag, SOP, trigger, NVR, recorder,
+  wall or access group, revoking a card or a federation credential: the API must not be called
+  until the operator confirms.
+- **Request bodies match the contract.** Several bugs found here were fields the UI sent that the
+  API forbids, or omitted that it requires — so the create/edit tests assert the body, not the
+  click.
+- **The selection derivation.** These screens derive `selectedId ?? filtered[0]?.id` instead of
+  syncing selection in an effect; the tests pin that an explicit choice survives a refetch.
+- **The stream hooks and player sessions** at their seam — retry when there is no token yet,
+  close on unmount, cap the buffer, release the session, recover from a failed renew.
+- **`asItems`** on all four input shapes, with `expectTypeOf` assertions that fail the *typecheck*
+  if the element type ever collapses to `unknown[]` again.
+- **The tree itself** (`src/test/naming.test.ts`) — the naming rules below, walked at run time.
+
+## Known gaps
+
+Recorded rather than implied, so nobody has to rediscover them:
+
+- **No CI.** Nothing runs `npm run check` automatically — the repo has no `.github/workflows`. Run
+  it by hand before pushing.
+- **Nothing here talks to a real backend.** Every test stubs the axios adapter or the api module,
+  so the types are the only thing holding the console to the backend's contract, and they are
+  hand-written from the Pydantic models rather than generated. The super-admin panel has a
+  contract test that reads those models at run time; this console does not yet.
+- **No end-to-end test.** Nothing exercises a real login against a running `core`.
+- **Coverage is deliberately uneven.** One worked example of each pattern (list, master-detail,
+  modal form, event feed) is covered rather than a thin pass over every screen. `Streaming.tsx`,
+  the map, the SOP designer canvas, the security write paths and roughly half the workflow and
+  access tabs have no tests of their own.
+- **~100 `react-hooks/set-state-in-effect` warnings.** All one shape: a component seeding local
+  state from props or server data. With `refetchOnWindowFocus: false` these do not clobber
+  operator input, so they are not defects — they stop the React Compiler memoizing those
+  components. Clearing them means splitting ~89 forms into children mounted from their record,
+  which is a deliberate refactor with tests behind it. The eslint config says so at the rule.
+- **Four screens export a component whose name their filename does not contain** (e.g.
+  `IncidentList.tsx` → `WorkflowPage`). Frozen in `KNOWN_EXPORT_NAME_MISMATCHES` in the naming
+  test: the existing four are grandfathered, a new one fails.
 
 ## Offline / air-gapped assets
 
@@ -25,7 +134,7 @@ icons come from a committed Iconify bundle instead of `api.iconify.design`:
 | --- | --- |
 | `scripts/build-icon-bundle.mjs` | the only thing that talks to the Iconify API — a dev-time step |
 | `src/lib/icons/icon-bundle.json` | the icons the app uses, committed |
-| `src/lib/icons/index.js` | registers them at boot (imported by `Providers`) |
+| `src/lib/icons/index.ts` | registers them at boot (imported by `Providers`) |
 | `src/styles/scss/_icon-assets.scss` | data: URIs for the icons SCSS draws with `content: url()` |
 
 Added a new `<Icon icon="…" />`? Run `npm run icons` (needs network) and commit the regenerated
@@ -41,7 +150,7 @@ off never ships its SDK — both canvases are code-split.
 
 | piece | where | committed? |
 | --- | --- | --- |
-| style (Protomaps dark flavor) | generated in-process by `src/lib/map/index.js` | n/a — no style server |
+| style (Protomaps dark flavor) | generated in-process by `src/lib/map/index.ts` | n/a — no style server |
 | label glyphs + POI sprites (17 MB) | `public/map/`, via `npm run map:assets` | yes |
 | world vector tiles (0.5–17 GB) | `deploy/tiles/planet.pmtiles` | **no** — the `tiles` service builds it on first start |
 | tile server | `tiles` service (deploy/tiles-server/), routed at `/tiles` in `gateway/dynamic/routes.yml` | n/a |
@@ -101,3 +210,30 @@ Google's geocoder has no offline equivalent worth its cost (self-hosted Nominati
 import — tens of GB and a second Postgres — to serve a few dozen sites). So with Google Maps off,
 the site form swaps "Fetch from address" for **Pick on map**: click the basemap, the pin's
 latitude and longitude fill into the form.
+
+## File naming
+
+Enforced by `src/test/naming.test.ts` — it walks `src/` and fails with the offending path, so
+this is not a style suggestion.
+
+| kind | format | example |
+| --- | --- | --- |
+| React component | `PascalCase.tsx`, named after the component it exports | `FloorPlanEditor.tsx` |
+| Hook | `useThing.ts` | `useLiveSession.ts` |
+| Other module (api, utils, types, config, constants) | `camelCase.ts` | `api.ts`, `wallLayout.ts` |
+| Next.js route file | whatever Next mandates, only under `src/app/` | `page.tsx`, `layout.tsx`, `not-found.tsx`, `route.ts` |
+| Directory | `kebab-case` (plus Next's `(group)` and `[param]`) | `floor-builder/`, `(app)/`, `[id]/` |
+| Test | beside its subject, same stem | `CameraGrid.test.tsx` |
+
+Two deliberate exceptions, both checked by the test rather than waived by hand:
+
+- A `.tsx` that exports **several** components is a collection named for the group, in camelCase
+  (`ui/kit.tsx`), and one that exports a component **alongside other values** is a mixed module
+  named for its domain (`lib/auth.tsx` — `AuthProvider` + `useAuth`). Only a file that is nothing
+  but one component must carry that component's name.
+- A `.tsx` that exports no component at all (`ApiKeyColumns.tsx`, a column builder that happens to
+  return JSX) is a module, and is not forced into either case.
+
+A handful of screens predate the convention and export a name their filename does not contain
+(`IncidentList.tsx` → `WorkflowPage`). They are frozen in `KNOWN_EXPORT_NAME_MISMATCHES` in the
+test: existing ones are grandfathered, a new one fails the suite.

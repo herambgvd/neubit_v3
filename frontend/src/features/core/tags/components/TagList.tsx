@@ -12,6 +12,8 @@ import TagListItem from "./TagListItem";
 export interface TagListProps {
   items: TagPublic[];
   loading: boolean;
+  /** A load failure; shown instead of the "no tags yet" empty state. */
+  error?: string | null;
   query: string;
   selectedId: string | null;
   /** The page mode; "create" un-highlights the list. */
@@ -19,13 +21,19 @@ export interface TagListProps {
   onSelect: (id: string) => void;
 }
 
-export default function TagList({ items, loading, query, selectedId, mode, onSelect }: TagListProps) {
+export default function TagList({ items, loading, error, query, selectedId, mode, onSelect }: TagListProps) {
   if (loading) {
     return (
       <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-muted">
         <Spinner className="!h-4 !w-4" /> Loading…
       </div>
     );
+  }
+
+  // A failed load must never read as "no tags yet" — that is the same screen an
+  // empty library shows, and it invites the operator to create a duplicate.
+  if (error) {
+    return <div className="px-4 py-12 text-center text-sm text-nb-crit">{error}</div>;
   }
 
   if (items.length === 0) {

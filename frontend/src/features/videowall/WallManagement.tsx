@@ -189,6 +189,13 @@ export default function WallManagement() {
               <div className="flex items-center gap-2 px-1 py-6 text-sm text-nb-soft">
                 <Spinner className="!h-4 !w-4" /> Loading…
               </div>
+            ) : wallsQ.isError ? (
+              // A failed load is NOT an empty estate: without this branch a wall
+              // service outage read as "No walls yet", inviting an operator to
+              // recreate walls that already exist.
+              <div className="px-1 py-10 text-center text-xs text-nb-crit">
+                {apiError(wallsQ.error, "Failed to load walls")}
+              </div>
             ) : filtered.length === 0 ? (
               <div className="px-1 py-10 text-center text-xs text-nb-faint">
                 {q.trim() ? "No walls match your search" : "No walls yet"}

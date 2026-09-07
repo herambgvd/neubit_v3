@@ -118,6 +118,8 @@ export default function SitesConfigPage() {
 
           <PanelList
             loading={sitesQ.isLoading}
+            // A failed load must never read as "no sites yet".
+            error={sitesQ.isError ? apiError(sitesQ.error, "Couldn't load sites") : undefined}
             empty={filtered.length === 0}
             emptyText={q.trim() ? "No sites match your search" : "No sites yet"}
           >

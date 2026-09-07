@@ -13,7 +13,7 @@ import { ConfirmDialog, Spinner, type ConfirmState } from "@/components/ui/kit";
 import { apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import type { FloorPublic, SitePublic } from "@/lib/types";
-import { FloorPlanEditorModal } from "@/components/floor-builder/floor-plan-editor";
+import { FloorPlanEditorModal } from "@/components/floor-builder/FloorPlanEditor";
 import FloorForm from "./FloorForm";
 
 export default function FloorsPanel({ site }: { site: SitePublic }) {

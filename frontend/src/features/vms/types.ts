@@ -1689,6 +1689,21 @@ export interface ReportRow {
   [k: string]: ReportCell;
 }
 
+/** One row of a NON-flat breakdown map. `alarm-response.by_severity` is keyed by
+ *  severity and each value is this stats record, not a count — see
+ *  backend/vision/app/vms/reports/computations.py (`compute_alarm_response`). */
+export interface AlarmSeverityBreakdown {
+  alarms: number;
+  acked: number;
+  ack_rate_pct: number;
+}
+
+/** What a breakdown map can be. `event-stats` emits flat count maps (`by_type`,
+ *  `by_severity`) and `operator-activity` a flat `by_action`; `alarm-response`
+ *  emits a map of rows under the SAME `by_severity` key. Both live in
+ *  backend/vision/app/vms/reports/computations.py. */
+export type BreakdownMap = Record<string, number> | Record<string, AlarmSeverityBreakdown>;
+
 /** The `totals` map — the estate-wide numbers each kind contributes. */
 export interface ReportTotals {
   cameras?: number;
@@ -1719,7 +1734,8 @@ export interface ReportViewData {
   rows: ReportRow[];
   totals: ReportTotals;
   by_type?: Record<string, number>;
-  by_severity?: Record<string, number>;
+  /** Flat counts for `event-stats`, a row map for `alarm-response`. */
+  by_severity?: BreakdownMap;
   by_action?: Record<string, number>;
   status_counts?: Record<string, number>;
   source_note?: string | null;

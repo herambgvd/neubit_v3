@@ -161,6 +161,8 @@ export default function RolesPage() {
 
           <PanelList
             loading={roles.isLoading}
+            // A failed load must never read as "no roles yet".
+            error={roles.isError ? apiError(roles.error, "Couldn't load roles") : undefined}
             empty={filtered.length === 0}
             emptyText={search.trim() ? "No roles match your search" : "No roles yet"}
           >

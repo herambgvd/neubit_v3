@@ -3,8 +3,10 @@
 // Reusable data table built on @tanstack/react-table (v8). Matches the shared
 // kit Table aesthetic — sharp uppercase header band, hover rows, right-aligned
 // numeric columns (tabular-nums) via column meta `align:"right"`. Adds sorting
-// (click a sortable header → asc/desc with a caret) and optional row selection
-// (header select-all + per-row checkbox column).
+// (click a sortable header → asc/desc with a caret) and optional row selection —
+// the STATE only. This component renders no checkbox column of its own: a caller
+// that wants one declares it (see CameraTable's `id: "select"` column) and turns
+// the state on with `enableRowSelection`.
 //
 // Generic on purpose so other VMS tables can adopt it. Props:
 //   columns              — TanStack column defs (use meta.align:"right" for numeric)
@@ -13,7 +15,7 @@
 //   onRowClick           — (row) => void; whole-row click
 //   emptyState           — node rendered when data is empty
 //   initialSorting       — [{ id, desc }]
-//   enableRowSelection   — adds the checkbox column
+//   enableRowSelection   — turns on TanStack's selection state (no column added)
 //   rowSelection         — controlled selection map { [rowId]: true }
 //   onRowSelectionChange — TanStack updater (setter) for the map
 import {

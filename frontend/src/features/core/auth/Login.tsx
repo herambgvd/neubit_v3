@@ -57,6 +57,13 @@ export default function LoginPage() {
         setCode("");
         return;
       }
+      // A 200 that carries no access token leaves the console signed out. Routing
+      // to /home would land on a page that bounces straight back to /login with a
+      // "Signed in" toast still on screen — say it failed instead.
+      if (!tokens.access) {
+        setError("Sign-in did not complete — no session was issued. Try again.");
+        return;
+      }
       toast.success("Signed in");
       router.push("/home");
     } catch (err) {

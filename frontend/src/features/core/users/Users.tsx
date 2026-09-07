@@ -271,6 +271,9 @@ export default function UsersPage() {
 
           <PanelList
             loading={users.isLoading}
+            // A failed load must never read as "no users yet" — that is the same
+            // screen an empty directory shows, and it invites the wrong action.
+            error={users.isError ? apiError(users.error, "Couldn't load users") : undefined}
             empty={filtered.length === 0}
             emptyText={search.trim() ? "No users match your search" : "No users yet"}
           >

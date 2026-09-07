@@ -103,6 +103,7 @@ export default function TagsConfigPage() {
             <TagList
               items={filtered}
               loading={tagsQ.isLoading}
+              error={tagsQ.isError ? apiError(tagsQ.error, "Couldn't load tags") : null}
               query={q}
               selectedId={selectedId}
               mode={mode}

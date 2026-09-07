@@ -18,7 +18,7 @@
 //                          all of them and cannot express the difference.
 //   • other             → plain dot.
 // Labels get a white halo + dark fill so they stay legible over dark floorplans
-// (mirrors the zone-label treatment in floor-plan-canvas.jsx).
+// (mirrors the zone-label treatment in FloorPlanCanvas.tsx).
 
 /** What the renderer reads off a device. Every field is optional so a saved
  *  placement, a palette ghost and a legacy row all draw through one path. */

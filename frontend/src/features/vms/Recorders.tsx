@@ -358,6 +358,7 @@ function FederationTrust({ node }: { node: MediaNodePublic }) {
   const [issued, setIssued] = useState<NodeEnrollResult | null>(null); // the just-issued RAW credential (show once)
   const [copied, setCopied] = useState(false);
   const [pairCode, setPairCode] = useState<string | null>(null); // non-null while the pair dialog is open
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null); // revoke confirmation
 
   const credsQ = useQuery({
     queryKey: ["vms-node-credentials", node.id],
@@ -480,7 +481,18 @@ function FederationTrust({ node }: { node: MediaNodePublic }) {
                   </span>
                   {canManage && !revoked && (
                     <button
-                      onClick={() => revoke.mutate(c.id)}
+                      onClick={() =>
+                        // Revoking is irreversible and cuts this VMS off from the
+                        // recorder (cameras and live streams stop resolving), so it
+                        // asks first — the mutation fires only from onConfirm.
+                        setConfirm({
+                          title: "Revoke credential",
+                          message: `Revoke “${c.label || "credential"}”? This VMS immediately loses access to ${node.name}'s cameras and streams until it is paired or enrolled again. This cannot be undone.`,
+                          confirmLabel: "Revoke",
+                          danger: true,
+                          onConfirm: () => { revoke.mutate(c.id); setConfirm(null); },
+                        })
+                      }
                       disabled={revoke.isPending}
                       className="inline-flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.08)] px-2 py-1 text-[11px] text-[#f87171] transition hover:bg-[rgba(248,113,113,.16)] disabled:opacity-50"
                     >
@@ -598,6 +610,8 @@ function FederationTrust({ node }: { node: MediaNodePublic }) {
           )}
         </div>
       </Modal>
+
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={revoke.isPending} />
     </>
   );
 }

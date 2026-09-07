@@ -29,7 +29,10 @@ export function useVmsPopups({ enabled = true }: { enabled?: boolean } = {}) {
   useEffect(() => {
     if (!enabled) return;
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
-    if (!tokens.access) return;
+    // No token check here: `connect` below reads the token at connect time and
+    // RETRIES when there is none yet. Bailing out of the effect instead left the
+    // popup stream dead for the whole session whenever this host mounted before
+    // the auth provider had finished probing the refresh cookie.
 
     let es: EventSource | null = null;
     let closed = false;

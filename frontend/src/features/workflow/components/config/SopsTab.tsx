@@ -71,6 +71,8 @@ export default function SopsTab() {
       <PanelSearch value={q} onChange={setQ} placeholder="Search SOPs…" />
       <PanelList
         loading={sopsQ.isLoading}
+        // A failed load must never read as "no SOPs yet".
+        error={sopsQ.isError ? apiError(sopsQ.error, "Couldn't load SOPs") : undefined}
         empty={filtered.length === 0}
         emptyText={q.trim() ? "No SOPs match your search" : "No SOPs yet"}
       >

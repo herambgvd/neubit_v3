@@ -41,7 +41,7 @@ import { incId, incTitle, incZoneHint, incSiteRef, sev, prioWeight } from "./lib
 const DEFAULT_W = 1200;
 const DEFAULT_H = 800;
 
-// `polygon` is FloorZone.polygon (components/floor-builder/floor-plan-editor.tsx).
+// `polygon` is FloorZone.polygon (components/floor-builder/FloorPlanEditor.tsx).
 function centroid(polygon: number[][] | null | undefined = []): [number, number] | null {
   if (!Array.isArray(polygon) || polygon.length === 0) return null;
   let sx = 0;
