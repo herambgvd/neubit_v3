@@ -45,7 +45,6 @@ from app.vms import public_routers as vms_public_routers
 from app.vms.anr import AnrConsumer
 from app.vms.common.events import bus
 from app.vms.events import EventSupervisor
-from app.vms.export import ExportWorker
 from app.vms.health import HealthSampler
 from app.vms.motion_search import MotionSearchWorker
 from app.vms.linkage import LinkageConsumer
@@ -105,13 +104,12 @@ async def lifespan(app: FastAPI):
     # files is a data-loss race. So the RetentionTieringWorker + RaidMonitor are NOT
     # started here (removed); the shared integrity helper stays for checksum-on-finalize.
 
-    # P4-B clip export: drain queued ExportJobs → ffmpeg-concat the covered recorded
-    # fmp4 segments into a single downloadable mp4 (in the downloads area on the
-    # recordings volume). Own DB session per cycle; bounded concurrency; graceful
-    # (missing segments / ffmpeg fail → job status=failed, never crashes the loop).
-    export_worker = ExportWorker(get_sessionmaker())
-    await export_worker.start()
-    app.state.export_worker = export_worker
+    # No clip-export worker here any more. An export is cut from the SEGMENTS, and
+    # the recorder that wrote them is the only box that can read them, hash the
+    # result and sign a chain-of-custody manifest with its own key. The VMS running
+    # its own ffmpeg over the same /recordings volume made it a second writer on
+    # files the recorder owns, and produced clips nothing could attest to. The
+    # console now asks the owning recorder (/vms/federation/…/exports).
 
     # G4 forensic motion search: drain queued MotionSearchJobs → non-AI ffmpeg VMD over
     # the covered recorded fmp4 segments in the drawn region(s) → threshold the per-frame
@@ -176,7 +174,6 @@ async def lifespan(app: FastAPI):
     await report_scheduler.stop()
     await event_supervisor.stop()
     await motion_search_worker.stop()
-    await export_worker.stop()
     await rec_scheduler.stop()
     await node_heartbeat.stop()
     await sampler.stop()

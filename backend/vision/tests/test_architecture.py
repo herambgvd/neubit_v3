@@ -134,6 +134,12 @@ def test_the_vms_does_not_proxy_config_authorship_to_a_node(app):
 # nothing still answers every read.
 REQUIRED_FEDERATED_OPERATIONS = [
     "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/ptz",
+    "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/exports",
+    # The evidence trio. Without these an export is a file with no provenance, which
+    # is the whole reason the VMS stopped producing its own.
+    "POST /vms/federation/nodes/{node_id}/exports/{export_id}/verify",
+    "GET /vms/federation/nodes/{node_id}/exports/{export_id}/manifest",
+    "GET /vms/federation/nodes/{node_id}/exports/public-key",
     "PUT /vms/federation/nodes/{node_id}/cameras/{camera_id}/imaging",
     "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/io/relays/{token}/state",
     "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/recording/start",

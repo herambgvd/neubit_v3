@@ -26,7 +26,6 @@ from app.vms.bookmarks.router import router as bookmark_router
 from app.vms.cameras.router import router as camera_router
 from app.vms.dashboard.router import router as dashboard_router
 from app.vms.evidence.router import router as evidence_router
-from app.vms.export.router import router as export_router
 from app.vms.groups.router import router as group_router
 from app.vms.health.router import router as health_router
 from app.vms.linkage.router import router as linkage_router
@@ -65,11 +64,7 @@ from app.vms.videowall.router import router as videowall_router
 # ``/vms/cameras/{id}/timeline`` paths are deeper than the camera ``/cameras/{id}``
 # catch-all, and distinct from the recording router's paths. The P4-A recorded-
 # playback control plane (recorded PlaybackSession + scrub-bar timeline).
-# Export mounts alongside playback — its ``/vms/cameras/{id}/export`` (POST) +
-# ``/vms/export/{job}`` + ``/vms/export/{job}/download`` are deeper/distinct from the
-# camera ``/cameras/{id}`` catch-all. The P4-B clip-export control plane (queue a job;
-# the ExportWorker ffmpeg-concats the covered recorded segments → a downloadable mp4).
-# Events mounts alongside export — its ``/vms/events`` + ``/vms/cameras/{id}/events``
+# Events mounts alongside playback — its ``/vms/events`` + ``/vms/cameras/{id}/events``
 # (GET) + ``/vms/events/{id}/ack`` (POST) are deeper/distinct from the camera
 # ``/cameras/{id}`` catch-all. The P5-A camera device-events feed (the event-supervisor
 # ingests device/system events → NATS → workflow correlation → incidents).
@@ -94,7 +89,6 @@ routers = [
     audio_router,
     recording_router,
     playback_router,
-    export_router,
     reports_router,
     event_router,
     federation_router,

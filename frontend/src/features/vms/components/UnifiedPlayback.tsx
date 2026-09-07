@@ -646,14 +646,23 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
   }, [clock, activeSource]);
 
   // Download / clip: export the visible window of the ACTIVE source, reusing the same
-  // export flow the focus player uses (`onExportRange`). Camera tiles export by real
-  // cameraId; NVR tiles don't have a native VMS export path → skip (button disabled).
+  // export flow the focus player uses (`onExportRange`).
+  //
+  // Federated tiles USED to be skipped here alongside NVR tiles, on the grounds that
+  // they had "no native VMS export path". They have one — the recorder's, which is
+  // the only place an export can be produced anyway — and since every camera is
+  // owned by a recorder, skipping them disabled the button for all of them.
+  //
+  // NVR tiles stay skipped, and for a real reason: a third-party NVR channel is
+  // proxied for viewing, and this platform does not drive an export job on somebody
+  // else's recorder.
   const downloadActive = useCallback(() => {
-    if (!activeSource || activeSource.kind === "nvr" || activeSource.kind === "federated") return;
+    if (!activeSource || activeSource.kind !== "federated") return;
     onExportRange?.({
       from: iso(windowStart),
       to: iso(windowEnd),
-      cameraId: activeSource.cameraId,
+      nodeId: activeSource.nodeId,
+      cameraId: activeSource.realId,
       cameraName: activeSource.name,
     });
   }, [activeSource, onExportRange, windowStart, windowEnd]);
@@ -689,15 +698,15 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
   const selDurationMs = hasSelection ? selTo - selFrom : 0;
 
   // Extract clip: export ONLY the selected sub-range of the ACTIVE source, reusing
-  // the same onExportRange flow as the window-download. Camera tiles only (NVR has
-  // no native VMS export path) — gated the same as downloadActive.
+  // the same onExportRange flow as the window-download — and gated identically, so
+  // the two cannot drift into disagreeing about what is exportable.
   const extractClip = useCallback(() => {
-    if (!hasSelection || !activeSource || activeSource.kind === "nvr" || activeSource.kind === "federated")
-      return;
+    if (!hasSelection || !activeSource || activeSource.kind !== "federated") return;
     onExportRange?.({
       from: iso(selFrom),
       to: iso(selTo),
-      cameraId: activeSource.cameraId,
+      nodeId: activeSource.nodeId,
+      cameraId: activeSource.realId,
       cameraName: activeSource.name,
     });
   }, [hasSelection, activeSource, onExportRange, selFrom, selTo]);
@@ -1229,8 +1238,19 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                       })
                     : null
               }
-              onExportRange={(r) =>
-                onExportRange?.({ ...r, cameraId: focusTile.cameraId, cameraName: focusTile.name })
+              // Only a federated tile can raise an export: the recorder that owns the
+              // camera is what produces one. A third-party NVR channel is proxied for
+              // viewing and this platform does not run a job on somebody else's box.
+              onExportRange={
+                focusTile.kind === "federated"
+                  ? (r) =>
+                      onExportRange?.({
+                        ...r,
+                        nodeId: focusTile.nodeId,
+                        cameraId: focusTile.realId,
+                        cameraName: focusTile.name,
+                      })
+                  : undefined
               }
             />
           ) : (
@@ -1405,8 +1425,8 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                 <ToolBtn
                   icon="heroicons-outline:scissors"
                   title={
-                    activeSource?.kind === "nvr" || activeSource?.kind === "federated"
-                      ? "Clip extract unavailable for recorder / NVR channels"
+                    activeSource && activeSource.kind !== "federated"
+                      ? "Clip extract is unavailable for third-party NVR channels"
                       : !hasSelection
                         ? "Mark in + out to select a section to extract"
                         : `Extract clip ${readout(selFrom)}–${readout(selTo)}${
@@ -1414,12 +1434,7 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                           }`
                   }
                   onClick={extractClip}
-                  disabled={
-                    !hasSelection ||
-                    !activeSource ||
-                    activeSource.kind === "nvr" ||
-                    activeSource.kind === "federated"
-                  }
+                  disabled={!hasSelection || !activeSource || activeSource.kind !== "federated"}
                 />
                 {hasSelection && (
                   <ToolBtn
@@ -1441,14 +1456,12 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                 <ToolBtn
                   icon="heroicons-outline:arrow-down-tray"
                   title={
-                    activeSource?.kind === "nvr" || activeSource?.kind === "federated"
-                      ? "Export unavailable for recorder / NVR channels"
+                    activeSource && activeSource.kind !== "federated"
+                      ? "Export is unavailable for third-party NVR channels"
                       : `Download this whole window${activeSource ? ` · ${activeSource.name}` : ""}`
                   }
                   onClick={downloadActive}
-                  disabled={
-                    !activeSource || activeSource.kind === "nvr" || activeSource.kind === "federated"
-                  }
+                  disabled={!activeSource || activeSource.kind !== "federated"}
                 />
                 <ToolBtn
                   icon={
@@ -1472,9 +1485,9 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                   {readout(selFrom)} – {readout(selTo)}
                   <span className="text-amber-400/70">({durReadout(selDurationMs)})</span>
                 </span>
-                {(activeSource?.kind === "nvr" || activeSource?.kind === "federated") && (
+                {activeSource && activeSource.kind !== "federated" && (
                   <span className="text-[11px] text-[#9db0d8]">
-                    Clip extract is unavailable for recorder / NVR channels.
+                    Clip extract is unavailable for third-party NVR channels.
                   </span>
                 )}
               </div>

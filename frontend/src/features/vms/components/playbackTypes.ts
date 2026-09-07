@@ -28,8 +28,15 @@ export interface ExportRange {
   to: string;
 }
 
-/** The export the Playback page raises from a tile: the window + which camera. */
+/** The export the Playback page raises from a tile: the window, and WHICH RECORDER
+ *  holds the footage.
+ *
+ *  `nodeId` is not optional. An export is produced by the recorder that owns the
+ *  segments — it reads them off its own disk and signs a chain-of-custody manifest
+ *  with its own key — so there is no export to raise without naming one. `cameraId`
+ *  is the camera's id ON that recorder, not a federated composite. */
 export interface ExportRequest extends ExportRange {
+  nodeId: string;
   cameraId: string;
   cameraName?: string | null;
 }

@@ -58,11 +58,10 @@ import type {
   EvidenceLockCreate,
   EvidenceLockListResponse,
   EvidenceLockPublic,
-  ExportJobPublic,
-  ExportPublicKey,
-  ExportVerifyResult,
   FederatedExportJob,
   FederatedExportList,
+  FederatedExportPublicKey,
+  FederatedExportVerify,
   FederatedHold,
   FederatedHoldList,
   FederatedLiveSession,
@@ -139,21 +138,10 @@ const GROUPS = "/vms/camera-groups";
 const PATTERNS = "/vms/patterns";
 const EVENTS = "/vms/events";
 const LINKAGE = "/vms/linkage-rules";
-const EXPORT = "/vms/export";
 const REPORTS = "/vms/reports";
 const REPORT_SCHEDULES = "/vms/report-schedules";
 const BOOKMARKS = "/vms/bookmarks";
 const EVIDENCE = "/vms/evidence";
-
-// The axios baseURL is "<host>/api/v1" — for endpoints the browser must hit
-// directly (an authed blob download triggered via a save-link), prefix the
-// full origin. Reuse the same host-derivation the api instance uses.
-// Same-origin by default so the download hits the gateway on whatever host the
-// operator opened (localhost, a LAN IP, a domain) — not core's raw :8000, which
-// isn't published outside dev.
-const API_ROOT =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== "undefined" ? window.location.origin : "");
 
 const unwrap = <T>(p: Promise<AxiosResponse<T>>): Promise<T> => p.then((r) => r.data);
 
@@ -323,6 +311,23 @@ export const vms = {
         unwrap(api.get<FederatedExportJob>(`/vms/federation/nodes/${nodeId}/exports/${exportId}`)),
       downloadExportBlob: (nodeId: string, exportId: string) =>
         blob(api.get<Blob>(`/vms/federation/nodes/${nodeId}/exports/${exportId}/download`, { responseType: "blob" })),
+      // ── Chain of custody ──────────────────────────────────────────────────
+      // The recorder re-hashes ITS copy of the clip and checks the manifest
+      // signature. It has to be the recorder: the clip lives on its disk, and a
+      // hash taken here would only prove the copy we were handed arrived intact.
+      // valid:false comes back as a 200 with a reason — "this cannot be verified"
+      // is the answer, not a failure to ask.
+      verifyExport: (nodeId: string, exportId: string) =>
+        unwrap(api.post<FederatedExportVerify>(
+          `/vms/federation/nodes/${nodeId}/exports/${exportId}/verify`, {})),
+      // The signed manifest, relayed byte for byte (the signature covers the
+      // document's canonical bytes, so it must not be re-encoded in transit).
+      exportManifestBlob: (nodeId: string, exportId: string) =>
+        blob(api.get<Blob>(`/vms/federation/nodes/${nodeId}/exports/${exportId}/manifest`, { responseType: "blob" })),
+      // The recorder's signing key, so a verifier can pin it independently of the
+      // manifest that claims it. Per recorder — each signs with its own identity.
+      exportPublicKey: (nodeId: string) =>
+        unwrap(api.get<FederatedExportPublicKey>(`/vms/federation/nodes/${nodeId}/exports/public-key`)),
       // ── Evidence hold — retention-lock a [from,to] window of this camera's footage
       // on the owning recorder (reason is a free-text note). Release cancels it.
       holds: (nodeId: string, cameraId: string) =>
@@ -630,37 +635,6 @@ export const vms = {
       ),
   },
 
-  // ── Clip export (P4-B) — a job that concatenates the covered segments ────
-  export: {
-    // POST /cameras/{id}/export { from, to, format?, watermark? } → the ExportJobPublic
-    //   (job_id, status, signed, checksum, watermark, …). `watermark` burns a visible
-    //   provenance stamp into the clip (re-encode; makes tampering visible).
-    create: (
-      cameraId: string,
-      { from, to, format = "mp4", watermark = false }: WindowOpt & { format?: string; watermark?: boolean } = {},
-    ) => unwrap(api.post<ExportJobPublic>(`${CAMERAS}/${cameraId}/export`, { from, to, format, watermark })),
-    // GET /export/{job} → { job_id, status(queued|running|done|failed),
-    //   file_size?, error?, camera_id, from, to, format }.
-    status: (jobId: string) => unwrap(api.get<ExportJobPublic>(`${EXPORT}/${jobId}`)),
-    // GET /export/{job}/download — token-gated mp4. The download endpoint is
-    // JWT-authed (Bearer), so it can't be a plain <a href> (no header). Fetch
-    // as a blob and hand it to the caller to save.
-    downloadBlob: (jobId: string) => blob(api.get<Blob>(`${EXPORT}/${jobId}/download`, { responseType: "blob" })),
-    // The absolute URL (for reference / opening in a new tab where the browser
-    // already holds the session) — note it still needs the Bearer header, so
-    // prefer downloadBlob for the in-app "Download" button.
-    downloadUrl: (jobId: string) => `${API_ROOT}/api/v1${EXPORT}/${jobId}/download`,
-    // ── Tamper-evidence (P6-B) ────────────────────────────────────────────
-    // POST /export/{job}/verify → { valid, reason, manifest } — re-hash the clip
-    //   + verify its Ed25519 signature server-side (valid:false/reason:"tampered"
-    //   if altered after signing).
-    verify: (jobId: string) => unwrap(api.post<ExportVerifyResult>(`${EXPORT}/${jobId}/verify`, {})),
-    // GET /export/{job}/manifest → the tamper-evidence sidecar (file_hash,
-    //   signature, exported_by, exported_at, chain…) as a downloadable blob.
-    manifestBlob: (jobId: string) => blob(api.get<Blob>(`${EXPORT}/${jobId}/manifest`, { responseType: "blob" })),
-    // GET /export/public-key → { algorithm, key_id, public_key(PEM) } for offline verify.
-    publicKey: () => unwrap(api.get<ExportPublicKey>(`${EXPORT}/public-key`)),
-  },
 
   // ── Operational reports (P6-B) — uptime / coverage / storage / events ────
   // Each report is computed over a [from, to] window (ISO). `kind` ∈

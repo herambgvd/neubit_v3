@@ -2,10 +2,21 @@
 
 // ExportDialog — export a recorded window to a downloadable clip.
 //
-// Flow (P4-B): pick from/to (+ format) → export.create → poll export.status
-// (queued → running → done|failed) → when done, a Download button pulls the
-// token-gated mp4 as a blob and saves it. The source segments stay locked by
-// the backend during the job.
+// The RECORDER produces it. It holds the segments, cuts them with its own ffmpeg,
+// hashes the result and signs a chain-of-custody manifest with its own key; the VMS
+// asks and relays. That is not a routing detail — it is why "verify" means anything.
+// A verification run here, on a copy relayed through the VMS, would only prove the
+// copy arrived intact, so verify is asked of the recorder too.
+//
+// Flow: pick from/to → federation.actions.createExport → poll getExport
+// (queued → running → done|failed) → Download pulls the token-gated mp4 as a blob.
+// Then the evidence trio: verify (the recorder re-hashes its own file), the signed
+// manifest (relayed byte for byte), and the recorder's public key.
+//
+// NOT offered any more, because the recorder's export API does not take them: a
+// container FORMAT choice (it produces mp4) and a burnt-in provenance WATERMARK.
+// The dialog used to send both to the VMS's own exporter. Showing controls the
+// recorder ignores would be worse than not showing them.
 //
 // Wired from: the Recordings row "Export" action (pre-fills a single recording's
 // range) and the PlaybackPlayer "Export this window" hook.
@@ -13,18 +24,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Modal, Select, Toggle } from "@/components/ui/kit";
+import { Button, Modal } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { fmtBytes, fmtDuration } from "@/lib/format";
 import { vms } from "../api";
-import type { ExportJobPublic, ExportVerifyResult } from "../types";
+import type { FederatedExportJob, FederatedExportVerify } from "../types";
 import type { ExportRange } from "./playbackTypes";
 
 const POLL_MS = 2_000;
-const FORMATS = [
-  { value: "mp4", label: "MP4 (H.264/HEVC remux)" },
-  { value: "mkv", label: "MKV (container copy)" },
-];
 
 // "2026-07-09T14:30:00Z" → the value shape a datetime-local input wants (local).
 function toLocalInput(iso: string | null | undefined): string {
@@ -36,28 +43,29 @@ function toLocalInput(iso: string | null | undefined): string {
 }
 const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOString() : null);
 
-/** The job as this dialog tracks it: seeded with just `{ job_id, status }` from
- *  the create call, filled in by each status poll. */
-type ExportJobState = Pick<ExportJobPublic, "job_id" | "status"> & Partial<ExportJobPublic>;
+/** The job as this dialog tracks it: seeded with just `{ id, status }` from the
+ *  create call, filled in by each status poll. */
+type ExportJobState = Pick<FederatedExportJob, "id" | "status"> & Partial<FederatedExportJob>;
 
 export interface ExportDialogProps {
   open: boolean;
   onClose?: () => void;
+  /** The recorder that owns the footage and will produce the clip. */
+  nodeId?: string | null;
+  /** The camera's id ON that recorder. */
   cameraId?: string | null;
   cameraName?: string | null;
   /** The window to pre-fill (a recording's span, a player's window, a clip selection). */
   range?: ExportRange | null;
 }
 
-export default function ExportDialog({ open, onClose, cameraId, cameraName, range }: ExportDialogProps) {
+export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraName, range }: ExportDialogProps) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [format, setFormat] = useState("mp4");
   const [job, setJob] = useState<ExportJobState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [watermark, setWatermark] = useState(false);
-  const [verify, setVerify] = useState<ExportVerifyResult | "loading" | null>(null);
+  const [verify, setVerify] = useState<FederatedExportVerify | "loading" | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Seed the range when (re)opened.
@@ -65,22 +73,20 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
     if (!open) return;
     setFrom(toLocalInput(range?.from));
     setTo(toLocalInput(range?.to));
-    setFormat("mp4");
     setJob(null);
     setSubmitting(false);
     setDownloading(false);
-    setWatermark(false);
     setVerify(null);
   }, [open, range?.from, range?.to]);
 
   // Poll the job while it's in flight.
   useEffect(() => {
-    if (!job?.job_id) return undefined;
+    if (!job?.id || !nodeId) return undefined;
     if (job.status === "done" || job.status === "failed") return undefined;
     let cancelled = false;
     const tick = async () => {
       try {
-        const next = await vms.export.status(job.job_id);
+        const next = await vms.federation.actions.getExport(nodeId, job.id);
         if (cancelled) return;
         setJob(next);
         if (next.status !== "done" && next.status !== "failed") {
@@ -95,7 +101,7 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
       cancelled = true;
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-  }, [job?.job_id, job?.status]);
+  }, [nodeId, job?.id, job?.status]);
 
   const durationSec = useMemo(() => {
     const a = fromLocalInput(from);
@@ -107,16 +113,13 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
   const rangeValid = durationSec != null && durationSec > 0;
 
   const startExport = async () => {
-    if (!cameraId || !rangeValid) return;
+    const a = fromLocalInput(from);
+    const b = fromLocalInput(to);
+    if (!nodeId || !cameraId || !rangeValid || !a || !b) return;
     setSubmitting(true);
     try {
-      const res = await vms.export.create(cameraId, {
-        from: fromLocalInput(from),
-        to: fromLocalInput(to),
-        format,
-        watermark,
-      });
-      setJob({ job_id: res.job_id, status: res.status || "queued" });
+      const res = await vms.federation.actions.createExport(nodeId, cameraId, a, b);
+      setJob({ id: res.id, status: res.status || "queued" });
     } catch (e) {
       toast.error(apiError(e, "Could not start the export"));
     } finally {
@@ -125,14 +128,14 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
   };
 
   const download = async () => {
-    if (!job?.job_id) return;
+    if (!job?.id || !nodeId) return;
     setDownloading(true);
     try {
-      const blob = await vms.export.downloadBlob(job.job_id);
+      const blob = await vms.federation.actions.downloadExportBlob(nodeId, job.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${cameraName || cameraId}-${job.job_id}.${format}`;
+      a.download = `${cameraName || cameraId}-${job.id}.mp4`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -145,13 +148,15 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
   };
 
   const runVerify = async () => {
-    if (!job?.job_id) return;
+    if (!job?.id || !nodeId) return;
     setVerify("loading");
     try {
-      const res = await vms.export.verify(job.job_id);
+      const res = await vms.federation.actions.verifyExport(nodeId, job.id);
       setVerify(res);
-      if (res.valid) toast.success("Signature verified — clip is authentic");
-      else toast.error(`Verification failed: ${res.reason}`);
+      // `detail` is the recorder's sentence about what it found; `reason` is the
+      // machine token. The operator gets the sentence when there is one.
+      if (res.valid) toast.success("Verified — the clip still hashes to its signed manifest");
+      else toast.error(res.detail || `Verification failed: ${res.reason}`);
     } catch (e) {
       setVerify(null);
       toast.error(apiError(e, "Verify failed"));
@@ -159,13 +164,13 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
   };
 
   const downloadManifest = async () => {
-    if (!job?.job_id) return;
+    if (!job?.id || !nodeId) return;
     try {
-      const blob = await vms.export.manifestBlob(job.job_id);
+      const blob = await vms.federation.actions.exportManifestBlob(nodeId, job.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${cameraName || cameraId}-${job.job_id}.manifest.json`;
+      a.download = `${cameraName || cameraId}-${job.id}.manifest.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -246,16 +251,6 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
                 />
               </label>
             </div>
-            <div className="flex items-end gap-4">
-              <div className="w-40">
-                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">Format</span>
-                <Select value={format} onChange={(e) => setFormat(e.target.value)} options={FORMATS} className="!h-9 !py-1.5" />
-              </div>
-              <label className="flex items-center gap-2 pb-1.5">
-                <Toggle checked={watermark} onChange={setWatermark} />
-                <span className="text-xs text-[#aec2e8]">Burn provenance watermark</span>
-              </label>
-            </div>
             <p className="text-xs text-[#aec2e8]">
               {rangeValid ? (
                 <>
@@ -313,9 +308,13 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
                       <Icon icon="heroicons-outline:shield-exclamation" className="text-sm" /> Not signed
                     </span>
                   )}
-                  {job.watermark && (
+                  {job.encode_mode === "reencode" && (
+                    /* Worth surfacing on an evidence artefact: the clip was
+                       re-encoded because the source segments could not be
+                       concatenated by stream copy, so it is not bit-identical to
+                       what was recorded. The manifest still pins both. */
                     <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
-                      <Icon icon="heroicons-outline:identification" className="text-sm" /> Watermarked
+                      <Icon icon="heroicons-outline:arrow-path" className="text-sm" /> Re-encoded
                     </span>
                   )}
                   {verify && verify !== "loading" && (
@@ -325,15 +324,46 @@ export default function ExportDialog({ open, onClose, cameraId, cameraName, rang
                       }`}
                     >
                       <Icon icon={verify.valid ? "heroicons-solid:check-badge" : "heroicons-solid:x-circle"} className="text-sm" />
-                      {verify.valid ? "Verified authentic" : `Tampered — ${verify.reason}`}
+                      {verify.valid ? "Verified authentic" : `Not verified — ${verify.reason}`}
                     </span>
                   )}
                 </div>
 
-                {job.checksum && (
+                {job.sha256 && (
                   <div className="text-[11px] text-[#aec2e8]">
-                    SHA-256 <code className="break-all text-[#f2f6ff]">{job.checksum}</code>
+                    SHA-256 <code className="break-all text-[#f2f6ff]">{job.sha256}</code>
                   </div>
+                )}
+
+                {/* The recorder's own words about what it found, and — when the
+                    clip does not match — both hashes, because "tampered" with no
+                    numbers behind it is not something anybody can act on. */}
+                {verify && verify !== "loading" && !verify.valid && (
+                  <div className="space-y-1 text-[11px] text-[#aec2e8]">
+                    {verify.detail && <p>{verify.detail}</p>}
+                    {verify.expected_sha256 && verify.actual_sha256 && (
+                      <>
+                        <div>
+                          Manifest says{" "}
+                          <code className="break-all text-[#f2f6ff]">{verify.expected_sha256}</code>
+                        </div>
+                        <div>
+                          File hashes to{" "}
+                          <code className="break-all text-red-400">{verify.actual_sha256}</code>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Verifying against the key EMBEDDED in the manifest proves only
+                    that whoever holds the matching private key signed it. This says
+                    whether that key is the recorder's current one. */}
+                {verify && verify !== "loading" && verify.valid && verify.signed_by_this_node === false && (
+                  <p className="text-[11px] text-amber-400">
+                    The manifest is internally valid but was not signed by this recorder&apos;s current
+                    key — it predates a key rotation, or it came from another recorder.
+                  </p>
                 )}
 
                 <div className="flex flex-wrap items-center gap-2">

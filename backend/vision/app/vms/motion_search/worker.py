@@ -8,7 +8,7 @@ times to ABSOLUTE recording time, thresholds them into hit intervals
 job's ``hits``. Flips each job ``queued → running → done`` (+ hits/progress/note) or
 ``failed`` (+ error).
 
-Follows the ``ExportWorker`` lifecycle EXACTLY (own DB session per cycle; a cancellable
+Follows the queue-worker lifecycle used across this service (own DB session per cycle; a cancellable
 ``stop()``; per-cycle transient backoff; BOUNDED concurrency via a semaphore; an atomic
 guarded claim so overlapping cycles never double-run a job).
 

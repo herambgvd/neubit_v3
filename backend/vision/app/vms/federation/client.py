@@ -533,6 +533,59 @@ async def get_export_node(api_url: str, export_id: str, *, credential: str | Non
     return r.json() or {}
 
 
+async def verify_export_node(
+    api_url: str, export_id: str, *, credential: str | None = None
+) -> dict:
+    """POST {api_url}/api/v1/nvr/estate/exports/{export_id}/verify — the RECORDER re-hashes
+    the clip on its own disk and checks the manifest signature, returning
+    { valid, reason, public_key, signed_by_this_node, manifest?, expected_sha256?,
+    actual_sha256? }.
+
+    The check has to happen on the node and nowhere else: the clip lives on the
+    recorder's disk, the VMS never sees those bytes, and re-hashing a copy relayed
+    through here would only prove the copy was intact. ``valid:false`` is a 200 with a
+    reason — "this cannot be verified" is an answer, not a transport failure."""
+    return await _node_json(
+        "POST", api_url, f"/exports/{export_id}/verify", credential=credential,
+    )
+
+
+async def export_public_key_node(api_url: str, *, credential: str | None = None) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/exports/public-key → { algorithm, key_id, public_key }.
+
+    The recorder's ed25519 signing key. Verifying a manifest against the key EMBEDDED in
+    it proves only that whoever holds the matching private key signed it; proving it was
+    THIS recorder means pinning the key from somewhere the document does not control."""
+    return await _node_json("GET", api_url, "/exports/public-key", credential=credential)
+
+
+async def export_manifest_node(
+    api_url: str, export_id: str, *, credential: str | None = None
+) -> tuple[bytes, str, str]:
+    """GET {api_url}/api/v1/nvr/estate/exports/{export_id}/manifest → the signed
+    chain-of-custody sidecar, relayed byte-for-byte.
+
+    Byte-for-byte matters more here than anywhere else in this file: the signature covers
+    the canonical encoding of the document, so re-serialising it through a Python dict
+    would invalidate it for the offline verifier this file exists to feed."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports/{export_id}/manifest"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential))
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+    media_type = (r.headers.get("content-type") or "application/json").split(";", 1)[0].strip()
+    filename = f"export-{export_id}.manifest.json"
+    disp = r.headers.get("content-disposition") or ""
+    if "filename=" in disp:
+        parsed = disp.split("filename=", 1)[1].strip().strip('"').strip()
+        if parsed:
+            filename = parsed
+    return r.content, media_type or "application/json", filename
+
+
 async def download_export_node(
     api_url: str, export_id: str, *, credential: str | None = None
 ) -> tuple[bytes, str, str]:

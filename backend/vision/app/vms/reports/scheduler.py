@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from kernel.auth import Scope
 
 from app.vms.common.events import emit_notify_request
-from app.vms.export.worker import downloads_dir
+from app.vms.common.downloads import downloads_dir
 from app.vms.models import ReportRun, ReportSchedule
 
 from .computations import compute_report
@@ -70,7 +70,7 @@ def _uuid_str() -> str:
 def reports_dir(tenant_id: uuid.UUID | None, schedule_id: str | None) -> str:
     """Directory a report artefact is written under, on the shared downloads volume.
 
-    Mirrors the clip-export root (``app.vms.export.worker.downloads_dir``) so reports ride
+    Under the shared downloads root (``app.vms.common.downloads``) so reports ride
     the same pooled volume as export clips (no extra mount):
     ``<downloads>/tenant/<tenant_id or 'platform'>/reports/<schedule_id or 'adhoc'>``.
     """

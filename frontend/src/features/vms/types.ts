@@ -584,41 +584,9 @@ export interface RecordingIntegrityResult {
 
 /* --- export (backend/vision/app/vms/export/schemas.py) --------------------- */
 
-export interface ExportStartBody {
-  from: string;
-  to: string;
-  format?: string;
-  watermark?: boolean;
-}
 
-export interface ExportJobPublic {
-  job_id: string;
-  camera_id: string;
-  status: "queued" | "running" | "done" | "failed" | string;
-  format: string;
-  from: string;
-  to: string;
-  file_size?: number | null;
-  error?: string | null;
-  checksum?: string | null;
-  signed: boolean;
-  watermark: boolean;
-  created_at: string;
-  finished_at?: string | null;
-}
 
-export interface ExportVerifyResult {
-  valid: boolean;
-  reason: string;
-  manifest?: Record<string, unknown> | null;
-}
 
-/** `GET /export/public-key` — the Ed25519 verify key for offline checks. */
-export interface ExportPublicKey {
-  algorithm: string;
-  key_id: string;
-  public_key: string;
-}
 
 /* --- groups + ACL (backend/vision/app/vms/groups/schemas.py) --------------- */
 
@@ -1310,6 +1278,34 @@ export interface FederatedOpResult {
   [k: string]: unknown;
 }
 
+/** `POST …/exports/{id}/verify` — the recorder's own answer about its own clip.
+ *
+ *  `valid:false` is a normal, expected result and carries `reason`:
+ *    unsigned | manifest_missing | manifest_malformed | signature | clip_missing |
+ *    clip_unreadable | tampered
+ *
+ *  `signed_by_this_node` false is NOT a failure — a manifest signed before a key
+ *  rotation, or produced by another recorder, is still internally valid. It says
+ *  which of the two the operator is looking at. */
+export interface FederatedExportVerify extends NodeTagged {
+  valid: boolean;
+  reason?: string | null;
+  detail?: string | null;
+  public_key?: string | null;
+  signed_by_this_node?: boolean;
+  expected_sha256?: string | null;
+  actual_sha256?: string | null;
+  manifest?: Record<string, unknown> | null;
+}
+
+/** `GET …/exports/public-key` — the recorder's ed25519 export-signing identity. */
+export interface FederatedExportPublicKey extends NodeTagged {
+  algorithm?: string | null;
+  /** The first 16 hex characters — a handle for comparing by eye, never a substitute. */
+  key_id?: string | null;
+  public_key?: string | null;
+}
+
 /** A node-side clip-export job (`…/exports`). */
 export interface FederatedExportJob {
   id: string;
@@ -1319,6 +1315,15 @@ export interface FederatedExportJob {
   to?: string;
   file_size?: number | null;
   error?: string | null;
+  /** Hex SHA-256 of the produced clip, as the recorder hashed it on its own disk. */
+  sha256?: string | null;
+  /** "copy" when the segments concatenated without re-encoding, else "reencode". */
+  encode_mode?: string | null;
+  /** Whether a signed chain-of-custody manifest was produced alongside the clip.
+   *  Signing is best-effort on the recorder: a signing failure leaves a valid,
+   *  hashed download with no manifest rather than failing the export. */
+  signed?: boolean;
+  manifest_sha256?: string | null;
   [k: string]: unknown;
 }
 

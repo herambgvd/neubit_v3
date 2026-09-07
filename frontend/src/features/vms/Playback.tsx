@@ -25,6 +25,7 @@ export default function PlaybackPage() {
       <ExportDialog
         open={!!exportReq}
         onClose={() => setExportReq(null)}
+        nodeId={exportReq?.nodeId}
         cameraId={exportReq?.cameraId}
         cameraName={exportReq?.cameraName}
         range={exportReq}

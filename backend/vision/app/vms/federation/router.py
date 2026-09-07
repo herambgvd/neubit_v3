@@ -402,6 +402,84 @@ async def federated_export_status(
     return result
 
 
+@router.post(
+    "/nodes/{node_id}/exports/{export_id}/verify",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def federated_export_verify(
+    node_id: str,
+    export_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """Ask the recorder to re-hash its own copy of the clip and check the manifest
+    signature. { valid, reason, public_key, signed_by_this_node, manifest? }.
+
+    The VMS never sees the clip's bytes, so it cannot answer this itself — and a
+    re-hash of a copy relayed through here would only prove the copy arrived intact,
+    which is not the question."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.verify_export_node(node.api_url, export_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    return _tag(node, result)
+
+
+@router.get(
+    "/nodes/{node_id}/exports/public-key",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def federated_export_public_key(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """The recorder's export signing key — { algorithm, key_id, public_key }.
+
+    Per NODE, not per VMS: each recorder signs with its own identity, so there is no
+    single key the VMS could publish on their behalf without lying about who vouched
+    for a given clip."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.export_public_key_node(node.api_url, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    return _tag(node, result)
+
+
+@router.get(
+    "/nodes/{node_id}/exports/{export_id}/manifest",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def federated_export_manifest(
+    node_id: str,
+    export_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> Response:
+    """Relay the signed chain-of-custody manifest, byte for byte.
+
+    Byte for byte, and not parsed into a dict and re-encoded: the signature covers the
+    document's canonical bytes, so re-serialising it here would break the very offline
+    verification it exists for."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        raw, media_type, filename = await fed.export_manifest_node(
+            node.api_url, export_id, credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+    return Response(
+        content=raw,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.get(
     "/nodes/{node_id}/exports/{export_id}/download",
     dependencies=[Depends(require_permission(PERM_EXPORT))],
