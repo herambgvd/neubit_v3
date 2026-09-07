@@ -206,3 +206,45 @@ describe("which recorder is shown", () => {
     expect(screen.getByRole("button", { name: /^delete$/i })).toBeInTheDocument();
   });
 });
+
+describe("a recorder that is online but refusing our credential", () => {
+  // The failure `status` cannot express. A federation credential keeps the grants it
+  // was minted with, so widening the recorder's grant set leaves an existing one
+  // short — and the node stays reachable and reports online the whole time. An
+  // operator scanning this list would see a perfectly healthy recorder while a
+  // screen somewhere quietly errors, and nothing would connect the two.
+  const STALE =
+    "the recorder refused this call: the federation credential is missing " +
+    "vms.storage.read. ... re-enrol this node";
+
+  it("marks it in the list, where status alone says everything is fine", async () => {
+    listReturns([node("r1", "edge-one", { credential_error: STALE })]);
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText(/credential needs re-enrolling/i)).toBeInTheDocument();
+    // The node is NOT down, and must not be shown as if it were.
+    expect(screen.getAllByText(/online/i).length).toBeGreaterThan(0);
+  });
+
+  it("shows the recorder's own sentence, which names the permission and the remedy", async () => {
+    listReturns([node("r1", "edge-one", { credential_error: STALE })]);
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText(/refusing our credential/i)).toBeInTheDocument();
+    // Paraphrasing it here would lose the two things it is for.
+    expect(screen.getByText(/vms\.storage\.read/)).toBeInTheDocument();
+    expect(screen.getByText(/re-enrol this node/i)).toBeInTheDocument();
+  });
+
+  it("says nothing when the credential is working", async () => {
+    listReturns([node("r1", "edge-one")]);
+
+    renderWithProviders(<RecordersPage />);
+    await screen.findAllByText("edge-one");
+
+    expect(screen.queryByText(/credential needs re-enrolling/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/refusing our credential/i)).not.toBeInTheDocument();
+  });
+});

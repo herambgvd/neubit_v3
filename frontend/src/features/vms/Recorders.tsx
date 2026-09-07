@@ -154,6 +154,17 @@ export default function RecordersPage() {
                         </span>
                         <StatusBadge status={n.status} />
                       </div>
+                      {/* A stale credential is the failure `status` cannot show: the
+                          recorder is reachable and reports online, and everything
+                          that needs the missing grant quietly errors. It gets its own
+                          mark for that reason — an operator scanning this list would
+                          otherwise see a healthy node. */}
+                      {n.credential_error && (
+                        <p className="mt-0.5 flex items-center gap-1 pl-3.5 text-[10px] text-[#fbbf24]">
+                          <Icon icon="heroicons-outline:key" className="shrink-0 text-[11px]" />
+                          Credential needs re-enrolling
+                        </p>
+                      )}
                       {n.label && <p className="mt-0.5 truncate pl-3.5 text-[10px] text-[#9a92c8]">{n.label}</p>}
                       <p className="mt-0.5 pl-3.5 font-mono text-[10px] tabular-nums text-[#7e93bf]">
                         {used} / {cap != null ? cap : "∞"} channel(s)
@@ -273,6 +284,21 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: RecorderDetailProps
       </div>
 
       <div className="scroll-themed min-h-0 flex-1 overflow-y-auto p-3">
+        {/* The recorder's own words, first, when it is refusing us.
+            A federation credential keeps the grants it was minted with, so widening
+            the recorder's grant set leaves an existing credential short — and the
+            node stays online throughout. The message names the missing permission and
+            the remedy; Re-enroll below is that remedy. */}
+        {node.credential_error && (
+          <div className="mb-3 flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.35)] bg-[rgba(251,191,36,.08)] px-3 py-2.5">
+            <Icon icon="heroicons-outline:key" className="mt-0.5 shrink-0 text-sm text-[#fbbf24]" />
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-[#fbbf24]">This recorder is refusing our credential</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-[#d6c99a]">{node.credential_error}</p>
+            </div>
+          </div>
+        )}
+
         {/* Info grid */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <InfoCell label="Status" value={node.status || "unknown"} />
