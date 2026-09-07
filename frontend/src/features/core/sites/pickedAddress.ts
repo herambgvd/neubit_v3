@@ -1,17 +1,21 @@
 // What a map pin is allowed to change in the site form's address.
 //
-// Pure, and separate from the modal, because the RULE is the interesting part and
-// it has three cases that are easy to get wrong by hand:
+// Pure, and separate from the modal, because the RULE is the interesting part.
 //
-//   • an empty field is filled
-//   • a field the MAP filled last time is replaced, so moving the pin actually
-//     moves the address
-//   • a field the operator typed is left alone
+//   a field the operator EDITED in this session is left alone;
+//   everything else the geocoder can name is replaced.
 //
-// The last one is the important one. OpenStreetMap frequently knows a coarser
-// name for a place than the person entering it does — "NH 48" where they wrote
-// "Star Mall, Delhi-Gurugram Expressway" — so silently overwriting typed text
-// would lose real information every time the pin moved.
+// The first version protected any non-empty field, and got this wrong on the
+// case that matters most. Editing a site seeds the form from the SAVED record —
+// city "Mumbai" on a site whose pin is being corrected to Gurugram — and that
+// seeded value is exactly what the operator is there to fix. Treating it as
+// hand-typed meant the address stayed half-wrong and silently disagreed with the
+// coordinates right below it.
+//
+// A value the operator actually typed still survives: OpenStreetMap routinely
+// knows a coarser name than they do — "NH 48" where they wrote "Star Mall,
+// Delhi-Gurugram Expressway" — so overwriting their own words would lose real
+// information every time the pin moved.
 
 import type { ResolvedAddress } from "@/lib/map/geocoder";
 
@@ -33,23 +37,24 @@ export interface MergeResult {
   next: AddressValues;
   /** Human labels of what was filled, for the confirmation message. */
   filled: string[];
-  /** Labels the operator had typed and that were therefore left alone. */
+  /** Labels the operator had edited themselves, and that were left alone. */
   kept: string[];
-  /** The map-authored values, to carry into the NEXT pick. */
-  fromMap: Partial<AddressValues>;
 }
 
+/**
+ * `touched` is the set of address fields the operator edited in THIS session —
+ * not the set that happens to be non-empty. See the note at the top of the file.
+ */
 export function mergePickedAddress(
   current: AddressValues,
   address: ResolvedAddress | null,
-  fromMap: Partial<AddressValues>,
+  touched: ReadonlySet<AddressField>,
 ): MergeResult {
   const next = { ...current };
-  const nextFromMap: Partial<AddressValues> = { ...fromMap };
   const filled: string[] = [];
   const kept: string[] = [];
 
-  if (!address) return { next, filled, kept, fromMap: nextFromMap };
+  if (!address) return { next, filled, kept };
 
   for (const { key, label } of ADDRESS_FIELDS) {
     const value = (address[key] || "").trim();
@@ -57,20 +62,18 @@ export function mergePickedAddress(
     if (!value) continue;
 
     const existing = current[key] || "";
-    const typedByHand = existing.trim() !== "" && existing !== fromMap[key];
-    if (typedByHand) {
-      // Only worth mentioning when it actually disagrees with the map.
+    if (touched.has(key)) {
+      // Only worth mentioning when their value actually disagrees with the map.
       if (existing.trim() !== value) kept.push(label);
       continue;
     }
     if (existing === value) continue;
 
     next[key] = value;
-    nextFromMap[key] = value;
     filled.push(label);
   }
 
-  return { next, filled, kept, fromMap: nextFromMap };
+  return { next, filled, kept };
 }
 
 /** The one line shown after a pick. Empty string when there is nothing to say. */

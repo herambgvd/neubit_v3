@@ -114,6 +114,17 @@ describe("deleting a site", () => {
   });
 });
 
+describe("starting a new site", () => {
+  it("opens the form from the plus beside the count, not only from the footer", async () => {
+    renderWithProviders(<SitesConfigPage />);
+    await screen.findAllByText("Pune HQ");
+
+    await userEvent.click(screen.getByRole("button", { name: /add a site/i }));
+
+    expect(await screen.findByRole("button", { name: /create site/i })).toBeInTheDocument();
+  });
+});
+
 describe("the site form", () => {
   it("refuses to create a nameless site before the network sees it", async () => {
     renderWithProviders(<SitesConfigPage />);

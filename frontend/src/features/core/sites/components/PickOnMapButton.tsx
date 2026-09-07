@@ -130,7 +130,10 @@ export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, o
           onChange={({ latitude, longitude }) => pinDropped(latitude, longitude)}
         />
         {picked && (
-          <p className="mt-3 flex items-center gap-2 text-[11.5px] text-nb-muted">
+          // A div, not a p: Spinner renders a div, and a div inside a p is
+          // invalid HTML — the browser reparents it, which React reports as a
+          // hydration mismatch.
+          <div className="mt-3 flex items-center gap-2 text-[11.5px] text-nb-muted">
             {resolving ? (
               <>
                 <Spinner className="!h-3 !w-3" /> Looking up what is here…
@@ -146,7 +149,7 @@ export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, o
               // where OpenStreetMap has nothing to name.
               <>Nothing mapped at this point — the coordinates are still used.</>
             )}
-          </p>
+          </div>
         )}
       </Modal>
     </>

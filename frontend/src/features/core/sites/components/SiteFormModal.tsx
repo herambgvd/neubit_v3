@@ -3,7 +3,7 @@
 // Full site create/edit modal — identity, address, coordinates, and contact
 // sections plus an image upload/preview. Auto-generates a location code from the
 // site type on create. On save, creates/updates then optionally uploads the image.
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -20,7 +20,7 @@ import { SITE_TYPES, THREAT_LEVELS, capitalize, generateLocationCode } from "../
 import { FInput, FTextarea, FSelect, ImagePreviewCard, Section } from "./FormControls";
 import GeocodeButton from "./GeocodeButton";
 import PickOnMapButton from "./PickOnMapButton";
-import { mergePickedAddress, pickedAddressMessage, type AddressValues } from "../pickedAddress";
+import { mergePickedAddress, pickedAddressMessage, type AddressField } from "../pickedAddress";
 import { sanitizePhone, sanitizeZip, validateSite, type SiteFormErrors } from "../validation";
 
 const FORM_ID = "site-form";
@@ -69,17 +69,22 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Sit
   const clearError = (field: keyof SiteFormErrors) =>
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
   /**
-   * The address values THIS FORM wrote from a map pin, so a later pick can
-   * replace them and a typed line is never overwritten. The rule itself lives in
-   * ../pickedAddress, where it can be read and tested on its own.
+   * The address fields the operator edited in THIS session. Not "the fields that
+   * are non-empty": editing a site seeds the form from the saved record, and
+   * those seeded values are precisely what a corrected pin should replace. The
+   * rule itself lives in ../pickedAddress.
    */
-  const filledFromMap = useRef<Partial<AddressValues>>({});
+  const [touchedAddress, setTouchedAddress] = useState<ReadonlySet<AddressField>>(() => new Set());
+  const editAddress = (field: AddressField, set: (v: string) => void) => (value: string) => {
+    setTouchedAddress((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
+    set(value);
+  };
 
   function applyPickedAddress(address: ResolvedAddress | null) {
     const result = mergePickedAddress(
       { street, city, state, zipCode, country },
       address,
-      filledFromMap.current,
+      touchedAddress,
     );
     if (result.next.street !== street) setStreet(result.next.street);
     if (result.next.city !== city) setCity(result.next.city);
@@ -89,7 +94,6 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Sit
       clearError("zipCode");
     }
     if (result.next.country !== country) setCountry(result.next.country);
-    filledFromMap.current = result.fromMap;
 
     const message = pickedAddressMessage(result);
     if (message) toast.success(message);
@@ -274,18 +278,29 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Sit
         </Section>
         <Section title="Address">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FInput label="Street" full value={street} onChange={setStreet} placeholder="Street address" />
-            <FInput label="City" value={city} onChange={setCity} placeholder="City" />
-            <FInput label="State / region" value={state} onChange={setState} placeholder="State or region" />
+            <FInput
+              label="Street"
+              full
+              value={street}
+              onChange={editAddress("street", setStreet)}
+              placeholder="Street address"
+            />
+            <FInput label="City" value={city} onChange={editAddress("city", setCity)} placeholder="City" />
+            <FInput
+              label="State / region"
+              value={state}
+              onChange={editAddress("state", setState)}
+              placeholder="State or region"
+            />
             <FInput
               label="Zip code"
               inputMode="numeric"
               value={zipCode}
-              onChange={(v) => { setZipCode(sanitizeZip(v)); clearError("zipCode"); }}
+              onChange={editAddress("zipCode", (v) => { setZipCode(sanitizeZip(v)); clearError("zipCode"); })}
               placeholder="Zip code"
               error={errors.zipCode}
             />
-            <FInput label="Country" value={country} onChange={setCountry} placeholder="Country" />
+            <FInput label="Country" value={country} onChange={editAddress("country", setCountry)} placeholder="Country" />
           </div>
         </Section>
         <Section

@@ -19,6 +19,7 @@ import {
   PanelList,
   PanelFooter,
   CreateButton,
+  IconButton,
   EmptyPane,
 } from "@/components/console";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
@@ -105,6 +106,14 @@ export default function SitesConfigPage() {
             icon="heroicons-outline:map-pin"
             title="Sites"
             count={total}
+            countAction={
+              <IconButton
+                icon="heroicons-outline:plus"
+                title="Add a site"
+                onClick={() => setMode("create")}
+                className="!h-5 !w-5 rounded-[6px]"
+              />
+            }
             actions={
               <PanelCounts
                 items={[
@@ -135,10 +144,6 @@ export default function SitesConfigPage() {
 
           <PanelFooter>
             <CreateButton label="SITE" onClick={() => setMode("create")} />
-            <p className="mt-2.5 text-[10.5px] leading-relaxed text-nb-faint">
-              A site is a <b className="text-nb-blueb">physical location</b> — its floors, zones and
-              cameras hang off it, and user access is scoped by it.
-            </p>
           </PanelFooter>
         </ConsolePanel>
 
