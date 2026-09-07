@@ -12,12 +12,17 @@
 // brochure line, and in a posture dashboard it is indistinguishable from a
 // measured green. Both are gone.
 //
-// LAYOUT — four tiles, sized by weight, in the order the questions get asked:
+// LAYOUT — four tiles on six columns, sized by weight:
 //
-//   NEEDS ATTENTION  what wants a human right now      (tall, left)
-//   LICENSING        can we operate at all             (wide)
-//   ACCESS           who can get in                    (small)
-//   RETENTION        what we keep, and for how long    (small)
+//   NEEDS ATTENTION  what wants a human right now   (2 wide, 2 tall — the only
+//                                                    actionable tile, so it leads)
+//   ACCESS           who can get in                 (4 wide — five rows, the densest)
+//   LICENSING        can we operate at all          (2 wide)
+//   RETENTION        what we keep, for how long     (2 wide)
+//
+// SOURCE ORDER IS LOAD-BEARING. The hero spans two rows, so the tile after it
+// must be 4 wide or row one ends with an empty pair of cells and everything else
+// spills onto a third row. Reordering these four is a layout change.
 //
 // Each fact has ONE home. Active evidence holds used to appear three times on this
 // page — as a KPI, under Approvals and again under Data — which is how a reader
@@ -96,7 +101,7 @@ function Tile({
           </Link>
         )}
       </div>
-      <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">{children}</div>
+      <div className="min-h-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -215,7 +220,7 @@ export default function SystemAssurance() {
       : "Everyone";
 
   return (
-    <section className="flex flex-col lg:min-h-0 lg:flex-1">
+    <section className="shrink-0">
       <h2 className="mb-2 flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">
         <Icon icon="heroicons-outline:shield-check" className="text-sm text-nb-blueb" />
         Posture
@@ -225,7 +230,7 @@ export default function SystemAssurance() {
           band was given, so the grid FITS the pane instead of growing past it —
           the page itself must not scroll. A tile too dense for its cell scrolls
           inside itself (see Tile), which keeps the arrangement stable. */}
-      <div className="grid grid-cols-1 gap-3 lg:min-h-0 lg:flex-1 lg:auto-rows-fr lg:grid-cols-6">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
         {/* ── what wants a human — the only actionable tile, so it leads ── */}
         <Tile
           icon="heroicons-outline:bell-alert"
@@ -257,11 +262,42 @@ export default function SystemAssurance() {
           </div>
         </Tile>
 
+        {/* ── who can get in ── */}
+        <Tile
+          icon="heroicons-outline:shield-check"
+          title="Access"
+          span="lg:col-span-4"
+          link="/config/security"
+          linkLabel="Security"
+        >
+          {canSec ? (
+            <>
+              <Row label="Two-factor (MFA)" value={require2fa ? "REQUIRED" : "OPTIONAL"} tone={require2fa ? "good" : "warn"} />
+              <Row label="Applies to" value={roleScope} tone="faint" />
+              <Row label="Idle timeout" value={idle ? `${idle} min` : "Not set"} tone={idle ? "ink" : "faint"} />
+              <Row
+                label="Directory (LDAP/AD)"
+                value={dir ? (dir.enabled ? "ENABLED" : "CONFIGURED") : "OFF"}
+                tone={dir?.enabled ? "good" : "faint"}
+                note={dir?.last_sync_at ? `synced ${fmtDate(dir.last_sync_at)}` : undefined}
+              />
+              <Row
+                label="Single sign-on"
+                value={ssoCfg ? (ssoCfg.enabled ? "ENABLED" : "CONFIGURED") : "OFF"}
+                tone={ssoCfg?.enabled ? "good" : "faint"}
+                note={ssoCfg?.issuer || undefined}
+              />
+            </>
+          ) : (
+            <p className="py-3 text-[12px] text-nb-faint">Requires the security.manage permission.</p>
+          )}
+        </Tile>
+
         {/* ── can we operate at all ── */}
         <Tile
           icon="heroicons-outline:key"
           title="Licensing"
-          span="lg:col-span-4"
+          span="lg:col-span-2"
           link="/license"
           linkLabel="License"
         >
@@ -286,37 +322,6 @@ export default function SystemAssurance() {
               value={Object.entries(lic.limits).map(([k, v]) => `${k}:${v}`).join(" · ")}
               tone="faint"
             />
-          )}
-        </Tile>
-
-        {/* ── who can get in ── */}
-        <Tile
-          icon="heroicons-outline:shield-check"
-          title="Access"
-          span="lg:col-span-2"
-          link="/config/security"
-          linkLabel="Security"
-        >
-          {canSec ? (
-            <>
-              <Row label="Two-factor (MFA)" value={require2fa ? "REQUIRED" : "OPTIONAL"} tone={require2fa ? "good" : "warn"} />
-              <Row label="Applies to" value={roleScope} tone="faint" />
-              <Row label="Idle timeout" value={idle ? `${idle} min` : "Not set"} tone={idle ? "ink" : "faint"} />
-              <Row
-                label="Directory (LDAP/AD)"
-                value={dir ? (dir.enabled ? "ENABLED" : "CONFIGURED") : "OFF"}
-                tone={dir?.enabled ? "good" : "faint"}
-                note={dir?.last_sync_at ? `synced ${fmtDate(dir.last_sync_at)}` : undefined}
-              />
-              <Row
-                label="Single sign-on"
-                value={ssoCfg ? (ssoCfg.enabled ? "ENABLED" : "CONFIGURED") : "OFF"}
-                tone={ssoCfg?.enabled ? "good" : "faint"}
-                note={ssoCfg?.issuer || undefined}
-              />
-            </>
-          ) : (
-            <p className="py-3 text-[12px] text-nb-faint">Requires the security.manage permission.</p>
           )}
         </Tile>
 

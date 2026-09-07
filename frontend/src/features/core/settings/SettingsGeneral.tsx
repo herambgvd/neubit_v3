@@ -65,7 +65,7 @@ export default function SettingsGeneralPage() {
     "mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted";
 
   return (
-    <section className="flex flex-col lg:min-h-0 lg:flex-1">
+    <section className="flex min-h-0 flex-1 flex-col">
       <div className="mb-2 flex shrink-0 items-center gap-2">
         <Icon icon="heroicons-outline:adjustments-horizontal" className="text-sm text-nb-blueb" />
         <h2 className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Settings</h2>
@@ -88,19 +88,19 @@ export default function SettingsGeneralPage() {
       ) : (
         // Same six columns as the posture band above, so the two line up, and
         // the same `auto-rows-fr` so this band fits its share of the pane.
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:auto-rows-fr lg:grid-cols-6">
+        <div className="grid min-h-0 flex-1 grid-cols-1 content-start gap-3 overflow-y-auto pb-1 md:grid-cols-2 lg:grid-cols-6">
           {groups.map((group) => {
             const fields = fieldsOf(group);
             const wide = fields.length >= WIDE_AT;
             return (
               <div
                 key={group}
-                className={`rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 lg:min-h-0 lg:overflow-y-auto ${
-                  wide ? "md:col-span-2 lg:col-span-4" : "lg:col-span-2"
+                className={`rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 ${
+                  wide ? "md:col-span-2 lg:col-span-6" : "lg:col-span-2"
                 }`}
               >
                 <h3 className={headCls}>{group}</h3>
-                <div className={wide ? "grid grid-cols-1 gap-x-8 md:grid-cols-2" : undefined}>
+                <div className={wide ? "grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3" : undefined}>
                   {fields.map(renderField)}
                 </div>
               </div>

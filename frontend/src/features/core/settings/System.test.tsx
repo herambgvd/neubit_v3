@@ -66,6 +66,29 @@ describe("the System console", () => {
     expect(screen.queryByText(/Ed25519/)).not.toBeInTheDocument();
   });
 
+  /**
+   * The bento packs six columns per row and the hero spans two of them for two
+   * rows. So the tile that FOLLOWS the hero has to be four wide, or row one ends
+   * with an empty pair of cells and the last tile spills onto a third row — which
+   * is what shipped, from nothing but source order.
+   */
+  it("packs the posture row: the tile after the two-row hero is four wide", async () => {
+    const { container } = renderWithProviders(<SystemPage />);
+    await screen.findByText("Posture");
+
+    const grid = container.querySelector(".lg\\:grid-cols-6");
+    const tiles = [...(grid?.children ?? [])] as HTMLElement[];
+    const span = (el: HTMLElement) =>
+      [...el.classList].find((c) => c.startsWith("lg:col-span-"))?.replace("lg:col-span-", "");
+
+    expect(tiles).toHaveLength(4);
+    expect(tiles[0].className).toContain("lg:row-span-2"); // the hero
+    expect(span(tiles[0])).toBe("2");
+    expect(span(tiles[1])).toBe("4"); // fills the rest of row one
+    expect(span(tiles[2])).toBe("2");
+    expect(span(tiles[3])).toBe("2"); // row two, beside the hero
+  });
+
   it("labels the MFA figure as a sample when it only counted a page of users", async () => {
     stubApi({
       "GET /features": { license_state: "active", modules: [] },
