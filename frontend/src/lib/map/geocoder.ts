@@ -118,6 +118,24 @@ export function toHit(feature: {
   };
 }
 
+/**
+ * Was this rejection just the NEXT KEYSTROKE, or a real failure?
+ *
+ * They have to be told apart. Swallowing both silently — which this did — hides a
+ * geocoder returning 503 behind a UI that merely looks like it found nothing, and
+ * an operator has no way to tell "not mapped" from "not working".
+ *
+ * Reads `name` and does NOT test `instanceof Error`. A browser abort is a
+ * DOMException, which extends Error there but not in jsdom — so the instanceof
+ * form passed in the browser and failed in the tests, which is the wrong way
+ * round for something that decides whether an error is shown to an operator.
+ */
+export function isAbortError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const name = (error as { name?: unknown }).name;
+  return name === "AbortError" || name === "TimeoutError";
+}
+
 export interface GeocodeOptions {
   limit?: number;
   signal?: AbortSignal;

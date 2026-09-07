@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { formatHit, geocode, probeGeocoder, resetGeocoder, toHit } from "./geocoder";
+import { formatHit, geocode, isAbortError, probeGeocoder, resetGeocoder, toHit } from "./geocoder";
 
 const feature = (properties: Record<string, unknown>, coordinates = [77.0263, 28.4601]) => ({
   geometry: { coordinates, type: "Point" },
@@ -111,6 +111,22 @@ describe("geocode", () => {
   it("raises on a non-2xx, so the caller can fall back rather than show nothing", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("no", { status: 503 })));
     await expect(geocode("x")).rejects.toThrow(/503/);
+  });
+});
+
+describe("isAbortError", () => {
+  it("recognises an abort however the environment spells it", () => {
+    expect(isAbortError(new DOMException("signal is aborted without reason", "AbortError"))).toBe(true);
+    const plain = new Error("aborted");
+    plain.name = "AbortError";
+    expect(isAbortError(plain)).toBe(true);
+  });
+
+  it("does NOT swallow a real failure — that is the whole point of asking", () => {
+    expect(isAbortError(new Error("geocoder: HTTP 503"))).toBe(false);
+    expect(isAbortError(new TypeError("Failed to fetch"))).toBe(false);
+    expect(isAbortError("AbortError")).toBe(false);
+    expect(isAbortError(null)).toBe(false);
   });
 });
 

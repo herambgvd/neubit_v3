@@ -7,7 +7,7 @@
  * when it is precise: a city centre is not a site, and saving one as a building's
  * coordinates is the exact failure a geocoder was rejected for before.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -141,6 +141,62 @@ describe("PlaceSearch without the geocoder", () => {
     await userEvent.type(box(), "zzzqqq");
 
     expect(await screen.findByText(/Address search is not installed/i)).toBeInTheDocument();
+  });
+});
+
+describe("PlaceSearch and the in-flight request", () => {
+  /**
+   * The first version of the test below typed with `userEvent` and assumed the
+   * 250 ms debounce had not elapsed yet. True when this file ran alone; false
+   * under a loaded full suite, where typing itself outlasted the debounce. It
+   * failed twice in 1,611 and passed on a re-run — the worst way to be wrong.
+   *
+   * `fireEvent.change` is SYNCHRONOUS, so nothing between it and `unmount` can
+   * yield to a timer. No clock to race, and no fake timers to deadlock on either
+   * (the geocoder probe is a promise, and a faked clock hangs waiting for it).
+   */
+  it("aborts nothing when the debounce never fired — there is no request to abort", async () => {
+    stubNetwork();
+    const abort = vi.spyOn(AbortController.prototype, "abort");
+    const { unmount } = render(<PlaceSearch onGo={onGo} />);
+    // The lookup effect only arms once the probe has answered; without this the
+    // test would pass because nothing had started YET, not because of the fix.
+    await screen.findByPlaceholderText(/Search an address/i);
+
+    fireEvent.change(box(), { target: { value: "star" } });
+    unmount();
+
+    expect(abort).not.toHaveBeenCalled();
+  });
+
+  it("does abort the request it actually started", async () => {
+    stubNetwork();
+    const abort = vi.spyOn(AbortController.prototype, "abort");
+    const { unmount } = render(<PlaceSearch onGo={onGo} />);
+
+    await userEvent.type(box(), "star tower");
+    await screen.findByText("Star Tower"); // the lookup has definitely run
+    unmount();
+
+    expect(abort).toHaveBeenCalled();
+  });
+
+  it("says the service is down instead of looking like the address is unmapped", async () => {
+    stubNetwork({ hits: [] });
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/geocode/status")) return Response.json({ status: "Ok" });
+      if (url.startsWith("/geocode/api")) return new Response("boom", { status: 503 });
+      if (url.startsWith("/map/gazetteer")) return new Response(TSV, { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    render(<PlaceSearch onGo={onGo} />);
+
+    await userEvent.type(box(), "star tower gurgaon");
+
+    expect(await screen.findByText(/Address search is not answering/i)).toBeInTheDocument();
+    // ...and still gets the operator somewhere, off the city list.
+    expect(await screen.findByText("Gurugram")).toBeInTheDocument();
   });
 });
 

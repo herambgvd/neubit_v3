@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { geocode, probeGeocoder, type GeocodeHit } from "@/lib/map/geocoder";
+import { geocode, isAbortError, probeGeocoder, type GeocodeHit } from "@/lib/map/geocoder";
 import {
   loadGazetteer,
   looksNumeric,
@@ -82,6 +82,7 @@ export default function PlaceSearch({ onGo, near }: PlaceSearchProps) {
   const [found, setFound] = useState<GeocodeHit[] | null>(null);
   const [hasGeocoder, setHasGeocoder] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const [geocoderFailed, setGeocoderFailed] = useState(false);
   // The highlighted row is stored WITH the query it belongs to, so a new query
   // resets it by derivation. Resetting it from an effect instead costs a second
   // render on every keystroke, and briefly highlights a row from the old results.
@@ -112,19 +113,36 @@ export default function PlaceSearch({ onGo, near }: PlaceSearchProps) {
   // keystrokes, and every one of them would otherwise be a query.
   useEffect(() => {
     if (!searching || !hasGeocoder) return;
+
     const controller = new AbortController();
+    // Only a request that actually STARTED can be aborted. Most cleanups here run
+    // before the debounce even fires — that is the point of a debounce — and
+    // aborting a signal no fetch ever saw manufactures an AbortError with nothing
+    // waiting to catch it.
+    let started = false;
+
     const timer = setTimeout(() => {
+      started = true;
       setBusy(true);
       geocode(query, { signal: controller.signal, near: nearRef.current ?? undefined })
-        .then(setFound)
-        // An abort is the next keystroke, not a failure; either way there is
-        // nothing to show, and the gazetteer below still answers.
-        .catch(() => setFound(null))
+        .then((hits) => {
+          setFound(hits);
+          setGeocoderFailed(false);
+        })
+        .catch((error: unknown) => {
+          // An abort is the next keystroke, not a failure — say nothing. Anything
+          // else IS a failure, and has to be visible: a geocoder answering 503
+          // must not look like an address that is simply not on the map.
+          if (isAbortError(error)) return;
+          setFound(null);
+          setGeocoderFailed(true);
+        })
         .finally(() => setBusy(false));
     }, DEBOUNCE_MS);
+
     return () => {
-      controller.abort();
       clearTimeout(timer);
+      if (started) controller.abort();
     };
   }, [query, searching, hasGeocoder]);
 
@@ -152,6 +170,7 @@ export default function PlaceSearch({ onGo, near }: PlaceSearchProps) {
     // Addresses first when we have them. The gazetteer is the fallback, not a
     // second opinion — showing both would put "Gurugram" under the actual building.
     if (hits?.length) return hits.map(fromHit);
+    // No addresses (or the service is down) — the city list is the fallback.
     return places ? searchPlaces(places, query).map(fromPlace) : [];
   }, [coordinate, searching, hits, places, query]);
 
@@ -284,7 +303,13 @@ export default function PlaceSearch({ onGo, near }: PlaceSearchProps) {
           <code className="font-mono">npm run map:gazetteer</code>.
         </p>
       )}
-      {emptyHanded && (
+      {geocoderFailed && (
+        <p className="mt-1 text-[11px] text-amber-400">
+          Address search is not answering — falling back to the city list. Check the{" "}
+          <code className="font-mono">geocoder</code> service.
+        </p>
+      )}
+      {emptyHanded && !geocoderFailed && (
         <p className="mt-1 text-[11px] text-nb-muted">
           {hasGeocoder
             ? "No match. Try the street and the city, or paste coordinates."
