@@ -49,6 +49,10 @@ ALL_PERMS = [
     "vms.camera.tune",
     "vms.ptz.control",
     "vms.playback.view",
+    # Live view is its own right, and this token is the "full operator" one. Without
+    # it the VMS's own gate 403s before the request ever reaches a recorder, which
+    # makes a test about the RECORDER's answer pass for the wrong reason.
+    "vms.live.view",
 ]
 
 
@@ -464,3 +468,49 @@ async def test_talk_uplink_is_gated_and_tenant_scoped(app, node, recorder):
     assert viewer.status_code == 403
     assert stranger.status_code == 404
     assert not recorder.calls
+
+
+# ── the Phase-1/3 routes answer the same way ─────────────────────────────────
+#
+# These six sit in the `earlier` set of the coverage table above, so the
+# unreachable/refused walk never touched them — and they were still mapping an
+# unreachable recorder to 502 long after the rest of this router moved to 503. Six
+# routes disagreeing with forty about what the same failure means, with nothing
+# asserting either.
+#
+# They are also the ones an operator hits first: live, snapshot, timeline,
+# recordings, playback, PTZ.
+
+_EARLY = [
+    ("POST", "/live", {}),
+    ("GET", "/snapshot", None),
+    ("GET", "/timeline", None),
+    ("GET", "/recordings", None),
+    ("POST", "/playback", {}),
+    ("POST", "/ptz", {"action": "stop"}),
+]
+
+
+@pytest.mark.parametrize("method,suffix,body", _EARLY, ids=[f"{m} {s}" for m, s, _ in _EARLY])
+async def test_the_early_routes_are_503_when_the_recorder_is_down(app, node, recorder, method, suffix, body):
+    recorder.down()
+    async with client(app) as c:
+        r = await c.request(method, FED + suffix, json=body, headers=_admin())
+    assert r.status_code == 503, f"{method} {suffix} answered {r.status_code}: {r.text}"
+    assert "recorder unavailable" in _detail(r)
+
+
+@pytest.mark.parametrize("method,suffix,body", _EARLY, ids=[f"{m} {s}" for m, s, _ in _EARLY])
+async def test_the_early_routes_name_a_missing_grant_too(app, node, recorder, method, suffix, body):
+    """A refusal must explain itself here as well. These are the routes most likely to
+    be the FIRST thing that breaks after a grant change, because they are what an
+    operator opens."""
+    recorder.json(
+        {"error": {"code": "FORBIDDEN", "message": "missing permission: vms.live.view"}}, 403
+    )
+    async with client(app) as c:
+        r = await c.request(method, FED + suffix, json=body, headers=_admin())
+    assert r.status_code == 502, f"{method} {suffix} answered {r.status_code}"
+    detail = _detail(r)
+    assert "vms.live.view" in detail
+    assert "re-enrol" in detail.lower()

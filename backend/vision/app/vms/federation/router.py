@@ -159,7 +159,7 @@ async def federated_live(
     try:
         payload = await fed.mint_estate_live(node.api_url, camera_id, profile=profile, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     payload["node_id"] = str(node.id)
     payload["node_name"] = node.name
     return payload
@@ -196,7 +196,7 @@ async def federated_ptz(
             node.api_url, camera_id, action, payload, credential=node.credential
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -224,7 +224,7 @@ async def federated_snapshot(
             node.api_url, camera_id, refresh=refresh, credential=node.credential
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     return Response(content=raw, media_type=content_type, headers={"Cache-Control": "no-store"})
 
 
@@ -255,7 +255,7 @@ async def federated_timeline(
             node.api_url, camera_id, profile=profile, from_=from_, to=to, credential=node.credential
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     payload["node_id"] = str(node.id)
     payload["node_name"] = node.name
     return payload
@@ -284,7 +284,7 @@ async def federated_recordings(
             limit=limit, offset=offset, credential=node.credential,
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     payload["node_id"] = str(node.id)
     payload["node_name"] = node.name
     return payload
@@ -420,6 +420,38 @@ async def federated_export_list(
     return result
 
 
+# ORDER MATTERS from here down, and it is not cosmetic.
+#
+# FastAPI matches in REGISTRATION order and a path parameter happily matches a
+# literal segment, so `/exports/{export_id}` sitting first swallowed
+# `/exports/public-key` — with `export_id="public-key"`. The handler below was never
+# reached, and the endpoint appeared to work only because the segment is forwarded to
+# the recorder verbatim and the RECORDER's own routing resolved it correctly. It
+# returned the key while the VMS believed it was fetching an export.
+#
+# Static before parameterised. A test asserts the VMS's own handler runs.
+@router.get(
+    "/nodes/{node_id}/exports/public-key",
+    dependencies=[Depends(require_permission(PERM_EXPORT))],
+)
+async def federated_export_public_key(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """The recorder's export signing key — { algorithm, key_id, public_key }.
+
+    Per NODE, not per VMS: each recorder signs with its own identity, so there is no
+    single key the VMS could publish on their behalf without lying about who vouched
+    for a given clip."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.export_public_key_node(node.api_url, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+    return _tag(node, result)
+
+
 @router.get(
     "/nodes/{node_id}/exports/{export_id}",
     dependencies=[Depends(require_permission(PERM_EXPORT))],
@@ -461,28 +493,6 @@ async def federated_export_verify(
     node = await _resolve_node(db, scope, node_id)
     try:
         result = await fed.verify_export_node(node.api_url, export_id, credential=node.credential)
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
-    return _tag(node, result)
-
-
-@router.get(
-    "/nodes/{node_id}/exports/public-key",
-    dependencies=[Depends(require_permission(PERM_EXPORT))],
-)
-async def federated_export_public_key(
-    node_id: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    scope: Annotated[Scope, Depends(get_scope)],
-) -> dict:
-    """The recorder's export signing key — { algorithm, key_id, public_key }.
-
-    Per NODE, not per VMS: each recorder signs with its own identity, so there is no
-    single key the VMS could publish on their behalf without lying about who vouched
-    for a given clip."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        result = await fed.export_public_key_node(node.api_url, credential=node.credential)
     except fed.NodeUnavailable as e:
         raise _unreachable(e)
     return _tag(node, result)
@@ -788,7 +798,7 @@ async def federated_playback(
             node.api_url, camera_id, from_=from_, to=to, credential=node.credential
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     payload["node_id"] = str(node.id)
     payload["node_name"] = node.name
     return payload

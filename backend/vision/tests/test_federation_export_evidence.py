@@ -107,6 +107,42 @@ async def test_the_manifest_is_relayed_byte_for_byte(app, node, recorder):
     assert json.dumps(json.loads(raw)).encode() != raw
 
 
+def test_the_public_key_route_is_not_shadowed_by_the_export_id_one(app):
+    """`/exports/public-key` must be registered BEFORE `/exports/{export_id}`.
+
+    FastAPI matches in registration order and a path parameter matches a literal
+    segment happily, so the by-id route sitting first swallowed this one with
+    export_id="public-key". Nothing looked wrong from outside: the segment is
+    forwarded to the recorder verbatim, and the RECORDER's own routing resolved it —
+    so the endpoint returned the key while the VMS believed it was fetching an export,
+    and would have broken silently the day the recorder stopped serving that path.
+
+    This is asserted STRUCTURALLY, on the route table, and it has to be. The obvious
+    behavioural version — call it and check the response — passes either way, because
+    both handlers build the same recorder URL and relay the same body. That version
+    was written first and passed with the routes deliberately swapped back, which is
+    the whole reason this one reads the order instead.
+    """
+    # Off the OpenAPI schema, not app.routes: this FastAPI wraps included routers in
+    # a lazy _IncludedRouter whose children are not plain routes, so walking
+    # app.routes sees the docs and health endpoints and nothing else. The schema is
+    # built by walking the real routes in order, and a dict preserves insertion order.
+    paths = list(app.openapi()["paths"].keys())
+
+    def index_of(suffix: str) -> int:
+        for i, p in enumerate(paths):
+            if p.endswith(suffix):
+                return i
+        raise AssertionError(f"no route ends with {suffix}: {paths}")
+
+    static_at = index_of("/nodes/{node_id}/exports/public-key")
+    param_at = index_of("/nodes/{node_id}/exports/{export_id}")
+    assert static_at < param_at, (
+        "/exports/public-key is registered after /exports/{export_id}, which shadows "
+        "it — the VMS handler never runs and the endpoint works only by accident."
+    )
+
+
 async def test_the_public_key_is_per_recorder(app, node, recorder):
     """Each recorder signs with its own identity, so the key is fetched from the node
     that produced the clip — there is no single VMS key that could stand in for it
