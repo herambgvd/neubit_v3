@@ -31,7 +31,6 @@ from app.vms.linkage.router import router as linkage_router
 from app.vms.live.router import router as live_router
 from app.vms.live.router import public_router as live_public_router
 from app.vms.media_nodes.router import router as media_node_router
-from app.vms.nvr.router import router as nvr_router
 from app.vms.events.router import router as event_router
 from app.vms.federation.router import router as federation_router
 from app.vms.patterns.router import router as pattern_router
@@ -112,7 +111,6 @@ routers = [
     camera_router,
     group_router,
     pattern_router,
-    nvr_router,
     # Media-node registry (MN-1a) — /vms/media-nodes (+ /{id}). Distinct literal prefix
     # (no collision with the camera ``/cameras/{id}`` catch-all). Onboards INDEPENDENT
     # recorder machines (Go-nvr api_url + MediaMTX bases + label); the NodeHeartbeatMonitor

@@ -18,15 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from kernel.auth import Scope
 from kernel.errors import NotFoundError
 
-import app.vms.drivers._http as http_mod
-import app.vms.drivers.decoder_base as decoder_base
-import app.vms.drivers.dahua_cpplus_decoder as dahua_mod
-import app.vms.drivers.hikvision_decoder as hik_mod
+import app.vms.videowall.decoders._http as http_mod
+import app.vms.videowall.decoders.decoder_base as decoder_base
+import app.vms.videowall.decoders.dahua_cpplus_decoder as dahua_mod
+import app.vms.videowall.decoders.hikvision_decoder as hik_mod
 from app.db import Base
-from app.vms.drivers.dahua_cpplus_decoder import DahuaCpPlusDecoder
-from app.vms.drivers.decoder_base import DecoderCredentials, DecoderResult
-from app.vms.drivers.decoder_factory import get_decoder_driver, supported_decoder_brands
-from app.vms.drivers.hikvision_decoder import HikvisionDecoder
+from app.vms.videowall.decoders.dahua_cpplus_decoder import DahuaCpPlusDecoder
+from app.vms.videowall.decoders.decoder_base import DecoderCredentials, DecoderResult
+from app.vms.videowall.decoders.decoder_factory import get_decoder_driver, supported_decoder_brands
+from app.vms.videowall.decoders.hikvision_decoder import HikvisionDecoder
 from app.vms.common.crypto import encrypt_secret
 from app.vms.models import Camera, MediaProfile, VideoDecoder
 import app.vms.videowall.service as wall_svc_mod

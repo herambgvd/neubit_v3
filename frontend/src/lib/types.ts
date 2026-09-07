@@ -492,26 +492,6 @@ export interface FederatedCameraList {
 
 /* --- NVRs (backend/vision/app/vms/nvr/schemas.py) -------------------------- */
 
-export interface NvrPublic {
-  id: string;
-  name: string;
-  is_enabled: boolean;
-  brand: string;
-  driver: string | null;
-  host: string;
-  port: number;
-  username: string;
-  has_credentials: boolean;
-  channel_count: number;
-  status: string;
-  channels: Record<string, unknown>[];
-  storage_info: Record<string, unknown>;
-  capabilities: Record<string, unknown>;
-  last_seen_at: string | null;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 /* --- access control (backend/access/app/access/schemas.py) ----------------- */
 

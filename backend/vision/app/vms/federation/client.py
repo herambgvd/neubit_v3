@@ -382,6 +382,22 @@ async def list_node_tier_rules(api_url: str, *, credential: str | None = None) -
     return r.json() or {}
 
 
+async def list_nvrs_node(api_url: str, *, credential: str | None = None) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/nvrs → the third-party NVR/DVR appliances this
+    recorder has onboarded, { items, total }.
+
+    The recorder owns them: it holds their credentials, probes them, enumerates their
+    channels and keeps them in step. Their CHANNELS are not listed here because they
+    are not separate objects on the node — onboarding turns each one into a proxy
+    camera, so they arrive through the ordinary camera list and their footage is read
+    through the ordinary camera routes. This endpoint answers only "which appliances
+    does this recorder front", which is the part a cross-recorder estate view needs
+    and no single recorder can assemble.
+
+    Gated node-side on vms.nvr.read, which the scoped federation credential carries."""
+    return await _node_json("GET", api_url, "/nvrs", credential=credential)
+
+
 async def get_upstream_nvr_storage(
     api_url: str, nvr_id: str, *, credential: str | None = None
 ) -> dict | None:
@@ -792,10 +808,9 @@ async def list_holds_node(api_url: str, camera_id: str, *, credential: str | Non
 
 # ── operate-THROUGH-node (Phase-4) — the per-camera DEVICE surface ────────────
 #
-# Everything below closes the last gap between Model A (app/vms/drivers/*, where the
-# VMS decrypted the camera's own credentials and drove the device itself) and Model B
-# (this module, where the owning NVR drives it). The node already serves every one of
-# these; the Go file that owns each handler is named above the function, and the
+# Everything below closed the last gap between Model A — the VMS decrypting a camera's
+# own credentials and driving the device itself, which is deleted — and Model B, this
+# module, where the owning NVR drives it. The node serves every one of the Go file that owns each handler is named above the function, and the
 # request/response shapes are the Go DTOs verbatim — dicts, because the node's own
 # handlers answer map[string]any and inventing a Pydantic mirror of a payload whose
 # optional keys are the whole point (options_error, tours_supported tri-state,

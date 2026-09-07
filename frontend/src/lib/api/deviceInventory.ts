@@ -16,13 +16,13 @@
 import type { AxiosResponse } from "axios";
 
 import { api } from "@/lib/api";
+import type { FederatedNvrList } from "@/features/vms/types";
 import type {
   AccessDoorPublic,
   AccessInstancePublic,
   BiDeviceListResponse,
   CameraPublic,
   FederatedCameraList,
-  NvrPublic,
   Paged,
   QueryParams,
 } from "@/lib/types";
@@ -85,9 +85,12 @@ export const vmsInventory = {
     }));
     return { items: [...localItems, ...fedItems], total: localItems.length + fedItems.length };
   },
-  // NVRs — GET /vms/nvrs → { items, total, skip, limit }.
-  nvrs: (params: QueryParams = {}) =>
-    unwrap(api.get<Paged<NvrPublic>>(`${VMS}/nvrs${qs({ limit: 500, ...params })}`)),
+  // NVRs — the third-party appliances the RECORDERS have onboarded, merged across
+  // every reachable one. They are the recorders' to own (each holds the appliance's
+  // credentials and syncs its channels); assembling the estate-wide list is the part
+  // no single recorder can do, which is why it is read here and not from a VMS
+  // registry of its own.
+  nvrs: () => unwrap(api.get<FederatedNvrList>("/vms/federation/nvrs")),
 };
 
 // ── IoT source ─────────────────────────────────────────────────────────────

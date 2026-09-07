@@ -25,8 +25,7 @@ from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError
 
 from app.vms.common.crypto import decrypt_secret, encrypt_secret
-from app.vms.drivers.decoder_base import DecoderCredentials, DecoderDriver
-from app.vms.drivers.decoder_factory import get_decoder_driver
+from app.vms.videowall.decoders import DecoderCredentials, DecoderDriver, get_decoder_driver
 from app.vms.models import VideoDecoder
 
 from .decoder_schemas import (

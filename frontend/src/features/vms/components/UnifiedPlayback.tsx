@@ -28,13 +28,11 @@ import { skipToken, useQueries, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { Button, Select } from "@/components/ui/kit";
-import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { vms } from "../api";
 import type {
   FederatedCamera,
   FederatedTimeline,
-  NvrRecordingsResponse,
   PlaybackSourceFn,
   RecordingDaysResponse,
   TimelineMarker,
@@ -112,14 +110,6 @@ interface CameraTile {
   name: string;
   cameraId: string;
 }
-interface NvrTile {
-  kind: "nvr";
-  key: string;
-  name: string;
-  cameraId: string;
-  nvrId: string;
-  channel: string;
-}
 interface FederatedTile {
   kind: "federated";
   key: string;
@@ -129,12 +119,11 @@ interface FederatedTile {
   realId: string;
   federated: true;
 }
-type PlaybackTile = CameraTile | NvrTile | FederatedTile;
+type PlaybackTile = CameraTile | FederatedTile;
 // The source kinds the channel picker offers.
 type PickerKind = PlaybackTile["kind"];
 const PICKER_KINDS: { k: PickerKind; label: string; icon: string }[] = [
   { k: "camera", label: "Recorded", icon: "heroicons-outline:video-camera" },
-  { k: "nvr", label: "NVR", icon: "heroicons:server-stack" },
   { k: "federated", label: "Recorder", icon: "heroicons-outline:globe-alt" },
 ];
 
@@ -152,14 +141,6 @@ const splitCamName = (name = "") => {
   const m = name.match(/^(.*\S)\s*[-·]\s*(.+)$/);
   return m ? { primary: m[2].trim(), secondary: m[1].trim() } : { primary: name, secondary: null };
 };
-const nvrTile = (nvrId: string, ch: { value: string; label?: string }, nvrName: string): NvrTile => ({
-  key: `nvr:${nvrId}:${ch.value}`,
-  kind: "nvr",
-  name: `${nvrName} · ${ch.label || `Ch ${ch.value}`}`,
-  cameraId: `${nvrId}:${ch.value}`,
-  nvrId,
-  channel: ch.value,
-});
 // kind='federated' → a recorder-owned / 3rd-party-NVR (e.g. Lumina) camera surfaced
 // through the federation proxy. nodeId/realId address it on the remote node; the
 // synthetic `cameraId` (like nvrTile's) satisfies the player's truthy-id guards +
@@ -211,7 +192,6 @@ async function fedRecordingDays(nodeId: string, realId: string, calMonth: string
 
 // The footage-days marks for the calendar: each source kind has its own path.
 function recordingDaysFor(t: PlaybackTile, month: string): Promise<RecordingDaysResponse> {
-  if (t.kind === "nvr") return vms.nvrFootage.recordingDays(t.nvrId, t.channel, { month, tzOffsetMinutes: TZ_OFFSET_MIN });
   if (t.kind === "federated") return fedRecordingDays(t.nodeId, t.realId, month);
   return vms.playback.recordingDays(t.cameraId, { month, tzOffsetMinutes: TZ_OFFSET_MIN });
 }
@@ -220,11 +200,9 @@ function recordingDaysFor(t: PlaybackTile, month: string): Promise<RecordingDays
 // in three shapes, and the merge below reads each by its own contract.
 type SourceCoverage =
   | { kind: "camera"; tl: TimelineResponse }
-  | { kind: "nvr"; rs: NvrRecordingsResponse }
   | { kind: "federated"; tl: FederatedTimeline };
 
 async function coverageFor(s: PlaybackTile, range: { from: string; to: string }, day: string): Promise<SourceCoverage> {
-  if (s.kind === "nvr") return { kind: "nvr", rs: await vms.nvrFootage.recordings(s.nvrId, s.channel, range) };
   if (s.kind === "federated")
     return { kind: "federated", tl: await vms.federation.timeline(s.nodeId, s.realId, { from: range.from, to: range.to }) };
   return { kind: "camera", tl: await vms.playback.timeline(s.cameraId, { day }) };
@@ -383,29 +361,17 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
     };
   }, [cameras]);
 
-  // ── NVR picker data ──────────────────────────────────────────────────────
-  const nvrsQ = useQuery({
-    queryKey: ["vms-nvrs", "playback-picker"],
-    queryFn: () => vms.nvrs.list({ limit: 200 }),
-    staleTime: 60_000,
-    enabled: pickerKind === "nvr",
-  });
-  const nvrs = useMemo(() => nvrsQ.data?.items ?? [], [nvrsQ.data]);
-  const [pickNvrId, setPickNvrId] = useState("");
-  // NVR channels come from OUR already-loaded, mapped cameras (instant) — NOT a live
-  // ONVIF re-enumeration of the device each time (that round-trips to the NVR and is
-  // slow). Each mapped camera's nvr_channel_number IS the recording-token index.
-  const nvrChannels = useMemo(
-    () =>
-      cameras
-        .filter((c) => c.nvr_id === pickNvrId && c.nvr_channel_number != null)
-        .sort((a, b) => (a.nvr_channel_number ?? 0) - (b.nvr_channel_number ?? 0)),
-    [cameras, pickNvrId],
-  );
-  const pickNvrName = useMemo(
-    () => nvrs.find((n) => n.id === pickNvrId)?.name || "NVR",
-    [nvrs, pickNvrId],
-  );
+  // There is no NVR picker any more.
+  //
+  // A third-party NVR's channels are not a separate kind of source: the recorder
+  // that fronts the appliance turns each channel into a proxy CAMERA during
+  // onboarding, so they arrive in the federated camera list and play through the
+  // federated camera routes like anything else. The picker built its channel list
+  // from this service's own Camera rows, of which a single-ownership estate has
+  // none — so it had been showing "No mapped channels" for every NVR.
+  //
+  // Which appliances exist is still worth seeing; that lives on the Recorders page,
+  // read from the recorder that owns them.
 
   // ── Federated (recorder-owned) picker data ───────────────────────────────
   // Cameras owned by remote recorder nodes (3rd-party NVR channels, e.g. Lumina),
@@ -472,16 +438,6 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
             s: sMs,
             e: sMs + (r.duration || 0) * 1000,
             trigger: r.trigger_type || "continuous",
-          });
-        }
-      } else if (d.kind === "nvr") {
-        // 3rd-party NVR ranges carry no trigger → neutral "continuous" (Normal).
-        for (const r of asItems(d.rs)) {
-          if (!r?.start) continue;
-          spans.push({
-            s: new Date(r.start).getTime(),
-            e: r.end ? new Date(r.end).getTime() : new Date(r.start).getTime(),
-            trigger: "continuous",
           });
         }
       } else {
@@ -730,7 +686,6 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
   // recorded recorder cams, fmp4). Adapt whichever is present into the session shape
   // usePlaybackSession/PlaybackPlayer consume (hls_url, webrtc_url, ranges, from, expires_at).
   const tileSource = (s: PlaybackTile): PlaybackSourceFn | null => {
-    if (s.kind === "nvr") return (win) => vms.nvrFootage.playback(s.nvrId, s.channel, win);
     if (s.kind === "federated")
       return (win) =>
         vms.federation.playback(s.nodeId, s.realId, win).then((r) => ({
@@ -1041,7 +996,7 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                   })()
                 )}
               </div>
-            ) : pickerKind === "federated" ? (
+            ) : (
               /* Recorder cameras — flat checkbox list (node · site subtitle). */
               <div className="space-y-1">
                 {fedCamsQ.isLoading ? (
@@ -1086,68 +1041,6 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                     );
                   })
                 )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Select
-                  value={pickNvrId}
-                  onChange={(e) => setPickNvrId(e.target.value)}
-                  options={[
-                    { value: "", label: nvrs.length ? "Select NVR…" : "No NVRs" },
-                    ...nvrs.map((n) => ({ value: n.id, label: n.name })),
-                  ]}
-                  className="!h-8 !py-1"
-                />
-                {pickNvrId &&
-                  (nvrChannels.length === 0 ? (
-                    <p className="px-2 py-4 text-center text-xs text-[#9db0d8]">No mapped channels.</p>
-                  ) : (
-                    nvrChannels.map((c) => {
-                      // NVR footage is keyed by the ONVIF video-source index
-                      // (== nvr_channel_number == RecordingToken index). Label with name.
-                      const val = String(c.nvr_channel_number);
-                      const ch = { value: val, label: c.name || `Channel ${val}` };
-                      // The NVR is already chosen in the dropdown above, so strip the
-                      // redundant "<nvr name> - " prefix → clean per-channel label. A
-                      // CH-number chip stays always visible.
-                      const raw = c.name || `Channel ${val}`;
-                      const clean =
-                        pickNvrName && raw.startsWith(pickNvrName)
-                          ? raw.slice(pickNvrName.length).replace(/^\s*[-·:]\s*/, "").trim() ||
-                            `Channel ${val}`
-                          : raw;
-                      const tile = nvrTile(pickNvrId, ch, pickNvrName);
-                      const on = isChecked(tile.key);
-                      return (
-                        <label
-                          key={val}
-                          title={c.name || `Channel ${val}`}
-                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-[#f2f6ff] transition hover:bg-[rgba(150,180,245,.07)] ${
-                            !on && atCap ? "opacity-40" : ""
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            className="sr-only"
-                            checked={on}
-                            disabled={!on && atCap}
-                            onChange={() => toggleCheck(tile)}
-                          />
-                          <span
-                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition ${
-                              on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
-                            }`}
-                          >
-                            {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
-                          </span>
-                          <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm bg-[rgba(150,180,245,.08)] px-1 font-mono text-[11px] font-semibold tabular-nums text-[#9db0d8]">
-                            {val}
-                          </span>
-                          <span className="truncate">{clean}</span>
-                        </label>
-                      );
-                    })
-                  ))}
               </div>
             )}
           </div>
@@ -1228,21 +1121,14 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
               sourceFn={tileSource(focusTile)}
               profile={stream}
               timelineFn={
-                focusTile.kind === "nvr"
+                focusTile.kind === "federated"
                   ? () => ({
-                      coverage: (focusData?.kind === "nvr" ? asItems(focusData.rs) : []).map((r) => ({
+                      coverage: (focusData?.kind === "federated" ? focusData.tl.ranges || [] : []).map((r) => ({
                         start: r.start,
-                        end: r.end,
+                        end: iso(new Date(r.start).getTime() + (r.duration || 0) * 1000),
                       })),
                     })
-                  : focusTile.kind === "federated"
-                    ? () => ({
-                        coverage: (focusData?.kind === "federated" ? focusData.tl.ranges || [] : []).map((r) => ({
-                          start: r.start,
-                          end: iso(new Date(r.start).getTime() + (r.duration || 0) * 1000),
-                        })),
-                      })
-                    : null
+                  : null
               }
               // Only a federated tile can raise an export: the recorder that owns the
               // camera is what produces one. A third-party NVR channel is proxied for
@@ -1281,11 +1167,6 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                       <span className="rounded-sm bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
                         {s.name}
                       </span>
-                      {s.kind === "nvr" && (
-                        <span className="rounded-sm bg-sky-500/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
-                          NVR
-                        </span>
-                      )}
                       {s.kind === "federated" && (
                         <span className="rounded-sm bg-violet-500/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
                           REC

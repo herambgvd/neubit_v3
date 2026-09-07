@@ -1,15 +1,15 @@
 // VMS wire types — one interface per Pydantic model in backend/vision/app/vms/**/
 // schemas.py, the backend file named per block. Feature-local: only the shapes
 // this console's video surfaces consume. The generic ones (CameraPublic,
-// NvrPublic, OnvifPublic, FederatedCamera, Paged, QueryParams) live in
+// OnvifPublic, FederatedCamera, Paged, QueryParams) live in
 // src/lib/types.ts and are re-exported here for convenience.
 //
 // Conventions (same as src/lib/types.ts): dates cross the wire as ISO-8601
 // strings; `dict[str, Any]` becomes `Record<string, unknown>` unless the backend
 // documents a narrower map; write-only credentials appear only on request bodies.
-import type { CameraPublic, NvrPublic, Paged } from "@/lib/types";
+import type { CameraPublic, Paged } from "@/lib/types";
 
-export type { CameraPublic, FederatedCamera, FederatedCameraList, NvrPublic, OnvifPublic, Paged, QueryParams } from "@/lib/types";
+export type { CameraPublic, FederatedCamera, FederatedCameraList, OnvifPublic, Paged, QueryParams } from "@/lib/types";
 
 /** The `{ items, total }` envelope the non-skip/limit list endpoints use. */
 export interface ItemList<T> {
@@ -183,36 +183,9 @@ export interface ReorderResult {
   reordered: number;
 }
 
-export interface DiscoverBody {
-  network?: string | null;
-  brand?: string | null;
-}
 
-export interface DiscoveredPublic {
-  ip: string;
-  port: number;
-  xaddr?: string | null;
-  name?: string | null;
-  manufacturer?: string | null;
-  model?: string | null;
-  firmware?: string | null;
-  serial_number?: string | null;
-  mac?: string | null;
-  brand: string;
-  auth_required: boolean;
-}
 
-export type DiscoverResponse = ItemList<DiscoveredPublic>;
 
-/** `ProbeBody` / `ChannelsBody` / `SnapshotBody` / `NvrChannelsBody` — the same
- *  host-credential quartet. */
-export interface HostCredentials {
-  host: string;
-  port?: number;
-  username?: string;
-  password?: string;
-  brand?: string | null;
-}
 
 export interface ProbeResponse {
   reachable: boolean;
@@ -241,32 +214,9 @@ export interface StreamInfoPublic {
   bitrate?: number | null;
 }
 
-export interface ChannelPublic {
-  channel: number;
-  name: string;
-  source_token?: string | null;
-  channel_number?: number | null;
-  main?: StreamInfoPublic | null;
-  sub?: StreamInfoPublic | null;
-  snapshot_url?: string | null;
-  ptz_capable: boolean;
-}
 
-export type ChannelsResponse = ItemList<ChannelPublic>;
 
-export interface BulkAddChannel {
-  channel_number?: number | null;
-  name?: string | null;
-  profile_token?: string | null;
-  nvr_id?: string | null;
-  site_id?: string | null;
-  floor_id?: string | null;
-}
 
-export interface BulkAddBody extends HostCredentials {
-  brand: string;
-  channels: BulkAddChannel[];
-}
 
 /** `POST /cameras/onvif/bulk-add` → the created cameras (router returns
  *  `{ items, total }` or a bare list; consumers go through `asItems`). */
@@ -292,78 +242,14 @@ export type PtzAction =
 
 /* --- NVRs (backend/vision/app/vms/nvr/schemas.py) -------------------------- */
 
-export interface NvrCreate {
-  name: string;
-  is_enabled?: boolean;
-  brand?: string;
-  driver?: string | null;
-  host: string;
-  port?: number;
-  username?: string;
-  password?: string | null;
-  channel_count?: number;
-}
 
-export type NvrUpdate = Partial<NvrCreate>;
 
-export type NvrListResponse = Paged<NvrPublic>;
 
-export interface MapChannelItem {
-  channel_number: number;
-  name?: string | null;
-  profile_token?: string | null;
-  add?: boolean;
-  site_id?: string | null;
-  floor_id?: string | null;
-}
 
-export interface MapChannelsResult {
-  created: VmsCameraPublic[];
-  created_count: number;
-  skipped_count: number;
-  nvr?: NvrPublic | null;
-}
 
-export interface NvrHealthResponse {
-  nvr_id: string;
-  status: string;
-  is_enabled: boolean;
-  channel_count: number;
-  mapped_channel_count: number;
-  storage_info: Record<string, unknown>;
-  capabilities: Record<string, unknown>;
-  last_seen_at?: string | null;
-  last_error?: string | null;
-}
 
-export interface NvrRecordingRange {
-  channel: number;
-  start?: string | null;
-  end?: string | null;
-  extra: Record<string, unknown>;
-}
 
-export interface NvrRecordingsResponse {
-  nvr_id: string;
-  channel: number;
-  items: NvrRecordingRange[];
-  total: number;
-  reachable: boolean;
-}
 
-export interface NvrPlaybackSession {
-  nvr_id: string;
-  channel: number;
-  kind: string;
-  from: string;
-  to: string;
-  hls_url?: string | null;
-  webrtc_url?: string | null;
-  rtsp_url?: string | null;
-  token?: string | null;
-  expires_at?: string | null;
-  ready: boolean;
-}
 
 /* --- PTZ (backend/vision/app/vms/ptz/schemas.py) --------------------------- */
 
@@ -1227,6 +1113,21 @@ export interface FederatedBackchannel extends NodeTagged {
   outputs_error?: string | null;
   decoders_error?: string | null;
   [k: string]: unknown;
+}
+
+/** One third-party NVR/DVR appliance as the RECORDER reports it. Proxied verbatim —
+ *  the recorder owns the appliance, so its shape is the recorder's. */
+export interface FederatedNvr {
+  id: string;
+  name?: string | null;
+  host?: string | null;
+  status?: string | null;
+  [k: string]: unknown;
+}
+
+export interface FederatedNvrList extends NodeTagged {
+  items?: FederatedNvr[] | null;
+  total?: number | null;
 }
 
 /** A stretch of time with no recording, inside a searched range. */

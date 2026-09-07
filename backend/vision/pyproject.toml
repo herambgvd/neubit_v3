@@ -14,21 +14,15 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "asyncpg>=0.29",
     "alembic>=1.13",
-    "httpx>=0.27",             # ONVIF/ISAPI/brand REST clients (drivers)
-    # ONVIF SDK — the OnvifDriver + NvrService SOAP paths need these to talk to real
-    # ONVIF cameras/NVRs (GetProfiles / enumerate_channels / GetCapabilities / PTZ /
-    # PullPoint events). Drivers import them LAZILY and still degrade gracefully if the
-    # wheel is somehow absent, but they are pinned as RUNTIME deps (same as gvd_nvr —
-    # see gvd_nvr backend/requirements.txt `onvif-zeep` + `WSDiscovery`) so the shipped
-    # image has a working ONVIF client. WITHOUT them the SOAP driver paths no-op with
-    # "not installed" — this was the P1-D gap.
-    "onvif-zeep>=0.2.12",
-    "WSDiscovery>=2.0.0",
-    # P6-C ONVIF server — OUR VMS answering ONVIF SOAP requests as a device. The SOAP
-    # handlers build/parse envelopes with lxml (same as gvd_nvr's onvif_device). lxml
-    # already arrives transitively via onvif-zeep/zeep, but pin it explicitly since the
-    # onvif_server domain imports it directly.
-    "lxml>=5.0",
+    # The federation client (recorder HTTP) and the video-wall decoder drivers.
+    "httpx>=0.27",
+    # NO ONVIF SDK. This service does not speak to cameras: it does not hold their
+    # credentials and does not open SOAP sessions. onvif-zeep, WSDiscovery and lxml
+    # were here for the camera drivers and the ONVIF server, both of which belong to
+    # — and live on — the recorder that owns the device. Anything ONVIF the console
+    # needs is read through /vms/federation from the box that already has a session
+    # open. Re-adding one of these means this service has started talking to devices
+    # again, which is the thing single ownership exists to prevent.
     # P3-B storage tiering — S3/MinIO put/head/delete for the cold tier. Imported
     # LAZILY in app.vms.common.storage_backend so the service degrades gracefully if
     # the wheel is absent, but pinned as a runtime dep so tiering works in the image.

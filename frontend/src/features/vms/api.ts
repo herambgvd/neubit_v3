@@ -31,7 +31,7 @@
 import type { AxiosResponse } from "axios";
 
 import { api } from "@/lib/api";
-import type { FederatedCameraList, NvrPublic, QueryParams } from "@/lib/types";
+import type { FederatedCameraList, QueryParams } from "@/lib/types";
 import type {
   BookmarkCreate,
   BookmarkListResponse,
@@ -47,9 +47,6 @@ import type {
   CameraListResponse,
   CameraReorderItem,
   CameraUpdate,
-  ChannelsResponse,
-  DiscoverBody,
-  DiscoverResponse,
   EvidenceCheckResult,
   EvidenceLockCreate,
   EvidenceLockListResponse,
@@ -64,6 +61,7 @@ import type {
   FederatedLiveSession,
   FederatedMotionSearch,
   FederatedMotionSearchBody,
+  FederatedNvrList,
   FederatedOpResult,
   FederatedPatrol,
   FederatedPatrolBody,
@@ -74,15 +72,12 @@ import type {
   FederatedRecordingList,
   FederatedTimeline,
   FederationNodeList,
-  HostCredentials,
   ItemList,
   LinkageFireListResponse,
   LinkageRuleCreate,
   LinkageRuleListResponse,
   LinkageRulePublic,
   LinkageRuleUpdate,
-  MapChannelItem,
-  MapChannelsResult,
   MediaNodeCreate,
   MediaNodeListResponse,
   MediaNodePublic,
@@ -94,12 +89,6 @@ import type {
   NodeStorageUsage,
   NodeTierRuleList,
   NodeUpstreamNvrStorage,
-  NvrCreate,
-  NvrHealthResponse,
-  NvrListResponse,
-  NvrPlaybackSession,
-  NvrRecordingsResponse,
-  NvrUpdate,
   PatternCreate,
   PatternListResponse,
   PatternPublic,
@@ -123,7 +112,6 @@ import type {
 } from "./types";
 
 const CAMERAS = "/vms/cameras";
-const NVRS = "/vms/nvrs";
 const GROUPS = "/vms/camera-groups";
 const PATTERNS = "/vms/patterns";
 const EVENTS = "/vms/events";
@@ -148,10 +136,6 @@ function qs(params: QueryParams = {}): string {
   return s ? `?${s}` : "";
 }
 
-/** `{ refresh:true }` re-probes the device instead of serving the persisted value. */
-interface RefreshOpt {
-  refresh?: boolean;
-}
 
 /** A `[from, to]` ISO window (both optional on the reads). */
 interface WindowOpt {
@@ -360,6 +344,16 @@ export const vms = {
     //   tierRules  → { items:[TierRule…] } (source → target after N hours)
     //   upstreamNvr→ a 3rd-party NVR's own HDDs as reported by the recorder, or
     //                { available:false } when not yet available.
+    // The third-party NVR/DVR appliances a recorder has onboarded. READ-ONLY, and
+    // that is the whole shape of third-party NVR support: the recorder onboards them,
+    // holds their credentials and syncs their channels into proxy cameras; this says
+    // which appliances exist and how they are doing.
+    //
+    // Their footage needs no route of its own — a channel IS a camera on the node, so
+    // it arrives in `cameras` above and plays through the ordinary camera routes.
+    nvrs: (nodeId: string) =>
+      unwrap(api.get<FederatedNvrList>(`/vms/federation/nodes/${nodeId}/nvrs`)),
+
     storage: {
       usage: (nodeId: string) => unwrap(api.get<NodeStorageUsage>(`/vms/federation/nodes/${nodeId}/storage/usage`)),
       raid: (nodeId: string) => unwrap(api.get<NodeRaidStatus>(`/vms/federation/nodes/${nodeId}/storage/raid`)),
@@ -394,30 +388,6 @@ export const vms = {
 
 
 
-  nvrs: {
-    // GET /nvrs → { items, total, skip, limit }. Filters: status, brand, q.
-    list: (params: QueryParams = {}) => unwrap(api.get<NvrListResponse>(`${NVRS}${qs(params)}`)),
-    get: (id: string) => unwrap(api.get<NvrPublic>(`${NVRS}/${id}`)),
-    create: (body: NvrCreate) => unwrap(api.post<NvrPublic>(NVRS, body)),
-    update: (id: string, body: NvrUpdate) => unwrap(api.patch<NvrPublic>(`${NVRS}/${id}`, body)),
-    remove: (id: string) => unwrap(api.delete<void>(`${NVRS}/${id}`)),
-    // POST /nvrs/discover { network?, brand? }.
-    discover: (body: DiscoverBody = {}) => unwrap(api.post<DiscoverResponse>(`${NVRS}/discover`, body)),
-    // GET /nvrs/{id}/channels — enumerate a SAVED NVR's channels (creds off the row).
-    // Served from the cached list on the NVR row; pass { refresh:true } to force a
-    // live ONVIF re-enumeration (the ↻ button).
-    channels: (id: string, { refresh = false }: RefreshOpt = {}) =>
-      unwrap(api.get<ChannelsResponse>(`${NVRS}/${id}/channels${refresh ? "?refresh=true" : ""}`)),
-    // POST /nvrs/channels { host, port, username, password, brand? } — UNSAVED host.
-    probeChannels: (body: HostCredentials) => unwrap(api.post<ChannelsResponse>(`${NVRS}/channels`, body)),
-    // POST /nvrs/{id}/map-channels { channels: [{ channel_number, name?, add }] }.
-    mapChannels: (id: string, channels: MapChannelItem[]) =>
-      unwrap(api.post<MapChannelsResult>(`${NVRS}/${id}/map-channels`, { channels })),
-    // GET /nvrs/{id}/health — reachability + storage/channel snapshot.
-    health: (id: string) => unwrap(api.get<NvrHealthResponse>(`${NVRS}/${id}/health`)),
-    // POST /nvrs/{id}/refresh — re-probe + return the refreshed NVR.
-    refresh: (id: string) => unwrap(api.post<NvrPublic>(`${NVRS}/${id}/refresh`, {})),
-  },
 
   // ── Media nodes (recorders) — independent recorder machines ─────────────
   // A MediaNode is a standalone recorder box (its own MediaMTX + storage) that
@@ -659,29 +629,6 @@ export const vms = {
 
 
 
-  // ── NVR footage extraction (P4-B) — search + play an onboarded NVR's own
-  // recorded storage (ONVIF Profile G / Hik ISAPI / CP-Plus-Dahua / Lumina).
-  // A unified timeline/export across our recordings + client NVRs.
-  nvrFootage: {
-    // GET /nvrs/{id}/channels/{ch}/recordings?from=&to= →
-    //   { items:[{start,end,duration?,...}], total } (or bare array).
-    recordings: (nvrId: string, channel: number | string, { from, to }: WindowOpt = {}) =>
-      unwrap(api.get<NvrRecordingsResponse>(`${NVRS}/${nvrId}/channels/${channel}/recordings${qs({ from, to })}`)),
-    // POST /nvrs/{id}/channels/{ch}/playback { from, to } →
-    //   { session_id?, hls_url?, webrtc_url?, rtsp_url?, from, to } — plays
-    //   like a recorded/live session (hls_url carries "?token=").
-    playback: (nvrId: string, channel: number | string, { from, to }: WindowOpt = {}) =>
-      unwrap(api.post<NvrPlaybackSession>(`${NVRS}/${nvrId}/channels/${channel}/playback`, { from, to })),
-    // GET /nvrs/{id}/channels/{ch}/recording-days?month=YYYY-MM&tz_offset_minutes=330 →
-    //   { year, month, days:[14,15,…] } — same shape as playback.recordingDays,
-    //   for a 3rd-party NVR channel's on-board storage. Drives the calendar marks.
-    recordingDays: (nvrId: string, channel: number | string, { month, tzOffsetMinutes }: RecordingDaysOpt = {}) =>
-      unwrap(
-        api.get<RecordingDaysResponse>(
-          `${NVRS}/${nvrId}/channels/${channel}/recording-days${qs({ month, tz_offset_minutes: tzOffsetMinutes })}`,
-        ),
-      ),
-  },
 
 
 };

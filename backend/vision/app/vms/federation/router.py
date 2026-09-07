@@ -109,6 +109,37 @@ async def federated_cameras(
     return {"items": items, "total": len(items), "nodes": len(nodes), "unreachable": unreachable}
 
 
+@router.get("/nvrs", dependencies=[Depends(require_permission(PERM_READ))])
+async def federated_nvrs_all(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """Every online recorder's third-party NVR/DVR appliances, merged and tagged.
+
+    The estate-wide view of appliances nobody but the VMS can assemble: each recorder
+    knows only the ones IT onboarded. Same shape and same failure discipline as
+    ``/cameras`` — a node that cannot be reached is listed in ``unreachable`` and
+    skipped, never fatal, because one recorder rebooting must not empty the inventory.
+    """
+    nodes = await _online_nodes(db, scope)
+    items: list[dict] = []
+    unreachable: list[dict] = []
+    for n in nodes:
+        try:
+            payload = await fed.list_nvrs_node(n.api_url, credential=n.credential)
+        except fed.NodeUnavailable as e:
+            log.warning("federation: node %s unreachable: %s", n.name, e)
+            unreachable.append({"node_id": str(n.id), "name": n.name, "error": str(e)})
+            continue
+        for row in (payload or {}).get("items") or []:
+            if not isinstance(row, dict):
+                continue
+            row["node_id"] = str(n.id)
+            row["node_name"] = n.name
+            items.append(row)
+    return {"items": items, "total": len(items), "nodes": len(nodes), "unreachable": unreachable}
+
+
 @router.post(
     "/nodes/{node_id}/cameras/{camera_id}/live",
     dependencies=[Depends(require_permission(PERM_LIVE))],
@@ -688,6 +719,29 @@ async def federated_storage_tier_rules(
 
 
 @router.get(
+    "/nodes/{node_id}/nvrs",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def federated_nvrs(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """The third-party NVR/DVR appliances a recorder has onboarded.
+
+    Read-only, and that is the whole shape of third-party NVR support here: the
+    recorder onboards them, holds their credentials and syncs their channels into
+    proxy cameras; the estate view says which appliances exist and how they are
+    doing. Their footage needs no route of its own — a channel IS a camera on the
+    node, so it arrives in the camera list and plays through the camera routes."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        return _tag(node, await fed.list_nvrs_node(node.api_url, credential=node.credential))
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+
+
+@router.get(
     "/nodes/{node_id}/nvrs/{nvr_id}/storage",
     dependencies=[Depends(require_permission(PERM_PLAYBACK))],
 )
@@ -742,12 +796,12 @@ async def federated_playback(
 
 # ── operate-THROUGH-node (Phase-4) — the whole per-camera DEVICE surface ──────
 #
-# Model A (app/vms/drivers/*) is the VMS decrypting a camera's credentials and driving
-# the device itself. Model B is this module: the OWNING NVR drives it and the VMS
-# commands through the node. Until now Model B stopped at PTZ move/stop + snapshot,
-# so imaging, encoders, OSD, privacy masks, camera-side motion, digital I/O, presets,
-# patrol, tours, talk and forensic motion search were reachable ONLY through Model A.
-# Everything below closes that gap; the node already served every one of these routes.
+# Model A WAS the VMS decrypting a camera's credentials and driving the device itself.
+# It is gone. Model B is this module: the OWNING NVR drives the device and the VMS
+# commands through the node. Model B used to stop at PTZ move/stop + snapshot, so
+# imaging, digital I/O, presets, patrol, talk and forensic motion search were reachable
+# only through Model A — which is what made deleting it possible only after these
+# existed. The node served every one of them all along.
 #
 # Shape, deliberately identical to the routes above: /nodes/{node_id}/cameras/{camera_id}/…,
 # _resolve_node for tenant scoping (a node another tenant owns is simply not found → 404),

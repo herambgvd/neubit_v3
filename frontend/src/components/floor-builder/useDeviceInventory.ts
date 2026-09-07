@@ -24,6 +24,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { accessInventory, iotInventory, vmsInventory } from "@/lib/api/deviceInventory";
+import type { FederatedNvr } from "@/features/vms/types";
 import type { BiDeviceRow } from "@/lib/types";
 
 import type { PlaceableDevice } from "./types";
@@ -84,9 +85,9 @@ export function useDeviceInventory() {
       search_ip: c.network_info?.ip || c.onvif?.host || "",
     }));
     // NVRs → placeable server-glyph devices.
-    const nvrItems = nvrDevices.map((n): PlaceableDevice => ({
+    const nvrItems = nvrDevices.map((n: FederatedNvr): PlaceableDevice => ({
       device_id: n.id,
-      name: n.name,
+      name: n.name || n.id,
       device_type: "nvr",
       service: "vms",
       search_ip: n.host || "",

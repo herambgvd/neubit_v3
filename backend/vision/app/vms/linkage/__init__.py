@@ -12,7 +12,7 @@
 
 The engine reuses the events bus (``app.vms.common.events``), the nvr client
 (``app.vms.common.nvr_client``) via the recording service, and the driver seam
-(``app.vms.drivers``) — no new infra.
+(through the owning recorder, ``app.vms.federation``) — no new infra.
 """
 
 from __future__ import annotations

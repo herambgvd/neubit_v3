@@ -65,6 +65,12 @@ RETIRED_MODULES = [
     "vms/onvif_server",  # an ONVIF *server* re-exporting cameras the NVR serves
     "vms/devicemgmt",    # camera NTP, user accounts, config backup/restore
     "vms/ptz",           # a second PTZ plane, and a second patrol cycler on one head
+    "vms/export",        # a second ffmpeg over the recorder's own /recordings volume
+    "vms/motion_search", # a second decoder over those same segments, with no bounds
+    "vms/audio",         # a WHIP talk session the VMS had no path to the speaker for
+    "vms/anr",           # a THIRD writer on the recorder's own recordings volume
+    "vms/nvr",           # a second onboarding of the same third-party appliance
+    "vms/drivers",       # the camera brand drivers — the credentials themselves
 ]
 
 
@@ -192,6 +198,28 @@ def test_the_vms_does_not_drive_or_onboard_a_camera(app):
         "the VMS is talking to cameras again:\n  " + "\n  ".join(back)
         + "\nThe recorder owns the camera and holds its credentials. Read what the "
           "console needs through /vms/federation; do not open a device session here."
+    )
+
+
+# The ONVIF SDK. This service does not speak to cameras — it holds no credentials and
+# opens no SOAP sessions — so an import of one of these means the device plane has
+# started growing back, whatever the route table says. Checked at the IMPORT level
+# because that is where it would reappear first: a helper, before any route exists.
+FORBIDDEN_IMPORTS = ["onvif", "zeep", "wsdiscovery", "lxml"]
+
+
+def test_the_vms_does_not_import_an_onvif_stack():
+    offenders = []
+    for path in APP.rglob("*.py"):
+        for n, line in enumerate(path.read_text().split("\n"), 1):
+            code = line.split("#", 1)[0]
+            for mod in FORBIDDEN_IMPORTS:
+                if f"import {mod}" in code or f"from {mod}" in code:
+                    offenders.append(f"{path.relative_to(APP)}:{n}: {line.strip()}")
+    assert not offenders, (
+        "the VMS is importing an ONVIF stack again:\n  " + "\n  ".join(offenders)
+        + "\nThe recorder owns the cameras and already has a session open. Read what "
+          "the console needs through /vms/federation."
     )
 
 
