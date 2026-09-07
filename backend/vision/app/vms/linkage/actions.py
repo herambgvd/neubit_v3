@@ -29,19 +29,15 @@ from typing import Any
 
 from kernel.auth import Scope
 
-from app.vms.common.crypto import decrypt_secret
 from app.vms.common.events import emit_notify_request, emit_popup
-from app.vms.common.nvr_client import NvrUnavailable
-from app.vms.common.service_token import mint_service_token
-from app.vms.drivers import Credentials, PtzCommand, get_driver
-from app.vms.drivers.base import DriverError
+from app.vms.common.node_routing import node_for_camera
+from app.vms.federation import client as fed
 from app.vms.models import Camera
 
 log = logging.getLogger("vision.linkage.actions")
 
 # A platform scope for the background executors (they authorize off the camera/event,
 # not a caller — the engine already resolved the tenant from the event envelope).
-_PLATFORM_SCOPE = Scope(tenant_id=None, is_superadmin=True)
 
 
 @dataclass
@@ -73,56 +69,46 @@ class ActionContext:
     reason: str = ""  # human reason (e.g. "door forced at Lobby")
 
 
-def _creds_for(cam: Camera) -> Credentials:
-    return Credentials(
-        username=cam.onvif_user or "admin",
-        password=decrypt_secret(cam.onvif_enc_pass) or "",
-        port=cam.onvif_port or 80,
-        rtsp_port=(cam.network_info or {}).get("rtsp_port") or 554,
-    )
+async def _camera_and_node(ctx: ActionContext) -> tuple[Camera | None, Any]:
+    """The camera row and the RECORDER that fronts it, resolved in ONE session.
 
-
-def _host_for(cam: Camera) -> str | None:
-    return cam.onvif_host or (cam.network_info or {}).get("ip")
-
-
-async def _load_camera(ctx: ActionContext) -> Camera | None:
+    Every device action goes through that recorder — it holds the camera's
+    credentials — so both are needed together, and reading them in one session avoids
+    handing an executor a detached row.
+    """
     if not ctx.camera_id:
-        return None
+        return None, None
     async with ctx.sessionmaker() as db:
-        return await db.get(Camera, ctx.camera_id)
+        cam = await db.get(Camera, ctx.camera_id)
+        if cam is None:
+            return None, None
+        node = await node_for_camera(db, cam.tenant_id, cam)
+        return cam, node
 
 
 # ── start_recording ─────────────────────────────────────────────────────────────
 async def action_start_recording(ctx: ActionContext, config: dict) -> ActionResult:
-    """Fire an event-clip on the nvr (pre/post buffer) → Recording trigger_type=event.
+    """Start recording on the camera, THROUGH the recorder that owns it.
 
-    Reuses ``RecordingService.start`` (which derives the RTSP + calls the Go nvr's
-    ``start_recording`` with ``trigger="event"``). The nvr stamps ``trigger_type`` from
-    the trigger; the produced segments are persisted as ``event`` recordings by the P3-A
-    segment consumer. Graceful: an unreachable nvr / no-RTSP camera → ``ok=False`` (a
-    clean skip), never a crash.
+    The recorder writes the segments and stamps the trigger; the produced footage
+    flows back as ``recording.segment`` events which the P3-A consumer persists.
+
+    This used to call the VMS's own RecordingService, which forwarded a minted service
+    token to the node. Same effect, one more credential, and a second path to an
+    operation the federation surface already covers.
+
+    Graceful: an unreachable recorder → ``ok=False`` (a clean skip), never a crash.
     """
-    if not ctx.camera_id:
+    cam, node = await _camera_and_node(ctx)
+    if cam is None:
         return ActionResult("start_recording", False, "no camera to record")
-
-    # Import here to avoid a heavy import at module load / a cycle through the engine.
-    from app.vms.recording.service import RecordingService, RecordingUpstreamError
-
-    bearer = mint_service_token(tenant_id=ctx.tenant_id)
+    if node is None:
+        return ActionResult("start_recording", False, "camera is not fronted by a recorder")
     try:
-        async with ctx.sessionmaker() as db:
-            svc = RecordingService(db, _PLATFORM_SCOPE, bearer=bearer)
-            out = await svc.start(ctx.camera_id, actor=None, trigger="event")
-        return ActionResult(
-            "start_recording",
-            True,
-            f"event-clip started (profile={out.get('profile')})",
-        )
-    except RecordingUpstreamError as exc:
-        return ActionResult("start_recording", False, f"nvr upstream: {exc}")
-    except NvrUnavailable as exc:  # noqa: F841 — belt & suspenders
-        return ActionResult("start_recording", False, f"nvr unavailable: {exc}")
+        await fed.record_start_node(node.api_url, cam.id, credential=node.credential)
+        return ActionResult("start_recording", True, "recording started on the owning recorder")
+    except fed.NodeUnavailable as exc:
+        return ActionResult("start_recording", False, f"recorder unavailable: {exc}")
     except Exception as exc:  # noqa: BLE001 — never crash the engine
         log.warning("start_recording action failed for %s: %s", ctx.camera_id, exc)
         return ActionResult("start_recording", False, f"error: {exc}")
@@ -158,94 +144,84 @@ async def action_notify(ctx: ActionContext, config: dict) -> ActionResult:
 
 # ── ptz_preset ──────────────────────────────────────────────────────────────────
 async def action_ptz_preset(ctx: ActionContext, config: dict) -> ActionResult:
-    """Recall a PTZ preset on the camera (``get_driver(brand).ptz(goto_preset)``)."""
+    """Recall a PTZ preset on the camera, THROUGH the recorder that owns it.
+
+    ``preset_token`` is the DEVICE's own preset handle — the camera stores presets in
+    its firmware and the recorder reads and recalls them there.
+    """
     preset = config.get("preset_token") or config.get("preset")
     if not preset:
         return ActionResult("ptz_preset", False, "no preset_token in config")
-    cam = await _load_camera(ctx)
+    cam, node = await _camera_and_node(ctx)
     if cam is None:
         return ActionResult("ptz_preset", False, "camera not found")
-    host = _host_for(cam)
-    if not host:
-        return ActionResult("ptz_preset", False, "camera has no host")
-    driver = get_driver(cam.brand or "onvif")
-    cmd = PtzCommand(
-        action="goto_preset",
-        preset_token=str(preset),
-        profile_token=cam.onvif_profile_token,
-    )
+    if node is None:
+        return ActionResult("ptz_preset", False, "camera is not fronted by a recorder")
     try:
-        await driver.ptz(host, _creds_for(cam), cmd)
+        await fed.goto_ptz_preset_node(
+            node.api_url, cam.id, str(preset), credential=node.credential
+        )
         return ActionResult("ptz_preset", True, f"recalled preset {preset}")
-    except DriverError as exc:
-        return ActionResult("ptz_preset", False, f"ptz failed: {exc}")
+    except fed.NodeUnavailable as exc:
+        return ActionResult("ptz_preset", False, f"recorder refused the recall: {exc}")
     except Exception as exc:  # noqa: BLE001
         log.warning("ptz_preset action failed for %s: %s", ctx.camera_id, exc)
         return ActionResult("ptz_preset", False, f"error: {exc}")
-    finally:
-        try:
-            await driver.aclose()
-        except Exception:  # noqa: BLE001
-            pass
 
 
 # ── trigger_output ──────────────────────────────────────────────────────────────
 async def action_trigger_output(ctx: ActionContext, config: dict) -> ActionResult:
-    """Drive a camera relay output via the driver ``configure("io", …)`` seam.
+    """Drive a camera relay output, THROUGH the recorder that owns the camera.
 
     ``config``: ``{relay_token?, state?, release_after_seconds?}`` (defaults RelayOut1 /
-    active / 0). When ``release_after_seconds > 0`` and ``state == "active"``, a tracked
-    background task flips it back to inactive after the delay. The ONVIF driver's
-    ``configure`` ``io`` section already wraps ``SetRelayOutputState`` — no interface
-    change is needed for the default driver; a brand whose ``configure`` doesn't support
-    ``io`` degrades to ``ok=False`` (graceful).
+    active / 0). When ``release_after_seconds > 0`` and ``state == "active"``, a
+    background task flips it back after the delay.
+
+    This is the only action here whose effect is PHYSICAL and outside the network — a
+    relay drives a gate, a barrier, a siren. It goes through the recorder for the same
+    reason everything else does (it holds the camera's credentials), and the recorder
+    gates it on vms.camera.tune: driving a relay's state is operator work, while
+    rewriting its IdleState — which decides which way "activate" pushes the contact —
+    is not, and stays out of reach.
     """
-    cam = await _load_camera(ctx)
+    cam, node = await _camera_and_node(ctx)
     if cam is None:
         return ActionResult("trigger_output", False, "camera not found")
-    host = _host_for(cam)
-    if not host:
-        return ActionResult("trigger_output", False, "camera has no host")
+    if node is None:
+        return ActionResult("trigger_output", False, "camera is not fronted by a recorder")
 
     relay_token = config.get("relay_token") or "RelayOut1"
     state = config.get("state") or "active"
     release_after = int(config.get("release_after_seconds") or 0)
-    driver = get_driver(cam.brand or "onvif")
-    creds = _creds_for(cam)
+    api_url, credential = node.api_url, node.credential
     try:
-        await driver.configure(host, creds, "io", {"relay_token": relay_token, "state": state})
-    except DriverError as exc:
+        await fed.set_relay_state_node(
+            api_url, cam.id, str(relay_token), {"state": state}, credential=credential
+        )
+    except fed.NodeUnavailable as exc:
         return ActionResult("trigger_output", False, f"relay set failed: {exc}")
-    except NotImplementedError:
-        return ActionResult("trigger_output", False, "driver has no relay-output support")
     except Exception as exc:  # noqa: BLE001
         log.warning("trigger_output action failed for %s: %s", ctx.camera_id, exc)
         return ActionResult("trigger_output", False, f"error: {exc}")
 
-    # Optional auto-release (fire-and-forget; the engine tracks/awaits nothing here — a
-    # relay stuck active is a device concern, not a linkage-audit concern).
+    # Optional auto-release, fire-and-forget. It captures the node URL and credential
+    # rather than the session: this outlives the request, and reading the ORM row later
+    # would touch a closed session.
     if release_after > 0 and state == "active":
         async def _release() -> None:
             try:
                 await asyncio.sleep(release_after)
-                await driver.configure(host, creds, "io", {"relay_token": relay_token, "state": "inactive"})
+                await fed.set_relay_state_node(
+                    api_url, cam.id, str(relay_token), {"state": "inactive"}, credential=credential
+                )
             except Exception as exc:  # noqa: BLE001
                 log.info("relay auto-release failed for %s: %s", ctx.camera_id, exc)
-            finally:
-                try:
-                    await driver.aclose()
-                except Exception:  # noqa: BLE001
-                    pass
 
         asyncio.create_task(_release())
         return ActionResult(
             "trigger_output", True, f"relay {relay_token}={state} (release in {release_after}s)"
         )
 
-    try:
-        await driver.aclose()
-    except Exception:  # noqa: BLE001
-        pass
     return ActionResult("trigger_output", True, f"relay {relay_token}={state}")
 
 

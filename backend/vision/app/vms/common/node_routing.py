@@ -112,4 +112,39 @@ async def node_base_for_id(
         return None
 
 
-__all__ = ["node_base_for_camera", "node_base_for_id"]
+async def node_for_camera(
+    db: AsyncSession,
+    tenant_id: uuid.UUID | None,
+    camera_or_id: Camera | str,
+) -> MediaNode | None:
+    """The MediaNode ROW that fronts ``camera_or_id``, or ``None``.
+
+    The sibling of :func:`node_base_for_camera`, for callers that need the node's
+    scoped CREDENTIAL as well as its URL — anything proxying an operation through
+    ``app.vms.federation.client``, which authenticates per node. Same tenant rules,
+    same never-raises contract.
+    """
+    try:
+        if isinstance(camera_or_id, str):
+            camera = await db.get(Camera, camera_or_id)
+            node_id = getattr(camera, "media_node_id", None) if camera else None
+        else:
+            node_id = getattr(camera_or_id, "media_node_id", None)
+        if not node_id:
+            return None
+        node = await db.get(MediaNode, node_id)
+        if node is None:
+            return None
+        node_tenant = getattr(node, "tenant_id", None)
+        if node_tenant is not None and node_tenant != tenant_id:
+            log.info("media node %s belongs to another tenant → no routing", node_id)
+            return None
+        if not (getattr(node, "api_url", None) or "").strip():
+            return None
+        return node
+    except Exception as exc:  # noqa: BLE001 — routing must never raise.
+        log.info("node lookup failed (%s)", exc)
+        return None
+
+
+__all__ = ["node_base_for_camera", "node_base_for_id", "node_for_camera"]

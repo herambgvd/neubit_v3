@@ -350,3 +350,116 @@ async def test_consumer_routes_camera_and_access(maker, camera, db, spy):
     # Drive both handlers directly.
     assert await consumer._engine.handle_camera_event(_cam_event_env(camera.id)) == 1
     assert await consumer._engine.handle_access_event(_access_env("X")) == 1
+
+
+# ── the device actions, for real ──────────────────────────────────────────────
+#
+# Everything above runs against the `spy` fixture, which replaces every executor —
+# so the three actions that actually TOUCH a camera had no coverage at all, before or
+# after they were moved onto the federation seam. These run the real bodies.
+#
+# The property under test is one sentence: a device action reaches the RECORDER that
+# owns the camera, with that recorder's own scoped credential, and never anything
+# else. The VMS holds no camera credentials any more; a regression here is it
+# reaching for some.
+
+
+async def _node_for(db, camera, *, api_url="http://rec-a:8000", credential="scoped-key"):
+    from app.vms.models import MediaNode
+
+    node = MediaNode(
+        id=str(uuid.uuid4()), tenant_id=TENANT, name="recorder-a", host="rec-a",
+        api_url=api_url, credential=credential, status="online",
+    )
+    db.add(node)
+    camera.media_node_id = node.id
+    await db.commit()
+    return node
+
+
+def _ctx(maker, camera):
+    return actions_mod.ActionContext(
+        tenant_id=str(TENANT), camera_id=camera.id, event_id="ev-1",
+        event_type="motion", severity="alarm", title="Motion", sessionmaker=maker,
+    )
+
+
+@pytest.fixture
+def fed_calls(monkeypatch):
+    """Record every federation call the actions make, and answer OK."""
+    calls: list[tuple] = []
+
+    async def _goto(api_url, camera_id, preset, body=None, *, credential=None):
+        calls.append(("goto_preset", api_url, camera_id, preset, credential))
+        return {"moved": True}
+
+    async def _relay(api_url, camera_id, token, body, *, credential=None):
+        calls.append(("relay_state", api_url, camera_id, token, credential, (body or {}).get("state")))
+        return {"token": token}
+
+    async def _rec(api_url, camera_id, *, credential=None):
+        calls.append(("record_start", api_url, camera_id, credential))
+        return {"ok": True}
+
+    monkeypatch.setattr(actions_mod.fed, "goto_ptz_preset_node", _goto)
+    monkeypatch.setattr(actions_mod.fed, "set_relay_state_node", _relay)
+    monkeypatch.setattr(actions_mod.fed, "record_start_node", _rec)
+    return calls
+
+
+async def test_ptz_preset_recalls_through_the_owning_recorder(maker, db, camera, fed_calls):
+    await _node_for(db, camera)
+    out = await actions_mod.action_ptz_preset(_ctx(maker, camera), {"preset_token": "p3"})
+    assert out.ok
+    assert fed_calls == [("goto_preset", "http://rec-a:8000", camera.id, "p3", "scoped-key")]
+
+
+async def test_trigger_output_drives_the_relay_through_the_recorder(maker, db, camera, fed_calls):
+    await _node_for(db, camera)
+    out = await actions_mod.action_trigger_output(
+        _ctx(maker, camera), {"relay_token": "RelayOut2", "state": "active"}
+    )
+    assert out.ok
+    assert fed_calls == [
+        ("relay_state", "http://rec-a:8000", camera.id, "RelayOut2", "scoped-key", "active")
+    ]
+
+
+async def test_start_recording_asks_the_owning_recorder(maker, db, camera, fed_calls):
+    await _node_for(db, camera)
+    out = await actions_mod.action_start_recording(_ctx(maker, camera), {})
+    assert out.ok
+    assert fed_calls == [("record_start", "http://rec-a:8000", camera.id, "scoped-key")]
+
+
+@pytest.mark.parametrize(
+    "action,config",
+    [
+        ("action_ptz_preset", {"preset_token": "p3"}),
+        ("action_trigger_output", {"state": "active"}),
+        ("action_start_recording", {}),
+    ],
+)
+async def test_a_camera_with_no_recorder_fails_cleanly(maker, db, camera, fed_calls, action, config):
+    """No node → a clean ok=False, and NOTHING attempted.
+
+    This is the case that used to fall back to driving the device directly with the
+    camera's own decrypted password. There is no such fallback now, and the absence of
+    a call is the assertion.
+    """
+    out = await getattr(actions_mod, action)(_ctx(maker, camera), config)
+    assert not out.ok
+    assert "recorder" in out.detail
+    assert fed_calls == []
+
+
+async def test_an_unreachable_recorder_is_a_clean_skip(maker, db, camera, monkeypatch):
+    """A recorder that is down must not crash the linkage engine mid-rule."""
+    await _node_for(db, camera)
+
+    async def _down(*a, **k):
+        raise actions_mod.fed.NodeUnavailable("connection refused")
+
+    monkeypatch.setattr(actions_mod.fed, "goto_ptz_preset_node", _down)
+    out = await actions_mod.action_ptz_preset(_ctx(maker, camera), {"preset_token": "p3"})
+    assert not out.ok and "connection refused" in out.detail
