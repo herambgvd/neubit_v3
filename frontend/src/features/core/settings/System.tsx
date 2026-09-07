@@ -25,7 +25,12 @@ export default function SystemPage() {
 
   return (
     <ConsolePage>
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-6">
+      {/* NO page scroll AT `lg`: the two bands share the pane's height and each
+          tile scrolls inside itself if it has to. A console that fits is readable
+          at a glance; one that scrolls hides half its own state below the fold.
+          Below `lg` the bento collapses to one column, where "fit the pane" would
+          mean CLIPPING — so the page scrolls there and the tiles do not. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 pb-1 lg:overflow-y-hidden lg:pb-0">
         <SystemAssurance />
         {/* Not merely hidden by nav: this band writes platform settings, so it is
             gated on the permission that authorises the write. */}

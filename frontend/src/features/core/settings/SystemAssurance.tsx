@@ -96,7 +96,7 @@ function Tile({
           </Link>
         )}
       </div>
-      <div className="min-h-0 flex-1">{children}</div>
+      <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">{children}</div>
     </div>
   );
 }
@@ -215,14 +215,17 @@ export default function SystemAssurance() {
       : "Everyone";
 
   return (
-    <section>
-      <h2 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">
+    <section className="flex flex-col lg:min-h-0 lg:flex-1">
+      <h2 className="mb-2 flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">
         <Icon icon="heroicons-outline:shield-check" className="text-sm text-nb-blueb" />
         Posture
         <span className="ml-1 font-normal normal-case tracking-normal text-nb-faint">read-only</span>
       </h2>
-      {/* Six columns on lg; each tile below claims its share. */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
+      {/* Six columns on lg. `auto-rows-fr` makes the rows share the height the
+          band was given, so the grid FITS the pane instead of growing past it —
+          the page itself must not scroll. A tile too dense for its cell scrolls
+          inside itself (see Tile), which keeps the arrangement stable. */}
+      <div className="grid grid-cols-1 gap-3 lg:min-h-0 lg:flex-1 lg:auto-rows-fr lg:grid-cols-6">
         {/* ── what wants a human — the only actionable tile, so it leads ── */}
         <Tile
           icon="heroicons-outline:bell-alert"
@@ -339,11 +342,6 @@ export default function SystemAssurance() {
         </Tile>
       </div>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-nb-faint">
-        Every figure is read live from the security, licensing, evidence and settings services —
-        change policy in the linked screens. Anything with no backing source (host hardening,
-        encryption-at-rest, watermarking) is deliberately absent rather than asserted.
-      </p>
     </section>
   );
 }

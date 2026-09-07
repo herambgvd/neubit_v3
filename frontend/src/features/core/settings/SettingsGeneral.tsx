@@ -65,8 +65,8 @@ export default function SettingsGeneralPage() {
     "mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted";
 
   return (
-    <section className="mt-5">
-      <div className="mb-2 flex items-center gap-2">
+    <section className="flex flex-col lg:min-h-0 lg:flex-1">
+      <div className="mb-2 flex shrink-0 items-center gap-2">
         <Icon icon="heroicons-outline:adjustments-horizontal" className="text-sm text-nb-blueb" />
         <h2 className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Settings</h2>
         <span className="text-[11px] text-nb-faint">edited here</span>
@@ -86,15 +86,16 @@ export default function SettingsGeneralPage() {
           <Spinner />
         </div>
       ) : (
-        // Same six columns as the posture band above, so the two line up.
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
+        // Same six columns as the posture band above, so the two line up, and
+        // the same `auto-rows-fr` so this band fits its share of the pane.
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:auto-rows-fr lg:grid-cols-6">
           {groups.map((group) => {
             const fields = fieldsOf(group);
             const wide = fields.length >= WIDE_AT;
             return (
               <div
                 key={group}
-                className={`rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 ${
+                className={`rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 lg:min-h-0 lg:overflow-y-auto ${
                   wide ? "md:col-span-2 lg:col-span-4" : "lg:col-span-2"
                 }`}
               >
