@@ -281,7 +281,7 @@ async def federated_recording_start(
     try:
         result = await fed.record_start_node(node.api_url, camera_id, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -303,7 +303,7 @@ async def federated_recording_stop(
     try:
         result = await fed.record_stop_node(node.api_url, camera_id, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -325,7 +325,7 @@ async def federated_camera_reboot(
     try:
         result = await fed.reboot_camera_node(node.api_url, camera_id, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -360,7 +360,7 @@ async def federated_export_create(
             credential=node.credential,
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -382,7 +382,7 @@ async def federated_export_list(
     try:
         result = await fed.list_exports_node(node.api_url, camera_id, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -404,7 +404,7 @@ async def federated_export_status(
     try:
         result = await fed.get_export_node(node.api_url, export_id, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -431,7 +431,7 @@ async def federated_export_verify(
     try:
         result = await fed.verify_export_node(node.api_url, export_id, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     return _tag(node, result)
 
 
@@ -453,7 +453,7 @@ async def federated_export_public_key(
     try:
         result = await fed.export_public_key_node(node.api_url, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     return _tag(node, result)
 
 
@@ -478,7 +478,7 @@ async def federated_export_manifest(
             node.api_url, export_id, credential=node.credential
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     return Response(
         content=raw,
         media_type=media_type,
@@ -508,7 +508,7 @@ async def federated_export_download(
             node.api_url, export_id, credential=node.credential
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     return Response(
         content=raw,
         media_type=media_type,
@@ -541,7 +541,7 @@ async def federated_evidence_hold(
             node.api_url, camera_id, frm, to, reason, credential=node.credential
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -567,7 +567,7 @@ async def federated_evidence_release(
             node.api_url, camera_id, from_, to, credential=node.credential
         )
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -589,7 +589,7 @@ async def federated_evidence_list(
     try:
         result = await fed.list_holds_node(node.api_url, camera_id, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(result, dict):
         result["node_id"] = str(node.id)
         result["node_name"] = node.name
@@ -617,7 +617,7 @@ async def federated_storage_usage(
     try:
         payload = await fed.get_node_storage_usage(node.api_url, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(payload, dict):
         payload["node_id"] = str(node.id)
         payload["node_name"] = node.name
@@ -638,7 +638,7 @@ async def federated_storage_raid(
     try:
         payload = await fed.get_node_storage_raid(node.api_url, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(payload, dict):
         payload["node_id"] = str(node.id)
         payload["node_name"] = node.name
@@ -659,7 +659,7 @@ async def federated_storage_pools(
     try:
         payload = await fed.list_node_pools(node.api_url, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(payload, dict):
         payload["node_id"] = str(node.id)
         payload["node_name"] = node.name
@@ -680,7 +680,7 @@ async def federated_storage_tier_rules(
     try:
         payload = await fed.list_node_tier_rules(node.api_url, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if isinstance(payload, dict):
         payload["node_id"] = str(node.id)
         payload["node_name"] = node.name
@@ -704,7 +704,7 @@ async def federated_upstream_nvr_storage(
     try:
         payload = await fed.get_upstream_nvr_storage(node.api_url, nvr_id, credential=node.credential)
     except fed.NodeUnavailable as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
+        raise _unreachable(e)
     if payload is None:
         return {"available": False, "node_id": str(node.id), "node_name": node.name}
     if isinstance(payload, dict):
@@ -797,8 +797,22 @@ def _tag(node: MediaNode, payload):
 
 
 def _unreachable(e: Exception) -> HTTPException:
+    """Map a failed node call to a status that says WHICH kind of failure it was.
+
+    A recorder that REFUSED us is not a recorder that is down, and conflating the two
+    is a real cost: a 403 for a missing grant surfaced as "recorder unavailable" twice
+    in one afternoon, and both times it sent the reader to look at the network. A
+    refusal is a 502 with the node's own sentence, which names the missing permission
+    and what to do about it (re-enrol).
+
+    Everything else — a connection refused, a timeout, a 5xx from the node — is a 503:
+    the call may well work on the next try, which is exactly what that status means and
+    a 502 does not.
+    """
+    if isinstance(e, fed.NodeRefused):
+        return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
     return HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY, detail=f"recorder unavailable: {e}"
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}"
     )
 
 

@@ -268,29 +268,68 @@ def _template(suffix: str) -> str:
     )
 
 
-# ── an unreachable node is a 502, never a 500 ────────────────────────────────
+# ── a recorder that is DOWN and a recorder that REFUSED are different failures ──
+#
+# They used to be the same 502 "recorder unavailable", and that cost two rounds of
+# live debugging: a missing grant (vms.event.read, then vms.storage.read) read as a
+# network problem and sent the reader to look at the network. The split is:
+#
+#   503 — could not reach it, or it broke. Retrying may work; that is what 503 means.
+#   502 — reached it, and it said no. Retrying will never work. The node's own
+#         sentence comes through, naming the permission and what to do about it.
 
 
 @pytest.mark.parametrize("method,suffix,body,perm", SURFACE, ids=IDS)
-async def test_unreachable_node_is_a_clean_502(app, node, recorder, method, suffix, body, perm):
-    """A recorder that cannot be reached is an UPSTREAM failure. 502 says so; a 500
-    would blame the VMS and send the operator to the wrong log."""
+async def test_an_unreachable_node_is_a_clean_503(app, node, recorder, method, suffix, body, perm):
+    """A recorder that cannot be reached is an UPSTREAM failure that may clear. 503
+    says so; a 500 would blame the VMS and send the operator to the wrong log."""
     recorder.down()
     r = await _call(app, method, suffix, body, _admin())
-    assert r.status_code == 502, r.text
+    assert r.status_code == 503, r.text
     assert "recorder unavailable" in _detail(r)
 
 
+async def test_a_missing_grant_names_the_permission_and_the_remedy(app, node, recorder):
+    """The failure this whole split exists for.
+
+    A federation credential FREEZES the grants it was minted with, so widening the
+    recorder's grant set does nothing for a credential that already exists. The
+    symptom is a 403 on one route while everything else works — invisible unless the
+    error says so. It must name the permission AND the fix, because neither is
+    guessable from a status code.
+    """
+    recorder.json(
+        {"error": {"code": "FORBIDDEN", "message": "missing permission: vms.storage.read"}}, 403
+    )
+    async with client(app) as c:
+        r = await c.get(FED + "/imaging", headers=_admin())
+    assert r.status_code == 502
+    detail = _detail(r)
+    assert "vms.storage.read" in detail, detail
+    assert "re-enrol" in detail.lower(), detail
+    # And it must NOT read like the node is down — that is the wrong place to look.
+    assert "recorder unavailable" not in detail
+
+
+async def test_a_rejected_credential_says_to_re_enrol(app, node, recorder):
+    """401 is the other half: the node has no valid credential for us at all — it was
+    revoked, or never landed. Same remedy, different cause, and neither is a retry."""
+    recorder.json({"error": {"code": "UNAUTHORIZED", "message": "missing or invalid node credentials"}}, 401)
+    async with client(app) as c:
+        r = await c.get(FED + "/imaging", headers=_admin())
+    assert r.status_code == 502
+    assert "re-enrol" in _detail(r).lower()
+
+
 async def test_a_node_that_refuses_relays_its_own_sentence(app, node, recorder):
-    """The node's own error text survives the proxy. This is the case that matters most
-    in practice: the scoped federation credential does NOT carry camera.manage, so a
-    real node answers 403 to every device WRITE — and the operator has to be able to
-    read WHY rather than a bare status code."""
-    recorder.json({"error": {"code": "FORBIDDEN", "message": "missing permission camera.manage"}}, 403)
+    """A refusal the VMS cannot interpret still comes through verbatim. The node knows
+    things this proxy does not, and swallowing its words for a generic message is how
+    an operator ends up with a status code and no lead."""
+    recorder.json({"error": {"code": "FORBIDDEN", "message": "this camera has no PTZ head"}}, 403)
     async with client(app) as c:
         r = await c.put(FED + "/imaging", json={"Brightness": 10}, headers=_admin())
     assert r.status_code == 502
-    assert "camera.manage" in _detail(r)
+    assert "no PTZ head" in _detail(r)
 
 
 # ── tenant scoping ───────────────────────────────────────────────────────────
@@ -409,11 +448,11 @@ async def test_talk_uplink_streams_the_body_through(app, node, recorder):
     assert recorder.calls[-1]["path"] == "/api/v1/nvr/estate/cameras/cam-7/onvif/talk/uplink"
 
 
-async def test_talk_uplink_unreachable_node_is_502(app, node, recorder):
+async def test_talk_uplink_unreachable_node_is_503(app, node, recorder):
     recorder.down()
     async with client(app) as c:
         r = await c.post(FED + "/talk/uplink", content=b"\x00\x00", headers=_admin())
-    assert r.status_code == 502
+    assert r.status_code == 503
 
 
 async def test_talk_uplink_is_gated_and_tenant_scoped(app, node, recorder):

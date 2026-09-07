@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import logging
+import re
 
 import httpx
 
@@ -26,7 +28,69 @@ _TIMEOUT = 8.0
 
 
 class NodeUnavailable(Exception):
-    """A federated recorder node could not be reached / answered non-2xx."""
+    """A federated recorder node could not be reached, or answered a non-2xx that is
+    not an authorisation refusal (see ``NodeRefused``)."""
+
+
+class NodeRefused(NodeUnavailable):
+    """The recorder was REACHED and refused us: 401 (no/!valid credential) or 403
+    (the credential lacks a permission the route needs).
+
+    This is not a transport failure and must not read like one. It cost two rounds of
+    live debugging to learn that twice — once for ``vms.event.read`` and once for
+    ``vms.storage.read`` — because both surfaced as "recorder unavailable", which
+    sends you to look at the network.
+
+    The cause is almost always the same and is invisible from the outside: a
+    federation credential FREEZES the grant list it was minted with. Widening
+    ``federationGrants`` on the recorder does nothing for credentials that already
+    exist; the node has to be re-enrolled. ``missing_permission`` carries the
+    permission the node named so the caller can say exactly that.
+
+    Subclasses NodeUnavailable so every existing ``except NodeUnavailable`` still
+    catches it — a refusal is still a failed call — while a handler that wants to say
+    something better can.
+    """
+
+    def __init__(self, message: str, *, status_code: int, missing_permission: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.missing_permission = missing_permission
+
+
+# The node's kernel renders a refusal as {"error": {"code", "message"}}, and a
+# permission failure spells the permission into the message: "missing permission:
+# vms.storage.read". Pulling it out is what lets the VMS name the exact grant an
+# operator must re-enrol for, instead of handing them a status code.
+_MISSING_PERM = re.compile(r"missing permission:\s*([a-z0-9_.]+)")
+
+
+def _refusal(status_code: int, body: str) -> NodeRefused:
+    """Build a NodeRefused from the node's own answer, keeping ITS sentence."""
+    detail = (body or "").strip()
+    try:
+        parsed = json.loads(detail)
+        detail = str(parsed.get("error", {}).get("message") or parsed.get("detail") or detail)
+    except (ValueError, AttributeError):
+        pass
+    m = _MISSING_PERM.search(detail)
+    perm = m.group(1) if m else None
+    if perm:
+        message = (
+            f"the recorder refused this call: the federation credential is missing "
+            f"{perm}. A credential keeps the grants it was minted with, so if the "
+            f"recorder's grant set was widened, re-enrol this node "
+            f"(POST /vms/media-nodes/{{id}}/enroll)."
+        )
+    elif status_code == 401:
+        message = (
+            "the recorder rejected this node's credential. Re-enrol the node "
+            "(POST /vms/media-nodes/{id}/enroll), or re-pair it if the recorder "
+            "revoked the credential."
+        )
+    else:
+        message = f"the recorder refused this call: {detail[:160]}"
+    return NodeRefused(message, status_code=status_code, missing_permission=perm)
 
 
 class NodePairingRejected(Exception):
@@ -63,7 +127,8 @@ async def enroll_node_full(api_url: str, *, label: str = "neubit_v3 VMS") -> dic
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     payload = r.json() or {}
     if not payload.get("credential"):
         raise NodeUnavailable("enrolment returned no credential")
@@ -120,7 +185,8 @@ async def pair_node(api_url: str, code: str, *, label: str = "neubit_v3 VMS") ->
             _node_error_message(r, "the recorder refused this pairing code")
         )
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     payload = r.json() or {}
     if not payload.get("credential"):
         raise NodePairingRejected("pairing returned no credential")
@@ -136,7 +202,8 @@ async def list_estate_cameras(api_url: str, credential: str | None = None) -> li
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return list((r.json() or {}).get("items") or [])
 
 
@@ -156,7 +223,8 @@ async def mint_estate_live(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -186,7 +254,8 @@ async def get_node_timeline(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -217,7 +286,8 @@ async def list_node_recordings(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -245,7 +315,8 @@ async def mint_node_playback(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -264,7 +335,8 @@ async def get_node_storage_usage(api_url: str, *, credential: str | None = None)
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -277,7 +349,8 @@ async def get_node_storage_raid(api_url: str, *, credential: str | None = None) 
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -290,7 +363,8 @@ async def list_node_pools(api_url: str, *, credential: str | None = None) -> dic
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -303,7 +377,8 @@ async def list_node_tier_rules(api_url: str, *, credential: str | None = None) -
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -323,7 +398,8 @@ async def get_upstream_nvr_storage(
     if r.status_code == 404:
         return None
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -344,7 +420,8 @@ async def list_node_credentials(api_url: str) -> list[dict]:
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return list((r.json() or {}).get("items") or [])
 
 
@@ -358,7 +435,8 @@ async def revoke_node_credential(api_url: str, cred_id: str) -> None:
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
 
 
 # ── operate-THROUGH-node (Phase-3) — the only two mutations the VMS makes on a
@@ -400,7 +478,8 @@ async def ptz_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -426,7 +505,8 @@ async def snapshot_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     uri = ((r.json() or {}).get("image") or "").strip()
     if not uri.startswith("data:"):
         raise NodeUnavailable("node returned no snapshot image")
@@ -456,7 +536,8 @@ async def record_start_node(api_url: str, camera_id: str, *, credential: str | N
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -470,7 +551,8 @@ async def record_stop_node(api_url: str, camera_id: str, *, credential: str | No
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -484,7 +566,8 @@ async def reboot_camera_node(api_url: str, camera_id: str, *, credential: str | 
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -516,7 +599,8 @@ async def create_export_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -530,7 +614,8 @@ async def list_exports_node(api_url: str, camera_id: str, *, credential: str | N
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -544,7 +629,8 @@ async def get_export_node(api_url: str, export_id: str, *, credential: str | Non
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -614,7 +700,8 @@ async def export_manifest_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     media_type = (r.headers.get("content-type") or "application/json").split(";", 1)[0].strip()
     filename = f"export-{export_id}.manifest.json"
     disp = r.headers.get("content-disposition") or ""
@@ -639,7 +726,8 @@ async def download_export_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     media_type = (r.headers.get("content-type") or "video/mp4").split(";", 1)[0].strip() or "video/mp4"
     filename = f"export-{export_id}.mp4"
     disp = r.headers.get("content-disposition") or ""
@@ -664,7 +752,8 @@ async def evidence_hold_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -681,7 +770,8 @@ async def evidence_release_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -695,7 +785,8 @@ async def list_holds_node(api_url: str, camera_id: str, *, credential: str | Non
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
     return r.json() or {}
 
 
@@ -746,7 +837,8 @@ async def _node_json(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
     if r.status_code == 204 or not (r.content or b"").strip():
         return {}
     try:
@@ -1064,7 +1156,8 @@ async def talk_uplink_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
     try:
         return r.json() or {}
     except ValueError as e:
@@ -1104,5 +1197,6 @@ async def motion_search_node(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}")
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
     return r.json() or {}
