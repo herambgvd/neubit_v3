@@ -448,18 +448,6 @@ export interface PlaybackSessionPublic {
 
 /* --- audio / talk (backend/vision/app/vms/audio/schemas.py) ---------------- */
 
-export interface TalkSessionPublic {
-  session_id: string;
-  camera_id: string;
-  kind: "whip" | "rtsp_backchannel" | "http_push" | string;
-  target_url?: string | null;
-  whip_url?: string | null;
-  codec?: string | null;
-  token: string;
-  expires_at: string;
-  live_validate: boolean;
-  extra: Record<string, unknown>;
-}
 
 /* --- playback (backend/vision/app/vms/playback/schemas.py) ----------------- */
 
@@ -1253,6 +1241,30 @@ export interface FederatedOpResult {
   ok?: boolean;
   supported?: boolean;
   detail?: string | null;
+  [k: string]: unknown;
+}
+
+/** `GET …/backchannel` — can this camera receive talk-back, and can the recorder
+ *  carry it there?
+ *
+ *  TWO facts, deliberately separate. `support.supported` is the CAMERA's answer
+ *  (it has an audio output and a decoder); `talk_stream_ready` is the RECORDER's
+ *  (its uplink transport is configured — off by default until bench-validated).
+ *  Push-to-talk needs both, and collapsing them would report a camera as incapable
+ *  when it is the recorder that is not ready. `outputs_error`/`decoders_error` mark
+ *  a probe that DROPPED rather than answered "none" — a failed read, worth a retry,
+ *  not a camera without talk-back. */
+export interface FederatedBackchannel extends NodeTagged {
+  support?: {
+    supported?: boolean;
+    detail?: string | null;
+    decoder_formats?: string[] | null;
+    [k: string]: unknown;
+  } | null;
+  talk_stream_ready?: boolean;
+  transport?: Record<string, unknown> | null;
+  outputs_error?: string | null;
+  decoders_error?: string | null;
   [k: string]: unknown;
 }
 

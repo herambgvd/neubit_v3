@@ -58,6 +58,7 @@ import type {
   EvidenceLockCreate,
   EvidenceLockListResponse,
   EvidenceLockPublic,
+  FederatedBackchannel,
   FederatedExportJob,
   FederatedExportList,
   FederatedExportPublicKey,
@@ -125,7 +126,6 @@ import type {
   ReportSchedulePublic,
   ReportScheduleUpdate,
   StreamPolicyResult,
-  TalkSessionPublic,
   TimelineResponse,
   VmsCameraPublic,
   VmsEventListResponse,
@@ -273,6 +273,21 @@ export const vms = {
       stop: (nodeId: string, cameraId: string) =>
         unwrap(api.post<FederatedOpResult>(
           `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/imaging/focus/stop`, {})),
+    },
+    // Two-way audio. `begin` is the recorder's capability + transport check and the
+    // audited record that somebody spoke; the UPLINK itself is not here, because it
+    // streams a request body and axios buffers one — holding every frame until the
+    // operator lets go. TalkButton issues that one with fetch.
+    talk: {
+      begin: (nodeId: string, cameraId: string) =>
+        unwrap(api.post<FederatedOpResult>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/talk`, {})),
+      // Whether the camera can RECEIVE talk-back AND this recorder can carry it —
+      // two different facts that fail differently, which is why the response keeps
+      // `support` and `talk_stream_ready` apart.
+      capability: (nodeId: string, cameraId: string) =>
+        unwrap(api.get<FederatedBackchannel>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/backchannel`)),
     },
     // Forensic region motion search over the recorder's OWN recorded footage. It has
     // to run there: the search decodes the segment files, and those are on its disk.
@@ -424,17 +439,6 @@ export const vms = {
     setOnvifEvents: (id: string, body: OnvifEventsBody) =>
       unwrap(api.put<OnvifEventsBody>(`${CAMERAS}/${id}/onvif-events`, body)),
 
-    // ── Two-way audio / push-to-talk (G6) ────────────────────────────────
-    // Only meaningful for a `talk_capable` camera (backchannel / two-way). Gates
-    // on vms.live.view. POST /cameras/{id}/talk/session → issues a short-lived
-    // uplink session for browser-mic → camera-speaker audio:
-    //   { session_id, kind:"whip"|"rtsp_backchannel"|"http_push", target_url,
-    //     whip_url (may carry ?token=), codec, token, expires_at, live_validate }
-    // For kind "whip" the frontend POSTs a mic-only SDP offer to `whip_url`
-    // (WHIP publish) and plays back the answer. 409 TALK_UNSUPPORTED for a
-    // non-capable camera. Real backchannel push = # LIVE-VALIDATE (needs a
-    // camera speaker).
-    talkSession: (id: string) => unwrap(api.post<TalkSessionPublic>(`${CAMERAS}/${id}/talk/session`, {})),
 
     // ── Stream codec policy — force the SUB (web) stream to H.264 ────────────
     // POST /vms/cameras/{id}/apply-stream-policy → pushes the sub-stream to

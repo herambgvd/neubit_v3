@@ -136,6 +136,8 @@ REQUIRED_FEDERATED_OPERATIONS = [
     "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/ptz",
     "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/exports",
     "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/motion-search",
+    "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/talk",
+    "POST /vms/federation/nodes/{node_id}/cameras/{camera_id}/talk/uplink",
     # The evidence trio. Without these an export is a file with no provenance, which
     # is the whole reason the VMS stopped producing its own.
     "POST /vms/federation/nodes/{node_id}/exports/{export_id}/verify",

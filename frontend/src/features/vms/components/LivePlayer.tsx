@@ -150,6 +150,10 @@ export interface LivePlayerProps {
    *  always available regardless of these. */
   talkCapable?: boolean;
   canTalk?: boolean;
+  /** The recorder that holds this camera's credentials and its audio backchannel.
+   *  Talk needs one — the VMS has no path to a camera speaker of its own — so the
+   *  button stays hidden without it rather than failing on press. */
+  nodeId?: string | null;
   className?: string;
   /** Optional session source override (mint/renew/release) — lets a federated
    *  recorder camera stream through the node's live endpoint while reusing this
@@ -185,6 +189,7 @@ function LivePlayer({
   fit = "contain",
   talkCapable = false,
   canTalk = false,
+  nodeId = null,
   className = "",
   source,
   enabled = true,
@@ -1019,7 +1024,9 @@ function LivePlayer({
           </span>
           <div className="pointer-events-auto flex items-center gap-0.5">
             {/* Push-to-talk (G6) — only for a talk-capable camera + vms.live.view. */}
-            {talkCapable && canTalk && cameraId && <TalkButton cameraId={cameraId} />}
+            {talkCapable && canTalk && cameraId && nodeId && (
+              <TalkButton nodeId={nodeId} cameraId={cameraId} />
+            )}
             {/* Listen (audio) — the media element starts muted for autoplay; this
                 unmutes so the operator hears the camera. Always shown; if the
                 stream carries no audio track it just does nothing audible. */}

@@ -8,10 +8,15 @@
 // note. We NEVER render the config/maintenance editor (CameraDetailView) or invent
 // config data we don't own.
 //
+// The operator ACTIONS here — snapshot, PTZ, push-to-talk — are not an exception to
+// that. They are things the operator asks the RECORDER to do to its own camera, and
+// every one of them is proxied. None of them writes configuration.
+//
 // The live view reuses LivePlayer's whole WHEP-first / h264-transcode / HLS engine
 // via a custom `source` that mints/renews a node-issued token off /vms/federation
 // (same seam WallTile uses for wall tiles).
 import { useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -33,6 +38,26 @@ export default function FederatedCameraDetail({ camera }: FederatedCameraDetailP
   const { can } = useAuth();
   const [snapping, setSnapping] = useState(false);
   const ptzCapable = isPtzCapable(camera);
+
+  // Push-to-talk needs TWO yeses, and the recorder reports them separately: the
+  // camera has an audio output and decoder (`support.supported`), and this recorder
+  // can actually carry a microphone to it (`talk_stream_ready` — its uplink
+  // transport, off by default until bench-validated). Requiring both is what keeps
+  // the button from lighting up over a path that is not built.
+  //
+  // The probe is a device read, so it is deliberately lazy and failure-tolerant: an
+  // unreachable recorder or a camera that drops the read leaves talk hidden, which
+  // is the same outcome as "cannot", and the right one when we do not know.
+  const canTalk = can("vms.camera.tune");
+  const backchannelQ = useQuery({
+    queryKey: ["vms", "federation", "backchannel", camera.node_id, camera.real_id],
+    queryFn: () => vms.federation.talk.capability(camera.node_id, camera.real_id),
+    enabled: canTalk,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const talkCapable =
+    backchannelQ.data?.support?.supported === true && backchannelQ.data?.talk_stream_ready === true;
 
   // Node-issued live session (mint/renew through the owning recorder). Stable per
   // (node, real id) so the player doesn't re-attach on every parent render.
@@ -123,8 +148,9 @@ export default function FederatedCameraDetail({ camera }: FederatedCameraDetailP
             cameraId={camera.real_id}
             cameraName={camera.name}
             source={source}
-            canTalk={false}
-            talkCapable={false}
+            nodeId={camera.node_id}
+            canTalk={canTalk}
+            talkCapable={talkCapable}
             className="h-full"
           />
 
