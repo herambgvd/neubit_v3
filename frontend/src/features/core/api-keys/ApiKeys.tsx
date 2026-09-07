@@ -8,7 +8,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ActionButton } from "@/components/console";
-import { Card, ConfirmDialog, Spinner, Table, type ConfirmState } from "@/components/ui/kit";
+import { Card, ConfirmDialog, EmptyState, Spinner, Table, type ConfirmState } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import type { Page } from "@/lib/types";
 import type { ApiKeyCreatedOut, ApiKeyOut, RoleOut } from "../types";
@@ -79,6 +79,7 @@ export default function ApiKeysPage() {
   }
 
   const columns = buildApiKeyColumns({ onRevoke: handleRevoke });
+  const truncated = (keys.data?.total ?? 0) > (keys.data?.items.length ?? 0);
 
   return (
     <div>
@@ -90,8 +91,35 @@ export default function ApiKeysPage() {
           <div className="flex justify-center py-16">
             <Spinner />
           </div>
+        ) : keys.isError ? (
+          // A failed load must never read as "no API keys". That is the same
+          // screen an empty tenant shows, and it invites exactly the wrong
+          // action: minting a replacement for a key that already exists.
+          <div className="m-2 rounded-[10px] border border-nb-crit/30 bg-nb-crit/10 px-3 py-3 text-sm text-nb-crit">
+            {apiError(keys.error, "Couldn't load API keys")}
+          </div>
         ) : (
-          <Table columns={columns} rows={keys.data?.items} />
+          <>
+            <Table
+              columns={columns}
+              rows={keys.data?.items}
+              empty={
+                <EmptyState
+                  icon="heroicons-outline:key"
+                  title="No API keys yet"
+                  subtitle="A key lets a script or an integration act with a role's permissions."
+                />
+              }
+            />
+            {truncated && (
+              // The query asks for one page. Saying so beats a table that is
+              // quietly short — an operator auditing keys would otherwise
+              // conclude the ones past 100 do not exist.
+              <p className="px-4 py-2 text-[11px] text-nb-faint">
+                Showing the first {keys.data?.items.length} of {keys.data?.total} keys.
+              </p>
+            )}
+          </>
         )}
       </Card>
 
