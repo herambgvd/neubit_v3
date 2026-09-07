@@ -63,7 +63,7 @@ export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onD
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Toggle checked={rule.is_active} onChange={(v) => onToggle(v)} />
+          <Toggle checked={rule.is_active} onChange={(v) => onToggle(v)} label="Rule active" />
           <button
             onClick={onClose}
             title="Close"

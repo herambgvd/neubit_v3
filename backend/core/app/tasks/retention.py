@@ -92,29 +92,90 @@ def cleanup_old_reports(days: int = 30) -> int:
 def cleanup_old_audit(days: int | None = None) -> int:
     """Delete audit entries older than the configured retention window.
 
-    ``days`` is read from the ``audit_retention_days`` system setting when not
-    passed. A value of 0 (or missing) means "keep forever" → nothing is deleted.
-    Returns the number of audit rows removed.
+    PER TENANT. ``audit_retention_days`` is a per-tenant setting with a
+    platform-default row (tenant_id NULL) behind it, so each tenant's trail is
+    purged on its OWN window and a tenant that chose "keep forever" keeps
+    everything — even when the platform default is 30 days. Deleting a record a
+    tenant asked to keep is not recoverable, so the scope is not a detail.
+
+    ``days``, when passed, overrides every policy and applies to all rows; that is
+    the manual escape hatch and the only unscoped path.
+
+    0 (or unset) means "keep forever" → nothing is deleted for that scope.
+
+    Two defects lived here and both were silent. The setting was read with
+    ``db.get(AppSetting, "audit_retention_days")``: ``Session.get`` takes a PRIMARY
+    KEY and AppSetting's is a surrogate UUID ``id``, so this raised a
+    StatementError every night rather than returning a window — the purge has
+    never run. And when it was written, settings were global; purging every
+    tenant by one number would have been the opposite fault.
     """
+    from sqlalchemy import or_, select
+
     from app.core.audit import AuditLog
     from app.settings.models import AppSetting
 
-    with get_sync_session() as db:
-        if days is None:
-            row = db.get(AppSetting, "audit_retention_days")
-            try:
-                days = int(row.value) if row and row.value is not None else 0
-            except (TypeError, ValueError):
-                days = 0
-        if not days or days <= 0:
+    KEY = "audit_retention_days"
+
+    def _days(value: object) -> int:
+        try:
+            return int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
             return 0
-        cutoff = _utcnow() - dt.timedelta(days=days)
-        deleted = (
-            db.query(AuditLog).filter(AuditLog.ts < cutoff).delete(synchronize_session=False)
-        )
+
+    deleted = 0
+    with get_sync_session() as db:
+        if days is not None:
+            if days <= 0:
+                return 0
+            cutoff = _utcnow() - dt.timedelta(days=days)
+            deleted = (
+                db.query(AuditLog).filter(AuditLog.ts < cutoff).delete(synchronize_session=False)
+            )
+            db.commit()
+            log.info("cleanup_old_audit: deleted %d entr(ies) older than %d day(s)", deleted, days)
+            return deleted
+
+        rows = db.execute(
+            select(AppSetting.tenant_id, AppSetting.value).where(AppSetting.key == KEY)
+        ).all()
+        platform_days = 0
+        per_tenant: dict = {}
+        for tenant_id, value in rows:
+            if tenant_id is None:
+                platform_days = _days(value)
+            else:
+                per_tenant[tenant_id] = _days(value)
+
+        # Each tenant that set its own window, on that window.
+        for tenant_id, window in per_tenant.items():
+            if window <= 0:
+                continue
+            cutoff = _utcnow() - dt.timedelta(days=window)
+            deleted += (
+                db.query(AuditLog)
+                .filter(AuditLog.tenant_id == tenant_id, AuditLog.ts < cutoff)
+                .delete(synchronize_session=False)
+            )
+
+        # Everything else — platform rows and tenants with no override — on the
+        # platform default. `notin_` cannot match a NULL tenant_id, so those rows
+        # are selected explicitly rather than left out by accident.
+        if platform_days > 0:
+            cutoff = _utcnow() - dt.timedelta(days=platform_days)
+            query = db.query(AuditLog).filter(AuditLog.ts < cutoff)
+            if per_tenant:
+                query = query.filter(
+                    or_(
+                        AuditLog.tenant_id.is_(None),
+                        AuditLog.tenant_id.notin_(list(per_tenant)),
+                    )
+                )
+            deleted += query.delete(synchronize_session=False)
+
         db.commit()
 
-    log.info("cleanup_old_audit: deleted %d entr(ies) older than %d day(s)", deleted, days)
+    log.info("cleanup_old_audit: deleted %d entr(ies) under the configured windows", deleted)
     return deleted
 
 

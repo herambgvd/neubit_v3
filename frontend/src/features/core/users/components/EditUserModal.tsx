@@ -135,6 +135,7 @@ export default function EditUserModal({
           <Toggle
             checked={form.is_active}
             onChange={(v) => !statusLocked && setForm({ ...form, is_active: v })}
+            label="Account active"
           />
         </div>
       </div>

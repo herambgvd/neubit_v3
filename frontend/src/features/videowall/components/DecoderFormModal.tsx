@@ -127,7 +127,7 @@ export default function DecoderFormModal({
         />
         <label className="flex items-center justify-between rounded-[9px] border border-nb-line px-3 py-2">
           <span className="text-sm text-nb-ink">Enabled</span>
-          <Toggle checked={form.is_enabled} onChange={(v) => set("is_enabled", v)} />
+          <Toggle checked={form.is_enabled} onChange={(v) => set("is_enabled", v)} label="Decoder enabled" />
         </label>
       </div>
     </Modal>

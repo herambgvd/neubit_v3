@@ -29,7 +29,7 @@ export default function SettingField({ item, value, onChange }: SettingFieldProp
           <div className="text-sm font-medium text-nb-ink">{item.label}</div>
           {item.description && <div className="text-xs text-nb-soft mt-0.5">{item.description}</div>}
         </div>
-        <Toggle checked={!!value} onChange={(v) => onChange(v)} />
+        <Toggle checked={!!value} onChange={(v) => onChange(v)} label={item.label} />
       </div>
     );
   }

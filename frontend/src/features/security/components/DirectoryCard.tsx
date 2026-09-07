@@ -152,7 +152,7 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
       <div className="space-y-4">
         <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
           <span className="text-sm text-nb-ink">Directory enabled</span>
-          <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} />
+          <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} label="Enable directory sync" />
         </label>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -177,7 +177,7 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
           />
           <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
             <span className="text-sm text-nb-ink">Use SSL/TLS</span>
-            <Toggle checked={form.use_ssl} onChange={(v) => set({ use_ssl: v })} disabled={!canManage} />
+            <Toggle checked={form.use_ssl} onChange={(v) => set({ use_ssl: v })} disabled={!canManage} label="Use SSL" />
           </label>
         </div>
 

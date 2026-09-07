@@ -57,7 +57,7 @@ export default function CloneUserModal({ source, onClose, form, setForm, onClone
             <div className="text-sm font-medium text-nb-ink">Send invite email</div>
             <div className="text-xs text-nb-faint">Secure link to set their own password.</div>
           </div>
-          <Toggle checked={form.send_invite} onChange={(v) => setForm({ ...form, send_invite: v })} />
+          <Toggle checked={form.send_invite} onChange={(v) => setForm({ ...form, send_invite: v })} label="Send invite email" />
         </div>
       </div>
     </Modal>

@@ -229,11 +229,11 @@ function ZonePropertiesModal({ open, onClose, zone, onSave }: ZonePropertiesModa
         />
         <div className="flex items-center justify-between rounded-md border border-card-border px-3 py-2">
           <span className="text-sm text-foreground">Alert on entry</span>
-          <Toggle checked={form.alert_on_entry} onChange={(v) => update({ alert_on_entry: v })} />
+          <Toggle checked={form.alert_on_entry} onChange={(v) => update({ alert_on_entry: v })} label="Alert on entry" />
         </div>
         <div className="flex items-center justify-between rounded-md border border-card-border px-3 py-2">
           <span className="text-sm text-foreground">Alert on exit</span>
-          <Toggle checked={form.alert_on_exit} onChange={(v) => update({ alert_on_exit: v })} />
+          <Toggle checked={form.alert_on_exit} onChange={(v) => update({ alert_on_exit: v })} label="Alert on exit" />
         </div>
         <Textarea
           label="Description"

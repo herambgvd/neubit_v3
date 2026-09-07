@@ -50,6 +50,7 @@ export default function BrandingEditor({ form, setForm, logoUrl, onUploadLogo, u
           <Toggle
             checked={form.name_in_header}
             onChange={(v) => setForm({ ...form, name_in_header: v })}
+            label="Show the name in the header"
           />
         </div>
 

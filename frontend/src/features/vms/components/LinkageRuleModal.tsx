@@ -208,7 +208,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
           <div className="grid grid-cols-2 gap-3">
             <Input label="Name" value={form.name} onChange={(e) => patch({ name: e.target.value })} placeholder="e.g. Record on lobby motion" />
             <div className="flex items-end gap-2 pb-1">
-              <Toggle checked={form.is_active} onChange={(v) => patch({ is_active: v })} />
+              <Toggle checked={form.is_active} onChange={(v) => patch({ is_active: v })} label="Rule active" />
               <span className="text-xs text-nb-soft">{form.is_active ? "Active" : "Inactive"}</span>
             </div>
           </div>

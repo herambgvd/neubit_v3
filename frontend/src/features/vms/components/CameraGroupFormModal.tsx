@@ -162,7 +162,7 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
               containerClassName="w-36"
             />
             <label className="flex items-center gap-2 pb-2 text-sm text-foreground">
-              <Toggle checked={isActive} onChange={setIsActive} />
+              <Toggle checked={isActive} onChange={setIsActive} label="Active" />
               <span className="text-muted">Active</span>
             </label>
           </div>

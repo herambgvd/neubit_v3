@@ -24,7 +24,6 @@ import {
   Select,
   Table,
   Textarea,
-  Toggle,
 } from "./kit";
 
 describe("Button", () => {
@@ -205,28 +204,10 @@ describe("Checkbox", () => {
   });
 });
 
-describe("Toggle", () => {
-  it("hands the caller the flipped boolean rather than a click event", async () => {
-    const onChange = vi.fn();
-    const { rerender } = render(<Toggle checked={false} onChange={onChange} />);
-
-    await userEvent.click(screen.getByRole("button"));
-    expect(onChange).toHaveBeenLastCalledWith(true);
-
-    rerender(<Toggle checked onChange={onChange} />);
-    await userEvent.click(screen.getByRole("button"));
-    expect(onChange).toHaveBeenLastCalledWith(false);
-  });
-
-  it("fires nothing while disabled", async () => {
-    const onChange = vi.fn();
-    render(<Toggle checked={false} disabled onChange={onChange} />);
-
-    await userEvent.click(screen.getByRole("button"));
-
-    expect(onChange).not.toHaveBeenCalled();
-  });
-});
+// Toggle's own tests live in ./toggle.test.tsx — it grew a role, a state and a
+// naming rule, and those belong next to each other rather than in the kit's
+// grab-bag. The two cases that were here (the flipped boolean, and silence while
+// disabled) moved there intact.
 
 describe("Modal", () => {
   it("renders nothing at all while closed — its children never mount", () => {

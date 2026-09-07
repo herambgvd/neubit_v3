@@ -175,7 +175,7 @@ export default function ReportScheduleModal({
         />
         <label className="flex items-center justify-between rounded-lg border border-card-border bg-hover/30 px-3 py-2.5">
           <span className="text-sm text-foreground">Enabled</span>
-          <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} />
+          <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} label="Schedule enabled" />
         </label>
       </div>
     </Modal>

@@ -70,7 +70,7 @@ export function ChannelCard({ channel }: { channel: ChannelOut }) {
           </span>
           <Badge color={enabled ? "green" : "slate"}>{enabled ? "Enabled" : "Disabled"}</Badge>
         </div>
-        <Toggle checked={enabled} onChange={setEnabled} />
+        <Toggle checked={enabled} onChange={setEnabled} label={`Enable ${meta.title}`} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -78,7 +78,7 @@ export function ChannelCard({ channel }: { channel: ChannelOut }) {
           f.type === "bool" ? (
             <div key={f.key} className="flex items-center justify-between rounded-[10px] border border-nb-line px-3 py-2.5">
               <span className="text-sm font-medium text-nb-muted">{f.label}</span>
-              <Toggle checked={!!config[f.key]} onChange={(v) => setField(f.key, v)} />
+              <Toggle checked={!!config[f.key]} onChange={(v) => setField(f.key, v)} label={f.label} />
             </div>
           ) : (
             <Input

@@ -82,6 +82,7 @@ export default function PolicyCard({ canManage }: PolicyCardProps) {
             <Toggle
               checked={form.require_2fa}
               onChange={(v: boolean) => setForm((f) => (f ? { ...f, require_2fa: v } : f))}
+              label="Require two-factor authentication"
               disabled={!canManage}
             />
           </label>

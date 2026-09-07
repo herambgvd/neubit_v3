@@ -100,6 +100,7 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
           <Toggle
             checked={form.send_invite}
             onChange={(v) => setForm({ ...form, send_invite: v })}
+            label="Send invite email"
           />
         </div>
       </div>

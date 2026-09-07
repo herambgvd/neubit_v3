@@ -47,11 +47,11 @@ export default function PreferencesTab() {
       <Card className="p-6">
         <h2 className="text-sm font-semibold text-foreground mb-1">Notifications</h2>
         <PrefRow title="Email notifications" desc="Receive important alerts by email.">
-          <Toggle checked={notifyEmail} onChange={(v) => save.mutate({ notify_email: v })} />
+          <Toggle checked={notifyEmail} onChange={(v) => save.mutate({ notify_email: v })} label="Email notifications" />
         </PrefRow>
 
         <PrefRow title="In-app notifications" desc="Show alerts in the notification center.">
-          <Toggle checked={notifyInapp} onChange={(v) => save.mutate({ notify_inapp: v })} />
+          <Toggle checked={notifyInapp} onChange={(v) => save.mutate({ notify_inapp: v })} label="In-app notifications" />
         </PrefRow>
       </Card>
 

@@ -119,7 +119,7 @@ export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: W
         </p>
         <label className="flex items-center justify-between rounded-[9px] border border-nb-line px-3 py-2">
           <span className="text-sm text-nb-ink">Active</span>
-          <Toggle checked={form.is_active} onChange={(v) => set("is_active", v)} />
+          <Toggle checked={form.is_active} onChange={(v) => set("is_active", v)} label="Wall active" />
         </label>
       </div>
     </Modal>

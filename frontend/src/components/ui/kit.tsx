@@ -438,24 +438,58 @@ export interface ToggleProps {
   checked?: boolean;
   onChange?: (checked: boolean) => void;
   disabled?: boolean;
+  /**
+   * What this switch controls. Required in spirit: the control renders no text of
+   * its own, so without it a screen reader announces "switch, on" and nothing
+   * about WHAT is on. Every call site sits next to a visible label — pass that
+   * label's id as `labelledBy`, or the text as `label` when there is no element
+   * to point at.
+   */
+  label?: string;
+  labelledBy?: string;
 }
 
-export function Toggle({ checked, onChange, disabled }: ToggleProps) {
+/**
+ * An on/off switch.
+ *
+ * `role="switch"` + `aria-checked`, not a bare button. It was a `<button>` with
+ * no role and no state, so assistive tech announced "button" — no indication that
+ * it toggled anything, or which way it currently sat.
+ *
+ * The OFF state is drawn, not merely absent. At `bg-white/10` on this navy it was
+ * very nearly invisible: an operator could not tell a switch was there at all, so
+ * "off" and "no control here" looked the same. It now has a visible track and
+ * border in both states, and the knob keeps contrast either way.
+ *
+ * The hit target is padded out to 32px tall while the track stays 20px, because a
+ * 20px-tall control is a miss waiting to happen — especially the ones that sit in
+ * a dense settings grid.
+ */
+export function Toggle({ checked, onChange, disabled, label, labelledBy }: ToggleProps) {
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={!!checked}
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
       disabled={disabled}
       onClick={() => onChange?.(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
-        checked ? "bg-nb-teal" : "bg-white/10"
-      } disabled:opacity-40`}
+      className="group inline-flex shrink-0 items-center rounded-full p-1.5 outline-none disabled:cursor-not-allowed disabled:opacity-40"
     >
       <span
-        className={`inline-block h-3.5 w-3.5 transform rounded-full transition ${
-          checked ? "bg-[#062330]" : "bg-nb-faint"
-        }`}
-        style={{ transform: checked ? "translateX(18px)" : "translateX(3px)" }}
-      />
+        className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors ${
+          checked
+            ? "border-nb-teal bg-nb-teal"
+            : "border-nb-line2 bg-[rgba(148,163,184,.16)]"
+        } group-focus-visible:ring-2 group-focus-visible:ring-nb-blue group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-[#0b1228]`}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 rounded-full shadow-sm transition-transform ${
+            checked ? "translate-x-[18px] bg-[#062330]" : "translate-x-[3px] bg-nb-soft"
+          }`}
+        />
+      </span>
     </button>
   );
 }

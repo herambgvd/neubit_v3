@@ -24,6 +24,11 @@
 // must be 4 wide or row one ends with an empty pair of cells and everything else
 // spills onto a third row. Reordering these four is a layout change.
 //
+// The band is deliberately DENSE — 20px figures, not 26px, and 1.5 padding
+// throughout. Every pixel it takes is one the settings form underneath does not
+// get, and that form was being clipped. A posture read-out earns its size from
+// being glanceable, not from being loud.
+//
 // Each fact has ONE home. Active evidence holds used to appear three times on this
 // page — as a KPI, under Approvals and again under Data — which is how a reader
 // loses track of whether they are looking at one number or three.
@@ -90,9 +95,9 @@ function Tile({
 }) {
   return (
     <div
-      className={`flex flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 ${span}`}
+      className={`flex flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-3 ${span}`}
     >
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-1.5 flex items-center gap-2">
         <Icon icon={icon} className="text-sm text-nb-blueb" />
         <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{title}</span>
         {link && (
@@ -127,11 +132,11 @@ function Stat({
   const body = (
     <>
       <div className="text-[10.5px] font-semibold uppercase tracking-[1.2px] text-nb-faint">{label}</div>
-      <div className={`mt-0.5 font-mono text-[26px] font-semibold leading-none ${KPI_TONE[tone]}`}>{value}</div>
-      {sub && <div className="mt-1 text-[11px] text-nb-faint">{sub}</div>}
+      <div className={`mt-0.5 font-mono text-[20px] font-semibold leading-none ${KPI_TONE[tone]}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-[10.5px] text-nb-faint">{sub}</div>}
     </>
   );
-  const cls = "block rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.45)] px-3 py-2.5";
+  const cls = "block rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.45)] px-3 py-1.5";
   return href ? (
     <Link href={href} className={`${cls} transition hover:border-nb-blue`}>
       {body}
@@ -148,7 +153,7 @@ const ROW_TONE: Record<RowTone, string> = { ink: "text-nb-ink", good: "text-nb-g
 function Row({ label, value, tone = "ink", note }: { label: ReactNode; value: ReactNode; tone?: RowTone; note?: ReactNode }) {
   const c = ROW_TONE[tone];
   return (
-    <div className="flex items-center gap-3 border-b border-nb-line/40 py-2 last:border-b-0">
+    <div className="flex items-center gap-3 border-b border-nb-line/40 py-1.5 last:border-b-0">
       <span className="text-[12px] text-nb-faint">{label}</span>
       <span className="ml-auto flex items-center gap-2">
         {note && <span className="text-[11px] text-nb-faint">{note}</span>}
@@ -237,7 +242,7 @@ export default function SystemAssurance() {
           title="Needs attention"
           span="lg:col-span-2 lg:row-span-2"
         >
-          <div className="grid gap-2">
+          <div className="grid gap-1.5">
             <Stat
               label="Pending approvals"
               value={dual.data ? pendingDual : dash}
@@ -301,8 +306,8 @@ export default function SystemAssurance() {
           link="/license"
           linkLabel="License"
         >
-          <div className="mb-2 flex items-baseline gap-3">
-            <span className={`font-mono text-[26px] font-semibold leading-none ${KPI_TONE[licTone]}`}>
+          <div className="mb-1 flex items-baseline gap-3">
+            <span className={`font-mono text-[20px] font-semibold leading-none ${KPI_TONE[licTone]}`}>
               {licState ? licState.toUpperCase() : dash}
             </span>
             <span className="text-[11px] text-nb-faint">

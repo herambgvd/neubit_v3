@@ -137,7 +137,7 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
             error={errors.seconds}
           />
           <label className="flex items-center gap-2 pb-2 text-sm">
-            <Toggle checked={isActive} onChange={setIsActive} />
+            <Toggle checked={isActive} onChange={setIsActive} label="Active" />
             <span className="text-nb-soft">Active</span>
           </label>
         </div>

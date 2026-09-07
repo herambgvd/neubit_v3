@@ -135,7 +135,7 @@ export default function SsoCard({ canManage }: SsoCardProps) {
       <div className="space-y-4">
         <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
           <span className="text-sm text-nb-ink">SSO enabled</span>
-          <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} />
+          <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} label="Enable single sign-on" />
         </label>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -179,7 +179,7 @@ export default function SsoCard({ canManage }: SsoCardProps) {
             <span className="text-sm text-nb-ink">Auto-provision users</span>
             <p className="text-xs text-nb-muted">Create a user on first successful SSO login.</p>
           </div>
-          <Toggle checked={form.auto_provision} onChange={(v) => set({ auto_provision: v })} disabled={!canManage} />
+          <Toggle checked={form.auto_provision} onChange={(v) => set({ auto_provision: v })} disabled={!canManage} label="Auto-provision users" />
         </label>
 
         {/* IdP app-registration hints */}
