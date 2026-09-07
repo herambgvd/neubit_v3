@@ -35,7 +35,6 @@ from kernel.auth import _bearer  # raw bearer credentials (forwarded to nvr for 
 from app.db import get_db
 from app.vms.groups.acl import enforce_camera_privilege
 
-from app.vms.drivers import DriverError, PtzCommand
 from .schemas import (
     BulkAddBody,
     BulkResult,
@@ -93,11 +92,6 @@ async def get_camera_service(
     # their sites; an unrestricted caller / super-admin passes [] (sees everything).
     site_ids = principal.site_ids if principal.site_scoped() else []
     return CameraService(db, scope, bearer=bearer, site_ids=site_ids)
-
-
-def _driver_err(exc: DriverError) -> HTTPException:
-    """Translate a driver failure (an explicit operator action) into a clean 502."""
-    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
 # ── Camera CRUD ────────────────────────────────────────────────────────

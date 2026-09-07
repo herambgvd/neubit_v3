@@ -105,48 +105,11 @@ def _cam(cid, tenant, host="10.0.0.5", brand="hikvision"):
     )
 
 
-class _Driver:
-    """Fake ONVIF driver; get_snapshot returns a configurable value."""
-
-    snap = None
-
-    def __init__(self, brand="hikvision"):
-        self.brand = brand
-
-    async def get_snapshot(self, host, creds, *, profile=None):
-        return _Driver.snap
-
-    async def aclose(self):
-        return None
-
-
 @pytest_asyncio.fixture
 async def seeded(db):
     db.add(_cam("cam-onvif", TENANT))
     db.add(_cam("cam-nvr", TENANT))
     await db.commit()
-
-
-async def test_snapshot_prefers_onvif_and_caches(db, seeded, monkeypatch):
-    from app.vms.cameras.service import CameraService
-
-    snapshot_frame._cache.clear()
-    _Driver.snap = b"ONVIF-JPEG"
-    monkeypatch.setattr("app.vms.cameras.service.get_driver", lambda brand: _Driver(brand))
-
-    grab_calls = []
-
-    async def _grab(url, **k):
-        grab_calls.append(url)
-        return FAKE_JPEG
-
-    monkeypatch.setattr(snapshot_frame, "grab_frame", _grab)
-
-    svc = CameraService(db, _scope())
-    out = await svc.snapshot_for("cam-onvif")
-    assert out == b"ONVIF-JPEG"
-    assert grab_calls == []  # ffmpeg fallback NOT attempted when ONVIF works
-    assert snapshot_frame.cache_get("cam-onvif", "sub") == b"ONVIF-JPEG"  # cached
 
 
 def _stub_ensure(monkeypatch):
@@ -171,43 +134,10 @@ def _stub_ensure(monkeypatch):
     return ensured
 
 
-async def test_snapshot_falls_back_to_mediamtx_when_onvif_none(db, seeded, monkeypatch):
-    from app.vms.cameras.service import CameraService
-
-    snapshot_frame._cache.clear()
-    _Driver.snap = None  # ONVIF snapshot unavailable (the NVR-channel case)
-    monkeypatch.setattr("app.vms.cameras.service.get_driver", lambda brand: _Driver(brand))
-    ensured = _stub_ensure(monkeypatch)
-
-    grab_calls = []
-
-    async def _grab(url, **k):
-        grab_calls.append(url)
-        return FAKE_JPEG
-
-    monkeypatch.setattr(snapshot_frame, "grab_frame", _grab)
-    monkeypatch.setenv("VE_MEDIAMTX_RTSP_BASE", "rtsp://mediamtx:8554")
-
-    svc = CameraService(db, _scope())
-    out = await svc.snapshot_for("cam-nvr")
-    assert out == FAKE_JPEG
-    # the on-demand path was ensured (sub profile) before the grab
-    assert ensured == [("cam-nvr", "rtsp://cam/cam-nvr/sub", "sub")]
-    # the frame-grab targeted the tenant-scoped sub-profile MediaMTX path
-    assert grab_calls == [f"rtsp://mediamtx:8554/cameras/{TENANT}/cam-nvr/sub"]
-
-    # 2nd request is served from cache — NO second ensure + NO second ffmpeg spawn.
-    out2 = await svc.snapshot_for("cam-nvr")
-    assert out2 == FAKE_JPEG
-    assert len(grab_calls) == 1 and len(ensured) == 1  # still one each
-
-
 async def test_snapshot_total_failure_returns_none(db, seeded, monkeypatch):
     from app.vms.cameras.service import CameraService
 
     snapshot_frame._cache.clear()
-    _Driver.snap = None
-    monkeypatch.setattr("app.vms.cameras.service.get_driver", lambda brand: _Driver(brand))
     _stub_ensure(monkeypatch)
 
     async def _grab(url, **k):
@@ -225,8 +155,6 @@ async def test_snapshot_none_when_nvr_ensure_unreachable(db, seeded, monkeypatch
     from app.vms.common.nvr_client import NvrUnavailable
 
     snapshot_frame._cache.clear()
-    _Driver.snap = None
-    monkeypatch.setattr("app.vms.cameras.service.get_driver", lambda brand: _Driver(brand))
 
     async def _rtsp_source_for(self, camera, profile):
         return f"rtsp://cam/{camera.id}/{profile}"
@@ -248,3 +176,9 @@ async def test_snapshot_none_when_nvr_ensure_unreachable(db, seeded, monkeypatch
     svc = CameraService(db, _scope())
     assert await svc.snapshot_for("cam-nvr") is None  # ensure failed → no grab, 502 upstream
     assert grabbed == []  # never reached the frame-grab
+
+
+# The two ONVIF-preference tests are gone with the path they covered. snapshot_for no
+# longer opens an ONVIF session with the camera's credentials — the recorder holds
+# those and already fronts the stream, so the frame comes off the MediaMTX path it
+# serves. What remains below is the cache, the path convention, and the honest None.

@@ -48,12 +48,8 @@ import type {
   CameraReorderItem,
   CameraUpdate,
   ChannelsResponse,
-  ConfigDict,
-  ConfigResult,
   DiscoverBody,
   DiscoverResponse,
-  DrawnShape,
-  EncoderBody,
   EvidenceCheckResult,
   EvidenceLockCreate,
   EvidenceLockListResponse,
@@ -91,7 +87,6 @@ import type {
   MediaNodeListResponse,
   MediaNodePublic,
   MediaNodeUpdate,
-  MotionZonesResponse,
   NodeCredentialPublic,
   NodeEnrollResult,
   NodeRaidStatus,
@@ -105,15 +100,11 @@ import type {
   NvrPlaybackSession,
   NvrRecordingsResponse,
   NvrUpdate,
-  OnvifEventsBody,
-  OsdBody,
   PatternCreate,
   PatternListResponse,
   PatternPublic,
   PatternUpdate,
   PlaybackSessionPublic,
-  PrivacyMasksResponse,
-  PtzBody,
   PtzResult,
   RecordedPlaybackPublic,
   RecordingDaysResponse,
@@ -125,7 +116,6 @@ import type {
   ReportScheduleList,
   ReportSchedulePublic,
   ReportScheduleUpdate,
-  StreamPolicyResult,
   TimelineResponse,
   VmsCameraPublic,
   VmsEventListResponse,
@@ -377,6 +367,11 @@ export const vms = {
 
 
   cameras: {
+    // REGISTRY ONLY. The device calls that used to live here — PTZ, imaging, I/O,
+    // encoder, OSD, motion config, privacy masks, ONVIF event subscription, stream
+    // policy — are gone with the backend routes behind them. Every one of them needed
+    // the camera's credentials, which the recorder holds; they live under
+    // `federation` above, against the node that owns the camera.
     // GET /cameras → { items, total, skip, limit }. Filters: status, brand,
     // site_id, group_id, q + skip/limit.
     list: (params: QueryParams = {}) => unwrap(api.get<CameraListResponse>(`${CAMERAS}${qs(params)}`)),
@@ -389,68 +384,6 @@ export const vms = {
     // POST /cameras/reorder { items: [{ id, display_order }] }.
     reorder: (items: CameraReorderItem[]) => unwrap(api.post<ReorderResult>(`${CAMERAS}/reorder`, { items })),
 
-    // Config sub-resources (ONVIF-backed) ──────────────────────────────
-    ptz: (id: string, body: PtzBody) => unwrap(api.post<ConfigResult>(`${CAMERAS}/${id}/ptz`, body)),
-    // GET current ONVIF imaging settings + ranges (served from the persisted value;
-    // { refresh:true } re-probes the device); PATCH pushes changes to the device.
-    getImaging: (id: string, { refresh = false }: RefreshOpt = {}) =>
-      unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/imaging${refresh ? "?refresh=true" : ""}`)),
-    setImaging: (id: string, body: ConfigDict) => unwrap(api.patch<ConfigResult>(`${CAMERAS}/${id}/imaging`, body)),
-    // GET enumerates ONVIF relay outputs + digital inputs (persisted; { refresh:true }
-    // re-enumerates from the device); PATCH toggles a relay.
-    getIo: (id: string, { refresh = false }: RefreshOpt = {}) =>
-      unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/io${refresh ? "?refresh=true" : ""}`)),
-    setIo: (id: string, body: ConfigDict) => unwrap(api.patch<ConfigResult>(`${CAMERAS}/${id}/io`, body)),
-    // Video encoder (resolution/fps/bitrate/GOP) — persisted; { refresh:true } re-reads.
-    getEncoder: (id: string, { refresh = false }: RefreshOpt = {}) =>
-      unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/encoder${refresh ? "?refresh=true" : ""}`)),
-    setEncoder: (id: string, body: EncoderBody) => unwrap(api.patch<ConfigResult>(`${CAMERAS}/${id}/encoder`, body)),
-    // OSD / text overlay — persisted; { refresh:true } re-reads.
-    getOsd: (id: string, { refresh = false }: RefreshOpt = {}) =>
-      unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/osd${refresh ? "?refresh=true" : ""}`)),
-    setOsd: (id: string, body: OsdBody) => unwrap(api.patch<ConfigResult>(`${CAMERAS}/${id}/osd`, body)),
-    getMotionConfig: (id: string) => unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/motion-config`)),
-    setMotionConfig: (id: string, body: ConfigDict) => unwrap(api.put<ConfigResult>(`${CAMERAS}/${id}/motion-config`, body)),
-
-    // ── Drawn regions (G5) — privacy masks + motion-detection zones ──────
-    // Both are lists of NORMALIZED (0..1) shapes, top-left origin: a rect
-    // { x, y, w, h } or a polygon { points:[[x,y],...] }. motion-zone shapes may
-    // also carry an optional `sensitivity` / `threshold`. The catalog is stored
-    // LOCALLY (source of truth for the draw tool) then best-effort pushed to the
-    // device — the PUT echo carries `pushed` (bool) + `push_error` (str) so the UI
-    // shows "applied on camera" vs "stored locally — not applied on device".
-    //   GET  /cameras/{id}/privacy-masks → { privacy_masks:[...] }
-    //   PUT  /cameras/{id}/privacy-masks { masks:[...] } → { privacy_masks, pushed, push_error? }
-    //   GET  /cameras/{id}/motion-zones  → { motion_zones:[...] }
-    //   PUT  /cameras/{id}/motion-zones  { zones:[...] }  → { motion_zones, pushed, push_error? }
-    // Reads gate on vms.camera.read; writes on vms.config.manage.
-    privacyMasks: {
-      get: (id: string) => unwrap(api.get<PrivacyMasksResponse>(`${CAMERAS}/${id}/privacy-masks`)),
-      put: (id: string, masks: DrawnShape[]) =>
-        unwrap(api.put<PrivacyMasksResponse>(`${CAMERAS}/${id}/privacy-masks`, { masks })),
-    },
-    motionZones: {
-      get: (id: string) => unwrap(api.get<MotionZonesResponse>(`${CAMERAS}/${id}/motion-zones`)),
-      put: (id: string, zones: DrawnShape[]) =>
-        unwrap(api.put<MotionZonesResponse>(`${CAMERAS}/${id}/motion-zones`, { zones })),
-    },
-
-    getOnvifEvents: (id: string) => unwrap(api.get<OnvifEventsBody>(`${CAMERAS}/${id}/onvif-events`)),
-    setOnvifEvents: (id: string, body: OnvifEventsBody) =>
-      unwrap(api.put<OnvifEventsBody>(`${CAMERAS}/${id}/onvif-events`, body)),
-
-
-    // ── Stream codec policy — force the SUB (web) stream to H.264 ────────────
-    // POST /vms/cameras/{id}/apply-stream-policy → pushes the sub-stream to
-    // H.264 via the brand driver so browsers play it directly (no transcode);
-    // MAIN stays H.265 for recording. Best-effort like the G7 device ops —
-    // returns a StreamPolicyResult { ok, supported, already, detail, ... }. Gate:
-    // vms.config.manage. The camera's sub_stream_codec/web_codec_enforced update
-    // on success (refetch the camera to refresh the codec badge).
-    applyStreamPolicy: (id: string) =>
-      unwrap(api.post<StreamPolicyResult>(`${CAMERAS}/${id}/apply-stream-policy`, {})),
-
-    // Snapshot URL for a saved camera (rendered via <img>, not fetched here).
     snapshotUrl: (id: string) => `${CAMERAS}/${id}/snapshot`,
   },
 

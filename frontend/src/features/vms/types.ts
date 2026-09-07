@@ -80,6 +80,10 @@ export interface DrawnPolygon {
   sensitivity?: number;
   threshold?: number;
 }
+
+/** A drawn region on a camera's frame — a rectangle or a polygon. Still here because
+ *  the camera row carries the shapes; what is gone is the console pushing them TO the
+ *  device, which is the recorder's write. */
 export type DrawnShape = DrawnRect | DrawnPolygon;
 
 export type AdvancedConfig = {
@@ -278,63 +282,13 @@ export type PtzAction =
   | "delete_preset"
   | "get_presets";
 
-export interface PtzBody {
-  action: PtzAction;
-  pan?: number;
-  tilt?: number;
-  zoom?: number;
-  speed?: number;
-  preset_token?: string | null;
-  preset_name?: string | null;
-  profile_token?: string | null;
-}
 
-/** `ImagingBody` / `IoBody` / `MotionConfigBody` — `extra="allow"` dicts. */
-export type ConfigDict = Record<string, unknown>;
 
-export interface EncoderBody extends ConfigDict {
-  role?: string | null;
-  resolution?: string | null;
-  fps?: number | null;
-  bitrate?: number | null;
-  gov_length?: number | null;
-}
 
-export interface OsdBody extends ConfigDict {
-  role?: string | null;
-  text?: string | null;
-  show_datetime?: boolean | null;
-}
 
-export interface OnvifEventsBody {
-  enabled: boolean;
-  topics: string[];
-}
 
-/** `ConfigResult` — a driver/local config echo (`extra="allow"`). */
-export type ConfigResult = Record<string, unknown>;
 
-/** `GET/PUT /cameras/{id}/privacy-masks` — the PUT echo adds the push outcome. */
-export interface PrivacyMasksResponse {
-  privacy_masks: DrawnShape[];
-  pushed?: boolean;
-  push_error?: string | null;
-}
-export interface MotionZonesResponse {
-  motion_zones: DrawnShape[];
-  pushed?: boolean;
-  push_error?: string | null;
-}
 
-export interface StreamPolicyResult {
-  camera_id: string;
-  camera_name?: string | null;
-  ok: boolean;
-  supported: boolean;
-  status: string;
-  sub_codec?: string | null;
-  detail?: string | null;
-}
 
 /* --- NVRs (backend/vision/app/vms/nvr/schemas.py) -------------------------- */
 

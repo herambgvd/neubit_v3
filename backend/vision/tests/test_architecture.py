@@ -162,6 +162,47 @@ def test_the_operator_command_surface_is_still_mounted(app, path):
 # the reconcile that enforces them every tick. The VMS keeps only the read model —
 # a segment row per finalized file, browsable across recorders, which is the one
 # thing no single recorder can answer.
+# The camera plane. Every one of these needed the camera's CREDENTIALS, which the
+# recorder holds, and every one of them exists on the recorder over HTTP. Re-adding
+# any of them means the VMS is decrypting a device password again.
+FORBIDDEN_CAMERA_DEVICE_ROUTES = [
+    "POST /vms/cameras/{camera_id}/ptz",
+    "PATCH /vms/cameras/{camera_id}/imaging",
+    "PATCH /vms/cameras/{camera_id}/io",
+    "PATCH /vms/cameras/{camera_id}/encoder",
+    "PATCH /vms/cameras/{camera_id}/osd",
+    "PUT /vms/cameras/{camera_id}/motion-config",
+    "PUT /vms/cameras/{camera_id}/privacy-masks",
+    "PUT /vms/cameras/{camera_id}/motion-zones",
+    "PUT /vms/cameras/{camera_id}/onvif-events",
+    "POST /vms/cameras/{camera_id}/apply-stream-policy",
+    # VMS-side ONBOARDING, which single ownership retired: the recorder onboards.
+    "POST /vms/cameras/onvif/discover",
+    "POST /vms/cameras/onvif/probe",
+    "POST /vms/cameras/onvif/channels",
+    "POST /vms/cameras/onvif/bulk-add",
+    "POST /vms/cameras/onvif/snapshot",
+]
+
+
+def test_the_vms_does_not_drive_or_onboard_a_camera(app):
+    mounted = _routes(app)
+    back = [r for r in FORBIDDEN_CAMERA_DEVICE_ROUTES if _is_mounted(mounted, r)]
+    assert not back, (
+        "the VMS is talking to cameras again:\n  " + "\n  ".join(back)
+        + "\nThe recorder owns the camera and holds its credentials. Read what the "
+          "console needs through /vms/federation; do not open a device session here."
+    )
+
+
+def test_the_camera_registry_is_still_here(app):
+    """The other half: the registry IS the VMS's job — which cameras the estate knows
+    about, what they are called, and which recorder fronts them."""
+    mounted = _routes(app)
+    for route in ("GET /vms/cameras", "GET /vms/cameras/{camera_id}"):
+        assert _is_mounted(mounted, route), f"{route} is gone"
+
+
 FORBIDDEN_RECORDING_CONTROL = [
     "PUT /vms/cameras/{camera_id}/recording",
     "POST /vms/cameras/{camera_id}/recording/start",

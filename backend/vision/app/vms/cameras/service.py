@@ -1,15 +1,19 @@
-"""Camera-onboarding service — tenant-scoped CRUD + driver-backed ops.
+"""Camera REGISTRY service — tenant-scoped CRUD over the estate's camera rows.
 
 Mirrors the access service (``backend/access/app/access/service.py``): every read
-goes through ``kernel.auth.scoped``; every by-id fetch through ``assert_owned``;
-new rows are stamped with the caller's ``tenant_id``. ONVIF/RTSP credentials are
-stored REVERSIBLY encrypted (``vms.common.crypto``) — the plaintext is handed to a
-driver in-memory only, never persisted.
+goes through ``kernel.auth.scoped``; every by-id fetch through ``assert_owned``; new
+rows are stamped with the caller's ``tenant_id``.
 
-Graceful-on-unreachable is the discipline throughout (no live devices in dev):
-probe/discover/channels/snapshot go through the driver, which returns empty/None
-on failure — the service never 500s. Only explicit operator actions (``ptz`` /
-``configure`` writes) surface a ``DriverError`` as a clean 502.
+It does not touch a device. It used to: discovery, ONVIF probe, channel enumeration,
+bulk-add onboarding, PTZ, and the imaging / I/O / encoder / OSD / motion / privacy-mask
+config writes all decrypted a camera's credentials here and drove the device over a
+brand driver. Every one of those is the recorder's — it owns the camera, holds the
+credentials, and exposes the same operations over HTTP — and the console reaches them
+through ``/vms/federation`` against the node that owns the camera.
+
+What is left is the registry itself: which cameras this estate knows about, what they
+are called, which site and group they belong to, which recorder fronts them, and who
+may see them. That is the aggregation no single recorder can do.
 
 Onboarding publishes on the NATS spine (``app.vms.common.events``):
   * create → ``device.camera.registered`` (Map/core) + ``vms.camera.status``.
@@ -38,7 +42,6 @@ from app.vms.common.stream_policy import (
     enforce_h264_web,
     needs_web_codec_enforcement,
 )
-from app.vms.drivers import Credentials, DriverError, PtzCommand, get_driver
 from app.vms.models import Camera, CameraACL, CameraGroup, MediaNode, MediaProfile
 
 from app.vms.groups.schemas import CameraACLPublic
@@ -121,16 +124,6 @@ class CameraService:
     async def _public(self, row: Camera) -> CameraPublic:
         return CameraPublic.from_row(row, await self._profiles(row.id))
 
-    def _creds_for(self, row: Camera) -> Credentials:
-        """Build a driver ``Credentials`` from a stored camera row (decrypting)."""
-        return Credentials(
-            username=row.onvif_user or "admin",
-            password=decrypt_secret(row.onvif_enc_pass) or "",
-            port=row.onvif_port or 80,
-            rtsp_port=(row.network_info or {}).get("rtsp_port") or 554,
-        )
-
-    # ── recorder-node assignment (media_node_id) ─────────────────────────
     async def _validate_node_usable(self, node_id: str) -> None:
         """Ensure ``node_id`` names a media node this tenant may home a camera on.
 
@@ -198,63 +191,6 @@ class CameraService:
         except Exception as exc:  # noqa: BLE001 — a re-host failure must not fail the write
             log.info("re-host stop on the old node failed for camera %s: %s", camera.id, exc)
 
-    # ── probe-on-create (best-effort capability autofill) ────────────────
-    async def _autofill_from_device(self, row: Camera) -> None:
-        """Probe the device via its driver and fill capabilities/profiles/PTZ.
-
-        Graceful: any failure (unreachable, driver missing) leaves the row at
-        ``status='connecting'`` with whatever the operator supplied — NEVER raises.
-        """
-        host = row.onvif_host or (row.network_info or {}).get("ip")
-        if not host:
-            return
-        driver = get_driver(row.brand)
-        creds = self._creds_for(row)
-        try:
-            info = await driver.probe(host, creds)
-            if not info.reachable:
-                row.last_error = info.error
-                return
-            caps = await driver.get_capabilities(host, creds)
-            row.status = "online"
-            row.last_seen_at = _utcnow()
-            row.last_error = None
-            row.onvif_capabilities = {**(row.onvif_capabilities or {}), **caps.raw, **_caps_dict(caps)}
-            row.ptz_capable = row.ptz_capable or caps.ptz
-            # Enumerate channels → persist main/sub as MediaProfiles for channel 0.
-            channels = await driver.enumerate_channels(host, creds)
-            if channels:
-                ch = channels[0]
-                row.onvif_profile_token = row.onvif_profile_token or (
-                    ch.main.profile_token if ch.main else None
-                )
-                await self._persist_channel_profiles(row.id, row.tenant_id, ch)
-                # Record the last-known SUB (web) codec for the badge + policy gate.
-                if ch.sub is not None and ch.sub.codec:
-                    row.sub_stream_codec = ch.sub.codec.upper()
-        except Exception as exc:  # noqa: BLE001 — probe must never break create
-            log.info("probe-on-create failed for camera %s (%s): %s", row.id, host, exc)
-            row.last_error = str(exc)
-        finally:
-            await driver.aclose()
-
-    async def _persist_channel_profiles(self, camera_id: str, tenant_id, channel) -> None:
-        """Upsert main/sub MediaProfiles for a driver ``Channel`` (idempotent by name)."""
-        existing = {p.name: p for p in await self._profiles(camera_id)}
-        for pname, sinfo in (("main", channel.main), ("sub", channel.sub)):
-            if sinfo is None:
-                continue
-            row = existing.get(pname)
-            if row is None:
-                row = MediaProfile(camera_id=camera_id, tenant_id=tenant_id, name=pname)
-                self.db.add(row)
-            row.codec = sinfo.codec or row.codec
-            row.resolution = sinfo.resolution or row.resolution
-            row.fps = sinfo.fps or row.fps
-            row.rtsp_path = sinfo.stream_url or row.rtsp_path
-            row.bitrate = sinfo.bitrate or row.bitrate
-
-    # ── CRUD ────────────────────────────────────────────────────────────
     async def create(self, body: CameraCreate, *, actor, probe: bool = True) -> CameraPublic:
         # Name is unique within the caller's tenant (like access instance names).
         dup = await self.db.scalar(
@@ -323,17 +259,17 @@ class CameraService:
                 )
             )
 
-        # Best-effort device probe to auto-fill capabilities/profiles/PTZ.
-        if probe:
-            await self._autofill_from_device(row)
+        # No device probe on create. Reading a camera's capabilities means opening an
+        # ONVIF session with its credentials, and the recorder that owns the camera
+        # holds those — it probes during its own onboarding, and the VMS reads the
+        # result through federation. ``probe`` stays in the signature so callers do
+        # not break; it no longer does anything.
 
         await self.db.commit()
         await self.db.refresh(row)
 
         await self._publish_lifecycle(row, "registered")
         await self._publish_status(row)
-        # Non-blocking: force the web (sub) stream to H.264 if policy on + sub is H.265.
-        self._schedule_web_codec_enforcement(row.id)
         return await self._public(row)
 
     async def list_(
@@ -575,96 +511,33 @@ class CameraService:
         await self.db.commit()
         return {"reordered": applied}
 
-    # ── discovery / onboarding helpers (driver-backed, graceful) ─────────
-    async def discover(self, *, brand: str | None, network: str | None) -> list[dict]:
-        driver = get_driver(brand)
-        try:
-            found = await driver.discover(network)
-        except Exception as exc:  # noqa: BLE001 — discover must never 500
-            log.info("discover failed (brand=%s net=%s): %s", brand, network, exc)
-            found = []
-        finally:
-            await driver.aclose()
-        return [_discovered_dict(d) for d in found]
-
-    async def probe(self, *, host, port, username, password, brand):
-        driver = get_driver(brand)
-        creds = Credentials(username=username or "admin", password=password or "", port=port or 80)
-        try:
-            info = await driver.probe(host, creds)
-            caps = await driver.get_capabilities(host, creds) if info.reachable else None
-        except Exception as exc:  # noqa: BLE001
-            log.info("probe failed (%s): %s", host, exc)
-            return {"reachable": False, "error": str(exc)}
-        finally:
-            await driver.aclose()
-        out = _deviceinfo_dict(info)
-        out["capabilities"] = _caps_dict(caps) if caps else {}
-        return out
-
-    async def enumerate_channels(self, *, host, port, username, password, brand):
-        driver = get_driver(brand)
-        creds = Credentials(username=username or "admin", password=password or "", port=port or 80)
-        try:
-            channels = await driver.enumerate_channels(host, creds)
-        except Exception as exc:  # noqa: BLE001
-            log.info("channels failed (%s): %s", host, exc)
-            channels = []
-        finally:
-            await driver.aclose()
-        return [_channel_dict(c) for c in channels]
-
-    async def snapshot(self, *, host, port, username, password, brand) -> bytes | None:
-        driver = get_driver(brand)
-        creds = Credentials(username=username or "admin", password=password or "", port=port or 80)
-        try:
-            return await driver.get_snapshot(host, creds)
-        except Exception as exc:  # noqa: BLE001
-            log.info("snapshot failed (%s): %s", host, exc)
-            return None
-        finally:
-            await driver.aclose()
-
     async def snapshot_for(self, camera_id: str) -> bytes | None:
-        """A JPEG snapshot for a camera — cached ~30s, with a live-stream fallback.
+        """A JPEG snapshot for a camera — cached ~30s, grabbed off the live stream.
 
         Order:
           1. Serve a fresh cached frame if we have one (bounds ffmpeg spawns + the
              MediaMTX on-demand activation the grid would otherwise trigger 16×).
-          2. Try the driver's ONVIF ``GetSnapshotUri`` → HTTP JPEG (fast when it
-             works — direct cameras).
-          3. Fall back to grabbing ONE frame off the live MediaMTX path with ffmpeg
+          2. Grab ONE frame off the live MediaMTX path with ffmpeg
              (``cameras/<tenant>/<cam>/sub``) — codec-agnostic, so it works for the
-             NVR-channel H.265/H.264 cameras where ONVIF snapshot fails.
+             H.265 and NVR-channel cameras an ONVIF snapshot fails on.
 
-        Returns ``None`` when neither source yields a frame (→ the router 502s and the
+        There used to be a step between them: the camera's own ONVIF
+        ``GetSnapshotUri``, reached by decrypting its credentials here. That is the
+        recorder's business — it holds the credentials and fronts the stream — and the
+        MediaMTX path already goes through it. Losing that step costs nothing the
+        recorder does not already provide, and it takes the VMS off the device.
+
+        Returns ``None`` when no frame can be grabbed (→ the router 502s and the
         frontend shows its placeholder). Never raises.
         """
         row = await self._row(camera_id)
 
-        # 1) cache — serve the last frame from EITHER source if still fresh.
+        # 1) cache.
         cached = snapshot_frame.cache_get(camera_id, "sub")
         if cached is not None:
             return cached
 
-        # 2) driver ONVIF snapshot (fast path — works for direct cameras).
-        host = row.onvif_host or (row.network_info or {}).get("ip")
-        if host:
-            driver = get_driver(row.brand)
-            try:
-                jpeg = await driver.get_snapshot(
-                    host, self._creds_for(row), profile=row.onvif_profile_token
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.info("snapshot(camera=%s) ONVIF failed: %s", camera_id, exc)
-                jpeg = None
-            finally:
-                await driver.aclose()
-            if jpeg:
-                snapshot_frame.cache_put(camera_id, "sub", jpeg)
-                return jpeg
-
-        # 3) fallback — grab a frame off the live MediaMTX stream (sub profile).
+        # 2) grab a frame off the live MediaMTX stream (sub profile).
         #
         # The MediaMTX path is on-demand: it only exists once the Go nvr has been asked
         # to "ensure" it (which configures the source = the camera's RTSP URL). A raw
@@ -708,387 +581,6 @@ class CameraService:
         rtsp_url = f"{snapshot_frame.rtsp_base()}/{path}"
         return await snapshot_frame.grab_frame(rtsp_url)
 
-    async def bulk_add(
-        self, *, host, port, username, password, brand, channels, actor
-    ) -> CameraListResponse:
-        """Create N cameras (one per supplied channel) in ONE transaction.
-
-        Each channel gets an ``onvif_profile_token`` + ``nvr_channel_number``; the
-        driver is probed once for stream-uris (graceful if unreachable → cameras
-        persist with ``status='connecting'``). This is the multi-channel NVR/DVR
-        onboarding primitive the NVR module (P1-E) reuses.
-        """
-        driver = get_driver(brand)
-        creds = Credentials(username=username or "admin", password=password or "", port=port or 80)
-
-        # One enumeration to enrich stream-uris (best-effort; may be empty). Index it by
-        # EVERY stable key so a per-channel spec matches regardless of which identifier the
-        # caller sent — source/profile token (most stable), the ONVIF channel_number hint,
-        # or the sequential channel index. Matching ONLY by ch.channel (1,2,3…) missed
-        # single-channel maps (idx=0) → cameras created with NO MediaProfiles → no stream.
-        enum_by_ch: dict[int, Any] = {}
-        enum_by_num: dict[int, Any] = {}
-        enum_by_token: dict[str, Any] = {}
-        try:
-            for ch in await driver.enumerate_channels(host, creds):
-                enum_by_ch[ch.channel] = ch
-                if getattr(ch, "channel_number", None) is not None:
-                    enum_by_num.setdefault(ch.channel_number, ch)
-                if getattr(ch, "source_token", None):
-                    enum_by_token.setdefault(str(ch.source_token), ch)
-                for prof in (getattr(ch, "main", None), getattr(ch, "sub", None)):
-                    tok = getattr(prof, "profile_token", None)
-                    if tok:
-                        enum_by_token.setdefault(str(tok), ch)
-        except Exception as exc:  # noqa: BLE001
-            log.info("bulk-add enumerate failed (%s): %s", host, exc)
-        finally:
-            await driver.aclose()
-
-        actor_id = _actor_id(actor)
-        enc_pass = encrypt_secret(password) if password else None
-        created: list[Camera] = []
-        base_order = int(
-            await self.db.scalar(
-                scoped(select(func.coalesce(func.max(Camera.display_order), 0)), Camera, self.scope)
-            )
-            or 0
-        )
-
-        for idx, spec in enumerate(channels):
-            ch_no = spec.channel_number if spec.channel_number is not None else idx + 1
-            name = spec.name or f"{host} — CH{ch_no}"
-            dup = await self.db.scalar(
-                scoped(select(Camera), Camera, self.scope).where(Camera.name == name)
-            )
-            if dup is not None:
-                # NVR channels routinely share generic names ("Channel 1") across
-                # different recorders, so mapping a second NVR must not hard-fail on
-                # a name clash — auto-disambiguate with an NVR-scoped suffix. Only the
-                # explicit single-camera add path keeps the hard error (user typed it).
-                if spec.nvr_id:
-                    stem = name
-                    n = 2
-                    while dup is not None:
-                        name = f"{stem} ({n})"
-                        dup = await self.db.scalar(
-                            scoped(select(Camera), Camera, self.scope).where(Camera.name == name)
-                        )
-                        n += 1
-                else:
-                    raise ConflictError(f"a camera named '{name}' already exists")
-
-            # Match the enumerated channel by token (stable) → channel_number → sequential
-            # index. This is what populates MediaProfiles; a miss = a camera with no stream.
-            probe_ch = (
-                (enum_by_token.get(str(spec.profile_token)) if spec.profile_token else None)
-                or (enum_by_num.get(spec.channel_number) if spec.channel_number is not None else None)
-                or enum_by_ch.get(ch_no)
-                or enum_by_ch.get(idx + 1)
-                or enum_by_ch.get(idx)
-            )
-            profile_token = spec.profile_token or (
-                probe_ch.main.profile_token if (probe_ch and probe_ch.main) else None
-            )
-            row = Camera(
-                tenant_id=self.scope.tenant_id,
-                name=name,
-                is_enabled=True,
-                status="connecting",
-                brand=brand or "onvif",
-                connection_type="nvr_channel" if spec.nvr_id else "onvif",
-                network_info={"ip": host, "port": port or 80},
-                onvif_host=host,
-                onvif_port=port or 80,
-                onvif_user=username or "admin",
-                onvif_enc_pass=enc_pass,
-                onvif_profile_token=profile_token,
-                nvr_id=spec.nvr_id,
-                nvr_channel_number=ch_no,
-                site_id=spec.site_id,
-                floor_id=spec.floor_id,
-                display_order=base_order + idx + 1,
-                created_by=actor_id,
-                updated_by=actor_id,
-            )
-            self.db.add(row)
-            await self.db.flush()
-            if probe_ch is not None:
-                await self._persist_channel_profiles(row.id, row.tenant_id, probe_ch)
-                if probe_ch.sub is not None and probe_ch.sub.codec:
-                    row.sub_stream_codec = probe_ch.sub.codec.upper()
-            created.append(row)
-
-        await self.db.commit()
-        for row in created:
-            await self.db.refresh(row)
-            await self._publish_lifecycle(row, "registered")
-            await self._publish_status(row)
-            # Non-blocking web-codec enforcement per created channel (policy-gated).
-            self._schedule_web_codec_enforcement(row.id)
-
-        items = [await self._public(r) for r in created]
-        return CameraListResponse(items=items, total=len(items), skip=0, limit=len(items))
-
-    # ── config sub-resources (driver-backed; explicit ops MAY 502) ───────
-    async def ptz(self, camera_id: str, cmd: PtzCommand) -> Any:
-        row = await self._row(camera_id)
-        host = row.onvif_host or (row.network_info or {}).get("ip")
-        if not host:
-            raise DriverError("camera has no reachable host configured")
-        driver = get_driver(row.brand)
-        try:
-            result = await driver.ptz(host, self._creds_for(row), cmd)
-            if cmd.action in ("set_preset", "delete_preset", "get_presets") and isinstance(result, list):
-                row.ptz_presets = result
-                await self.db.commit()
-            return result
-        finally:
-            await driver.aclose()
-
-    # ONVIF read-sections whose result we persist on the camera row so the UI serves
-    # them instantly (no auto re-probe on every tab open); the operator re-reads on
-    # demand via ``refresh=True`` (the panel's ↻/Reload). Writes always hit the device
-    # AND refresh the cache with the echoed current state.
-    _CACHEABLE_SECTIONS = {"imaging", "io", "encoder", "osd"}
-
-    async def configure(
-        self, camera_id: str, section: str, payload: dict, *, refresh: bool = False
-    ) -> dict:
-        row = await self._row(camera_id)
-        is_read = not payload
-        cacheable = section in self._CACHEABLE_SECTIONS
-
-        # Serve a cached read instantly unless the caller forced a refresh.
-        if cacheable and is_read and not refresh:
-            cached = (row.onvif_capabilities or {}).get(section)
-            if cached:
-                return cached
-
-        host = row.onvif_host or (row.network_info or {}).get("ip")
-        if not host:
-            raise DriverError("camera has no reachable host configured")
-        driver = get_driver(row.brand)
-        # For an NVR channel, imaging is per video-source — pass the channel index so the
-        # driver targets THIS channel's source, not the recorder's first one.
-        channel = row.nvr_channel_number if row.nvr_id else None
-        try:
-            result = await driver.configure(
-                host, self._creds_for(row), section, payload, channel=channel
-            )
-        finally:
-            await driver.aclose()
-
-        # Persist the live result (both reads and writes echo the current device state)
-        # so the next tab open is instant.
-        if cacheable and isinstance(result, dict):
-            caps = dict(row.onvif_capabilities or {})
-            caps[section] = result
-            row.onvif_capabilities = caps
-            await self.db.commit()
-        return result
-
-    async def get_local_config(self, camera_id: str, section: str) -> dict:
-        """Return a locally-persisted config section (motion/privacy/onvif-events)."""
-        row = await self._row(camera_id)
-        if section == "motion_config":
-            return {"motion_config": row.motion_config or {}}
-        if section == "privacy_masks":
-            return {"privacy_masks": row.privacy_masks or []}
-        if section == "motion_zones":
-            return {"motion_zones": row.motion_zones or []}
-        if section == "onvif_events":
-            return {"onvif_events": (row.onvif_capabilities or {}).get("_events_config", {})}
-        raise ValidationError(f"unknown local config section: {section}")
-
-    async def put_local_config(self, camera_id: str, section: str, value) -> dict:
-        """Persist a config section locally (event ingestion at scale = Go nvr P5).
-
-        ``privacy_masks`` / ``motion_zones`` are ALWAYS stored locally (the local
-        catalog is source-of-truth for the G5 draw tool), then best-effort pushed to
-        the device via the driver ``configure`` seam. The push NEVER blocks or fails
-        the save — the echo carries ``pushed`` (True | False) + ``push_error`` so the
-        UI can surface store-only vs applied-on-device per brand.
-        """
-        row = await self._row(camera_id)
-        push_section: str | None = None
-        if section == "motion_config":
-            row.motion_config = value or {}
-            out = {"motion_config": row.motion_config}
-        elif section == "privacy_masks":
-            row.privacy_masks = value or []
-            out = {"privacy_masks": row.privacy_masks}
-            push_section = "privacy_masks"
-        elif section == "motion_zones":
-            row.motion_zones = value or []
-            out = {"motion_zones": row.motion_zones}
-            push_section = "motion_zones"
-        elif section == "onvif_events":
-            caps = dict(row.onvif_capabilities or {})
-            caps["_events_config"] = value or {}
-            row.onvif_capabilities = caps
-            out = {"onvif_events": caps["_events_config"]}
-        else:
-            raise ValidationError(f"unknown local config section: {section}")
-        row.updated_at = _utcnow()
-        await self.db.commit()
-
-        # Best-effort device push for the drawn regions (graceful — never raises).
-        if push_section is not None:
-            pushed, push_error = await self._push_regions(row, push_section, value or [])
-            out["pushed"] = pushed
-            if push_error:
-                out["push_error"] = push_error
-        return out
-
-    async def _push_regions(self, row: Camera, section: str, value) -> tuple[bool, str | None]:
-        """Push privacy_masks / motion_zones to the device via ``driver.configure``.
-
-        Graceful: returns ``(False, error)`` when no host / driver missing / device
-        unreachable / brand doesn't support the region config — the local save already
-        succeeded. Returns ``(True, None)`` when the driver reports the write applied.
-        """
-        host = row.onvif_host or (row.network_info or {}).get("ip")
-        if not host:
-            return False, "camera has no reachable host configured"
-        driver = get_driver(row.brand)
-        try:
-            result = await driver.configure(host, self._creds_for(row), section, {section: value})
-            return bool((result or {}).get("applied", True)), None
-        except DriverError as exc:
-            log.info("region push (%s) failed for camera %s: %s", section, row.id, exc)
-            return False, str(exc)
-        except Exception as exc:  # noqa: BLE001 — push must never break the local save
-            log.info("region push (%s) errored for camera %s: %s", section, row.id, exc)
-            return False, str(exc)
-        finally:
-            await driver.aclose()
-
-    # ── stream codec policy (G8 — zero-transcode live view) ──────────────
-    #
-    # Force the SUB (web-viewing) stream to H.264 at the device so browsers play live with
-    # zero transcode (main stays H.265 for storage-efficient recording). The H.265→H.264
-    # transcode fallback (mediamtx /h264 + LivePlayer) STAYS as a safety net for devices
-    # that can't be reconfigured — this only avoids the transcode where the device CAN.
-
-    async def _apply_stream_policy_row(self, row: Camera, *, force: bool = False) -> dict:
-        """Probe the sub codec + push it to H.264 via the driver, persisting the outcome.
-
-        Returns a JSON-safe result dict {ok, supported, status, sub_codec, detail}. Never
-        raises — driver failures degrade to ``ok=False``. ``force=True`` pushes even if the
-        last-known sub codec is already H.264 (re-assert); default skips an H.264 sub.
-
-        Statuses: ``applied`` (pushed to H.264), ``already_h264`` (skipped — no churn),
-        ``unsupported`` (brand/NVR can't set the codec), ``unreachable`` (no host / down),
-        ``failed`` (op ran, device rejected).
-        """
-        host = row.onvif_host or (row.network_info or {}).get("ip")
-        if not host:
-            return {"ok": False, "supported": True, "status": "unreachable",
-                    "sub_codec": row.sub_stream_codec, "detail": "camera has no reachable host configured"}
-        driver = get_driver(row.brand)
-        creds = self._creds_for(row)
-        try:
-            # 1) Probe the current per-stream codecs (refreshes the badge + gates the push).
-            sub_codec = row.sub_stream_codec
-            try:
-                codecs = await driver.get_stream_codecs(host, creds)
-                for c in codecs:
-                    if c.role == WEB_STREAM_ROLE and c.codec:
-                        sub_codec = c.codec.upper()
-                        break
-            except Exception as exc:  # noqa: BLE001 — probe must not break the apply
-                log.info("stream-codec probe failed for camera %s: %s", row.id, exc)
-            if sub_codec:
-                row.sub_stream_codec = sub_codec
-
-            # 2) Skip when already H.264 (unless forced) — zero-churn on compliant devices.
-            if not force and sub_codec and sub_codec.upper() == "H264":
-                await self.db.commit()
-                return {"ok": True, "supported": True, "status": "already_h264",
-                        "sub_codec": sub_codec, "detail": "sub stream already H.264 (no transcode)"}
-
-            # 3) Push sub → H.264 at the device (best-effort, graceful per brand).
-            res = await driver.set_stream_codec(host, creds, profile=WEB_STREAM_ROLE, codec="h264")
-            if res.ok:
-                row.sub_stream_codec = "H264"
-                row.web_codec_enforced_at = _utcnow()
-                status = "already_h264" if (res.data or {}).get("already") else "applied"
-            elif not res.supported:
-                status = "unsupported"
-            else:
-                status = "failed"
-            await self.db.commit()
-            return {"ok": res.ok, "supported": res.supported, "status": status,
-                    "sub_codec": row.sub_stream_codec, "detail": res.detail}
-        except Exception as exc:  # noqa: BLE001 — never raise from the policy apply
-            log.info("apply_stream_policy errored for camera %s: %s", row.id, exc)
-            return {"ok": False, "supported": True, "status": "failed",
-                    "sub_codec": row.sub_stream_codec, "detail": str(exc)}
-        finally:
-            await driver.aclose()
-
-    async def apply_stream_policy(self, camera_id: str, *, force: bool = False) -> dict:
-        """Manual apply (existing camera): push sub → H.264. Tenant-scoped + owned."""
-        row = await self._row(camera_id)
-        out = await self._apply_stream_policy_row(row, force=force)
-        return {"camera_id": row.id, "camera_name": row.name, **out}
-
-    async def bulk_apply_stream_policy(self, camera_ids: list[str], *, force: bool = False) -> dict:
-        """Bulk apply — mirror the G7 fleet bulk contract (per-camera results, tenant
-        isolation via scoped id-filter, one failure never aborts the batch)."""
-        stmt = scoped(select(Camera), Camera, self.scope).where(Camera.id.in_(camera_ids))
-        rows = {r.id: r for r in (await self.db.execute(stmt)).scalars().all()}
-        ordered = [rows[cid] for cid in camera_ids if cid in rows]
-        items: list[dict] = []
-        succeeded = 0
-        for row in ordered:
-            res = await self._apply_stream_policy_row(row, force=force)
-            if res["ok"]:
-                succeeded += 1
-            items.append({"camera_id": row.id, "camera_name": row.name, **res})
-        return {"action": "apply-stream-policy", "total": len(items), "succeeded": succeeded, "items": items}
-
-    async def _maybe_enforce_web_codec(self, camera_id: str) -> None:
-        """Onboard auto-enforce hook — runs in a DETACHED task with a FRESH DB session so
-        it NEVER blocks or fails the onboard. Gated by the policy flag + skips a sub
-        already on H.264. Best-effort + logged; the camera row is already committed."""
-        if not enforce_h264_web():
-            return
-        from app.db import get_sessionmaker
-
-        try:
-            async with get_sessionmaker()() as session:
-                svc = CameraService(session, self.scope)
-                row = await session.get(Camera, camera_id)
-                if row is None:
-                    return
-                # Only push when the probed sub codec is known-not-H.264 (no churn / no
-                # blind push against an unknown device).
-                if not needs_web_codec_enforcement(row.sub_stream_codec):
-                    return
-                res = await svc._apply_stream_policy_row(row)
-                log.info(
-                    "auto-enforce H.264 web on camera %s: status=%s detail=%s",
-                    camera_id, res.get("status"), res.get("detail"),
-                )
-        except Exception as exc:  # noqa: BLE001 — the hook must never surface
-            log.info("auto-enforce web codec errored for camera %s: %s", camera_id, exc)
-
-    def _schedule_web_codec_enforcement(self, camera_id: str) -> None:
-        """Spawn the non-blocking onboard auto-enforce task (fire-and-forget)."""
-        if not enforce_h264_web():
-            return
-        try:
-            task = asyncio.create_task(self._maybe_enforce_web_codec(camera_id))
-            # Keep a ref so the task isn't GC'd mid-flight; drop it on completion.
-            self._bg_tasks.add(task)
-            task.add_done_callback(self._bg_tasks.discard)
-        except RuntimeError:
-            # No running loop (shouldn't happen under FastAPI) — skip silently.
-            log.debug("no event loop for web-codec enforcement of camera %s", camera_id)
-
-    # ── per-camera ACL (VMS-owned, keyed on core subject ids) ────────────
     async def get_acl(self, camera_id: str) -> list[CameraACLPublic]:
         await self._row(camera_id)  # ownership check
         stmt = scoped(select(CameraACL), CameraACL, self.scope).where(
