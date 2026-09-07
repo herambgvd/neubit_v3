@@ -36,6 +36,8 @@ from kernel.auth import Scope, assert_owned, owns, scoped
 from kernel.errors import ConflictError, NotFoundError, ValidationError
 
 from app.vms.common.node_routing import node_for_camera
+from app.vms.common.owning_node import forget as forget_placement
+from app.vms.common.owning_node import owning_node
 from app.vms.federation import client as fed
 from app.vms.common.crypto import decrypt_secret, encrypt_secret
 from app.vms.common.events import emit_camera_lifecycle, emit_camera_status
@@ -529,13 +531,20 @@ class CameraService:
         produce a frame (→ the router 502s and the frontend shows its placeholder).
         Never raises.
         """
-        row = await self._row(camera_id)
-
         cached = snapshot_frame.cache_get(camera_id, "sub")
         if cached is not None:
             return cached
 
-        node = await node_for_camera(self.db, self.scope.tenant_id, row)
+        # Two ways to find the recorder, and the second is not a fallback — it is the
+        # normal case. A camera the VMS has a row for names its node on the row; a
+        # camera it does not (which under single ownership is every camera) is
+        # resolved by asking the recorders which of them has it.
+        row = await self.db.get(Camera, camera_id)
+        if row is not None:
+            assert_owned(row, self.scope, message="camera not found", allow_shared=False)
+            node = await node_for_camera(self.db, self.scope.tenant_id, row)
+        else:
+            node = await owning_node(self.db, self.scope.tenant_id, camera_id)
         if node is None:
             log.info("snapshot(camera=%s): no recorder fronts this camera", camera_id)
             return None
@@ -544,6 +553,9 @@ class CameraService:
                 node.api_url, camera_id, credential=node.credential
             )
         except fed.NodeUnavailable as exc:
+            # Drop a resolved placement the recorder just disproved, so the next ask
+            # re-resolves rather than returning to the same wrong box for a minute.
+            forget_placement(camera_id)
             log.info("snapshot(camera=%s): recorder could not produce a frame: %s", camera_id, exc)
             return None
         except Exception as exc:  # noqa: BLE001 — a snapshot must never raise

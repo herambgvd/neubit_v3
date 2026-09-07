@@ -203,3 +203,41 @@ async def test_snapshot_none_when_the_recorder_is_unreachable(db, seeded, monkey
     assert await svc.snapshot_for("cam-nvr") is None
     # And a failure is NOT cached — the next ask retries rather than serving a hole.
     assert snapshot_frame.cache_get("cam-nvr", "sub") is None
+
+
+# ── the camera the VMS has no row for ─────────────────────────────────────────
+#
+# Which, under single ownership, is every camera: the recorders own them. A snapshot
+# asked for by camera id alone — an incident card, a thumbnail — used to 404 here for
+# exactly the same reason the live session did, and for exactly as long as nobody
+# tried it against a real pair.
+
+
+async def test_a_camera_with_no_row_is_resolved_to_its_recorder(db, monkeypatch):
+    from app.vms.cameras.service import CameraService
+    from app.vms.models import MediaNode
+
+    snapshot_frame._cache.clear()
+    node = MediaNode(
+        id=str(uuid.uuid4()), tenant_id=TENANT, name="rec-a", host="rec-a",
+        api_url="http://rec-a:8000", credential="scoped-key", status="online",
+    )
+    db.add(node)
+    await db.commit()
+
+    async def _cameras(api_url, credential=None):
+        return [{"id": "cam-only-on-the-recorder"}]
+
+    monkeypatch.setattr("app.vms.federation.client.list_estate_cameras", _cameras)
+
+    asks = []
+
+    async def _snap(api_url, camera_id, *, refresh=False, credential=None):
+        asks.append((api_url, camera_id, credential))
+        return FAKE_JPEG, "image/jpeg"
+
+    monkeypatch.setattr("app.vms.cameras.service.fed.snapshot_node", _snap)
+
+    out = await CameraService(db, _scope()).snapshot_for("cam-only-on-the-recorder")
+    assert out == FAKE_JPEG
+    assert asks == [("http://rec-a:8000", "cam-only-on-the-recorder", "scoped-key")]
