@@ -14,6 +14,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { vms } from "../api";
 import type { LiveSessionLike, LiveSessionSource } from "../types";
 import { useLiveSession } from "./useLiveSession";
 
@@ -192,5 +193,35 @@ describe("cold-start warm-up", () => {
 
     // 1 initial issue + at most the capped number of warm-up polls.
     expect((src.start as ReturnType<typeof vi.fn>).mock.calls.length).toBeLessThanOrEqual(7);
+  });
+});
+
+/**
+ * The DEFAULT source, and why it has a test of its own.
+ *
+ * A caller that passes no `source` mints through /vms/cameras/{id}/live with a bare
+ * camera id. Two screens depend on that and can depend on nothing else: the alarm
+ * popup holds a camera because an incident carries one, and a video wall cell holds a
+ * camera because a saved layout stores one. Neither can carry a recorder id without
+ * persisting a placement decision into every popup and every saved layout.
+ *
+ * That endpoint used to 404 for every camera in a single-ownership estate — the
+ * recorders own the cameras, so the VMS has no row to look up — and both screens were
+ * dead. It resolves the owning recorder now. This pins the CLIENT half: the default
+ * source must keep asking with the id alone, so a change that starts demanding a node
+ * fails here rather than in a control room.
+ */
+describe("the default source", () => {
+  it("mints with the camera id alone — no recorder id", async () => {
+    const start = vi
+      .spyOn(vms.live, "start")
+      .mockResolvedValue(session("s-default") as never);
+    vi.spyOn(vms.live, "renew").mockResolvedValue(session("s-default") as never);
+    vi.spyOn(vms.live, "release").mockResolvedValue(undefined as never);
+
+    renderHook(() => useLiveSession("cam-on-a-recorder", { profile: "sub" }));
+
+    await vi.waitFor(() => expect(start).toHaveBeenCalled());
+    expect(start).toHaveBeenCalledWith("cam-on-a-recorder", "sub");
   });
 });
