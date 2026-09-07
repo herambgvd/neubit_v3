@@ -56,10 +56,28 @@ def upgrade() -> None:
             op.add_column("cameras", Camera.__table__.c[name].copy())
 
 
+def _indexes_on(column: str) -> list[str]:
+    """Names of ``cameras`` indexes that cover ``column``.
+
+    SQLite refuses ``DROP COLUMN`` while any index still references the column
+    ("error in index ix_cameras_onvif_events_enabled after drop column"), so the
+    index has to go first. Postgres cascades the drop on its own; dropping the
+    index explicitly is a no-op there, not a behaviour change.
+    """
+    bind = op.get_bind()
+    return [
+        ix["name"]
+        for ix in inspect(bind).get_indexes("cameras")
+        if column in (ix.get("column_names") or []) and ix.get("name")
+    ]
+
+
 def downgrade() -> None:
     bind = op.get_bind()
     existing = _camera_columns()
     for name in ("onvif_event_topics", "onvif_events_enabled"):
         if name in existing:
+            for index_name in _indexes_on(name):
+                op.drop_index(index_name, table_name="cameras")
             op.drop_column("cameras", name)
     _table().drop(bind, checkfirst=True)

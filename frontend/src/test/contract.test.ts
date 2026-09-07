@@ -362,8 +362,6 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
   "features/vms/types.ts:NvrRollup": { src: "VISION", file: "dashboard/schemas.py", model: "NvrRollup" },
   "features/vms/types.ts:OnvifConfig": { src: "VISION", file: "cameras/schemas.py", model: "OnvifConfig" },
   "features/vms/types.ts:OnvifEventsBody": { src: "VISION", file: "cameras/schemas.py", model: "OnvifEventsBody" },
-  "features/vms/types.ts:OnvifServerConfigPublic": { src: "VISION", file: "onvif_server/schemas.py", model: "OnvifServerConfigPublic" },
-  "features/vms/types.ts:OnvifServerConfigUpdate": { src: "VISION", file: "onvif_server/schemas.py", model: "OnvifServerConfigUpdate" },
   "features/vms/types.ts:OsdBody": { src: "VISION", file: "cameras/schemas.py", model: "OsdBody" },
   "features/vms/types.ts:PasswordBody": { src: "VISION", file: "devicemgmt/schemas.py", model: "PasswordBody" },
   "features/vms/types.ts:PatrolCreate": { src: "VISION", file: "ptz/schemas.py", model: "PatrolCreate" },

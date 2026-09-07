@@ -1000,33 +1000,6 @@ export interface BulkOpResult {
   items: BulkOpItem[];
 }
 
-/* --- ONVIF server (backend/vision/app/vms/onvif_server/schemas.py) --------- */
-
-export interface OnvifServerConfigUpdate {
-  enabled?: boolean | null;
-  exposed_camera_ids?: string[] | null;
-  service_username?: string | null;
-  service_password?: string | null;
-  device_name?: string | null;
-  advertised_host?: string | null;
-  advertised_http_port?: number | null;
-  advertised_rtsp_port?: number | null;
-}
-
-export interface OnvifServerConfigPublic {
-  id: string;
-  enabled: boolean;
-  exposed_camera_ids: string[];
-  service_username: string;
-  password_set: boolean;
-  device_name: string;
-  advertised_host?: string | null;
-  advertised_http_port?: number | null;
-  advertised_rtsp_port?: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
 /* --- reports (backend/vision/app/vms/reports/schemas.py) ------------------- */
 
 export type ReportKind =

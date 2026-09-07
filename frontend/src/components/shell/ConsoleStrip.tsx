@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
 const STRIP_ROUTES = new Set<string>([
   "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config",
   "/ingest", "/config/security", "/platform", "/config/video-wall",
-  "/config/linkage", "/config/onvif-server", "/federation", "/storage",
+  "/config/linkage", "/federation", "/storage",
   "/config/patterns",
   // Building Intelligence — one modtab plus a segment across the BUILT consoles.
   // The unbuilt Sense/Think surfaces are deliberately absent here: the launcher
@@ -63,19 +63,16 @@ export default function ConsoleStrip() {
   const isVideoWall = pathname === "/config/video-wall";
   const isPatterns = pathname === "/config/patterns";
   const isLinkage = pathname === "/config/linkage";
-  const isExternal = pathname === "/config/onvif-server";
   const isFederation = pathname === "/federation";
   const isStorage = pathname === "/storage";
   const isBI = pathname.startsWith("/bi/");
   const SOLO = isLinkage
     ? { label: "Linkage", icon: "heroicons-outline:bolt" }
-    : isExternal
-      ? { label: "External Access", icon: "heroicons-outline:signal" }
-      : isFederation
-        ? { label: "Federation", icon: "heroicons-outline:share" }
-        : isStorage
-          ? { label: "Storage", icon: "heroicons-outline:circle-stack" }
-          : null;
+    : isFederation
+      ? { label: "Federation", icon: "heroicons-outline:share" }
+      : isStorage
+        ? { label: "Storage", icon: "heroicons-outline:circle-stack" }
+        : null;
 
   return (
     // Bare inline content — the global header owns the bar chrome. nav-scroll +

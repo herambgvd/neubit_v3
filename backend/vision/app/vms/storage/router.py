@@ -1,8 +1,9 @@
 """Recording integrity + evidence-lock router — permission-gated, tenant-scoped.
 
-The storage control-plane (StoragePool/TierRule/RAID under ``/vms/storage/*``) is
-owned by the NVR and has been retired from this VMS. Only the recording
-integrity/lock surface remains here:
+The storage control-plane (pool/tier-rule/RAID CRUD under ``/vms/storage/*``) is
+owned by the NVR and has been retired from this VMS — the ``TierRule`` and
+``RaidArray`` models with it. Only the recording integrity/lock surface remains
+here:
 
   * ``POST /vms/recordings/{id}/lock`` / ``unlock`` / ``verify``.
 

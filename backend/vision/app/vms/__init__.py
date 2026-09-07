@@ -36,7 +36,6 @@ from app.vms.live.router import public_router as live_public_router
 from app.vms.media_nodes.router import router as media_node_router
 from app.vms.motion_search.router import router as motion_search_router
 from app.vms.nvr.router import router as nvr_router
-from app.vms.onvif_server.router import config_router as onvif_server_router
 from app.vms.events.router import router as event_router
 from app.vms.federation.router import router as federation_router
 from app.vms.patterns.router import router as pattern_router
@@ -141,10 +140,6 @@ routers = [
     # recorder machines (Go-nvr api_url + MediaMTX bases + label); the NodeHeartbeatMonitor
     # (app.main lifespan) keeps their reachability status live. vms.config.manage.
     media_node_router,
-    # ONVIF-server config CRUD (P6-C) — /vms/onvif-server/config. Distinct prefix (no
-    # collision with the camera catch-all). The SOAP endpoints (/onvif/*) mount at the
-    # app root separately in app.main (WS-Security, not JWT).
-    onvif_server_router,
     # Video Wall (VW-A) — /vms/walls/*. Distinct prefix (no collision with the camera
     # ``/cameras/{id}`` catch-all). Shared control-room display wall: wall/monitor CRUD +
     # live shared-state (push camera to cell / clear / apply-save preset / start-stop

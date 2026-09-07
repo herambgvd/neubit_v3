@@ -600,3 +600,528 @@ async def list_holds_node(api_url: str, camera_id: str, *, credential: str | Non
     if r.status_code // 100 != 2:
         raise NodeUnavailable(f"{r.status_code}: {r.text[:160]}")
     return r.json() or {}
+
+
+# ── operate-THROUGH-node (Phase-4) — the per-camera DEVICE surface ────────────
+#
+# Everything below closes the last gap between Model A (app/vms/drivers/*, where the
+# VMS decrypted the camera's own credentials and drove the device itself) and Model B
+# (this module, where the owning NVR drives it). The node already serves every one of
+# these; the Go file that owns each handler is named above the function, and the
+# request/response shapes are the Go DTOs verbatim — dicts, because the node's own
+# handlers answer map[string]any and inventing a Pydantic mirror of a payload whose
+# optional keys are the whole point (options_error, tours_supported tri-state,
+# latching:null) would flatten exactly the distinctions those fields exist to draw.
+#
+# Auth: _headers(credential) — the SAME scoped X-Node-Credential the rest of this
+# module presents, falling back to the shared-secret service JWT. No second mechanism.
+#
+# IMPORTANT, and not fixable from this side: every WRITE below is gated node-side on
+# core.PermCameraManage, which federationGrants (estate/federation.go) deliberately
+# does NOT include. So on a node that issued a scoped credential the reads pass and
+# the writes come back 403 → NodeUnavailable → 502. They pass only where the node is
+# still on the shared service JWT (superadmin). Widening the node's grant set is a
+# node-side decision; this module is the surface that will use it when it lands.
+
+_ESTATE = "/api/v1/nvr/estate"
+
+
+async def _node_json(
+    method: str,
+    api_url: str,
+    path: str,
+    *,
+    credential: str | None = None,
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """One estate call → its JSON body, in this module's established idiom: httpx with
+    ``_TIMEOUT``, ``_headers`` auth, and NodeUnavailable on a transport error or any
+    non-2xx (the router maps that to a clean 502). A 204/empty body answers ``{}`` —
+    the node returns 204 for a preset/tour/OSD/mask delete, which is a success, not a
+    missing payload."""
+    url = f"{api_url.rstrip('/')}{_ESTATE}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.request(
+                method, url, headers=_headers(credential), params=params, json=json_body
+            )
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}")
+    if r.status_code == 204 or not (r.content or b"").strip():
+        return {}
+    try:
+        return r.json() or {}
+    except ValueError as e:
+        raise NodeUnavailable(f"node returned a non-JSON body: {e}") from e
+
+
+# ── Image tab (internal/estate/onvifapi/imaging.go) ───────────────────────────
+
+
+async def get_imaging_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/imaging → imaging.go getImaging:
+    { settings, source_token, options, options_error?, focus? { movable, move_options?,
+    move_options_error?, status?, status_error?, detail? } }."""
+    return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/imaging", credential=credential)
+
+
+async def set_imaging_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/imaging → imaging.go setImaging. Body is
+    onvif.ImagingSettings (tt:ImagingSettings20; every child optional — a partial block
+    is the normal way to change one setting). Returns { settings }."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/imaging", credential=credential, json_body=body or {}
+    )
+
+
+async def focus_move_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/imaging/focus/move → imaging.go focusMoveReq
+    { mode: "relative"|"absolute"|"continuous", distance?, position?, speed?, timeout_ms? }.
+    Returns { moved: true, mode, source_token }."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/imaging/focus/move",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def focus_stop_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """POST …/cameras/{id}/onvif/imaging/focus/stop → imaging.go focusStop.
+    Empty body; returns { stopped: true }."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/imaging/focus/stop",
+        credential=credential, json_body={},
+    )
+
+
+# ── Video / Audio encoder tabs (internal/estate/onvifapi/video.go, audio.go) ──
+
+
+async def get_video_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/video → video.go getVideo: { media_service,
+    media2_available, media2_error?, configurations, options?, options_error?, … }."""
+    return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/video", credential=credential)
+
+
+async def set_video_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/video → video.go setVideo. Body is ONE encoder config
+    and MUST carry ``token`` — it names the configuration to change. Returns
+    { config, media_service }."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/video", credential=credential, json_body=body or {}
+    )
+
+
+async def get_audio_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/audio → audio.go getAudio: { configurations, has_audio,
+    scoped, scope_reason?, scope_detail?, writable, device_total?, channel_profiles?,
+    linked_profiles?, unlisted_encoders?, source? }."""
+    return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/audio", credential=credential)
+
+
+async def set_audio_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/audio → audio.go setAudio. Body is one
+    onvif.AudioEncoderConfig and MUST carry ``token``. Returns { config }."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/audio", credential=credential, json_body=body or {}
+    )
+
+
+# ── OSD + privacy masks (internal/estate/onvifapi/overlay.go) ─────────────────
+
+
+async def list_osds_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/osd → overlay.go getOSD:
+    { osds: [onvif.OSD], config_token, options, options_error? }."""
+    return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/osd", credential=credential)
+
+
+async def create_osd_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/osd → overlay.go createOSD. Body is an onvif.OSD; the
+    node FORCES config_token from its own scope and clears token (the device mints it),
+    so neither can be smuggled in. Returns { created: <token>, osds, config_token }."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/osd", credential=credential, json_body=body or {}
+    )
+
+
+async def set_osd_node(
+    api_url: str, camera_id: str, osd_token: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/osd/{osd} → overlay.go setOSD. Rewrites one overlay.
+    Returns { updated: <token>, osds, config_token }."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/osd/{osd_token}",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def delete_osd_node(
+    api_url: str, camera_id: str, osd_token: str, *, credential: str | None = None
+) -> dict:
+    """DELETE …/cameras/{id}/onvif/osd/{osd} → overlay.go deleteOSD (the ONVIF way to
+    turn an overlay OFF). Returns { deleted: <token>, osds, config_token }."""
+    return await _node_json(
+        "DELETE", api_url, f"/cameras/{camera_id}/onvif/osd/{osd_token}", credential=credential
+    )
+
+
+async def list_masks_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/masks → overlay.go getMasks: { masks: [onvif.Mask],
+    config_token, coordinate_space { kind:"onvif_normalized", x_min:-1, x_max:1,
+    y_min:-1, y_max:1, y_axis:"up" }, options, options_error? }."""
+    return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/masks", credential=credential)
+
+
+async def create_mask_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/masks → overlay.go createMask. Body is an onvif.Mask;
+    configuration_token is forced from the node's scope. Returns { created, masks, … }."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/masks", credential=credential, json_body=body or {}
+    )
+
+
+async def set_mask_node(
+    api_url: str, camera_id: str, mask_token: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/masks/{mask} → overlay.go setMask. Returns
+    { updated, masks, … }."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/masks/{mask_token}",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def delete_mask_node(
+    api_url: str, camera_id: str, mask_token: str, *, credential: str | None = None
+) -> dict:
+    """DELETE …/cameras/{id}/onvif/masks/{mask} → overlay.go deleteMask. Returns
+    { deleted, masks, … }."""
+    return await _node_json(
+        "DELETE", api_url, f"/cameras/{camera_id}/onvif/masks/{mask_token}", credential=credential
+    )
+
+
+async def get_backchannel_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/backchannel → overlay.go getBackchannel: whether the
+    device can RECEIVE a talk-back stream, so the console enables or honestly disables
+    push-to-talk. { support { supported, detail, decoder_formats, … }, …errors }."""
+    return await _node_json(
+        "GET", api_url, f"/cameras/{camera_id}/onvif/backchannel", credential=credential
+    )
+
+
+# ── camera-side motion detection (internal/estate/onvifapi/motion.go) ─────────
+
+
+async def get_motion_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/motion → motion.go getMotion: { supported, profile_token,
+    columns, rows, sensitivity, active_cells?, zones?, reason? }. ``supported:false`` with
+    a ``reason`` is an honest device answer, NOT an error."""
+    return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/motion", credential=credential)
+
+
+async def set_motion_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/motion → motion.go motionWriteReq
+    { sensitivity: 0..100, whole_frame: bool, zones: [{…}] }. An empty ``zones`` with
+    ``whole_frame:false`` CLEARS the mask — a distinct intention from whole-frame, which
+    is why the request states which. Returns { written, columns, rows, sensitivity,
+    zones, note? }."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/motion", credential=credential, json_body=body or {}
+    )
+
+
+# ── digital I/O — inputs + relays (internal/estate/onvifapi/io.go) ────────────
+
+
+async def get_io_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/io → io.go getIO. Note ``scope:"device"`` — this payload
+    describes the DEVICE, not the channel, and ``channels_on_device`` / ``channel_names``
+    say who else is affected by driving a relay. { scope, device_service,
+    device_io_service, device_host, channels_on_device, channel_names,
+    relay_state_readable, relay_state_detail, digital_input_detail, digital_inputs,
+    relay_outputs, device_io_supported, …_error?, …_unknown? }."""
+    return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/io", credential=credential)
+
+
+async def set_relay_settings_node(
+    api_url: str, camera_id: str, token: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/io/relays/{token} → io.go relaySettingsReq
+    { mode?: "Bistable"|"Monostable", idle_state?: "closed"|"open", delay_seconds?: int
+    (WHOLE seconds) }. nil/absent leaves the device's own setting alone. Returns
+    { token, settings } re-read from the firmware."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/io/relays/{token}",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def set_relay_state_node(
+    api_url: str, camera_id: str, token: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/io/relays/{token}/state → io.go relayStateReq
+    { state: "active"|"inactive" }. The only call in the estate API whose effect is
+    PHYSICAL and outside the network. Returns { token, state, mode, latching } — where
+    ``latching`` is THREE-valued: null (with mode_unknown) means the device did not
+    report its mode, not "this relay does not latch"."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/io/relays/{token}/state",
+        credential=credential, json_body=body or {},
+    )
+
+
+# ── PTZ presets / patrol / tours (onvifapi/ptz.go, ptz_patrol.go, ptz_tours.go) ──
+
+
+async def get_ptz_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/ptz → ptz.go getPtz: the head's capability report
+    { profile_token, node?, configuration?, presets, presets_error?, status?,
+    status_error?, reason?, detail? }. No ``node`` means no movable head bound to this
+    channel — an honest state, with ``detail`` saying which of the two it is."""
+    return await _node_json("GET", api_url, f"/cameras/{camera_id}/onvif/ptz", credential=credential)
+
+
+async def list_ptz_presets_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/ptz/presets → ptz.go ptzListPresets:
+    { supported, items: [onvif.Preset], total, detail? }. These are the DEVICE's presets,
+    not a stored VMS table."""
+    return await _node_json(
+        "GET", api_url, f"/cameras/{camera_id}/onvif/ptz/presets", credential=credential
+    )
+
+
+async def save_ptz_preset_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/ptz/presets → ptz.go ptzSavePreset { name, token? }.
+    Empty token CREATES; a supplied token OVERWRITES that preset with the current
+    position — two separate intentions the request must state. Returns { token, name }."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/ptz/presets",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def goto_ptz_preset_node(
+    api_url: str, camera_id: str, preset: str, body: dict | None = None, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/ptz/presets/{preset}/goto → ptz.go ptzGotoPreset
+    { speed?, zoom_speed? }; ``preset`` is the DEVICE token from the list above.
+    Returns { moved: true, preset }."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/ptz/presets/{preset}/goto",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def delete_ptz_preset_node(
+    api_url: str, camera_id: str, preset: str, *, credential: str | None = None
+) -> dict:
+    """DELETE …/cameras/{id}/onvif/ptz/presets/{preset} → ptz.go ptzRemovePreset.
+    The node answers 204 No Content, so this returns {}."""
+    return await _node_json(
+        "DELETE", api_url, f"/cameras/{camera_id}/onvif/ptz/presets/{preset}", credential=credential
+    )
+
+
+async def get_patrol_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/ptz/patrol → ptz_patrol.go getPatrol: the HOST-DRIVEN
+    patrol (``kind:"host_driven"`` — the recorder drives it, it is not stored on the
+    camera). { enabled, stops, default_dwell_seconds, random_order, runnable,
+    last_tick_at, last_error, kind, note, native_tours_supported?, native_tours_hint?,
+    presets? }. ``native_tours_supported`` ABSENT means unknown, not "no"."""
+    return await _node_json(
+        "GET", api_url, f"/cameras/{camera_id}/onvif/ptz/patrol", credential=credential
+    )
+
+
+async def set_patrol_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/ptz/patrol → ptz_patrol.go patrolWriteReq
+    { enabled?, stops?: [{preset_token, dwell_seconds}], default_dwell_seconds?,
+    random_order? }. Absent = leave untouched. Returns { saved, enabled, note? }."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/ptz/patrol",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def operate_patrol_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/ptz/patrol/operate → ptz_patrol.go patrolOperate
+    { operation: "start"|"stop" }. Returns { operation, enabled }."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/ptz/patrol/operate",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def list_ptz_tours_node(api_url: str, camera_id: str, *, credential: str | None = None) -> dict:
+    """GET …/cameras/{id}/onvif/ptz/tours → ptz_tours.go ptzListTours — the tours stored
+    ON THE DEVICE. { supported, profile_token, tours, presets, tours_supported?,
+    tours_error?, device_fault?, options?, options_error?, presets_error?, detail? }.
+    ``tours_supported`` is a TRI-STATE: true / false / absent ("we could not ask"), and
+    only the last is worth a Retry — do not collapse it to a boolean."""
+    return await _node_json(
+        "GET", api_url, f"/cameras/{camera_id}/onvif/ptz/tours", credential=credential
+    )
+
+
+async def create_ptz_tour_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/ptz/tours → ptz_tours.go ptzCreateTour, body tourReq
+    { name?, auto_start?, random_preset_order?, recurring_time? (a COUNT, not a time),
+    recurring_duration_seconds?, direction?, spots?: [...] }. Returns
+    { token, populated, tour? }; the node's create is deliberately NOT atomic and says
+    so in its error when the follow-up modify fails."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/ptz/tours",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def modify_ptz_tour_node(
+    api_url: str, camera_id: str, tour: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT …/cameras/{id}/onvif/ptz/tours/{tour} → ptz_tours.go ptzModifyTour (tourReq;
+    a nil field leaves the device's own setting alone, but ``spots`` REPLACES the list
+    wholesale — an empty array clears it). Returns { token, tour }."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/onvif/ptz/tours/{tour}",
+        credential=credential, json_body=body or {},
+    )
+
+
+async def delete_ptz_tour_node(
+    api_url: str, camera_id: str, tour: str, *, credential: str | None = None
+) -> dict:
+    """DELETE …/cameras/{id}/onvif/ptz/tours/{tour} → ptz_tours.go ptzRemoveTour.
+    204 No Content → {}."""
+    return await _node_json(
+        "DELETE", api_url, f"/cameras/{camera_id}/onvif/ptz/tours/{tour}", credential=credential
+    )
+
+
+async def operate_ptz_tour_node(
+    api_url: str, camera_id: str, tour: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/ptz/tours/{tour}/operate → ptz_tours.go ptzOperateTour
+    { operation: "Start"|"Stop"|"Pause"|"Extended" } (onvif.TourOperations; the node
+    canonicalises case). Returns { tour, operation, profile_token }."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/ptz/tours/{tour}/operate",
+        credential=credential, json_body=body or {},
+    )
+
+
+# ── two-way audio: push-to-talk (onvifapi/talk.go, talk_uplink.go) ────────────
+
+
+async def talk_begin_node(
+    api_url: str, camera_id: str, body: dict | None = None, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/onvif/talk → talk.go postTalk, the BEGIN acknowledgement
+    (capability + transport check plus the audited intent). Returns { talking:true,
+    half_duplex, transport, support, started_at }. On a node with no talk transport
+    configured (VE_TALK_TRANSPORT unset) it answers an honest 501 — surfaced here, like
+    every other non-2xx, as NodeUnavailable carrying the node's OWN sentence, so the
+    operator reads "the path is not built" rather than a bare status code."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/onvif/talk", credential=credential, json_body=body or {}
+    )
+
+
+async def talk_uplink_node(
+    api_url: str,
+    camera_id: str,
+    body_stream,
+    *,
+    credential: str | None = None,
+    timeout: float | None = None,
+) -> dict:
+    """POST …/cameras/{id}/onvif/talk/uplink → talk_uplink.go postTalkUplink — the
+    microphone leg itself, a STREAMED PCM16LE 8 kHz mono body (the node packetizes
+    20 ms / 160-sample frames). Returns { talked, half_duplex, codec, frames_sent,
+    finished_at }.
+
+    ``body_stream`` is an async byte iterator (FastAPI's ``request.stream()``), passed
+    to httpx as a streaming body rather than buffered: a talk press is open-ended, and
+    reading it into memory first would both cap how long an operator may hold the
+    button and delay every frame until they let go. It is the ONE call in this module
+    that does not go through ``_node_json`` — for that reason, and no other.
+
+    The timeout is deliberately NOT ``_TIMEOUT``: 8 s is right for a control call and
+    would cut a talk off mid-sentence. ``None`` (the default) means no read timeout —
+    the press ends when the operator's body stream ends."""
+    url = f"{api_url.rstrip('/')}{_ESTATE}/cameras/{camera_id}/onvif/talk/uplink"
+    headers = dict(_headers(credential))
+    headers["Content-Type"] = "application/octet-stream"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as c:
+            r = await c.post(url, headers=headers, content=body_stream)
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}")
+    try:
+        return r.json() or {}
+    except ValueError as e:
+        raise NodeUnavailable(f"node returned a non-JSON body: {e}") from e
+
+
+# ── forensic motion search (internal/estate/motionsearch.go) ─────────────────
+
+
+async def motion_search_node(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST …/cameras/{id}/motion-search → motionsearch.go motionSearchRequest
+    { from, to (RFC3339, both required), region? {x,y,w,h in 0..1}, sensitivity? (1..100,
+    default 50), sample_interval_sec? (default 1), min_duration_sec?, merge_gap_sec? }.
+
+    Returns { hits:[{start,end,duration_sec,score}], examined_from, examined_to,
+    frames_examined, sample_interval_sec, complete, notes, gaps, summary, method }.
+
+    ``method`` and ``summary`` are a NON-NEGOTIABLE disclosure the node carries on every
+    response: this is region pixel-difference over recorded frames, NOT AI — no object
+    detection, no classification. Relay them to the operator verbatim; a hit list
+    stripped of them is exactly the output somebody reads as "three intruders".
+
+    ``complete:false`` with ``notes`` means a bound bit (span / frame budget / deadline)
+    and the window actually examined is narrower than the one asked for — which is
+    precisely when an empty hit list must NOT be read as "the footage is clear".
+
+    Note this is a bare estate route, NOT under /onvif/: it reads the recording index
+    and decodes segments; it never touches the camera."""
+    # A longer budget than _TIMEOUT: this decodes footage, and 8s is a control-call
+    # timeout, not a search one. The node applies its own bounds and reports them.
+    url = f"{api_url.rstrip('/')}{_ESTATE}/cameras/{camera_id}/motion-search"
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as c:
+            r = await c.post(url, headers=_headers(credential), json=body or {})
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}")
+    return r.json() or {}

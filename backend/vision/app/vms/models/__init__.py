@@ -16,10 +16,11 @@ Domain split:
   * ``nvr``        — NVR
   * ``group``      — CameraGroup + CameraACL
   * ``health``     — CameraHealth
-  * ``media_node`` — MediaNode + StreamShard
+  * ``media_node`` — MediaNode (a camera's node placement lives on Camera.media_node_id)
   * ``live``       — PlaybackSession (live/recorded viewer sessions, P2)
   * ``recording``  — Recording (finalized recording-segment metadata, P3)
-  * ``storage``    — StoragePool + TierRule (where segments live + tiering, P3-B)
+  * ``storage``    — StoragePool (where recorded segments live, P3-B). Tiering and
+                     RAID are the NVR's job; TierRule/RaidArray were deleted.
   * ``pattern``    — CameraPattern (video-wall rotating group sequences, P3-C)
   * ``export``     — ExportJob (clip-export: concat recorded segments → mp4, P4-B)
   * ``event``      — VmsEvent (normalized camera device / system events, P5-A)
@@ -46,15 +47,14 @@ from .group import CameraACL, CameraGroup
 from .health import CameraHealth
 from .linkage import LinkageFire, LinkageRule
 from .live import PlaybackSession
-from .media_node import MediaNode, StreamShard
+from .media_node import MediaNode
 from .motion_search import MotionSearchJob
 from .nvr import NVR
-from .onvif_server import OnvifServerConfig
 from .pattern import CameraPattern
 from .ptz import PtzPatrol, PtzPreset
 from .recording import Recording
 from .report import ReportRun, ReportSchedule
-from .storage import RaidArray, StoragePool, TierRule
+from .storage import StoragePool
 from .videowall import VideoWall, WallMonitor, WallPreset, WallTour
 
 __all__ = [
@@ -65,12 +65,9 @@ __all__ = [
     "CameraACL",
     "CameraHealth",
     "MediaNode",
-    "StreamShard",
     "PlaybackSession",
     "Recording",
     "StoragePool",
-    "TierRule",
-    "RaidArray",
     "CameraPattern",
     "ExportJob",
     "VmsEvent",
@@ -78,7 +75,6 @@ __all__ = [
     "LinkageFire",
     "ReportSchedule",
     "ReportRun",
-    "OnvifServerConfig",
     "VideoWall",
     "WallMonitor",
     "WallPreset",

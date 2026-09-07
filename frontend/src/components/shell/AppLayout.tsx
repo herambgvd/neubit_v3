@@ -123,7 +123,6 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
     pathname === "/tags" ||
     pathname === "/config/patterns" ||
     pathname === "/config/linkage" ||
-    pathname === "/config/onvif-server" ||
     pathname === "/config/video-wall" ||
     pathname === "/general" ||
     pathname === "/workflow-config" ||

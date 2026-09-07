@@ -20,7 +20,7 @@ from app.db import Base
 
 # Import all model modules so their tables register on Base.metadata.
 # vms domain: Camera + MediaProfile + NVR + CameraGroup + CameraACL + CameraHealth
-#             + MediaNode + StreamShard + CameraPattern + VmsEvent + LinkageRule +
+#             + MediaNode + CameraPattern + VmsEvent + LinkageRule +
 #             LinkageFire (…). The models package __init__ imports every submodule, so
 #             this single import registers all VMS tables.
 import app.vms.models  # noqa: E402,F401
@@ -29,7 +29,11 @@ config = context.config
 if config.config_file_name:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# VE_DATABASE_URL is the source of truth in every deployment. A caller that has
+# ALREADY put a url on the config wins, though: that is how tests/test_migrations.py
+# points the chain at a throwaway scratch database instead of the service's own.
+if not config.get_main_option("sqlalchemy.url", None):
+    config.set_main_option("sqlalchemy.url", get_settings().database_url)
 target_metadata = Base.metadata
 
 

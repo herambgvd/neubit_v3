@@ -8,10 +8,12 @@ Enterprise-VMS RAID parity (Genetec/Milestone class): the VMS monitors software-
 (mdadm) arrays and alerts on degrade. Adds:
 
   * ``raid_arrays`` — one row per md device (``/dev/md0``), the live health snapshot the
-    ``RaidMonitor`` worker upserts every poll (derived health, working/failed/total
-    devices, rebuild %). NOT tenant-scoped (physical node hardware). A fresh deploy gets
-    it from the ``RaidArray`` model via the 0001 baseline sweep; this migration creates
-    it on already-deployed DBs.
+    ``RaidMonitor`` worker upserted every poll (derived health, working/failed/total
+    devices, rebuild %). NOT tenant-scoped (physical node hardware). The ``RaidArray``
+    model has since been DELETED — RAID is the standalone NVR's job — so the 0001
+    baseline sweep no longer creates this table and ``0028_drop_raid_tier`` drops it
+    again. The literal DDL below is kept so this revision still reproduces the schema
+    of its day; a fresh ``upgrade head`` creates then drops it.
   * ``storage_pools.raid_level`` + ``storage_pools.raid_device`` — optional documentary
     link from a local pool to its RAID array (UI cross-link to health).
 

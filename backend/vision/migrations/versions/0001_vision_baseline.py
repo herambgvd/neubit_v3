@@ -6,12 +6,18 @@ Create Date: 2026-07-08
 
 Creates the vision service's own tables in its own DB (neubit_vision): the full VMS
 camera domain — ``cameras``, ``media_profiles``, ``nvrs``, ``camera_groups``,
-``camera_acl``, ``camera_health``, ``media_nodes`` and ``stream_shards``. Every
+``camera_acl``, ``camera_health`` and ``media_nodes``. Every
 table is TENANT-SCOPED (nullable ``tenant_id``).
 
 ⭐ Migration gotcha: each model module MUST be imported in BOTH ``migrations/env.py``
 AND the ``_tables()`` sweep below (via ``app.vms.models``), or its table is silently
 dropped on a fresh deploy. Add new models to both.
+
+Historical note: this sweep once also created ``storage_tier_rules``, ``raid_arrays``,
+``onvif_server_config`` and ``stream_shards``. Those models are DELETED (the NVR owns
+storage tiering, RAID and answering ONVIF; shard placement became
+``Camera.media_node_id``), so a fresh DB never gets them; ``0028``-``0030`` drop them
+from already-deployed DBs.
 
 Idempotent — uses ``Table.create(checkfirst=True)`` off the live model metadata so
 it is safe to re-run and always matches the ORM (the v3 baseline pattern, same as
@@ -44,17 +50,13 @@ def _tables():
         MediaNode,
         MediaProfile,
         MotionSearchJob,
-        OnvifServerConfig,
         PlaybackSession,
         PtzPatrol,
         PtzPreset,
-        RaidArray,
         Recording,
         ReportRun,
         ReportSchedule,
         StoragePool,
-        StreamShard,
-        TierRule,
         VideoDecoder,
         VideoWall,
         VmsEvent,
@@ -72,12 +74,9 @@ def _tables():
         CameraGroup.__table__,
         CameraACL.__table__,
         CameraHealth.__table__,
-        StreamShard.__table__,
         PlaybackSession.__table__,
         Recording.__table__,
         StoragePool.__table__,
-        TierRule.__table__,
-        RaidArray.__table__,
         CameraPattern.__table__,
         ExportJob.__table__,
         VmsEvent.__table__,
@@ -85,7 +84,6 @@ def _tables():
         LinkageFire.__table__,
         ReportSchedule.__table__,
         ReportRun.__table__,
-        OnvifServerConfig.__table__,
         VideoWall.__table__,
         WallMonitor.__table__,
         WallPreset.__table__,

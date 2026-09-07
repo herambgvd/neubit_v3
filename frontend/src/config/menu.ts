@@ -57,7 +57,7 @@ export const menuItems: NavItem[] = [
 // ── Config surfaces ──────────────────────────────────────────────────
 // The Config sub-tab bar is fully retired: every former Config surface is now its
 // own minimal-chrome console (Users/Roles, Sites, Audit, Workflow, Ingest, System,
-// Security(+API Keys), Platform, Video Wall, Linkage, External Access), reached via
+// Security(+API Keys), Platform, Video Wall, Linkage), reached via
 // the ⊞ MENU navigator's "Configurations" group + the Home Configurations launcher.
 // The former Config surfaces, now standalone consoles — the ⊞ menu navigator's
 // "Configurations" column is built from THIS list.
@@ -82,7 +82,6 @@ export const configConsoles: NavItem[] = [
   { title: "System", icon: "heroicons-outline:adjustments-horizontal", link: "/general", perm: "settings.manage" },
   { title: "Platform", icon: "heroicons-outline:squares-2x2", link: "/platform", perm: "settings.manage" },
   { title: "Audit", icon: "heroicons-outline:clipboard-document-list", link: "/audit", perm: "audit.read" },
-  { title: "External Access", icon: "heroicons-outline:signal", link: "/config/onvif-server", perm: "vms.config.manage", superadmin: true },
 ];
 
 // ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──

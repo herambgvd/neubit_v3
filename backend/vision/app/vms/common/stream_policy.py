@@ -21,8 +21,6 @@ from __future__ import annotations
 
 import os
 
-# The codec browsers can always decode over WebRTC/HLS — the web (sub) stream target.
-WEB_CODEC = "h264"
 # The role of the stream live view prefers (the small, browser-friendly one).
 WEB_STREAM_ROLE = "sub"
 

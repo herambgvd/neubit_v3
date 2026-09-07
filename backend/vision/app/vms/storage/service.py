@@ -1,10 +1,11 @@
 """Recording integrity + default-pool bootstrap — tenant-scoped.
 
-The storage DATA-PLANE (StoragePool/TierRule CRUD, per-pool usage, RAID
-monitoring, retention + hot→cold tiering) has been RETIRED from this VMS: the
-standalone NVR owns all storage/retention/tiering/RAID (it is the recorder that
-writes the segments and sits on the disks). Two movers on the same ``/recordings``
-volume is a data-loss race, so the VMS keeps only:
+The storage DATA-PLANE (pool CRUD, per-pool usage, RAID monitoring, retention +
+hot→cold tiering) has been RETIRED from this VMS: the standalone NVR owns all
+storage/retention/tiering/RAID (it is the recorder that writes the segments and
+sits on the disks). Two movers on the same ``/recordings`` volume is a data-loss
+race. The ``TierRule`` and ``RaidArray`` models went with it — their tables are
+dropped by ``0028_drop_raid_tier``. The VMS keeps only:
 
   * ``ensure_default_pool`` — seeds/promotes the tenant's default StoragePool so a
     P3-A recording always gets a ``storage_pool_id`` stamped at finalize.

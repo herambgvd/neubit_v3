@@ -1,9 +1,14 @@
-"""Storage pools + tiering rules — tenant-scoped (P3-B).
+"""Storage pools — tenant-scoped (P3-B).
 
-Where recorded segments LIVE (local disk / NAS / S3), the tiering policy that moves
-them hot→cold, and the retention/integrity machinery the sweep worker runs against
-them. Ported (control-plane subset) from ``gvd_nvr`` ``storage/models.py`` adapted to
-the v3 tenant-scoped ORM conventions:
+Where recorded segments LIVE (local disk / NAS / S3). This is all that is left of
+the storage domain: the DATA-PLANE (tiering rules, RAID monitoring, retention +
+hot→cold movement) is owned by the standalone NVR — the recorder that writes the
+segments and sits on the disks — so the ``TierRule`` and ``RaidArray`` models were
+deleted (their tables dropped by ``0028_drop_raid_tier``). The pool row survives only
+so a finalized recording can be stamped with a ``storage_pool_id``.
+
+Ported (control-plane subset) from ``gvd_nvr`` ``storage/models.py`` adapted to the
+v3 tenant-scoped ORM conventions:
 
   * nullable ``tenant_id`` (NULL = platform/system default pool);
   * plain-string ``pool_type`` / ``mount_state`` — NO PG enum (asyncpg add-column enum
@@ -110,90 +115,12 @@ class StoragePool(Base):
     reachable: Mapped[bool | None] = mapped_column(Boolean)
 
     # ── RAID link (optional) ────────────────────────────────────────────
-    # A local pool may sit on a software-RAID array. These are DOCUMENTARY: they
-    # let the UI show "this pool is on /dev/md0, RAID5" and cross-link the pool to
-    # its live health in ``raid_arrays`` (matched on ``raid_device``). NULL = the
-    # pool is not on a monitored RAID array (plain disk / NAS / S3).
+    # PURELY DOCUMENTARY labels: a local pool may sit on a software-RAID array, and
+    # these record which one. Nothing in this VMS monitors RAID any more — the
+    # ``raid_arrays`` health table these once cross-linked to is gone (dropped by
+    # ``0028_drop_raid_tier``); the NVR owns array health. NULL = not on a RAID array.
     raid_level: Mapped[str | None] = mapped_column(String(16))  # raid1|raid5|raid6|raid10
     raid_device: Mapped[str | None] = mapped_column(String(64))  # /dev/md0
-
-    created_by: Mapped[str | None] = mapped_column(String(64))
-    updated_by: Mapped[str | None] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
-
-
-class RaidArray(Base):
-    """Live health snapshot of a software-RAID (mdadm) array — node infrastructure.
-
-    RAID arrays are PHYSICAL, node-global hardware (not tenant data), so this table is
-    NOT tenant-scoped: one row per md device (``/dev/md0``), upserted every poll by the
-    ``RaidMonitor`` worker off ``app.vms.common.raid_service``. It exists so the Storage
-    UI / dashboard / reports can read array health without shelling out per request, and
-    so a healthy→degraded transition can be detected (compare stored ``health`` before
-    upsert) to fire a ``raid_degraded`` alert exactly once.
-
-    ⭐ Enterprise-VMS parity: Genetec/Milestone all surface RAID health + degrade alerts;
-    the VMS does not BUILD the array (OS/controller does) — it monitors + alerts.
-    """
-
-    __tablename__ = "raid_arrays"
-    __table_args__ = (Index("ix_raid_arrays_health", "health"),)
-
-    # md device path is the natural key (one array per device on a node).
-    device: Mapped[str] = mapped_column(String(64), primary_key=True)
-    level: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'unknown'"))
-    # Raw mdadm "State :" line (e.g. "clean", "clean, degraded", "active, resyncing").
-    state: Mapped[str | None] = mapped_column(String(128))
-    # Derived operator status: healthy | degraded | rebuilding | failed | unknown.
-    health: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'unknown'"))
-    working_devices: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    failed_devices: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    total_devices: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    rebuild_status: Mapped[str | None] = mapped_column(String(255))  # raw "Rebuild Status :" line
-    rebuild_percent: Mapped[int | None] = mapped_column(Integer)  # parsed % (null = not rebuilding)
-
-    # When this array was first seen degraded in the CURRENT degraded episode (cleared
-    # on recovery) — lets the UI show "degraded for 3h" and the alert carry duration.
-    first_degraded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_seen_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
-
-
-class TierRule(Base):
-    """Move recordings older than ``after_age_hours`` from ``source_pool``→``target_pool``.
-
-    Evaluated by the retention+tiering sweep worker (``app.main`` lifespan). Kept flat
-    (pool ids as plain strings, not FKs) so a pool delete doesn't cascade-drop the
-    rule — the worker tolerates a dangling ref by skipping gracefully.
-    """
-
-    __tablename__ = "storage_tier_rules"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "name", name="uq_storage_tier_rules_tenant_name"),
-        Index("ix_storage_tier_rules_tenant", "tenant_id"),
-        Index("ix_storage_tier_rules_enabled", "enabled"),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
-
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    source_pool_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    target_pool_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    after_age_hours: Mapped[int] = mapped_column(Integer, nullable=False)
-    enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
-    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_by: Mapped[str | None] = mapped_column(String(64))
     updated_by: Mapped[str | None] = mapped_column(String(64))

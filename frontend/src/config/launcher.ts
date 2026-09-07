@@ -267,7 +267,6 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           { icon: "heroicons-outline:rectangle-group", label: "Patterns", href: "/config/patterns", tone: "blue", perm: "vms.config.manage", module: "vms" },
           { icon: "heroicons:rectangle-stack", label: "Workflow", href: "/workflow-config", tone: "blue", perm: "neubit.read", module: "workflow" },
           { icon: "heroicons:arrow-down-on-square-stack", label: "Ingest", href: "/ingest", tone: "blue", perm: "neubit.read", module: "workflow" },
-          { icon: "heroicons:signal", label: "External Access", href: "/config/onvif-server", tone: "blue", perm: "vms.config.manage" },
         ],
       },
     ],

@@ -48,6 +48,12 @@ exec "$DOCKER" run --rm --network none \
   -v "$REPO/backend/vision/app:/app/app:ro" \
   -v "$REPO/backend/vision/tests:/app/tests:ro" \
   -v "$REPO/backend/vision/pyproject.toml:/app/pyproject.toml:ro" \
+  `# migrations + alembic.ini: tests/test_migrations.py runs the chain against a
+   # scratch database, and it has to run the WORKING TREE's chain. Without these
+   # mounts it tests the copy baked into the image, which is exactly as old as the
+   # last build — a stale image made the suite pass while a fresh install was broken.` \
+  -v "$REPO/backend/vision/migrations:/app/migrations:ro" \
+  -v "$REPO/backend/vision/alembic.ini:/app/alembic.ini:ro" \
   -v "$REPO/backend/kernel/kernel:/opt/kernel/kernel:ro" \
   -w /app \
   -e PYTHONDONTWRITEBYTECODE=1 \

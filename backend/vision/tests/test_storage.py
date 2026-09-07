@@ -1,7 +1,8 @@
 """Recording-integrity tests (no network) — checksum, verify, lock, default pool.
 
-The storage data-plane (StoragePool/TierRule CRUD, retention, capacity, tiering,
-RAID) was retired from this VMS — the NVR owns it — so those tests are gone. What
+The storage data-plane (pool CRUD, retention, capacity, tiering, RAID) was retired
+from this VMS — the NVR owns it, and the ``TierRule``/``RaidArray`` models are
+deleted — so those tests are gone. What
 remains is what the VMS still owns: the default-pool bootstrap + recording
 integrity/lock/verify, exercised against an in-memory SQLite DB with the filesystem
 backed by ``tmp_path``.

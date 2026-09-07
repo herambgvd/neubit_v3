@@ -1,8 +1,9 @@
 """Recording integrity / lock schemas.
 
-The storage data-plane schemas (StoragePool + TierRule CRUD, pool usage, RAID
-health) were retired along with the VMS storage control-plane — the NVR owns
-storage/retention/tiering/RAID. Only the recording integrity/lock/verify
+The storage data-plane schemas (pool + tier-rule CRUD, pool usage, RAID health)
+were retired along with the VMS storage control-plane — the NVR owns
+storage/retention/tiering/RAID — and the ``TierRule``/``RaidArray`` models they
+mirrored are themselves gone. Only the recording integrity/lock/verify
 request+response shapes remain.
 """
 

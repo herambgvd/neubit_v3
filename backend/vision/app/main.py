@@ -51,8 +51,6 @@ from app.vms.motion_search import MotionSearchWorker
 from app.vms.ptz import get_cycler
 from app.vms.linkage import LinkageConsumer
 from app.vms.media_nodes import NodeHeartbeatMonitor
-from app.vms.onvif_server import advertiser as onvif_advertiser
-from app.vms.onvif_server import soap_router as onvif_soap_router
 from app.vms.recording import RecordingConsumer, RecordingScheduler
 from app.vms.reports import ReportScheduler
 # NOTE: storage retention/tiering + RAID monitoring are owned by the NVR, not this
@@ -178,16 +176,8 @@ async def lifespan(app: FastAPI):
     await patrol_cycler.rearm_running()
     app.state.patrol_cycler = patrol_cycler
 
-    # P6-C ONVIF server: advertise OUR VMS as an ONVIF device via WS-Discovery so
-    # external VMS/recorders (Milestone/Genetec/NVRs) auto-find us on the LAN and pull
-    # our camera streams + recordings over the /onvif/* SOAP endpoints. GRACEFUL:
-    # multicast is often unavailable in a bridged Docker network → the advertiser logs
-    # + disables itself (SOAP still works; clients add us by URL); never crashes.
-    await onvif_advertiser.start()
-
     yield
 
-    await onvif_advertiser.stop()
     await patrol_cycler.stop_all()
     await report_scheduler.stop()
     await event_supervisor.stop()
@@ -253,8 +243,7 @@ def create_app() -> FastAPI:
     # onboarding mounts alongside in P1-E.
     # Every VMS route is gated by the tenant's "vms" module + an unexpired license
     # (super-admins bypass both). Module off → 403 FEATURE_DISABLED; past-grace
-    # license → 403 LICENSE_EXPIRED. The ONVIF SOAP server below is NOT gated here
-    # (it authenticates by WS-Security, not the kernel JWT).
+    # license → 403 LICENSE_EXPIRED.
     vms_gate = [Depends(require_feature("vms")), Depends(require_active_license())]
     for r in vms_routers:
         app.include_router(r, prefix=settings.api_prefix, dependencies=vms_gate)
@@ -264,12 +253,6 @@ def create_app() -> FastAPI:
     # media token, so it must stay reachable for HLS/WebRTC even without a session JWT.
     for r in vms_public_routers:
         app.include_router(r, prefix=settings.api_prefix)
-
-    # P6-C ONVIF SOAP server — mounted at the app ROOT (NOT under api_prefix): external
-    # ONVIF clients hit ``http://<host>/onvif/device_service`` etc. Auth is WS-Security
-    # UsernameToken (resolves the tenant), NOT the kernel JWT — the gateway routes
-    # ``/onvif`` here (see gateway/dynamic/routes.yml).
-    app.include_router(onvif_soap_router)
 
     return app
 

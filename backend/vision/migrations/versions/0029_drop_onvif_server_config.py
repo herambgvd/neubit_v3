@@ -1,37 +1,49 @@
-"""onvif_server_config table — the VMS answering as an ONVIF device (P6-C)
+"""drop onvif_server_config — answering as an ONVIF device belongs to the NVR
 
-Revision ID: 0011_onvif_server
-Revises: 0010_signed_export_reports
-Create Date: 2026-07-09
+Revision ID: 0029_drop_onvif_server_config
+Revises: 0028_drop_raid_tier
+Create Date: 2026-09-07
 
-Adds the per-tenant ``onvif_server_config`` table that backed the ONVIF SOAP server
-(``/onvif/*``): enable flag, exposed-camera allow-list, WS-Security service creds
-(password reversibly encrypted), and advertised host/ports for the RTSP StreamUri +
-WS-Discovery XAddr.
+``onvif_server_config`` (0011) held one row per tenant describing how THIS VMS would
+present itself as an ONVIF device to a third-party client: exposed cameras,
+WS-Security service credentials, advertised host/ports. The whole VMS-side module
+(``app/vms/onvif_server/`` — SOAP, WS-Discovery advertiser, auth, config CRUD) has
+been removed with it.
 
-The DDL is spelled out literally here because the ``OnvifServerConfig`` model NO
-LONGER EXISTS — serving ONVIF is the standalone NVR's job (``internal/onvifserver/``);
-a control plane that owns no media cannot serve ONVIF media, so the whole VMS-side
-module was deleted. This revision still creates the table so that stepping the
-history forward one revision at a time reproduces the schema of the day;
-``0029_drop_onvif_server_config`` drops it again later, so a fresh ``upgrade head``
-ends with no such table.
+The reason is ownership, not tidiness: an ONVIF client that finds us will
+``GetStreamUri`` and expect media. The VMS aggregates and commands; it does not hold
+the streams. The standalone NVR does, and already implements the server side
+(``internal/onvifserver/`` — server.go, soap.go, discovery.go). A third-party
+recorder should point at the NVR.
+
+The table is empty in the live deployment. Guarded/idempotent both ways.
 """
 
-from alembic import op
-import sqlalchemy as sa
+from __future__ import annotations
 
-revision = "0011_onvif_server"
-down_revision = "0010_signed_export_reports"
+import sqlalchemy as sa
+from alembic import op
+
+revision = "0029_drop_onvif_server_config"
+down_revision = "0028_drop_raid_tier"
 branch_labels = None
 depends_on = None
 
 
-def upgrade() -> None:
-    bind = op.get_bind()
-    if sa.inspect(bind).has_table("onvif_server_config"):
-        return
+def _has_table() -> bool:
+    return sa.inspect(op.get_bind()).has_table("onvif_server_config")
 
+
+def upgrade() -> None:
+    if _has_table():
+        op.drop_table("onvif_server_config")
+
+
+def downgrade() -> None:
+    # Recreates the table as 0011 left it. The model is gone, so this is literal DDL —
+    # a downgrade gets the schema back, not the code that used it.
+    if _has_table():
+        return
     op.create_table(
         "onvif_server_config",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -64,13 +76,3 @@ def upgrade() -> None:
     )
     op.create_index("ix_onvif_server_tenant", "onvif_server_config", ["tenant_id"], unique=True)
     op.create_index("ix_onvif_server_enabled", "onvif_server_config", ["enabled"])
-
-
-def downgrade() -> None:
-    bind = op.get_bind()
-    if not sa.inspect(bind).has_table("onvif_server_config"):
-        return
-    op.drop_index("ix_onvif_server_enabled", table_name="onvif_server_config")
-    op.drop_index("ix_onvif_server_tenant", table_name="onvif_server_config")
-    op.drop_index("ix_onvif_server_username", table_name="onvif_server_config")
-    op.drop_table("onvif_server_config")

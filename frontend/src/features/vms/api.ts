@@ -114,8 +114,6 @@ import type {
   NvrRecordingsResponse,
   NvrUpdate,
   OnvifEventsBody,
-  OnvifServerConfigPublic,
-  OnvifServerConfigUpdate,
   OsdBody,
   PasswordBody,
   PatrolCreate,
@@ -171,7 +169,6 @@ const STORAGE = "/vms/storage";
 const EXPORT = "/vms/export";
 const REPORTS = "/vms/reports";
 const REPORT_SCHEDULES = "/vms/report-schedules";
-const ONVIF_SERVER = "/vms/onvif-server";
 const BOOKMARKS = "/vms/bookmarks";
 const EVIDENCE = "/vms/evidence";
 
@@ -927,21 +924,6 @@ export const vms = {
       applyStreamPolicy: (camera_ids: string[]) =>
         unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/apply-stream-policy`, { camera_ids })),
     },
-  },
-
-  // ── ONVIF-server config (P6-C) — expose OUR cameras to a 3rd-party VMS ────
-  // Per-tenant interop: Milestone/Genetec/etc. pull our cameras over ONVIF.
-  // Public shape: { id, enabled, exposed_camera_ids[] ("*"=all), service_username,
-  //   password_set, device_name, advertised_host, advertised_http_port,
-  //   advertised_rtsp_port }. service_password is WRITE-ONLY. Gate: vms.config.manage.
-  onvifServer: {
-    // GET /vms/onvif-server/config → the config (or a transient default).
-    getConfig: () => unwrap(api.get<OnvifServerConfigPublic>(`${ONVIF_SERVER}/config`)),
-    // PUT /vms/onvif-server/config { enabled?, exposed_camera_ids?, service_username?,
-    //   service_password?, device_name?, advertised_host?, advertised_http_port?,
-    //   advertised_rtsp_port? } — PATCH semantics; omit unchanged secrets.
-    setConfig: (body: OnvifServerConfigUpdate) =>
-      unwrap(api.put<OnvifServerConfigPublic>(`${ONVIF_SERVER}/config`, body)),
   },
 
   // ── NVR footage extraction (P4-B) — search + play an onboarded NVR's own
