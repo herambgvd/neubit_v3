@@ -71,8 +71,14 @@ PROTECTED = _protected()
 
 def test_the_walk_sees_the_whole_surface():
     """A walk that finds nothing makes every assertion below vacuous — and this
-    router uses deferred includes, where a naive iteration sees a handful."""
-    assert len(PROTECTED) > 190, len(PROTECTED)
+    router uses deferred includes, where a naive iteration sees a handful.
+
+    The floor is a SANITY check on the walk, not a target for the service's size.
+    It was 190 when the VMS still carried its own device plane; that plane moved to
+    the recorder that owns the cameras, so the surface is legitimately smaller now.
+    Lower it when routes are deliberately removed — never raise it to paper over a
+    walk that stopped seeing them."""
+    assert len(PROTECTED) > 150, len(PROTECTED)
 
 
 @pytest.mark.parametrize("method,url", PROTECTED, ids=lambda v: str(v))

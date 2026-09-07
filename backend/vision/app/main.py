@@ -42,7 +42,6 @@ from kernel.events import subject
 from app.db import get_sessionmaker
 from app.vms import routers as vms_routers
 from app.vms import public_routers as vms_public_routers
-from app.vms.anr import AnrConsumer
 from app.vms.common.events import bus
 from app.vms.events import EventSupervisor
 from app.vms.health import HealthSampler
@@ -149,17 +148,12 @@ async def lifespan(app: FastAPI):
     await report_scheduler.start()
     app.state.report_scheduler = report_scheduler
 
-    # P6-A ANR fulfiller: subscribe to the Go ``nvr``'s ``tenant.*.vms.anr.request``
-    # (a detected recording gap → an ANRJob). Per request the fulfiller resolves the
-    # footage source (NVR channel → the NVR's driver; else an edge/Profile-G camera →
-    # its driver), reuses the P4-B footage search to get a replay URI, ffmpeg-pulls the
-    # gap into an fmp4 segment on the shared recordings volume (which the segment tracker
-    # turns into a Recording row), and publishes ``tenant.<id>.vms.anr.result``. Own DB
-    # session per message; bounded concurrency; idempotent per job_id; graceful (an
-    # unreachable edge/NVR or ffmpeg failure → result{status:failed}, never crashes).
-    anr_consumer = AnrConsumer(bus, get_sessionmaker())
-    await anr_consumer.start()
-    app.state.anr_consumer = anr_consumer
+    # No ANR fulfiller here any more. The recorder detects its own recording gaps
+    # AND fills them now (nvr internal/anr + estate.BackfillGap): it holds the camera
+    # credentials, it speaks ONVIF Profile-G, and it owns the disk the pulled segment
+    # lands on. This service was reaching across the network to write into another
+    # box's recordings volume, which made it a third writer there alongside the
+    # recorder's own segment writer and its retention janitor.
 
     # No PTZ patrol cycler here any more. Patrols are HOST-DRIVEN by the recorder
     # that owns the camera — it steps the head preset by preset and survives its own
