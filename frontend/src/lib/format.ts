@@ -17,13 +17,22 @@ type IsAny<T> = 0 extends 1 & T ? true : false;
  *  collapse every not-yet-typed screen to `unknown[]`. No `any` originates here. */
 export type ItemsOf<D> = IsAny<D> extends true
   ? any[] // eslint-disable-line @typescript-eslint/no-explicit-any -- passes the caller's own `any` through
-  : D extends readonly (infer T)[]
+  : ItemsOfEach<NonNullable<D>>;
+
+/** The element half, split out so `D` is a NAKED type parameter and the
+ *  conditional distributes. Several endpoints are typed `ItemList<T> | T[]`
+ *  ("envelope or bare array"); tested as one union neither branch matches and
+ *  every one of them fell through to `unknown[]`. */
+type ItemsOfEach<D> = D extends readonly (infer T)[]
+  ? T[]
+  : D extends { items?: readonly (infer T)[] | null }
     ? T[]
-    : D extends { items?: readonly (infer T)[] | null }
-      ? T[]
-      : unknown[];
+    : unknown[];
 
 // List endpoints return either a bare array or { items, total }. Normalise to array.
+// NonNullable above is load-bearing: the usual argument is a react-query `.data`,
+// which is `Envelope | undefined` until the query resolves. Distributing over that
+// union gave `T[] | unknown[]`, so every typed list collapsed back to unknown[].
 export const asItems = <D>(d: D): ItemsOf<D> =>
   (Array.isArray(d) ? d : (d as { items?: unknown[] | null } | null | undefined)?.items || []) as ItemsOf<D>;
 

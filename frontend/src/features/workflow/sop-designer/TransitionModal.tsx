@@ -6,6 +6,7 @@
 // tokens and wired to the v3 API. Two-column at lg+ so the notification section
 // doesn't blow up modal height.
 import { useEffect, useMemo, useState } from "react";
+import type { Dispatch, ReactNode, SetStateAction, SyntheticEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -13,19 +14,32 @@ import { toast } from "sonner";
 import { Button, Modal } from "@/components/ui/kit";
 import { fieldClass, areaClass, FieldLabel } from "@/components/common";
 import { api, apiError } from "@/lib/api";
-import { titleize, asItems, idOf } from "@/lib/format";
+import type { Page } from "@/lib/types";
+import { titleize, asItems } from "@/lib/format";
 import { workflow as wfApi } from "../api";
+import type {
+  AssignableRole,
+  AssignableUser,
+  CreateTransitionRequest,
+  FormPublic,
+  StatePublic,
+  TransitionNotificationConfig,
+  TransitionPublic,
+  UpdateTransitionRequest,
+} from "../types";
 
-const tid = (t) => idOf(t, "transition_id", "id");
-const NOTIFY_TYPES = [
+type NotifyType = TransitionNotificationConfig["type"];
+
+const NOTIFY_TYPES: { value: NotifyType; label: string }[] = [
   { value: "none", label: "None" },
   { value: "email", label: "Email" },
   { value: "sms", label: "SMS" },
   { value: "both", label: "Both" },
 ];
+const isNotifyType = (v: string): v is NotifyType => NOTIFY_TYPES.some((t) => t.value === v);
 
 // Small titled group (v2's <Section>).
-function Section({ title, children }: any) {
+function Section({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
     <div>
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{title}</div>
@@ -34,39 +48,54 @@ function Section({ title, children }: any) {
   );
 }
 
-const chipCls = (active) =>
+const chipCls = (active: boolean): string =>
   `text-xs rounded-full border px-2.5 py-1 transition ${
     active
       ? "border-nb-blue bg-[rgba(96,165,250,.10)] text-nb-blueb"
       : "border-nb-line bg-[rgba(8,15,34,.5)] text-nb-muted hover:bg-[rgba(96,165,250,.1)]"
   }`;
 
-export default function TransitionModal({ sopId, states = [], transition, defaults, onClose, onSaved }: any) {
+/** Edit sends a PATCH body; create needs the endpoints too. */
+type SaveVars =
+  | { id: string; body: UpdateTransitionRequest }
+  | { id: null; body: CreateTransitionRequest };
+
+export interface TransitionModalProps {
+  sopId: string;
+  states?: StatePublic[];
+  /** The transition being edited; null creates one between `defaults`. */
+  transition: TransitionPublic | null;
+  defaults?: { from_state_id?: string; to_state_id?: string } | null;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+export default function TransitionModal({ sopId, states = [], transition, defaults, onClose, onSaved }: TransitionModalProps) {
   const isEdit = !!transition;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [requiresNote, setRequiresNote] = useState(false);
   const [confirmationRequired, setConfirmationRequired] = useState(false);
-  const [requiredRoleIds, setRequiredRoleIds] = useState<any[]>([]);
+  const [requiredRoleIds, setRequiredRoleIds] = useState<string[]>([]);
   const [formId, setFormId] = useState("");
   // Notification config
-  const [notifyType, setNotifyType] = useState("none");
-  const [notifyRoleIds, setNotifyRoleIds] = useState<any[]>([]);
-  const [notifyUserIds, setNotifyUserIds] = useState<any[]>([]);
+  const [notifyType, setNotifyType] = useState<NotifyType>("none");
+  const [notifyRoleIds, setNotifyRoleIds] = useState<string[]>([]);
+  const [notifyUserIds, setNotifyUserIds] = useState<string[]>([]);
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [smsMessage, setSmsMessage] = useState("");
   const [nameErr, setNameErr] = useState("");
 
   useEffect(() => {
-    setName(transition?.label || transition?.name || "");
+    setName(transition?.label || "");
     setDescription(transition?.description || "");
     setRequiresNote(!!transition?.requires_note);
     setConfirmationRequired(!!transition?.confirmation_required);
     setRequiredRoleIds(transition?.required_role_ids || []);
-    setFormId(transition?.form_id || transition?.form_config?.form_id || "");
-    const nc = transition?.notification_config || {};
+    setFormId(transition?.form_id || "");
+    const nc: Partial<TransitionNotificationConfig> = transition?.notification_config || {};
     setNotifyType(nc.type || "none");
     setNotifyRoleIds(nc.role_ids || []);
     setNotifyUserIds(nc.user_ids || []);
@@ -76,25 +105,25 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
     setNameErr("");
   }, [transition]);
 
-  const formsQ = useQuery<any>({ queryKey: ["wf-forms"], queryFn: () => wfApi.forms.list({ limit: 100 }) });
-  const forms = asItems(formsQ.data);
+  const formsQ = useQuery({ queryKey: ["wf-forms"], queryFn: () => wfApi.forms.list({ limit: 100 }) });
+  const forms = useMemo<FormPublic[]>(() => (formsQ.data ? asItems(formsQ.data) : []), [formsQ.data]);
 
-  const rolesQ = useQuery<any>({
+  const rolesQ = useQuery({
     queryKey: ["auth-roles-min"],
-    queryFn: () => api.get("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<AssignableRole>>("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
   });
-  const roles = asItems(rolesQ.data);
+  const roles = useMemo<AssignableRole[]>(() => (rolesQ.data ? asItems(rolesQ.data) : []), [rolesQ.data]);
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: (body: any) =>
-      isEdit ? wfApi.transitions.update(sopId, tid(transition), body) : wfApi.transitions.create(sopId, body),
+  const saving = useMutation({
+    mutationFn: (v: SaveVars) =>
+      v.id === null ? wfApi.transitions.create(sopId, v.body) : wfApi.transitions.update(sopId, v.id, v.body),
     onSuccess: () => { toast.success(isEdit ? "Transition updated" : "Transition created"); onSaved(); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function buildNotificationConfig() {
+  function buildNotificationConfig(): TransitionNotificationConfig | null {
     if (notifyType === "none") return null;
-    const cfg: any = { type: notifyType };
+    const cfg: TransitionNotificationConfig = { type: notifyType };
     if (notifyRoleIds.length) cfg.role_ids = notifyRoleIds;
     if (notifyUserIds.length) cfg.user_ids = notifyUserIds;
     if (notifyType === "email" || notifyType === "both") {
@@ -107,11 +136,12 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
     return cfg;
   }
 
-  function submit(e) {
+  // Reached from the footer button (a click) and the form (a submit).
+  function submit(e?: SyntheticEvent) {
     e?.preventDefault?.();
     if (!name.trim()) { setNameErr("Name is required"); return; }
     const notification_config = buildNotificationConfig();
-    const base = {
+    const base: UpdateTransitionRequest = {
       label: name.trim(),
       description: description.trim() || null,
       requires_note: requiresNote,
@@ -120,32 +150,32 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
       form_id: formId || null,
       notification_config,
     };
-    if (isEdit) {
-      saving.mutate(base);
+    if (transition) {
+      saving.mutate({ id: transition.transition_id, body: base });
     } else {
       const from = defaults?.from_state_id;
       const to = defaults?.to_state_id;
       if (!from || !to) { toast.error("Pick source and target states first"); return; }
-      saving.mutate({ ...base, from_state_id: from, to_state_id: to });
+      saving.mutate({ id: null, body: { ...base, label: name.trim(), from_state_id: from, to_state_id: to } });
     }
   }
 
-  const toggleId = (id, list, setList) =>
+  const toggleId = (id: string, list: string[], setList: Dispatch<SetStateAction<string[]>>) =>
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
-  const stateName = (id) => states.find((s) => idOf(s, "state_id", "id") === id)?.name || id;
-  const fromName = isEdit ? stateName(transition.from_state_id) : stateName(defaults?.from_state_id);
-  const toName = isEdit ? stateName(transition.to_state_id) : stateName(defaults?.to_state_id);
+  const stateName = (id: string | undefined): string | undefined => states.find((s) => s.state_id === id)?.name || id;
+  const fromName = transition ? stateName(transition.from_state_id) : stateName(defaults?.from_state_id);
+  const toName = transition ? stateName(transition.to_state_id) : stateName(defaults?.to_state_id);
   const showNotify = notifyType !== "none";
 
-  const roleId = (r) => r.role_id || r.id;
-  const roleName = (r) => r.display_name || titleize(r.name) || roleId(r);
+  const roleId = (r: AssignableRole): string => r.id;
+  const roleName = (r: AssignableRole): string => titleize(r.name) || roleId(r);
 
   return (
     <Modal
       open
       onClose={saving.isPending ? undefined : onClose}
-      title={isEdit ? `Edit transition · ${transition.label || transition.name}` : "Add transition"}
+      title={transition ? `Edit transition · ${transition.label}` : "Add transition"}
       wide
       footer={
         <>
@@ -212,7 +242,7 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <FieldLabel>Type</FieldLabel>
-                  <select value={notifyType} onChange={(e) => setNotifyType(e.target.value)} className={fieldClass}>
+                  <select value={notifyType} onChange={(e) => { if (isNotifyType(e.target.value)) setNotifyType(e.target.value); }} className={fieldClass}>
                     {NOTIFY_TYPES.map((t) => <option key={t.value} value={t.value} className="bg-[rgba(8,15,34,.5)]">{t.label}</option>)}
                   </select>
                 </div>
@@ -276,18 +306,24 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
   );
 }
 
-/* Multi-select user picker with search — selected chips on top + searchable list. */
-function UserMultiSelect({ label, selectedIds, onToggle, onClear }: any) {
-  const [query, setQuery] = useState("");
-  const usersQ = useQuery<any>({
-    queryKey: ["auth-users-picker"],
-    queryFn: () => api.get("/auth/users", { params: { page_size: 100 } }).then((r) => r.data),
-  });
-  const allUsers = asItems(usersQ.data);
+interface UserMultiSelectProps {
+  label: ReactNode;
+  selectedIds: string[];
+  onToggle: (userId: string) => void;
+  onClear: () => void;
+}
 
-  const uid = (u) => u.user_id || u.id;
-  const display = (u) =>
-    u.full_name || [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email || uid(u);
+/* Multi-select user picker with search — selected chips on top + searchable list. */
+function UserMultiSelect({ label, selectedIds, onToggle, onClear }: UserMultiSelectProps) {
+  const [query, setQuery] = useState("");
+  const usersQ = useQuery({
+    queryKey: ["auth-users-picker"],
+    queryFn: () => api.get<Page<AssignableUser>>("/auth/users", { params: { page_size: 100 } }).then((r) => r.data),
+  });
+  const allUsers = useMemo<AssignableUser[]>(() => (usersQ.data ? asItems(usersQ.data) : []), [usersQ.data]);
+
+  const uid = (u: AssignableUser): string => u.id;
+  const display = (u: AssignableUser): string => u.full_name || u.email || uid(u);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

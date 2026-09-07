@@ -19,23 +19,34 @@ import { Button, PageHeader, Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { titleize, asItems } from "@/lib/format";
 import { workflow as wfApi } from "./api";
+import type {
+  FormPublic,
+  InstanceStatus,
+  StatePublic,
+  TransitionInstanceRequest,
+  TransitionPublic,
+} from "./types";
 import IncidentMeta from "./components/detail/IncidentMeta";
 import StateMachine, { stateId, stateName } from "./components/detail/StateMachine";
 import IncidentTimeline from "./components/detail/IncidentTimeline";
 import EventPayloadInspector from "./components/detail/EventPayloadInspector";
 import IncidentActionBar from "./components/detail/IncidentActionBar";
+import type { StatusAction } from "./components/detail/IncidentActionBar";
 import ManagePanel from "./components/detail/ManagePanel";
 import AssignModal from "./components/detail/AssignModal";
 import TransitionFormModal from "./components/detail/TransitionFormModal";
 import ReasonModal from "./components/detail/ReasonModal";
+import type { ReasonAction } from "./components/detail/ReasonModal";
 
 export default function WorkflowDetailPage() {
   const params = useParams();
-  const id = params?.id;
+  // `[id]` is a single segment; a catch-all would hand back an array.
+  const rawId = params?.id;
+  const id = (Array.isArray(rawId) ? rawId[0] : rawId) ?? "";
   const qc = useQueryClient();
 
   // Poll the instance for near-real-time updates. Swap for SSE/WS later.
-  const instQ = useQuery<any>({
+  const instQ = useQuery({
     queryKey: ["wf-instance", id],
     queryFn: () => wfApi.instances.get(id),
     enabled: !!id,
@@ -43,50 +54,50 @@ export default function WorkflowDetailPage() {
   });
   const inst = instQ.data;
 
-  const sopId = inst?.sop_id ?? inst?.sop?.id;
+  const sopId = inst?.sop_id ?? "";
 
   // SOP definition: states + transitions to render the state machine + allowed moves.
-  const statesQ = useQuery<any>({
+  const statesQ = useQuery({
     queryKey: ["wf-states", sopId],
     queryFn: () => wfApi.states.list(sopId, { limit: 200 }),
     enabled: !!sopId,
   });
-  const transitionsQ = useQuery<any>({
+  const transitionsQ = useQuery({
     queryKey: ["wf-transitions", sopId],
     queryFn: () => wfApi.transitions.list(sopId, { limit: 200 }),
     enabled: !!sopId,
   });
-  const forms = useQuery<any>({
+  const forms = useQuery({
     queryKey: ["wf-forms"],
     queryFn: () => wfApi.forms.list({ limit: 200 }),
   });
 
-  const states = asItems(statesQ.data);
-  const transitions = asItems(transitionsQ.data);
-  const formList = asItems(forms.data);
+  const states = useMemo<StatePublic[]>(() => (statesQ.data ? asItems(statesQ.data) : []), [statesQ.data]);
+  const transitions = useMemo<TransitionPublic[]>(() => (transitionsQ.data ? asItems(transitionsQ.data) : []), [transitionsQ.data]);
+  const formList = useMemo<FormPublic[]>(() => (forms.data ? asItems(forms.data) : []), [forms.data]);
 
-  const currentStateId = inst?.current_state_id ?? inst?.current_state ?? inst?.state;
+  const currentStateId = inst?.current_state;
   const currentStateName =
     inst?.current_state_name ||
     stateName(states.find((s) => stateId(s) === currentStateId)) ||
-    titleize(inst?.current_state || inst?.state);
+    titleize(inst?.current_state);
 
   // Transitions leaving the current state.
   const allowed = useMemo(() => {
     return transitions.filter((t) => {
-      const from = t.from_state_id ?? t.from_state;
+      const from = t.from_state_id;
       return from === currentStateId || stateName(states.find((s) => stateId(s) === from)) === currentStateName;
     });
   }, [transitions, states, currentStateId, currentStateName]);
 
-  const [transitionModal, setTransitionModal] = useState<any>(null); // the chosen transition
-  const [reasonAction, setReasonAction] = useState<any>(null); // { title, verb, run(reason) }
+  const [transitionModal, setTransitionModal] = useState<TransitionPublic | null>(null); // the chosen transition
+  const [reasonAction, setReasonAction] = useState<ReasonAction | null>(null); // { title, verb, run(reason) }
   const [assignOpen, setAssignOpen] = useState(false);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["wf-instance", id] });
 
-  const doTransition = useMutation<any, any, any>({
-    mutationFn: (body: any) => wfApi.instances.transition(id, body),
+  const doTransition = useMutation({
+    mutationFn: (body: TransitionInstanceRequest) => wfApi.instances.transition(id, body),
     onSuccess: () => {
       toast.success("Transition applied");
       invalidate();
@@ -94,19 +105,20 @@ export default function WorkflowDetailPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
-  const escalateMut = useMutation<any>({
-    mutationFn: (reason: any) => wfApi.instances.escalate(id, reason),
+  const escalateMut = useMutation({
+    mutationFn: (reason: string | null) => wfApi.instances.escalate(id, reason),
     onSuccess: () => { toast.success("Incident escalated"); invalidate(); setReasonAction(null); },
     onError: (e) => toast.error(apiError(e)),
   });
-  const statusMut = useMutation<any, any, any>({
-    mutationFn: ({ status, reason }: any) => wfApi.instances.setStatus(id, status, reason),
+  const statusMut = useMutation({
+    mutationFn: ({ status, reason }: { status: InstanceStatus; reason?: string | null }) =>
+      wfApi.instances.setStatus(id, status, reason),
     onSuccess: () => { toast.success("Status updated"); invalidate(); setReasonAction(null); },
     onError: (e) => toast.error(apiError(e)),
   });
   const actionPending = escalateMut.isPending || statusMut.isPending;
 
-  function runStatus(a) {
+  function runStatus(a: StatusAction) {
     if (a.reason) {
       setReasonAction({ title: `${a.label} incident`, verb: a.label, run: (reason) => statusMut.mutate({ status: a.status, reason }) });
     } else {
@@ -117,13 +129,12 @@ export default function WorkflowDetailPage() {
     setReasonAction({ title: "Escalate incident", verb: "Escalate", run: (reason) => escalateMut.mutate(reason) });
   }
 
-  function runTransition(t) {
-    const formRef = t.form_id ?? t.form_config?.form_id;
-    const hasForm = !!(t.form_config?.fields?.length || formRef);
+  function runTransition(t: TransitionPublic) {
+    const hasForm = !!t.form_id;
     if (hasForm) {
       setTransitionModal(t);
     } else {
-      doTransition.mutate({ transition_id: t.transition_id ?? t.id });
+      doTransition.mutate({ transition_id: t.transition_id });
     }
   }
 
@@ -146,10 +157,9 @@ export default function WorkflowDetailPage() {
     );
   }
 
-  const title =
-    inst.title || inst.reference || inst.name || `Incident ${String(id).slice(0, 8)}`;
-  const history = asItems(inst.history || inst.timeline || inst.events);
-  const eventPayload = inst.trigger_data ?? inst.event ?? inst.event_data ?? null;
+  const title = inst.name || `Incident ${String(id).slice(0, 8)}`;
+  const history = asItems(inst.timeline);
+  const eventPayload = inst.trigger_data ?? null;
 
   return (
     <div>
@@ -223,7 +233,7 @@ export default function WorkflowDetailPage() {
           pending={doTransition.isPending}
           onCancel={() => setTransitionModal(null)}
           onSubmit={(form_data) => {
-            doTransition.mutate({ transition_id: transitionModal.transition_id ?? transitionModal.id, form_data });
+            doTransition.mutate({ transition_id: transitionModal.transition_id, form_data });
           }}
         />
       )}
@@ -241,7 +251,7 @@ export default function WorkflowDetailPage() {
         open={assignOpen}
         onClose={() => setAssignOpen(false)}
         instanceId={id}
-        currentAssigneeId={inst.assigned_to ?? inst.assignee_id ?? inst.assignment?.assigned_to ?? ""}
+        currentAssigneeId={inst.assigned_to ?? inst.assignment?.assigned_to ?? ""}
         onAssigned={invalidate}
       />
     </div>

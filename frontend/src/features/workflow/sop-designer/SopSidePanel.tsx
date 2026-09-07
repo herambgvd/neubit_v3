@@ -5,11 +5,27 @@
 // Edit + Delete). Replaces the old floating selection action-bar to match the
 // v2 layout. Presentational: the parent (SopCanvas) supplies the selection, the
 // resolved states/transitions, and the edit/delete/close handlers.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
-import { idOf } from "@/lib/format";
+import type { StatePublic, TransitionPublic } from "../types";
 
-const sid = (s) => idOf(s, "state_id", "id");
-const tid = (t) => idOf(t, "transition_id", "id");
+const sid = (s: StatePublic): string => s.state_id;
+const tid = (t: TransitionPublic): string => t.transition_id;
+
+/** What the designer has selected: one node or one edge, by id. */
+export interface SelectionRef {
+  kind: "state" | "transition";
+  id: string;
+}
+
+export interface SopSidePanelProps {
+  selection: SelectionRef | null;
+  states?: StatePublic[];
+  transitions?: TransitionPublic[];
+  onClose: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}
 
 export default function SopSidePanel({
   selection,
@@ -18,13 +34,15 @@ export default function SopSidePanel({
   onClose,
   onEdit,
   onDelete,
-}: any) {
+}: SopSidePanelProps) {
   if (!selection) return null;
 
   if (selection.kind === "state") {
     const s = states.find((x) => sid(x) === selection.id);
     if (!s) return null;
-    const flags = [s.is_initial && "Initial", s.is_terminal && "Terminal", s.is_cancellation && "Cancellation"].filter(Boolean);
+    const flags = [s.is_initial && "Initial", s.is_terminal && "Terminal", s.is_cancellation && "Cancellation"].filter(
+      (f): f is string => typeof f === "string",
+    );
     return (
       <Shell title="State" onClose={onClose} onEdit={onEdit} onDelete={onDelete}>
         <div className="flex items-center gap-3">
@@ -59,7 +77,7 @@ export default function SopSidePanel({
 
   const t = transitions.find((x) => tid(x) === selection.id);
   if (!t) return null;
-  const stateName = (id) => states.find((s) => sid(s) === id)?.name || "—";
+  const stateName = (id: string): string => states.find((s) => sid(s) === id)?.name || "—";
   return (
     <Shell title="Transition" onClose={onClose} onEdit={onEdit} onDelete={onDelete}>
       <div className="flex items-center gap-3">
@@ -80,12 +98,20 @@ export default function SopSidePanel({
       )}
       <Row label="Requires note" value={t.requires_note ? "Yes" : "No"} />
       <Row label="Confirmation" value={t.confirmation_required ? "Required" : "No"} />
-      <Row label="Form" value={t.form_config?.form_id || t.form_id ? "Linked" : "—"} />
+      <Row label="Form" value={t.form_id ? "Linked" : "—"} />
     </Shell>
   );
 }
 
-function Shell({ title, onClose, onEdit, onDelete, children }: any) {
+interface ShellProps {
+  title: ReactNode;
+  onClose: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  children?: ReactNode;
+}
+
+function Shell({ title, onClose, onEdit, onDelete, children }: ShellProps) {
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)]">
       <header className="flex items-center justify-between border-b border-nb-line px-4 py-3">
@@ -123,7 +149,12 @@ function Shell({ title, onClose, onEdit, onDelete, children }: any) {
   );
 }
 
-function Row({ label, value }: any) {
+interface RowProps {
+  label: string;
+  value: ReactNode;
+}
+
+function Row({ label, value }: RowProps) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
       <span className="text-[10px] font-medium uppercase tracking-wide text-nb-muted/70">{label}</span>

@@ -5,8 +5,15 @@
 // form's fields (label, type, required).
 import { Icon } from "@iconify/react";
 import { titleize } from "@/lib/format";
+import type { FormPublic } from "../../types";
 
-export default function FormDetail({ form, onEdit, onDelete }: any) {
+export interface FormDetailProps {
+  form: FormPublic;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+export default function FormDetail({ form, onEdit, onDelete }: FormDetailProps) {
   const fields = Array.isArray(form.fields) ? form.fields : [];
   return (
     <div className="flex flex-col flex-1 min-h-0">

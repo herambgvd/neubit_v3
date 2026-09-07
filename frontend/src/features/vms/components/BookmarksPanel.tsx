@@ -9,10 +9,24 @@
 import { Icon } from "@iconify/react";
 
 import { fmtDateTime } from "@/lib/format";
+import type { BookmarkPublic, EvidenceLockPublic } from "../types";
 
-function timeLabel(iso) {
+function timeLabel(iso: string | null | undefined): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleTimeString(undefined, { hour12: false });
+}
+
+export interface BookmarksPanelProps {
+  bookmarks?: BookmarkPublic[];
+  locks?: EvidenceLockPublic[];
+  loading?: boolean;
+  canLock?: boolean;
+  onSeek?: (ms: number) => void;
+  onEditBookmark?: (bookmark: BookmarkPublic) => void;
+  onDeleteBookmark?: (bookmark: BookmarkPublic) => void;
+  onReleaseLock?: (lock: EvidenceLockPublic) => void;
+  onDeleteLock?: (lock: EvidenceLockPublic) => void;
+  className?: string;
 }
 
 export default function BookmarksPanel({
@@ -20,13 +34,13 @@ export default function BookmarksPanel({
   locks = [],
   loading = false,
   canLock = false,
-  onSeek, // (ms) => void
+  onSeek,
   onEditBookmark,
   onDeleteBookmark,
   onReleaseLock,
   onDeleteLock,
   className = "",
-}: any) {
+}: BookmarksPanelProps) {
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
       {/* Bookmarks */}
@@ -144,7 +158,14 @@ export default function BookmarksPanel({
   );
 }
 
-function IconBtn({ icon, title, onClick, danger }: any) {
+interface IconBtnProps {
+  icon: string;
+  title: string;
+  onClick?: () => void;
+  danger?: boolean;
+}
+
+function IconBtn({ icon, title, onClick, danger }: IconBtnProps) {
   return (
     <button
       type="button"

@@ -6,9 +6,20 @@
 // mounted with its stable key so its LivePlayer session is REUSED, not
 // restarted (see Streaming.jsx render). This just exposes exit + prev/next so
 // an operator can flip through cameras without leaving spotlight.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
-export default function SpotlightOverlay({ label, position, total, onPrev, onNext, onExit }: any) {
+export interface SpotlightOverlayProps {
+  label: ReactNode;
+  /** 1-based position of the spotlighted tile among the filled ones. */
+  position: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+  onExit: () => void;
+}
+
+export default function SpotlightOverlay({ label, position, total, onPrev, onNext, onExit }: SpotlightOverlayProps) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center p-3">
       <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-black/70 px-1.5 py-1 text-white shadow-2xl backdrop-blur-md">

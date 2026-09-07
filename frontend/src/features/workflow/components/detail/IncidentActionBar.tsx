@@ -11,12 +11,23 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { Button, Spinner } from "@/components/ui/kit";
+import type { ButtonVariant } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { workflow as wfApi } from "../../api";
+import type { InstancePublic, InstanceStatus } from "../../types";
+
+/** One status-lifecycle button. `reason:true` routes through the reason modal. */
+export interface StatusAction {
+  status: InstanceStatus;
+  label: string;
+  icon: string;
+  variant: ButtonVariant;
+  reason?: boolean;
+}
 
 // status → status actions offered from it. `reason:true` routes through the
 // reason modal; `outcome` (when set) is passed to setStatus as the outcome.
-export const STATUS_ACTIONS = {
+export const STATUS_ACTIONS: Record<string, StatusAction[]> = {
   pending: [{ status: "active", label: "Activate", icon: "heroicons-outline:play", variant: "primary" }],
   active: [
     { status: "paused", label: "Pause", icon: "heroicons-outline:pause", variant: "secondary" },
@@ -30,7 +41,15 @@ export const STATUS_ACTIONS = {
   ],
 };
 
-const TERMINAL = new Set<any>(["resolved", "completed", "cancelled"]);
+const TERMINAL = new Set<string>(["resolved", "completed", "cancelled"]);
+
+export interface IncidentActionBarProps {
+  instance: InstancePublic;
+  actionPending: boolean;
+  onStatusAction: (action: StatusAction) => void;
+  onEscalate: () => void;
+  onAssign: () => void;
+}
 
 export default function IncidentActionBar({
   instance,
@@ -38,13 +57,13 @@ export default function IncidentActionBar({
   onStatusAction,
   onEscalate,
   onAssign,
-}: any) {
+}: IncidentActionBarProps) {
   const inst = instance;
-  const id = inst.instance_id || inst.id;
+  const id = inst.instance_id;
   const status = inst.status;
   const terminal = TERMINAL.has(status);
   const statusActions = STATUS_ACTIONS[status] || [];
-  const assigned = inst.assigned_to ?? inst.assignee_id ?? inst.assignment?.assigned_to;
+  const assigned = inst.assigned_to ?? inst.assignment?.assigned_to;
 
   const [pdfLoading, setPdfLoading] = useState(false);
 

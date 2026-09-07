@@ -3,12 +3,24 @@
 // Dynamic form field renderer (text / textarea / number / date / boolean /
 // select / multiselect). Used by TransitionFormModal to render a SOP form's
 // fields. Reads label/required from the backend FormFieldSchema shape.
+import type { FormFieldSchema, FormFieldValue } from "../../types";
 
 // Form field id + required (backend FormFieldSchema: {id, validation:{required}}).
-export const fieldKey = (f) => f?.id ?? f?.key ?? f?.label;
-export const fieldRequired = (f) => !!(f?.validation?.required ?? f?.required);
+export const fieldKey = (f: FormFieldSchema): string => f.id ?? f.label;
+export const fieldRequired = (f: FormFieldSchema): boolean => !!f.validation?.required;
 
-export default function FormFieldInput({ field, value, error, onChange }: any) {
+// Text-ish controls only ever hold a string or a number; anything else renders empty.
+const asText = (v: FormFieldValue | undefined): string | number =>
+  typeof v === "string" || typeof v === "number" ? v : "";
+
+export interface FormFieldInputProps {
+  field: FormFieldSchema;
+  value: FormFieldValue | undefined;
+  error?: string;
+  onChange: (value: FormFieldValue) => void;
+}
+
+export default function FormFieldInput({ field, value, error, onChange }: FormFieldInputProps) {
   const label = (
     <label className="text-xs font-medium uppercase tracking-wide text-muted">
       {field.label || fieldKey(field)}
@@ -16,9 +28,7 @@ export default function FormFieldInput({ field, value, error, onChange }: any) {
     </label>
   );
   const cls = `mt-1 h-10 w-full rounded-lg border ${error ? "border-red-500" : "border-field"} bg-transparent px-3 text-sm text-foreground placeholder:text-muted outline-hidden transition focus:border-muted`;
-  const options = Array.isArray(field.options)
-    ? field.options.map((o) => (typeof o === "object" ? o : { value: o, label: o }))
-    : [];
+  const options = field.options ?? [];
 
   return (
     <div>
@@ -26,7 +36,7 @@ export default function FormFieldInput({ field, value, error, onChange }: any) {
       {field.type === "textarea" ? (
         <textarea
           rows={3}
-          value={value || ""}
+          value={asText(value) || ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder || ""}
           className={`mt-1 w-full rounded-lg border ${error ? "border-red-500" : "border-field"} bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted outline-hidden transition focus:border-muted`}
@@ -38,7 +48,7 @@ export default function FormFieldInput({ field, value, error, onChange }: any) {
         </label>
       ) : field.type === "select" ? (
         <select
-          value={value || ""}
+          value={asText(value) || ""}
           onChange={(e) => onChange(e.target.value)}
           className={cls}
         >
@@ -99,7 +109,7 @@ export default function FormFieldInput({ field, value, error, onChange }: any) {
       ) : (
         <input
           type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
-          value={value ?? ""}
+          value={asText(value)}
           onChange={(e) => onChange(field.type === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)}
           placeholder={field.placeholder || ""}
           className={cls}

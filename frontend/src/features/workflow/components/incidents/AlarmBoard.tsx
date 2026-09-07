@@ -6,8 +6,29 @@
 
 import { Icon } from "@iconify/react";
 
+import type { InstancePublic, NameMap } from "../../types";
 import AlarmCard from "./AlarmCard";
 import { incId, sortForBoard } from "./lib";
+
+export interface AlarmBoardProps {
+  rows?: InstancePublic[];
+  loading?: boolean;
+  hasFilters?: boolean;
+  selected?: Set<string>;
+  onToggle?: (id: string) => void;
+  allSelected?: boolean;
+  onToggleAll?: () => void;
+  sopName?: NameMap;
+  siteName?: NameMap;
+  newIds?: Set<string>;
+  onAck?: (it: InstancePublic) => void;
+  onAssign?: (it: InstancePublic) => void;
+  actionPending?: boolean;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  onPage?: (page: number) => void;
+}
 
 export default function AlarmBoard({
   rows = [],
@@ -27,7 +48,7 @@ export default function AlarmBoard({
   page = 0,
   pageSize = 25,
   onPage,
-}: any) {
+}: AlarmBoardProps) {
   const sorted = sortForBoard(rows);
   const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
   const showingFrom = total === 0 ? 0 : page * pageSize + 1;
@@ -74,8 +95,8 @@ export default function AlarmBoard({
               incident={it}
               sopName={sopName}
               siteName={siteName}
-              isNew={newIds?.has?.(String(id))}
-              selected={selected?.has?.(id)}
+              isNew={newIds?.has(String(id))}
+              selected={selected?.has(id)}
               onSelect={onToggle}
               onAck={onAck}
               onAssign={onAssign}

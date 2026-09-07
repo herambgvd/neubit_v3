@@ -14,13 +14,17 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { api, tokens } from "@/lib/api";
+import type { VmsPopupFrame } from "../types";
+
+/** A popup in the active queue: the frame plus its de-dupe key. */
+export type ActivePopup = VmsPopupFrame & { key: string };
 
 // Cap concurrent camera-pops so a burst of popups can't cover the whole screen.
 const MAX_ACTIVE = 3;
 
-export function useVmsPopups({ enabled = true }: any = {}) {
-  const [active, setActive] = useState<any[]>([]); // [{ key, camera_id, reason, event_type, severity, occurred_at }]
-  const seenRef = useRef(new Set<any>());
+export function useVmsPopups({ enabled = true }: { enabled?: boolean } = {}) {
+  const [active, setActive] = useState<ActivePopup[]>([]); // [{ key, camera_id, reason, event_type, severity, occurred_at }]
+  const seenRef = useRef(new Set<string>());
 
   useEffect(() => {
     if (!enabled) return;
@@ -32,7 +36,7 @@ export function useVmsPopups({ enabled = true }: any = {}) {
     let retry = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const push = (p) => {
+    const push = (p: VmsPopupFrame) => {
       // Dedupe by event_id (a rule + a manual re-fire could double up).
       const key = p.event_id || `${p.camera_id}:${p.occurred_at}:${p.event_type}`;
       if (key && seenRef.current.has(key)) return;
@@ -73,9 +77,9 @@ export function useVmsPopups({ enabled = true }: any = {}) {
       es = new EventSource(url);
 
       es.addEventListener("vms.popup", (e) => {
-        let data: any = null;
+        let data: VmsPopupFrame | null = null;
         try {
-          data = JSON.parse(e.data);
+          data = JSON.parse(e.data) as VmsPopupFrame;
         } catch {
           return;
         }
@@ -101,11 +105,12 @@ export function useVmsPopups({ enabled = true }: any = {}) {
     };
   }, [enabled]);
 
-  const dismiss = (key) => setActive((prev) => prev.filter((p) => p.key !== key));
-  const acknowledge = (popup) => {
+  const dismiss = (key: string) => setActive((prev) => prev.filter((p) => p.key !== key));
+  const acknowledge = (popup: ActivePopup) => {
     // Best-effort ack of the source event so it drops from the unacknowledged feed.
     if (popup?.event_id) {
-      import("../api").then(({ vms }: any) => vms.events.ack(popup.event_id).catch(() => {}));
+      const eventId = popup.event_id;
+      import("../api").then(({ vms }) => vms.events.ack(eventId).catch(() => {}));
     }
     dismiss(popup.key);
   };

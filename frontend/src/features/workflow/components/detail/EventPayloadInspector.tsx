@@ -8,19 +8,26 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
+import { asStr } from "../../types";
+import type { InstancePublic, TriggerEnvelope } from "../../types";
 
 // Camera-origin incidents carry the domain source "vision" on the envelope.
 const CAMERA_SOURCE = "vision";
 
-export default function EventPayloadInspector({ payload, eventType, incident = null }: any) {
+export interface EventPayloadInspectorProps {
+  payload: TriggerEnvelope;
+  eventType?: string | null;
+  incident?: InstancePublic | null;
+}
+
+export default function EventPayloadInspector({ payload, eventType, incident = null }: EventPayloadInspectorProps) {
   const [open, setOpen] = useState(false);
   let json = "";
   try { json = JSON.stringify(payload, null, 2); } catch { json = String(payload); }
 
   // Reverse cross-link: only meaningful when this incident came from a camera event.
   const isCamera = incident?.event_source === CAMERA_SOURCE;
-  const cameraId =
-    (payload && typeof payload === "object" && payload.payload?.camera_id) || null;
+  const cameraId = asStr(payload?.payload?.camera_id) || null;
   const cameraHref = isCamera
     ? `/camera-events${cameraId ? `?camera=${encodeURIComponent(cameraId)}` : ""}`
     : null;

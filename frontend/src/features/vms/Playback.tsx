@@ -12,10 +12,11 @@ import { useState } from "react";
 
 import UnifiedPlayback from "./components/UnifiedPlayback";
 import ExportDialog from "./components/ExportDialog";
+import type { ExportRequest } from "./components/playbackTypes";
 
 export default function PlaybackPage() {
   // Export is raised from a focused tile: { from, to, cameraId, cameraName }.
-  const [exportReq, setExportReq] = useState<any>(null);
+  const [exportReq, setExportReq] = useState<ExportRequest | null>(null);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

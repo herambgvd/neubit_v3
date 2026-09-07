@@ -4,10 +4,16 @@
 // rethemed to v3 tokens). Falls back to "unknown" for any unmapped status.
 import { Icon } from "@iconify/react";
 
-import { STATUS_PRESETS } from "../constants";
+import { STATUS_PRESETS, presetFor } from "../constants";
 
-export default function StatusBadge({ status, className = "" }: any) {
-  const preset = STATUS_PRESETS[status] || STATUS_PRESETS.unknown;
+export interface StatusBadgeProps {
+  /** The wire status (CameraStatus / NodeStatus / anything) — unmapped → "unknown". */
+  status?: string | null;
+  className?: string;
+}
+
+export default function StatusBadge({ status, className = "" }: StatusBadgeProps) {
+  const preset = presetFor(STATUS_PRESETS, status, STATUS_PRESETS.unknown);
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${preset.cls} ${className}`}
@@ -28,9 +34,9 @@ const NB_DOT = {
   unknown: "bg-nb-warn",
 };
 
-export function StatusDot({ status, className = "" }: any) {
-  const preset = STATUS_PRESETS[status] || STATUS_PRESETS.unknown;
-  const dot = NB_DOT[status] || NB_DOT.unknown;
+export function StatusDot({ status, className = "" }: StatusBadgeProps) {
+  const preset = presetFor(STATUS_PRESETS, status, STATUS_PRESETS.unknown);
+  const dot = presetFor(NB_DOT, status, NB_DOT.unknown);
   return (
     <span
       title={preset.label}

@@ -25,7 +25,139 @@
 //
 // Credentials (onvif.password / nvr password) are WRITE-ONLY — sent on
 // create/update, never returned (public shapes expose has_password/has_credentials).
+//
+// Types: every request body / response is one of the wire types in ./types
+// (one interface per Pydantic model, backend file named there). Ids are strings.
+import type { AxiosResponse } from "axios";
+
 import { api } from "@/lib/api";
+import type { FederatedCameraList, NvrPublic, QueryParams } from "@/lib/types";
+import type {
+  BookmarkCreate,
+  BookmarkListResponse,
+  BookmarkPublic,
+  BookmarkUpdate,
+  BulkAddBody,
+  BulkAddResponse,
+  BulkOpResult,
+  BulkResult,
+  CameraACLEntry,
+  CameraACLListResponse,
+  CameraBulkBody,
+  CameraCreate,
+  CameraGroupCreate,
+  CameraGroupListResponse,
+  CameraGroupPublic,
+  CameraGroupUpdate,
+  CameraHealthHistoryResponse,
+  CameraHealthListResponse,
+  CameraHealthPublic,
+  CameraListResponse,
+  CameraReorderItem,
+  CameraUpdate,
+  ChannelsResponse,
+  ConfigDict,
+  ConfigResult,
+  DashboardSummary,
+  DeviceInfoPublic,
+  DeviceUsersResponse,
+  DiscoverBody,
+  DiscoverResponse,
+  DrawnShape,
+  EncoderBody,
+  EvidenceCheckResult,
+  EvidenceLockCreate,
+  EvidenceLockListResponse,
+  EvidenceLockPublic,
+  ExportJobPublic,
+  ExportPublicKey,
+  ExportVerifyResult,
+  FederatedExportJob,
+  FederatedExportList,
+  FederatedHold,
+  FederatedHoldList,
+  FederatedLiveSession,
+  FederatedOpResult,
+  FederatedPlaybackSession,
+  FederatedPtzBody,
+  FederatedRecordingList,
+  FederatedTimeline,
+  FederationNodeList,
+  FleetOpPublic,
+  HostCredentials,
+  LinkageFireListResponse,
+  LinkageRuleCreate,
+  LinkageRuleListResponse,
+  LinkageRulePublic,
+  LinkageRuleUpdate,
+  MapChannelItem,
+  MapChannelsResult,
+  MediaNodeCreate,
+  MediaNodeListResponse,
+  MediaNodePublic,
+  MediaNodeUpdate,
+  MotionSearchJobPublic,
+  MotionSearchStartBody,
+  MotionZonesResponse,
+  NodeCredentialPublic,
+  NodeEnrollResult,
+  NodeRaidStatus,
+  NodeStoragePool,
+  NodeStoragePoolList,
+  NodeStorageUsage,
+  NodeTierRuleList,
+  NodeUpstreamNvrStorage,
+  NvrCreate,
+  NvrHealthResponse,
+  NvrListResponse,
+  NvrPlaybackSession,
+  NvrRecordingsResponse,
+  NvrUpdate,
+  OnvifEventsBody,
+  OnvifServerConfigPublic,
+  OnvifServerConfigUpdate,
+  OsdBody,
+  PasswordBody,
+  PatrolCreate,
+  PatrolPublic,
+  PatrolUpdate,
+  PatternCreate,
+  PatternListResponse,
+  PatternPublic,
+  PatternUpdate,
+  PlaybackSessionPublic,
+  PresetPublic,
+  PrivacyMasksResponse,
+  ProbeResponse,
+  PtzBody,
+  PtzMoveBody,
+  PtzResult,
+  RecordedPlaybackPublic,
+  RecordingActiveResponse,
+  RecordingConfigBody,
+  RecordingConfigPublic,
+  RecordingControlResult,
+  RecordingDaysResponse,
+  RecordingIntegrityResult,
+  RecordingListResponse,
+  RecordingPublic,
+  ReorderResult,
+  ReportResponse,
+  ReportRunList,
+  ReportRunPublic,
+  ReportScheduleCreate,
+  ReportScheduleList,
+  ReportSchedulePublic,
+  ReportScheduleUpdate,
+  StreamPolicyResult,
+  TalkSessionPublic,
+  TimelineResponse,
+  UserAddBody,
+  VmsEventListResponse,
+  VmsCameraPublic,
+  VmsEventPublic,
+  ItemList,
+} from "./types";
 
 const CAMERAS = "/vms/cameras";
 const NVRS = "/vms/nvrs";
@@ -53,16 +185,50 @@ const API_ROOT =
   process.env.NEXT_PUBLIC_API_URL ||
   (typeof window !== "undefined" ? window.location.origin : "");
 
-const unwrap = (p) => p.then((r) => r.data);
+const unwrap = <T>(p: Promise<AxiosResponse<T>>): Promise<T> => p.then((r) => r.data);
+
+// A blob-typed GET/POST; the caller saves it (Bearer header rides along).
+const blob = (p: Promise<AxiosResponse<Blob>>): Promise<Blob> => p.then((r) => r.data);
 
 // Drop null/undefined/"" so URLSearchParams doesn't emit empty filters.
-function qs(params: any = {}) {
-  const clean: any = {};
-  for (const [k, v] of Object.entries<any>(params)) {
-    if (v !== undefined && v !== null && v !== "") clean[k] = v;
+function qs(params: QueryParams = {}): string {
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") clean[k] = String(v);
   }
   const s = new URLSearchParams(clean).toString();
   return s ? `?${s}` : "";
+}
+
+/** `{ refresh:true }` re-probes the device instead of serving the persisted value. */
+interface RefreshOpt {
+  refresh?: boolean;
+}
+
+/** A `[from, to]` ISO window (both optional on the reads). */
+interface WindowOpt {
+  from?: string | null;
+  to?: string | null;
+}
+
+/** `{ month:"YYYY-MM", tzOffsetMinutes }` for the recording-days calendar marks. */
+interface RecordingDaysOpt {
+  month?: string;
+  tzOffsetMinutes?: number;
+}
+
+/** A federated recording-index page: window + profile + skip/limit. */
+interface FederatedRecordingsOpt extends WindowOpt {
+  profile?: string | null;
+  limit?: number;
+  offset?: number;
+}
+
+/** `motionSearch.poll` options. */
+interface PollOpt {
+  intervalMs?: number;
+  onTick?: (job: MotionSearchJobPublic) => void;
+  signal?: AbortSignal;
 }
 
 export const vms = {
@@ -71,30 +237,46 @@ export const vms = {
   // the node (the node owns them). GET cameras aggregates all online nodes; live
   // mints a node-issued token for a federated camera.
   federation: {
-    nodes: () => unwrap(api.get("/vms/federation/nodes")),
-    cameras: () => unwrap(api.get("/vms/federation/cameras")),
-    live: (nodeId, cameraId, profile) =>
-      unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/live${qs({ profile })}`)),
+    nodes: () => unwrap(api.get<FederationNodeList>("/vms/federation/nodes")),
+    cameras: () => unwrap(api.get<FederatedCameraList>("/vms/federation/cameras")),
+    live: (nodeId: string, cameraId: string, profile?: string | null) =>
+      unwrap(
+        api.post<FederatedLiveSession>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/live${qs({ profile })}`,
+        ),
+      ),
     // Recorded-coverage ranges (scrub-bar timeline) for a federated camera.
-    timeline: (nodeId, cameraId, { profile, from, to }: any = {}) =>
-      unwrap(api.get(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/timeline${qs({ profile, from, to })}`)),
+    timeline: (nodeId: string, cameraId: string, { profile, from, to }: WindowOpt & { profile?: string | null } = {}) =>
+      unwrap(
+        api.get<FederatedTimeline>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/timeline${qs({ profile, from, to })}`,
+        ),
+      ),
     // Per-segment recording index for a federated camera.
-    recordings: (nodeId, cameraId, { profile, from, to, limit, offset }: any = {}) =>
-      unwrap(api.get(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recordings${qs({ profile, from, to, limit, offset })}`)),
+    recordings: (nodeId: string, cameraId: string, { profile, from, to, limit, offset }: FederatedRecordingsOpt = {}) =>
+      unwrap(
+        api.get<FederatedRecordingList>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recordings${qs({ profile, from, to, limit, offset })}`,
+        ),
+      ),
     // Mint a playback session (tokenized fmp4 URL + t=0 start) through the node.
-    playback: (nodeId, cameraId, { from, to }: any = {}) =>
-      unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/playback${qs({ from, to })}`)),
+    playback: (nodeId: string, cameraId: string, { from, to }: WindowOpt = {}) =>
+      unwrap(
+        api.post<FederatedPlaybackSession>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/playback${qs({ from, to })}`,
+        ),
+      ),
     // ── operate-THROUGH-node — the only two mutations on a node-owned camera ──
     // PTZ a federated camera through its recorder. `body` = { action:"move"|"stop"|
     // "zoom"|"focus", ...payload } (the node forwards the payload to the device).
     // Node-side PTZ gates on vms.ptz.control; the scoped federation credential does
     // NOT carry it, so this only passes while the node falls back to the shared
     // service JWT (502 otherwise). Read-only surfaces stay read-only.
-    ptz: (nodeId, cameraId, body) =>
-      unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz`, body)),
+    ptz: (nodeId: string, cameraId: string, body: FederatedPtzBody) =>
+      unwrap(api.post<PtzResult>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz`, body)),
     // Snapshot URL for a federated camera (relative path — fetched as an authed
     // blob, same as cameras.snapshotUrl, since the endpoint needs the Bearer header).
-    snapshotUrl: (nodeId, cameraId) =>
+    snapshotUrl: (nodeId: string, cameraId: string) =>
       `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/snapshot`,
 
     // ── operate-THROUGH-node — operational actions PROXIED to the owning recorder
@@ -104,34 +286,32 @@ export const vms = {
     // hides each control behind the operator's own permission (see FederatedCameraDetail).
     actions: {
       // Manual recording — flip the node's recording on this camera on/off now.
-      recordStart: (nodeId, cameraId) =>
-        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording/start`, {})),
-      recordStop: (nodeId, cameraId) =>
-        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording/stop`, {})),
+      recordStart: (nodeId: string, cameraId: string) =>
+        unwrap(api.post<FederatedOpResult>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording/start`, {})),
+      recordStop: (nodeId: string, cameraId: string) =>
+        unwrap(api.post<FederatedOpResult>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording/stop`, {})),
       // Reboot the camera through its recorder's brand driver.
-      reboot: (nodeId, cameraId) =>
-        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/reboot`, {})),
+      reboot: (nodeId: string, cameraId: string) =>
+        unwrap(api.post<FederatedOpResult>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/reboot`, {})),
       // ── Clip export (job) — { from, to } (RFC3339) → { id, status }. Poll getExport
       // until status is ready/done, then pull the mp4 as an authed blob (Bearer header,
       // same idiom as export.downloadBlob) rather than a bare <a href>.
-      createExport: (nodeId, cameraId, from, to) =>
-        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`, { from, to })),
-      listExports: (nodeId, cameraId) =>
-        unwrap(api.get(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`)),
-      getExport: (nodeId, exportId) =>
-        unwrap(api.get(`/vms/federation/nodes/${nodeId}/exports/${exportId}`)),
-      downloadExportBlob: (nodeId, exportId) =>
-        api
-          .get(`/vms/federation/nodes/${nodeId}/exports/${exportId}/download`, { responseType: "blob" })
-          .then((r) => r.data),
+      createExport: (nodeId: string, cameraId: string, from: string, to: string) =>
+        unwrap(api.post<FederatedExportJob>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`, { from, to })),
+      listExports: (nodeId: string, cameraId: string) =>
+        unwrap(api.get<FederatedExportList>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`)),
+      getExport: (nodeId: string, exportId: string) =>
+        unwrap(api.get<FederatedExportJob>(`/vms/federation/nodes/${nodeId}/exports/${exportId}`)),
+      downloadExportBlob: (nodeId: string, exportId: string) =>
+        blob(api.get<Blob>(`/vms/federation/nodes/${nodeId}/exports/${exportId}/download`, { responseType: "blob" })),
       // ── Evidence hold — retention-lock a [from,to] window of this camera's footage
       // on the owning recorder (reason is a free-text note). Release cancels it.
-      holds: (nodeId, cameraId) =>
-        unwrap(api.get(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds`)),
-      holdCreate: (nodeId, cameraId, from, to, reason) =>
-        unwrap(api.post(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds`, { from, to, reason })),
-      holdRelease: (nodeId, cameraId, from, to) =>
-        unwrap(api.delete(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds${qs({ from, to })}`)),
+      holds: (nodeId: string, cameraId: string) =>
+        unwrap(api.get<FederatedHoldList>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds`)),
+      holdCreate: (nodeId: string, cameraId: string, from: string, to: string, reason?: string | null) =>
+        unwrap(api.post<FederatedHold>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds`, { from, to, reason })),
+      holdRelease: (nodeId: string, cameraId: string, from: string, to: string) =>
+        unwrap(api.delete<FederatedOpResult>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/holds${qs({ from, to })}`)),
     },
 
     // ── Storage (single-ownership) — READ-ONLY per recorder node ────────────
@@ -144,12 +324,12 @@ export const vms = {
     //   upstreamNvr→ a 3rd-party NVR's own HDDs as reported by the recorder, or
     //                { available:false } when not yet available.
     storage: {
-      usage: (nodeId) => unwrap(api.get(`/vms/federation/nodes/${nodeId}/storage/usage`)),
-      raid: (nodeId) => unwrap(api.get(`/vms/federation/nodes/${nodeId}/storage/raid`)),
-      pools: (nodeId) => unwrap(api.get(`/vms/federation/nodes/${nodeId}/storage/pools`)),
-      tierRules: (nodeId) => unwrap(api.get(`/vms/federation/nodes/${nodeId}/storage/tier-rules`)),
-      upstreamNvr: (nodeId, nvrId) =>
-        unwrap(api.get(`/vms/federation/nodes/${nodeId}/nvrs/${nvrId}/storage`)),
+      usage: (nodeId: string) => unwrap(api.get<NodeStorageUsage>(`/vms/federation/nodes/${nodeId}/storage/usage`)),
+      raid: (nodeId: string) => unwrap(api.get<NodeRaidStatus>(`/vms/federation/nodes/${nodeId}/storage/raid`)),
+      pools: (nodeId: string) => unwrap(api.get<NodeStoragePoolList>(`/vms/federation/nodes/${nodeId}/storage/pools`)),
+      tierRules: (nodeId: string) => unwrap(api.get<NodeTierRuleList>(`/vms/federation/nodes/${nodeId}/storage/tier-rules`)),
+      upstreamNvr: (nodeId: string, nvrId: string) =>
+        unwrap(api.get<NodeUpstreamNvrStorage>(`/vms/federation/nodes/${nodeId}/nvrs/${nvrId}/storage`)),
     },
   },
 
@@ -159,44 +339,44 @@ export const vms = {
   //   storage/node/event/nvr data. Gated on vms.camera.read; tenant-scoped. The
   //   node section degrades to data_plane:"unknown" if the Go nvr is unreachable.
   dashboard: {
-    summary: () => unwrap(api.get("/vms/dashboard/summary")),
+    summary: () => unwrap(api.get<DashboardSummary>("/vms/dashboard/summary")),
   },
 
   cameras: {
     // GET /cameras → { items, total, skip, limit }. Filters: status, brand,
     // site_id, group_id, q + skip/limit.
-    list: (params: any = {}) => unwrap(api.get(`${CAMERAS}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${CAMERAS}/${id}`)),
-    create: (body) => unwrap(api.post(CAMERAS, body)),
-    update: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${CAMERAS}/${id}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<CameraListResponse>(`${CAMERAS}${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<VmsCameraPublic>(`${CAMERAS}/${id}`)),
+    create: (body: CameraCreate) => unwrap(api.post<VmsCameraPublic>(CAMERAS, body)),
+    update: (id: string, body: CameraUpdate) => unwrap(api.patch<VmsCameraPublic>(`${CAMERAS}/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`${CAMERAS}/${id}`)),
     // POST /cameras/bulk { camera_ids, action, group_id?, retention_days? }.
-    bulk: (body) => unwrap(api.post(`${CAMERAS}/bulk`, body)),
+    bulk: (body: CameraBulkBody) => unwrap(api.post<BulkResult>(`${CAMERAS}/bulk`, body)),
     // POST /cameras/reorder { items: [{ id, display_order }] }.
-    reorder: (items) => unwrap(api.post(`${CAMERAS}/reorder`, { items })),
+    reorder: (items: CameraReorderItem[]) => unwrap(api.post<ReorderResult>(`${CAMERAS}/reorder`, { items })),
 
     // Config sub-resources (ONVIF-backed) ──────────────────────────────
-    ptz: (id, body) => unwrap(api.post(`${CAMERAS}/${id}/ptz`, body)),
+    ptz: (id: string, body: PtzBody) => unwrap(api.post<ConfigResult>(`${CAMERAS}/${id}/ptz`, body)),
     // GET current ONVIF imaging settings + ranges (served from the persisted value;
     // { refresh:true } re-probes the device); PATCH pushes changes to the device.
-    getImaging: (id, { refresh = false }: any = {}) =>
-      unwrap(api.get(`${CAMERAS}/${id}/imaging${refresh ? "?refresh=true" : ""}`)),
-    setImaging: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/imaging`, body)),
+    getImaging: (id: string, { refresh = false }: RefreshOpt = {}) =>
+      unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/imaging${refresh ? "?refresh=true" : ""}`)),
+    setImaging: (id: string, body: ConfigDict) => unwrap(api.patch<ConfigResult>(`${CAMERAS}/${id}/imaging`, body)),
     // GET enumerates ONVIF relay outputs + digital inputs (persisted; { refresh:true }
     // re-enumerates from the device); PATCH toggles a relay.
-    getIo: (id, { refresh = false }: any = {}) =>
-      unwrap(api.get(`${CAMERAS}/${id}/io${refresh ? "?refresh=true" : ""}`)),
-    setIo: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/io`, body)),
+    getIo: (id: string, { refresh = false }: RefreshOpt = {}) =>
+      unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/io${refresh ? "?refresh=true" : ""}`)),
+    setIo: (id: string, body: ConfigDict) => unwrap(api.patch<ConfigResult>(`${CAMERAS}/${id}/io`, body)),
     // Video encoder (resolution/fps/bitrate/GOP) — persisted; { refresh:true } re-reads.
-    getEncoder: (id, { refresh = false }: any = {}) =>
-      unwrap(api.get(`${CAMERAS}/${id}/encoder${refresh ? "?refresh=true" : ""}`)),
-    setEncoder: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/encoder`, body)),
+    getEncoder: (id: string, { refresh = false }: RefreshOpt = {}) =>
+      unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/encoder${refresh ? "?refresh=true" : ""}`)),
+    setEncoder: (id: string, body: EncoderBody) => unwrap(api.patch<ConfigResult>(`${CAMERAS}/${id}/encoder`, body)),
     // OSD / text overlay — persisted; { refresh:true } re-reads.
-    getOsd: (id, { refresh = false }: any = {}) =>
-      unwrap(api.get(`${CAMERAS}/${id}/osd${refresh ? "?refresh=true" : ""}`)),
-    setOsd: (id, body) => unwrap(api.patch(`${CAMERAS}/${id}/osd`, body)),
-    getMotionConfig: (id) => unwrap(api.get(`${CAMERAS}/${id}/motion-config`)),
-    setMotionConfig: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/motion-config`, body)),
+    getOsd: (id: string, { refresh = false }: RefreshOpt = {}) =>
+      unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/osd${refresh ? "?refresh=true" : ""}`)),
+    setOsd: (id: string, body: OsdBody) => unwrap(api.patch<ConfigResult>(`${CAMERAS}/${id}/osd`, body)),
+    getMotionConfig: (id: string) => unwrap(api.get<ConfigResult>(`${CAMERAS}/${id}/motion-config`)),
+    setMotionConfig: (id: string, body: ConfigDict) => unwrap(api.put<ConfigResult>(`${CAMERAS}/${id}/motion-config`, body)),
 
     // ── Drawn regions (G5) — privacy masks + motion-detection zones ──────
     // Both are lists of NORMALIZED (0..1) shapes, top-left origin: a rect
@@ -211,16 +391,19 @@ export const vms = {
     //   PUT  /cameras/{id}/motion-zones  { zones:[...] }  → { motion_zones, pushed, push_error? }
     // Reads gate on vms.camera.read; writes on vms.config.manage.
     privacyMasks: {
-      get: (id) => unwrap(api.get(`${CAMERAS}/${id}/privacy-masks`)),
-      put: (id, masks) => unwrap(api.put(`${CAMERAS}/${id}/privacy-masks`, { masks })),
+      get: (id: string) => unwrap(api.get<PrivacyMasksResponse>(`${CAMERAS}/${id}/privacy-masks`)),
+      put: (id: string, masks: DrawnShape[]) =>
+        unwrap(api.put<PrivacyMasksResponse>(`${CAMERAS}/${id}/privacy-masks`, { masks })),
     },
     motionZones: {
-      get: (id) => unwrap(api.get(`${CAMERAS}/${id}/motion-zones`)),
-      put: (id, zones) => unwrap(api.put(`${CAMERAS}/${id}/motion-zones`, { zones })),
+      get: (id: string) => unwrap(api.get<MotionZonesResponse>(`${CAMERAS}/${id}/motion-zones`)),
+      put: (id: string, zones: DrawnShape[]) =>
+        unwrap(api.put<MotionZonesResponse>(`${CAMERAS}/${id}/motion-zones`, { zones })),
     },
 
-    getOnvifEvents: (id) => unwrap(api.get(`${CAMERAS}/${id}/onvif-events`)),
-    setOnvifEvents: (id, body) => unwrap(api.put(`${CAMERAS}/${id}/onvif-events`, body)),
+    getOnvifEvents: (id: string) => unwrap(api.get<OnvifEventsBody>(`${CAMERAS}/${id}/onvif-events`)),
+    setOnvifEvents: (id: string, body: OnvifEventsBody) =>
+      unwrap(api.put<OnvifEventsBody>(`${CAMERAS}/${id}/onvif-events`, body)),
 
     // ── Two-way audio / push-to-talk (G6) ────────────────────────────────
     // Only meaningful for a `talk_capable` camera (backchannel / two-way). Gates
@@ -232,7 +415,7 @@ export const vms = {
     // (WHIP publish) and plays back the answer. 409 TALK_UNSUPPORTED for a
     // non-capable camera. Real backchannel push = # LIVE-VALIDATE (needs a
     // camera speaker).
-    talkSession: (id) => unwrap(api.post(`${CAMERAS}/${id}/talk/session`, {})),
+    talkSession: (id: string) => unwrap(api.post<TalkSessionPublic>(`${CAMERAS}/${id}/talk/session`, {})),
 
     // ── Stream codec policy — force the SUB (web) stream to H.264 ────────────
     // POST /vms/cameras/{id}/apply-stream-policy → pushes the sub-stream to
@@ -241,10 +424,11 @@ export const vms = {
     // returns a StreamPolicyResult { ok, supported, already, detail, ... }. Gate:
     // vms.config.manage. The camera's sub_stream_codec/web_codec_enforced update
     // on success (refetch the camera to refresh the codec badge).
-    applyStreamPolicy: (id) => unwrap(api.post(`${CAMERAS}/${id}/apply-stream-policy`, {})),
+    applyStreamPolicy: (id: string) =>
+      unwrap(api.post<StreamPolicyResult>(`${CAMERAS}/${id}/apply-stream-policy`, {})),
 
     // Snapshot URL for a saved camera (rendered via <img>, not fetched here).
-    snapshotUrl: (id) => `${CAMERAS}/${id}/snapshot`,
+    snapshotUrl: (id: string) => `${CAMERAS}/${id}/snapshot`,
   },
 
   // ── PTZ operator control (G1) — live pan/tilt/zoom/focus + presets + patrols
@@ -269,68 +453,72 @@ export const vms = {
   ptz: {
     // Continuous move: pan/tilt/zoom velocities in [-1,1], speed in (0,1].
     // On release call stop (or send mode:"continuous" with 0 velocities via stop).
-    move: (id, body) => unwrap(api.post(`${CAMERAS}/${id}/ptz/move`, body)),
-    stop: (id) => unwrap(api.post(`${CAMERAS}/${id}/ptz/stop`, {})),
-    zoom: (id, { direction, speed = 0.5 }: any = {}) =>
-      unwrap(api.post(`${CAMERAS}/${id}/ptz/zoom`, { direction, speed })),
-    focus: (id, { direction, speed = 0.5 }: any = {}) =>
-      unwrap(api.post(`${CAMERAS}/${id}/ptz/focus`, { direction, speed })),
+    move: (id: string, body: PtzMoveBody) => unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/move`, body)),
+    stop: (id: string) => unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/stop`, {})),
+    zoom: (id: string, { direction, speed = 0.5 }: { direction: "in" | "out"; speed?: number }) =>
+      unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/zoom`, { direction, speed })),
+    focus: (id: string, { direction, speed = 0.5 }: { direction: "near" | "far"; speed?: number }) =>
+      unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/focus`, { direction, speed })),
     presets: {
-      list: (id) => unwrap(api.get(`${CAMERAS}/${id}/ptz/presets`)),
+      list: (id: string) => unwrap(api.get<ItemList<PresetPublic>>(`${CAMERAS}/${id}/ptz/presets`)),
       // Stores the camera's CURRENT position under `name`.
-      create: (id, name) => unwrap(api.post(`${CAMERAS}/${id}/ptz/presets`, { name })),
-      goto: (id, presetId) => unwrap(api.post(`${CAMERAS}/${id}/ptz/presets/${presetId}/goto`, {})),
-      remove: (id, presetId) => unwrap(api.delete(`${CAMERAS}/${id}/ptz/presets/${presetId}`)),
+      create: (id: string, name: string) => unwrap(api.post<PresetPublic>(`${CAMERAS}/${id}/ptz/presets`, { name })),
+      goto: (id: string, presetId: string) =>
+        unwrap(api.post<PtzResult>(`${CAMERAS}/${id}/ptz/presets/${presetId}/goto`, {})),
+      remove: (id: string, presetId: string) => unwrap(api.delete<void>(`${CAMERAS}/${id}/ptz/presets/${presetId}`)),
     },
     patrols: {
-      list: (id) => unwrap(api.get(`${CAMERAS}/${id}/ptz/patrols`)),
+      list: (id: string) => unwrap(api.get<ItemList<PatrolPublic>>(`${CAMERAS}/${id}/ptz/patrols`)),
       // { name, stops:[{ preset_id, dwell_seconds }], speed }.
-      create: (id, body) => unwrap(api.post(`${CAMERAS}/${id}/ptz/patrols`, body)),
-      update: (id, patrolId, body) =>
-        unwrap(api.patch(`${CAMERAS}/${id}/ptz/patrols/${patrolId}`, body)),
-      remove: (id, patrolId) => unwrap(api.delete(`${CAMERAS}/${id}/ptz/patrols/${patrolId}`)),
-      start: (id, patrolId) => unwrap(api.post(`${CAMERAS}/${id}/ptz/patrols/${patrolId}/start`, {})),
-      stop: (id, patrolId) => unwrap(api.post(`${CAMERAS}/${id}/ptz/patrols/${patrolId}/stop`, {})),
+      create: (id: string, body: PatrolCreate) => unwrap(api.post<PatrolPublic>(`${CAMERAS}/${id}/ptz/patrols`, body)),
+      update: (id: string, patrolId: string, body: PatrolUpdate) =>
+        unwrap(api.patch<PatrolPublic>(`${CAMERAS}/${id}/ptz/patrols/${patrolId}`, body)),
+      remove: (id: string, patrolId: string) => unwrap(api.delete<void>(`${CAMERAS}/${id}/ptz/patrols/${patrolId}`)),
+      start: (id: string, patrolId: string) =>
+        unwrap(api.post<PatrolPublic>(`${CAMERAS}/${id}/ptz/patrols/${patrolId}/start`, {})),
+      stop: (id: string, patrolId: string) =>
+        unwrap(api.post<PatrolPublic>(`${CAMERAS}/${id}/ptz/patrols/${patrolId}/stop`, {})),
     },
   },
 
   // ONVIF discovery / onboarding (unsaved-device flows) ──────────────────
   discovery: {
     // POST /cameras/onvif/discover { network?, brand? } → { items, total }.
-    discover: (body: any = {}) => unwrap(api.post(`${CAMERAS}/onvif/discover`, body)),
+    discover: (body: DiscoverBody = {}) => unwrap(api.post<DiscoverResponse>(`${CAMERAS}/onvif/discover`, body)),
     // POST /cameras/onvif/probe { host, port, username, password, brand? }.
-    probe: (body) => unwrap(api.post(`${CAMERAS}/onvif/probe`, body)),
+    probe: (body: HostCredentials) => unwrap(api.post<ProbeResponse>(`${CAMERAS}/onvif/probe`, body)),
     // POST /cameras/onvif/channels — enumerate an NVR/encoder's channels.
-    channels: (body) => unwrap(api.post(`${CAMERAS}/onvif/channels`, body)),
+    channels: (body: HostCredentials) => unwrap(api.post<ChannelsResponse>(`${CAMERAS}/onvif/channels`, body)),
     // POST /cameras/onvif/bulk-add { host, port, username, password, brand, channels[] }.
-    bulkAdd: (body) => unwrap(api.post(`${CAMERAS}/onvif/bulk-add`, body)),
+    bulkAdd: (body: BulkAddBody) => unwrap(api.post<BulkAddResponse>(`${CAMERAS}/onvif/bulk-add`, body)),
     // POST /cameras/onvif/snapshot — grab a JPEG from an unsaved host (returns blob).
-    snapshot: (body) =>
-      api.post(`${CAMERAS}/onvif/snapshot`, body, { responseType: "blob" }).then((r) => r.data),
+    snapshot: (body: HostCredentials) =>
+      blob(api.post<Blob>(`${CAMERAS}/onvif/snapshot`, body, { responseType: "blob" })),
   },
 
   nvrs: {
     // GET /nvrs → { items, total, skip, limit }. Filters: status, brand, q.
-    list: (params = {}) => unwrap(api.get(`${NVRS}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${NVRS}/${id}`)),
-    create: (body) => unwrap(api.post(NVRS, body)),
-    update: (id, body) => unwrap(api.patch(`${NVRS}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${NVRS}/${id}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<NvrListResponse>(`${NVRS}${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<NvrPublic>(`${NVRS}/${id}`)),
+    create: (body: NvrCreate) => unwrap(api.post<NvrPublic>(NVRS, body)),
+    update: (id: string, body: NvrUpdate) => unwrap(api.patch<NvrPublic>(`${NVRS}/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`${NVRS}/${id}`)),
     // POST /nvrs/discover { network?, brand? }.
-    discover: (body = {}) => unwrap(api.post(`${NVRS}/discover`, body)),
+    discover: (body: DiscoverBody = {}) => unwrap(api.post<DiscoverResponse>(`${NVRS}/discover`, body)),
     // GET /nvrs/{id}/channels — enumerate a SAVED NVR's channels (creds off the row).
     // Served from the cached list on the NVR row; pass { refresh:true } to force a
     // live ONVIF re-enumeration (the ↻ button).
-    channels: (id, { refresh = false }: any = {}) =>
-      unwrap(api.get(`${NVRS}/${id}/channels${refresh ? "?refresh=true" : ""}`)),
+    channels: (id: string, { refresh = false }: RefreshOpt = {}) =>
+      unwrap(api.get<ChannelsResponse>(`${NVRS}/${id}/channels${refresh ? "?refresh=true" : ""}`)),
     // POST /nvrs/channels { host, port, username, password, brand? } — UNSAVED host.
-    probeChannels: (body) => unwrap(api.post(`${NVRS}/channels`, body)),
+    probeChannels: (body: HostCredentials) => unwrap(api.post<ChannelsResponse>(`${NVRS}/channels`, body)),
     // POST /nvrs/{id}/map-channels { channels: [{ channel_number, name?, add }] }.
-    mapChannels: (id, channels) => unwrap(api.post(`${NVRS}/${id}/map-channels`, { channels })),
+    mapChannels: (id: string, channels: MapChannelItem[]) =>
+      unwrap(api.post<MapChannelsResult>(`${NVRS}/${id}/map-channels`, { channels })),
     // GET /nvrs/{id}/health — reachability + storage/channel snapshot.
-    health: (id) => unwrap(api.get(`${NVRS}/${id}/health`)),
+    health: (id: string) => unwrap(api.get<NvrHealthResponse>(`${NVRS}/${id}/health`)),
     // POST /nvrs/{id}/refresh — re-probe + return the refreshed NVR.
-    refresh: (id) => unwrap(api.post(`${NVRS}/${id}/refresh`, {})),
+    refresh: (id: string) => unwrap(api.post<NvrPublic>(`${NVRS}/${id}/refresh`, {})),
   },
 
   // ── Media nodes (recorders) — independent recorder machines ─────────────
@@ -350,11 +538,11 @@ export const vms = {
   //   PATCH  /vms/media-nodes/{id} — any subset incl. status (allow "draining").
   //   DELETE /vms/media-nodes/{id} — 409/400 with an error if cameras still assigned.
   mediaNodes: {
-    list: (params: any = {}) => unwrap(api.get(`/vms/media-nodes${qs(params)}`)),
-    get: (id) => unwrap(api.get(`/vms/media-nodes/${id}`)),
-    create: (body) => unwrap(api.post("/vms/media-nodes", body)),
-    update: (id, body) => unwrap(api.patch(`/vms/media-nodes/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`/vms/media-nodes/${id}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<MediaNodeListResponse>(`/vms/media-nodes${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<MediaNodePublic>(`/vms/media-nodes/${id}`)),
+    create: (body: MediaNodeCreate) => unwrap(api.post<MediaNodePublic>("/vms/media-nodes", body)),
+    update: (id: string, body: MediaNodeUpdate) => unwrap(api.patch<MediaNodePublic>(`/vms/media-nodes/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`/vms/media-nodes/${id}`)),
 
     // ── Federation trust — per-node credential management ────────────────────
     // A node is enrolled when it holds a federation credential (MediaNodePublic
@@ -370,11 +558,12 @@ export const vms = {
     // operator mints a one-use code on the recorder's console and `pair` trades it.
     // Same 201 body either way: { credential (RAW), id, label, grants[] }.
     //   POST /vms/media-nodes/{id}/pair { code } → 201
-    credentials: (id) => unwrap(api.get(`/vms/media-nodes/${id}/credentials`)),
-    enroll: (id) => unwrap(api.post(`/vms/media-nodes/${id}/enroll`, {})),
-    pair: (id, code) => unwrap(api.post(`/vms/media-nodes/${id}/pair`, { code })),
-    revokeCredential: (id, credId) =>
-      unwrap(api.delete(`/vms/media-nodes/${id}/credentials/${credId}`)),
+    credentials: (id: string) =>
+      unwrap(api.get<ItemList<NodeCredentialPublic>>(`/vms/media-nodes/${id}/credentials`)),
+    enroll: (id: string) => unwrap(api.post<NodeEnrollResult>(`/vms/media-nodes/${id}/enroll`, {})),
+    pair: (id: string, code: string) => unwrap(api.post<NodeEnrollResult>(`/vms/media-nodes/${id}/pair`, { code })),
+    revokeCredential: (id: string, credId: string) =>
+      unwrap(api.delete<void>(`/vms/media-nodes/${id}/credentials/${credId}`)),
   },
 
   // Camera groups — a named set of cameras shown in a grid `layout`
@@ -382,11 +571,11 @@ export const vms = {
   // rotates through on the video wall. Public shape: { id, name, description,
   // camera_ids[], layout, is_active, color }.
   groups: {
-    list: (params: any = {}) => unwrap(api.get(`${GROUPS}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${GROUPS}/${id}`)),
-    create: (body) => unwrap(api.post(GROUPS, body)),
-    update: (id, body) => unwrap(api.patch(`${GROUPS}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${GROUPS}/${id}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<CameraGroupListResponse>(`${GROUPS}${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<CameraGroupPublic>(`${GROUPS}/${id}`)),
+    create: (body: CameraGroupCreate) => unwrap(api.post<CameraGroupPublic>(GROUPS, body)),
+    update: (id: string, body: CameraGroupUpdate) => unwrap(api.patch<CameraGroupPublic>(`${GROUPS}/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`${GROUPS}/${id}`)),
   },
 
   // Patterns — a named ROTATING sequence of camera groups. On the wall a pattern
@@ -395,28 +584,30 @@ export const vms = {
   // camera_group_ids[], seconds, is_active }.
   patterns: {
     // GET /patterns?is_active= → { items, total } (or bare array).
-    list: (params: any = {}) => unwrap(api.get(`${PATTERNS}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${PATTERNS}/${id}`)),
-    create: (body) => unwrap(api.post(PATTERNS, body)),
-    update: (id, body) => unwrap(api.patch(`${PATTERNS}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${PATTERNS}/${id}`)),
+    list: (params: QueryParams = {}) =>
+      unwrap(api.get<PatternListResponse>(`${PATTERNS}${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<PatternPublic>(`${PATTERNS}/${id}`)),
+    create: (body: PatternCreate) => unwrap(api.post<PatternPublic>(PATTERNS, body)),
+    update: (id: string, body: PatternUpdate) => unwrap(api.patch<PatternPublic>(`${PATTERNS}/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`${PATTERNS}/${id}`)),
   },
 
   acl: {
     // GET /cameras/{id}/acl → { items, total }.
-    get: (cameraId) => unwrap(api.get(`${CAMERAS}/${cameraId}/acl`)),
+    get: (cameraId: string) => unwrap(api.get<CameraACLListResponse>(`${CAMERAS}/${cameraId}/acl`)),
     // PUT /cameras/{id}/acl { entries: [{ subject_type, subject_id, privileges[] }] }.
-    put: (cameraId, entries) => unwrap(api.put(`${CAMERAS}/${cameraId}/acl`, { entries })),
+    put: (cameraId: string, entries: CameraACLEntry[]) =>
+      unwrap(api.put<CameraACLListResponse>(`${CAMERAS}/${cameraId}/acl`, { entries })),
   },
 
   health: {
     // GET /cameras/health?camera_id= → { items, total } (latest per camera).
-    latest: (params: any = {}) => unwrap(api.get(`${HEALTH}${qs(params)}`)),
+    latest: (params: QueryParams = {}) => unwrap(api.get<CameraHealthListResponse>(`${HEALTH}${qs(params)}`)),
     // GET /cameras/{id}/health/history?skip=&limit=&from=&to= → time-series.
-    history: (cameraId, params: any = {}) =>
-      unwrap(api.get(`${CAMERAS}/${cameraId}/health/history${qs(params)}`)),
+    history: (cameraId: string, params: QueryParams = {}) =>
+      unwrap(api.get<CameraHealthHistoryResponse>(`${CAMERAS}/${cameraId}/health/history${qs(params)}`)),
     // POST /cameras/{id}/health/refresh → a fresh sample.
-    refresh: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/health/refresh`, {})),
+    refresh: (cameraId: string) => unwrap(api.post<CameraHealthPublic>(`${CAMERAS}/${cameraId}/health/refresh`, {})),
   },
 
   // ── Camera device-events (P5-A) — the normalized event feed ─────────────
@@ -430,12 +621,12 @@ export const vms = {
   events: {
     // GET /vms/events?camera_id=&event_type=&severity=&acknowledged=&from=&to=&skip=&limit=
     //   → { items, total, skip, limit } (newest first).
-    list: (params: any = {}) => unwrap(api.get(`${EVENTS}${qs(params)}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<VmsEventListResponse>(`${EVENTS}${qs(params)}`)),
     // GET /vms/cameras/{id}/events?… → one camera's events.
-    listForCamera: (cameraId, params = {}) =>
-      unwrap(api.get(`${CAMERAS}/${cameraId}/events${qs(params)}`)),
+    listForCamera: (cameraId: string, params: QueryParams = {}) =>
+      unwrap(api.get<VmsEventListResponse>(`${CAMERAS}/${cameraId}/events${qs(params)}`)),
     // POST /vms/events/{id}/ack → the acknowledged VmsEventPublic (idempotent).
-    ack: (id) => unwrap(api.post(`${EVENTS}/${id}/ack`, {})),
+    ack: (id: string) => unwrap(api.post<VmsEventPublic>(`${EVENTS}/${id}/ack`, {})),
   },
 
   // ── Linkage / action rules (P5-B) — event → action automation ───────────
@@ -447,13 +638,13 @@ export const vms = {
   // updated_at }. Writes gate on vms.config.manage; the fire-audit is read-only.
   linkage: {
     // GET /vms/linkage-rules?trigger_event_type=&is_active=&skip=&limit= → { items, total }.
-    list: (params = {}) => unwrap(api.get(`${LINKAGE}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${LINKAGE}/${id}`)),
-    create: (body) => unwrap(api.post(LINKAGE, body)),
-    update: (id, body) => unwrap(api.patch(`${LINKAGE}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${LINKAGE}/${id}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<LinkageRuleListResponse>(`${LINKAGE}${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<LinkageRulePublic>(`${LINKAGE}/${id}`)),
+    create: (body: LinkageRuleCreate) => unwrap(api.post<LinkageRulePublic>(LINKAGE, body)),
+    update: (id: string, body: LinkageRuleUpdate) => unwrap(api.patch<LinkageRulePublic>(`${LINKAGE}/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`${LINKAGE}/${id}`)),
     // GET /vms/linkage-fires?rule_id=&camera_id=&skip=&limit= → the fire-audit log.
-    fires: (params = {}) => unwrap(api.get(`/vms/linkage-fires${qs(params)}`)),
+    fires: (params: QueryParams = {}) => unwrap(api.get<LinkageFireListResponse>(`/vms/linkage-fires${qs(params)}`)),
   },
 
   // ── Live streaming (P2-D) — PlaybackSession issue / renew / release ──────
@@ -467,16 +658,16 @@ export const vms = {
     //   { session_id, camera_id, profile, hls_url, webrtc_url, rtsp_url,
     //     token, expires_at, ready }. `profile` defaults to the low-bandwidth
     //   "sub" stream; the backend falls back to main/onvif when absent.
-    start: (cameraId, profile = "sub") =>
-      unwrap(api.post(`${CAMERAS}/${cameraId}/live`, { profile })),
+    start: (cameraId: string, profile: string = "sub") =>
+      unwrap(api.post<PlaybackSessionPublic>(`${CAMERAS}/${cameraId}/live`, { profile })),
     // POST /cameras/{id}/live/{session}/renew → fresh token + expiry (call
     //   before expiry to keep long views alive; TTL ~300s). Does NOT re-ensure
     //   the MediaMTX path — playback never drops.
-    renew: (cameraId, sessionId) =>
-      unwrap(api.post(`${CAMERAS}/${cameraId}/live/${sessionId}/renew`, {})),
+    renew: (cameraId: string, sessionId: string) =>
+      unwrap(api.post<PlaybackSessionPublic>(`${CAMERAS}/${cameraId}/live/${sessionId}/renew`, {})),
     // DELETE /live/{session} → release the session (nvr path teardown + row).
     //   Call on unmount so idle MediaMTX paths get reaped.
-    release: (sessionId) => unwrap(api.delete(`/vms/live/${sessionId}`)),
+    release: (sessionId: string) => unwrap(api.delete<void>(`/vms/live/${sessionId}`)),
   },
 
   // ── Recordings (P3-A/B) — browse + integrity/lock ───────────────────────
@@ -486,16 +677,16 @@ export const vms = {
   // storage_pool_id. No dedicated download endpoint yet (P4) — surface the path.
   recordings: {
     // GET /cameras/{id}/recordings?from=&to=&trigger=&skip=&limit= → { items, total }.
-    list: (cameraId, params = {}) =>
-      unwrap(api.get(`${CAMERAS}/${cameraId}/recordings${qs(params)}`)),
+    list: (cameraId: string, params: QueryParams = {}) =>
+      unwrap(api.get<RecordingListResponse>(`${CAMERAS}/${cameraId}/recordings${qs(params)}`)),
     // GET /recordings/{id} → a single RecordingPublic.
-    get: (id) => unwrap(api.get(`${RECORDINGS}/${id}`)),
+    get: (id: string) => unwrap(api.get<RecordingPublic>(`${RECORDINGS}/${id}`)),
     // POST /recordings/{id}/lock — protect from retention/tiering deletion.
-    lock: (id) => unwrap(api.post(`${RECORDINGS}/${id}/lock`, {})),
+    lock: (id: string) => unwrap(api.post<RecordingIntegrityResult>(`${RECORDINGS}/${id}/lock`, {})),
     // POST /recordings/{id}/unlock — release the lock.
-    unlock: (id) => unwrap(api.post(`${RECORDINGS}/${id}/unlock`, {})),
+    unlock: (id: string) => unwrap(api.post<RecordingIntegrityResult>(`${RECORDINGS}/${id}/unlock`, {})),
     // POST /recordings/{id}/verify — recompute the SHA-256 + return integrity_status.
-    verify: (id) => unwrap(api.post(`${RECORDINGS}/${id}/verify`, {})),
+    verify: (id: string) => unwrap(api.post<RecordingIntegrityResult>(`${RECORDINGS}/${id}/verify`, {})),
   },
 
   // ── Recorded playback (P4-A) — timeline + a RECORDED PlaybackSession ─────
@@ -507,19 +698,19 @@ export const vms = {
     // POST /cameras/{id}/playback { from, to, profile? } →
     //   { session_id, hls_url, token, from, to, ranges, expires_at }.
     //   `from`/`to` are ISO strings; `ranges` are the covered [start,end] spans.
-    session: (cameraId, { from, to, profile = "main" }: any = {}) =>
-      unwrap(api.post(`${CAMERAS}/${cameraId}/playback`, { from, to, profile })),
+    session: (cameraId: string, { from, to, profile = "main" }: WindowOpt & { profile?: string } = {}) =>
+      unwrap(api.post<RecordedPlaybackPublic>(`${CAMERAS}/${cameraId}/playback`, { from, to, profile })),
     // GET /cameras/{id}/timeline?day=YYYY-MM-DD (or ?from=&to=) →
     //   { coverage:[{start,end}], gaps:[{start,end}], total_seconds }.
-    timeline: (cameraId, params: any = {}) =>
-      unwrap(api.get(`${CAMERAS}/${cameraId}/timeline${qs(params)}`)),
+    timeline: (cameraId: string, params: QueryParams = {}) =>
+      unwrap(api.get<TimelineResponse>(`${CAMERAS}/${cameraId}/timeline${qs(params)}`)),
     // GET /cameras/{id}/recording-days?month=YYYY-MM&tz_offset_minutes=330 →
     //   { year, month, days:[14,15,…] } — days-of-month (LOCAL tz) that have footage.
     //   Drives the playback calendar's footage marks. tz_offset_minutes is the
     //   client's offset FROM UTC (= -getTimezoneOffset()).
-    recordingDays: (cameraId, { month, tzOffsetMinutes }: any = {}) =>
+    recordingDays: (cameraId: string, { month, tzOffsetMinutes }: RecordingDaysOpt = {}) =>
       unwrap(
-        api.get(
+        api.get<RecordingDaysResponse>(
           `${CAMERAS}/${cameraId}/recording-days${qs({ month, tz_offset_minutes: tzOffsetMinutes })}`,
         ),
       ),
@@ -530,31 +721,31 @@ export const vms = {
     // POST /cameras/{id}/export { from, to, format?, watermark? } → the ExportJobPublic
     //   (job_id, status, signed, checksum, watermark, …). `watermark` burns a visible
     //   provenance stamp into the clip (re-encode; makes tampering visible).
-    create: (cameraId, { from, to, format = "mp4", watermark = false }: any = {}) =>
-      unwrap(api.post(`${CAMERAS}/${cameraId}/export`, { from, to, format, watermark })),
+    create: (
+      cameraId: string,
+      { from, to, format = "mp4", watermark = false }: WindowOpt & { format?: string; watermark?: boolean } = {},
+    ) => unwrap(api.post<ExportJobPublic>(`${CAMERAS}/${cameraId}/export`, { from, to, format, watermark })),
     // GET /export/{job} → { job_id, status(queued|running|done|failed),
     //   file_size?, error?, camera_id, from, to, format }.
-    status: (jobId) => unwrap(api.get(`${EXPORT}/${jobId}`)),
+    status: (jobId: string) => unwrap(api.get<ExportJobPublic>(`${EXPORT}/${jobId}`)),
     // GET /export/{job}/download — token-gated mp4. The download endpoint is
     // JWT-authed (Bearer), so it can't be a plain <a href> (no header). Fetch
     // as a blob and hand it to the caller to save.
-    downloadBlob: (jobId) =>
-      api.get(`${EXPORT}/${jobId}/download`, { responseType: "blob" }).then((r) => r.data),
+    downloadBlob: (jobId: string) => blob(api.get<Blob>(`${EXPORT}/${jobId}/download`, { responseType: "blob" })),
     // The absolute URL (for reference / opening in a new tab where the browser
     // already holds the session) — note it still needs the Bearer header, so
     // prefer downloadBlob for the in-app "Download" button.
-    downloadUrl: (jobId) => `${API_ROOT}/api/v1${EXPORT}/${jobId}/download`,
+    downloadUrl: (jobId: string) => `${API_ROOT}/api/v1${EXPORT}/${jobId}/download`,
     // ── Tamper-evidence (P6-B) ────────────────────────────────────────────
     // POST /export/{job}/verify → { valid, reason, manifest } — re-hash the clip
     //   + verify its Ed25519 signature server-side (valid:false/reason:"tampered"
     //   if altered after signing).
-    verify: (jobId) => unwrap(api.post(`${EXPORT}/${jobId}/verify`, {})),
+    verify: (jobId: string) => unwrap(api.post<ExportVerifyResult>(`${EXPORT}/${jobId}/verify`, {})),
     // GET /export/{job}/manifest → the tamper-evidence sidecar (file_hash,
     //   signature, exported_by, exported_at, chain…) as a downloadable blob.
-    manifestBlob: (jobId) =>
-      api.get(`${EXPORT}/${jobId}/manifest`, { responseType: "blob" }).then((r) => r.data),
+    manifestBlob: (jobId: string) => blob(api.get<Blob>(`${EXPORT}/${jobId}/manifest`, { responseType: "blob" })),
     // GET /export/public-key → { algorithm, key_id, public_key(PEM) } for offline verify.
-    publicKey: () => unwrap(api.get(`${EXPORT}/public-key`)),
+    publicKey: () => unwrap(api.get<ExportPublicKey>(`${EXPORT}/public-key`)),
   },
 
   // ── Operational reports (P6-B) — uptime / coverage / storage / events ────
@@ -565,35 +756,33 @@ export const vms = {
   //   vms.playback.view; schedule writes on vms.config.manage.
   reports: {
     // GET /vms/reports/{kind}?from=&to=&camera_id= → the JSON report.
-    get: (kind, params = {}) => unwrap(api.get(`${REPORTS}/${kind}${qs(params)}`)),
+    get: (kind: string, params: QueryParams = {}) => unwrap(api.get<ReportResponse>(`${REPORTS}/${kind}${qs(params)}`)),
     // GET /vms/reports/{kind}/export?format=csv|pdf&from=&to=&camera_id= → a
     //   CSV/PDF download (fetched as a blob so the Bearer header is sent).
-    exportBlob: (kind, params = {}) =>
-      api
-        .get(`${REPORTS}/${kind}/export${qs(params)}`, { responseType: "blob" })
-        .then((r) => r.data),
+    exportBlob: (kind: string, params: QueryParams = {}) =>
+      blob(api.get<Blob>(`${REPORTS}/${kind}/export${qs(params)}`, { responseType: "blob" })),
     schedules: {
       // GET /vms/report-schedules → { items, total }.
-      list: (params = {}) => unwrap(api.get(`${REPORT_SCHEDULES}${qs(params)}`)),
-      create: (body) => unwrap(api.post(REPORT_SCHEDULES, body)),
-      update: (id, body) => unwrap(api.patch(`${REPORT_SCHEDULES}/${id}`, body)),
-      remove: (id) => unwrap(api.delete(`${REPORT_SCHEDULES}/${id}`)),
+      list: (params: QueryParams = {}) => unwrap(api.get<ReportScheduleList>(`${REPORT_SCHEDULES}${qs(params)}`)),
+      create: (body: ReportScheduleCreate) => unwrap(api.post<ReportSchedulePublic>(REPORT_SCHEDULES, body)),
+      update: (id: string, body: ReportScheduleUpdate) =>
+        unwrap(api.patch<ReportSchedulePublic>(`${REPORT_SCHEDULES}/${id}`, body)),
+      remove: (id: string) => unwrap(api.delete<void>(`${REPORT_SCHEDULES}/${id}`)),
       // GET /vms/report-schedules/{id}/runs?limit=&offset= → { items: ReportRunPublic[],
       //   total } (newest-first). ReportRunPublic: { id, schedule_id, name, kind,
       //   export_format, window{from,to}, status: done|error, output_size, error,
       //   computed_at, notified_at }.
-      runs: (id, params = {}) => unwrap(api.get(`${REPORT_SCHEDULES}/${id}/runs${qs(params)}`)),
+      runs: (id: string, params: QueryParams = {}) =>
+        unwrap(api.get<ReportRunList>(`${REPORT_SCHEDULES}/${id}/runs${qs(params)}`)),
       // GET /vms/report-schedules/{id}/runs/{runId}/download → the report FILE
       //   (CSV/PDF/JSON) as a blob (fetched so the Bearer header is sent, then saved
       //   by the caller). Content-Disposition is set server-side.
-      runDownloadBlob: (id, runId) =>
-        api
-          .get(`${REPORT_SCHEDULES}/${id}/runs/${runId}/download`, { responseType: "blob" })
-          .then((r) => r.data),
+      runDownloadBlob: (id: string, runId: string) =>
+        blob(api.get<Blob>(`${REPORT_SCHEDULES}/${id}/runs/${runId}/download`, { responseType: "blob" })),
       // POST /vms/report-schedules/{id}/run-now → the created ReportRunPublic (fires
       //   the report immediately; does NOT change the schedule's cadence). Returns 201
       //   even when the run's status is "error" — inspect `status`.
-      runNow: (id) => unwrap(api.post(`${REPORT_SCHEDULES}/${id}/run-now`, {})),
+      runNow: (id: string) => unwrap(api.post<ReportRunPublic>(`${REPORT_SCHEDULES}/${id}/run-now`, {})),
     },
   },
 
@@ -606,13 +795,13 @@ export const vms = {
   // created_at, updated_at }. end_ts null = a point bookmark.
   bookmarks: {
     // GET /vms/bookmarks?camera_id=&from=&to=&skip=&limit= → { items, total }.
-    list: (params = {}) => unwrap(api.get(`${BOOKMARKS}${qs(params)}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<BookmarkListResponse>(`${BOOKMARKS}${qs(params)}`)),
     // POST /vms/bookmarks { camera_id, start_ts, end_ts?, title, note?, tags? }.
-    create: (body) => unwrap(api.post(BOOKMARKS, body)),
+    create: (body: BookmarkCreate) => unwrap(api.post<BookmarkPublic>(BOOKMARKS, body)),
     // PATCH /vms/bookmarks/{id} { start_ts?, end_ts?, title?, note?, tags? }.
-    update: (id, body) => unwrap(api.patch(`${BOOKMARKS}/${id}`, body)),
+    update: (id: string, body: BookmarkUpdate) => unwrap(api.patch<BookmarkPublic>(`${BOOKMARKS}/${id}`, body)),
     // DELETE /vms/bookmarks/{id} → 204.
-    remove: (id) => unwrap(api.delete(`${BOOKMARKS}/${id}`)),
+    remove: (id: string) => unwrap(api.delete<void>(`${BOOKMARKS}/${id}`)),
   },
 
   // ── Evidence lock / legal hold (G3) — protect a camera+range from deletion
@@ -624,15 +813,15 @@ export const vms = {
   // case_ref?, is_active, created_by, created_at, released_by?, released_at? }.
   evidence: {
     // GET /vms/evidence?camera_id=&active_only=&skip=&limit= → { items, total }.
-    list: (params = {}) => unwrap(api.get(`${EVIDENCE}${qs(params)}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<EvidenceLockListResponse>(`${EVIDENCE}${qs(params)}`)),
     // POST /vms/evidence { camera_id, start_ts, end_ts, reason?, case_ref? }.
-    create: (body) => unwrap(api.post(EVIDENCE, body)),
+    create: (body: EvidenceLockCreate) => unwrap(api.post<EvidenceLockPublic>(EVIDENCE, body)),
     // POST /vms/evidence/{id}/release → the released lock (is_active:false).
-    release: (id) => unwrap(api.post(`${EVIDENCE}/${id}/release`, {})),
+    release: (id: string) => unwrap(api.post<EvidenceLockPublic>(`${EVIDENCE}/${id}/release`, {})),
     // DELETE /vms/evidence/{id} → 204 (hard delete; prefer release for the trail).
-    remove: (id) => unwrap(api.delete(`${EVIDENCE}/${id}`)),
+    remove: (id: string) => unwrap(api.delete<void>(`${EVIDENCE}/${id}`)),
     // GET /vms/evidence/check?camera_id=&ts= (or &from=&to=) → { camera_id, locked }.
-    check: (params = {}) => unwrap(api.get(`${EVIDENCE}/check${qs(params)}`)),
+    check: (params: QueryParams = {}) => unwrap(api.get<EvidenceCheckResult>(`${EVIDENCE}/check${qs(params)}`)),
   },
 
   // ── Smart / forensic motion search (G4) — VMD over recorded footage ──────
@@ -645,16 +834,16 @@ export const vms = {
     // POST /vms/cameras/{id}/motion-search
     //   { from, to, regions:[{x,y,w,h}], sensitivity?=0.5, sample_fps?=4.0 }
     //   → 201 { job_id, status:"queued", ... }.
-    start: (cameraId, body) =>
-      unwrap(api.post(`${CAMERAS}/${cameraId}/motion-search`, body)),
+    start: (cameraId: string, body: MotionSearchStartBody) =>
+      unwrap(api.post<MotionSearchJobPublic>(`${CAMERAS}/${cameraId}/motion-search`, body)),
     // GET /vms/motion-search/{job_id} → { status:"queued"|"running"|"done"|
     //   "failed", progress, hits:[{start,end,score}], note, error }.
-    get: (jobId) => unwrap(api.get(`/vms/motion-search/${jobId}`)),
+    get: (jobId: string) => unwrap(api.get<MotionSearchJobPublic>(`/vms/motion-search/${jobId}`)),
     // Poll `get(jobId)` every `intervalMs` until the job reaches a terminal state
     // (done|failed) or `signal` aborts. `onTick(job)` fires each poll so the caller
     // can render progress. Resolves with the terminal job (or rejects on abort).
-    poll: (jobId, { intervalMs = 1500, onTick, signal }: any = {}): Promise<any> =>
-      new Promise<any>((resolve, reject) => {
+    poll: (jobId: string, { intervalMs = 1500, onTick, signal }: PollOpt = {}): Promise<MotionSearchJobPublic> =>
+      new Promise<MotionSearchJobPublic>((resolve, reject) => {
         let stopped = false;
         const stop = () => {
           stopped = true;
@@ -697,44 +886,46 @@ export const vms = {
   deviceMgmt: {
     // GET /vms/cameras/{id}/device-info → { manufacturer?, model?, firmware?,
     //   serial?, hardware_id?, ... } (brand-dependent; sparse on unsupported brands).
-    info: (id, { refresh = false }: any = {}) =>
-      unwrap(api.get(`${CAMERAS}/${id}/device-info${refresh ? "?refresh=true" : ""}`)),
+    info: (id: string, { refresh = false }: RefreshOpt = {}) =>
+      unwrap(api.get<DeviceInfoPublic>(`${CAMERAS}/${id}/device-info${refresh ? "?refresh=true" : ""}`)),
     // POST /vms/cameras/{id}/reboot → { ok, supported, detail }.
-    reboot: (id) => unwrap(api.post(`${CAMERAS}/${id}/reboot`, {})),
+    reboot: (id: string) => unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/reboot`, {})),
     // POST /vms/cameras/{id}/ntp { server } → { ok, supported, detail }.
-    ntp: (id, server) => unwrap(api.post(`${CAMERAS}/${id}/ntp`, { server })),
+    ntp: (id: string, server: string) => unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/ntp`, { server })),
     // POST /vms/cameras/{id}/password { user?, new_password } → { ok, supported, detail }.
-    password: (id, { user, new_password }: any = {}) =>
-      unwrap(api.post(`${CAMERAS}/${id}/password`, { user, new_password })),
+    password: (id: string, { user, new_password }: Partial<PasswordBody> = {}) =>
+      unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/password`, { user, new_password })),
     // ONVIF device accounts: GET list, POST add, DELETE remove.
-    users: (id) => unwrap(api.get(`${CAMERAS}/${id}/users`)),
-    addUser: (id, { user, password, level }: any = {}) =>
-      unwrap(api.post(`${CAMERAS}/${id}/users`, { user, password, level })),
-    deleteUser: (id, username) => unwrap(api.delete(`${CAMERAS}/${id}/users/${encodeURIComponent(username)}`)),
+    users: (id: string) => unwrap(api.get<DeviceUsersResponse>(`${CAMERAS}/${id}/users`)),
+    addUser: (id: string, { user, password, level }: UserAddBody) =>
+      unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/users`, { user, password, level })),
+    deleteUser: (id: string, username: string) =>
+      unwrap(api.delete<FleetOpPublic>(`${CAMERAS}/${id}/users/${encodeURIComponent(username)}`)),
     // POST /vms/cameras/{id}/config-backup → the device config as a binary blob
     //   (fetched as a blob so the Bearer header is sent, then saved by the caller).
-    configBackup: (id) =>
-      api.post(`${CAMERAS}/${id}/config-backup`, {}, { responseType: "blob" }).then((r) => r.data),
-    // POST /vms/cameras/{id}/config-restore { data } (base64) → { ok, supported, detail }.
-    configRestore: (id, data) =>
-      unwrap(api.post(`${CAMERAS}/${id}/config-restore`, { data })),
+    configBackup: (id: string) =>
+      blob(api.post<Blob>(`${CAMERAS}/${id}/config-backup`, {}, { responseType: "blob" })),
+    // POST /vms/cameras/{id}/config-restore { blob_b64 } (base64) → { ok, supported, detail }.
+    //   The router's ConfigRestoreBody is `blob_b64` (extra="forbid") — a `{ data }`
+    //   body 422s before the driver is reached.
+    configRestore: (id: string, data: string) =>
+      unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/config-restore`, { blob_b64: data })),
     // ── Bulk (multi-select) ──────────────────────────────────────────────
     // POST /vms/cameras/bulk/{reboot|ntp|password} { camera_ids, server?, user?,
     //   new_password? } → { action, total, succeeded, items:[{ camera_id,
     //   camera_name, ok, supported, detail }] }.
     bulk: {
-      reboot: (camera_ids) =>
-        unwrap(api.post(`${CAMERAS}/bulk/reboot`, { camera_ids })),
-      ntp: (camera_ids, server) =>
-        unwrap(api.post(`${CAMERAS}/bulk/ntp`, { camera_ids, server })),
-      password: (camera_ids, { user, new_password }: any = {}) =>
-        unwrap(api.post(`${CAMERAS}/bulk/password`, { camera_ids, user, new_password })),
+      reboot: (camera_ids: string[]) => unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/reboot`, { camera_ids })),
+      ntp: (camera_ids: string[], server: string) =>
+        unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/ntp`, { camera_ids, server })),
+      password: (camera_ids: string[], { user, new_password }: Partial<PasswordBody> = {}) =>
+        unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/password`, { camera_ids, user, new_password })),
       // POST /vms/cameras/bulk/apply-stream-policy { camera_ids } → per-camera
       //   results (same shape as the other bulk ops: { action, total, succeeded,
       //   items:[{ camera_id, camera_name, ok, supported, detail }] }). Forces each
       //   camera's sub-stream to H.264 for browser-direct playback.
-      applyStreamPolicy: (camera_ids) =>
-        unwrap(api.post(`${CAMERAS}/bulk/apply-stream-policy`, { camera_ids })),
+      applyStreamPolicy: (camera_ids: string[]) =>
+        unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/apply-stream-policy`, { camera_ids })),
     },
   },
 
@@ -745,11 +936,12 @@ export const vms = {
   //   advertised_rtsp_port }. service_password is WRITE-ONLY. Gate: vms.config.manage.
   onvifServer: {
     // GET /vms/onvif-server/config → the config (or a transient default).
-    getConfig: () => unwrap(api.get(`${ONVIF_SERVER}/config`)),
+    getConfig: () => unwrap(api.get<OnvifServerConfigPublic>(`${ONVIF_SERVER}/config`)),
     // PUT /vms/onvif-server/config { enabled?, exposed_camera_ids?, service_username?,
     //   service_password?, device_name?, advertised_host?, advertised_http_port?,
     //   advertised_rtsp_port? } — PATCH semantics; omit unchanged secrets.
-    setConfig: (body) => unwrap(api.put(`${ONVIF_SERVER}/config`, body)),
+    setConfig: (body: OnvifServerConfigUpdate) =>
+      unwrap(api.put<OnvifServerConfigPublic>(`${ONVIF_SERVER}/config`, body)),
   },
 
   // ── NVR footage extraction (P4-B) — search + play an onboarded NVR's own
@@ -758,19 +950,19 @@ export const vms = {
   nvrFootage: {
     // GET /nvrs/{id}/channels/{ch}/recordings?from=&to= →
     //   { items:[{start,end,duration?,...}], total } (or bare array).
-    recordings: (nvrId, channel, { from, to }: any = {}) =>
-      unwrap(api.get(`${NVRS}/${nvrId}/channels/${channel}/recordings${qs({ from, to })}`)),
+    recordings: (nvrId: string, channel: number | string, { from, to }: WindowOpt = {}) =>
+      unwrap(api.get<NvrRecordingsResponse>(`${NVRS}/${nvrId}/channels/${channel}/recordings${qs({ from, to })}`)),
     // POST /nvrs/{id}/channels/{ch}/playback { from, to } →
     //   { session_id?, hls_url?, webrtc_url?, rtsp_url?, from, to } — plays
     //   like a recorded/live session (hls_url carries "?token=").
-    playback: (nvrId, channel, { from, to }: any = {}) =>
-      unwrap(api.post(`${NVRS}/${nvrId}/channels/${channel}/playback`, { from, to })),
+    playback: (nvrId: string, channel: number | string, { from, to }: WindowOpt = {}) =>
+      unwrap(api.post<NvrPlaybackSession>(`${NVRS}/${nvrId}/channels/${channel}/playback`, { from, to })),
     // GET /nvrs/{id}/channels/{ch}/recording-days?month=YYYY-MM&tz_offset_minutes=330 →
     //   { year, month, days:[14,15,…] } — same shape as playback.recordingDays,
     //   for a 3rd-party NVR channel's on-board storage. Drives the calendar marks.
-    recordingDays: (nvrId, channel, { month, tzOffsetMinutes }: any = {}) =>
+    recordingDays: (nvrId: string, channel: number | string, { month, tzOffsetMinutes }: RecordingDaysOpt = {}) =>
       unwrap(
-        api.get(
+        api.get<RecordingDaysResponse>(
           `${NVRS}/${nvrId}/channels/${channel}/recording-days${qs({ month, tz_offset_minutes: tzOffsetMinutes })}`,
         ),
       ),
@@ -780,16 +972,19 @@ export const vms = {
   // Mode / weekly schedule / retention drive the recording-supervisor. Manual
   // start/stop toggle recording on the MediaMTX path immediately.
   recordingConfig: {
-    // PUT /cameras/{id}/recording { recording_mode, recording_schedule,
-    //   retention_days, record_substream }.
-    set: (cameraId, body) => unwrap(api.put(`${CAMERAS}/${cameraId}/recording`, body)),
+    // PUT /cameras/{id}/recording { mode, schedule, retention_days,
+    //   record_substream, audio_enabled?, storage_pool_id? }.
+    set: (cameraId: string, body: RecordingConfigBody) =>
+      unwrap(api.put<RecordingConfigPublic>(`${CAMERAS}/${cameraId}/recording`, body)),
     // POST /cameras/{id}/recording/start — begin recording now (manual).
-    start: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/recording/start`, {})),
+    start: (cameraId: string) =>
+      unwrap(api.post<RecordingControlResult>(`${CAMERAS}/${cameraId}/recording/start`, {})),
     // POST /cameras/{id}/recording/stop — stop recording now.
-    stop: (cameraId) => unwrap(api.post(`${CAMERAS}/${cameraId}/recording/stop`, {})),
+    stop: (cameraId: string) =>
+      unwrap(api.post<RecordingControlResult>(`${CAMERAS}/${cameraId}/recording/stop`, {})),
     // GET /recording/active → { available, camera_ids } — which cameras are ACTUALLY
     // recording right now (live nvr state, not the policy mode). Drives the ● indicator.
-    active: () => unwrap(api.get(`/vms/recording/active`)),
+    active: () => unwrap(api.get<RecordingActiveResponse>(`/vms/recording/active`)),
   },
 
   // ── Storage (P3-B) — LEGACY VMS-local pools + tiering ───────────────────
@@ -802,31 +997,34 @@ export const vms = {
   //   is_default, is_active, nas_*(server/share/protocol/username/password/
   //   domain), s3_*(endpoint/bucket/access_key/secret_key/region/use_ssl),
   //   mount_state, reachable. Credentials are write-only.
+  // No Pydantic model survives for these (storage/schemas.py retired them), so the
+  // pool / rule rows are typed by the recorder's own shapes (NodeStoragePool /
+  // NodeTierRule) — the same rows the federation reads hand back.
   storage: {
     pools: {
       // GET /storage/pools → { items, total } (or bare array).
-      list: (params: any = {}) => unwrap(api.get(`${STORAGE}/pools${qs(params)}`)),
-      get: (id) => unwrap(api.get(`${STORAGE}/pools/${id}`)),
-      create: (body) => unwrap(api.post(`${STORAGE}/pools`, body)),
-      update: (id, body) => unwrap(api.patch(`${STORAGE}/pools/${id}`, body)),
-      remove: (id) => unwrap(api.delete(`${STORAGE}/pools/${id}`)),
+      list: (params: QueryParams = {}) => unwrap(api.get<NodeStoragePoolList>(`${STORAGE}/pools${qs(params)}`)),
+      get: (id: string) => unwrap(api.get<NodeStoragePool>(`${STORAGE}/pools/${id}`)),
+      create: (body: ConfigDict) => unwrap(api.post<ConfigResult>(`${STORAGE}/pools`, body)),
+      update: (id: string, body: ConfigDict) => unwrap(api.patch<ConfigResult>(`${STORAGE}/pools/${id}`, body)),
+      remove: (id: string) => unwrap(api.delete<void>(`${STORAGE}/pools/${id}`)),
       // GET /storage/pools/{id}/usage → { used_bytes, capacity_bytes,
       //   recording_count, ... }.
-      usage: (id) => unwrap(api.get(`${STORAGE}/pools/${id}/usage`)),
+      usage: (id: string) => unwrap(api.get<NodeStorageUsage>(`${STORAGE}/pools/${id}/usage`)),
     },
     tierRules: {
       // GET /storage/tier-rules → { items, total }.
-      list: (params: any = {}) => unwrap(api.get(`${STORAGE}/tier-rules${qs(params)}`)),
-      create: (body) => unwrap(api.post(`${STORAGE}/tier-rules`, body)),
-      update: (id, body) => unwrap(api.patch(`${STORAGE}/tier-rules/${id}`, body)),
-      remove: (id) => unwrap(api.delete(`${STORAGE}/tier-rules/${id}`)),
+      list: (params: QueryParams = {}) => unwrap(api.get<NodeTierRuleList>(`${STORAGE}/tier-rules${qs(params)}`)),
+      create: (body: ConfigDict) => unwrap(api.post<ConfigResult>(`${STORAGE}/tier-rules`, body)),
+      update: (id: string, body: ConfigDict) => unwrap(api.patch<ConfigResult>(`${STORAGE}/tier-rules/${id}`, body)),
+      remove: (id: string) => unwrap(api.delete<void>(`${STORAGE}/tier-rules/${id}`)),
     },
     // RAID health (software-RAID / mdadm monitoring). status → { available, reason,
     // arrays:[{device,level,health,working/failed/total_devices,rebuild_percent,...}] }.
     // The RaidMonitor worker upserts array health every poll + alerts on degrade.
     raid: {
-      status: () => unwrap(api.get(`${STORAGE}/raid/status`)),
-      devices: () => unwrap(api.get(`${STORAGE}/raid/devices`)),
+      status: () => unwrap(api.get<NodeRaidStatus>(`${STORAGE}/raid/status`)),
+      devices: () => unwrap(api.get<ConfigResult>(`${STORAGE}/raid/devices`)),
     },
   },
 };

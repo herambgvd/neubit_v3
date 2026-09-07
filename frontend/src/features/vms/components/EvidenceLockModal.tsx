@@ -12,24 +12,36 @@ import { toast } from "sonner";
 import { Button, Modal } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { EvidenceLockPublic } from "../types";
+import type { IsoSeed } from "./playbackTypes";
 
-function toLocalInput(iso) {
+function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-const fromLocalInput = (v) => (v ? new Date(v).toISOString() : null);
+const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOString() : null);
+
+export interface EvidenceLockModalProps {
+  open: boolean;
+  onClose?: () => void;
+  cameraId: string;
+  cameraName?: string | null;
+  /** { start, end } (ISO) — the window to lock. */
+  seed?: IsoSeed | null;
+  onSaved?: (lock: EvidenceLockPublic) => void;
+}
 
 export default function EvidenceLockModal({
   open,
   onClose,
   cameraId,
   cameraName,
-  seed = null, // { start, end } (ISO) — the window to lock
+  seed = null,
   onSaved,
-}: any) {
+}: EvidenceLockModalProps) {
   const [startTs, setStartTs] = useState("");
   const [endTs, setEndTs] = useState("");
   const [reason, setReason] = useState("");
@@ -47,10 +59,10 @@ export default function EvidenceLockModal({
 
   const startIso = fromLocalInput(startTs);
   const endIso = fromLocalInput(endTs);
-  const rangeValid = startIso && endIso && new Date(endIso) > new Date(startIso);
+  const rangeValid = !!startIso && !!endIso && new Date(endIso) > new Date(startIso);
 
   const save = async () => {
-    if (!rangeValid) return;
+    if (!rangeValid || !startIso || !endIso) return; // `rangeValid` already implies both; this narrows them
     setSaving(true);
     try {
       const res = await vms.evidence.create({

@@ -24,7 +24,9 @@ const STATUS_TABS = [
   { value: "", label: "All" },
 ];
 
-const STATUS_STYLE = {
+// Keyed by the wire status, so an unknown value falls back rather than failing
+// to compile.
+const STATUS_STYLE: Record<string, string> = {
   pending: "bg-amber-500/15 text-amber-500",
   approved: "bg-emerald-500/15 text-emerald-500",
   denied: "bg-red-500/15 text-red-500",
@@ -38,7 +40,7 @@ export default function DualAuthPanel() {
   const canApprove = can("dualauth.approve");
   const [status, setStatus] = useState("pending");
 
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["security-dual-auth", status],
     queryFn: () => security.dualAuth.list({ status: status || undefined, size: 100 }),
     refetchInterval: 15_000,
@@ -47,16 +49,16 @@ export default function DualAuthPanel() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["security-dual-auth"] });
 
-  const approve = useMutation<any>({
-    mutationFn: (id: any) => security.dualAuth.approve(id, undefined),
+  const approve = useMutation({
+    mutationFn: (id: string) => security.dualAuth.approve(id, undefined),
     onSuccess: () => {
       toast.success("Request approved");
       invalidate();
     },
     onError: (e) => toast.error(apiError(e, "Approve failed")),
   });
-  const deny = useMutation<any>({
-    mutationFn: (id: any) => security.dualAuth.deny(id, undefined),
+  const deny = useMutation({
+    mutationFn: (id: string) => security.dualAuth.deny(id, undefined),
     onSuccess: () => {
       toast.success("Request denied");
       invalidate();

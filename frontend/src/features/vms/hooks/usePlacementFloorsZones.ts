@@ -8,24 +8,30 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { sites as sitesApi } from "@/lib/api/sites";
-import { asItems } from "@/lib/format";
+import type { FloorPublic, ZonePublic } from "@/lib/types";
 
-export function usePlacementFloorsZones(siteId, floorId) {
-  const floorsQ = useQuery<any>({
+export function usePlacementFloorsZones(
+  siteId: string | null | undefined,
+  floorId: string | null | undefined,
+): { floors: FloorPublic[]; zones: ZonePublic[] } {
+  const floorsQ = useQuery({
     queryKey: ["vms-floors", siteId],
-    queryFn: () => sitesApi.floors.list({ site_id: siteId, limit: 100 }),
+    queryFn: () => sitesApi.floors.list({ site_id: siteId ?? "", limit: 100 }),
     enabled: !!siteId,
     staleTime: 60_000,
   });
-  const zonesQ = useQuery<any>({
+  const zonesQ = useQuery({
     queryKey: ["vms-zones", floorId],
-    queryFn: () => sitesApi.zones.list({ floor_id: floorId, limit: 100 }),
+    queryFn: () => sitesApi.zones.list({ floor_id: floorId ?? "", limit: 100 }),
     enabled: !!floorId,
     staleTime: 60_000,
   });
+  // Read the envelope directly rather than through asItems: the queries are
+  // typed, so `.items` is already FloorPublic[] / ZonePublic[], and asItems'
+  // pass-through branch widened `undefined` (query not yet resolved) to unknown[].
   return {
-    floors: siteId ? asItems(floorsQ.data) : [],
-    zones: floorId ? asItems(zonesQ.data) : [],
+    floors: siteId ? (floorsQ.data?.items ?? []) : [],
+    zones: floorId ? (zonesQ.data?.items ?? []) : [],
   };
 }
 

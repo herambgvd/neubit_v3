@@ -7,22 +7,37 @@
 // the hardware output (the actual hardware push is VW-B, backend-side).
 import { Icon } from "@iconify/react";
 
+import type { EstateCamera } from "@/features/vms/types";
+
 import WallCell from "./WallCell";
-import { monitorGrid, monitorGridStyle, cameraAt } from "../wallLayout";
+import { monitorGrid, monitorGridStyle, cameraAt, type WallMonitor } from "../wallLayout";
+import type { WallState } from "../types";
+
+export interface MonitorTileProps {
+  monitor: WallMonitor;
+  state?: WallState | null;
+  /** Estate cameras keyed by id, for the per-cell name strip. */
+  cameraById?: Map<string, EstateCamera>;
+  control?: boolean;
+  onAssign?: (cellIndex: number, cameraId: string) => void;
+  onClearCell?: (cellIndex: number) => void;
+  onClearMonitor?: () => void;
+  onPickCell?: (cellIndex: number) => void;
+}
 
 export default function MonitorTile({
   monitor,
   state,
   cameraById,
   control = false,
-  onAssign, // (cellIndex, cameraId)
-  onClearCell, // (cellIndex)
-  onClearMonitor, // ()
-  onPickCell, // (cellIndex)
-}: any) {
+  onAssign,
+  onClearCell,
+  onClearMonitor,
+  onPickCell,
+}: MonitorTileProps) {
   const { capacity } = monitorGrid(monitor.layout);
   const monState = state?.[monitor.id] || {};
-  const filled = Object.values<any>(monState).filter(Boolean).length;
+  const filled = Object.values(monState).filter(Boolean).length;
   const isDecoder = monitor.kind === "decoder";
   // Solo cell → main profile; dense → sub (bandwidth), same heuristic as /streaming.
   const profile = capacity <= 1 ? "main" : "sub";
@@ -71,7 +86,7 @@ export default function MonitorTile({
                 camera={camId ? cameraById?.get(camId) : null}
                 profile={profile}
                 control={control}
-                onAssign={(cameraId) => onAssign?.(cellIndex, cameraId)}
+                onAssign={(cameraId: string) => onAssign?.(cellIndex, cameraId)}
                 onClear={() => onClearCell?.(cellIndex)}
                 onPick={() => onPickCell?.(cellIndex)}
               />

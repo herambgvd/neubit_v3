@@ -11,6 +11,7 @@
 // JSON payload instead.
 import Link from "next/link";
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -18,12 +19,23 @@ import { toast } from "sonner";
 import { Badge, Spinner, checkboxClass } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
-import { asItems, idOf } from "@/lib/format";
+import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { workflow as wfApi } from "../../api";
+import { isRecord } from "../../types";
+import type { SimulateEventRequest, SimulateEventResponse } from "../../types";
+
+interface Preset {
+  id: string;
+  label: string;
+  icon: string;
+  eventType: string;
+  alertCode: string;
+  payload: Record<string, unknown>;
+}
 
 // Generic sample events — no device dependency. Each fills the composer fields.
-const PRESETS = [
+const PRESETS: Preset[] = [
   {
     id: "motion",
     label: "Motion (custom)",
@@ -52,8 +64,10 @@ const PRESETS = [
 
 const SAMPLE_PAYLOAD = JSON.stringify({ severity: "medium", source: "custom" }, null, 2);
 
+type ErrorKey = "eventType" | "payload";
+
 export default function SimulatorTab() {
-  const sitesQ = useQuery<any>({ queryKey: ["sim-sites"], queryFn: () => sitesApi.list({ limit: 200 }) });
+  const sitesQ = useQuery({ queryKey: ["sim-sites"], queryFn: () => sitesApi.list({ limit: 200 }) });
   const sites = asItems(sitesQ.data);
 
   const [eventType, setEventType] = useState("");
@@ -61,24 +75,24 @@ export default function SimulatorTab() {
   const [siteId, setSiteId] = useState("");
   const [payloadText, setPayloadText] = useState(SAMPLE_PAYLOAD);
   const [dryRun, setDryRun] = useState(true);
-  const [errors, setErrors] = useState<any>({});
-  const [result, setResult] = useState<any>(null);
+  const [errors, setErrors] = useState<Partial<Record<ErrorKey, string>>>({});
+  const [result, setResult] = useState<SimulateEventResponse | null>(null);
 
-  function applyPreset(p) {
+  function applyPreset(p: Preset) {
     setEventType(p.eventType);
     setAlertCode(p.alertCode || "");
     setPayloadText(JSON.stringify(p.payload, null, 2));
     setErrors({});
   }
 
-  function parsePayload() {
+  function parsePayload(): unknown {
     const t = payloadText.trim();
     if (!t) return {};
     return JSON.parse(t); // throws → caught in submit
   }
 
-  const simulate = useMutation<any, any, any>({
-    mutationFn: (body: any) => wfApi.simulate(body),
+  const simulate = useMutation({
+    mutationFn: (body: SimulateEventRequest) => wfApi.simulate(body),
     onSuccess: (res) => {
       setResult(res);
       if (!dryRun && (res?.created_instance_id || res?.created_instance_ids?.length)) {
@@ -90,18 +104,20 @@ export default function SimulatorTab() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: Partial<Record<ErrorKey, string>> = {};
     if (!eventType.trim()) next.eventType = "Event type is required";
-    let payload;
+    let payload: Record<string, unknown> | undefined;
     try {
-      payload = parsePayload();
-      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      const parsed = parsePayload();
+      if (isRecord(parsed)) {
+        payload = parsed;
+      } else {
         next.payload = "Payload must be a JSON object";
       }
     } catch (err) {
-      next.payload = `Invalid JSON: ${err.message}`;
+      next.payload = `Invalid JSON: ${err instanceof Error ? err.message : String(err)}`;
     }
     if (Object.keys(next).length) { setErrors(next); return; }
     setErrors({});
@@ -171,7 +187,7 @@ export default function SimulatorTab() {
             label="Site"
             value={siteId}
             onChange={(e) => setSiteId(e.target.value)}
-            options={[{ value: "", label: sitesQ.isLoading ? "Loading sites…" : "No site" }, ...sites.map((s) => ({ value: idOf(s, "site_id", "id") ?? "", label: s.name }))]}
+            options={[{ value: "", label: sitesQ.isLoading ? "Loading sites…" : "No site" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]}
           />
 
           <Field
@@ -234,7 +250,7 @@ export default function SimulatorTab() {
   );
 }
 
-function ResultPanel({ result }: any) {
+function ResultPanel({ result }: { result: SimulateEventResponse }) {
   const triggers = result.matched_triggers || [];
   const skipped = result.skipped || [];
   const fmt = result.matched_format;

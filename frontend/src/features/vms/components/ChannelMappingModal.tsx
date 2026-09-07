@@ -13,13 +13,25 @@ import { Button, Modal, Toggle } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
+import type { NvrPublic, SitePublic } from "@/lib/types";
 import { vms } from "../api";
+import type { MapChannelItem } from "../types";
 
-export default function ChannelMappingModal({ nvr, sites = [], onClose, onSuccess }: any) {
-  const [selected, setSelected] = useState<any>({}); // channel → { checked, name }
+/** Per-channel tick + operator-typed name, keyed by `channel`. */
+type ChannelSelection = Record<number, { checked?: boolean; name?: string }>;
+
+export interface ChannelMappingModalProps {
+  nvr: NvrPublic;
+  sites?: SitePublic[];
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export default function ChannelMappingModal({ nvr, sites = [], onClose, onSuccess }: ChannelMappingModalProps) {
+  const [selected, setSelected] = useState<ChannelSelection>({}); // channel → { checked, name }
   const [targetSite, setTargetSite] = useState("");
 
-  const channelsQ = useQuery<any>({
+  const channelsQ = useQuery({
     queryKey: ["nvr-channels", nvr.id],
     queryFn: () => vms.nvrs.channels(nvr.id),
   });
@@ -29,15 +41,15 @@ export default function ChannelMappingModal({ nvr, sites = [], onClose, onSucces
     if (!channels.length) return;
     setSelected((prev) => {
       if (Object.keys(prev).length) return prev;
-      const sel: any = {};
+      const sel: ChannelSelection = {};
       for (const c of channels) sel[c.channel] = { checked: true, name: c.name || `Channel ${c.channel}` };
       return sel;
     });
   }, [channels]);
 
-  const map = useMutation<any>({
+  const map = useMutation({
     mutationFn: () => {
-      const list = channels.map((c) => ({
+      const list: MapChannelItem[] = channels.map((c) => ({
         channel_number: c.channel_number ?? c.channel,
         name: selected[c.channel]?.name || c.name,
         profile_token: c.source_token || undefined,

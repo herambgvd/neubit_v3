@@ -3,7 +3,7 @@
 // Schedule editor with a windows builder. Ported from neubit_v2's schedule-modal.jsx:
 // name (required) + timezone, description, a repeatable time-window builder (day
 // toggles + start/end), and a holidays list (YYYY-MM-DD chips). Rethemed to v3 tokens.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -13,37 +13,55 @@ import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { gates } from "../api";
 import { SCHEDULE_DAYS, TIMEZONES } from "../constants";
+import type { SchedulePublic, TimeWindow } from "../types";
 
-const DEFAULT_WINDOW = () => ({ days: [1, 2, 3, 4, 5], start_time: "09:00", end_time: "18:00" });
+const DEFAULT_WINDOW = (): TimeWindow => ({ days: [1, 2, 3, 4, 5], start_time: "09:00", end_time: "18:00" });
 
-export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess }: any) {
+/** The three scalar fields; the windows and holidays lists are their own state. */
+interface ScheduleForm {
+  name: string;
+  description: string;
+  timezone: string;
+}
+
+export interface ScheduleModalProps {
+  instanceId: string;
+  /** The row being edited; omit/null to create. */
+  schedule?: SchedulePublic | null;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess }: ScheduleModalProps) {
   const isEdit = !!schedule;
   const qc = useQueryClient();
 
-  const scheduleQ = useQuery<any>({
+  const scheduleQ = useQuery({
     queryKey: ["ac-schedule", instanceId, schedule?.schedule_id],
-    queryFn: () => gates.schedules.get(instanceId, schedule.schedule_id),
+    // `enabled: isEdit` below — the query only runs when `schedule` is set.
+    queryFn: () => gates.schedules.get(instanceId, schedule!.schedule_id),
     enabled: isEdit && !!instanceId,
     staleTime: 30_000,
   });
   const editSchedule = scheduleQ.data || schedule;
 
-  const [form, setForm] = useState<any>({
+  const [form, setForm] = useState<ScheduleForm>({
     name: schedule?.name || "",
     description: schedule?.description || "",
     timezone: schedule?.timezone || "Asia/Kolkata",
   });
-  const [windows, setWindows] = useState(
+  const [windows, setWindows] = useState<TimeWindow[]>(
     () =>
       schedule?.windows?.map((w) => ({ days: w.days || [], start_time: w.start_time || "09:00", end_time: w.end_time || "18:00" })) || [
         DEFAULT_WINDOW(),
       ],
   );
-  const [holidays, setHolidays] = useState(schedule?.holidays || []);
+  const [holidays, setHolidays] = useState<string[]>(schedule?.holidays || []);
   const [newHoliday, setNewHoliday] = useState("");
-  const [errors, setErrors] = useState<any>({});
+  // Keyed by field name, plus `w<i>` per time window.
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<ScheduleForm>) => setForm((f) => ({ ...f, ...patch }));
 
   useEffect(() => {
     if (!editSchedule) return;
@@ -60,7 +78,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
     setHolidays(editSchedule.holidays || []);
   }, [editSchedule]);
 
-  const m = useMutation<any>({
+  const m = useMutation({
     mutationFn: () => {
       const body = {
         name: form.name.trim(),
@@ -69,7 +87,8 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
         windows,
         holidays,
       };
-      return isEdit ? gates.schedules.update(instanceId, schedule.schedule_id, body) : gates.schedules.create(instanceId, body);
+      // `schedule` set ⇔ isEdit, so this branch also narrows it for the id.
+      return schedule ? gates.schedules.update(instanceId, schedule.schedule_id, body) : gates.schedules.create(instanceId, body);
     },
     onSuccess: () => {
       toast.success(isEdit ? "Schedule updated" : "Schedule created");
@@ -80,7 +99,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
   });
 
   const validate = () => {
-    const next: any = {};
+    const next: Record<string, string> = {};
     if (!form.name.trim()) next.name = "Required";
     windows.forEach((w, i) => {
       if (!w.days?.length) next[`w${i}`] = "Pick at least one day";
@@ -91,19 +110,20 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e) => {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (validate()) m.mutate();
   };
 
   const addWindow = () => setWindows((ws) => [...ws, DEFAULT_WINDOW()]);
-  const updateWindow = (idx, patch) => setWindows((ws) => ws.map((w, i) => (i === idx ? { ...w, ...patch } : w)));
-  const removeWindow = (idx) => setWindows((ws) => ws.filter((_, i) => i !== idx));
+  const updateWindow = (idx: number, patch: Partial<TimeWindow>) =>
+    setWindows((ws) => ws.map((w, i) => (i === idx ? { ...w, ...patch } : w)));
+  const removeWindow = (idx: number) => setWindows((ws) => ws.filter((_, i) => i !== idx));
 
   const addHoliday = () => {
     const v = newHoliday.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
-    setHolidays((h) => Array.from(new Set<any>([...h, v])).sort());
+    setHolidays((h) => Array.from(new Set<string>([...h, v])).sort());
     setNewHoliday("");
   };
 
@@ -111,7 +131,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
     <Modal
       open
       onClose={onClose}
-      title={isEdit ? `Edit · ${editSchedule?.name || schedule.name}` : "New Schedule"}
+      title={isEdit ? `Edit · ${editSchedule?.name || schedule?.name}` : "New Schedule"}
       wide
       footer={
         <>

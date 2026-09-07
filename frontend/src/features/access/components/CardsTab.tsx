@@ -11,24 +11,32 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog } from "@/components/ui/kit";
+import { Button, ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems, idOf } from "@/lib/format";
 import { gates } from "../api";
 import { CARD_STATUS_FILTERS, CARD_STATUS_TONE } from "../constants";
+import type { AccessCard } from "../types";
 import CardModal from "./CardModal";
 
-const cardId = (c) => idOf(c, "dds_uid", "card_id", "id");
+// The write-path id is the controller UID; `idOf` keeps the v2 aliases working
+// for a mirror row that predates the rename. `AccessCard.dds_uid` is always a
+// string, so the fallback is only for a hand-built row.
+const cardId = (c: AccessCard): string => idOf(c, "dds_uid", "card_id", "id") ?? "";
 
-export default function CardsTab({ instanceId }: any) {
+export interface CardsTabProps {
+  instanceId: string;
+}
+
+export default function CardsTab({ instanceId }: CardsTabProps) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [editTarget, setEditTarget] = useState<AccessCard | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["ac-cards", instanceId],
     queryFn: () => gates.cards.list(instanceId, { limit: 500 }),
     enabled: !!instanceId,
@@ -44,19 +52,19 @@ export default function CardsTab({ instanceId }: any) {
     });
   }, [all, search, statusFilter]);
 
-  const chQ = useQuery<any>({
+  const chQ = useQuery({
     queryKey: ["ac-cardholders", instanceId],
     queryFn: () => gates.cardholders.list(instanceId, { limit: 500 }),
     enabled: !!instanceId,
     staleTime: 60_000,
   });
   const cardholderById = useMemo(
-    () => Object.fromEntries(asItems(chQ.data).map((ch) => [ch.cardholder_id, ch])),
+    () => Object.fromEntries(asItems(chQ.data).map((ch) => [ch.cardholder_id, ch] as const)),
     [chQ.data],
   );
 
   const remove = useMutation({
-    mutationFn: (id: any) => gates.cards.remove(instanceId, id),
+    mutationFn: (id: string) => gates.cards.remove(instanceId, id),
     onSuccess: () => {
       toast.success("Card removed");
       qc.invalidateQueries({ queryKey: ["ac-cards", instanceId] });
@@ -191,7 +199,7 @@ export default function CardsTab({ instanceId }: any) {
   );
 }
 
-function shortId(id) {
+function shortId(id: string | null | undefined): string {
   if (!id) return "—";
   return String(id).length > 10 ? `${String(id).slice(0, 10)}…` : id;
 }

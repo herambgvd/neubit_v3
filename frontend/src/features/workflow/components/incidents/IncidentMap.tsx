@@ -32,7 +32,9 @@ import { Badge } from "@/components/ui/kit";
 import { fileUrl } from "@/lib/api";
 import { asItems, titleize, fmtRelative } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { FloorPublic, SitePublic, ZonePublic } from "@/lib/types";
 import { PRIORITY_COLOR } from "../../constants";
+import type { InstancePublic, NameMap } from "../../types";
 import MapMarker from "./MapMarker";
 import { incId, incTitle, incZoneHint, incSiteRef, sev, prioWeight } from "./lib";
 
@@ -40,7 +42,7 @@ const DEFAULT_W = 1200;
 const DEFAULT_H = 800;
 
 // `polygon` is FloorZone.polygon (components/floor-builder/floor-plan-editor.tsx).
-function centroid(polygon: number[][] = []): [number, number] | null {
+function centroid(polygon: number[][] | null | undefined = []): [number, number] | null {
   if (!Array.isArray(polygon) || polygon.length === 0) return null;
   let sx = 0;
   let sy = 0;
@@ -53,7 +55,7 @@ function centroid(polygon: number[][] = []): [number, number] | null {
 
 // Match an incident's zone hint to a floor zone (case-insensitive, exact or
 // substring on the zone name).
-function matchZone(hint, zones) {
+function matchZone(hint: string | null, zones: ZonePublic[]): ZonePublic | null {
   if (!hint) return null;
   const h = String(hint).trim().toLowerCase();
   if (!h) return null;
@@ -64,25 +66,42 @@ function matchZone(hint, zones) {
   );
 }
 
-export default function IncidentMap({ incidents = [], sites = [], sopName = {} }: any) {
+/** Incidents sharing one zone, placed at its centroid. */
+interface Cluster {
+  zone: ZonePublic;
+  items: InstancePublic[];
+  x: number;
+  y: number;
+  priority: string;
+}
+
+export interface IncidentMapProps {
+  incidents?: InstancePublic[];
+  sites?: SitePublic[];
+  siteName?: NameMap;
+  sopName?: NameMap;
+}
+
+export default function IncidentMap({ incidents = [], sites = [], sopName = {} }: IncidentMapProps) {
   const router = useRouter();
   const [siteId, setSiteId] = useState("");
   const [floorId, setFloorId] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [img, setImg] = useState<any>({ w: DEFAULT_W, h: DEFAULT_H, ok: false });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [img, setImg] = useState({ w: DEFAULT_W, h: DEFAULT_H, ok: false });
 
   // Default to the first site once sites load.
 
   // The explicit choice, or the first row once the list lands. Derived rather
-  // than synced in an effect, which rendered one empty frame first.
-  const effectiveSiteId = siteId ?? sites[0]?.site_id ?? null;
+  // than synced in an effect, which rendered one empty frame first. `siteId` is
+  // "" until the operator picks (a string is never nullish), hence `||`.
+  const effectiveSiteId = siteId || sites[0]?.site_id || "";
 
-  const floorsQ = useQuery<any>({
+  const floorsQ = useQuery({
     queryKey: ["map-floors", effectiveSiteId],
     queryFn: () => sitesApi.floors.list({ site_id: effectiveSiteId, limit: 100 }),
     enabled: !!effectiveSiteId,
   });
-  const floors = asItems(floorsQ.data);
+  const floors = useMemo<FloorPublic[]>(() => (floorsQ.data ? asItems(floorsQ.data) : []), [floorsQ.data]);
 
   // Default to the first floor of the selected site.
   useEffect(() => {
@@ -93,12 +112,12 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
 
   const floor = floors.find((f) => f.floor_id === floorId) || null;
 
-  const zonesQ = useQuery<any>({
+  const zonesQ = useQuery({
     queryKey: ["map-zones", floorId],
     queryFn: () => sitesApi.zones.list({ floor_id: floorId, limit: 200 }),
     enabled: !!floorId,
   });
-  const zones = asItems(zonesQ.data);
+  const zones = useMemo<ZonePublic[]>(() => (zonesQ.data ? asItems(zonesQ.data) : []), [zonesQ.data]);
 
   // Load the floor image to get its natural size for the viewBox.
   const planUrl = floor?.floorplan_url ? fileUrl(floor.floorplan_url) : null;
@@ -115,8 +134,8 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
   const { clusters, unplaced, siteCount, unmappedNoSite } = useMemo(() => {
     const unmappedNoSite = incidents.filter((it) => !incSiteRef(it)).length;
     const forSite = incidents.filter((it) => incSiteRef(it) === effectiveSiteId);
-    const byZone = new Map<any, any>(); // zoneId -> { zone, items }
-    const unplaced: any[] = [];
+    const byZone = new Map<string, { zone: ZonePublic; items: InstancePublic[] }>(); // zoneId -> { zone, items }
+    const unplaced: InstancePublic[] = [];
     for (const it of forSite) {
       const z = matchZone(incZoneHint(it), zones);
       if (z) {
@@ -127,7 +146,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
         unplaced.push(it);
       }
     }
-    const clusters: any[] = [];
+    const clusters: Cluster[] = [];
     for (const { zone, items } of byZone.values()) {
       const ctr = centroid(zone.polygon);
       if (!ctr) {
@@ -141,7 +160,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
     return { clusters, unplaced, siteCount: forSite.length, unmappedNoSite };
   }, [incidents, effectiveSiteId, zones]);
 
-  const openIncident = (it) => router.push(`/events/${incId(it)}`);
+  const openIncident = (it: InstancePublic) => router.push(`/events/${incId(it)}`);
 
   const mapSelCls =
     "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-hidden transition focus:border-[rgba(34,211,238,.5)]";
@@ -312,7 +331,14 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
   );
 }
 
-function IncidentRow({ it, onOpen, zoneName }: any) {
+interface IncidentRowProps {
+  it: InstancePublic;
+  sopName?: NameMap;
+  onOpen: () => void;
+  zoneName?: string;
+}
+
+function IncidentRow({ it, onOpen, zoneName }: IncidentRowProps) {
   const s = sev(it.priority);
   return (
     <button

@@ -7,6 +7,8 @@
 import { Icon } from "@iconify/react";
 
 import { Button, Modal } from "@/components/ui/kit";
+import { presetFor } from "../constants";
+import type { BulkOpItem, BulkOpResult } from "../types";
 
 const ACTION_LABEL = {
   reboot: "Reboot",
@@ -15,14 +17,20 @@ const ACTION_LABEL = {
   "apply-stream-policy": "Apply web profile (H.264)",
 };
 
-function statusFor(item) {
+function statusFor(item: BulkOpItem) {
   if (item.ok) return { icon: "heroicons:check-circle", tone: "text-emerald-500", label: "Applied" };
   if (item.supported === false)
     return { icon: "heroicons:no-symbol", tone: "text-muted", label: "Not supported" };
   return { icon: "heroicons:x-circle", tone: "text-red-500", label: "Failed" };
 }
 
-export default function BulkDeviceResultModal({ result, onClose }: any) {
+export interface BulkDeviceResultModalProps {
+  /** Null/undefined = closed. */
+  result?: BulkOpResult | null;
+  onClose?: () => void;
+}
+
+export default function BulkDeviceResultModal({ result, onClose }: BulkDeviceResultModalProps) {
   if (!result) return null;
   const items = result.items || [];
   const total = result.total ?? items.length;
@@ -34,7 +42,7 @@ export default function BulkDeviceResultModal({ result, onClose }: any) {
       open
       onClose={onClose}
       wide
-      title={`${ACTION_LABEL[result.action] || result.action} — results`}
+      title={`${presetFor(ACTION_LABEL, result.action, result.action)} — results`}
       footer={
         <Button variant="primary" onClick={onClose}>
           Done

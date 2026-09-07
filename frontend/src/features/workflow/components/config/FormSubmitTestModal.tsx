@@ -5,11 +5,19 @@
 // resulting form_data JSON — or per-field errors. No API call.
 import { Modal, Button } from "@/components/ui/kit";
 import { validateForm } from "../../lib/formValidation";
+import type { FormFieldSchema, FormValues } from "../../types";
 
-export default function FormSubmitTestModal({ open, onClose, fields, values }: any) {
+export interface FormSubmitTestModalProps {
+  open: boolean;
+  onClose: () => void;
+  fields: FormFieldSchema[];
+  values?: FormValues;
+}
+
+export default function FormSubmitTestModal({ open, onClose, fields, values }: FormSubmitTestModalProps) {
   const { errors, formData, valid } = validateForm(fields, values || {});
-  const errEntries = Object.entries<any>(errors);
-  const dataEntries = Object.entries<any>(formData);
+  const errEntries = Object.entries(errors);
+  const dataEntries = Object.entries(formData);
 
   return (
     <Modal

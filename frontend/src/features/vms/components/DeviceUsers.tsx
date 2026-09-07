@@ -13,28 +13,46 @@ import { Field } from "@/components/common";
 import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { DeviceUserPublic, FleetOpPublic, UserAddBody } from "../types";
 
 const LEVELS = ["Administrator", "Operator", "User"];
 
-export default function DeviceUsers({ cameraId }: any) {
+/** What `GET /cameras/{id}/users` actually returns — the FleetOpPublic envelope
+ *  (backend/vision/app/vms/devicemgmt/router.py `response_model=FleetOpPublic`)
+ *  with the driver's account rows under `data.users`. types.ts' DeviceUsersResponse
+ *  (an ItemList / bare list) does not match the router, so the read is narrowed here. */
+interface DeviceUsersFleetOp extends Omit<FleetOpPublic, "data"> {
+  data?: { users?: DeviceUserPublic[] };
+}
+
+// The row's account name — the ONVIF driver sends `username`; keep the aliases the
+// wire type allows for other drivers.
+const nameOf = (u: DeviceUserPublic) => u.username ?? u.user ?? u.name ?? "";
+
+export interface DeviceUsersProps {
+  cameraId: string;
+}
+
+export default function DeviceUsers({ cameraId }: DeviceUsersProps) {
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
   const qc = useQueryClient();
 
-  const usersQ = useQuery<any>({
+  const usersQ = useQuery({
     queryKey: ["vms-device-users", cameraId],
-    queryFn: () => vms.deviceMgmt.users(cameraId),
+    // The declared wire type is wrong for this route (see DeviceUsersFleetOp).
+    queryFn: async () => (await vms.deviceMgmt.users(cameraId)) as unknown as DeviceUsersFleetOp,
     enabled: !!cameraId && can("vms.camera.read"),
     retry: false,
     staleTime: 30_000,
   });
-  const res = usersQ.data || {};
+  const res: Partial<DeviceUsersFleetOp> = usersQ.data || {};
   const users = res.data?.users || [];
   const unsupported = res.supported === false;
 
-  const [form, setForm] = useState<any>({ user: "", password: "", level: "User" });
+  const [form, setForm] = useState<Required<UserAddBody>>({ user: "", password: "", level: "User" });
 
-  const add = useMutation<any>({
+  const add = useMutation({
     mutationFn: () => vms.deviceMgmt.addUser(cameraId, form),
     onSuccess: (r) => {
       if (r?.ok) {
@@ -48,8 +66,8 @@ export default function DeviceUsers({ cameraId }: any) {
     onError: (e) => toast.error(apiError(e, "Add user failed")),
   });
 
-  const del = useMutation<any>({
-    mutationFn: (username: any) => vms.deviceMgmt.deleteUser(cameraId, username),
+  const del = useMutation({
+    mutationFn: (username: string) => vms.deviceMgmt.deleteUser(cameraId, username),
     onSuccess: (r) => {
       if (r?.ok) {
         toast.success("User removed");
@@ -76,16 +94,16 @@ export default function DeviceUsers({ cameraId }: any) {
       ) : (
         <div className="space-y-1.5">
           {users.map((u) => (
-            <div key={u.username} className="flex items-center justify-between rounded-lg border border-card-border bg-hover/30 px-3 py-2">
+            <div key={nameOf(u)} className="flex items-center justify-between rounded-lg border border-card-border bg-hover/30 px-3 py-2">
               <div className="min-w-0">
-                <p className="truncate text-sm text-foreground">{u.username}</p>
+                <p className="truncate text-sm text-foreground">{nameOf(u)}</p>
                 <p className="text-[11px] text-muted">{u.level || "—"}</p>
               </div>
               {canManage && u.level !== "Administrator" && (
                 <button
                   type="button"
                   title="Remove user"
-                  onClick={() => del.mutate(u.username)}
+                  onClick={() => del.mutate(nameOf(u))}
                   disabled={del.isPending}
                   className="rounded-sm p-1 text-red-500 hover:bg-red-500/10"
                 >

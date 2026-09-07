@@ -12,24 +12,32 @@ import { Icon } from "@iconify/react";
 
 import { Button, Modal } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
+import type { SitePublic } from "@/lib/types";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
 import { CONFIG_TABS, DEFAULT_CAMERA_FORM } from "../constants";
 import { toCreateBody, validateCamera } from "../formUtils";
+import type { CameraForm, CameraFormErrors, ProbeResponse } from "../types";
 import CameraConfigForm from "./CameraConfigForm";
 import { usePlacementFloorsZones } from "../hooks/usePlacementFloorsZones";
 
-export default function OnboardCameraModal({ onClose, onSuccess, sites = [] }: any) {
+export interface OnboardCameraModalProps {
+  onClose: () => void;
+  onSuccess?: () => void;
+  sites?: SitePublic[];
+}
+
+export default function OnboardCameraModal({ onClose, onSuccess, sites = [] }: OnboardCameraModalProps) {
   const [tab, setTab] = useState("live");
-  const [form, setForm] = useState<any>({ ...DEFAULT_CAMERA_FORM });
-  const [errors, setErrors] = useState<any>({});
-  const [probe, setProbe] = useState<any>(null); // last probe result
+  const [form, setForm] = useState<CameraForm>({ ...DEFAULT_CAMERA_FORM });
+  const [errors, setErrors] = useState<CameraFormErrors>({});
+  const [probe, setProbe] = useState<ProbeResponse | null>(null); // last probe result
   // Cascading placement: floors of the selected site, zones of the selected floor.
   const { floors, zones } = usePlacementFloorsZones(form.site_id, form.floor_id);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<CameraForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const create = useMutation<any>({
+  const create = useMutation({
     mutationFn: () => vms.cameras.create(toCreateBody(form)),
     onSuccess: () => {
       toast.success("Camera onboarded");
@@ -38,7 +46,7 @@ export default function OnboardCameraModal({ onClose, onSuccess, sites = [] }: a
     onError: (e) => toast.error(apiError(e, "Onboard failed")),
   });
 
-  const test = useMutation<any>({
+  const test = useMutation({
     mutationFn: () =>
       vms.discovery.probe({
         host: form.onvif_host || form.ip,

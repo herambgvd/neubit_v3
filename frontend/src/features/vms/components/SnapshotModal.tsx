@@ -10,10 +10,16 @@ import { Icon } from "@iconify/react";
 import { Button, Modal } from "@/components/ui/kit";
 import { api } from "@/lib/api";
 import { vms } from "../api";
+import type { EstateCamera } from "../types";
 
-export default function SnapshotModal({ camera, onClose }: any) {
-  const [url, setUrl] = useState<any>(null);
-  const [error, setError] = useState<any>(null);
+export interface SnapshotModalProps {
+  camera: Pick<EstateCamera, "id" | "name">;
+  onClose?: () => void;
+}
+
+export default function SnapshotModal({ camera, onClose }: SnapshotModalProps) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [nonce, setNonce] = useState(0);
 
@@ -23,7 +29,7 @@ export default function SnapshotModal({ camera, onClose }: any) {
     setLoading(true);
     setError(null);
     api
-      .get(vms.cameras.snapshotUrl(camera.id), { responseType: "blob" })
+      .get<Blob>(vms.cameras.snapshotUrl(camera.id), { responseType: "blob" })
       .then((r) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(r.data);
@@ -66,7 +72,7 @@ export default function SnapshotModal({ camera, onClose }: any) {
           </div>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt={`${camera.name} snapshot`} className="max-h-full max-w-full object-contain" />
+          <img src={url ?? undefined} alt={`${camera.name} snapshot`} className="max-h-full max-w-full object-contain" />
         )}
       </div>
     </Modal>

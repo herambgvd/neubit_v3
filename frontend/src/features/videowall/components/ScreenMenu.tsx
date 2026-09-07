@@ -22,6 +22,11 @@
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 
+import type { useScreens } from "@/lib/desktop";
+
+import type { WallPublic } from "../types";
+import type { WallMonitor } from "../wallLayout";
+
 /** Decoder monitors are deliberately absent from the picker.
  *
  *  A decoder monitor is a hardware decoder output driven over its SDK — the
@@ -31,9 +36,17 @@ import { Icon } from "@iconify/react";
  *
  *  The shell cannot make this check: `kind` lives in a record it has no session to
  *  read. It validates the SHAPE of the ids it is given; the meaning is ours. */
-const assignable = (monitors) => monitors.filter((m) => m.kind !== "decoder");
+const assignable = (monitors: WallMonitor[]) => monitors.filter((m) => m.kind !== "decoder");
 
-export default function ScreenMenu({ wall, monitors, screens }) {
+export interface ScreenMenuProps {
+  wall: WallPublic;
+  monitors: WallMonitor[];
+  /** The desktop-shell screen panel — `useScreens()`. In a browser its
+   *  `available` is false and this component renders nothing. */
+  screens: ReturnType<typeof useScreens>;
+}
+
+export default function ScreenMenu({ wall, monitors, screens }: ScreenMenuProps) {
   const [open, setOpen] = useState(false);
   if (!screens.available) return null;
 
@@ -41,7 +54,7 @@ export default function ScreenMenu({ wall, monitors, screens }) {
   const attached = screens.screens.filter((s) => s.attached);
   const openCount = screens.screens.filter((s) => s.open).length;
 
-  const onPick = (signature, monitorId) => {
+  const onPick = (signature: string, monitorId: string) => {
     if (!monitorId) {
       screens.clear(signature);
       return;

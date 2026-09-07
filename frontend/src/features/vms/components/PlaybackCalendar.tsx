@@ -19,18 +19,32 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const pad = (n) => String(n).padStart(2, "0");
-const dayStr = (y, m0, d) => `${y}-${pad(m0 + 1)}-${pad(d)}`;
+const pad = (n: number) => String(n).padStart(2, "0");
+const dayStr = (y: number, m0: number, d: number) => `${y}-${pad(m0 + 1)}-${pad(d)}`;
+
+export interface PlaybackCalendarProps {
+  viewYear: number;
+  /** 0-based. */
+  viewMonth: number;
+  /** YYYY-MM-DD | null. */
+  selected?: string | null;
+  /** Days-of-month with footage in the view month. */
+  footageDays?: Set<number> | null;
+  /** (YYYY-MM-DD) => void */
+  onSelectDay: (day: string) => void;
+  onPrevMonth?: () => void;
+  onNextMonth?: () => void;
+}
 
 export default function PlaybackCalendar({
   viewYear,
-  viewMonth, // 0-based
-  selected, // YYYY-MM-DD | null
-  footageDays, // Set<number> of days-of-month with footage in the view month
-  onSelectDay, // (YYYY-MM-DD) => void
+  viewMonth,
+  selected,
+  footageDays,
+  onSelectDay,
   onPrevMonth,
   onNextMonth,
-}: any) {
+}: PlaybackCalendarProps) {
   const firstDow = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
 
@@ -42,7 +56,7 @@ export default function PlaybackCalendar({
   const todayD = now.getDate();
 
   // 6 rows × 7 cells — a fixed grid so the rail height doesn't jump month-to-month.
-  const cells: any[] = [];
+  const cells: (number | null)[] = [];
   for (let i = 0; i < 42; i += 1) {
     const dayNum = i - firstDow + 1;
     cells.push(dayNum >= 1 && dayNum <= daysInMonth ? dayNum : null);

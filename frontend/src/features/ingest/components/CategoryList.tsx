@@ -5,6 +5,7 @@
 // the bottom. Purely presentational — the page owns state + data.
 import { Icon } from "@iconify/react";
 
+import type { CategoryPublic } from "../types";
 import {
   ConsolePanel,
   PanelHeader,
@@ -13,6 +14,23 @@ import {
   PanelFooter,
   CreateButton,
 } from "@/components/console";
+
+export interface CategoryListProps {
+  /** Already filtered by the parent's search box. */
+  categories: CategoryPublic[];
+  /** Unfiltered count, shown in the header. */
+  total: number;
+  loading?: boolean;
+  search: string;
+  onSearch: (value: string) => void;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  /** The parent's id accessor (handles id vs category_id). */
+  catId: (c: CategoryPublic) => string | undefined;
+  /** True while the create form is open, so no row reads as selected. */
+  suppressSelected?: boolean;
+  onNew: () => void;
+}
 
 export default function CategoryList({
   categories,
@@ -25,7 +43,7 @@ export default function CategoryList({
   catId,
   suppressSelected = false,
   onNew,
-}: any) {
+}: CategoryListProps) {
   return (
     <ConsolePanel>
       <PanelHeader icon="heroicons-outline:squares-2x2" title="Categories" count={total} />
@@ -41,7 +59,7 @@ export default function CategoryList({
               return (
                 <button
                   key={catId(c)}
-                  onClick={() => onSelect(catId(c))}
+                  onClick={() => onSelect(catId(c) ?? "")}
                   className={`flex w-full items-start gap-3 rounded-[10px] border px-3 py-2.5 text-left transition ${
                     isSelected
                       ? "border-[rgba(96,165,250,.6)] bg-[rgba(96,165,250,.1)]"

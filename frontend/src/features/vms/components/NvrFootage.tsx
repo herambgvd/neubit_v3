@@ -16,37 +16,44 @@ import { Button, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems, fmtDateTime, fmtDuration } from "@/lib/format";
 import { vms } from "../api";
+import type { PlaybackSourceFn } from "../types";
 import PlaybackPlayer from "./PlaybackPlayer";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+
+/** The recorder range being played — its `[from, to]` as the NVR reported them. */
+interface ActiveRange {
+  from?: string | null;
+  to?: string | null;
+}
 
 export default function NvrFootage() {
   const [nvrId, setNvrId] = useState("");
   const [channel, setChannel] = useState("");
   const [fromDate, setFromDate] = useState(todayStr());
   const [toDate, setToDate] = useState(todayStr());
-  const [active, setActive] = useState<any>(null); // { from, to } being played
+  const [active, setActive] = useState<ActiveRange | null>(null); // { from, to } being played
 
   // ── NVRs ────────────────────────────────────────────────────────────────
-  const nvrsQ = useQuery<any>({
+  const nvrsQ = useQuery({
     queryKey: ["vms-nvrs", "footage-picker"],
     queryFn: () => vms.nvrs.list({ limit: 200 }),
     staleTime: 60_000,
   });
-  const nvrs = useMemo(() => asItems(nvrsQ.data), [nvrsQ.data]);
+  const nvrs = useMemo(() => nvrsQ.data?.items ?? [], [nvrsQ.data]);
   const nvrNames = useMemo(() => {
-    const m: any = {};
+    const m: Record<string, string> = {};
     for (const n of nvrs) m[n.id] = n.name;
     return m;
   }, [nvrs]);
 
   // ── Channels for the chosen NVR ───────────────────────────────────────────
-  const channelsQ = useQuery<any>({
+  const channelsQ = useQuery({
     queryKey: ["vms-nvr-channels", nvrId],
     queryFn: () => vms.nvrs.channels(nvrId),
     enabled: !!nvrId,
   });
-  const channels = useMemo(() => asItems(channelsQ.data), [channelsQ.data]);
+  const channels = useMemo(() => channelsQ.data?.items ?? [], [channelsQ.data]);
 
   const range = useMemo(() => {
     const from = fromDate ? new Date(`${fromDate}T00:00:00`).toISOString() : null;
@@ -55,13 +62,13 @@ export default function NvrFootage() {
   }, [fromDate, toDate]);
 
   // ── Recording search on the NVR's own storage ─────────────────────────────
-  const searchQ = useQuery<any>({
+  const searchQ = useQuery({
     queryKey: ["vms-nvr-footage", nvrId, channel, range.from, range.to],
     queryFn: () => vms.nvrFootage.recordings(nvrId, channel, range),
     enabled: !!nvrId && channel !== "",
     retry: false,
   });
-  const results = useMemo(() => asItems(searchQ.data), [searchQ.data]);
+  const results = useMemo(() => (searchQ.data ? asItems(searchQ.data) : []), [searchQ.data]);
 
   const nvrOptions = [
     { value: "", label: nvrs.length ? "Select NVR…" : "No NVRs onboarded" },
@@ -70,13 +77,13 @@ export default function NvrFootage() {
   const channelOptions = [
     { value: "", label: channelsQ.isLoading ? "Loading channels…" : "Select channel…" },
     ...channels.map((c) => ({
-      value: String(c.channel_number ?? c.channel ?? c.id),
-      label: c.name || `Channel ${c.channel_number ?? c.channel ?? c.id}`,
+      value: String(c.channel_number ?? c.channel),
+      label: c.name || `Channel ${c.channel_number ?? c.channel}`,
     })),
   ];
 
   // Source functions for the PlaybackPlayer when playing an NVR range.
-  const sourceFn = (win) => vms.nvrFootage.playback(nvrId, channel, win);
+  const sourceFn: PlaybackSourceFn = (win) => vms.nvrFootage.playback(nvrId, channel, win);
 
   return (
     <div className="space-y-4">
@@ -179,11 +186,10 @@ export default function NvrFootage() {
             <tbody>
               {results.map((r, i) => {
                 const dur =
-                  r.duration ??
-                  (r.start && r.end ? (new Date(r.end).getTime() - new Date(r.start).getTime()) / 1000 : null);
+                  r.start && r.end ? (new Date(r.end).getTime() - new Date(r.start).getTime()) / 1000 : null;
                 const isActive = active && active.from === r.start;
                 return (
-                  <tr key={r.id || `${r.start}-${i}`} className="border-b border-card-border last:border-0 hover:bg-hover/50">
+                  <tr key={`${r.start}-${i}`} className="border-b border-card-border last:border-0 hover:bg-hover/50">
                     <td className="px-4 py-3 text-foreground">{fmtDateTime(r.start)}</td>
                     <td className="px-4 py-3 text-muted">{r.end ? fmtDateTime(r.end) : "—"}</td>
                     <td className="px-4 py-3 text-muted">{fmtDuration(dur)}</td>

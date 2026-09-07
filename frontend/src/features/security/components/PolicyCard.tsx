@@ -12,11 +12,23 @@ import { apiError } from "@/lib/api";
 import { security } from "../api";
 import SecuritySection from "./SecuritySection";
 
-export default function PolicyCard({ canManage }: any) {
-  const qc = useQueryClient();
-  const q = useQuery<any>({ queryKey: ["security-policy"], queryFn: () => security.policy.get() });
+/** The policy as the form edits it — the role list is one comma-separated
+ *  string, and the idle timeout is whatever the number input currently holds. */
+interface PolicyForm {
+  require_2fa: boolean;
+  require_2fa_roles: string;
+  session_idle_minutes: string | number;
+}
 
-  const [form, setForm] = useState<any>(null);
+export interface PolicyCardProps {
+  canManage: boolean;
+}
+
+export default function PolicyCard({ canManage }: PolicyCardProps) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["security-policy"], queryFn: () => security.policy.get() });
+
+  const [form, setForm] = useState<PolicyForm | null>(null);
   useEffect(() => {
     if (!q.data) return;
     setForm({
@@ -26,15 +38,16 @@ export default function PolicyCard({ canManage }: any) {
     });
   }, [q.data]);
 
-  const save = useMutation<any>({
+  const save = useMutation({
+    // The Save button only renders once `form` is populated.
     mutationFn: () =>
       security.policy.update({
-        require_2fa: form.require_2fa,
-        require_2fa_roles: form.require_2fa_roles
+        require_2fa: form!.require_2fa,
+        require_2fa_roles: form!.require_2fa_roles
           .split(/[,\n]/)
           .map((r) => r.trim())
           .filter(Boolean),
-        session_idle_minutes: Number(form.session_idle_minutes) || 0,
+        session_idle_minutes: Number(form!.session_idle_minutes) || 0,
       }),
     onSuccess: () => {
       toast.success("2FA policy saved");
@@ -68,14 +81,14 @@ export default function PolicyCard({ canManage }: any) {
             </div>
             <Toggle
               checked={form.require_2fa}
-              onChange={(v) => setForm((f) => ({ ...f, require_2fa: v }))}
+              onChange={(v: boolean) => setForm((f) => (f ? { ...f, require_2fa: v } : f))}
               disabled={!canManage}
             />
           </label>
           <Input
             label="Restrict to roles (optional, comma-separated)"
             value={form.require_2fa_roles}
-            onChange={(e) => setForm((f) => ({ ...f, require_2fa_roles: e.target.value }))}
+            onChange={(e) => setForm((f) => (f ? { ...f, require_2fa_roles: e.target.value } : f))}
             disabled={!canManage || !form.require_2fa}
             placeholder="admin, operator (blank = everyone)"
             hint="Leave blank to enforce for every user. Enter role names to enforce only for those roles."
@@ -84,7 +97,7 @@ export default function PolicyCard({ canManage }: any) {
             label="Session idle timeout (minutes)"
             type="number"
             value={form.session_idle_minutes}
-            onChange={(e) => setForm((f) => ({ ...f, session_idle_minutes: e.target.value }))}
+            onChange={(e) => setForm((f) => (f ? { ...f, session_idle_minutes: e.target.value } : f))}
             disabled={!canManage}
             placeholder="0 = no idle timeout"
             hint="Sign users out after this many minutes of inactivity. 0 disables the idle timeout."

@@ -8,7 +8,7 @@
 // tiering and formatting live on the recorder. Wears the shared console frame + the
 // blue Configurations accent, exactly like its sibling federation lens (Federation).
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 
@@ -28,25 +28,71 @@ import { apiError } from "@/lib/api";
 import { asItems, fmtBytes } from "@/lib/format";
 import { vms } from "./api";
 import StatusBadge from "./components/StatusBadge";
+import type {
+  FederationNode,
+  NodeRaidArray,
+  NodeRaidStatus,
+  NodeStoragePool,
+  NodeStorageUsage,
+  NodeTierRule,
+} from "./types";
+
+/** One upstream 3rd-party NVR discovered from the federated camera list. */
+interface UpstreamNvrRef {
+  id: string;
+  name: string;
+}
+
+/** The NVR linkage a federated camera may carry. The recorder's own camera dict
+ *  is forwarded verbatim (backend/vision/app/vms/federation/router.py), so only
+ *  the fields this view reads are named. */
+interface FederatedCameraNvrLink {
+  node_id?: string;
+  nvr_id?: string | null;
+  nvr_name?: string | null;
+  nvr?: { id?: string | null; name?: string | null } | null;
+}
+
+/** A disk/usage row as this view reads it — `NodeStorageUsage` plus the
+ *  alternate column names a 3rd-party NVR's HDD table uses. */
+interface NodeDiskRow extends NodeStorageUsage {
+  id?: string | null;
+  name?: string | null;
+  model?: string | null;
+  status?: string | null;
+  capacity_bytes?: number | null;
+}
+
+/** A tier rule plus the older/aliased column names the recorder may still send. */
+interface NodeTierRuleRow extends NodeTierRule {
+  source_pool_name?: string | null;
+  target_pool_name?: string | null;
+  source?: string | null;
+  target?: string | null;
+  after_hours?: number | null;
+  hours?: number | null;
+}
 
 // Storage-pool kind → label + icon (the node reports `kind`, not the legacy
 // VMS-local `pool_type`).
-const POOL_KIND = {
+const POOL_KIND: Record<string, { label: string; icon: string }> = {
   local: { label: "Local disk", icon: "heroicons-outline:server" },
   nfs: { label: "NFS", icon: "heroicons-outline:server-stack" },
   smb: { label: "SMB / CIFS", icon: "heroicons-outline:server-stack" },
   s3: { label: "S3 / MinIO", icon: "heroicons-outline:cloud" },
 };
 
-// RAID array health → tone/label/icon for its badge.
-const RAID_HEALTH = {
+// RAID array health → tone/label/icon for its badge. `health` is an open string
+// on the wire, so the map is keyed by string and falls back to `unknown`.
+type RaidTone = "emerald" | "red" | "amber" | "muted";
+const RAID_HEALTH: Record<string, { tone: RaidTone; label: string; icon: string }> = {
   healthy: { tone: "emerald", label: "Healthy", icon: "heroicons-outline:shield-check" },
   degraded: { tone: "red", label: "Degraded", icon: "heroicons-outline:exclamation-triangle" },
   rebuilding: { tone: "amber", label: "Rebuilding", icon: "heroicons-outline:arrow-path" },
   failed: { tone: "red", label: "Failed", icon: "heroicons-outline:x-circle" },
   unknown: { tone: "muted", label: "Unknown", icon: "heroicons-outline:question-mark-circle" },
 };
-const RAID_TONE = {
+const RAID_TONE: Record<RaidTone, string> = {
   emerald: "border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.08)] text-nb-tealb",
   red: "border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] text-nb-crit",
   amber: "border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.1)] text-nb-warn",
@@ -54,7 +100,7 @@ const RAID_TONE = {
 };
 
 // A used% → bar gradient, shared by every usage bar on the page.
-function barColor(pct) {
+function barColor(pct: number) {
   return pct > 90
     ? "bg-gradient-to-r from-nb-warn to-nb-crit"
     : pct > 70
@@ -64,11 +110,11 @@ function barColor(pct) {
 
 export default function StoragePage() {
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Recorder nodes = the storage owners. Federation is the read path; fall back to
   // the media-node registry shape (both return {items} / a bare array via asItems).
-  const nodesQ = useQuery<any>({
+  const nodesQ = useQuery({
     queryKey: ["vms-storage-nodes"],
     queryFn: () => vms.federation.nodes(),
     refetchInterval: 20_000,
@@ -78,14 +124,15 @@ export default function StoragePage() {
   // Federated cameras — grouped per node so a node's upstream 3rd-party NVRs can be
   // discovered (a camera onboarded from an NVR carries its nvr_id). Best-effort: if
   // the payload has no nvr linkage, the upstream section simply stays empty.
-  const camsQ = useQuery<any>({
+  const camsQ = useQuery({
     queryKey: ["vms-storage-fed-cameras"],
     queryFn: () => vms.federation.cameras(),
     refetchInterval: 30_000,
   });
   const nvrsByNode = useMemo(() => {
-    const m = new Map<any, any>();
-    for (const c of camsQ.data?.items || []) {
+    const m = new Map<string, UpstreamNvrRef[]>();
+    // The node's camera dict is open; read it through the linkage shape above.
+    for (const c of (camsQ.data?.items || []) as FederatedCameraNvrLink[]) {
       const nid = c.node_id;
       const nvrId = c.nvr_id || c.nvr?.id;
       if (!nid || !nvrId) continue;
@@ -215,37 +262,38 @@ export default function StoragePage() {
 }
 
 // ── Right pane: one node's storage, read-only ───────────────────────────────
-function NodeStorageDetail({ node, nvrs }: any) {
+function NodeStorageDetail({ node, nvrs }: { node: FederationNode; nvrs: UpstreamNvrRef[] }) {
   const reachableOffline = node.status !== "online";
 
-  const usageQ = useQuery<any>({
+  const usageQ = useQuery({
     queryKey: ["vms-node-storage-usage", node.id],
     queryFn: () => vms.federation.storage.usage(node.id),
     refetchInterval: 30_000,
     retry: false,
   });
-  const poolsQ = useQuery<any>({
+  const poolsQ = useQuery({
     queryKey: ["vms-node-storage-pools", node.id],
     queryFn: () => vms.federation.storage.pools(node.id),
     retry: false,
   });
-  const rulesQ = useQuery<any>({
+  const rulesQ = useQuery({
     queryKey: ["vms-node-storage-tier-rules", node.id],
     queryFn: () => vms.federation.storage.tierRules(node.id),
     retry: false,
   });
-  const raidQ = useQuery<any>({
+  const raidQ = useQuery({
     queryKey: ["vms-node-storage-raid", node.id],
     queryFn: () => vms.federation.storage.raid(node.id),
     refetchInterval: 30_000,
     retry: false,
   });
 
-  const usage = usageQ.data || {};
+  const usage: NodeStorageUsage = usageQ.data || {};
   const pools = useMemo(() => asItems(poolsQ.data), [poolsQ.data]);
-  const rules = useMemo(() => asItems(rulesQ.data), [rulesQ.data]);
+  // The recorder still sends a few aliased tier-rule columns; read them as such.
+  const rules = useMemo(() => asItems(rulesQ.data) as NodeTierRuleRow[], [rulesQ.data]);
   const poolNames = useMemo(() => {
-    const m: any = {};
+    const m: Record<string, string> = {};
     for (const p of pools) m[p.id] = p.name;
     return m;
   }, [pools]);
@@ -376,12 +424,12 @@ function NodeStorageDetail({ node, nvrs }: any) {
 }
 
 // ── RAID ────────────────────────────────────────────────────────────────────
-function RaidSection({ query }: any) {
+function RaidSection({ query }: { query: UseQueryResult<NodeRaidStatus> }) {
   if (query.isLoading) return <InlineLoading />;
   if (query.isError) return <InlineError error={query.error} fallback="Failed to load RAID status" />;
 
-  const data = query.data || {};
-  const list = data.arrays || (Array.isArray(data) ? data : []);
+  const data: NodeRaidStatus = query.data || {};
+  const list: NodeRaidArray[] = data.arrays || (Array.isArray(data) ? data : []);
 
   if (data.available === false) {
     return (
@@ -402,8 +450,8 @@ function RaidSection({ query }: any) {
   );
 }
 
-function RaidArrayCard({ arr }: any) {
-  const h = RAID_HEALTH[arr.health] || RAID_HEALTH.unknown;
+function RaidArrayCard({ arr }: { arr: NodeRaidArray }) {
+  const h = RAID_HEALTH[arr.health ?? "unknown"] || RAID_HEALTH.unknown;
   const alarm = arr.health === "degraded" || arr.health === "failed";
   const pct = arr.rebuild_percent;
   return (
@@ -456,9 +504,9 @@ function RaidArrayCard({ arr }: any) {
 }
 
 // ── Pool card (read-only) ───────────────────────────────────────────────────
-function PoolCard({ pool }: any) {
-  const kind = POOL_KIND[pool.kind] || { label: pool.kind || "Pool", icon: "heroicons-outline:server" };
-  const u = pool.usage || {};
+function PoolCard({ pool }: { pool: NodeStoragePool }) {
+  const kind = POOL_KIND[pool.kind ?? ""] || { label: pool.kind || "Pool", icon: "heroicons-outline:server" };
+  const u = (pool.usage || {}) as NodeDiskRow;
   const cap = u.total_bytes ?? u.capacity_bytes ?? pool.max_size_bytes ?? 0;
   const used = u.used_bytes ?? 0;
   const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
@@ -495,11 +543,12 @@ function PoolCard({ pool }: any) {
 }
 
 // ── Tier rule row (read-only) ───────────────────────────────────────────────
-const fmtAge = (h) => (h == null ? "—" : h >= 24 ? `${Math.round(h / 24)}d` : `${h}h`);
+const fmtAge = (h: number | null | undefined) =>
+  h == null ? "—" : h >= 24 ? `${Math.round(h / 24)}d` : `${h}h`;
 
-function TierRuleRow({ rule, poolNames }: any) {
-  const src = poolNames[rule.source_pool_id] || rule.source_pool_name || rule.source || "—";
-  const dst = poolNames[rule.target_pool_id] || rule.target_pool_name || rule.target || "—";
+function TierRuleRow({ rule, poolNames }: { rule: NodeTierRuleRow; poolNames: Record<string, string> }) {
+  const src = poolNames[rule.source_pool_id ?? ""] || rule.source_pool_name || rule.source || "—";
+  const dst = poolNames[rule.target_pool_id ?? ""] || rule.target_pool_name || rule.target || "—";
   const hours = rule.after_age_hours ?? rule.after_hours ?? rule.hours;
   return (
     <li className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-2">
@@ -516,15 +565,16 @@ function TierRuleRow({ rule, poolNames }: any) {
 }
 
 // ── Upstream 3rd-party NVR storage ──────────────────────────────────────────
-function UpstreamNvrCard({ nodeId, nvr }: any) {
-  const q = useQuery<any>({
+function UpstreamNvrCard({ nodeId, nvr }: { nodeId: string; nvr: UpstreamNvrRef }) {
+  const q = useQuery({
     queryKey: ["vms-node-upstream-nvr-storage", nodeId, nvr.id],
     queryFn: () => vms.federation.storage.upstreamNvr(nodeId, nvr.id),
     retry: false,
   });
 
   const data = q.data || {};
-  const disks = asItems(data.disks ? { items: data.disks } : data);
+  // A 3rd-party NVR's HDD table uses its own column names; read it as a disk row.
+  const disks = asItems(data.disks ? { items: data.disks } : data) as NodeDiskRow[];
   const available = data.available !== false;
 
   return (
@@ -575,7 +625,15 @@ function UpstreamNvrCard({ nodeId, nvr }: any) {
 }
 
 // ── Small shared bits ───────────────────────────────────────────────────────
-function SectionLabel({ children, count, className = "" }: any) {
+function SectionLabel({
+  children,
+  count,
+  className = "",
+}: {
+  children: React.ReactNode;
+  count?: number;
+  className?: string;
+}) {
   return (
     <div className={`mb-2 flex items-center gap-2 ${className}`}>
       <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{children}</span>
@@ -596,11 +654,11 @@ function InlineLoading() {
   );
 }
 
-function InlineError({ error, fallback }: any) {
+function InlineError({ error, fallback }: { error: unknown; fallback: string }) {
   return <p className="px-1 py-3 text-xs text-nb-crit">{apiError(error, fallback)}</p>;
 }
 
-function EmptyNote({ children }: any) {
+function EmptyNote({ children }: { children: React.ReactNode }) {
   return (
     <p className="rounded-[10px] border border-dashed border-nb-line px-3 py-4 text-center text-xs text-nb-faint">
       {children}

@@ -3,7 +3,7 @@
 // Edit an onboarded instance. Ported from neubit_v2's edit-instance-modal.jsx:
 // diffs each field vs the original and only PATCHes what changed; secret is
 // rotated only when the "Rotate" toggle is on. Rethemed to v3 tokens.
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -11,10 +11,12 @@ import { Button, Modal } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
+import type { AccessInstancePublic } from "@/lib/types";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { gates } from "../api";
+import type { AccessAuthType, InstanceUpdate } from "../types";
 
-function normalizeBaseUrl(value) {
+function normalizeBaseUrl(value: string): string {
   const raw = String(value || "").trim();
   if (!raw) return "";
   try {
@@ -27,7 +29,7 @@ function normalizeBaseUrl(value) {
   }
 }
 
-function isValidHttpUrl(value) {
+function isValidHttpUrl(value: string): boolean {
   try {
     const u = new URL(value);
     return (u.protocol === "http:" || u.protocol === "https:") && !!u.hostname;
@@ -36,31 +38,50 @@ function isValidHttpUrl(value) {
   }
 }
 
-export default function EditInstanceModal({ instance, onClose, onSuccess }: any) {
+/** The edit form; each field is diffed against `instance` on submit. */
+interface EditInstanceForm {
+  name: string;
+  site_id: string;
+  base_url: string;
+  auth_type: AccessAuthType;
+  username: string;
+  /** Only sent when the Rotate toggle is on. */
+  secret: string;
+  reconciler_cron: string;
+}
+
+export interface EditInstanceModalProps {
+  instance: AccessInstancePublic;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export default function EditInstanceModal({ instance, onClose, onSuccess }: EditInstanceModalProps) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<any>({
+  const [form, setForm] = useState<EditInstanceForm>({
     name: instance.name || "",
     site_id: instance.site_id || "",
     base_url: instance.base_url || "",
-    auth_type: instance.auth_type || "basic",
+    // The wire type is a plain string; the backend enum is basic|jwt.
+    auth_type: (instance.auth_type as AccessAuthType) || "basic",
     username: instance.username || "",
     secret: "",
     reconciler_cron: instance.reconciler_cron || "",
   });
   const [rotateSecret, setRotateSecret] = useState(false);
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<EditInstanceForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const sitesQ = useQuery<any>({
+  const sitesQ = useQuery({
     queryKey: ["sites-list"],
     queryFn: () => sitesApi.list({ limit: 200 }),
   });
   const sites = asItems(sitesQ.data);
 
-  const m = useMutation<any>({
+  const m = useMutation({
     mutationFn: () => {
-      const body: any = {};
+      const body: InstanceUpdate = {};
       const url = normalizeBaseUrl(form.base_url);
       if (form.name !== instance.name) body.name = form.name;
       if (form.site_id !== (instance.site_id || "")) body.site_id = form.site_id || null;
@@ -81,7 +102,7 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }: any)
   });
 
   const validate = () => {
-    const next: any = {};
+    const next: Record<string, string> = {};
     const url = normalizeBaseUrl(form.base_url);
     if (!form.name.trim()) next.name = "Required";
     if (!url || !isValidHttpUrl(url)) next.base_url = "Must start with http:// or https://";
@@ -91,7 +112,7 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }: any)
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e) => {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (validate()) m.mutate();
   };
@@ -142,7 +163,8 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }: any)
             as="select"
             label="Auth Type"
             value={form.auth_type}
-            onChange={(e) => set({ auth_type: e.target.value })}
+            // The select offers exactly these two values.
+            onChange={(e) => set({ auth_type: e.target.value === "jwt" ? "jwt" : "basic" })}
             options={[
               { value: "basic", label: "Basic (user + API key)" },
               { value: "jwt", label: "JWT (user + password)" },

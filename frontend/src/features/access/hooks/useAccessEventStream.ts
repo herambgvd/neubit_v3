@@ -9,12 +9,21 @@
 import { useEffect, useState } from "react";
 
 import { api, tokens } from "@/lib/api";
+import type { AccessEventFrame } from "../types";
 
 // Cap the live buffer so a long-lived stream can't grow unbounded.
 const MAX_EVENTS = 500;
 
-export function useAccessEventStream(instanceId, { enabled = true, max = MAX_EVENTS }: any = {}) {
-  const [events, setEvents] = useState<any[]>([]);
+export interface AccessEventStreamOptions {
+  enabled?: boolean;
+  max?: number;
+}
+
+export function useAccessEventStream(
+  instanceId: string | null | undefined,
+  { enabled = true, max = MAX_EVENTS }: AccessEventStreamOptions = {},
+) {
+  const [events, setEvents] = useState<AccessEventFrame[]>([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -52,14 +61,17 @@ export function useAccessEventStream(instanceId, { enabled = true, max = MAX_EVE
       es = new EventSource(url);
 
       es.addEventListener("access.event", (e) => {
-        let data: any = null;
+        // The frame is the compact JSON realtime_access._compact emits; the
+        // parse is only narrowed to "an object" before it is trusted as one.
+        let data: unknown = null;
         try {
           data = JSON.parse(e.data);
         } catch {
           return; // keepalive/comment — ignore
         }
-        if (!data) return;
-        setEvents((prev) => [data, ...prev].slice(0, max));
+        if (!data || typeof data !== "object") return;
+        const frame = data as AccessEventFrame;
+        setEvents((prev) => [frame, ...prev].slice(0, max));
       });
 
       es.onopen = () => {

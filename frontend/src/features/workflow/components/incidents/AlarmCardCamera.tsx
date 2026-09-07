@@ -7,15 +7,24 @@
 // event instant. Graceful: an offline camera / no frame → a placeholder, never a
 // crash. Rendered inside AlarmCard only when incCameraId(incident) is truthy.
 import { useEffect, useState } from "react";
+import type { SyntheticEvent } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 
 import { api } from "@/lib/api";
 import { vms } from "@/features/vms/api";
 
-export default function AlarmCardCamera({ cameraId, eventTime }: any) {
-  const [url, setUrl] = useState<any>(null);
-  const [state, setState] = useState("loading"); // loading | ok | error
+export interface AlarmCardCameraProps {
+  cameraId: string;
+  /** ISO instant of the source event — Playback is deep-linked to it. */
+  eventTime?: string | null;
+}
+
+type SnapshotState = "loading" | "ok" | "error";
+
+export default function AlarmCardCamera({ cameraId, eventTime }: AlarmCardCameraProps) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [state, setState] = useState<SnapshotState>("loading"); // loading | ok | error
 
   useEffect(() => {
     if (!cameraId) return undefined;
@@ -23,7 +32,7 @@ export default function AlarmCardCamera({ cameraId, eventTime }: any) {
     let cancelled = false;
     setState("loading");
     api
-      .get(vms.cameras.snapshotUrl(cameraId), { responseType: "blob" })
+      .get<Blob>(vms.cameras.snapshotUrl(cameraId), { responseType: "blob" })
       .then((r) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(r.data);
@@ -47,7 +56,7 @@ export default function AlarmCardCamera({ cameraId, eventTime }: any) {
 
   // The card body is itself a <Link> to the incident; stop the click from bubbling
   // so "View recording" navigates to Playback instead.
-  const stop = (e) => e.stopPropagation();
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
 
   return (
     <div className="mt-1 flex items-center gap-3 rounded-[10px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] p-2" onClick={stop}>

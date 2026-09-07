@@ -14,6 +14,7 @@
 //   3. Fields to extract — repeating {outKey, jmespath} rows → field_map
 //   4. Test — paste sample JSON → per-condition ✓/✗ + overall matched + extracted
 import { useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -23,20 +24,32 @@ import { Field, FieldLabel, fieldClass } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
 import SelectMenu from "@/components/common/SelectMenu";
+import type { FieldChangeEvent } from "@/components/common/Field";
+import type {
+  ConditionDraft,
+  EventRuleCreate,
+  EventRulePublic,
+  FieldMapRow,
+  JsonObject,
+  JsonValue,
+  MatchCondition,
+  MatchOp,
+  RuleTestResponse,
+} from "../types";
 
 // Matcher operators — exact backend set.
-const OP_OPTIONS = [
+const OP_OPTIONS: { value: MatchOp; label: string }[] = [
   { value: "exists", label: "is present" },
   { value: "not_exists", label: "is missing" },
   { value: "equals", label: "equals" },
   { value: "not_equals", label: "does not equal" },
   { value: "contains", label: "contains" },
 ];
-const OP_NEEDS_VALUE = new Set<any>(["equals", "not_equals", "contains"]);
+const OP_NEEDS_VALUE = new Set<MatchOp>(["equals", "not_equals", "contains"]);
 
 // Try numeric / boolean / null literals; otherwise pass the raw string.
-function parseValue(v) {
-  if (v === "" || v === null || v === undefined) return v;
+function parseValue(v: string | null | undefined): JsonValue {
+  if (v === "" || v === null || v === undefined) return v ?? null;
   const t = String(v).trim();
   if (t === "true") return true;
   if (t === "false") return false;
@@ -45,7 +58,7 @@ function parseValue(v) {
   return v;
 }
 
-function formatValue(v) {
+function formatValue(v: unknown): string {
   if (v === undefined) return "—";
   if (v === null) return "null";
   if (typeof v === "string") return v.length > 24 ? `"${v.slice(0, 24)}…"` : `"${v}"`;
@@ -58,7 +71,16 @@ function formatValue(v) {
   return String(v);
 }
 
-export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any) {
+export interface RuleFormModalProps {
+  /** The webhook the rule belongs to (create only — an edit uses `rule.id`). */
+  webhookId: string;
+  /** Null = create. */
+  rule?: EventRulePublic | null;
+  onClose: () => void;
+  onSaved?: () => void;
+}
+
+export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: RuleFormModalProps) {
   const isEdit = !!rule;
 
   // ── identity ──────────────────────────────────────────────────
@@ -66,31 +88,38 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
   const [description, setDescription] = useState(rule?.description || "");
   const [eventType, setEventType] = useState(rule?.event_type || "");
   const [targetDomain, setTargetDomain] = useState(rule?.target_domain || "");
-  const [priority, setPriority] = useState(rule?.priority ?? 100);
+  // Held as typed text while the number input is edited; coerced on submit.
+  const [priority, setPriority] = useState<string | number>(rule?.priority ?? 100);
   const [enabled, setEnabled] = useState(rule?.enabled ?? true);
 
   // ── match conditions: [{path, op, value}] ─────────────────────
-  const [conditions, setConditions] = useState(
+  const [conditions, setConditions] = useState<ConditionDraft[]>(() =>
     (rule?.match_conditions || []).map((c) => ({
       path: c.path || "",
       op: c.op || "exists",
-      value: c.value ?? "",
+      // The row edits the literal as text; parseValue turns it back on submit.
+      value:
+        c.value === null || c.value === undefined
+          ? ""
+          : typeof c.value === "object"
+            ? JSON.stringify(c.value)
+            : String(c.value),
     })),
   );
 
   // ── field map: repeating {outKey, jmespath} rows ──────────────
-  const [fieldRows, setFieldRows] = useState(
-    Object.entries<any>(rule?.field_map || {}).map(([outKey, jmespath]) => ({ outKey, jmespath })),
+  const [fieldRows, setFieldRows] = useState<FieldMapRow[]>(() =>
+    Object.entries(rule?.field_map || {}).map(([outKey, jmespath]) => ({ outKey, jmespath })),
   );
 
   // ── live test ─────────────────────────────────────────────────
   const [sampleText, setSampleText] = useState("");
   const [jsonErr, setJsonErr] = useState("");
-  const [testResult, setTestResult] = useState<any>(null);
-  const [errors, setErrors] = useState<any>({});
+  const [testResult, setTestResult] = useState<RuleTestResponse | null>(null);
+  const [errors, setErrors] = useState<{ name?: string; eventType?: string }>({});
 
   // Build the { path, op, value? } list the backend expects.
-  const buildConditions = () =>
+  const buildConditions = (): MatchCondition[] =>
     conditions
       .filter((c) => c.path)
       .map((c) => ({
@@ -100,17 +129,18 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
       }));
 
   // Build the { outKey: jmespath } field map.
-  const buildFieldMap = () => {
-    const map: any = {};
+  const buildFieldMap = (): Record<string, string> => {
+    const map: Record<string, string> = {};
     for (const r of fieldRows) {
       if (r.outKey?.trim() && r.jmespath?.trim()) map[r.outKey.trim()] = r.jmespath.trim();
     }
     return map;
   };
 
-  const save = useMutation<any, any, any>({
-    mutationFn: (body: any) =>
-      isEdit ? ingestApi.eventRules.update(rule.id, body) : ingestApi.eventRules.create(webhookId, body),
+  const save = useMutation({
+    // `rule` is non-null on the edit branch — `isEdit` IS `!!rule`.
+    mutationFn: (body: EventRuleCreate) =>
+      isEdit ? ingestApi.eventRules.update(rule!.id, body) : ingestApi.eventRules.create(webhookId, body),
     onSuccess: () => {
       toast.success(isEdit ? "Rule updated" : "Rule created");
       onSaved?.();
@@ -122,9 +152,11 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
   // match_conditions / field_map from the current draft, so you can preview
   // edits before saving — but it anchors on an existing rule id, so a
   // brand-new (never-saved) rule must be created first before it can be tested.
-  const test = useMutation<any>({
-    mutationFn: (payload: any) =>
-      ingestApi.eventRules.test(rule.id, {
+  const test = useMutation({
+    // Only reachable when `isEdit` (the button is disabled otherwise), so `rule`
+    // is non-null here.
+    mutationFn: (payload: JsonObject) =>
+      ingestApi.eventRules.test(rule!.id, {
         payload,
         match_conditions: buildConditions(),
         field_map: buildFieldMap(),
@@ -135,16 +167,16 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
 
   function runTest() {
     if (!isEdit) { toast.error("Create the rule first, then reopen it to test."); return; }
-    let payload;
+    let payload: JsonObject;
     try { payload = sampleText.trim() ? JSON.parse(sampleText) : {}; }
-    catch (err) { setJsonErr(`Invalid sample JSON: ${err.message}`); return; }
+    catch (err) { setJsonErr(`Invalid sample JSON: ${(err as Error).message}`); return; }
     setJsonErr("");
     test.mutate(payload);
   }
 
-  function submit(e) {
+  function submit(e?: FormEvent<HTMLFormElement>) {
     e?.preventDefault?.();
-    const next: any = {};
+    const next: { name?: string; eventType?: string } = {};
     if (!name.trim()) next.name = "Name is required";
     if (!eventType.trim()) next.eventType = "Event type is required";
     for (let i = 0; i < conditions.length; i++) {
@@ -152,7 +184,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
       if (!c.path) { toast.error(`Condition #${i + 1} needs a path`); return; }
       if (OP_NEEDS_VALUE.has(c.op) && c.value === "") { toast.error(`Condition #${i + 1} needs a value`); return; }
     }
-    const seen = new Set<any>();
+    const seen = new Set<string>();
     for (const r of fieldRows) {
       if (!r.outKey?.trim() && !r.jmespath?.trim()) continue;
       if (!r.outKey?.trim()) { toast.error("A field-map row is missing its output key"); return; }
@@ -183,7 +215,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={save.isPending}>
+          <Button onClick={() => submit()} disabled={save.isPending}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create rule"}
           </Button>
         </>
@@ -196,7 +228,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
             label="Name"
             required
             value={name}
-            onChange={(e) => { setName(e.target.value); if (errors.name) setErrors((p) => ({ ...p, name: undefined })); }}
+            onChange={(e: FieldChangeEvent) => { setName(e.target.value); if (errors.name) setErrors((p) => ({ ...p, name: undefined })); }}
             placeholder="Enter rule name"
             maxLength={128}
             error={errors.name}
@@ -205,7 +237,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
             label="Event type (emitted)"
             required
             value={eventType}
-            onChange={(e) => { setEventType(e.target.value); if (errors.eventType) setErrors((p) => ({ ...p, eventType: undefined })); }}
+            onChange={(e: FieldChangeEvent) => { setEventType(e.target.value); if (errors.eventType) setErrors((p) => ({ ...p, eventType: undefined })); }}
             placeholder="e.g. motion_alarm"
             className="font-mono"
             error={errors.eventType}
@@ -249,16 +281,16 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
             <p className="text-[11px] text-nb-faint">No conditions — this rule matches any payload. Add one to make it specific.</p>
           ) : (
             <div className="space-y-2">
-              {conditions.map((c, i) => (
+              {conditions.map((c: ConditionDraft, i: number) => (
                 <ConditionRow
                   key={i}
                   condition={c}
-                  onChange={(patch) => {
+                  onChange={(patch: Partial<ConditionDraft>) => {
                     const nextC = conditions.slice();
                     nextC[i] = { ...nextC[i], ...patch };
                     setConditions(nextC);
                   }}
-                  onRemove={() => setConditions(conditions.filter((_, idx) => idx !== i))}
+                  onRemove={() => setConditions(conditions.filter((_, idx: number) => idx !== i))}
                 />
               ))}
             </div>
@@ -380,7 +412,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
 
           {testResult?.condition_results?.length ? (
             <div className="divide-y divide-nb-line/50 rounded-[8px] border border-nb-line">
-              {testResult.condition_results.map((r, i) => (
+              {testResult.condition_results.map((r, i: number) => (
                 <div key={i} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
                   <div className="flex min-w-0 items-center gap-2">
                     <Icon
@@ -413,27 +445,33 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: any
   );
 }
 
-function ConditionRow({ condition, onChange, onRemove }: any) {
+interface ConditionRowProps {
+  condition: ConditionDraft;
+  onChange: (patch: Partial<ConditionDraft>) => void;
+  onRemove: () => void;
+}
+
+function ConditionRow({ condition, onChange, onRemove }: ConditionRowProps) {
   const needsValue = OP_NEEDS_VALUE.has(condition.op);
   return (
     <div className="grid grid-cols-1 sm:grid-cols-[1fr_150px_1fr_auto] items-center gap-2">
       <input
         value={condition.path}
-        onChange={(e) => onChange({ path: e.target.value })}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => onChange({ path: e.target.value })}
         placeholder="data.alarm[0].motion"
         spellCheck={false}
         className={`${fieldClass} !mt-0 !h-9 font-mono text-xs`}
       />
       <SelectMenu
         value={condition.op}
-        onChange={(e) => onChange({ op: e.target.value })}
+        onChange={(e) => onChange({ op: e.target.value as MatchOp })}
         options={OP_OPTIONS}
         className="!mt-0 !h-9 !text-xs"
       />
       {needsValue ? (
         <input
           value={condition.value ?? ""}
-          onChange={(e) => onChange({ value: e.target.value })}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => onChange({ value: e.target.value })}
           placeholder="value"
           className={`${fieldClass} !mt-0 !h-9 font-mono text-xs`}
         />

@@ -21,25 +21,32 @@ import { Button, Modal, ConfirmDialog } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { vms } from "../api";
+import type { EstateFederatedCamera, FederatedExportJob } from "../types";
+
+export interface FederatedCameraActionsProps {
+  camera: EstateFederatedCamera;
+}
 
 // Small pill-button matching the header's Snapshot control exactly.
 const BTN =
   "inline-flex items-center gap-1 rounded-md border border-nb-line bg-nb-surface px-2 py-1 text-[11px] font-medium text-nb-soft transition hover:border-nb-blueb hover:text-nb-ink disabled:opacity-50";
 
 // datetime-local <-> ISO helpers (same convention as EvidenceLockModal).
-function toLocalInput(d) {
+function toLocalInput(d: Date | string | number | null | undefined): string {
   if (!d) return "";
   const dt = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(dt.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
-const fromLocalInput = (v) => (v ? new Date(v).toISOString() : null);
+const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOString() : null);
 
-const READY = new Set<any>(["ready", "done", "complete", "completed", "succeeded"]);
-const FAILED = new Set<any>(["failed", "error"]);
+const READY = new Set<string>(["ready", "done", "complete", "completed", "succeeded"]);
+const FAILED = new Set<string>(["failed", "error"]);
 
-export default function FederatedCameraActions({ camera }: any) {
+type RecordMode = "start" | "stop";
+
+export default function FederatedCameraActions({ camera }: FederatedCameraActionsProps) {
   const { can } = useAuth();
   const node = camera.node_id;
   const cam = camera.real_id;
@@ -49,7 +56,7 @@ export default function FederatedCameraActions({ camera }: any) {
   const canHold = can("vms.recording.control");
   const canExport = can("vms.playback.view");
 
-  const [recBusy, setRecBusy] = useState<any>(null); // "start" | "stop" | null
+  const [recBusy, setRecBusy] = useState<RecordMode | null>(null); // "start" | "stop" | null
   const [confirmReboot, setConfirmReboot] = useState(false);
   const [rebooting, setRebooting] = useState(false);
   const [holdBusy, setHoldBusy] = useState(false); // quick "last 15 min"
@@ -59,7 +66,7 @@ export default function FederatedCameraActions({ camera }: any) {
   // Nothing to render if the operator holds none of the four perms.
   if (!canRecord && !canReboot && !canHold && !canExport) return null;
 
-  const record = async (mode) => {
+  const record = async (mode: RecordMode) => {
     setRecBusy(mode);
     try {
       if (mode === "start") await vms.federation.actions.recordStart(node, cam);
@@ -225,7 +232,12 @@ export default function FederatedCameraActions({ camera }: any) {
 
 // ── Evidence hold — custom range ──────────────────────────────────────────────
 // Retention-lock an arbitrary [from,to] window on the owning recorder.
-function FedHoldModal({ camera, onClose }: any) {
+interface FedModalProps {
+  camera: EstateFederatedCamera;
+  onClose?: () => void;
+}
+
+function FedHoldModal({ camera, onClose }: FedModalProps) {
   const node = camera.node_id;
   const cam = camera.real_id;
   const now = new Date();
@@ -325,23 +337,23 @@ function FedHoldModal({ camera, onClose }: any) {
 // ── Clip export — job through the node ────────────────────────────────────────
 // POST createExport → poll getExport until ready/failed → Download (authed blob).
 // Polling lives inside this modal so it stops the moment the modal unmounts.
-function FedExportModal({ camera, onClose }: any) {
+function FedExportModal({ camera, onClose }: FedModalProps) {
   const node = camera.node_id;
   const cam = camera.real_id;
   const now = new Date();
   const [from, setFrom] = useState(toLocalInput(new Date(now.getTime() - 5 * 60 * 1000)));
   const [to, setTo] = useState(toLocalInput(now));
-  const [job, setJob] = useState<any>(null); // { id, status }
+  const [job, setJob] = useState<Pick<FederatedExportJob, "id" | "status"> | null>(null); // { id, status }
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const pollRef = useRef<any>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fromIso = fromLocalInput(from);
   const toIso = fromLocalInput(to);
   const rangeValid = fromIso && toIso && new Date(toIso) > new Date(fromIso);
   const status = job?.status;
-  const ready = status && READY.has(String(status).toLowerCase());
-  const failed = status && FAILED.has(String(status).toLowerCase());
+  const ready = !!status && READY.has(String(status).toLowerCase());
+  const failed = !!status && FAILED.has(String(status).toLowerCase());
 
   // Poll while the job is in flight; cancel on unmount / terminal state.
   useEffect(() => {

@@ -5,10 +5,31 @@
 // controlled: parent owns the values and the setters.
 import { Icon } from "@iconify/react";
 import { titleize } from "@/lib/format";
+import type { SitePublic } from "@/lib/types";
 import { INCIDENT_STATUSES, PRIORITIES, INCIDENT_SOURCES } from "../../constants";
+import type { SopPublic } from "../../types";
 
 const selCls =
   "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-hidden transition focus:border-[rgba(34,211,238,.5)]";
+
+export interface IncidentFiltersProps {
+  qInput: string;
+  onQInput: (q: string) => void;
+  status: string;
+  priority: string;
+  siteId: string;
+  sopId: string;
+  source: string;
+  onStatus: (v: string) => void;
+  onPriority: (v: string) => void;
+  onSite: (v: string) => void;
+  onSop: (v: string) => void;
+  onSource: (v: string) => void;
+  onClear: () => void;
+  sites?: SitePublic[];
+  sops?: SopPublic[];
+  total: number;
+}
 
 export default function IncidentFilters({
   qInput,
@@ -27,7 +48,7 @@ export default function IncidentFilters({
   sites = [],
   sops = [],
   total,
-}: any) {
+}: IncidentFiltersProps) {
   const hasFilter = qInput || status || priority || siteId || sopId || source;
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -75,7 +96,7 @@ export default function IncidentFilters({
       <select value={sopId} onChange={(e) => onSop(e.target.value)} className={selCls}>
         <option value="" className="bg-card">All SOPs</option>
         {sops.map((s) => (
-          <option key={s.id ?? s.sop_id} value={s.id ?? s.sop_id} className="bg-card">{s.name}</option>
+          <option key={s.sop_id} value={s.sop_id} className="bg-card">{s.name}</option>
         ))}
       </select>
       <select

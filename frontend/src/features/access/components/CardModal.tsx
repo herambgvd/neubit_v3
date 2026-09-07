@@ -4,7 +4,7 @@
 // Ported from neubit_v2's card-modal.jsx: card code (required) + status, a searchable
 // cardholder picker (selecting one auto-sets status Used; status Free clears holder),
 // reader-function UID, technology type (0–255), description. Rethemed to v3 tokens.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -15,28 +15,51 @@ import { apiError } from "@/lib/api";
 import { asItems, idOf } from "@/lib/format";
 import { gates } from "../api";
 import { CARD_STATUSES } from "../constants";
+import type { AccessCard, AccessCardholder, CardUpdate } from "../types";
 
-const cardKey = (c) => idOf(c, "dds_uid", "card_id", "id");
+// The write-path id is the controller UID; `idOf` keeps the v2 aliases working
+// for a mirror row that predates the rename. `AccessCard.dds_uid` is always a
+// string, so the fallback is only for a hand-built row.
+const cardKey = (c: AccessCard): string => idOf(c, "dds_uid", "card_id", "id") ?? "";
 
-export default function CardModal({ instanceId, card, onClose, onSuccess }: any) {
+/** The card form. Every field is a string — `technology_type` included, since it
+ *  is a text input that is "" while empty and parsed on submit. */
+interface CardForm {
+  card_code: string;
+  status: string;
+  cardholder_uid: string;
+  reader_function_uid: string;
+  technology_type: string;
+  description: string;
+}
+
+export interface CardModalProps {
+  instanceId: string;
+  /** The row being edited; omit/null to create. */
+  card?: AccessCard | null;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export default function CardModal({ instanceId, card, onClose, onSuccess }: CardModalProps) {
   const isEdit = !!card;
   const qc = useQueryClient();
 
-  const [form, setForm] = useState<any>({
+  const [form, setForm] = useState<CardForm>({
     card_code: card?.card_code || "",
     status: card?.status || "Free",
     cardholder_uid: card?.cardholder_uid || "",
     reader_function_uid: card?.reader_function_uid || "",
-    technology_type: card?.technology_type ?? "",
+    technology_type: card?.technology_type == null ? "" : String(card.technology_type),
     description: card?.description || "",
   });
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [chSearch, setChSearch] = useState("");
   const [chOpen, setChOpen] = useState(false);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<CardForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const cardholdersQ = useQuery<any>({
+  const cardholdersQ = useQuery({
     queryKey: ["ac-cardholders", instanceId],
     queryFn: () => gates.cardholders.list(instanceId, { limit: 500 }),
     enabled: !!instanceId,
@@ -61,7 +84,7 @@ export default function CardModal({ instanceId, card, onClose, onSuccess }: any)
     [allCardholders, form.cardholder_uid],
   );
 
-  const create = useMutation<any>({
+  const create = useMutation({
     mutationFn: () =>
       gates.cards.create(instanceId, {
         card_code: form.card_code.trim(),
@@ -79,18 +102,20 @@ export default function CardModal({ instanceId, card, onClose, onSuccess }: any)
     onError: (e) => toast.error(apiError(e, "Create failed")),
   });
 
-  const update = useMutation<any>({
+  const update = useMutation({
+    // Only reachable from the edit form, where `card` is set.
     mutationFn: () => {
-      const body: any = {};
-      if (form.card_code !== (card.card_code || "")) body.card_code = form.card_code.trim();
-      if (form.status !== card.status) body.status = form.status;
-      if (form.cardholder_uid !== (card.cardholder_uid || "")) body.cardholder_uid = form.cardholder_uid.trim() || null;
-      if (form.reader_function_uid !== (card.reader_function_uid || ""))
+      const target = card!;
+      const body: CardUpdate = {};
+      if (form.card_code !== (target.card_code || "")) body.card_code = form.card_code.trim();
+      if (form.status !== target.status) body.status = form.status;
+      if (form.cardholder_uid !== (target.cardholder_uid || "")) body.cardholder_uid = form.cardholder_uid.trim() || null;
+      if (form.reader_function_uid !== (target.reader_function_uid || ""))
         body.reader_function_uid = form.reader_function_uid.trim() || null;
       const tt = form.technology_type === "" ? null : Number(form.technology_type);
-      if (tt !== (card.technology_type ?? null)) body.technology_type = tt;
-      if (form.description !== (card.description || "")) body.description = form.description.trim() || null;
-      return gates.cards.update(instanceId, cardKey(card), body);
+      if (tt !== (target.technology_type ?? null)) body.technology_type = tt;
+      if (form.description !== (target.description || "")) body.description = form.description.trim() || null;
+      return gates.cards.update(instanceId, cardKey(target), body);
     },
     onSuccess: () => {
       toast.success("Card updated");
@@ -101,7 +126,7 @@ export default function CardModal({ instanceId, card, onClose, onSuccess }: any)
   });
 
   const validate = () => {
-    const next: any = {};
+    const next: Record<string, string> = {};
     if (!form.card_code.trim()) next.card_code = "Required";
     if (
       form.technology_type !== "" &&
@@ -112,7 +137,7 @@ export default function CardModal({ instanceId, card, onClose, onSuccess }: any)
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e) => {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!validate()) return;
     if (isEdit) update.mutate();
@@ -125,7 +150,7 @@ export default function CardModal({ instanceId, card, onClose, onSuccess }: any)
     <Modal
       open
       onClose={onClose}
-      title={isEdit ? `Edit · ${card.card_code}` : "New Card"}
+      title={isEdit ? `Edit · ${card?.card_code}` : "New Card"}
       wide
       footer={
         <>
@@ -184,8 +209,20 @@ export default function CardModal({ instanceId, card, onClose, onSuccess }: any)
   );
 }
 
-function CardholderPicker({ selected, filtered, loading, search, open, onSearch, onToggle, onSelect }: any) {
-  const label = (ch) => `${ch.first_name ? ch.first_name + " " : ""}${ch.last_name || ch.name || ""}`.trim() || ch.cardholder_id;
+interface CardholderPickerProps {
+  selected: AccessCardholder | null;
+  filtered: AccessCardholder[];
+  loading: boolean;
+  search: string;
+  open: boolean;
+  onSearch: (term: string) => void;
+  onToggle: () => void;
+  /** null clears the selection. */
+  onSelect: (cardholder: AccessCardholder | null) => void;
+}
+
+function CardholderPicker({ selected, filtered, loading, search, open, onSearch, onToggle, onSelect }: CardholderPickerProps) {
+  const label = (ch: AccessCardholder) => `${ch.first_name ? ch.first_name + " " : ""}${ch.last_name || ch.name || ""}`.trim() || ch.cardholder_id;
   return (
     <div className="relative mt-1">
       <button

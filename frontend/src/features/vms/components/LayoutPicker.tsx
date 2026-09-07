@@ -10,14 +10,35 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { LAYOUTS, getLayout } from "../videoWall";
+import { LAYOUTS, getLayout, type WallLayout } from "../videoWall";
+
+export interface LayoutGlyphProps {
+  layout: WallLayout;
+  className?: string;
+}
+
+/** One rect of the glyph, in viewBox units. */
+interface GlyphRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** A tile token's bounding box in the spotlight template (cells, inclusive). */
+interface TokenBox {
+  minC: number;
+  maxC: number;
+  minR: number;
+  maxR: number;
+}
 
 // Draw a layout as a tiny grid of rounded rects inside a 24×24 viewBox.
-function LayoutGlyph({ layout, className = "" }: any) {
+function LayoutGlyph({ layout, className = "" }: LayoutGlyphProps) {
   const pad = 2;
   const size = 24 - pad * 2;
 
-  let rects: any[] = [];
+  let rects: GlyphRect[] = [];
   if (Array.isArray(layout.template)) {
     // Spotlight: parse the area template into bounding boxes per tile token.
     const rows = layout.template.map((r) => r.trim().split(/\s+/));
@@ -25,7 +46,7 @@ function LayoutGlyph({ layout, className = "" }: any) {
     const rowCount = rows.length;
     const cw = size / cols;
     const ch = size / rowCount;
-    const boxes = new Map<any, any>();
+    const boxes = new Map<string, TokenBox>();
     rows.forEach((cells, r) => {
       cells.forEach((tok, c) => {
         const b = boxes.get(tok) || { minC: c, maxC: c, minR: r, maxR: r };
@@ -70,17 +91,22 @@ function LayoutGlyph({ layout, className = "" }: any) {
   );
 }
 
-export default function LayoutPicker({ layoutKey, onChange }: any) {
+export interface LayoutPickerProps {
+  layoutKey: string;
+  onChange?: (key: string) => void;
+}
+
+export default function LayoutPicker({ layoutKey, onChange }: LayoutPickerProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<any>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   const active = getLayout(layoutKey);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDoc = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node | null)) setOpen(false);
     };
-    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {

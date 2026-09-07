@@ -21,7 +21,7 @@
 //
 // Polygons are supported in the payload contract but this tool draws rectangles —
 // enough to ship; existing polygon shapes are shown read-only and preserved on save.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Icon } from "@iconify/react";
@@ -29,11 +29,33 @@ import { Icon } from "@iconify/react";
 import { Button, Modal } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { vms } from "../api";
+import { presetFor } from "../constants";
+import type { DrawnPolygon, DrawnRect, DrawnShape, MotionZonesResponse, PrivacyMasksResponse } from "../types";
 
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
-const isRect = (s) =>
-  s && typeof s.x === "number" && typeof s.y === "number" && typeof s.w === "number" && typeof s.h === "number";
-const isPoly = (s) => s && Array.isArray(s.points) && s.points.length >= 3;
+/** Which region list the tool edits. */
+export type RegionVariant = "privacy" | "motion";
+/** The PUT echo of either list (`pushed` / `push_error` are common to both). */
+export type RegionPutResponse = PrivacyMasksResponse | MotionZonesResponse;
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const isRect = (s: DrawnShape | null | undefined): s is DrawnRect =>
+  !!s && "x" in s && typeof s.x === "number" && typeof s.y === "number" && typeof s.w === "number" && typeof s.h === "number";
+const isPoly = (s: DrawnShape | null | undefined): s is DrawnPolygon =>
+  !!s && "points" in s && Array.isArray(s.points) && s.points.length >= 3;
+
+interface VariantConfig {
+  title: string;
+  heading: string;
+  empty: string;
+  hint: string;
+  fillClass: string;
+  draftClass: string;
+  removeBtnClass: string;
+  /** The saved list (an empty list when the echo carries none). */
+  getFn: (id: string) => Promise<DrawnShape[]>;
+  putFn: (id: string, shapes: DrawnShape[]) => Promise<RegionPutResponse>;
+  hasSensitivity: boolean;
+}
 
 const VARIANTS = {
   privacy: {
@@ -46,9 +68,8 @@ const VARIANTS = {
     draftClass: "border border-dashed border-white/70 bg-black/50",
     // static class so Tailwind JIT keeps it (no dynamic `bg-${x}-500`).
     removeBtnClass: "bg-sky-500",
-    getFn: (id) => vms.cameras.privacyMasks.get(id),
+    getFn: (id) => vms.cameras.privacyMasks.get(id).then((r) => (Array.isArray(r?.privacy_masks) ? r.privacy_masks : [])),
     putFn: (id, shapes) => vms.cameras.privacyMasks.put(id, shapes),
-    listKey: "privacy_masks",
     hasSensitivity: false,
   },
   motion: {
@@ -60,12 +81,22 @@ const VARIANTS = {
     fillClass: "border-2 border-emerald-400 bg-emerald-400/15",
     draftClass: "border-2 border-dashed border-emerald-300 bg-emerald-300/10",
     removeBtnClass: "bg-emerald-500",
-    getFn: (id) => vms.cameras.motionZones.get(id),
+    getFn: (id) => vms.cameras.motionZones.get(id).then((r) => (Array.isArray(r?.motion_zones) ? r.motion_zones : [])),
     putFn: (id, shapes) => vms.cameras.motionZones.put(id, shapes),
-    listKey: "motion_zones",
     hasSensitivity: true,
   },
-};
+} satisfies Record<RegionVariant, VariantConfig>;
+
+export interface RegionDrawModalProps {
+  open?: boolean;
+  onClose?: () => void;
+  variant?: RegionVariant;
+  cameraId: string;
+  cameraName?: string | null;
+  canManage?: boolean;
+  /** Called after a successful save so the parent can refetch / reflect state. */
+  onSaved?: (res: RegionPutResponse) => void;
+}
 
 export default function RegionDrawModal({
   open,
@@ -74,26 +105,25 @@ export default function RegionDrawModal({
   cameraId,
   cameraName,
   canManage = false,
-  // Called after a successful save so the parent can refetch / reflect state.
   onSaved,
-}: any) {
-  const cfg = VARIANTS[variant] || VARIANTS.privacy;
+}: RegionDrawModalProps) {
+  const cfg: VariantConfig = presetFor(VARIANTS, variant, VARIANTS.privacy);
 
   // Reference frame (camera snapshot as a blob object-URL).
-  const [frameUrl, setFrameUrl] = useState<any>(null);
+  const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [frameError, setFrameError] = useState(false);
   const [frameLoading, setFrameLoading] = useState(false);
 
   // Drawn shapes. Rects are editable; polygons (if any pre-exist) are preserved
   // read-only. Each rect may carry `sensitivity` in the motion variant.
-  const [shapes, setShapes] = useState<any[]>([]);
-  const [draft, setDraft] = useState<any>(null); // in-progress rect while dragging (normalized)
+  const [shapes, setShapes] = useState<DrawnShape[]>([]);
+  const [draft, setDraft] = useState<DrawnRect | null>(null); // in-progress rect while dragging (normalized)
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [globalSensitivity, setGlobalSensitivity] = useState(0.5);
 
-  const drawRef = useRef<any>(null);
-  const dragRef = useRef<any>(null); // { startX, startY }
+  const drawRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number } | null>(null);
 
   // ── Load existing shapes + a reference frame when opened ──────────────────
   useEffect(() => {
@@ -111,7 +141,7 @@ export default function RegionDrawModal({
     setFrameError(false);
     setFrameUrl(null);
     api
-      .get(vms.cameras.snapshotUrl(cameraId), { responseType: "blob" })
+      .get<Blob>(vms.cameras.snapshotUrl(cameraId), { responseType: "blob" })
       .then((r) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(r.data);
@@ -124,14 +154,13 @@ export default function RegionDrawModal({
     setLoading(true);
     cfg
       .getFn(cameraId)
-      .then((res) => {
+      .then((list) => {
         if (cancelled) return;
-        const list = Array.isArray(res?.[cfg.listKey]) ? res[cfg.listKey] : [];
         setShapes(list);
         // Seed the global sensitivity slider from the first zone that has one.
         if (cfg.hasSensitivity) {
           const seed = list.find((s) => typeof s.sensitivity === "number");
-          if (seed) setGlobalSensitivity(clamp01(seed.sensitivity));
+          if (seed?.sensitivity != null) setGlobalSensitivity(clamp01(seed.sensitivity));
         }
       })
       .catch((e) => !cancelled && setLoadError(apiError(e, "Could not load saved regions")))
@@ -145,7 +174,7 @@ export default function RegionDrawModal({
   }, [open, cameraId, variant]);
 
   // ── Draw layer — drag to add a normalized rect ────────────────────────────
-  const pointFromEvent = (e) => {
+  const pointFromEvent = (e: MouseEvent<HTMLDivElement>) => {
     const box = drawRef.current?.getBoundingClientRect();
     if (!box?.width || !box?.height) return null;
     return {
@@ -154,7 +183,7 @@ export default function RegionDrawModal({
     };
   };
 
-  const onDrawDown = (e) => {
+  const onDrawDown = (e: MouseEvent<HTMLDivElement>) => {
     if (!canManage) return;
     const p = pointFromEvent(e);
     if (!p) return;
@@ -163,7 +192,7 @@ export default function RegionDrawModal({
     e.preventDefault();
   };
 
-  const onDrawMove = (e) => {
+  const onDrawMove = (e: MouseEvent<HTMLDivElement>) => {
     if (!dragRef.current) return;
     const p = pointFromEvent(e);
     if (!p) return;
@@ -182,7 +211,7 @@ export default function RegionDrawModal({
     setDraft((d) => {
       // Ignore accidental micro-drags (a click).
       if (d && d.w > 0.02 && d.h > 0.02) {
-        const rect: any = { x: d.x, y: d.y, w: d.w, h: d.h };
+        const rect: DrawnRect = { x: d.x, y: d.y, w: d.w, h: d.h };
         if (cfg.hasSensitivity) rect.sensitivity = globalSensitivity;
         setShapes((prev) => [...prev, rect]);
       }
@@ -190,17 +219,17 @@ export default function RegionDrawModal({
     });
   };
 
-  const removeShape = (idx) => setShapes((prev) => prev.filter((_, i) => i !== idx));
+  const removeShape = (idx: number) => setShapes((prev) => prev.filter((_, i) => i !== idx));
   const clearShapes = () => setShapes([]);
 
   // Apply the global sensitivity onto every editable rect (motion variant).
-  const applyGlobalSensitivity = (v) => {
+  const applyGlobalSensitivity = (v: number) => {
     setGlobalSensitivity(v);
     setShapes((prev) => prev.map((s) => (isRect(s) ? { ...s, sensitivity: v } : s)));
   };
 
   // ── Save ──────────────────────────────────────────────────────────────────
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => cfg.putFn(cameraId, shapes),
     onSuccess: (res) => {
       const applied = res?.pushed === true;
@@ -410,7 +439,7 @@ export default function RegionDrawModal({
 }
 
 // Bounding-box style for a normalized polygon (read-only marker).
-function polyBoundsStyle(points) {
+function polyBoundsStyle(points: [number, number][]): CSSProperties {
   const xs = points.map((p) => p[0]);
   const ys = points.map((p) => p[1]);
   const x = Math.min(...xs);

@@ -3,13 +3,16 @@
 // Right-pane detail for a selected linkage rule: header (trigger icon, name,
 // trigger/status pills, active toggle + close/edit/delete) and a read-only body —
 // trigger/scope/cooldown grid plus the configured actions. Mirrors SiteDetail.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { Toggle } from "@/components/ui/kit";
-import { EVENT_TYPE_PRESETS, LINKAGE_ACTION_TYPES } from "../constants";
+import { EVENT_TYPE_PRESETS, LINKAGE_ACTION_TYPES, presetFor } from "../constants";
+import type { LinkageRulePublic } from "../types";
+import type { LinkageScopeDict } from "./LinkageRuleModal";
 
-const actionLabel = (t) => LINKAGE_ACTION_TYPES.find((a) => a.value === t)?.label || t;
+const actionLabel = (t: string) => LINKAGE_ACTION_TYPES.find((a) => a.value === t)?.label || t;
 
-function scopeLabel(scope: any = {}) {
+function scopeLabel(scope: LinkageScopeDict | null | undefined = {}) {
   if (!scope || scope.all || Object.keys(scope).length === 0) return "Any camera";
   if (Array.isArray(scope.camera_ids) && scope.camera_ids.length)
     return `${scope.camera_ids.length} camera${scope.camera_ids.length === 1 ? "" : "s"}`;
@@ -18,7 +21,7 @@ function scopeLabel(scope: any = {}) {
   return "Any camera";
 }
 
-function InfoField({ label, children }: any) {
+function InfoField({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{label}</div>
@@ -27,8 +30,16 @@ function InfoField({ label, children }: any) {
   );
 }
 
-export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onDelete }: any) {
-  const tp = EVENT_TYPE_PRESETS[rule.trigger_event_type] || EVENT_TYPE_PRESETS.system;
+export interface LinkageRuleDetailProps {
+  rule: LinkageRulePublic;
+  onToggle: (active: boolean) => void;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onDelete }: LinkageRuleDetailProps) {
+  const tp = presetFor(EVENT_TYPE_PRESETS, rule.trigger_event_type, EVENT_TYPE_PRESETS.system);
   const actions = rule.actions || [];
   return (
     <div className="flex flex-col flex-1 min-h-0">

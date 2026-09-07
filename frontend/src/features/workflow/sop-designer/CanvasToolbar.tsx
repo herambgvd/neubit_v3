@@ -5,7 +5,13 @@
 import { Icon } from "@iconify/react";
 import { Button } from "@/components/ui/kit";
 
-function ToolBtn({ icon, title, onClick }: any) {
+interface ToolBtnProps {
+  icon: string;
+  title: string;
+  onClick: () => void;
+}
+
+function ToolBtn({ icon, title, onClick }: ToolBtnProps) {
   return (
     <button
       type="button"
@@ -18,7 +24,15 @@ function ToolBtn({ icon, title, onClick }: any) {
   );
 }
 
-export default function CanvasToolbar({ scale, onAddState, onZoomIn, onZoomOut, onFit }: any) {
+export interface CanvasToolbarProps {
+  scale: number;
+  onAddState: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFit: () => void;
+}
+
+export default function CanvasToolbar({ scale, onAddState, onZoomIn, onZoomOut, onFit }: CanvasToolbarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-nb-line px-3 py-2 bg-[rgba(8,15,34,.5)]">
       <Button variant="success" icon="heroicons-outline:plus" onClick={onAddState} className="!px-2.5 !py-1 text-xs">

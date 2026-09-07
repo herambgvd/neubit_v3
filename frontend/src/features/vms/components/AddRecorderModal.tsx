@@ -18,11 +18,32 @@ import { Button, Modal } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { MediaNodeCreate, MediaNodePublic } from "../types";
 
-export default function AddRecorderModal({ node, onClose, onSuccess }: any) {
+/** The flat form; every field binds to a text input (capacity is coerced on save). */
+interface RecorderForm {
+  name: string;
+  api_url: string;
+  hls_base: string;
+  webrtc_base: string;
+  rtsp_base: string;
+  label: string;
+  capacity_channels: number | string;
+  pairing_code: string;
+}
+
+export interface AddRecorderModalProps {
+  /** Present = edit this recorder; absent = register a new one. */
+  node?: MediaNodePublic | null;
+  onClose: () => void;
+  /** The saved row (it may carry `warning` when the box was unreachable). */
+  onSuccess?: (node: MediaNodePublic) => void;
+}
+
+export default function AddRecorderModal({ node, onClose, onSuccess }: AddRecorderModalProps) {
   const editing = !!node;
-  const [form, setForm] = useState(
-    editing
+  const [form, setForm] = useState<RecorderForm>(
+    node
       ? {
           name: node.name || "",
           api_url: node.api_url || "",
@@ -36,13 +57,13 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: any) {
         }
       : { name: "", api_url: "", hls_base: "", webrtc_base: "", rtsp_base: "", label: "", capacity_channels: "", pairing_code: "" },
   );
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<RecorderForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => {
-      const body = {
+      const body: MediaNodeCreate = {
         name: form.name.trim(),
         api_url: form.api_url.trim(),
         hls_base: form.hls_base.trim() || undefined,
@@ -55,7 +76,7 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: any) {
         // credential, and re-pairing is a deliberate act from the detail panel.
         pairing_code: editing ? undefined : form.pairing_code.trim() || undefined,
       };
-      return editing ? vms.mediaNodes.update(node.id, body) : vms.mediaNodes.create(body);
+      return node ? vms.mediaNodes.update(node.id, body) : vms.mediaNodes.create(body);
     },
     onSuccess: (res) => {
       // The backend may save an unreachable node and echo a `warning`.
@@ -67,7 +88,7 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: any) {
   });
 
   const submit = () => {
-    const errs: any = {};
+    const errs: Record<string, string> = {};
     if (!form.name.trim() || form.name.trim().length < 2) errs.name = "Required (min 2 chars)";
     if (!form.api_url.trim()) errs.api_url = "Required";
     setErrors(errs);
@@ -79,7 +100,7 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: any) {
     <Modal
       open
       onClose={onClose}
-      title={editing ? `Edit recorder — ${node.name}` : "Add recorder"}
+      title={node ? `Edit recorder — ${node.name}` : "Add recorder"}
       wide
       footer={
         <>

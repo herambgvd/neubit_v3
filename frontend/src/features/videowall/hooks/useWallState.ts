@@ -16,19 +16,29 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { videowall } from "../api";
+import type { WallState, WallStateResponse } from "../types";
 import { useWallStream } from "./useWallStream";
 
 
 /** Stable stand-in for "no wall state yet" — see the note at the return.*/
-const EMPTY = {};
+const EMPTY: WallState = {};
 
-export function useWallState(wallId, { enabled = true }: any = {}) {
-  const [state, setState] = useState<any>(null);
+/** Options — `enabled: false` skips the seed query and the SSE subscription. */
+export interface UseWallStateOptions {
+  enabled?: boolean;
+}
+
+export function useWallState(
+  wallId: string | null | undefined,
+  { enabled = true }: UseWallStateOptions = {},
+) {
+  const [state, setState] = useState<WallState | null>(null);
 
   // Initial snapshot (one-shot; SSE keeps it fresh afterwards).
-  const stateQ = useQuery<any>({
+  const stateQ = useQuery<WallStateResponse>({
     queryKey: ["wall-state", wallId],
-    queryFn: () => videowall.state.get(wallId),
+    // Guarded by `enabled` above: the query never runs without a wall id.
+    queryFn: () => videowall.state.get(wallId!),
     enabled: !!wallId && enabled,
     staleTime: 5_000,
   });
@@ -45,32 +55,35 @@ export function useWallState(wallId, { enabled = true }: any = {}) {
 
   // Seed state from a mutation response (before its SSE echo arrives) so the
   // acting operator sees the change instantly.
-  const applyResponse = (resp) => {
+  const applyResponse = (resp: WallStateResponse) => {
     if (resp?.state) setState(resp.state);
     return resp;
   };
 
   const push = useCallback(
-    (monitorId, cellIndex, cameraId) =>
+    (monitorId: string, cellIndex: number, cameraId: string) =>
       videowall.state
-        .push(wallId, { monitor_id: monitorId, cell_index: cellIndex, camera_id: cameraId })
+        .push(String(wallId), { monitor_id: monitorId, cell_index: cellIndex, camera_id: cameraId })
         .then(applyResponse),
     [wallId],
   );
 
   const clearCell = useCallback(
-    (monitorId, cellIndex) =>
-      videowall.state.clear(wallId, { monitor_id: monitorId, cell_index: cellIndex }).then(applyResponse),
+    (monitorId: string, cellIndex: number) =>
+      videowall.state
+        .clear(String(wallId), { monitor_id: monitorId, cell_index: cellIndex })
+        .then(applyResponse),
     [wallId],
   );
 
   const clearMonitor = useCallback(
-    (monitorId) => videowall.state.clear(wallId, { monitor_id: monitorId }).then(applyResponse),
+    (monitorId: string) =>
+      videowall.state.clear(String(wallId), { monitor_id: monitorId }).then(applyResponse),
     [wallId],
   );
 
   const applyPreset = useCallback(
-    (presetId) => videowall.presets.apply(wallId, presetId).then(applyResponse),
+    (presetId: string) => videowall.presets.apply(String(wallId), presetId).then(applyResponse),
     [wallId],
   );
 

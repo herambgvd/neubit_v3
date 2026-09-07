@@ -9,6 +9,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import {
   ConsoleGrid,
   ConsolePanel,
@@ -22,17 +23,20 @@ import {
 import { apiError } from "@/lib/api";
 import { asItems, titleize } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import type { TemplatePublic } from "../../types";
 import TemplateForm from "./TemplateForm";
 import TemplateDetail from "./TemplateDetail";
 
+type Mode = "view" | "create" | "edit";
+
 export default function NotificationTemplatesTab() {
   const qc = useQueryClient();
-  const q = useQuery<any>({ queryKey: ["wf-templates"], queryFn: () => wfApi.notifications.templates.list({ limit: 200 }) });
-  const templates = asItems(q.data);
+  const q = useQuery({ queryKey: ["wf-templates"], queryFn: () => wfApi.notifications.templates.list({ limit: 200 }) });
+  const templates = useMemo<TemplatePublic[]>(() => (q.data ? asItems(q.data) : []), [q.data]);
 
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [mode, setMode] = useState("view"); // view | create | edit
-  const [confirm, setConfirm] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("view"); // view | create | edit
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -49,13 +53,13 @@ export default function NotificationTemplatesTab() {
   const selected = useMemo(() => (mode === "create" ? null : templates.find((t) => t.template_id === effectiveId) || null), [templates, effectiveId, mode]);
 
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => wfApi.notifications.templates.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => wfApi.notifications.templates.remove(id),
     onSuccess: () => { toast.success("Template removed"); qc.invalidateQueries({ queryKey: ["wf-templates"] }); setSelectedId(null); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function askDelete(t) {
+  function askDelete(t: TemplatePublic) {
     setConfirm({ title: "Delete template?", message: `Delete "${t.name}"?`, confirmLabel: "Delete", onConfirm: () => { remove.mutate(t.template_id); setConfirm(null); } });
   }
 

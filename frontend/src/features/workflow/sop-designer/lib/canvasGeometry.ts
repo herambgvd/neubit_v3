@@ -2,20 +2,37 @@
 // paths, a point-on-curve helper (for label + arrowhead placement), and the
 // fit-to-view computation. No React, no DOM.
 
+import type { StatePublic } from "../../types";
+
 export const NODE_W = 190;
 export const NODE_H = 76;
 export const MIN_SCALE = 0.35;
 export const MAX_SCALE = 2.5;
 export const DEFAULT_COLOR = "#6366F1";
 
-export const nodeCenter = (s) => ({
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** Anything placed on the canvas — a state, or a state with a live drag override. */
+export type Positioned = Pick<StatePublic, "position_x" | "position_y">;
+
+export const nodeCenter = (s: Positioned): Point => ({
   x: (s.position_x ?? 0) + NODE_W / 2,
   y: (s.position_y ?? 0) + NODE_H / 2,
 });
 
+export interface EdgeGeometry {
+  a: Point;
+  b: Point;
+  c1: Point;
+  c2: Point;
+}
+
 // Bezier control points between two node centers — mirrors v2's transitionGeometry
 // (drops a little so parallel edges separate and the curve reads as directional).
-export function edgePath(from, to) {
+export function edgePath(from: Positioned, to: Positioned): EdgeGeometry {
   const a = nodeCenter(from);
   const b = nodeCenter(to);
   const dx = b.x - a.x;
@@ -28,7 +45,7 @@ export function edgePath(from, to) {
 }
 
 // Point at t on the cubic bezier (for label placement + arrowhead angle).
-export function bezierPoint(a, c1, c2, b, t) {
+export function bezierPoint(a: Point, c1: Point, c2: Point, b: Point, t: number): Point {
   const u = 1 - t;
   return {
     x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x,
@@ -36,7 +53,12 @@ export function bezierPoint(a, c1, c2, b, t) {
   };
 }
 
-export function computeFit(states, w, h) {
+export interface Fit {
+  scale: number;
+  offset: Point;
+}
+
+export function computeFit(states: Positioned[], w: number, h: number): Fit | null {
   if (!states.length || !w || !h) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const s of states) {

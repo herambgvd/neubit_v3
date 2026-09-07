@@ -6,7 +6,21 @@
 import { useState } from "react";
 import { Button, Modal } from "@/components/ui/kit";
 
-export default function ReasonModal({ action, pending, onCancel, onSubmit }: any) {
+/** What the reason modal is collecting a reason FOR. */
+export interface ReasonAction {
+  title: string;
+  verb: string;
+  run: (reason: string | null) => void;
+}
+
+export interface ReasonModalProps {
+  action: ReasonAction;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (reason: string | null) => void;
+}
+
+export default function ReasonModal({ action, pending, onCancel, onSubmit }: ReasonModalProps) {
   const [reason, setReason] = useState("");
   return (
     <Modal

@@ -41,13 +41,30 @@ export const RANGES = [
 
 export const DEFAULT_RANGE_SECONDS = 3_600;
 
+/** The timeline window in epoch ms. */
+export interface WallWindow {
+  fromMs: number;
+  toMs: number;
+}
+
+/** The shared playhead — see `createClock`. `null` = live (no playhead). */
+export interface WallClock {
+  get: () => number | null;
+  set: (v: number | null) => void;
+  advance: (deltaMs: number) => void;
+  sincePublished: () => number;
+  subscribe: (fn: (ms: number | null) => void) => () => void;
+}
+
+export type WallMode = "live" | "playback";
+
 // Speeds the transport offers. The browser decodes every frame at any rate, and
 // with Sync on the rate applies to EVERY visible tile at once, so this ladder
 // stops where a wall of decoders still keeps up rather than where <video> stops
 // accepting the number.
 export const SPEEDS = [0.5, 1, 2, 4];
 
-export const dayStartMs = (atMs) => {
+export const dayStartMs = (atMs: number): number => {
   const d = new Date(atMs);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
@@ -56,7 +73,7 @@ export const dayStartMs = (atMs) => {
 // A window of `seconds` centred on an instant, or — at a day or more — the whole
 // calendar day that instant falls in. "Yesterday 14:00" should show yesterday,
 // not a rolling 24h ending at 14:00.
-export function makeWindow(atMs, seconds) {
+export function makeWindow(atMs: number, seconds: number): WallWindow {
   if (seconds >= 86_400) {
     const from = dayStartMs(atMs);
     return { fromMs: from, toMs: from + DAY_MS };
@@ -68,29 +85,29 @@ export function makeWindow(atMs, seconds) {
 // ── the shared playhead ─────────────────────────────────────────────────────
 // A plain subscribable value. The master tile publishes; the transport bar and
 // the synced tiles subscribe. Deliberately outside React: see the header.
-function createClock() {
+function createClock(): WallClock {
   let ms: number | null = null;
   // When a TILE last published. `advance` deliberately does not touch it, so the
   // heartbeat below can tell "a camera is driving this" from "nobody is".
   let publishedAt = 0;
-  const subs = new Set<any>();
+  const subs = new Set<(ms: number | null) => void>();
   const emit = () => subs.forEach((fn) => fn(ms));
   return {
     get: () => ms,
     // The master tile, or a seek.
-    set(v) {
+    set(v: number | null) {
       ms = v;
       publishedAt = Date.now();
       emit();
     },
     // The heartbeat, carrying the clock over a camera that cannot.
-    advance(deltaMs) {
+    advance(deltaMs: number) {
       if (ms == null) return;
       ms += deltaMs;
       emit();
     },
     sincePublished: () => Date.now() - publishedAt,
-    subscribe(fn) {
+    subscribe(fn: (ms: number | null) => void) {
       subs.add(fn);
       fn(ms);
       return () => subs.delete(fn);
@@ -99,13 +116,13 @@ function createClock() {
 }
 
 export function useWallPlayback() {
-  const [mode, setMode] = useState("live"); // "live" | "playback"
+  const [mode, setMode] = useState<WallMode>("live");
   const [sync, setSync] = useState(false);
   const [rangeSeconds, setRangeSeconds] = useState(DEFAULT_RANGE_SECONDS);
   const [win, setWin] = useState(() => makeWindow(Date.now(), DEFAULT_RANGE_SECONDS));
   // Where every playing tile's session begins. `seq` makes a repeat seek to the
   // same instant a real event (see the header).
-  const [anchor, setAnchor] = useState<any>({ ms: null, seq: 0 });
+  const [anchor, setAnchor] = useState<{ ms: number | null; seq: number }>({ ms: null, seq: 0 });
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
 
@@ -118,7 +135,7 @@ export function useWallPlayback() {
   // the seek: in playback this re-anchors, which is the only operation the node's
   // session model actually has.
   const playAt = useCallback(
-    (atMs) => {
+    (atMs: number) => {
       const ms = Math.round(atMs);
       clock.set(ms);
       setAnchor((a) => ({ ms, seq: a.seq + 1 }));
@@ -140,7 +157,7 @@ export function useWallPlayback() {
 
   // Move the playhead by a signed number of seconds, inside the window.
   const skip = useCallback(
-    (seconds) => {
+    (seconds: number) => {
       const base = clock.get();
       if (base == null) return;
       playAt(Math.max(win.fromMs, Math.min(base + seconds * 1000, win.toMs)));
@@ -150,7 +167,7 @@ export function useWallPlayback() {
 
   // Re-frame the timeline around wherever the playhead is (or now, in live).
   const setRange = useCallback(
-    (seconds) => {
+    (seconds: number) => {
       setRangeSeconds(seconds);
       setWin(makeWindow(clock.get() ?? Date.now(), seconds));
     },
@@ -163,7 +180,7 @@ export function useWallPlayback() {
   // how an investigation actually runs ("same corridor, same 14:05, yesterday").
   // Never past now: a window into the future has no footage in it by definition.
   const pickDay = useCallback(
-    (dayISO) => {
+    (dayISO: string) => {
       const dayStart = new Date(`${dayISO}T00:00:00`).getTime();
       if (Number.isNaN(dayStart)) return;
       const base = clock.get() ?? Date.now();
@@ -184,7 +201,7 @@ export function useWallPlayback() {
   // Pan the window a whole page at a time — the way to walk back through a day
   // once the range is tight enough to be useful.
   const pan = useCallback(
-    (dir) => {
+    (dir: number) => {
       setWin((w) => {
         const span = w.toMs - w.fromMs;
         return { fromMs: w.fromMs + dir * span, toMs: w.toMs + dir * span };
@@ -256,5 +273,8 @@ export function useWallPlayback() {
     togglePlaying: useCallback(() => setPlaying((p) => !p), []),
   };
 }
+
+/** The wall DVR handle PlayoutBar / WallTile / Streaming share. */
+export type WallPlayback = ReturnType<typeof useWallPlayback>;
 
 export default useWallPlayback;

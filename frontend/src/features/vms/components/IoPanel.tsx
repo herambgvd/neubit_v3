@@ -14,14 +14,37 @@ import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
 
-export default function IoPanel({ cameraId }: any) {
+// The ONVIF driver's I/O echo (backend/vision/app/vms/drivers/onvif.py
+// get_relay_outputs): relay rows carry the ONVIF Mode/IdleState properties,
+// inputs just their idle state. The wire type is the open ConfigResult, so the
+// fields this panel reads are narrowed here.
+interface IoRelay {
+  token: string;
+  mode?: string;
+  idle_state?: string;
+}
+interface IoInput {
+  token: string;
+  idle_state?: string;
+}
+interface IoState {
+  relay_outputs?: IoRelay[];
+  digital_inputs?: IoInput[];
+}
+
+export interface IoPanelProps {
+  cameraId: string;
+  cameraName?: string | null;
+}
+
+export default function IoPanel({ cameraId }: IoPanelProps) {
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
   const qc = useQueryClient();
 
   // Served from the I/O map persisted on the camera row — no device re-enumerate on
   // every open. Reload forces a live re-read (refresh:true).
-  const ioQ = useQuery<any>({
+  const ioQ = useQuery({
     queryKey: ["vms-io", cameraId],
     queryFn: () => vms.cameras.getIo(cameraId),
     enabled: !!cameraId,
@@ -43,11 +66,13 @@ export default function IoPanel({ cameraId }: any) {
     }
   };
 
-  const relays = ioQ.data?.relay_outputs || [];
-  const inputs = ioQ.data?.digital_inputs || [];
+  const io = (ioQ.data ?? {}) as IoState;
+  const relays = io.relay_outputs || [];
+  const inputs = io.digital_inputs || [];
 
-  const setRelay = useMutation<any, any, any>({
-    mutationFn: ({ token, state }: any) => vms.cameras.setIo(cameraId, { relay_token: token, state }),
+  const setRelay = useMutation({
+    mutationFn: ({ token, state }: { token: string; state: "active" | "inactive" }) =>
+      vms.cameras.setIo(cameraId, { relay_token: token, state }),
     onSuccess: (fresh) => {
       toast.success("Relay updated");
       if (fresh) qc.setQueryData(["vms-io", cameraId], fresh);
@@ -77,7 +102,7 @@ export default function IoPanel({ cameraId }: any) {
     );
   }
 
-  const isActive = (r) => String(r.idle_state || "").toLowerCase() !== "closed";
+  const isActive = (r: IoRelay) => String(r.idle_state || "").toLowerCase() !== "closed";
 
   return (
     <div className="space-y-4">

@@ -17,6 +17,8 @@ import { Button, Modal, Select, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { fmtBytes, fmtDuration } from "@/lib/format";
 import { vms } from "../api";
+import type { ExportJobPublic, ExportVerifyResult } from "../types";
+import type { ExportRange } from "./playbackTypes";
 
 const POLL_MS = 2_000;
 const FORMATS = [
@@ -25,25 +27,38 @@ const FORMATS = [
 ];
 
 // "2026-07-09T14:30:00Z" → the value shape a datetime-local input wants (local).
-function toLocalInput(iso) {
+function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-const fromLocalInput = (v) => (v ? new Date(v).toISOString() : null);
+const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOString() : null);
 
-export default function ExportDialog({ open, onClose, cameraId, cameraName, range }: any) {
+/** The job as this dialog tracks it: seeded with just `{ job_id, status }` from
+ *  the create call, filled in by each status poll. */
+type ExportJobState = Pick<ExportJobPublic, "job_id" | "status"> & Partial<ExportJobPublic>;
+
+export interface ExportDialogProps {
+  open: boolean;
+  onClose?: () => void;
+  cameraId?: string | null;
+  cameraName?: string | null;
+  /** The window to pre-fill (a recording's span, a player's window, a clip selection). */
+  range?: ExportRange | null;
+}
+
+export default function ExportDialog({ open, onClose, cameraId, cameraName, range }: ExportDialogProps) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [format, setFormat] = useState("mp4");
-  const [job, setJob] = useState<any>(null); // { job_id, status, file_size?, error?, signed?, checksum?, watermark? }
+  const [job, setJob] = useState<ExportJobState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [watermark, setWatermark] = useState(false);
-  const [verify, setVerify] = useState<any>(null); // { valid, reason } | "loading"
-  const pollRef = useRef<any>(null);
+  const [verify, setVerify] = useState<ExportVerifyResult | "loading" | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Seed the range when (re)opened.
   useEffect(() => {

@@ -5,12 +5,19 @@
 
 import { Icon } from "@iconify/react";
 
-const OPTS = [
+export type IncidentView = "board" | "map";
+
+const OPTS: { key: IncidentView; label: string; icon: string }[] = [
   { key: "board", label: "Board", icon: "heroicons-outline:squares-2x2" },
   { key: "map", label: "Map", icon: "heroicons-outline:map" },
 ];
 
-export default function ViewToggle({ view = "board", onChange }: any) {
+export interface ViewToggleProps {
+  view?: IncidentView;
+  onChange?: (view: IncidentView) => void;
+}
+
+export default function ViewToggle({ view = "board", onChange }: ViewToggleProps) {
   return (
     <div className="inline-flex items-center gap-0.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.55)] p-0.5">
       {OPTS.map((o) => {

@@ -7,7 +7,12 @@
 
 import { sev, priorityMix } from "./lib";
 
-export default function PriorityBar({ byPriority }: any) {
+export interface PriorityBarProps {
+  /** `InstanceStatsResponse.by_priority`; null until the stats land. */
+  byPriority?: Record<string, number> | null;
+}
+
+export default function PriorityBar({ byPriority }: PriorityBarProps) {
   const { total, segments } = priorityMix(byPriority || {});
 
   return (

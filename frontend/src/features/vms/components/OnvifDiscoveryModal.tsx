@@ -16,18 +16,34 @@ import { Icon } from "@iconify/react";
 
 import { Button, Modal, Toggle } from "@/components/ui/kit";
 import { Field } from "@/components/common";
+import type { SitePublic } from "@/lib/types";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "../api";
 import { CAMERA_BRANDS } from "../constants";
+import type { BulkAddChannel, ChannelPublic, DiscoveredPublic, ProbeResponse } from "../types";
 
-const STEPS = [
+type DiscoveryStep = "scan" | "connect" | "select";
+
+/** The host + credentials the connect step collects (port binds to a text input). */
+interface ConnectForm {
+  host: string;
+  port: number | string;
+  username: string;
+  password: string;
+  brand: string;
+}
+
+/** Per-channel tick + operator-typed name, keyed by `channel`. */
+type ChannelSelection = Record<number, { checked?: boolean; name?: string }>;
+
+const STEPS: { key: DiscoveryStep; label: string; icon: string }[] = [
   { key: "scan", label: "Scan", icon: "heroicons-outline:magnifying-glass" },
   { key: "connect", label: "Connect", icon: "heroicons-outline:key" },
   { key: "select", label: "Channels", icon: "heroicons-outline:queue-list" },
 ];
 
-function Stepper({ step }: any) {
+function Stepper({ step }: { step: DiscoveryStep }) {
   const idx = STEPS.findIndex((s) => s.key === step);
   return (
     <div className="mb-4 flex items-center gap-1">
@@ -52,24 +68,30 @@ function Stepper({ step }: any) {
   );
 }
 
-export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }: any) {
-  const [step, setStep] = useState("scan");
+export interface OnvifDiscoveryModalProps {
+  onClose: () => void;
+  onSuccess?: () => void;
+  sites?: SitePublic[];
+}
+
+export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }: OnvifDiscoveryModalProps) {
+  const [step, setStep] = useState<DiscoveryStep>("scan");
 
   // Step 1 — scan
   const [network, setNetwork] = useState("");
   const [scanBrand, setScanBrand] = useState("");
-  const [devices, setDevices] = useState<any[]>([]);
-  const [probes, setProbes] = useState<any>({}); // ip → probe result
+  const [devices, setDevices] = useState<DiscoveredPublic[]>([]);
+  const [probes, setProbes] = useState<Record<string, ProbeResponse>>({}); // ip → probe result
 
   // Step 2 — connect (creds for the chosen host)
-  const [conn, setConn] = useState<any>({ host: "", port: 80, username: "admin", password: "", brand: "onvif" });
-  const [channels, setChannels] = useState<any[]>([]);
+  const [conn, setConn] = useState<ConnectForm>({ host: "", port: 80, username: "admin", password: "", brand: "onvif" });
+  const [channels, setChannels] = useState<ChannelPublic[]>([]);
 
   // Step 3 — selection
-  const [selected, setSelected] = useState<any>({}); // channel_number → { checked, name }
+  const [selected, setSelected] = useState<ChannelSelection>({}); // channel_number → { checked, name }
   const [targetSite, setTargetSite] = useState("");
 
-  const scan = useMutation<any>({
+  const scan = useMutation({
     mutationFn: () => vms.discovery.discover({ network: network || undefined, brand: scanBrand || undefined }),
     onSuccess: (res) => {
       const items = asItems(res);
@@ -80,14 +102,14 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }: 
     onError: (e) => toast.error(apiError(e, "Scan failed")),
   });
 
-  const probeOne = useMutation<any, any, any>({
-    mutationFn: ({ host, port }: any) =>
+  const probeOne = useMutation({
+    mutationFn: ({ host, port }: { host: string; port?: number | null }) =>
       vms.discovery.probe({ host, port: port || 80, username: conn.username || "admin", password: conn.password || "", brand: scanBrand || "onvif" }),
     onSuccess: (res, vars) => setProbes((p) => ({ ...p, [vars.host]: res })),
     onError: (e) => toast.error(apiError(e, "Probe failed")),
   });
 
-  const enumerate = useMutation<any>({
+  const enumerate = useMutation({
     mutationFn: () =>
       vms.discovery.channels({
         host: conn.host,
@@ -99,7 +121,7 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }: 
     onSuccess: (res) => {
       const items = asItems(res);
       setChannels(items);
-      const sel: any = {};
+      const sel: ChannelSelection = {};
       for (const c of items) sel[c.channel] = { checked: true, name: c.name || `Channel ${c.channel}` };
       setSelected(sel);
       setStep("select");
@@ -108,9 +130,9 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }: 
     onError: (e) => toast.error(apiError(e, "Channel enumeration failed")),
   });
 
-  const bulkAdd = useMutation<any>({
+  const bulkAdd = useMutation({
     mutationFn: () => {
-      const chans = channels
+      const chans: BulkAddChannel[] = channels
         .filter((c) => selected[c.channel]?.checked)
         .map((c) => ({
           channel_number: c.channel_number ?? c.channel,
@@ -136,7 +158,7 @@ export default function OnvifDiscoveryModal({ onClose, onSuccess, sites = [] }: 
   });
 
   // Move a discovered device into the connect step.
-  const chooseDevice = (d) => {
+  const chooseDevice = (d: DiscoveredPublic) => {
     setConn({
       host: d.ip || d.xaddr || "",
       port: d.port || 80,

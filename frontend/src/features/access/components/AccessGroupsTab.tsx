@@ -4,51 +4,66 @@
 // access-groups-tab.jsx: two stacked sections, each with an add button and a table.
 // Groups table → name / type / api key / door chips / schedule name / description /
 // actions. Schedules table → name+desc / timezone / windows / holiday count / actions.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog } from "@/components/ui/kit";
+import { Button, ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
+import type { AccessDoorPublic } from "@/lib/types";
 import { gates } from "../api";
 import { DAY_LABELS } from "../constants";
+import type { AccessGroupPublic, SchedulePublic, TimeWindow } from "../types";
 import AccessGroupModal from "./AccessGroupModal";
 import ScheduleModal from "./ScheduleModal";
 
-export default function AccessGroupsTab({ instanceId }: any) {
+export interface AccessGroupsTabProps {
+  instanceId: string;
+}
+
+export default function AccessGroupsTab({ instanceId }: AccessGroupsTabProps) {
   const qc = useQueryClient();
   const [groupCreate, setGroupCreate] = useState(false);
-  const [groupEdit, setGroupEdit] = useState<any>(null);
+  const [groupEdit, setGroupEdit] = useState<AccessGroupPublic | null>(null);
   const [scheduleCreate, setScheduleCreate] = useState(false);
-  const [scheduleEdit, setScheduleEdit] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [scheduleEdit, setScheduleEdit] = useState<SchedulePublic | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const groupsQ = useQuery<any>({
+  const groupsQ = useQuery({
     queryKey: ["ac-access-groups", instanceId],
     queryFn: () => gates.accessGroups.list(instanceId),
     enabled: !!instanceId,
   });
   const groups = asItems(groupsQ.data);
 
-  const schedulesQ = useQuery<any>({
+  const schedulesQ = useQuery({
     queryKey: ["ac-schedules", instanceId],
     queryFn: () => gates.schedules.list(instanceId),
     enabled: !!instanceId,
   });
   const schedules = asItems(schedulesQ.data);
-  const scheduleById = useMemo(() => new Map<any, any>(schedules.map((s) => [s.schedule_id, s])), [schedules]);
+  const scheduleById = useMemo(
+    () => new Map<string, SchedulePublic>(schedules.map((s) => [s.schedule_id, s])),
+    [schedules],
+  );
 
-  const doorsQ = useQuery<any>({
+  const doorsQ = useQuery({
     queryKey: ["ac-doors", instanceId],
     queryFn: () => gates.doors.list({ instance_id: instanceId, limit: 500 }),
     enabled: !!instanceId,
   });
-  const doorsById = useMemo(() => new Map<any, any>(asItems(doorsQ.data).map((d) => [d.door_id, d])), [doorsQ.data]);
+  // A group's `door_ids` are LOCAL door ids, so the index keys on `id`. It keyed
+  // on `door_id` — the v2 field name, absent from `DoorPublic` — so every chip
+  // fell back to the short id instead of showing the door's name.
+  const doorsById = useMemo(
+    () => new Map<string, AccessDoorPublic>(asItems(doorsQ.data).map((d) => [d.id, d])),
+    [doorsQ.data],
+  );
 
-  const removeGroup = useMutation<any>({
-    mutationFn: (id: any) => gates.accessGroups.remove(instanceId, id),
+  const removeGroup = useMutation({
+    mutationFn: (id: string) => gates.accessGroups.remove(instanceId, id),
     onSuccess: () => {
       toast.success("Group deleted");
       qc.invalidateQueries({ queryKey: ["ac-access-groups", instanceId] });
@@ -56,8 +71,8 @@ export default function AccessGroupsTab({ instanceId }: any) {
     onError: (e) => toast.error(apiError(e, "Delete failed")),
   });
 
-  const removeSchedule = useMutation<any>({
-    mutationFn: (id: any) => gates.schedules.remove(instanceId, id),
+  const removeSchedule = useMutation({
+    mutationFn: (id: string) => gates.schedules.remove(instanceId, id),
     onSuccess: () => {
       toast.success("Schedule deleted");
       qc.invalidateQueries({ queryKey: ["ac-schedules", instanceId] });
@@ -199,7 +214,17 @@ export default function AccessGroupsTab({ instanceId }: any) {
   );
 }
 
-function Section({ icon, title, count, loading, onAdd, addLabel, children }: any) {
+interface SectionProps {
+  icon: string;
+  title: ReactNode;
+  count: number;
+  loading?: boolean;
+  onAdd: () => void;
+  addLabel: ReactNode;
+  children?: ReactNode;
+}
+
+function Section({ icon, title, count, loading, onAdd, addLabel, children }: SectionProps) {
   return (
     <div className="rounded-lg border border-card-border bg-card">
       <div className="flex items-center gap-2 border-b border-card-border px-3 py-2">
@@ -223,7 +248,12 @@ function Section({ icon, title, count, loading, onAdd, addLabel, children }: any
   );
 }
 
-function Th({ children, align = "left" }: any) {
+interface ThProps {
+  children?: ReactNode;
+  align?: "left" | "right";
+}
+
+function Th({ children, align = "left" }: ThProps) {
   return (
     <th className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted ${align === "right" ? "text-right" : "text-left"}`}>
       {children}
@@ -231,11 +261,16 @@ function Th({ children, align = "left" }: any) {
   );
 }
 
-function Empty({ label }: any) {
+function Empty({ label }: { label: ReactNode }) {
   return <div className="px-3 py-6 text-center text-xs text-muted/70">{label}</div>;
 }
 
-function RowActions({ onEdit, onDelete }: any) {
+interface RowActionsProps {
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function RowActions({ onEdit, onDelete }: RowActionsProps) {
   return (
     <div className="inline-flex items-center gap-1">
       <button type="button" onClick={onEdit} title="Edit" className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground">
@@ -248,7 +283,13 @@ function RowActions({ onEdit, onDelete }: any) {
   );
 }
 
-function DoorChips({ ids, doorsById }: any) {
+interface DoorChipsProps {
+  /** Local door ids stored on the group. */
+  ids?: string[] | null;
+  doorsById: Map<string, AccessDoorPublic>;
+}
+
+function DoorChips({ ids, doorsById }: DoorChipsProps) {
   if (!ids?.length) return <span className="text-[10px] text-muted/70">—</span>;
   const visible = ids.slice(0, 3);
   const overflow = ids.length - visible.length;
@@ -267,7 +308,7 @@ function DoorChips({ ids, doorsById }: any) {
   );
 }
 
-function WindowsCell({ windows }: any) {
+function WindowsCell({ windows }: { windows: TimeWindow[] }) {
   if (!windows.length) return <span className="text-[10px] text-muted/70">—</span>;
   return (
     <div className="space-y-0.5">
@@ -281,7 +322,7 @@ function WindowsCell({ windows }: any) {
   );
 }
 
-function shortId(id) {
+function shortId(id: string | null | undefined): string {
   if (!id) return "—";
   return String(id).length > 8 ? `${String(id).slice(0, 8)}…` : id;
 }

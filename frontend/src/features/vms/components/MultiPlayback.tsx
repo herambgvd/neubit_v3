@@ -13,7 +13,6 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { Button, Select } from "@/components/ui/kit";
-import { asItems } from "@/lib/format";
 import { vms } from "../api";
 import PlaybackPlayer from "./PlaybackPlayer";
 import ScrubBar from "./ScrubBar";
@@ -23,20 +22,24 @@ const SPEEDS = [0.5, 1, 2, 4];
 const MAX_CAMS = 4;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
-const dayStartMs = (d) => new Date(`${d}T00:00:00`).getTime();
-const readout = (ms) => (ms == null ? "--:--:--" : new Date(ms).toLocaleTimeString(undefined, { hour12: false }));
+const dayStartMs = (d: string) => new Date(`${d}T00:00:00`).getTime();
+const readout = (ms: number | null) =>
+  ms == null ? "--:--:--" : new Date(ms).toLocaleTimeString(undefined, { hour12: false });
+
+/** A `[startMs, endMs]` span. */
+type MsSpan = [number, number];
 
 export default function MultiPlayback() {
   const [day, setDay] = useState(todayStr());
-  const [selected, setSelected] = useState<any[]>([]); // camera ids
+  const [selected, setSelected] = useState<string[]>([]); // camera ids
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [clock, setClock] = useState(dayStartMs(todayStr())); // shared epoch ms
-  const [seekMs, setSeekMs] = useState<any>(null); // pushed to cells on scrub
+  const [seekMs, setSeekMs] = useState<number | null>(null); // pushed to cells on scrub
 
   const windowStart = dayStartMs(day);
   const windowEnd = windowStart + DAY_MS;
-  const tickRef = useRef<any>(null);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Reset the clock into the window whenever the day changes.
   useEffect(() => {
@@ -46,20 +49,20 @@ export default function MultiPlayback() {
   }, [windowStart]);
 
   // ── Cameras (picker) ─────────────────────────────────────────────────────
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["vms-cameras", "multi-playback"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     staleTime: 60_000,
   });
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+  const cameras = useMemo(() => camerasQ.data?.items ?? [], [camerasQ.data]);
   const cameraNames = useMemo(() => {
-    const m: any = {};
+    const m: Record<string, string> = {};
     for (const c of cameras) m[c.id] = c.name;
     return m;
   }, [cameras]);
 
   // ── Merged coverage across selected cameras ──────────────────────────────
-  const timelineQs: any[] = useQueries({
+  const timelineQs = useQueries({
     queries: selected.map((id) => ({
       queryKey: ["vms-timeline", id, day, "multi"],
       queryFn: () => vms.playback.timeline(id, { day }),
@@ -70,17 +73,16 @@ export default function MultiPlayback() {
   });
 
   const mergedCoverage = useMemo(() => {
-    const spans: any[] = [];
+    const spans: MsSpan[] = [];
     for (const q of timelineQs) {
-      const d = q.data;
-      const cov = Array.isArray(d) ? d : d?.coverage || [];
+      const cov = q.data?.coverage || [];
       for (const c of cov) {
         if (!c?.start) continue;
         spans.push([new Date(c.start).getTime(), c.end ? new Date(c.end).getTime() : new Date(c.start).getTime()]);
       }
     }
     spans.sort((a, b) => a[0] - b[0]);
-    const merged: any[] = [];
+    const merged: MsSpan[] = [];
     for (const [s, e] of spans) {
       const last = merged[merged.length - 1];
       if (last && s <= last[1]) last[1] = Math.max(last[1], e);
@@ -128,19 +130,19 @@ export default function MultiPlayback() {
     };
   }, [playing, speed, windowEnd]);
 
-  const addCamera = (id) => {
+  const addCamera = (id: string) => {
     if (!id) return;
     setSelected((s) => (s.includes(id) || s.length >= MAX_CAMS ? s : [...s, id]));
   };
-  const removeCamera = (id) => setSelected((s) => s.filter((x) => x !== id));
+  const removeCamera = (id: string) => setSelected((s) => s.filter((x) => x !== id));
 
-  const onScrub = useCallback((ms) => {
+  const onScrub = useCallback((ms: number) => {
     setPlaying(false);
     setClock(ms);
     setSeekMs(ms);
   }, []);
 
-  const skip = (sec) => onScrub(Math.max(windowStart, Math.min(windowEnd, clock + sec * 1000)));
+  const skip = (sec: number) => onScrub(Math.max(windowStart, Math.min(windowEnd, clock + sec * 1000)));
 
   const available = cameras.filter((c) => !selected.includes(c.id));
   const gridCls = selected.length <= 1 ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2";

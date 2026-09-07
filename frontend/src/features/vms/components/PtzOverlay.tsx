@@ -17,13 +17,15 @@
 // all MOVEMENTS and writes gate on `vms.ptz.control`. When the operator lacks
 // that perm the pad/zoom/focus/save/patrol-write controls are hidden and only
 // the (read-only) preset list + patrol status show.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ButtonHTMLAttributes, type PointerEvent } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiError } from "@/lib/api";
+import { asItems } from "@/lib/format";
 import vms from "../api";
+import type { PatrolPublic, PresetPublic, PtzMoveBody } from "../types";
 import PatrolEditorModal from "./PatrolEditorModal";
 
 const MOVE_SPEED = 0.6;
@@ -41,17 +43,33 @@ const DIRS = {
   "down-left": { pan: -MOVE_SPEED, tilt: -MOVE_SPEED },
   "down-right": { pan: MOVE_SPEED, tilt: -MOVE_SPEED },
 };
+type PadDir = keyof typeof DIRS;
+
+/** The pointer handlers every hold-to-move button spreads. */
+type HoldHandlers = Pick<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "onPointerDown" | "onPointerUp" | "onPointerLeave" | "onPointerCancel"
+>;
+type HoldPropsFn = (onStart: () => void) => HoldHandlers;
+
+export interface PtzOverlayProps {
+  cameraId: string;
+  canControl: boolean;
+  /** Both set = FEDERATED mode (see below). */
+  fedNodeId?: string | null;
+  fedRealId?: string | null;
+}
 
 // `fedNodeId`/`fedRealId` (both set) put the overlay in FEDERATED mode: move/zoom/
 // focus/stop are proxied to the owning recorder via vms.federation.ptz (operate-
 // through-node) instead of the local vms.ptz. Presets + patrols are NOT proxied
 // through the node, so those sections are hidden in federated mode rather than
 // shown as controls that would fail — honest about what operate-through-node covers.
-export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fedRealId = null }: any) {
+export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fedRealId = null }: PtzOverlayProps) {
   const qc = useQueryClient();
   const [showPatrols, setShowPatrols] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
+  const [editing, setEditing] = useState<PatrolPublic | null>(null);
 
   const federated = !!(fedNodeId && fedRealId);
 
@@ -61,57 +79,59 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
   const presetsKey = ["vms", "ptz", "presets", cameraId];
   const patrolsKey = ["vms", "ptz", "patrols", cameraId];
 
-  const presetsQ = useQuery<any>({
+  const presetsQ = useQuery({
     queryKey: presetsKey,
     queryFn: () => vms.ptz.presets.list(cameraId),
     enabled: !!cameraId && !federated,
     staleTime: 30_000,
   });
-  const patrolsQ = useQuery<any>({
+  const patrolsQ = useQuery({
     queryKey: patrolsKey,
     queryFn: () => vms.ptz.patrols.list(cameraId),
     enabled: !!cameraId && !federated,
     staleTime: 30_000,
   });
 
-  const presets = itemsOf(presetsQ.data);
-  const patrols = itemsOf(patrolsQ.data);
+  const presets: PresetPublic[] = asItems(presetsQ.data);
+  const patrols: PatrolPublic[] = asItems(patrolsQ.data);
 
   // ── hold-to-move plumbing ───────────────────────────────────────────────
+  // Each command branches on the node ids themselves (not `federated`) so the
+  // federated call sees them as strings.
   const stop = useCallback(async () => {
     if (!movingRef.current) return;
     movingRef.current = false;
     try {
-      if (federated) await vms.federation.ptz(fedNodeId, fedRealId, { action: "stop" });
+      if (fedNodeId && fedRealId) await vms.federation.ptz(fedNodeId, fedRealId, { action: "stop" });
       else await vms.ptz.stop(cameraId);
     } catch (e) {
       toast.error(apiError(e, "PTZ stop failed"));
     }
-  }, [cameraId, federated, fedNodeId, fedRealId]);
+  }, [cameraId, fedNodeId, fedRealId]);
 
   const startPanTilt = useCallback(
-    async (dir) => {
+    async (dir: PadDir) => {
       if (!canControl || movingRef.current) return;
       movingRef.current = true;
       const v = DIRS[dir];
-      const cmd = { mode: "continuous", pan: v.pan, tilt: v.tilt, zoom: 0, speed: MOVE_SPEED };
+      const cmd: PtzMoveBody = { mode: "continuous", pan: v.pan, tilt: v.tilt, zoom: 0, speed: MOVE_SPEED };
       try {
-        if (federated) await vms.federation.ptz(fedNodeId, fedRealId, { action: "move", ...cmd });
+        if (fedNodeId && fedRealId) await vms.federation.ptz(fedNodeId, fedRealId, { action: "move", ...cmd });
         else await vms.ptz.move(cameraId, cmd);
       } catch (e) {
         movingRef.current = false;
         toast.error(apiError(e, "PTZ move failed"));
       }
     },
-    [cameraId, canControl, federated, fedNodeId, fedRealId]
+    [cameraId, canControl, fedNodeId, fedRealId]
   );
 
   const startZoom = useCallback(
-    async (direction) => {
+    async (direction: "in" | "out") => {
       if (!canControl || movingRef.current) return;
       movingRef.current = true;
       try {
-        if (federated)
+        if (fedNodeId && fedRealId)
           await vms.federation.ptz(fedNodeId, fedRealId, { action: "zoom", direction, speed: ZOOM_SPEED });
         else await vms.ptz.zoom(cameraId, { direction, speed: ZOOM_SPEED });
       } catch (e) {
@@ -119,15 +139,15 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
         toast.error(apiError(e, "Zoom failed"));
       }
     },
-    [cameraId, canControl, federated, fedNodeId, fedRealId]
+    [cameraId, canControl, fedNodeId, fedRealId]
   );
 
   const startFocus = useCallback(
-    async (direction) => {
+    async (direction: "near" | "far") => {
       if (!canControl || movingRef.current) return;
       movingRef.current = true;
       try {
-        if (federated)
+        if (fedNodeId && fedRealId)
           await vms.federation.ptz(fedNodeId, fedRealId, { action: "focus", direction, speed: FOCUS_SPEED });
         else await vms.ptz.focus(cameraId, { direction, speed: FOCUS_SPEED });
       } catch (e) {
@@ -135,7 +155,7 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
         toast.error(apiError(e, "Focus failed"));
       }
     },
-    [cameraId, canControl, federated, fedNodeId, fedRealId]
+    [cameraId, canControl, fedNodeId, fedRealId]
   );
 
   // Safety net: always stop on window blur / tab hide / unmount so a held button
@@ -153,7 +173,7 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
   }, [stop]);
 
   // ── preset actions ──────────────────────────────────────────────────────
-  const gotoPreset = async (pid) => {
+  const gotoPreset = async (pid: string) => {
     if (!canControl) return;
     try {
       await vms.ptz.presets.goto(cameraId, pid);
@@ -173,7 +193,7 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
       toast.error(apiError(e, "Could not save preset"));
     }
   };
-  const deletePreset = async (pid) => {
+  const deletePreset = async (pid: string) => {
     if (!canControl) return;
     try {
       await vms.ptz.presets.remove(cameraId, pid);
@@ -184,7 +204,7 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
   };
 
   // ── patrol actions ──────────────────────────────────────────────────────
-  const startPatrol = async (id) => {
+  const startPatrol = async (id: string) => {
     try {
       await vms.ptz.patrols.start(cameraId, id);
       toast.success("Patrol started");
@@ -193,7 +213,7 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
       toast.error(apiError(e, "Could not start patrol"));
     }
   };
-  const stopPatrol = async (id) => {
+  const stopPatrol = async (id: string) => {
     try {
       await vms.ptz.patrols.stop(cameraId, id);
       toast.success("Patrol stopped");
@@ -202,7 +222,7 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
       toast.error(apiError(e, "Could not stop patrol"));
     }
   };
-  const deletePatrol = async (id) => {
+  const deletePatrol = async (id: string) => {
     try {
       await vms.ptz.patrols.remove(cameraId, id);
       qc.invalidateQueries({ queryKey: patrolsKey });
@@ -212,8 +232,8 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
   };
 
   // Pointer handlers shared by every hold-to-move button.
-  const holdProps = (onStart) => ({
-    onPointerDown: (e) => {
+  const holdProps: HoldPropsFn = (onStart) => ({
+    onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
       e.preventDefault();
       e.currentTarget.setPointerCapture?.(e.pointerId);
       onStart();
@@ -358,9 +378,15 @@ export default function PtzOverlay({ cameraId, canControl, fedNodeId = null, fed
   );
 }
 
+interface PanTiltPadProps {
+  holdProps: HoldPropsFn;
+  startPanTilt: (dir: PadDir) => void;
+  onCenterStop: () => void;
+}
+
 // 3×3 direction pad; the center is a stop button.
-function PanTiltPad({ holdProps, startPanTilt, onCenterStop }: any) {
-  const cell = (dir, icon?, rotate = "") =>
+function PanTiltPad({ holdProps, startPanTilt, onCenterStop }: PanTiltPadProps) {
+  const cell = (dir: PadDir | null, icon = "", rotate = "") =>
     dir ? (
       <button
         type="button"
@@ -396,7 +422,13 @@ function PanTiltPad({ holdProps, startPanTilt, onCenterStop }: any) {
   );
 }
 
-function HoldGroup({ label, buttons, holdProps }: any) {
+interface HoldGroupProps {
+  label: string;
+  buttons: { icon: string; title: string; start: () => void }[];
+  holdProps: HoldPropsFn;
+}
+
+function HoldGroup({ label, buttons, holdProps }: HoldGroupProps) {
   return (
     <div className="flex items-center gap-1">
       <span className="w-9 text-right text-[10px] font-semibold uppercase tracking-wide text-white/45">
@@ -417,11 +449,23 @@ function HoldGroup({ label, buttons, holdProps }: any) {
   );
 }
 
-function PatrolMenu({ patrols, loading, canControl, onStart, onStop, onDelete, onEdit, onNew, onClose }: any) {
-  const ref = useRef<any>(null);
+interface PatrolMenuProps {
+  patrols: PatrolPublic[];
+  loading: boolean;
+  canControl: boolean;
+  onStart: (id: string) => void;
+  onStop: (id: string) => void;
+  onDelete: (id: string) => void;
+  onEdit: (patrol: PatrolPublic) => void;
+  onNew: () => void;
+  onClose?: () => void;
+}
+
+function PatrolMenu({ patrols, loading, canControl, onStart, onStop, onDelete, onEdit, onNew, onClose }: PatrolMenuProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    const onDoc = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) onClose?.();
+    const onDoc = (e: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose?.();
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -439,7 +483,7 @@ function PatrolMenu({ patrols, loading, canControl, onStart, onStop, onDelete, o
           <p className="px-2 py-3 text-center text-[11px] text-white/40">No patrols yet</p>
         ) : (
           patrols.map((p) => {
-            const running = !!(p.is_running ?? p.running ?? p.active);
+            const running = !!p.is_running;
             return (
               <div
                 key={p.id}
@@ -483,7 +527,14 @@ function PatrolMenu({ patrols, loading, canControl, onStart, onStop, onDelete, o
   );
 }
 
-function MenuIcon({ icon, title, onClick, danger }: any) {
+interface MenuIconProps {
+  icon: string;
+  title: string;
+  onClick: () => void;
+  danger?: boolean;
+}
+
+function MenuIcon({ icon, title, onClick, danger }: MenuIconProps) {
   return (
     <button
       type="button"
@@ -496,12 +547,4 @@ function MenuIcon({ icon, title, onClick, danger }: any) {
       <Icon icon={icon} className="text-sm" />
     </button>
   );
-}
-
-// Normalize { items } | bare array | null → array.
-function itemsOf(data) {
-  if (!data) return [];
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data.items)) return data.items;
-  return [];
 }

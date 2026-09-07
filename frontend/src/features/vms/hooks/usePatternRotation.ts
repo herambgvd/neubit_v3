@@ -17,6 +17,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { mapGroupLayout } from "../videoWall";
+import type { CameraGroupPublic, PatternPublic, PatternStop, WallPreset } from "../types";
+
+export interface UsePatternRotationOptions {
+  pattern: PatternPublic | null | undefined;
+  groupById: Map<string, CameraGroupPublic> | null | undefined;
+  cameraIdSet: Set<string> | null | undefined;
+  applyWallPreset: (preset: WallPreset) => void;
+  prewarm?: (stop: PatternStop) => void;
+}
 
 // How far ahead of a switch to hand the NEXT stop to the caller so it can be
 // mounted, hidden and already playing before anyone sees it. Capped at half the
@@ -24,7 +33,7 @@ import { mapGroupLayout } from "../videoWall";
 // time — the overlap is what this costs, and it must stay bounded.
 const PREWARM_LEAD_MS = 4_000;
 
-export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallPreset, prewarm }: any) {
+export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallPreset, prewarm }: UsePatternRotationOptions) {
   const [active, setActive] = useState(false);
   const [paused, setPaused] = useState(false);
   const [index, setIndex] = useState(0);
@@ -40,10 +49,10 @@ export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallP
   // Resolve the pattern's group ids → renderable stops. A stop is one group with
   // at least one *existing* camera; unresolvable groups are dropped so rotation
   // never lands on an empty grid.
-  const stops = useMemo(() => {
+  const stops = useMemo<PatternStop[]>(() => {
     if (!pattern) return [];
     const ids = pattern.camera_group_ids || [];
-    const out: any[] = [];
+    const out: PatternStop[] = [];
     for (const gid of ids) {
       const g = groupById?.get(gid);
       if (!g) continue; // deleted group
@@ -60,7 +69,7 @@ export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallP
     return out;
   }, [pattern, groupById, cameraIdSet]);
 
-  const applyStop = useCallback((stop) => {
+  const applyStop = useCallback((stop: PatternStop | null) => {
     if (!stop) return;
     applyRef.current?.({ layout: stop.wallLayout, tiles: stop.cameraIds });
   }, []);
@@ -79,7 +88,7 @@ export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallP
   const togglePause = useCallback(() => setPaused((p) => !p), []);
 
   const go = useCallback(
-    (dir) => {
+    (dir: number) => {
       setIndex((cur) => {
         if (stops.length === 0) return cur;
         return (cur + dir + stops.length) % stops.length;

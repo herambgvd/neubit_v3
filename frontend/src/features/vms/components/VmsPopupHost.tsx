@@ -22,6 +22,10 @@ export default function VmsPopupHost() {
     <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-3">
       {active.map((p) => {
         const sp = sevPreset(p.severity);
+        // useVmsPopups only queues a popup that names a camera (the toast alone
+        // covers the rest), so this never skips at runtime; it narrows the id.
+        const cameraId = p.camera_id;
+        if (!cameraId) return null;
         return (
           <div
             key={p.key}
@@ -44,7 +48,7 @@ export default function VmsPopupHost() {
 
             {/* Live camera */}
             <div className="aspect-video w-full bg-black">
-              <LivePlayer cameraId={p.camera_id} minimal className="h-full w-full" />
+              <LivePlayer cameraId={cameraId} minimal className="h-full w-full" />
             </div>
 
             {/* Reason + actions */}
@@ -55,7 +59,7 @@ export default function VmsPopupHost() {
               <div className="flex items-center gap-2">
                 {p.event_id && p.occurred_at && (
                   <Link
-                    href={`/playback?camera=${encodeURIComponent(p.camera_id)}&t=${encodeURIComponent(p.occurred_at)}`}
+                    href={`/playback?camera=${encodeURIComponent(cameraId)}&t=${encodeURIComponent(p.occurred_at)}`}
                     className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted hover:bg-hover hover:text-foreground"
                   >
                     <Icon icon="heroicons-outline:play" className="text-xs" /> Recording

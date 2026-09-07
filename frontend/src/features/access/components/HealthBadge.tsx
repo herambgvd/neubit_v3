@@ -7,8 +7,13 @@ import { Icon } from "@iconify/react";
 
 import { HEALTH_PRESETS } from "../constants";
 
-export default function HealthBadge({ status }: any) {
-  const preset = HEALTH_PRESETS[status] || HEALTH_PRESETS.unknown;
+export interface HealthBadgeProps {
+  /** `AccessInstancePublic.status`; anything unmapped falls back to "unknown". */
+  status: string | null | undefined;
+}
+
+export default function HealthBadge({ status }: HealthBadgeProps) {
+  const preset = (status ? HEALTH_PRESETS[status] : undefined) || HEALTH_PRESETS.unknown;
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${preset.cls}`}

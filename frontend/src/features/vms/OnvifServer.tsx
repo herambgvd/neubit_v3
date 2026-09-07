@@ -18,19 +18,34 @@ import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
+import type { OnvifServerConfigUpdate } from "./types";
 
 const PLACEHOLDER = "•••••••• (unchanged)";
+
+/** Local editable mirror of `OnvifServerConfigPublic`
+ *  (backend/vision/app/vms/onvif_server/schemas.py) minus the exposed-camera
+ *  list, which lives in `allCameras` / `selectedIds`. The port inputs hand back
+ *  strings, so they widen; `save` coerces with Number(). */
+interface OnvifForm {
+  enabled: boolean;
+  service_username: string;
+  device_name: string;
+  advertised_host: string;
+  advertised_http_port: number | string;
+  advertised_rtsp_port: number | string;
+  password_set: boolean;
+}
 
 export default function OnvifServerPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
 
-  const cfgQ = useQuery<any>({
+  const cfgQ = useQuery({
     queryKey: ["vms-onvif-server-config"],
     queryFn: () => vms.onvifServer.getConfig(),
   });
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["vms-cameras", "onvif-server-picker"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     staleTime: 60_000,
@@ -38,9 +53,9 @@ export default function OnvifServerPage() {
   const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
 
   // Local editable form. `allCameras` = the "*" wildcard; else a set of ids.
-  const [form, setForm] = useState<any>(null);
+  const [form, setForm] = useState<OnvifForm | null>(null);
   const [allCameras, setAllCameras] = useState(true);
-  const [selectedIds, setSelectedIds] = useState(new Set<any>());
+  const [selectedIds, setSelectedIds] = useState(new Set<string>());
   const [password, setPassword] = useState(""); // write-only; "" = keep existing
 
   useEffect(() => {
@@ -58,24 +73,28 @@ export default function OnvifServerPage() {
     const exposed = c.exposed_camera_ids || [];
     const isAll = exposed.length === 1 && exposed[0] === "*";
     setAllCameras(isAll || exposed.length === 0);
-    setSelectedIds(new Set<any>(isAll ? [] : exposed));
+    setSelectedIds(new Set<string>(isAll ? [] : exposed));
     setPassword("");
   }, [cfgQ.data]);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<OnvifForm>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
-  const toggleCamera = (id) => {
+  const toggleCamera = (id: string) => {
     setSelectedIds((prev) => {
-      const next = new Set<any>(prev);
+      const next = new Set<string>(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
   };
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => {
-      const body: any = {
+      // The Save button only renders past the `!form` early return below, so the
+      // config is always loaded here; the guard keeps the throw that reading a
+      // null form used to produce.
+      if (!form) throw new Error("ONVIF server config is not loaded yet");
+      const body: OnvifServerConfigUpdate = {
         enabled: form.enabled,
         exposed_camera_ids: allCameras ? ["*"] : Array.from(selectedIds),
         service_username: form.service_username || undefined,
@@ -242,7 +261,9 @@ export default function OnvifServerPage() {
                         className="h-4 w-4 accent-foreground"
                       />
                       <span className="flex-1 truncate text-sm text-foreground">{c.name}</span>
-                      <span className="text-xs text-muted">{c.brand || c.ip_address || ""}</span>
+                      {/* CameraPublic carries the address under network_info.ip
+                          — there is no flat `ip_address` field. */}
+                      <span className="text-xs text-muted">{c.brand || c.network_info?.ip || ""}</span>
                     </label>
                   ))
                 )}
@@ -280,7 +301,17 @@ export default function OnvifServerPage() {
   );
 }
 
-function Section({ title, desc, children, className = "" }: any) {
+function Section({
+  title,
+  desc,
+  children,
+  className = "",
+}: {
+  title: string;
+  desc?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={`rounded-xl border border-card-border bg-card p-4 ${className}`}>
       <h2 className="text-sm font-semibold text-foreground">{title}</h2>
@@ -290,7 +321,7 @@ function Section({ title, desc, children, className = "" }: any) {
   );
 }
 
-function HintRow({ label, value, copyable }: any) {
+function HintRow({ label, value, copyable }: { label: string; value: string; copyable?: boolean }) {
   const copy = () => {
     navigator.clipboard?.writeText(value);
     toast.success("Copied");

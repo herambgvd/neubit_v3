@@ -7,7 +7,7 @@
 // v3 difference: v3's reconcile queues a FULL reconcile (no per-entity `only` filter),
 // so the entity-filter select from v2 is dropped. Jobs are read from
 // GET /instances/{id}/sync-jobs (polled every 5s).
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -15,12 +15,17 @@ import { toast } from "sonner";
 import { apiError } from "@/lib/api";
 import { asItems, fmtDateTime } from "@/lib/format";
 import { gates } from "../api";
+import type { SyncCollectionCounts, SyncJobPublic } from "../types";
 
-export default function SyncTab({ instanceId }: any) {
+export interface SyncTabProps {
+  instanceId: string;
+}
+
+export default function SyncTab({ instanceId }: SyncTabProps) {
   const qc = useQueryClient();
-  const [openJobs, setOpenJobs] = useState(() => new Set<any>());
+  const [openJobs, setOpenJobs] = useState(() => new Set<string>());
 
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["ac-sync-jobs", instanceId],
     queryFn: () => gates.instances.syncJobs(instanceId, { limit: 50 }),
     enabled: !!instanceId,
@@ -28,7 +33,7 @@ export default function SyncTab({ instanceId }: any) {
   });
   const jobs = asItems(q.data);
 
-  const trigger = useMutation<any>({
+  const trigger = useMutation({
     mutationFn: () => gates.instances.reconcile(instanceId),
     onSuccess: (job) => {
       const id = String(job?.id || "").slice(0, 8) || "—";
@@ -42,9 +47,9 @@ export default function SyncTab({ instanceId }: any) {
     onError: (e) => toast.error(apiError(e, "Sync failed")),
   });
 
-  const toggle = (id) =>
+  const toggle = (id: string) =>
     setOpenJobs((prev) => {
-      const next = new Set<any>(prev);
+      const next = new Set<string>(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
@@ -86,7 +91,7 @@ export default function SyncTab({ instanceId }: any) {
         ) : (
           <div className="divide-y divide-card-border">
             {jobs.map((j) => {
-              const id = j.id || j._id || `${j.started_at}`;
+              const id = j.id || `${j.started_at}`;
               return <JobRow key={id} job={j} open={openJobs.has(id)} onToggle={() => toggle(id)} />;
             })}
           </div>
@@ -96,7 +101,13 @@ export default function SyncTab({ instanceId }: any) {
   );
 }
 
-function JobRow({ job, open, onToggle }: any) {
+interface JobRowProps {
+  job: SyncJobPublic;
+  open: boolean;
+  onToggle: () => void;
+}
+
+function JobRow({ job, open, onToggle }: JobRowProps) {
   const s = String(job.status || "").toLowerCase();
   const isOk = s === "success" || s === "completed" || s === "succeeded";
   const isRunning = s === "running" || s === "pending";
@@ -112,14 +123,14 @@ function JobRow({ job, open, onToggle }: any) {
           ? "bg-red-500/10 text-red-500"
           : "bg-hover text-muted";
   const icon = isOk ? "heroicons-outline:check-circle" : isFail ? "heroicons-outline:exclamation-circle" : "svg-spinners:180-ring";
-  const counts = job.counts || job.entity_counts || {};
+  const counts = job.counts || {};
 
   return (
     <div className="px-2 py-2 text-xs">
       <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 text-left">
         <Icon icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"} className="shrink-0 text-xs text-muted" />
         <Icon icon={icon} className={`shrink-0 text-sm ${isRunning ? "" : ""}`} />
-        <span className="w-36 shrink-0 font-mono text-[10px] text-muted">{fmtDateTime(job.started_at || job.created_at)}</span>
+        <span className="w-36 shrink-0 font-mono text-[10px] text-muted">{fmtDateTime(job.started_at)}</span>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${tone}`}>{job.status || "—"}</span>
         <span className="text-muted">{job.trigger || "manual"}</span>
         <span className="ml-auto font-mono text-[10px] text-muted/70">{durationOf(job)}</span>
@@ -127,11 +138,12 @@ function JobRow({ job, open, onToggle }: any) {
       {open && (
         <div className="ml-5 mt-2 space-y-2">
           <div className="grid grid-cols-3 gap-2 text-[10px]">
-            <KV label="Job id" value={job.id || job._id} />
+            <KV label="Job id" value={job.id} />
             <KV label="Started" value={fmtDateTime(job.started_at)} />
             <KV label="Finished" value={fmtDateTime(job.finished_at)} />
             <KV label="Trigger" value={job.trigger} />
-            <KV label="Only" value={(job.only || []).join(", ") || "all"} />
+            {/* v3 reconcile is always a FULL run — there is no per-entity filter. */}
+            <KV label="Only" value="all" />
             <KV label="Errors" value={Array.isArray(job.errors) ? job.errors.length : "0"} />
           </div>
           {Object.keys(counts).length > 0 && (
@@ -151,7 +163,12 @@ function JobRow({ job, open, onToggle }: any) {
   );
 }
 
-function KV({ label, value }: any) {
+interface KVProps {
+  label: ReactNode;
+  value: ReactNode;
+}
+
+function KV({ label, value }: KVProps) {
   return (
     <div>
       <div className="text-[9px] uppercase tracking-wider text-muted/70">{label}</div>
@@ -160,21 +177,21 @@ function KV({ label, value }: any) {
   );
 }
 
-function CountsCell({ counts }: any) {
-  const entries = Object.entries<any>(counts || {});
+function CountsCell({ counts }: { counts: Record<string, SyncCollectionCounts> }) {
+  const entries = Object.entries(counts || {});
   if (!entries.length) return <span className="text-[10px] text-muted/70">—</span>;
   return (
     <div className="flex flex-wrap gap-2">
       {entries.map(([k, v]) => {
-        const c = typeof v === "object" && v !== null ? v : {};
+        const c: Partial<SyncCollectionCounts> = typeof v === "object" && v !== null ? v : {};
         return (
           <div key={k} className="rounded-sm border border-card-border bg-hover px-2 py-1 text-[10px] leading-tight">
             <div className="mb-0.5 font-semibold uppercase tracking-wider text-muted">{k.replace(/_/g, " ")}</div>
             {typeof v === "object" && v !== null ? (
               <div className="flex gap-2">
-                <span className="text-green-500">+{c.added || 0}</span>
+                <span className="text-green-500">+{c.created || 0}</span>
                 <span className="text-blue-500">~{c.updated || 0}</span>
-                <span className="text-red-500">−{c.removed || 0}</span>
+                <span className="text-red-500">−{c.deleted || 0}</span>
                 {(c.errors || 0) > 0 && <span className="text-amber-500">!{c.errors}</span>}
               </div>
             ) : (
@@ -187,7 +204,7 @@ function CountsCell({ counts }: any) {
   );
 }
 
-function durationOf(job) {
+function durationOf(job: SyncJobPublic): string {
   if (!job.started_at) return "";
   const start = new Date(job.started_at).getTime();
   const end = job.finished_at ? new Date(job.finished_at).getTime() : Date.now();

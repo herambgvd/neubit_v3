@@ -4,10 +4,11 @@
 // have recordings. Ported from gvd_nvr's timeline concept (coverage only; full
 // scrub playback lands in P4). Each recording paints a colored span across the
 // bar proportional to its start/end within the day.
-import { useMemo } from "react";
+import { useMemo, type MouseEvent } from "react";
 import { Icon } from "@iconify/react";
 
-import { TRIGGER_PRESETS } from "../constants";
+import { presetFor, TRIGGER_PRESETS } from "../constants";
+import type { RecordingPublic } from "../types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
@@ -21,7 +22,27 @@ const BAR_COLOR = {
   manual: "bg-foreground/60",
 };
 
-export default function RecordingTimeline({ recordings = [], day, onSeek }: any) {
+// The pill label for a trigger, or the raw trigger for one the presets don't know.
+const triggerLabel = (t: string): string =>
+  Object.prototype.hasOwnProperty.call(TRIGGER_PRESETS, t)
+    ? TRIGGER_PRESETS[t as keyof typeof TRIGGER_PRESETS].label
+    : t;
+
+interface CoverageSpan {
+  id: string;
+  leftPct: number;
+  widthPct: number;
+  trigger: string;
+}
+
+export interface RecordingTimelineProps {
+  recordings?: RecordingPublic[];
+  /** "YYYY-MM-DD"; absent → the first recording's date. */
+  day?: string | null;
+  onSeek?: (ms: number) => void;
+}
+
+export default function RecordingTimeline({ recordings = [], day, onSeek }: RecordingTimelineProps) {
   // The day window [00:00, 24:00) in epoch ms. `day` is a "YYYY-MM-DD" string;
   // when absent, use the first recording's date.
   const dayStart = useMemo(() => {
@@ -35,7 +56,7 @@ export default function RecordingTimeline({ recordings = [], day, onSeek }: any)
   }, [day, recordings]);
 
   const spans = useMemo(() => {
-    const out: any[] = [];
+    const out: CoverageSpan[] = [];
     for (const r of recordings) {
       if (!r.start_time) continue;
       const s = new Date(r.start_time).getTime();
@@ -66,7 +87,7 @@ export default function RecordingTimeline({ recordings = [], day, onSeek }: any)
         }`}
         onClick={
           onSeek
-            ? (e) => {
+            ? (e: MouseEvent<HTMLDivElement>) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 if (!rect.width) return;
                 const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -88,9 +109,9 @@ export default function RecordingTimeline({ recordings = [], day, onSeek }: any)
         {spans.map((sp) => (
           <div
             key={sp.id}
-            className={`absolute top-1 bottom-1 rounded-xs ${BAR_COLOR[sp.trigger] || "bg-muted"} opacity-90`}
+            className={`absolute top-1 bottom-1 rounded-xs ${presetFor(BAR_COLOR, sp.trigger, "bg-muted")} opacity-90`}
             style={{ left: `${sp.leftPct}%`, width: `${sp.widthPct}%` }}
-            title={TRIGGER_PRESETS[sp.trigger]?.label || sp.trigger}
+            title={triggerLabel(sp.trigger)}
           />
         ))}
         {spans.length === 0 && (

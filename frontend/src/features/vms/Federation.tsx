@@ -31,39 +31,43 @@ import {
   QuietButton,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
-import { asItems, fmtRelative } from "@/lib/format";
+import { fmtRelative } from "@/lib/format";
+import type { FederatedCamera } from "@/lib/types";
 import { vms } from "./api";
+import type { FederationNode } from "./types";
 import StatusBadge, { StatusDot } from "./components/StatusBadge";
 
 export default function FederationPage() {
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Enrolled recorder nodes (the federation membership) + every federated camera,
   // node-tagged. The cameras call also reports nodes it couldn't reach → surfaced
   // honestly rather than silently dropped.
-  const nodesQ = useQuery<any>({
+  const nodesQ = useQuery({
     queryKey: ["vms-federation-nodes"],
     queryFn: () => vms.federation.nodes(),
     refetchInterval: 20_000,
   });
-  const camsQ = useQuery<any>({
+  const camsQ = useQuery({
     queryKey: ["vms-federation-cameras"],
     queryFn: () => vms.federation.cameras(),
     refetchInterval: 20_000,
   });
 
-  const nodes = useMemo(() => asItems(nodesQ.data), [nodesQ.data]);
+  // Read the envelope directly: the query is typed, so `.items` is already
+  // FederationNode[]. `asItems(data)` widened the not-yet-loaded case to never[].
+  const nodes = useMemo(() => nodesQ.data?.items ?? [], [nodesQ.data]);
   const cameras = useMemo(() => camsQ.data?.items || [], [camsQ.data]);
   const unreachable = useMemo(() => camsQ.data?.unreachable || [], [camsQ.data]);
   const unreachableIds = useMemo(
-    () => new Set<any>(unreachable.map((u) => u.node_id)),
+    () => new Set<string>(unreachable.map((u) => u.node_id)),
     [unreachable],
   );
 
   // Cameras grouped by their owning node.
   const camsByNode = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, FederatedCamera[]>();
     for (const c of cameras) {
       const arr = m.get(c.node_id) || [];
       arr.push(c);
@@ -205,7 +209,14 @@ export default function FederationPage() {
 
 // Right pane: one enrolled node's reachability + the cameras it federates. Read-only
 // — lifecycle/endpoint edits live on the Recorders page; this is the federation lens.
-function NodeDetail({ node, cameras, camsLoading, unreachable }: any) {
+interface NodeDetailProps {
+  node: FederationNode;
+  cameras: FederatedCamera[];
+  camsLoading: boolean;
+  unreachable: boolean;
+}
+
+function NodeDetail({ node, cameras, camsLoading, unreachable }: NodeDetailProps) {
   const cap = node.capacity_channels;
   const used = node.used_channels ?? cameras.length;
   const online = cameras.filter((c) => c.status === "online").length;

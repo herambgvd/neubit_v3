@@ -9,8 +9,9 @@
 //
 // Reads gate on vms.playback.view; schedule writes on vms.config.manage. The gateway
 // routes /api/v1/vms/reports* → the vision service.
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -21,6 +22,10 @@ import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
 import ReportScheduleModal from "./components/ReportScheduleModal";
 import ReportRunsPanel, { scheduleRunsKey } from "./components/ReportRunsPanel";
+import type { QueryParams, ReportCell, ReportRow, ReportSchedulePublic, ReportViewData } from "./types";
+
+/** The four accent tones a summary tile / bar can take. */
+type Tone = "ok" | "warn" | "bad" | "info";
 
 const REPORT_KINDS = [
   { value: "camera-uptime", label: "Camera uptime", icon: "heroicons:signal", desc: "Online % per camera" },
@@ -34,7 +39,7 @@ const REPORT_KINDS = [
 ];
 
 // Default the window to the last 7 days.
-const isoDaysAgo = (n) => {
+const isoDaysAgo = (n: number) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
@@ -50,12 +55,13 @@ export default function ReportsPage() {
   const [cameraId, setCameraId] = useState("");
   const [fromDate, setFromDate] = useState(isoDaysAgo(7));
   const [toDate, setToDate] = useState(todayStr());
-  const [downloading, setDownloading] = useState<any>(null); // "csv" | "pdf" | null
-  const [scheduleModal, setScheduleModal] = useState<any>(null); // {} to open
-  const [expanded, setExpanded] = useState<any>(null); // schedule id whose run history is open
+  const [downloading, setDownloading] = useState<"csv" | "pdf" | null>(null);
+  // null = closed, "new" = open on a blank form, a schedule = open for editing.
+  const [scheduleModal, setScheduleModal] = useState<ReportSchedulePublic | "new" | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null); // schedule id whose run history is open
 
   // Cameras (optional narrowing + name lookup).
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["vms-cameras", "reports-picker"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     staleTime: 60_000,
@@ -63,29 +69,31 @@ export default function ReportsPage() {
   const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
 
   const params = useMemo(() => {
-    const p: any = { camera_id: cameraId || undefined };
+    const p: QueryParams = { camera_id: cameraId || undefined };
     if (fromDate) p.from = new Date(`${fromDate}T00:00:00`).toISOString();
     if (toDate) p.to = new Date(`${toDate}T23:59:59`).toISOString();
     return p;
   }, [cameraId, fromDate, toDate]);
 
-  const reportQ = useQuery<any>({
+  const reportQ = useQuery({
     queryKey: ["vms-report", kind, params],
     queryFn: () => vms.reports.get(kind, params),
     enabled: !!params.from && !!params.to,
   });
-  const report = reportQ.data;
+  // `ReportResponse` keeps rows/totals open (`unknown` cells) because the columns
+  // are kind-specific; the renderers below read them as scalars, so narrow once.
+  const report = reportQ.data as ReportViewData | undefined;
 
   // ── Scheduled reports ──────────────────────────────────────────────────
-  const schedulesQ = useQuery<any>({
+  const schedulesQ = useQuery({
     queryKey: ["vms-report-schedules"],
     queryFn: () => vms.reports.schedules.list(),
     staleTime: 30_000,
   });
   const schedules = useMemo(() => asItems(schedulesQ.data), [schedulesQ.data]);
 
-  const deleteSchedule = useMutation<any>({
-    mutationFn: (id: any) => vms.reports.schedules.remove(id),
+  const deleteSchedule = useMutation({
+    mutationFn: (id: string) => vms.reports.schedules.remove(id),
     onSuccess: () => {
       toast.success("Schedule removed");
       qc.invalidateQueries({ queryKey: ["vms-report-schedules"] });
@@ -96,8 +104,8 @@ export default function ReportsPage() {
   // Run-now: fires the report immediately. The endpoint returns 201 with the
   // created run even on a compute-error, so branch on run.status. Either way,
   // refresh that schedule's run history and expand it so the result is visible.
-  const runNow = useMutation<any>({
-    mutationFn: (id: any) => vms.reports.schedules.runNow(id),
+  const runNow = useMutation({
+    mutationFn: (id: string) => vms.reports.schedules.runNow(id),
     onSuccess: (run, id) => {
       if (run?.status === "error") {
         toast.warning(run.error || "Report ran but failed to compute");
@@ -111,7 +119,7 @@ export default function ReportsPage() {
     onError: (e) => toast.error(apiError(e, "Run failed")),
   });
 
-  const download = async (fmt) => {
+  const download = async (fmt: "csv" | "pdf") => {
     setDownloading(fmt);
     try {
       const blob = await vms.reports.exportBlob(kind, { ...params, format: fmt });
@@ -124,7 +132,7 @@ export default function ReportsPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {
-      if (fmt === "pdf" && e?.response?.status === 503) {
+      if (fmt === "pdf" && isAxiosError(e) && e.response?.status === 503) {
         toast.error("PDF export unavailable (reportlab not installed on server)");
       } else {
         toast.error(apiError(e, "Export failed"));
@@ -225,7 +233,7 @@ export default function ReportsPage() {
             <p className="text-xs text-muted">Recurring reports delivered automatically to recipients.</p>
           </div>
           {canManage && (
-            <Button icon="heroicons-outline:plus" onClick={() => setScheduleModal({})}>
+            <Button icon="heroicons-outline:plus" onClick={() => setScheduleModal("new")}>
               New schedule
             </Button>
           )}
@@ -353,7 +361,7 @@ export default function ReportsPage() {
 
       <ReportScheduleModal
         open={!!scheduleModal}
-        schedule={scheduleModal && scheduleModal.id ? scheduleModal : null}
+        schedule={scheduleModal === "new" ? null : scheduleModal}
         reportKinds={REPORT_KINDS}
         onClose={() => setScheduleModal(null)}
         onSaved={() => {
@@ -366,7 +374,7 @@ export default function ReportsPage() {
 }
 
 // ── Report renderer — one component per shape, driven by report.kind ─────────
-function ReportView({ report }: any) {
+function ReportView({ report }: { report: ReportViewData }) {
   const totals = report.totals || {};
   const rows = report.rows || [];
 
@@ -478,7 +486,7 @@ function ReportView({ report }: any) {
     return (
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {rows.map((r) => (
-          <SummaryTile key={r.metric} label={r.metric.replace(/_/g, " ")} value={r.value} />
+          <SummaryTile key={r.metric} label={(r.metric || "").replace(/_/g, " ")} value={r.value} />
         ))}
       </div>
     );
@@ -486,7 +494,8 @@ function ReportView({ report }: any) {
 
   // ── G8: Operator activity — per-operator action rollup (core Activity/audit) ──
   if (report.kind === "operator-activity") {
-    const totalActions = totals.total_actions ?? totals.actions ?? rows.reduce((s, r) => s + (r.actions || r.count || 0), 0);
+    // The wire column is `total_actions` (reports/computations.py), not actions/count.
+    const totalActions = totals.total_actions ?? rows.reduce((s, r) => s + (r.total_actions || 0), 0);
     return (
       <div className="space-y-4">
         <SummaryRow
@@ -498,11 +507,11 @@ function ReportView({ report }: any) {
         <BarTable
           rows={rows}
           nameKey={rows[0]?.operator_name != null ? "operator_name" : "operator"}
-          valueKey={rows[0]?.actions != null ? "actions" : "count"}
+          valueKey={rows[0]?.total_actions != null ? "total_actions" : "actions"}
           nameLabel="Operator"
           valueLabel="Actions"
           title="By operator"
-          max={Math.max(1, ...rows.map((r) => r.actions || r.count || 0))}
+          max={Math.max(1, ...rows.map((r) => r.total_actions || 0))}
         />
         {report.by_action && Object.keys(report.by_action).length > 0 && (
           <BreakdownCard title="By action" data={report.by_action} />
@@ -515,7 +524,8 @@ function ReportView({ report }: any) {
   // ── G8: Alarm response — ack-rate + time-to-ack per camera/severity (workflow) ──
   if (report.kind === "alarm-response") {
     const ackRate = totals.ack_rate_pct ?? totals.ack_rate ?? 0;
-    const avgTtaSec = totals.avg_time_to_ack_seconds ?? totals.avg_ack_seconds ?? totals.avg_tta_seconds;
+    // The wire keys are `*_time_to_ack_s` (reports/computations.py).
+    const avgTtaSec = totals.avg_time_to_ack_s ?? totals.avg_time_to_ack_seconds ?? totals.avg_ack_seconds;
     return (
       <div className="space-y-4">
         <SummaryRow
@@ -542,7 +552,7 @@ function ReportView({ report }: any) {
             columns={[
               { key: "alarms", label: "Alarms" },
               {
-                key: rows[0]?.avg_time_to_ack_seconds != null ? "avg_time_to_ack_seconds" : "avg_ack_seconds",
+                key: rows[0]?.avg_time_to_ack_s != null ? "avg_time_to_ack_s" : "avg_time_to_ack_seconds",
                 label: "Avg TTA",
                 fmt: fmtDuration,
               },
@@ -563,7 +573,7 @@ function ReportView({ report }: any) {
 }
 
 // Format a duration in seconds → "1m 20s" / "45s" / "1h 5m". null → "—".
-function fmtDuration(sec) {
+function fmtDuration(sec: ReportCell) {
   if (sec == null || Number.isNaN(Number(sec))) return "—";
   const s = Math.round(Number(sec));
   if (s < 60) return `${s}s`;
@@ -576,7 +586,7 @@ function fmtDuration(sec) {
 }
 
 // Small caption explaining where the report's full data lives (core Activity / workflow).
-function SourceNote({ note }: any) {
+function SourceNote({ note }: { note?: string | null }) {
   if (!note) return null;
   return (
     <p className="flex items-start gap-1.5 px-1 text-[11px] text-muted">
@@ -588,8 +598,16 @@ function SourceNote({ note }: any) {
 
 // Columns sized to the tile count (capped at 4) so the KPI row always fills the
 // width instead of leaving a half-empty gap on the right.
-const _COLS = { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5", 6: "sm:grid-cols-6" };
-function SummaryRow({ tiles }: any) {
+const _COLS: Record<number, string> = { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4", 5: "sm:grid-cols-5", 6: "sm:grid-cols-6" };
+
+/** One KPI tile of a SummaryRow. */
+interface TileSpec {
+  label: string;
+  value: ReactNode;
+  icon?: string;
+  tone?: Tone;
+}
+function SummaryRow({ tiles }: { tiles: TileSpec[] }) {
   const cols = _COLS[Math.min(tiles.length, 6)] || "sm:grid-cols-4";
   return (
     <div className={`grid grid-cols-2 gap-2.5 ${cols}`}>
@@ -600,14 +618,14 @@ function SummaryRow({ tiles }: any) {
   );
 }
 
-const _TONE = {
+const _TONE: Record<Tone, string> = {
   ok: "text-emerald-500 bg-emerald-500/10",
   warn: "text-amber-500 bg-amber-500/10",
   bad: "text-red-500 bg-red-500/10",
   info: "text-blue-500 bg-blue-500/10",
 };
-const _BAR = { ok: "bg-emerald-500/70", warn: "bg-amber-500/70", bad: "bg-red-500/70", info: "bg-blue-500/70" };
-function SummaryTile({ label, value, icon, tone = "info" }: any) {
+const _BAR: Record<Tone, string> = { ok: "bg-emerald-500/70", warn: "bg-amber-500/70", bad: "bg-red-500/70", info: "bg-blue-500/70" };
+function SummaryTile({ label, value, icon, tone = "info" }: TileSpec) {
   return (
     <div className="relative flex items-center gap-3 overflow-hidden rounded-xl border border-card-border bg-card px-4 py-3.5">
       <span className={`absolute inset-y-0 left-0 w-1 ${_BAR[tone] || _BAR.info}`} />
@@ -626,6 +644,24 @@ function SummaryTile({ label, value, icon, tone = "info" }: any) {
 
 // A rows table where each row gets a horizontal bar for its primary metric.
 // Renders a proper column-header row so numeric columns are always labelled.
+/** One extra column of a BarTable, read off each row by key. */
+interface BarColumn {
+  key: string;
+  label: string;
+  fmt?: (v: ReportCell) => string;
+}
+interface BarTableProps {
+  rows: ReportRow[];
+  nameKey: string;
+  valueKey: string;
+  nameLabel?: string;
+  valueLabel?: string;
+  suffix?: string;
+  valueFmt?: (v: number) => string;
+  max?: number;
+  columns?: BarColumn[];
+  title?: string;
+}
 function BarTable({
   rows,
   nameKey,
@@ -637,7 +673,7 @@ function BarTable({
   max = 100,
   columns = [],
   title,
-}: any) {
+}: BarTableProps) {
   if (!rows || rows.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-card-border bg-card py-12 text-center text-sm text-muted">
@@ -667,11 +703,13 @@ function BarTable({
         </thead>
         <tbody>
           {rows.map((r, i) => {
-            const v = r[valueKey] || 0;
+            // The bar's key is per-kind, so the cell arrives as an open scalar;
+            // every column the renderers point at is numeric on the wire.
+            const v = Number(r[valueKey]) || 0;
             const pct = Math.min(100, (v / max) * 100);
             return (
               <tr
-                key={r[nameKey] || i}
+                key={String(r[nameKey] ?? i)}
                 className="border-b border-card-border/50 transition last:border-0 hover:bg-hover/40"
               >
                 <td className="w-48 px-4 py-2.5 font-medium text-foreground">{r[nameKey]}</td>
@@ -702,8 +740,8 @@ function BarTable({
   );
 }
 
-function BreakdownCard({ title, data }: any) {
-  const entries = Object.entries<any>(data || {}).sort((a, b) => b[1] - a[1]);
+function BreakdownCard({ title, data }: { title: string; data?: Record<string, number> }) {
+  const entries = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
   const max = Math.max(1, ...entries.map(([, n]) => n));
   return (
     <div className="rounded-xl border border-card-border bg-card p-4">

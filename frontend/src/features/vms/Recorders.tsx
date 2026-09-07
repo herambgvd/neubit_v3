@@ -6,34 +6,37 @@
 // RIGHT = RecorderDetail with full info + Edit / Drain / Delete). Mirrors the NVR page
 // exactly (MasterDetail + ListPanel + EmptyDetail, TanStack Query + invalidation,
 // StatusBadge, sonner, ConfirmDialog). Add / edit reuse AddRecorderModal.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Modal } from "@/components/ui/kit";
+import { Button, ConfirmDialog, Modal, type ConfirmState } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail, Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
+import type { MediaNodePublic, NodeEnrollResult } from "./types";
 import StatusBadge, { StatusDot } from "./components/StatusBadge";
 import AddRecorderModal from "./components/AddRecorderModal";
 
 export default function RecordersPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [editTarget, setEditTarget] = useState<MediaNodePublic | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const nodesQ = useQuery<any>({
+  const nodesQ = useQuery({
     queryKey: ["vms-media-nodes"],
     queryFn: () => vms.mediaNodes.list({ limit: 500 }),
     refetchInterval: 20_000,
   });
-  const nodes = useMemo(() => asItems(nodesQ.data), [nodesQ.data]);
+  // Read the envelope directly: the query is typed, so `.items` is already
+  // MediaNodePublic[]. `asItems(data)` widened the not-yet-loaded case to never[].
+  const nodes = useMemo(() => nodesQ.data?.items ?? [], [nodesQ.data]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["vms-media-nodes"] });
 
@@ -59,14 +62,14 @@ export default function RecordersPage() {
 
   const onlineCount = nodes.filter((n) => n.status === "online").length;
 
-  const drain = useMutation<any>({
-    mutationFn: (id: any) => vms.mediaNodes.update(id, { status: "draining" }),
+  const drain = useMutation({
+    mutationFn: (id: string) => vms.mediaNodes.update(id, { status: "draining" }),
     onSuccess: () => { toast.success("Recorder set to draining"); invalidate(); },
     onError: (e) => toast.error(apiError(e, "Drain failed")),
   });
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => vms.mediaNodes.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => vms.mediaNodes.remove(id),
     onSuccess: (_d, id) => {
       toast.success("Recorder removed");
       if (effectiveId === id) setSelectedId(null);
@@ -76,7 +79,7 @@ export default function RecordersPage() {
     onError: (e) => toast.error(apiError(e, "Delete failed")),
   });
 
-  const askDrain = (node) =>
+  const askDrain = (node: MediaNodePublic) =>
     setConfirm({
       title: "Drain recorder",
       message: `Set ${node.name} to draining? New recordings stop landing here; reassign its cameras to another recorder before deleting.`,
@@ -84,7 +87,7 @@ export default function RecordersPage() {
       onConfirm: () => { drain.mutate(node.id); setConfirm(null); },
     });
 
-  const askDelete = (node) =>
+  const askDelete = (node: MediaNodePublic) =>
     setConfirm({
       title: "Delete recorder",
       message: `Remove ${node.name}? Cameras still assigned to it must be reassigned first — the backend will block this otherwise.`,
@@ -203,7 +206,14 @@ export default function RecordersPage() {
 // Right-pane detail for one recorder (MediaNode): header (name / label / status +
 // Edit / Drain / Delete) + an info grid (endpoints, capacity, heartbeat). Mirrors
 // NvrDetail's card chrome so the three device pages look identical.
-function InfoCell({ label, value, mono = false, children }: any) {
+interface InfoCellProps {
+  label: ReactNode;
+  value?: ReactNode;
+  mono?: boolean;
+  children?: ReactNode;
+}
+
+function InfoCell({ label, value, mono = false, children }: InfoCellProps) {
   return (
     <div className="min-w-0 rounded-[10px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] px-3 py-1.5">
       <p className="font-mono text-[10px] uppercase tracking-[1.4px] text-[#9a92c8]">{label}</p>
@@ -213,12 +223,19 @@ function InfoCell({ label, value, mono = false, children }: any) {
   );
 }
 
-function RecorderDetail({ node, onEdit, onDrain, onDelete }: any) {
+interface RecorderDetailProps {
+  node: MediaNodePublic;
+  onEdit?: (node: MediaNodePublic) => void;
+  onDrain?: (node: MediaNodePublic) => void;
+  onDelete?: (node: MediaNodePublic) => void;
+}
+
+function RecorderDetail({ node, onEdit, onDrain, onDelete }: RecorderDetailProps) {
   const cap = node.capacity_channels;
 
   // Cameras pinned to THIS recorder (client-side filter — the list API has no
   // media_node_id filter). Refetches so a fresh assignment shows up.
-  const camsQ = useQuery<any>({
+  const camsQ = useQuery({
     queryKey: ["vms-cameras", "for-recorder-detail"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     staleTime: 15_000,
@@ -334,19 +351,20 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: any) {
 // lists issued credentials (grants + activity), lets an operator Enroll / Re-enroll
 // (the RAW secret is shown ONCE, copyable, with a warning) and Revoke a credential.
 // Gated on vms.config.manage, like the other recorder mutations.
-function FederationTrust({ node }: any) {
+function FederationTrust({ node }: { node: MediaNodePublic }) {
   const qc = useQueryClient();
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
-  const [issued, setIssued] = useState<any>(null); // the just-issued RAW credential (show once)
+  const [issued, setIssued] = useState<NodeEnrollResult | null>(null); // the just-issued RAW credential (show once)
   const [copied, setCopied] = useState(false);
   const [pairCode, setPairCode] = useState<string | null>(null); // non-null while the pair dialog is open
 
-  const credsQ = useQuery<any>({
+  const credsQ = useQuery({
     queryKey: ["vms-node-credentials", node.id],
     queryFn: () => vms.mediaNodes.credentials(node.id),
   });
-  const creds = useMemo(() => asItems(credsQ.data), [credsQ.data]);
+  // Typed envelope — see the note on `nodes` above.
+  const creds = useMemo(() => credsQ.data?.items ?? [], [credsQ.data]);
   const activeCount = creds.filter((c) => !c.revoked_at).length;
   const enrolled = node.has_credential || activeCount > 0;
 
@@ -355,7 +373,7 @@ function FederationTrust({ node }: any) {
     qc.invalidateQueries({ queryKey: ["vms-media-nodes"] });
   };
 
-  const enroll = useMutation<any>({
+  const enroll = useMutation({
     mutationFn: () => vms.mediaNodes.enroll(node.id),
     onSuccess: (data) => {
       setIssued(data);
@@ -369,7 +387,7 @@ function FederationTrust({ node }: any) {
   // Pairing is the bootstrap for a recorder deployed on its OWN box: it has its own
   // VE_JWT_SECRET, so the shared-secret enrol above cannot authenticate to it. The
   // operator mints a one-use code on that recorder's console and enters it here.
-  const pair = useMutation<any>({
+  const pair = useMutation({
     mutationFn: () => vms.mediaNodes.pair(node.id, (pairCode ?? "").trim()),
     onSuccess: (data) => {
       setPairCode(null);
@@ -381,15 +399,16 @@ function FederationTrust({ node }: any) {
     onError: (e) => toast.error(apiError(e, "Pairing failed")),
   });
 
-  const revoke = useMutation<any>({
-    mutationFn: (credId: any) => vms.mediaNodes.revokeCredential(node.id, credId),
+  const revoke = useMutation({
+    mutationFn: (credId: string) => vms.mediaNodes.revokeCredential(node.id, credId),
     onSuccess: () => { toast.success("Credential revoked"); invalidate(); },
     onError: (e) => toast.error(apiError(e, "Revoke failed")),
   });
 
+  // Only reachable from the credential modal, which renders while `issued` is set.
   const copyRaw = async () => {
     try {
-      await navigator.clipboard.writeText(issued.credential);
+      await navigator.clipboard.writeText(issued?.credential ?? "");
       setCopied(true);
       toast.success("Copied to clipboard");
     } catch {

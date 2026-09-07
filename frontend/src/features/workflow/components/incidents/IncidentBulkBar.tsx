@@ -5,7 +5,17 @@
 // this is presentational.
 import { Button } from "@/components/ui/kit";
 
-export default function IncidentBulkBar({ count, pending, onAction, onClear }: any) {
+/** A bulk verb: two status moves plus escalate. */
+export type BulkAction = "paused" | "cancelled" | "escalate";
+
+export interface IncidentBulkBarProps {
+  count: number;
+  pending?: boolean;
+  onAction: (kind: BulkAction) => void;
+  onClear: () => void;
+}
+
+export default function IncidentBulkBar({ count, pending, onAction, onClear }: IncidentBulkBarProps) {
   if (count === 0) return null;
   return (
     <div className="mb-3 flex items-center gap-2 rounded-[13px] border border-[rgba(34,211,238,.35)] bg-[rgba(34,211,238,.08)] px-3 py-2 backdrop-blur-xs">

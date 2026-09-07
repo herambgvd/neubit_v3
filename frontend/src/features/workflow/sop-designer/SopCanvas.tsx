@@ -10,15 +10,19 @@
 // position_y,is_initial,is_terminal,is_cancellation,...}; transition {transition_id,
 // from_state_id,to_state_id,label,requires_note,...}.
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog, Spinner } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { asItems, idOf } from "@/lib/format";
+import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "../api";
+import type { StatePublic, TransitionPublic } from "../types";
 import { NODE_W, NODE_H, nodeCenter } from "./lib/canvasGeometry";
+import type { Point } from "./lib/canvasGeometry";
 import { usePanZoom } from "./hooks/usePanZoom";
 import CanvasToolbar from "./CanvasToolbar";
 import CanvasNode from "./CanvasNode";
@@ -26,37 +30,63 @@ import CanvasEdge, { PendingEdge } from "./CanvasEdge";
 import StateModal from "./StateModal";
 import TransitionModal from "./TransitionModal";
 import SopSidePanel from "./SopSidePanel";
+import type { SelectionRef } from "./SopSidePanel";
 
-const sid = (s) => idOf(s, "state_id", "id") ?? "";
-const tid = (t) => idOf(t, "transition_id", "id");
+const sid = (s: StatePublic): string => s.state_id;
+const tid = (t: TransitionPublic): string => t.transition_id;
 
-export default function SopCanvas({ sopId }: any) {
+/** The state modal's subject: an existing state (edit) or a drop position (new). */
+type StateModalTarget = StatePublic | { position_x: number; position_y: number };
+/** The transition modal's subject: an existing transition (edit) or its endpoints (new). */
+type TransModalTarget = TransitionPublic | { from_state_id: string; to_state_id: string };
+
+interface DragState {
+  id: string;
+  startWorld: Point;
+  orig: Point;
+  moved: boolean;
+}
+interface PanState {
+  x: number;
+  y: number;
+  ox: number;
+  oy: number;
+}
+interface ConnectState extends Point {
+  fromId: string;
+}
+
+export interface SopCanvasProps {
+  sopId: string;
+}
+
+export default function SopCanvas({ sopId }: SopCanvasProps) {
   const qc = useQueryClient();
   const statesKey = ["wf-states", sopId];
   const transKey = ["wf-transitions", sopId];
 
-  const statesQ = useQuery<any>({ queryKey: statesKey, queryFn: () => wfApi.states.list(sopId, { limit: 200 }), enabled: !!sopId });
-  const transQ = useQuery<any>({ queryKey: transKey, queryFn: () => wfApi.transitions.list(sopId, { limit: 200 }), enabled: !!sopId });
-  const states = useMemo(() => asItems(statesQ.data), [statesQ.data]);
-  const transitions = useMemo(() => asItems(transQ.data), [transQ.data]);
+  const statesQ = useQuery({ queryKey: statesKey, queryFn: () => wfApi.states.list(sopId, { limit: 200 }), enabled: !!sopId });
+  const transQ = useQuery({ queryKey: transKey, queryFn: () => wfApi.transitions.list(sopId, { limit: 200 }), enabled: !!sopId });
+  const states = useMemo<StatePublic[]>(() => (statesQ.data ? asItems(statesQ.data) : []), [statesQ.data]);
+  const transitions = useMemo<TransitionPublic[]>(() => (transQ.data ? asItems(transQ.data) : []), [transQ.data]);
 
   const { wrapRef, scale, offset, setOffset, size, screenToWorld, zoomBy, doFit } = usePanZoom(states);
 
-  const [selection, setSelection] = useState<any>(null); // { kind: "state"|"transition", id }
-  const [stateModal, setStateModal] = useState<any>(null); // state obj or {} (new)
-  const [transModal, setTransModal] = useState<any>(null); // { from, to } (new) or transition obj (edit)
-  const [confirm, setConfirm] = useState<any>(null);
+  const [selection, setSelection] = useState<SelectionRef | null>(null);
+  const [stateModal, setStateModal] = useState<StateModalTarget | null>(null); // state obj or {} (new)
+  const [transModal, setTransModal] = useState<TransModalTarget | null>(null); // { from, to } (new) or transition obj (edit)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   // Live drag overrides so we don't mutate query data mid-drag.
-  const [dragPos, setDragPos] = useState<any>({}); // { [state_id]: {x,y} }
-  const dragRef = useRef<any>(null); // { id, startWorld, orig, moved }
-  const panRef = useRef<any>(null); // { x, y, ox, oy }
+  const [dragPos, setDragPos] = useState<Record<string, Point>>({}); // { [state_id]: {x,y} }
+  const dragRef = useRef<DragState | null>(null); // { id, startWorld, orig, moved }
+  const panRef = useRef<PanState | null>(null); // { x, y, ox, oy }
   const [panning, setPanning] = useState(false);
-  const connectRef = useRef<any>(null); // { fromId }
-  const [connect, setConnect] = useState<any>(null); // { fromId, x, y } world coords of cursor
+  const connectRef = useRef<{ fromId: string } | null>(null); // { fromId }
+  const [connect, setConnect] = useState<ConnectState | null>(null); // { fromId, x, y } world coords of cursor
 
   const stateById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, StatePublic>();
     for (const s of states) {
       const dp = dragPos[sid(s)];
       m.set(sid(s), dp ? { ...s, position_x: dp.x, position_y: dp.y } : s);
@@ -66,13 +96,14 @@ export default function SopCanvas({ sopId }: any) {
   const effStates = useMemo(() => Array.from(stateById.values()), [stateById]);
 
   /* ── persistence mutations ── */
-  const moveState = useMutation<any, any, any>({
-    mutationFn: ({ id, x, y }: any) => wfApi.states.update(sopId, id, { position_x: x, position_y: y }),
+  const moveState = useMutation({
+    mutationFn: ({ id, x, y }: { id: string; x: number; y: number }) =>
+      wfApi.states.update(sopId, id, { position_x: x, position_y: y }),
     onSuccess: () => qc.invalidateQueries({ queryKey: statesKey }),
     onError: (e) => toast.error(apiError(e)),
   });
-  const removeState = useMutation<any>({
-    mutationFn: (id: any) => wfApi.states.remove(sopId, id),
+  const removeState = useMutation({
+    mutationFn: (id: string) => wfApi.states.remove(sopId, id),
     onSuccess: () => {
       toast.success("State removed");
       qc.invalidateQueries({ queryKey: statesKey });
@@ -81,8 +112,8 @@ export default function SopCanvas({ sopId }: any) {
     },
     onError: (e) => toast.error(apiError(e)),
   });
-  const removeTransition = useMutation<any>({
-    mutationFn: (id: any) => wfApi.transitions.remove(sopId, id),
+  const removeTransition = useMutation({
+    mutationFn: (id: string) => wfApi.transitions.remove(sopId, id),
     onSuccess: () => {
       toast.success("Transition removed");
       qc.invalidateQueries({ queryKey: transKey });
@@ -102,7 +133,7 @@ export default function SopCanvas({ sopId }: any) {
 
   /* ── background pointer: pan / clear selection / finish a connect drag ── */
   const onBgPointerDown = useCallback(
-    (e) => {
+    (e: PointerEvent<HTMLDivElement>) => {
       if (e.button !== 0) return;
       // Only fires when the empty background is hit (nodes stop propagation).
       setSelection(null);
@@ -113,7 +144,7 @@ export default function SopCanvas({ sopId }: any) {
   );
 
   const onWrapPointerMove = useCallback(
-    (e) => {
+    (e: PointerEvent<HTMLDivElement>) => {
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect) return;
       const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
@@ -160,10 +191,11 @@ export default function SopCanvas({ sopId }: any) {
 
   /* ── node interactions ── */
   const onNodePointerDown = useCallback(
-    (e, s) => {
+    (e: PointerEvent<HTMLDivElement>, s: StatePublic) => {
       e.stopPropagation();
       if (e.button !== 0) return;
-      const rect = wrapRef.current.getBoundingClientRect();
+      const rect = wrapRef.current?.getBoundingClientRect();
+      if (!rect) return;
       const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       setSelection({ kind: "state", id: sid(s) });
       dragRef.current = {
@@ -176,14 +208,14 @@ export default function SopCanvas({ sopId }: any) {
     [screenToWorld, wrapRef],
   );
 
-  const onHandlePointerDown = useCallback((e, s) => {
+  const onHandlePointerDown = useCallback((e: PointerEvent<HTMLButtonElement>, s: StatePublic) => {
     e.stopPropagation();
     if (e.button !== 0) return;
     connectRef.current = { fromId: sid(s) };
     setConnect({ fromId: sid(s), x: nodeCenter(s).x, y: nodeCenter(s).y });
   }, []);
 
-  const onNodePointerUp = useCallback((e, s) => {
+  const onNodePointerUp = useCallback((e: PointerEvent<HTMLDivElement>, s: StatePublic) => {
     if (connectRef.current && connectRef.current.fromId !== sid(s)) {
       e.stopPropagation();
       const fromId = connectRef.current.fromId;
@@ -333,7 +365,7 @@ export default function SopCanvas({ sopId }: any) {
       {stateModal && (
         <StateModal
           sopId={sopId}
-          state={sid(stateModal) ? stateModal : null}
+          state={"state_id" in stateModal ? stateModal : null}
           defaults={stateModal}
           onClose={() => setStateModal(null)}
           onSaved={() => { qc.invalidateQueries({ queryKey: statesKey }); setStateModal(null); }}
@@ -343,7 +375,7 @@ export default function SopCanvas({ sopId }: any) {
         <TransitionModal
           sopId={sopId}
           states={effStates}
-          transition={tid(transModal) ? transModal : null}
+          transition={"transition_id" in transModal ? transModal : null}
           defaults={transModal}
           onClose={() => setTransModal(null)}
           onSaved={() => { qc.invalidateQueries({ queryKey: transKey }); setTransModal(null); }}

@@ -1,22 +1,33 @@
 // Client-side mirror of the backend trigger matcher
-// (backend/workflow/app/workflow/correlation.py :: matches_conditions). Pure
+// (backend/workflow/app/workflow/core/matching.py :: matches_conditions). Pure
 // functions, no side effects — used by the conditions preview + trigger test
 // modal to evaluate an AND-list of conditions against a sample event envelope
 // WITHOUT hitting the API.
 //
-// v3 condition shape is { path, op, value } (a v2 condition uses { field,
-// operator, value } — both are accepted so the same helpers can back either).
+// The wire condition shape is { field, operator, value } (TransitionCondition);
+// the trigger editor's rows use { path, op, value } — both are accepted so the
+// same helpers can back either.
 //
 // Operators (keep in sync with backend):
 //   eq, ne, gt, gte, lt, lte, in, not_in, contains, starts_with,
 //   ends_with, regex, exists
 
-export const MATCHER_OPS = [
+/** A condition in either spelling: the wire `{field, operator}` or the editor's
+ *  `{path, op}`. */
+export interface AnyCondition {
+  field?: string;
+  operator?: string;
+  path?: string;
+  op?: string;
+  value?: unknown;
+}
+
+export const MATCHER_OPS: string[] = [
   "eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in",
   "contains", "starts_with", "ends_with", "regex", "exists",
 ];
 
-export const OP_LABEL = {
+export const OP_LABEL: Record<string, string> = {
   eq: "equals",
   ne: "not equals",
   gt: "greater than",
@@ -32,16 +43,16 @@ export const OP_LABEL = {
   exists: "exists",
 };
 
-const condPath = (c) => c.path ?? c.field ?? "";
-const condOp = (c) => c.op ?? c.operator ?? "eq";
+const condPath = (c: AnyCondition): string => c.path ?? c.field ?? "";
+const condOp = (c: AnyCondition): string => c.op ?? c.operator ?? "eq";
 
 // Dot-path lookup into the envelope. Supports numeric array indices.
-export function walk(envelope, path) {
+export function walk(envelope: unknown, path: string | null | undefined): unknown {
   if (!path) return undefined;
-  let cur = envelope;
+  let cur: unknown = envelope;
   for (const part of String(path).split(".")) {
     if (cur && typeof cur === "object" && !Array.isArray(cur)) {
-      cur = cur[part];
+      cur = (cur as Record<string, unknown>)[part];
     } else if (Array.isArray(cur)) {
       const idx = Number(part);
       cur = Number.isFinite(idx) ? cur[idx] : undefined;
@@ -53,21 +64,26 @@ export function walk(envelope, path) {
   return cur;
 }
 
-export function evalOp(actual, op, expected) {
+// The relational operators are deliberately as loose as the backend's (Python
+// compares whatever it is handed and a TypeError is a non-match, mirrored by the
+// try/catch). `unknown` operands need an explicit widening for `<` / `>`.
+const ordered = (v: unknown): number => v as number;
+
+export function evalOp(actual: unknown, op: string, expected: unknown): boolean {
   try {
     switch (op) {
       case "eq":
-        return actual === expected || actual == expected;  
+        return actual === expected || actual == expected;
       case "ne":
-        return actual !== expected && actual != expected;  
+        return actual !== expected && actual != expected;
       case "gt":
-        return actual != null && actual > expected;
+        return actual != null && ordered(actual) > ordered(expected);
       case "gte":
-        return actual != null && actual >= expected;
+        return actual != null && ordered(actual) >= ordered(expected);
       case "lt":
-        return actual != null && actual < expected;
+        return actual != null && ordered(actual) < ordered(expected);
       case "lte":
-        return actual != null && actual <= expected;
+        return actual != null && ordered(actual) <= ordered(expected);
       case "in":
         return Array.isArray(expected) && expected.includes(actual);
       case "not_in":
@@ -106,9 +122,23 @@ export function evalOp(actual, op, expected) {
   }
 }
 
+export interface ConditionResult<C extends AnyCondition = AnyCondition> {
+  condition: C;
+  actual: unknown;
+  matched: boolean;
+}
+
+export interface EvaluateResult<C extends AnyCondition = AnyCondition> {
+  rows: ConditionResult<C>[];
+  allMatch: boolean;
+}
+
 // Evaluate an AND-list of conditions against an envelope.
 // Returns { rows: [{ condition, actual, matched }], allMatch }.
-export function evaluateConditions(envelope, conditions) {
+export function evaluateConditions<C extends AnyCondition>(
+  envelope: unknown,
+  conditions: C[] | null | undefined,
+): EvaluateResult<C> {
   const rows = (conditions || []).map((c) => {
     const actual = walk(envelope, condPath(c));
     const matched = evalOp(actual, condOp(c), c.value);
@@ -122,7 +152,7 @@ export function evaluateConditions(envelope, conditions) {
 //   in / not_in : comma-separated → array (each item JSON-parsed when possible)
 //   exists      : boolean
 //   else        : JSON.parse when possible, else the raw string.
-export function coerceValue(op, raw) {
+export function coerceValue(op: string, raw: unknown): unknown {
   if (op === "exists") {
     if (typeof raw === "boolean") return raw;
     return raw === true || raw === "true" || raw === 1 || raw === "1";
@@ -133,7 +163,7 @@ export function coerceValue(op, raw) {
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
-      .map((s) => {
+      .map((s): unknown => {
         try {
           return JSON.parse(s);
         } catch {
@@ -151,7 +181,7 @@ export function coerceValue(op, raw) {
 }
 
 // Stringify a stored condition value back into editor text.
-export function stringifyValue(op, value) {
+export function stringifyValue(op: string, value: unknown): string {
   if (op === "exists") {
     return value === true || value === "true" ? "true" : "false";
   }

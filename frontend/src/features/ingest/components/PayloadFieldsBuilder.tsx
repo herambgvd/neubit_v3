@@ -13,13 +13,15 @@
 // dotted/bracketed source path into the incoming payload. The parent owns the
 // state; this component is fully controlled.
 import { useMemo, useState } from "react";
+import type { ChangeEvent, MouseEvent, ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 import { Button, checkboxClass } from "@/components/ui/kit";
 import { areaClass } from "@/components/common";
+import type { BuilderField } from "../types";
 
 // Heuristics: pre-tick these field-name patterns when found in the sample.
-const AUTO_PICK_NAMES = new Set<any>([
+const AUTO_PICK_NAMES = new Set<string>([
   "device_name", "name", "hostname",
   "mac", "serial", "device_id",
   "ip", "ip_address",
@@ -33,18 +35,27 @@ const AUTO_PICK_NAMES = new Set<any>([
 // Heuristics: mark these as "required" candidates (device-identifying keys).
 const IMPORTANT_NAMES = ["mac", "serial", "device_id", "hostname", "device_name"];
 
+export interface PayloadFieldsBuilderProps {
+  /** The pasted sample event, as raw text (the parent owns it). */
+  sampleText: string;
+  onSampleTextChange: (text: string) => void;
+  /** The candidate rows: [{ path, name, checked }]. */
+  fields: BuilderField[];
+  onFieldsChange: (fields: BuilderField[]) => void;
+}
+
 export default function PayloadFieldsBuilder({
   sampleText,
   onSampleTextChange,
   fields, // [{ path, name, checked }]
   onFieldsChange,
-}: any) {
-  const [collapsedGroups, setCollapsedGroups] = useState<any>({});
+}: PayloadFieldsBuilderProps) {
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   // Parse result AND its error come out of the same memo. They used to be state
   // written from inside it, which is a setState during render — React can (and
   // the compiler says will) loop on that.
-  const { sample, parseError } = useMemo<{ sample: any; parseError: string | null }>(() => {
+  const { sample, parseError } = useMemo<{ sample: unknown; parseError: string | null }>(() => {
     if (!sampleText || !sampleText.trim()) return { sample: null, parseError: null };
     try {
       return { sample: JSON.parse(sampleText), parseError: null };
@@ -59,7 +70,7 @@ export default function PayloadFieldsBuilder({
   const handleAnalyze = () => {
     if (!sample) return;
     const leaves = collectLeafPaths(sample, "", []);
-    const existing = new Map<any, any>(fields.map((f) => [f.path, f]));
+    const existing = new Map<string, BuilderField>(fields.map((f) => [f.path, f]));
     const next = leaves.map((p) => {
       const prev = existing.get(p);
       if (prev) return prev;
@@ -70,7 +81,7 @@ export default function PayloadFieldsBuilder({
     onFieldsChange(next);
   };
 
-  const setField = (i, patch) => {
+  const setField = (i: number, patch: Partial<BuilderField>) => {
     const next = fields.slice();
     next[i] = { ...next[i], ...patch };
     onFieldsChange(next);
@@ -135,7 +146,7 @@ export default function PayloadFieldsBuilder({
               <div>Sample value</div>
             </div>
 
-            {Object.entries<any>(groups).map(([groupKey, groupFields]) => {
+            {Object.entries(groups).map(([groupKey, groupFields]) => {
               const collapsed = collapsedGroups[groupKey];
               return (
                 <div key={groupKey} className="rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.5)]">
@@ -143,7 +154,7 @@ export default function PayloadFieldsBuilder({
                   <button
                     type="button"
                     onClick={() =>
-                      setCollapsedGroups((s) => ({ ...s, [groupKey]: !s[groupKey] }))
+                      setCollapsedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }))
                     }
                     className="flex w-full items-center gap-2 px-2 py-1.5 text-left"
                   >
@@ -172,8 +183,8 @@ export default function PayloadFieldsBuilder({
                             key={field.path}
                             field={field}
                             preview={preview}
-                            onCheck={(checked) => setField(i, { checked })}
-                            onName={(name) => setField(i, { name })}
+                            onCheck={(checked: boolean) => setField(i, { checked })}
+                            onName={(name: string) => setField(i, { name })}
                           />
                         );
                       })}
@@ -191,7 +202,14 @@ export default function PayloadFieldsBuilder({
 
 // ── Sub-components ────────────────────────────────────────────────
 
-function Step({ number, title, hint, children }: any) {
+interface StepProps {
+  number: number;
+  title: ReactNode;
+  hint?: ReactNode;
+  children?: ReactNode;
+}
+
+function Step({ number, title, hint, children }: StepProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -208,7 +226,15 @@ function Step({ number, title, hint, children }: any) {
   );
 }
 
-function FieldRow({ field, preview, onCheck, onName }: any) {
+interface FieldRowProps {
+  field: BuilderField;
+  /** Already formatted for display (see `formatPreview`). */
+  preview: string;
+  onCheck: (checked: boolean) => void;
+  onName: (name: string) => void;
+}
+
+function FieldRow({ field, preview, onCheck, onName }: FieldRowProps) {
   return (
     <label
       className={`grid cursor-pointer grid-cols-[20px_1fr_1fr_110px] items-center gap-2 px-2 py-1.5 transition hover:bg-[rgba(96,165,250,.05)] ${
@@ -218,14 +244,14 @@ function FieldRow({ field, preview, onCheck, onName }: any) {
       <input
         type="checkbox"
         checked={field.checked}
-        onChange={(e) => onCheck(e.target.checked)}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => onCheck(e.target.checked)}
         className={checkboxClass}
       />
       <input
         value={field.name}
-        onChange={(e) => onName(e.target.value)}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => onName(e.target.value)}
         disabled={!field.checked}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: MouseEvent<HTMLInputElement>) => e.stopPropagation()}
         className="h-7 w-full rounded-[7px] border border-nb-line bg-[rgba(0,0,0,.35)] px-2 text-xs text-nb-blueb outline-hidden focus:border-nb-teal disabled:opacity-50"
       />
       <span className="truncate font-mono text-[11px] text-nb-faint" title={field.path}>
@@ -240,22 +266,22 @@ function FieldRow({ field, preview, onCheck, onName }: any) {
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-function lastSegment(p) {
+function lastSegment(p: string): string {
   const parts = p.split(".");
   const last = parts[parts.length - 1] || p;
   return last.replace(/\[\d+\]$/, ""); // strip array indices
 }
 
-function dedupeName(name, fields, path) {
-  const used = new Set<any>(fields.filter((f) => f.path !== path).map((f) => f.name));
+function dedupeName(name: string, fields: BuilderField[], path: string): string {
+  const used = new Set<string>(fields.filter((f) => f.path !== path).map((f) => f.name));
   if (!used.has(name)) return name;
   let i = 2;
   while (used.has(`${name}_${i}`)) i++;
   return `${name}_${i}`;
 }
 
-function groupByParent(fields) {
-  const groups: any = {};
+function groupByParent(fields: BuilderField[]): Record<string, BuilderField[]> {
+  const groups: Record<string, BuilderField[]> = {};
   for (const f of fields) {
     const parent = parentPath(f.path);
     if (!groups[parent]) groups[parent] = [];
@@ -264,12 +290,13 @@ function groupByParent(fields) {
   return groups;
 }
 
-function parentPath(p) {
+function parentPath(p: string): string {
   const idx = Math.max(p.lastIndexOf("."), p.lastIndexOf("["));
   return idx <= 0 ? "" : p.slice(0, idx).replace(/\.$/, "");
 }
 
-function collectLeafPaths(obj, prefix, acc) {
+// Walks the parsed sample — an arbitrary JSON value — and lists every leaf path.
+function collectLeafPaths(obj: unknown, prefix: string, acc: string[]): string[] {
   if (obj === null || obj === undefined) {
     if (prefix) acc.push(prefix);
     return acc;
@@ -284,7 +311,7 @@ function collectLeafPaths(obj, prefix, acc) {
     return acc;
   }
   if (typeof obj === "object") {
-    for (const [k, v] of Object.entries<any>(obj)) {
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
       const next = prefix ? `${prefix}.${k}` : k;
       collectLeafPaths(v, next, acc);
     }
@@ -294,14 +321,14 @@ function collectLeafPaths(obj, prefix, acc) {
   return acc;
 }
 
-export function previewValue(sample, dottedPath) {
+export function previewValue(sample: unknown, dottedPath: string | null | undefined): unknown {
   if (!sample || !dottedPath) return undefined;
   try {
     const parts = parsePath(dottedPath);
-    let cur = sample;
+    let cur: unknown = sample;
     for (const part of parts) {
       if (cur === null || cur === undefined) return undefined;
-      cur = cur[part];
+      cur = (cur as Record<string | number, unknown>)[part];
     }
     return cur;
   } catch {
@@ -309,10 +336,10 @@ export function previewValue(sample, dottedPath) {
   }
 }
 
-function parsePath(p) {
-  const out: any[] = [];
+function parsePath(p: string): (string | number)[] {
+  const out: (string | number)[] = [];
   const re = /([^.[\]]+)|\[(\d+)\]/g;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(p)) !== null) {
     if (m[1] !== undefined) out.push(m[1]);
     else if (m[2] !== undefined) out.push(Number(m[2]));
@@ -320,7 +347,7 @@ function parsePath(p) {
   return out;
 }
 
-function formatPreview(v) {
+function formatPreview(v: unknown): string {
   if (v === undefined) return "—";
   if (v === null) return "null";
   if (typeof v === "string") return v.length > 20 ? `"${v.slice(0, 20)}…"` : `"${v}"`;
@@ -331,8 +358,8 @@ function formatPreview(v) {
 // ── Shape converters (used by the parent form) ────────────────────
 
 /** UI field list → transform dict { outKey: "jmespath.path" }. */
-export function fieldsToTransform(fields) {
-  const out: any = {};
+export function fieldsToTransform(fields: BuilderField[] | null | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const f of (fields || []).filter((f) => f.checked && f.name && f.path)) {
     out[f.name] = f.path;
   }
@@ -340,9 +367,11 @@ export function fieldsToTransform(fields) {
 }
 
 /** Inverse: rebuild UI fields from a saved transform dict. */
-export function transformToFields(transform) {
+export function transformToFields(
+  transform: Record<string, unknown> | null | undefined,
+): BuilderField[] {
   const map = transform || {};
-  return Object.entries<any>(map).map(([name, path]) => ({
+  return Object.entries(map).map(([name, path]) => ({
     path: typeof path === "string" ? path : "",
     name,
     checked: true,

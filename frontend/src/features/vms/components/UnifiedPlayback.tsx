@@ -24,20 +24,32 @@
 // Deep-linkable via ?camera=<id>[&t=<iso>] (from the Recordings/Events "Play" action):
 // opens that camera as the sole tile and seeks the shared clock to that instant.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { skipToken, useQueries, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { Button, Select } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { vms } from "../api";
+import type {
+  FederatedCamera,
+  FederatedTimeline,
+  NvrRecordingsResponse,
+  PlaybackSourceFn,
+  RecordingDaysResponse,
+  TimelineMarker,
+  TimelineResponse,
+  VmsCameraPublic,
+} from "../types";
 import PlaybackPlayer from "./PlaybackPlayer";
 import PlaybackCalendar from "./PlaybackCalendar";
+import type { ExportRequest } from "./playbackTypes";
 import ScrubBar, {
   LEGEND_TYPES,
   TIMELINE_PALETTE,
   triggerToLegend,
   legendKeyForEventType,
+  type LegendType,
 } from "./ScrubBar";
 
 const DAY_MS = 86_400_000;
@@ -49,7 +61,7 @@ const MAX_TILES = 4;
 // Adaptive grid geometry — columns × rows for the number of LOADED sources.
 // 1 → 1×1 (one big player, no empty cells) · 2 → 2×1 side-by-side · 3/4 → 2×2.
 // Only the real tiles are rendered (3 uses 2×2 and leaves ONE cell empty).
-const gridDims = (n) => {
+const gridDims = (n: number) => {
   if (n <= 1) return { cols: 1, rows: 1 };
   if (n === 2) return { cols: 2, rows: 1 };
   return { cols: 2, rows: 2 }; // 3 or 4
@@ -64,8 +76,9 @@ const STREAMS = [
   { value: "main", label: "Main stream" },
 ];
 // Event-type filters (3b: wired to the seekbar — hide unchecked coverage bars +
-// event markers). Same order/labels as the timeline legend (ScrubBar LEGEND_TYPES).
-const EVENT_TYPES = ["Normal", "Motion", "IO", "PIR", "AI", "Alarm", "Manual", "ANR"];
+// event markers). The timeline legend's own list (ScrubBar LEGEND_TYPES), so the
+// two can never disagree on order or labels.
+const EVENT_TYPES = LEGEND_TYPES;
 
 // LOCAL calendar date (not UTC) — toISOString() would roll to the wrong day near
 // local midnight in offset zones (e.g. 00:30 IST is still the previous UTC day).
@@ -73,26 +86,64 @@ const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-const dayStartMs = (d) => new Date(`${d}T00:00:00`).getTime();
-const iso = (ms) => new Date(ms).toISOString();
-const readout = (ms) =>
+const dayStartMs = (d: string) => new Date(`${d}T00:00:00`).getTime();
+const iso = (ms: number) => new Date(ms).toISOString();
+const readout = (ms: number | null) =>
   ms == null ? "--:--:--" : new Date(ms).toLocaleTimeString(undefined, { hour12: false });
 // Human duration for the selection readout — mm:ss under a minute-of-hours, else h:mm:ss.
-const durReadout = (ms) => {
+const durReadout = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 };
 
-// A tile descriptor. kind='camera' → our recording; kind='nvr' → device storage.
+// A tile descriptor. kind='camera' → our recording; kind='nvr' → device storage;
+// kind='federated' → a recorder-owned camera through the federation proxy.
 //   key      unique tile id
 //   name     label shown on the tile
-//   cameraId real camera id | synthetic `${nvrId}:${channel}` for nvr tiles
-//   nvrId/channel present only for nvr tiles
-const cameraTile = (c) => ({ key: `cam:${c.id}`, kind: "camera", name: c.name, cameraId: c.id });
+//   cameraId real camera id | synthetic `${nvrId}:${channel}` / `${nodeId}:${realId}`
+//   nvrId/channel present only for nvr tiles; nodeId/realId only for federated ones
+interface CameraTile {
+  kind: "camera";
+  key: string;
+  name: string;
+  cameraId: string;
+}
+interface NvrTile {
+  kind: "nvr";
+  key: string;
+  name: string;
+  cameraId: string;
+  nvrId: string;
+  channel: string;
+}
+interface FederatedTile {
+  kind: "federated";
+  key: string;
+  name: string;
+  cameraId: string;
+  nodeId: string;
+  realId: string;
+  federated: true;
+}
+type PlaybackTile = CameraTile | NvrTile | FederatedTile;
+// The source kinds the channel picker offers.
+type PickerKind = PlaybackTile["kind"];
+const PICKER_KINDS: { k: PickerKind; label: string; icon: string }[] = [
+  { k: "camera", label: "Recorded", icon: "heroicons-outline:video-camera" },
+  { k: "nvr", label: "NVR", icon: "heroicons:server-stack" },
+  { k: "federated", label: "Recorder", icon: "heroicons-outline:globe-alt" },
+];
+
+const cameraTile = (c: Pick<VmsCameraPublic, "id" | "name">): CameraTile => ({
+  key: `cam:${c.id}`,
+  kind: "camera",
+  name: c.name,
+  cameraId: c.id,
+});
 
 // Split a camera name like "NVR 45.64.11.69 - Channel 1" into a clear channel label
 // (primary) + its source (muted subtitle) so the sidebar rows don't truncate to "…Chann…".
@@ -101,7 +152,7 @@ const splitCamName = (name = "") => {
   const m = name.match(/^(.*\S)\s*[-·]\s*(.+)$/);
   return m ? { primary: m[2].trim(), secondary: m[1].trim() } : { primary: name, secondary: null };
 };
-const nvrTile = (nvrId, ch, nvrName) => ({
+const nvrTile = (nvrId: string, ch: { value: string; label?: string }, nvrName: string): NvrTile => ({
   key: `nvr:${nvrId}:${ch.value}`,
   kind: "nvr",
   name: `${nvrName} · ${ch.label || `Ch ${ch.value}`}`,
@@ -117,8 +168,8 @@ const nvrTile = (nvrId, ch, nvrName) => ({
 // `real_id` on the raw payload — that alias only exists after the Streaming console
 // remaps it). Use `id` (fall back to real_id if a caller pre-mapped it) so the tile
 // key + playback target are never `undefined`.
-const fedTile = (c) => {
-  const realId = c.real_id ?? c.id;
+const fedTile = (c: FederatedCamera): FederatedTile => {
+  const realId = typeof c.real_id === "string" ? c.real_id : c.id;
   return {
     key: `fed:${c.node_id}:${realId}`,
     kind: "federated",
@@ -135,7 +186,7 @@ const fedTile = (c) => {
 // (a range may cross midnight → mark each local day it covers) is bucketed into
 // day-of-month numbers. Local Date methods honor the operator's tz (== TZ_OFFSET_MIN),
 // matching the server-side branches. Resilient to no footage (days:[]).
-async function fedRecordingDays(nodeId, realId, calMonth) {
+async function fedRecordingDays(nodeId: string, realId: string, calMonth: string): Promise<RecordingDaysResponse> {
   const [y, m] = calMonth.split("-").map(Number); // m is 1-based
   const monthStart = new Date(y, m - 1, 1, 0, 0, 0, 0);
   const monthEnd = new Date(y, m, 0, 23, 59, 59, 999); // day 0 of next month = last day
@@ -143,7 +194,7 @@ async function fedRecordingDays(nodeId, realId, calMonth) {
     from: monthStart.toISOString(),
     to: monthEnd.toISOString(),
   });
-  const days = new Set<any>();
+  const days = new Set<number>();
   for (const r of tl?.ranges || []) {
     if (!r?.start) continue;
     const startMs = new Date(r.start).getTime();
@@ -158,16 +209,49 @@ async function fedRecordingDays(nodeId, realId, calMonth) {
   return { year: y, month: m, days: [...days].sort((a, b) => a - b) };
 }
 
-export default function UnifiedPlayback({ onExportRange }: any) {
+// The footage-days marks for the calendar: each source kind has its own path.
+function recordingDaysFor(t: PlaybackTile, month: string): Promise<RecordingDaysResponse> {
+  if (t.kind === "nvr") return vms.nvrFootage.recordingDays(t.nvrId, t.channel, { month, tzOffsetMinutes: TZ_OFFSET_MIN });
+  if (t.kind === "federated") return fedRecordingDays(t.nodeId, t.realId, month);
+  return vms.playback.recordingDays(t.cameraId, { month, tzOffsetMinutes: TZ_OFFSET_MIN });
+}
+
+// A source's coverage over the day, tagged by kind: the three endpoints answer
+// in three shapes, and the merge below reads each by its own contract.
+type SourceCoverage =
+  | { kind: "camera"; tl: TimelineResponse }
+  | { kind: "nvr"; rs: NvrRecordingsResponse }
+  | { kind: "federated"; tl: FederatedTimeline };
+
+async function coverageFor(s: PlaybackTile, range: { from: string; to: string }, day: string): Promise<SourceCoverage> {
+  if (s.kind === "nvr") return { kind: "nvr", rs: await vms.nvrFootage.recordings(s.nvrId, s.channel, range) };
+  if (s.kind === "federated")
+    return { kind: "federated", tl: await vms.federation.timeline(s.nodeId, s.realId, { from: range.from, to: range.to }) };
+  return { kind: "camera", tl: await vms.playback.timeline(s.cameraId, { day }) };
+}
+
+/** A merged span in epoch ms, keeping the backend trigger_type for its colour. */
+interface MsSpan {
+  s: number;
+  e: number;
+  trigger: string;
+}
+
+export interface UnifiedPlaybackProps {
+  /** Open the export dialog for a window of one camera. */
+  onExportRange?: (req: ExportRequest) => void;
+}
+
+export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps) {
   const [day, setDay] = useState(todayStr());
-  const [sources, setSources] = useState<any[]>([]); // tile descriptors (loaded on Search)
+  const [sources, setSources] = useState<PlaybackTile[]>([]); // tile descriptors (loaded on Search)
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [clock, setClock] = useState(dayStartMs(todayStr())); // shared epoch ms
-  const [seekMs, setSeekMs] = useState<any>(null);
+  const [seekMs, setSeekMs] = useState<number | null>(null);
   const [seekNonce, setSeekNonce] = useState(0); // bumped ONLY on an explicit user scrub
-  const [focusKey, setFocusKey] = useState<any>(null); // tile expanded to full player
-  const [pickerKind, setPickerKind] = useState("camera"); // 'camera' | 'nvr' | 'federated'
+  const [focusKey, setFocusKey] = useState<string | null>(null); // tile expanded to full player
+  const [pickerKind, setPickerKind] = useState<PickerKind>("camera");
   // Recorded picker scaling (200+ cams): server-side search + site filter so the
   // rail never renders a wall of checkboxes. `camSearch` is the raw input;
   // `debouncedCamSearch` (250ms) is what the camera query actually keys on.
@@ -176,14 +260,14 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   const [camSiteFilter, setCamSiteFilter] = useState(""); // "" = all sites
   // Recorded picker tree (Default › Site › Camera) — collapsed branch keys. Empty
   // ⇒ all expanded. While searching we force-expand so every match is visible.
-  const [pbCollapsed, setPbCollapsed] = useState(() => new Set<any>());
+  const [pbCollapsed, setPbCollapsed] = useState(() => new Set<string>());
 
   // ── Rail composer state (drives the Search → load) ───────────────────────
   // Default to MAIN — that's the profile we record (sub is the live web/WHEP stream, not
   // recorded), so a playback page must open on main or it shows "No footage" by default.
   const [stream, setStream] = useState("main"); // 'main' | 'sub' — recorded profile
-  const [eventFilter, setEventFilter] = useState(() => new Set<any>(EVENT_TYPES)); // 3b: filters seekbar
-  const [checked, setChecked] = useState<any[]>([]); // ≤4 pending tile descriptors (pre-Search)
+  const [eventFilter, setEventFilter] = useState(() => new Set<LegendType>(EVENT_TYPES)); // 3b: filters seekbar
+  const [checked, setChecked] = useState<PlaybackTile[]>([]); // ≤4 pending tile descriptors (pre-Search)
   // Calendar view month (independent of the selected day so paging doesn't re-load).
   const [calView, setCalView] = useState(() => {
     const d = new Date();
@@ -195,13 +279,13 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   // to pick a sub-range on the master timeline, then "Extract clip" exports JUST
   // that span via the same onExportRange flow the window-download uses. Stored as
   // epoch ms; a valid selection needs both marks AND out > in.
-  const [selFrom, setSelFrom] = useState<any>(null);
-  const [selTo, setSelTo] = useState<any>(null);
+  const [selFrom, setSelFrom] = useState<number | null>(null);
+  const [selTo, setSelTo] = useState<number | null>(null);
 
   const windowStart = dayStartMs(day);
   const windowEnd = windowStart + DAY_MS;
-  const tickRef = useRef<any>(null);
-  const gridWrapRef = useRef<any>(null); // fullscreen target (the grid/focus body)
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const gridWrapRef = useRef<HTMLDivElement | null>(null); // fullscreen target (the grid/focus body)
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Reset the shared clock into the window when the day changes.
@@ -232,7 +316,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   const camFiltering = pickerKind === "camera";
   const camQ = camFiltering ? debouncedCamSearch : "";
   const camSite = camFiltering ? camSiteFilter : "";
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["vms-cameras", "playback-picker", camQ, camSite],
     queryFn: () =>
       vms.cameras.list({
@@ -242,19 +326,19 @@ export default function UnifiedPlayback({ onExportRange }: any) {
       }),
     staleTime: 60_000,
   });
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+  const cameras = useMemo(() => camerasQ.data?.items ?? [], [camerasQ.data]);
 
   // Sites for the picker's site-filter dropdown + per-camera group headers. Same
   // source Cameras.jsx uses (site_id → name).
-  const sitesQ = useQuery<any>({
+  const sitesQ = useQuery({
     queryKey: ["sites-list"],
     queryFn: () => sitesApi.list({ limit: 200 }),
     staleTime: 60_000,
     enabled: pickerKind === "camera",
   });
-  const sites = useMemo(() => asItems(sitesQ.data), [sitesQ.data]);
+  const sites = useMemo(() => sitesQ.data?.items ?? [], [sitesQ.data]);
   const siteNames = useMemo(() => {
-    const m: any = {};
+    const m: Record<string, string> = {};
     for (const s of sites) m[s.site_id] = s.name;
     return m;
   }, [sites]);
@@ -300,13 +384,13 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   }, [cameras]);
 
   // ── NVR picker data ──────────────────────────────────────────────────────
-  const nvrsQ = useQuery<any>({
+  const nvrsQ = useQuery({
     queryKey: ["vms-nvrs", "playback-picker"],
     queryFn: () => vms.nvrs.list({ limit: 200 }),
     staleTime: 60_000,
     enabled: pickerKind === "nvr",
   });
-  const nvrs = useMemo(() => asItems(nvrsQ.data), [nvrsQ.data]);
+  const nvrs = useMemo(() => nvrsQ.data?.items ?? [], [nvrsQ.data]);
   const [pickNvrId, setPickNvrId] = useState("");
   // NVR channels come from OUR already-loaded, mapped cameras (instant) — NOT a live
   // ONVIF re-enumeration of the device each time (that round-trips to the NVR and is
@@ -327,55 +411,38 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   // Cameras owned by remote recorder nodes (3rd-party NVR channels, e.g. Lumina),
   // surfaced through the federation proxy. Each carries node_id/real_id (its address
   // on the node) + node_name/site_name for the label.
-  const fedCamsQ = useQuery<any>({
+  const fedCamsQ = useQuery({
     queryKey: ["vms-federation-cameras", "playback-picker"],
     queryFn: () => vms.federation.cameras(),
     staleTime: 60_000,
     enabled: pickerKind === "federated",
   });
-  const fedCameras = useMemo(() => asItems(fedCamsQ.data), [fedCamsQ.data]);
+  const fedCameras = useMemo(() => fedCamsQ.data?.items ?? [], [fedCamsQ.data]);
 
   // ── Calendar footage marks ───────────────────────────────────────────────
   // The calendar tracks the FIRST-selected channel's footage-days for the month
   // in view (a checked channel takes priority; else the first loaded source). No
   // channel chosen yet → no marks (fine). `month` is the visible YYYY-MM.
   const calMonth = `${calView.year}-${String(calView.month + 1).padStart(2, "0")}`;
-  const calTrack = checked[0] || sources[0] || null;
-  const recordingDaysQ = useQuery<any>({
+  const calTrack: PlaybackTile | null = checked[0] || sources[0] || null;
+  const recordingDaysQ = useQuery({
     queryKey: ["vms-recording-days", calTrack?.key, calMonth],
-    queryFn: () =>
-      calTrack?.kind === "nvr"
-        ? vms.nvrFootage.recordingDays(calTrack.nvrId, calTrack.channel, {
-            month: calMonth,
-            tzOffsetMinutes: TZ_OFFSET_MIN,
-          })
-        : calTrack?.kind === "federated"
-          ? fedRecordingDays(calTrack.nodeId, calTrack.realId, calMonth)
-          : vms.playback.recordingDays(calTrack.cameraId, {
-              month: calMonth,
-              tzOffsetMinutes: TZ_OFFSET_MIN,
-            }),
-    enabled: !!calTrack,
+    queryFn: calTrack ? () => recordingDaysFor(calTrack, calMonth) : skipToken,
     staleTime: 60_000,
     retry: false,
     refetchOnWindowFocus: false,
   });
   const footageDays = useMemo(
-    () => new Set<any>(recordingDaysQ.data?.days || []),
+    () => new Set<number>(recordingDaysQ.data?.days || []),
     [recordingDaysQ.data],
   );
 
   // ── Union coverage across every selected source ──────────────────────────
   const range = useMemo(() => ({ from: iso(windowStart), to: iso(windowEnd) }), [windowStart, windowEnd]);
-  const coverageQs: any[] = useQueries({
+  const coverageQs = useQueries({
     queries: sources.map((s) => ({
       queryKey: ["vms-pb-coverage", s.key, day],
-      queryFn: () =>
-        s.kind === "nvr"
-          ? vms.nvrFootage.recordings(s.nvrId, s.channel, range)
-          : s.kind === "federated"
-            ? vms.federation.timeline(s.nodeId, s.realId, { from: range.from, to: range.to })
-            : vms.playback.timeline(s.cameraId, { day }),
+      queryFn: () => coverageFor(s, range, day),
       enabled: !!s.key,
       staleTime: 30_000,
       retry: false,
@@ -390,45 +457,44 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   // motion span never gets swallowed into a continuous one. The event-type filter then
   // hides coverage/markers whose legend bucket is unchecked.
   const { mergedCoverage, markers } = useMemo(() => {
-    const spans: any[] = []; // { s, e, trigger } (trigger = backend trigger_type)
-    const marks: any[] = [];
-    coverageQs.forEach((q, i) => {
-      const s = sources[i];
+    const spans: MsSpan[] = []; // { s, e, trigger } (trigger = backend trigger_type)
+    const marks: TimelineMarker[] = [];
+    coverageQs.forEach((q) => {
       const d = q.data;
       if (!d) return;
-      if (s?.kind === "federated") {
+      if (d.kind === "federated") {
         // Federated node timeline: ranges carry {start, duration(sec), trigger_type}
         // → convert each to a [start, start+duration] span (same shape as nvr/camera).
-        for (const r of d.ranges || []) {
+        for (const r of d.tl.ranges || []) {
           if (!r?.start) continue;
           const sMs = new Date(r.start).getTime();
           spans.push({
             s: sMs,
             e: sMs + (r.duration || 0) * 1000,
-            trigger: r.trigger_type || r.trigger || "continuous",
+            trigger: r.trigger_type || "continuous",
           });
         }
-      } else if (s?.kind === "nvr") {
+      } else if (d.kind === "nvr") {
         // 3rd-party NVR ranges carry no trigger → neutral "continuous" (Normal).
-        for (const r of asItems(d)) {
+        for (const r of asItems(d.rs)) {
           if (!r?.start) continue;
           spans.push({
             s: new Date(r.start).getTime(),
             e: r.end ? new Date(r.end).getTime() : new Date(r.start).getTime(),
-            trigger: r.trigger_type || r.trigger || "continuous",
+            trigger: "continuous",
           });
         }
       } else {
-        const cov = Array.isArray(d) ? d : d.coverage || [];
+        const cov = d.tl.coverage || [];
         for (const c of cov) {
           if (!c?.start) continue;
           spans.push({
             s: new Date(c.start).getTime(),
             e: c.end ? new Date(c.end).getTime() : new Date(c.start).getTime(),
-            trigger: c.trigger_type || c.trigger || "continuous",
+            trigger: c.trigger_type || "continuous",
           });
         }
-        for (const m of Array.isArray(d) ? [] : d.markers || []) marks.push(m);
+        for (const m of d.tl.markers || []) marks.push(m);
       }
     });
 
@@ -436,7 +502,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
     // sort + merge same-trigger touching spans (leaving different triggers distinct).
     const kept = spans.filter((sp) => eventFilter.has(triggerToLegend(sp.trigger)));
     kept.sort((a, b) => a.s - b.s || a.e - b.e);
-    const merged: any[] = [];
+    const merged: MsSpan[] = [];
     for (const sp of kept) {
       const last = merged[merged.length - 1];
       if (last && sp.trigger === last.trigger && sp.s <= last.e) {
@@ -453,7 +519,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
       mergedCoverage: merged.map((m) => ({ start: iso(m.s), end: iso(m.e), trigger_type: m.trigger })),
       markers: keptMarks,
     };
-  }, [coverageQs, sources, day, eventFilter]);
+  }, [coverageQs, eventFilter]);
 
   // Default the playhead to first coverage when it appears (and not playing).
   const firstCoverageMs = useMemo(() => {
@@ -498,9 +564,9 @@ export default function UnifiedPlayback({ onExportRange }: any) {
 
   // ── Rail multi-select (pre-Search) ───────────────────────────────────────
   // The operator CHECKS up to 4 channels in the rail; nothing loads until Search.
-  const isChecked = (key) => checked.some((t) => t.key === key);
+  const isChecked = (key: string) => checked.some((t) => t.key === key);
   const atCap = checked.length >= MAX_TILES;
-  const toggleCheck = (tile) => {
+  const toggleCheck = (tile: PlaybackTile) => {
     setChecked((prev) => {
       const already = prev.some((t) => t.key === tile.key);
       if (already) return prev.filter((t) => t.key !== tile.key);
@@ -525,21 +591,23 @@ export default function UnifiedPlayback({ onExportRange }: any) {
     setSeekNonce((n) => n + 1);
   };
 
-  const removeTile = (key) => {
+  const removeTile = (key: string) => {
     setSources((s) => s.filter((x) => x.key !== key));
     setChecked((c) => c.filter((x) => x.key !== key)); // keep the rail in sync
     if (focusKey === key) setFocusKey(null);
   };
 
-  const onScrub = useCallback((ms) => {
+  const onScrub = useCallback((ms: number) => {
     setPlaying(false);
     setClock(ms);
     setSeekMs(ms);
     setSeekNonce((n) => n + 1); // explicit user scrub → NVR tiles re-request the replay
   }, []);
-  const skip = (sec) => onScrub(Math.max(windowStart, Math.min(windowEnd, clock + sec * 1000)));
+  const skip = (sec: number) => onScrub(Math.max(windowStart, Math.min(windowEnd, clock + sec * 1000)));
 
-  const focusTile = focusKey ? sources.find((s) => s.key === focusKey) : null;
+  const focusTile = focusKey ? (sources.find((s) => s.key === focusKey) ?? null) : null;
+  // The focused tile's own coverage answer — what its full player's timeline shows.
+  const focusData = focusTile ? coverageQs[sources.findIndex((s) => s.key === focusTile.key)]?.data : undefined;
 
   // ── Inline master toolbar actions (snapshot / download / fullscreen) ───────
   // The active source = the focused tile, else the first loaded tile — the one the
@@ -652,7 +720,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   // webrtc_url (mediamtx proxy channels, same as live) OR playback_url (locally-
   // recorded recorder cams, fmp4). Adapt whichever is present into the session shape
   // usePlaybackSession/PlaybackPlayer consume (hls_url, webrtc_url, ranges, from, expires_at).
-  const tileSource = (s) => {
+  const tileSource = (s: PlaybackTile): PlaybackSourceFn | null => {
     if (s.kind === "nvr") return (win) => vms.nvrFootage.playback(s.nvrId, s.channel, win);
     if (s.kind === "federated")
       return (win) =>
@@ -672,8 +740,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
   // into an "Unassigned" group pinned to the end.
   const railCameras = cameras;
   const camGroups = useMemo(() => {
-    // Rail groups; the cameras are whatever asItems() handed back (untyped).
-    type RailGroup = { key: string; name: string; cameras: typeof railCameras };
+    type RailGroup = { key: string; name: string; cameras: VmsCameraPublic[] };
     const bySite = new Map<string, RailGroup>(); // site_id → { name, cameras: [] }
     let unassigned: RailGroup | null = null;
     for (const c of railCameras) {
@@ -781,7 +848,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
                       checked={on}
                       onChange={() =>
                         setEventFilter((prev) => {
-                          const next = new Set<any>(prev);
+                          const next = new Set<LegendType>(prev);
                           if (next.has(et)) next.delete(et);
                           else next.add(et);
                           return next;
@@ -806,11 +873,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
 
             {/* kind toggle [Recorded | NVR | Recorder] */}
             <div className="mb-2 flex gap-1">
-              {[
-                { k: "camera", label: "Recorded", icon: "heroicons-outline:video-camera" },
-                { k: "nvr", label: "NVR", icon: "heroicons:server-stack" },
-                { k: "federated", label: "Recorder", icon: "heroicons-outline:globe-alt" },
-              ].map((t) => (
+              {PICKER_KINDS.map((t) => (
                 <button
                   key={t.k}
                   type="button"
@@ -865,14 +928,14 @@ export default function UnifiedPlayback({ onExportRange }: any) {
                     // Tree: Default › Site › Camera (scales for many cameras). Search
                     // (server-side) force-expands via pbSearching.
                     const pbSearching = camSearch.trim().length > 0;
-                    const pbOpen = (k) => pbSearching || !pbCollapsed.has(k);
-                    const pbToggle = (k) =>
+                    const pbOpen = (k: string) => pbSearching || !pbCollapsed.has(k);
+                    const pbToggle = (k: string) =>
                       setPbCollapsed((prev) => {
-                        const n = new Set<any>(prev);
+                        const n = new Set<string>(prev);
                         n.has(k) ? n.delete(k) : n.add(k);
                         return n;
                       });
-                    const renderCamRow = (c) => {
+                    const renderCamRow = (c: VmsCameraPublic) => {
                       const { primary, secondary } = splitCamName(c.name);
                       const tile = cameraTile(c);
                       const on = isChecked(tile.key);
@@ -980,7 +1043,10 @@ export default function UnifiedPlayback({ onExportRange }: any) {
                   fedCameras.map((c) => {
                     const tile = fedTile(c);
                     const on = isChecked(tile.key);
-                    const sub = [c.node_name, c.site_name].filter(Boolean).join(" · ");
+                    // `site_name` is the node's own field, read through the open dict.
+                    const sub = [c.node_name, typeof c.site_name === "string" ? c.site_name : null]
+                      .filter(Boolean)
+                      .join(" · ");
                     return (
                       <label
                         key={tile.key}
@@ -1149,16 +1215,14 @@ export default function UnifiedPlayback({ onExportRange }: any) {
               timelineFn={
                 focusTile.kind === "nvr"
                   ? () => ({
-                      coverage: asItems(
-                        coverageQs[sources.findIndex((s) => s.key === focusTile.key)]?.data,
-                      ).map((r) => ({ start: r.start, end: r.end })),
+                      coverage: (focusData?.kind === "nvr" ? asItems(focusData.rs) : []).map((r) => ({
+                        start: r.start,
+                        end: r.end,
+                      })),
                     })
                   : focusTile.kind === "federated"
                     ? () => ({
-                        coverage: (
-                          coverageQs[sources.findIndex((s) => s.key === focusTile.key)]?.data
-                            ?.ranges || []
-                        ).map((r) => ({
+                        coverage: (focusData?.kind === "federated" ? focusData.tl.ranges || [] : []).map((r) => ({
                           start: r.start,
                           end: iso(new Date(r.start).getTime() + (r.duration || 0) * 1000),
                         })),
@@ -1274,7 +1338,7 @@ export default function UnifiedPlayback({ onExportRange }: any) {
                     title={on ? `Hide ${t}` : `Show ${t}`}
                     onClick={() =>
                       setEventFilter((prev) => {
-                        const next = new Set<any>(prev);
+                        const next = new Set<LegendType>(prev);
                         if (next.has(t)) next.delete(t);
                         else next.add(t);
                         return next;
@@ -1426,7 +1490,15 @@ export default function UnifiedPlayback({ onExportRange }: any) {
 // toolbar reads the same as the focus player's controls. Renders an icon by
 // default; pass `label` for a short TEXT affordance instead (e.g. "IN"/"OUT",
 // used by mark-in/out — guaranteed-visible, no icon-set dependency).
-function ToolBtn({ icon, label, title, onClick, disabled }: any) {
+interface ToolBtnProps {
+  icon?: string;
+  label?: string;
+  title?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}
+
+function ToolBtn({ icon, label, title, onClick, disabled }: ToolBtnProps) {
   return (
     <button
       type="button"
@@ -1437,9 +1509,9 @@ function ToolBtn({ icon, label, title, onClick, disabled }: any) {
     >
       {label ? (
         <span className="text-[11px] font-semibold tracking-wide">{label}</span>
-      ) : (
+      ) : icon ? (
         <Icon icon={icon} className="text-base" />
-      )}
+      ) : null}
     </button>
   );
 }

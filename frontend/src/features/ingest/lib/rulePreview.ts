@@ -10,29 +10,36 @@
 // dotted/indexed paths, not the full JMESPath grammar the server runs (filters,
 // wildcards, functions). A saved rule should be re-tested through the API, which
 // is what this modal does the moment the rule exists.
+//
+// Payloads are whatever the vendor sends, so every value here is `unknown` and
+// narrowed before use — the shapes are in ../types.
+import type { ConditionResult, MatchCondition, RuleDraft, RuleTestResponse } from "../types";
 
 /** Resolve "a.b[0].c" against an object. Undefined when any link is missing. */
-export function resolvePath(obj, path) {
+export function resolvePath(obj: unknown, path: string | null | undefined): unknown {
   if (!path) return undefined;
   const re = /([^.[\]]+)|\[(\d+)\]/g;
-  let cur = obj;
-  let m;
+  let cur: unknown = obj;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(path)) !== null) {
     if (cur === null || cur === undefined) return undefined;
-    cur = m[1] !== undefined ? cur[m[1]] : cur[Number(m[2])];
+    // Index whatever we hold: a missing key yields undefined and ends the walk
+    // on the next turn, exactly as the untyped version did.
+    const step = cur as Record<string | number, unknown>;
+    cur = m[1] !== undefined ? step[m[1]] : step[Number(m[2])];
   }
   return cur;
 }
 
 /** matcher.py `_is_empty`: None/undefined, or a zero-length str/array/object. */
-export function isEmpty(v) {
+export function isEmpty(v: unknown): boolean {
   if (v === null || v === undefined) return true;
   if (typeof v === "string" || Array.isArray(v)) return v.length === 0;
-  if (typeof v === "object") return Object.keys(v).length === 0;
+  if (typeof v === "object") return Object.keys(v as object).length === 0;
   return false;
 }
 
-function deepEqual(a, b) {
+function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
   try {
@@ -43,7 +50,7 @@ function deepEqual(a, b) {
 }
 
 /** matcher.py `_evaluate_condition` → { ok, op, path, actual, expected }. */
-export function evaluateCondition(payload, condition) {
+export function evaluateCondition(payload: unknown, condition: MatchCondition): ConditionResult {
   const actual = resolvePath(payload, condition.path);
   const expected = condition.value;
   let ok = false;
@@ -77,26 +84,34 @@ export function evaluateCondition(payload, condition) {
 }
 
 /** matcher.py `evaluate_rule`: no conditions = catch-all; otherwise ALL must hold. */
-export function evaluateRule(payload, conditions) {
+export function evaluateRule(
+  payload: unknown,
+  conditions: MatchCondition[] | null | undefined,
+): { matched: boolean; results: ConditionResult[] } {
   const results = (conditions || []).map((c) => evaluateCondition(payload, c));
   return { matched: results.every((r) => r.ok), results };
 }
 
 /** transform.py `_assign_target`: cap.* nests, everything else stays flat. */
-export function assignPreviewValue(out, target, value) {
+export function assignPreviewValue(
+  out: Record<string, unknown>,
+  target: string,
+  value: unknown,
+): void {
   if (!target.startsWith("cap.")) {
     out[target] = value;
     return;
   }
-  const tokens: any[] = [];
+  const tokens: (string | number)[] = [];
   const re = /([^.[\]]+)|\[(\d+)\]/g;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(target)) !== null) {
     tokens.push(m[1] !== undefined ? m[1] : Number(m[2]));
   }
   if (!tokens.length) return;
 
-  let cur = out;
+  // Walks into freshly-created containers, so the cursor is an open map.
+  let cur = out as Record<string | number, unknown>;
   tokens.forEach((token, i) => {
     const isLast = i === tokens.length - 1;
     if (isLast) {
@@ -107,7 +122,7 @@ export function assignPreviewValue(out, target, value) {
     const existing = cur[token];
     const rightShape = wantArray ? Array.isArray(existing) : existing && typeof existing === "object" && !Array.isArray(existing);
     if (!rightShape) cur[token] = wantArray ? [] : {};
-    cur = cur[token];
+    cur = cur[token] as Record<string | number, unknown>;
   });
 }
 
@@ -115,13 +130,16 @@ export function assignPreviewValue(out, target, value) {
  * Evaluate an unsaved rule draft against a sample payload.
  * Returns the same shape the /test endpoint does, so the UI renders one way.
  */
-export function clientSidePreview(payload, { conditions, fieldMap, eventType }) {
+export function clientSidePreview(
+  payload: unknown,
+  { conditions, fieldMap, eventType }: RuleDraft,
+): RuleTestResponse {
   const { matched, results } = evaluateRule(payload, conditions);
 
   let extracted: Record<string, unknown> | null = null;
   if (matched && fieldMap && Object.keys(fieldMap).length) {
     extracted = {};
-    for (const [target, expr] of Object.entries<any>(fieldMap)) {
+    for (const [target, expr] of Object.entries(fieldMap)) {
       assignPreviewValue(extracted, target, resolvePath(payload, expr));
     }
   }

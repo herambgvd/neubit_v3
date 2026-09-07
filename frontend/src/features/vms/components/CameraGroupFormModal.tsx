@@ -5,7 +5,7 @@
 // Modal (the builder needs room), so it's a portal-based sheet reusing the v3
 // dark tokens. On save it POSTs/PATCHes { name, description, camera_ids, layout,
 // is_active } to /vms/camera-groups.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -15,19 +15,38 @@ import { Button, Toggle } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { CameraGroupCreate, CameraGroupPublic, EstateCamera, GridLayout } from "../types";
 import { GROUP_LAYOUTS, DEFAULT_GROUP_LAYOUT, getGroupLayout } from "../videoWall";
 import GroupGridBuilder from "./GroupGridBuilder";
 
-export default function CameraGroupFormModal({ open, group, cameras = [], onClose, onSaved }: any) {
+// The select's options come from GROUP_LAYOUTS, so a value it hands back is one
+// of those keys; this narrows the string at that boundary.
+const isGridLayout = (v: string): v is GridLayout => GROUP_LAYOUTS.some((l) => l.key === v);
+
+export interface CameraGroupFormModalProps {
+  open: boolean;
+  /** null/undefined = create. */
+  group?: CameraGroupPublic | null;
+  cameras?: EstateCamera[];
+  onClose?: () => void;
+  onSaved?: (saved: CameraGroupPublic) => void;
+}
+
+interface GroupFormErrors {
+  name?: string;
+  cells?: string;
+}
+
+export default function CameraGroupFormModal({ open, group, cameras = [], onClose, onSaved }: CameraGroupFormModalProps) {
   const qc = useQueryClient();
   const isEdit = !!group;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [layout, setLayout] = useState(DEFAULT_GROUP_LAYOUT);
+  const [layout, setLayout] = useState<GridLayout>(DEFAULT_GROUP_LAYOUT);
   const [isActive, setIsActive] = useState(true);
-  const [cells, setCells] = useState<any[]>([]);
-  const [errors, setErrors] = useState<any>({});
+  const [cells, setCells] = useState<(string | null)[]>([]);
+  const [errors, setErrors] = useState<GroupFormErrors>({});
 
   useEffect(() => {
     if (!open) return;
@@ -48,28 +67,28 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
     setCells((cur) => {
       if (cur.length === capacity) return cur;
       if (cur.length > capacity) return cur.slice(0, capacity);
-      return [...cur, ...Array(capacity - cur.length).fill(null)];
+      return [...cur, ...Array.from({ length: capacity - cur.length }, () => null)];
     });
   }, [capacity]);
 
-  const save = useMutation<any, any, any>({
-    mutationFn: (body: any) =>
-      isEdit ? vms.groups.update(group.id, body) : vms.groups.create(body),
-    onSuccess: () => {
+  const save = useMutation({
+    mutationFn: (body: CameraGroupCreate) =>
+      group ? vms.groups.update(group.id, body) : vms.groups.create(body),
+    onSuccess: (saved) => {
       toast.success(`Camera group ${isEdit ? "updated" : "created"}`);
       qc.invalidateQueries({ queryKey: ["vms-camera-groups"] });
       qc.invalidateQueries({ queryKey: ["vms-groups"] });
-      onSaved?.();
+      onSaved?.(saved);
       onClose?.();
     },
     onError: (e) => toast.error(apiError(e, "Save failed")),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: GroupFormErrors = {};
     if (!name.trim()) next.name = "Name is required";
-    const ids = cells.filter(Boolean);
+    const ids = cells.filter((c): c is string => !!c);
     if (ids.length === 0) next.cells = "Place at least one camera in the grid.";
     if (Object.keys(next).length) {
       setErrors(next);
@@ -134,7 +153,10 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
               label="Grid layout"
               as="select"
               value={layout}
-              onChange={(e) => setLayout(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (isGridLayout(v)) setLayout(v);
+              }}
               options={GROUP_LAYOUTS.map((l) => ({ value: l.key, label: l.label }))}
               className="w-36"
               containerClassName="w-36"

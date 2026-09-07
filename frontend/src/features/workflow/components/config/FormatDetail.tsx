@@ -5,21 +5,33 @@
 // 3-tab body — Overview (identity + timestamps), Presentation (colour/icon/sound),
 // and Workflow link (linked SOP + mode) — mirroring neubit_v2's format detail.
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { Badge } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
+import type { TabItem } from "@/components/common/TabBar";
 import { titleize } from "@/lib/format";
 import { PRIORITY_COLOR } from "../../constants";
+import type { AlertFormatPublic } from "../../types";
 
-const TABS = [
+type TabKey = "overview" | "presentation" | "workflow";
+
+const TABS: TabItem<TabKey>[] = [
   { key: "overview", label: "Overview" },
   { key: "presentation", label: "Presentation" },
   { key: "workflow", label: "Workflow link" },
 ];
 
-export default function FormatDetail({ format, sopName, onEdit, onDelete }: any) {
+export interface FormatDetailProps {
+  format: AlertFormatPublic;
+  sopName: string | null;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+export default function FormatDetail({ format, sopName, onEdit, onDelete }: FormatDetailProps) {
   const f = format;
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState<TabKey>("overview");
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -63,7 +75,7 @@ export default function FormatDetail({ format, sopName, onEdit, onDelete }: any)
   );
 }
 
-function OverviewPanel({ f }: any) {
+function OverviewPanel({ f }: { f: AlertFormatPublic }) {
   return (
     <div className="space-y-6">
       {f.description && <p className="text-sm text-nb-faint">{f.description}</p>}
@@ -87,7 +99,7 @@ function OverviewPanel({ f }: any) {
   );
 }
 
-function PresentationPanel({ f }: any) {
+function PresentationPanel({ f }: { f: AlertFormatPublic }) {
   return (
     <div className="space-y-6">
       <Section title="Visual">
@@ -109,7 +121,7 @@ function PresentationPanel({ f }: any) {
   );
 }
 
-function WorkflowLinkPanel({ f, sopName }: any) {
+function WorkflowLinkPanel({ f, sopName }: { f: AlertFormatPublic; sopName: string | null }) {
   const linked = !!f.sop_id;
   return (
     <div className="space-y-6">
@@ -127,7 +139,7 @@ function WorkflowLinkPanel({ f, sopName }: any) {
   );
 }
 
-function Section({ title, children }: any) {
+function Section({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
     <section>
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-nb-faint">{title}</h3>
@@ -136,7 +148,7 @@ function Section({ title, children }: any) {
   );
 }
 
-function Row({ label, value, mono }: any) {
+function Row({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div>
       <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">{label}</div>

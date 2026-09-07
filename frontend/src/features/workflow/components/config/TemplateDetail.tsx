@@ -5,8 +5,15 @@
 // subject and the rendered body text.
 import { Icon } from "@iconify/react";
 import { titleize } from "@/lib/format";
+import type { TemplatePublic } from "../../types";
 
-export default function TemplateDetail({ template, onEdit, onDelete }: any) {
+export interface TemplateDetailProps {
+  template: TemplatePublic;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+export default function TemplateDetail({ template, onEdit, onDelete }: TemplateDetailProps) {
   const t = template;
   return (
     <div className="flex flex-col flex-1 min-h-0">

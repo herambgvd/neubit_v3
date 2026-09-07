@@ -13,12 +13,19 @@
 import { useEffect, useState } from "react";
 
 import { api, tokens } from "@/lib/api";
+import type { VmsEventFrame } from "../types";
+
+export interface UseVmsEventStreamOptions {
+  cameraId?: string | null;
+  enabled?: boolean;
+  max?: number;
+}
 
 // Cap the live buffer so a long-lived stream can't grow unbounded.
 const MAX_EVENTS = 500;
 
-export function useVmsEventStream({ cameraId = null, enabled = true, max = MAX_EVENTS }: any = {}) {
-  const [events, setEvents] = useState<any[]>([]);
+export function useVmsEventStream({ cameraId = null, enabled = true, max = MAX_EVENTS }: UseVmsEventStreamOptions = {}) {
+  const [events, setEvents] = useState<VmsEventFrame[]>([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -56,9 +63,9 @@ export function useVmsEventStream({ cameraId = null, enabled = true, max = MAX_E
       es = new EventSource(url);
 
       es.addEventListener("vms.event", (e) => {
-        let data: any = null;
+        let data: VmsEventFrame | null = null;
         try {
-          data = JSON.parse(e.data);
+          data = JSON.parse(e.data) as VmsEventFrame;
         } catch {
           return; // keepalive/comment — ignore
         }

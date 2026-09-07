@@ -12,17 +12,22 @@ import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { Button } from "@/components/ui/kit";
+import type { FormFieldSchema, FormFieldValue, FormValues } from "../../types";
+import type { BuilderField } from "./FormBuilder";
 import FormRenderer from "./FormRenderer";
 import FormSubmitTestModal from "./FormSubmitTestModal";
 
-const FIELDS_WITH_OPTIONS = new Set<any>(["select", "radio", "multiselect"]);
+const FIELDS_WITH_OPTIONS = new Set<string>(["select", "radio", "multiselect"]);
 
-const slug = (s, i) =>
+const slug = (s: string | null | undefined, i: number): string =>
   ((s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `field_${i + 1}`);
 
+/** A renderer field whose `id` is always set (the preview keys inputs by it). */
+export type PreviewField = FormFieldSchema & { id: string };
+
 // Builder rows → renderer fields, with unique ids.
-export function normalizeFields(rows) {
-  const seen = new Map<any, any>();
+export function normalizeFields(rows: BuilderField[] | null | undefined): PreviewField[] {
+  const seen = new Map<string, number>();
   return (rows || [])
     .filter((f) => (f.label || "").trim())
     .map((f, i) => {
@@ -46,12 +51,18 @@ export function normalizeFields(rows) {
     });
 }
 
-export default function FormPreview({ name, description, fields }: any) {
-  const [values, setValues] = useState<any>({});
+export interface FormPreviewProps {
+  name: string;
+  description?: string;
+  fields: BuilderField[];
+}
+
+export default function FormPreview({ name, description, fields }: FormPreviewProps) {
+  const [values, setValues] = useState<FormValues>({});
   const [showSubmit, setShowSubmit] = useState(false);
 
   const previewFields = useMemo(() => normalizeFields(fields), [fields]);
-  const update = (key, v) => setValues((prev) => ({ ...prev, [key]: v }));
+  const update = (key: string, v: FormFieldValue) => setValues((prev) => ({ ...prev, [key]: v }));
 
   return (
     <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">

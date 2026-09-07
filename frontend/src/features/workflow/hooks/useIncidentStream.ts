@@ -8,10 +8,20 @@
 import { useEffect, useRef } from "react";
 
 import { api, tokens } from "@/lib/api";
+import type { IncidentStreamEvent } from "../types";
 
 const EVENTS = ["incident.created", "trigger.fired"];
 
-export function useIncidentStream(onEvent, { enabled = true, onStatus }: any = {}) {
+export interface IncidentStreamOptions {
+  enabled?: boolean;
+  /** True on open, false on error (before the reconnect). */
+  onStatus?: (connected: boolean) => void;
+}
+
+export function useIncidentStream(
+  onEvent: (evt: IncidentStreamEvent) => void,
+  { enabled = true, onStatus }: IncidentStreamOptions = {},
+) {
   // Seeded with the current callbacks and refreshed after each commit, so the
   // long-lived EventSource handlers below never need re-subscribing to see a new
   // one — and no ref is written during render.
@@ -50,8 +60,8 @@ export function useIncidentStream(onEvent, { enabled = true, onStatus }: any = {
       const url = `${api.defaults.baseURL}/realtime/incidents?token=${encodeURIComponent(token)}`;
       es = new EventSource(url);
 
-      const handler = (type) => (e) => {
-        let data: any = null;
+      const handler = (type: string) => (e: MessageEvent<string>) => {
+        let data: IncidentStreamEvent["data"] = null;
         try { data = JSON.parse(e.data); } catch { /* keepalive/comment — ignore */ }
         cbRef.current?.({ type, data });
       };

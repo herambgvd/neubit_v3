@@ -21,9 +21,33 @@ import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { StatusDot } from "./StatusBadge";
+import type { EstateCamera } from "../types";
 
 const NO_SITE = "__no_site__";
 const ROOT = "__root__";
+
+/** One collapsible branch of the tree — a recorder node or a local site. */
+interface RailBranch {
+  id: string;
+  kind: "recorder" | "site";
+  name: string;
+  cameras: EstateCamera[];
+}
+
+export interface CameraRailProps {
+  cameras?: EstateCamera[];
+  /** Camera ids already on the wall (rendered with the "on wall" glyph). */
+  mountedIds?: Set<string>;
+  /** Double-click / Enter on a camera row. */
+  onPick?: (camera: EstateCamera) => void;
+  /** Double-click on a branch header — every camera under it, in order. */
+  onPickMany?: (cameras: EstateCamera[]) => void;
+  onDragStateChange?: (dragging: boolean) => void;
+  isLoading?: boolean;
+  /** Accepted for the callers that pass them; the rail does not render them. */
+  onlineCount?: number;
+  liveCount?: number;
+}
 
 export default function CameraRail({
   cameras = [],
@@ -32,11 +56,11 @@ export default function CameraRail({
   onPickMany,
   onDragStateChange,
   isLoading,
-}: any) {
+}: CameraRailProps) {
   const [q, setQ] = useState("");
   // Collapsed branches (Set of keys). Empty ⇒ everything expanded (friendliest
   // default for small estates; operators collapse what they don't need).
-  const [collapsed, setCollapsed] = useState(() => new Set<any>());
+  const [collapsed, setCollapsed] = useState(() => new Set<string>());
 
   const needle = q.trim().toLowerCase();
   const searching = needle.length > 0;
@@ -46,7 +70,7 @@ export default function CameraRail({
       if (!needle) return true;
       return (
         c.name?.toLowerCase().includes(needle) ||
-        c.ip?.toLowerCase?.().includes(needle) ||
+        c.network_info?.ip?.toLowerCase().includes(needle) ||
         c.brand?.toLowerCase?.().includes(needle) ||
         c.site_name?.toLowerCase?.().includes(needle)
       );
@@ -58,19 +82,23 @@ export default function CameraRail({
   // kind:"recorder" so they render with a server glyph — the tree reads
   //   Default › recorder-dev-01 › Channel 1 / Channel 2 …
   const sites = useMemo(() => {
-    const byGroup = new Map<any, any>();
+    const byGroup = new Map<string, RailBranch>();
     filtered.forEach((c) => {
       const recorder = !!c.federated;
-      const key = recorder ? c.site_id : c.site_id || NO_SITE;
-      if (!byGroup.has(key)) {
-        byGroup.set(key, {
+      // A federated row always carries its node as site_id (useEstateCameras);
+      // the `??` only keeps the Map key a string.
+      const key = recorder ? c.site_id ?? NO_SITE : c.site_id || NO_SITE;
+      let branch = byGroup.get(key);
+      if (!branch) {
+        branch = {
           id: key,
           kind: recorder ? "recorder" : "site",
           name: key === NO_SITE ? "Unassigned" : c.site_name || (recorder ? "Recorder" : "Site"),
           cameras: [],
-        });
+        };
+        byGroup.set(key, branch);
       }
-      byGroup.get(key).cameras.push(c);
+      branch.cameras.push(c);
     });
     return [...byGroup.values()].sort((a, b) => {
       if (a.id === NO_SITE) return 1;
@@ -81,19 +109,19 @@ export default function CameraRail({
     });
   }, [filtered]);
 
-  const toggle = (key) =>
+  const toggle = (key: string) =>
     setCollapsed((prev) => {
-      const next = new Set<any>(prev);
+      const next = new Set<string>(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
 
   // While searching, ignore the collapsed set so every match is visible.
-  const isOpen = (key) => searching || !collapsed.has(key);
+  const isOpen = (key: string) => searching || !collapsed.has(key);
   const rootOpen = isOpen(ROOT);
 
-  const renderCameraRow = (c) => {
+  const renderCameraRow = (c: EstateCamera) => {
     const onWall = mountedIds?.has(c.id);
     return (
       <li key={c.id}>

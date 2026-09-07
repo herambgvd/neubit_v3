@@ -17,13 +17,30 @@ import { Icon } from "@iconify/react";
 // The bundle exposes window.H265webjsPlayer. We inject the <script> once and share
 // the load promise across every tile.
 const SDK_SRC = "/h265web/h265web.js";
+
+/** The slice of the h265web.js player object this tile drives. The SDK ships no
+ *  typings (a classic script on `window`, `any` in global.d.ts), so the instance is
+ *  narrowed to the members called here; the optional ones are best-effort per SDK
+ *  build. */
+interface H265Player {
+  build(opts: Record<string, unknown>): void;
+  load_media(url: string): void;
+  play(): void;
+  pause(): void;
+  release?(): void;
+  seek?(offsetSeconds: number): void;
+  set_playback_rate?(rate: number): void;
+  /** Playhead callback — the stream PTS in seconds. */
+  on_play_time?: (pts: number) => void;
+  on_ready_show_done_callback?: () => void;
+}
 /** The h265web SDK factory, once the script has loaded. */
-type H265Factory = () => any;
+type H265Factory = () => H265Player;
 
 // Shared across every player instance: the script is loaded at most once.
 let sdkPromise: Promise<H265Factory> | null = null;
 
-function loadSdk() {
+function loadSdk(): Promise<H265Factory> {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
   if (window.H265webjsPlayer) return Promise.resolve(window.H265webjsPlayer);
   if (sdkPromise) return sdkPromise;
@@ -55,23 +72,39 @@ function loadSdk() {
 // Base dir the SDK loads its WASM + ext bundles from (Next serves /public at root).
 const BASE_URL = "/h265web/";
 
+export interface H265WebPlayerProps {
+  /** The media URL (HLS m3u8 or fMP4) — carries ?token=. */
+  url?: string | null;
+  playing?: boolean;
+  muted?: boolean;
+  speed?: number;
+  /** Controlled seek: epoch-ms target + the window start so we can map to a stream offset. */
+  seekMs?: number | null;
+  windowStart?: number | null;
+  /** Playhead reporting (maps pts + windowStart) → epoch ms. */
+  onTime?: (epochMs: number) => void;
+  onReady?: () => void;
+  /** Parent can fall back to hls.js / transcode. */
+  onError?: (err: unknown) => void;
+  className?: string;
+}
+
 export default function H265WebPlayer({
-  url, // the media URL (HLS m3u8 or fMP4) — carries ?token=
+  url,
   playing = true,
   muted = true,
   speed = 1,
-  // Controlled seek: epoch-ms target + the window start so we can map to a stream offset.
   seekMs = null,
   windowStart = null,
-  onTime, // (epochMs) => void — playhead reporting (maps pts + windowStart)
-  onReady, // () => void
-  onError, // (err) => void — parent can fall back to hls.js / transcode
+  onTime,
+  onReady,
+  onError,
   className = "",
-}: any) {
+}: H265WebPlayerProps) {
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const containerId = `h265-${reactId}`;
-  const playerRef = useRef<any>(null);
-  const [status, setStatus] = useState("loading"); // loading | ready | error
+  const playerRef = useRef<H265Player | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const playingRef = useRef(playing);
   const winStartRef = useRef(windowStart);
   useEffect(() => {
@@ -85,7 +118,7 @@ export default function H265WebPlayer({
   useEffect(() => {
     if (!url) return undefined;
     let disposed = false;
-    let player: any = null;
+    let player: H265Player | null = null;
     setStatus("loading");
 
     loadSdk()
@@ -120,7 +153,7 @@ export default function H265WebPlayer({
             setStatus("ready");
             onReady?.();
             try {
-              if (!playingRef.current) player.pause();
+              if (!playingRef.current) player?.pause();
             } catch {}
           };
           player.load_media(url);

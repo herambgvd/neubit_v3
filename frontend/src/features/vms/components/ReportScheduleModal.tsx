@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Button, Input, Modal, Select, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { ReportSchedulePublic } from "../types";
 
 const CADENCES = [
   { value: "daily", label: "Daily" },
@@ -27,7 +28,33 @@ const HOURS = Array.from({ length: 24 }, (_, h) => ({
   label: `${String(h).padStart(2, "0")}:00 UTC`,
 }));
 
-const EMPTY = {
+/** Local form state. Every Select hands back a string, so `hour_utc` holds the
+ *  number the wire sent until the operator picks an hour; `save` coerces it. */
+interface ScheduleForm {
+  name: string;
+  kind: string;
+  cadence: string;
+  export_format: string;
+  hour_utc: number | string;
+  recipients: string;
+  enabled: boolean;
+}
+
+/** One entry of the parent's REPORT_KINDS list (Reports.tsx). */
+interface ReportKindOption {
+  value: string;
+  label: string;
+}
+
+interface ReportScheduleModalProps {
+  open: boolean;
+  schedule?: ReportSchedulePublic | null;
+  reportKinds?: ReportKindOption[];
+  onClose: () => void;
+  onSaved?: () => void;
+}
+
+const EMPTY: ScheduleForm = {
   name: "",
   kind: "camera-uptime",
   cadence: "daily",
@@ -37,9 +64,15 @@ const EMPTY = {
   enabled: true,
 };
 
-export default function ReportScheduleModal({ open, schedule, reportKinds = [], onClose, onSaved }: any) {
+export default function ReportScheduleModal({
+  open,
+  schedule,
+  reportKinds = [],
+  onClose,
+  onSaved,
+}: ReportScheduleModalProps) {
   const editing = !!schedule;
-  const [form, setForm] = useState(EMPTY);
+  const [form, setForm] = useState<ScheduleForm>(EMPTY);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -59,7 +92,7 @@ export default function ReportScheduleModal({ open, schedule, reportKinds = [], 
     }
   }, [open, schedule]);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<ScheduleForm>) => setForm((f) => ({ ...f, ...patch }));
 
   const kindOptions = reportKinds.map((k) => ({ value: k.value, label: k.label }));
 

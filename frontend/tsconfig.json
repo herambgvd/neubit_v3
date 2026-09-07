@@ -3,13 +3,11 @@
     // The console is fully TypeScript: allowJs is off, so a stray .js file is a
     // build error rather than a silently untyped island.
     "allowJs": false,
-    // `strict` is being turned on a flag at a time. noImplicitAny is the one
-    // still outstanding (~2.5k call sites, tracked in the README).
-    "strict": false,
-    // Enabled ahead of full `strict`: this is the flag that catches real null and
-    // undefined bugs, and without it TypeScript will not even narrow a
-    // discriminated union on a boolean, which silently weakens every guard.
-    "strictNullChecks": true,
+    // Fully strict. Turned on a flag at a time — strictNullChecks first (it is
+    // what catches real null bugs, and without it TypeScript will not even
+    // narrow a discriminated union on a boolean), then noImplicitAny once every
+    // feature area had real types rather than inferred `any`.
+    "strict": true,
     "target": "ES2022",
     "lib": [
       "dom",

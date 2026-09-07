@@ -17,10 +17,12 @@
 //   selectionStart/End          — epoch ms, an OPTIONAL clip-extract selection band
 //                                 (mark-in/out); both null → off (default, so the
 //                                 standalone PlaybackPlayer stays unaffected)
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import { SEVERITY_PRESETS } from "../constants";
-import { eventTypeLabel } from "../eventLib";
+import { presetFor } from "../constants";
+import { eventTypeLabel, sevPreset } from "../eventLib";
+import type { BookmarkPublic, EvidenceLockPublic, MotionHit, TimelineMarker } from "../types";
+import type { CoverageSpan } from "./playbackTypes";
 
 const HOUR_MS = 3_600_000;
 
@@ -47,8 +49,11 @@ export const TIMELINE_PALETTE = {
   ANR: { cls: "bg-indigo-500/70", hex: "#6366f1", label: "ANR" },
 };
 
+/** One of the 8 legend buckets. */
+export type LegendType = keyof typeof TIMELINE_PALETTE;
+
 // The 8 legend buckets, in the reference NVR's order.
-export const LEGEND_TYPES = ["Normal", "Motion", "IO", "PIR", "AI", "Alarm", "Manual", "ANR"];
+export const LEGEND_TYPES: readonly LegendType[] = ["Normal", "Motion", "IO", "PIR", "AI", "Alarm", "Manual", "ANR"];
 
 // Coverage `trigger_type` (backend model) → legend bucket.
 export const TRIGGER_TO_LEGEND = {
@@ -57,12 +62,13 @@ export const TRIGGER_TO_LEGEND = {
   motion: "Motion",
   event: "Alarm",
   manual: "Manual",
-};
-export const triggerToLegend = (t) => TRIGGER_TO_LEGEND[t] || "Normal";
+} satisfies Record<string, LegendType>;
+export const triggerToLegend = (t: string | null | undefined): LegendType =>
+  presetFor(TRIGGER_TO_LEGEND, t, "Normal");
 
 // Event-marker `event_type` (free-form string) → legend bucket, by keyword. Used
 // both to color/plot markers and to honor the event-type filter for markers.
-export const legendKeyForEventType = (et = "") => {
+export const legendKeyForEventType = (et: string | null | undefined = ""): LegendType => {
   const s = String(et).toLowerCase();
   // Order matters + the 2-letter tokens "ai"/"io" MUST be word-boundary matched —
   // a bare `includes("io")` wrongly catches motion/intrusion/audio (all contain "io"),
@@ -84,21 +90,68 @@ export const legendKeyForEventType = (et = "") => {
 };
 
 // Coverage-block color by trigger, mapped through the shared palette so bars and
-// legend swatches always agree. Falls back to the neutral Normal accent.
-const BLOCK_COLOR = new Proxy(TIMELINE_PALETTE, {
-  get: (t, trigger) => (TIMELINE_PALETTE[triggerToLegend(trigger)] || TIMELINE_PALETTE.Normal).cls,
-});
+// legend swatches always agree. An unknown trigger lands on the neutral Normal accent.
+const blockColor = (trigger: string): string => TIMELINE_PALETTE[triggerToLegend(trigger)].cls;
 
-// Marker tick color by severity (falls back to info blue).
-const MARKER_FILL = {
-  critical: SEVERITY_PRESETS.critical.fill,
-  warning: SEVERITY_PRESETS.warning.fill,
-  info: SEVERITY_PRESETS.info.fill,
-};
-
-function hhmmss(ms) {
+function hhmmss(ms: number) {
   const d = new Date(ms);
   return d.toLocaleTimeString(undefined, { hour12: false });
+}
+
+// ── the painted items, positioned as % of the track ─────────────────────────
+interface Block {
+  key: string;
+  leftPct: number;
+  widthPct: number;
+  trigger: string;
+}
+interface MarkerTick {
+  key: string;
+  leftPct: number;
+  ms: number;
+  fill: string;
+  label: string;
+  severity: string;
+}
+interface LockBand {
+  key: string;
+  leftPct: number;
+  widthPct: number;
+  label: string;
+}
+interface BookmarkFlag {
+  key: string;
+  bm: BookmarkPublic;
+  leftPct: number;
+  widthPct: number;
+  ms: number;
+  title: string;
+}
+interface MotionBand {
+  key: string;
+  ms: number;
+  leftPct: number;
+  widthPct: number;
+  label: string;
+}
+
+export interface ScrubBarProps {
+  coverage?: CoverageSpan[];
+  markers?: TimelineMarker[];
+  bookmarks?: BookmarkPublic[];
+  locks?: EvidenceLockPublic[];
+  motionHits?: MotionHit[];
+  /** Epoch ms — the visible track range. */
+  windowStart: number;
+  windowEnd: number;
+  /** Epoch ms — the playhead. */
+  current?: number | null;
+  onSeek?: (ms: number) => void;
+  onBookmarkClick?: (bm: BookmarkPublic) => void;
+  /** Epoch ms — an OPTIONAL clip-extract selection band; both null → off. */
+  selectionStart?: number | null;
+  selectionEnd?: number | null;
+  disabled?: boolean;
 }
 
 export default function ScrubBar({
@@ -115,13 +168,13 @@ export default function ScrubBar({
   selectionStart = null,
   selectionEnd = null,
   disabled = false,
-}: any) {
-  const trackRef = useRef<any>(null);
+}: ScrubBarProps) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [hover, setHover] = useState<any>(null); // { pct, ms }
-  const [markerHover, setMarkerHover] = useState<any>(null); // { leftPct, label, time }
-  const [bmHover, setBmHover] = useState<any>(null); // { leftPct, title, time }
-  const [hitHover, setHitHover] = useState<any>(null); // { leftPct, label } — G4 motion hit
+  const [hover, setHover] = useState<{ pct: number; ms: number } | null>(null);
+  const [markerHover, setMarkerHover] = useState<{ leftPct: number; label: string; time: string } | null>(null);
+  const [bmHover, setBmHover] = useState<{ leftPct: number; title: string; time: string } | null>(null);
+  const [hitHover, setHitHover] = useState<{ leftPct: number; label: string } | null>(null); // G4 motion hit
 
   const span = Math.max(1, windowEnd - windowStart);
 
@@ -130,7 +183,7 @@ export default function ScrubBar({
   // so aligning on UTC hours makes them land at :30 in half-hour-offset zones (e.g.
   // IST +5:30 → "00:30, 03:30…"). Ceil windowStart up to the next local :00.
   const hours = useMemo(() => {
-    const out: any[] = [];
+    const out: number[] = [];
     const d0 = new Date(windowStart);
     d0.setMinutes(0, 0, 0);
     if (d0.getTime() < windowStart) d0.setHours(d0.getHours() + 1);
@@ -145,7 +198,7 @@ export default function ScrubBar({
   }, [windowStart, windowEnd, span]);
 
   const blocks = useMemo(() => {
-    const out: any[] = [];
+    const out: Block[] = [];
     for (const c of coverage) {
       if (!c?.start) continue;
       const s = new Date(c.start).getTime();
@@ -157,7 +210,7 @@ export default function ScrubBar({
         key: `${c.start}-${c.end}`,
         leftPct: left * 100,
         widthPct: Math.max(0.3, (right - left) * 100),
-        trigger: c.trigger || c.trigger_type || "continuous",
+        trigger: c.trigger_type || "continuous",
       });
     }
     return out;
@@ -165,7 +218,7 @@ export default function ScrubBar({
 
   // Event markers → ticks positioned by time, colored by severity.
   const markerTicks = useMemo(() => {
-    const out: any[] = [];
+    const out: MarkerTick[] = [];
     for (const m of markers) {
       const t = m?.t ? new Date(m.t).getTime() : null;
       if (t == null || Number.isNaN(t)) continue;
@@ -175,7 +228,7 @@ export default function ScrubBar({
         key: m.event_id || `${m.t}-${m.event_type}`,
         leftPct: pos * 100,
         ms: t,
-        fill: MARKER_FILL[m.severity] || MARKER_FILL.info,
+        fill: sevPreset(m.severity).fill,
         label: eventTypeLabel(m.event_type),
         severity: m.severity,
       });
@@ -185,7 +238,7 @@ export default function ScrubBar({
 
   // Evidence-lock bands — a shaded amber span per active hold overlapping window.
   const lockBands = useMemo(() => {
-    const out: any[] = [];
+    const out: LockBand[] = [];
     for (const l of locks) {
       const s = l?.start_ts ? new Date(l.start_ts).getTime() : null;
       const e = l?.end_ts ? new Date(l.end_ts).getTime() : null;
@@ -205,7 +258,7 @@ export default function ScrubBar({
 
   // Bookmark flags — a pin at start_ts (point) plus a faint underline for ranges.
   const bookmarkFlags = useMemo(() => {
-    const out: any[] = [];
+    const out: BookmarkFlag[] = [];
     for (const b of bookmarks) {
       const s = b?.start_ts ? new Date(b.start_ts).getTime() : null;
       if (s == null || Number.isNaN(s)) continue;
@@ -229,7 +282,7 @@ export default function ScrubBar({
   // G4 forensic motion-search hits — fuchsia intervals plotted along the track,
   // distinct from coverage/bookmarks/locks. A point hit (no end) gets a min width.
   const motionBands = useMemo(() => {
-    const out: any[] = [];
+    const out: MotionBand[] = [];
     for (let i = 0; i < motionHits.length; i += 1) {
       const h = motionHits[i];
       const s = h?.start ? new Date(h.start).getTime() : null;
@@ -263,7 +316,7 @@ export default function ScrubBar({
   }, [selectionStart, selectionEnd, windowStart, span]);
 
   const posToMs = useCallback(
-    (clientX) => {
+    (clientX: number) => {
       const rect = trackRef.current?.getBoundingClientRect();
       if (!rect?.width) return null;
       const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
@@ -273,7 +326,7 @@ export default function ScrubBar({
   );
 
   const emit = useCallback(
-    (clientX) => {
+    (clientX: number) => {
       if (disabled) return;
       const ms = posToMs(clientX);
       if (ms != null) onSeek?.(ms);
@@ -281,11 +334,11 @@ export default function ScrubBar({
     [disabled, posToMs, onSeek],
   );
 
-  const onDown = (e) => {
+  const onDown = (e: ReactMouseEvent<HTMLDivElement>) => {
     if (disabled) return;
     setDragging(true);
     emit(e.clientX);
-    const move = (ev) => emit(ev.clientX);
+    const move = (ev: MouseEvent) => emit(ev.clientX);
     const up = () => {
       setDragging(false);
       window.removeEventListener("mousemove", move);
@@ -295,7 +348,7 @@ export default function ScrubBar({
     window.addEventListener("mouseup", up);
   };
 
-  const onMove = (e) => {
+  const onMove = (e: ReactMouseEvent<HTMLDivElement>) => {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect?.width) return;
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -362,7 +415,7 @@ export default function ScrubBar({
         {blocks.map((b) => (
           <div
             key={b.key}
-            className={`absolute bottom-2 top-6 rounded-xs ${BLOCK_COLOR[b.trigger] || "bg-blue-500/70"}`}
+            className={`absolute bottom-2 top-6 rounded-xs ${blockColor(b.trigger)}`}
             style={{ left: `${b.leftPct}%`, width: `${b.widthPct}%` }}
           />
         ))}

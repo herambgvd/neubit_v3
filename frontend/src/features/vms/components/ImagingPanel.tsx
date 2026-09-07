@@ -15,9 +15,52 @@ import { Button, Toggle } from "@/components/ui/kit";
 import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { ConfigDict } from "../types";
+
+// The ONVIF driver's imaging echo (backend/vision/app/vms/drivers/onvif.py
+// get_imaging): the current settings, a `supported` map of which fields the
+// device exposes, and best-effort `ranges` from GetOptions. The wire type is the
+// open ConfigResult, so the fields this panel reads are narrowed here.
+type SliderKey = "brightness" | "contrast" | "color_saturation" | "sharpness";
+type ImagingControl = SliderKey | "wide_dynamic_range" | "ir_cut_filter";
+interface ImagingRange {
+  min?: number | null;
+  max?: number | null;
+}
+interface ImagingState {
+  brightness?: number | null;
+  contrast?: number | null;
+  color_saturation?: number | null;
+  sharpness?: number | null;
+  ir_cut_filter?: string | null;
+  wide_dynamic_range?: { mode?: string | null; level?: number | null } | null;
+  supported?: Partial<Record<ImagingControl, boolean>>;
+  ranges?: Partial<Record<SliderKey, ImagingRange | null>> & {
+    wide_dynamic_range_modes?: string[];
+    ir_cut_filter_modes?: string[];
+  };
+}
+// The editable copy — sliders keep the device's number (or null when unread).
+interface ImagingDraft {
+  brightness?: number | null;
+  contrast?: number | null;
+  color_saturation?: number | null;
+  sharpness?: number | null;
+  wdr_on?: boolean;
+  ir_cut_filter?: string;
+}
+
+interface SliderRowProps {
+  label: string;
+  value?: number | null;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}
 
 // A labelled slider bounded by the device range, with the live numeric value.
-function SliderRow({ label, value, min, max, disabled, onChange }: any) {
+function SliderRow({ label, value, min, max, disabled, onChange }: SliderRowProps) {
   return (
     <div className="rounded-lg border border-card-border bg-hover/30 px-3 py-2.5">
       <div className="mb-1.5 flex items-center justify-between">
@@ -41,14 +84,19 @@ function SliderRow({ label, value, min, max, disabled, onChange }: any) {
   );
 }
 
-export default function ImagingPanel({ cameraId, cameraName }: any) {
+export interface ImagingPanelProps {
+  cameraId: string;
+  cameraName?: string | null;
+}
+
+export default function ImagingPanel({ cameraId, cameraName }: ImagingPanelProps) {
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
   const qc = useQueryClient();
 
   // Served from the imaging settings persisted on the camera row — no device re-probe
   // on every open. The Reload button forces a live re-read (refresh:true).
-  const imagingQ = useQuery<any>({
+  const imagingQ = useQuery({
     queryKey: ["vms-imaging", cameraId],
     queryFn: () => vms.cameras.getImaging(cameraId),
     enabled: !!cameraId,
@@ -70,12 +118,12 @@ export default function ImagingPanel({ cameraId, cameraName }: any) {
     }
   };
 
-  const data = imagingQ.data || {};
+  const data = (imagingQ.data ?? {}) as ImagingState;
   const supported = data.supported || {};
   const ranges = data.ranges || {};
 
   // Local editable copy — seeded from the device read, reset whenever a fresh read lands.
-  const [draft, setDraft] = useState<any>({});
+  const [draft, setDraft] = useState<ImagingDraft>({});
   useEffect(() => {
     if (!imagingQ.data) return;
     setDraft({
@@ -89,9 +137,9 @@ export default function ImagingPanel({ cameraId, cameraName }: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imagingQ.data]);
 
-  const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
+  const set = (patch: ImagingDraft) => setDraft((d) => ({ ...d, ...patch }));
 
-  const rng = (key, fallbackMin = 0, fallbackMax = 255) => ({
+  const rng = (key: SliderKey, fallbackMin = 0, fallbackMax = 255) => ({
     min: ranges[key]?.min ?? fallbackMin,
     max: ranges[key]?.max ?? fallbackMax,
   });
@@ -101,9 +149,9 @@ export default function ImagingPanel({ cameraId, cameraName }: any) {
     [ranges.ir_cut_filter_modes],
   );
 
-  const apply = useMutation<any>({
+  const apply = useMutation({
     mutationFn: () => {
-      const body: any = {};
+      const body: ConfigDict = {};
       if (supported.brightness) body.brightness = draft.brightness;
       if (supported.contrast) body.contrast = draft.contrast;
       if (supported.color_saturation) body.color_saturation = draft.color_saturation;

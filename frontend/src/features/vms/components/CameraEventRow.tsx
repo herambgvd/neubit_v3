@@ -10,9 +10,24 @@ import { useState } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 
-import { typePreset, sevPreset, eventTypeLabel, fmtTime, fmtDate } from "../eventLib";
+import { typePreset, sevPreset, eventTypeLabel, fmtTime, fmtDate, type NormalizedVmsEvent } from "../eventLib";
 
-export default function CameraEventRow({ event, cameraName, incidentId = null, onAck, ackPending = false }: any) {
+/** The row's event: a normalized history row / live frame. Live frames from the
+ *  bus surface `zone` top-level (vision events.normalize) when the device sent
+ *  one; it is not on the stored row, so it stays optional here. */
+export interface CameraEventRowEvent extends NormalizedVmsEvent {
+  zone?: string | null;
+}
+
+export interface CameraEventRowProps {
+  event: CameraEventRowEvent;
+  cameraName?: string | null;
+  incidentId?: string | null;
+  onAck?: (event: CameraEventRowEvent) => void;
+  ackPending?: boolean;
+}
+
+export default function CameraEventRow({ event, cameraName, incidentId = null, onAck, ackPending = false }: CameraEventRowProps) {
   const [open, setOpen] = useState(false);
   const tp = typePreset(event.event_type);
   const sp = sevPreset(event.severity);

@@ -15,23 +15,26 @@ import { toast } from "sonner";
 import { apiError } from "@/lib/api";
 import { asItems, fmtBytes, fmtDateTime } from "@/lib/format";
 import { vms } from "../api";
+import type { ReportRunPublic, ReportSchedulePublic } from "../types";
 
-export const scheduleRunsKey = (id) => ["vms-report-schedule-runs", id];
+export const scheduleRunsKey = (id: string) => ["vms-report-schedule-runs", id];
 
-// Map an export format → a sensible download extension.
-const EXT = { csv: "csv", pdf: "pdf", json: "json" };
+// Map an export format → a sensible download extension. `export_format` is an
+// open string on the wire (backend/vision/app/vms/reports/schemas.py), so the
+// lookup is keyed by string and falls back below.
+const EXT: Record<string, string> = { csv: "csv", pdf: "pdf", json: "json" };
 
-export default function ReportRunsPanel({ schedule }: any) {
-  const [downloading, setDownloading] = useState<any>(null); // runId | null
+export default function ReportRunsPanel({ schedule }: { schedule: ReportSchedulePublic }) {
+  const [downloading, setDownloading] = useState<string | null>(null); // runId | null
 
-  const runsQ = useQuery<any>({
+  const runsQ = useQuery({
     queryKey: scheduleRunsKey(schedule.id),
     queryFn: () => vms.reports.schedules.runs(schedule.id, { limit: 20, offset: 0 }),
     staleTime: 15_000,
   });
   const runs = asItems(runsQ.data);
 
-  const download = async (run) => {
+  const download = async (run: ReportRunPublic) => {
     setDownloading(run.id);
     try {
       const blob = await vms.reports.schedules.runDownloadBlob(schedule.id, run.id);

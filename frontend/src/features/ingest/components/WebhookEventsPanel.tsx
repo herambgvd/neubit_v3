@@ -14,9 +14,10 @@ import { ingest as ingestApi } from "../api";
 import { OUTCOME_PILL } from "../constants";
 import EventLogDetail from "./EventLogDetail";
 import { RowAction } from "@/components/console";
+import type { DateInput } from "@/lib/format";
 
 // Received-at with seconds — kept local since the shared fmtDateTime omits seconds.
-const fmt = (ts) =>
+const fmt = (ts: DateInput): string =>
   ts
     ? new Date(ts).toLocaleString(undefined, {
         month: "short",
@@ -27,15 +28,19 @@ const fmt = (ts) =>
       })
     : "—";
 
-export default function WebhookEventsPanel({ hookId }: any) {
+export interface WebhookEventsPanelProps {
+  hookId: string;
+}
+
+export default function WebhookEventsPanel({ hookId }: WebhookEventsPanelProps) {
   const qc = useQueryClient();
   const key = ["ingest-event-logs", hookId];
-  const q = useQuery<any>({ queryKey: key, queryFn: () => ingestApi.eventLogs.list({ webhook_id: hookId, limit: 30 }) });
+  const q = useQuery({ queryKey: key, queryFn: () => ingestApi.eventLogs.list({ webhook_id: hookId, limit: 30 }) });
   const rows = asItems(q.data);
-  const [expanded, setExpanded] = useState<any>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
-  const replay = useMutation<any>({
-    mutationFn: (id: any) => ingestApi.eventLogs.replay(id),
+  const replay = useMutation({
+    mutationFn: (id: string) => ingestApi.eventLogs.replay(id),
     onSuccess: () => { toast.success("Event replayed"); qc.invalidateQueries({ queryKey: key }); },
     onError: (e) => toast.error(apiError(e)),
   });

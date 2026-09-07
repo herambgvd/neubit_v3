@@ -18,12 +18,17 @@
 // via /vms/federation/.../timeline. An empty track means the recorder genuinely
 // has no footage in the window. Local (non-federated) cameras record on the VMS
 // and are not wired to this path yet — the track says so rather than pretending.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { vms } from "../api";
-import { RANGES, SPEEDS } from "../hooks/useWallPlayback";
+import { presetFor } from "../constants";
+import { RANGES, SPEEDS, useWallPlayback } from "../hooks/useWallPlayback";
+import type { EstateCamera } from "../types";
+
+/** The wall's DVR state + transport, as `useWallPlayback` returns it. */
+export type WallPlayback = ReturnType<typeof useWallPlayback>;
 
 // Colour per recording trigger (mockup palette).
 const TRIGGER_COLOR = {
@@ -35,7 +40,15 @@ const TRIGGER_COLOR = {
 
 const SKIP_SEC = 10;
 
-function Btn({ icon, title, onClick, active = false, disabled = false }: any) {
+interface BtnProps {
+  icon: string;
+  title: string;
+  onClick?: () => void;
+  active?: boolean;
+  disabled?: boolean;
+}
+
+function Btn({ icon, title, onClick, active = false, disabled = false }: BtnProps) {
   return (
     <button
       type="button"
@@ -53,17 +66,17 @@ function Btn({ icon, title, onClick, active = false, disabled = false }: any) {
   );
 }
 
-const pad2 = (n) => String(n).padStart(2, "0");
-const clockOf = (ms) => {
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const clockOf = (ms: number | null | undefined) => {
   if (ms == null || !Number.isFinite(ms)) return "--:--:--";
   const d = new Date(ms);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 };
-const dayValue = (ms) => {
+const dayValue = (ms: number) => {
   const d = new Date(ms);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
-const hhmm = (ms) => {
+const hhmm = (ms: number) => {
   const d = new Date(ms);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 };
@@ -72,7 +85,7 @@ const hhmm = (ms) => {
 // still leaves at most ~10 labels. A 24h track ticked every minute is noise; a
 // 5m track ticked every hour has no ticks at all.
 const TICKS = [15_000, 60_000, 300_000, 900_000, 1_800_000, 3_600_000, 10_800_000, 21_600_000];
-function tickEvery(spanMs) {
+function tickEvery(spanMs: number) {
   return TICKS.find((t) => spanMs / t <= 10) || TICKS[TICKS.length - 1];
 }
 
@@ -83,12 +96,12 @@ function tickEvery(spanMs) {
 //
 // Pointer capture is what makes the drag survive leaving the track — the mouse
 // WILL leave a bar this thin, and without capture the gesture dies there.
-function useScrub(onCommit) {
-  const ref = useRef<any>(null);
-  const [drag, setDrag] = useState<any>(null);
-  const [hover, setHover] = useState<any>(null);
+function useScrub(onCommit: (frac: number) => void) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [drag, setDrag] = useState<number | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
 
-  const fracFrom = (e) => {
+  const fracFrom = (e: PointerEvent<HTMLDivElement>) => {
     const r = ref.current?.getBoundingClientRect();
     if (!r || !r.width) return 0;
     return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
@@ -117,24 +130,24 @@ function useScrub(onCommit) {
   // `null` there and drops the seek on the floor. It is intermittent by nature:
   // click slowly and it works, tap and nothing happens. The ref is written
   // synchronously, so a click of any length commits.
-  const dragRef = useRef<any>(null);
+  const dragRef = useRef<number | null>(null);
 
   const handlers = {
-    onPointerDown: (e) => {
+    onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
       if (e.button !== 0) return;
       e.preventDefault();
       e.currentTarget.setPointerCapture?.(e.pointerId);
       dragRef.current = fracFrom(e);
       setDrag(dragRef.current);
     },
-    onPointerMove: (e) => {
+    onPointerMove: (e: PointerEvent<HTMLDivElement>) => {
       const f = fracFrom(e);
       setHover(f);
       if (dragRef.current == null) return;
       dragRef.current = f;
       setDrag(f);
     },
-    onPointerUp: (e) => {
+    onPointerUp: (e: PointerEvent<HTMLDivElement>) => {
       if (dragRef.current == null) return;
       const f = fracFrom(e);
       dragRef.current = null;
@@ -151,16 +164,33 @@ function useScrub(onCommit) {
   return { ref, drag, hover, handlers };
 }
 
-export default function PlayoutBar({ camera, pb, onClose }: any) {
+/** A recorded span in epoch ms, with the recorder's trigger for its colour. */
+interface Span {
+  start: number;
+  end: number;
+  trigger: string | null | undefined;
+}
+
+export interface PlayoutBarProps {
+  /** The focused tile's camera — whose coverage the track draws. */
+  camera?: EstateCamera | null;
+  pb: WallPlayback;
+  onClose?: () => void;
+}
+
+export default function PlayoutBar({ camera, pb, onClose }: PlayoutBarProps) {
   const { win, mode, sync, playing, speed, rangeSeconds, clock } = pb;
   const federated = !!camera?.federated;
   const nodeId = camera?.node_id;
   const realId = camera?.real_id;
+  // The node address, present only for a federated camera; the timeline query
+  // below is skipped without it.
+  const fed = federated && nodeId && realId ? { nodeId, realId } : null;
 
   // The shared playhead. Only THIS component subscribes in React state — the
   // wall's tiles follow the clock object directly, so a 4Hz playhead re-renders
   // one bar rather than sixty-four tiles.
-  const [head, setHead] = useState<any>(null);
+  const [head, setHead] = useState<number | null>(null);
   useEffect(() => clock.subscribe(setHead), [clock]);
 
   // "Now" for the live edge marker; a quarter-minute's resolution is plenty.
@@ -177,14 +207,15 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
   const to = win.toMs;
   const span = Math.max(1, to - from);
 
-  const tlQ = useQuery<any>({
+  const tlQ = useQuery({
     queryKey: ["fed-timeline", nodeId, realId, from, to],
-    queryFn: () =>
-      vms.federation.timeline(nodeId, realId, {
-        from: new Date(from).toISOString(),
-        to: new Date(to).toISOString(),
-      }),
-    enabled: federated && !!nodeId && !!realId,
+    queryFn: fed
+      ? () =>
+          vms.federation.timeline(fed.nodeId, fed.realId, {
+            from: new Date(from).toISOString(),
+            to: new Date(to).toISOString(),
+          })
+      : skipToken,
     refetchInterval: 60_000,
   });
 
@@ -193,7 +224,7 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
   const spans = useMemo(() => {
     const rs = tlQ.data?.ranges || [];
     return rs
-      .map((r: any) => {
+      .map((r): Span => {
         const s = new Date(r.start).getTime();
         return { start: s, end: s + (r.duration || 0) * 1000, trigger: r.trigger_type };
       })
@@ -205,7 +236,7 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
   // next recorded span, so a rough drag still lands on footage rather than
   // silently doing nothing.
   const seekFrac = useCallback(
-    (frac) => {
+    (frac: number) => {
       if (!federated) return;
       const at = from + frac * span;
       const inSpan = spans.some((s) => at >= s.start && at <= s.end);
@@ -223,7 +254,7 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
   const scrub = useScrub(seekFrac);
 
   // Step to the neighbouring recorded span.
-  const stepSpan = (dir) => {
+  const stepSpan = (dir: number) => {
     if (!spans.length) return;
     const at = head ?? nowMs;
     const target =
@@ -446,7 +477,7 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
               style={{
                 left: `${Math.max(0, left)}%`,
                 width: `${Math.max(0.15, Math.min(100 - Math.max(0, left), width))}%`,
-                background: TRIGGER_COLOR[s.trigger] || TRIGGER_COLOR.continuous,
+                background: presetFor(TRIGGER_COLOR, s.trigger, TRIGGER_COLOR.continuous),
                 opacity: 0.8,
               }}
             />
@@ -485,7 +516,7 @@ export default function PlayoutBar({ camera, pb, onClose }: any) {
         {federated && hoverMs != null && (
           <div
             className="pointer-events-none absolute top-0.5 z-10 -translate-x-1/2 rounded-[5px] border border-[rgba(150,180,245,.3)] bg-[rgba(8,15,34,.95)] px-1.5 py-px font-mono text-[10px] tabular-nums text-[#d7f7e9]"
-            style={{ left: `${Math.min(96, Math.max(4, scrub.hover * 100))}%` }}
+            style={{ left: `${Math.min(96, Math.max(4, (scrub.hover ?? 0) * 100))}%` }}
           >
             {clockOf(hoverMs)}
           </div>

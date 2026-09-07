@@ -8,8 +8,24 @@
 //   add [start,end] pairs. Emits the canonical dict via onChange.
 import { Icon } from "@iconify/react";
 
+import type { LinkageSchedule } from "../types";
 
-const DAYS = [
+/** One `[start, end]` window, "HH:MM" UTC. */
+export type LinkageScheduleWindow = [string, string];
+
+/** The canonical schedule this editor emits: lowercase weekday → windows. An
+ *  empty dict = always on. (`LinkageSchedule` is the loose wire dict the
+ *  backend stores verbatim; this is its editor-defined shape.) */
+export interface LinkageScheduleWindows {
+  [day: string]: LinkageScheduleWindow[];
+}
+
+export interface LinkageScheduleEditorProps {
+  value?: LinkageSchedule | LinkageScheduleWindows | null;
+  onChange?: (next: LinkageScheduleWindows) => void;
+}
+
+const DAYS: [string, string][] = [
   ["mon", "Mon"],
   ["tue", "Tue"],
   ["wed", "Wed"],
@@ -19,29 +35,36 @@ const DAYS = [
   ["sun", "Sun"],
 ];
 
-export default function LinkageScheduleEditor({ value = {}, onChange }: any) {
-  const sched = value && typeof value === "object" ? value : {};
+export default function LinkageScheduleEditor({ value = {}, onChange }: LinkageScheduleEditorProps) {
+  const sched: Record<string, unknown> = value && typeof value === "object" ? value : {};
   const isAlwaysOn = Object.keys(sched).length === 0;
 
-  const set = (next) => {
+  // A day's windows, or null when the day carries none. The dict is this
+  // editor's own output (the backend stores it verbatim), so an array here is
+  // taken as the window pairs it wrote.
+  const asWindows = (v: unknown): LinkageScheduleWindow[] | null =>
+    Array.isArray(v) ? (v as LinkageScheduleWindow[]) : null;
+
+  const set = (next: Record<string, unknown>) => {
     // Drop empty-array days so a fully-empty schedule collapses to {} (= always on).
-    const clean: any = {};
-    for (const [k, v] of Object.entries<any>(next)) {
-      if (Array.isArray(v) && v.length) clean[k] = v;
+    const clean: LinkageScheduleWindows = {};
+    for (const [k, v] of Object.entries(next)) {
+      const windows = asWindows(v);
+      if (windows && windows.length) clean[k] = windows;
     }
     onChange?.(clean);
   };
 
-  const dayWindows = (key) => (Array.isArray(sched[key]) ? sched[key] : null);
+  const dayWindows = (key: string) => asWindows(sched[key]);
 
-  const addWindow = (key) =>
+  const addWindow = (key: string) =>
     set({ ...sched, [key]: [...(dayWindows(key) || []), ["09:00", "17:00"]] });
-  const removeWindow = (key, idx) =>
+  const removeWindow = (key: string, idx: number) =>
     set({ ...sched, [key]: (dayWindows(key) || []).filter((_, i) => i !== idx) });
-  const patchWindow = (key, idx, pos, v) =>
+  const patchWindow = (key: string, idx: number, pos: 0 | 1, v: string) =>
     set({
       ...sched,
-      [key]: (dayWindows(key) || []).map((w, i) => (i === idx ? (pos === 0 ? [v, w[1]] : [w[0], v]) : w)),
+      [key]: (dayWindows(key) || []).map((w, i): LinkageScheduleWindow => (i === idx ? (pos === 0 ? [v, w[1]] : [w[0], v]) : w)),
     });
 
   return (

@@ -5,8 +5,17 @@ import { Icon } from "@iconify/react";
 
 import WebhooksPanel from "./WebhooksPanel";
 import { QuietButton, DangerButton } from "@/components/console";
+import type { CategoryPublic } from "../types";
 
-export default function CategoryDetail({ category, catId, onEdit, onDelete }: any) {
+export interface CategoryDetailProps {
+  category: CategoryPublic;
+  /** The selected category's id, resolved by the parent. */
+  catId?: string;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+export default function CategoryDetail({ category, catId, onEdit, onDelete }: CategoryDetailProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-nb-line px-5 py-3">

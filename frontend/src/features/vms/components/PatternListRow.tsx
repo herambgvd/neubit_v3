@@ -3,9 +3,21 @@
 // PatternListRow — one row in the Patterns / Camera-Groups master list. Renders
 // an icon (grid for patterns, video-camera for groups), name, a compact meta
 // line, an active dot, and hover actions (toggle active / edit / delete).
+import type { MouseEvent } from "react";
 import { Icon } from "@iconify/react";
 
 import { getGroupLayout } from "../videoWall";
+import { isPatternItem, type PatternItem } from "./patternTypes";
+
+export interface PatternListRowProps {
+  item: PatternItem;
+  isPattern: boolean;
+  isSelected: boolean;
+  onSelect: (item: PatternItem) => void;
+  onToggleActive: (item: PatternItem) => void;
+  onEdit: (item: PatternItem) => void;
+  onDelete: (item: PatternItem) => void;
+}
 
 export default function PatternListRow({
   item,
@@ -15,12 +27,15 @@ export default function PatternListRow({
   onToggleActive,
   onEdit,
   onDelete,
-}: any) {
+}: PatternListRowProps) {
   const active = item.is_active !== false;
   const icon = isPattern ? "heroicons:squares-2x2" : "heroicons-outline:video-camera";
+  // The tab says which kind this row is; the shape guard just types the reads.
+  const pattern = isPatternItem(item) ? item : null;
+  const group = isPatternItem(item) ? null : item;
   const meta = isPattern
-    ? `${item.seconds || 0}s · ${(item.camera_group_ids || []).length} groups`
-    : `${(item.camera_ids || []).length} cameras · ${getGroupLayout(item.layout).label}`;
+    ? `${pattern?.seconds || 0}s · ${(pattern?.camera_group_ids || []).length} groups`
+    : `${(group?.camera_ids || []).length} cameras · ${getGroupLayout(group?.layout).label}`;
 
   return (
     <div
@@ -85,7 +100,14 @@ export default function PatternListRow({
   );
 }
 
-function RowBtn({ icon, title, onClick, danger }: any) {
+interface RowBtnProps {
+  icon: string;
+  title: string;
+  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+  danger?: boolean;
+}
+
+function RowBtn({ icon, title, onClick, danger }: RowBtnProps) {
   return (
     <button
       type="button"

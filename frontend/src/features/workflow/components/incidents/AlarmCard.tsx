@@ -8,12 +8,14 @@
 // handlers. The whole card is a link to the existing IncidentDetail; quick-action
 // buttons stopPropagation so they don't navigate.
 
+import type { SyntheticEvent } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 
 import { Avatar, Badge } from "@/components/ui/kit";
 import { titleize, fmtRelative } from "@/lib/format";
 import { PRIORITY_COLOR, STATUS_COLOR } from "../../constants";
+import type { InstancePublic, NameMap } from "../../types";
 import {
   incId,
   incTitle,
@@ -28,10 +30,11 @@ import {
   slaFor,
   isOpen,
 } from "./lib";
+import type { SlaInfo } from "./lib";
 import AlarmCardCamera from "./AlarmCardCamera";
 
 // A status → glyph for the card's type icon.
-const STATUS_ICON = {
+const STATUS_ICON: Record<string, string> = {
   pending: "heroicons-solid:bell-alert",
   active: "heroicons-solid:signal",
   paused: "heroicons-solid:pause-circle",
@@ -40,7 +43,7 @@ const STATUS_ICON = {
   cancelled: "heroicons-solid:x-circle",
 };
 
-function SlaChip({ sla }: any) {
+function SlaChip({ sla }: { sla: SlaInfo | null }) {
   if (!sla) {
     return <span className="inline-flex items-center gap-1 font-mono text-[11px] text-[#7e93bf]"><Icon icon="heroicons-outline:clock" className="text-xs" />No SLA</span>;
   }
@@ -58,6 +61,18 @@ function SlaChip({ sla }: any) {
   );
 }
 
+export interface AlarmCardProps {
+  incident: InstancePublic;
+  sopName?: NameMap;
+  siteName?: NameMap;
+  isNew?: boolean;
+  selected?: boolean;
+  onSelect?: (id: string) => void;
+  onAck?: (it: InstancePublic) => void;
+  onAssign?: (it: InstancePublic) => void;
+  actionPending?: boolean;
+}
+
 export default function AlarmCard({
   incident,
   sopName = {},
@@ -68,7 +83,7 @@ export default function AlarmCard({
   onAck,
   onAssign,
   actionPending = false,
-}: any) {
+}: AlarmCardProps) {
   const it = incident;
   const id = incId(it);
   const s = sev(it.priority);
@@ -89,7 +104,7 @@ export default function AlarmCard({
   const cameraId = incCameraId(it);
   const eventTime = incEventTime(it);
 
-  const stop = (e) => e.stopPropagation();
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
 
   return (
     <div

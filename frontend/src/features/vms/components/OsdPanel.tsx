@@ -14,12 +14,30 @@ import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
 
-export default function OsdPanel({ cameraId, cameraName }: any) {
+// The ONVIF driver's GetOSDs echo (backend/vision/app/vms/drivers/onvif.py
+// get_osd): one row per overlay. The wire type is the open ConfigResult, so the
+// fields this panel reads are narrowed here.
+interface OsdItem {
+  token?: string;
+  type?: string;
+  text?: string;
+}
+interface OsdState {
+  osds?: OsdItem[];
+  supported?: boolean;
+}
+
+export interface OsdPanelProps {
+  cameraId: string;
+  cameraName?: string | null;
+}
+
+export default function OsdPanel({ cameraId, cameraName }: OsdPanelProps) {
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
   const qc = useQueryClient();
 
-  const osdQ = useQuery<any>({
+  const osdQ = useQuery({
     queryKey: ["vms-osd", cameraId],
     queryFn: () => vms.cameras.getOsd(cameraId),
     enabled: !!cameraId,
@@ -28,8 +46,8 @@ export default function OsdPanel({ cameraId, cameraName }: any) {
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
-  const osds = osdQ.data?.osds || [];
-  const plain = osds.find((o) => (o.type || "").toLowerCase().startsWith("plain")) || {};
+  const osds = ((osdQ.data ?? {}) as OsdState).osds || [];
+  const plain: OsdItem = osds.find((o) => (o.type || "").toLowerCase().startsWith("plain")) || {};
   const hasDatetime = osds.some((o) => /date|time/i.test(o.type || ""));
 
   const [text, setText] = useState("");
@@ -54,7 +72,7 @@ export default function OsdPanel({ cameraId, cameraName }: any) {
     }
   };
 
-  const apply = useMutation<any>({
+  const apply = useMutation({
     mutationFn: () => vms.cameras.setOsd(cameraId, { text, show_datetime: showDt }),
     onSuccess: (fresh) => {
       toast.success(`Overlay applied to ${cameraName || "camera"}`);

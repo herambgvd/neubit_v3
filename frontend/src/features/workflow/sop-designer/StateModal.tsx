@@ -10,14 +10,15 @@ import { toast } from "sonner";
 import { Button, Modal } from "@/components/ui/kit";
 import { fieldClass, areaClass, FieldLabel } from "@/components/common";
 import { api, apiError } from "@/lib/api";
-import { titleize, asItems, idOf } from "@/lib/format";
+import type { Page } from "@/lib/types";
+import { titleize, asItems } from "@/lib/format";
 import { DEFAULT_COLOR } from "./lib/canvasGeometry";
 import { workflow as wfApi } from "../api";
+import type { AssignableRole, CreateStateRequest, StatePublic } from "../types";
 
-const sid = (s) => idOf(s, "state_id", "id");
-const roleId = (r) => r.role_id || r.id;
-const roleName = (r) => r.display_name || titleize(r.name) || roleId(r);
-const chipCls = (active) =>
+const roleId = (r: AssignableRole): string => r.id;
+const roleName = (r: AssignableRole): string => titleize(r.name) || roleId(r);
+const chipCls = (active: boolean): string =>
   `text-xs rounded-full border px-2.5 py-1 transition ${
     active
       ? "border-nb-blue bg-[rgba(96,165,250,.10)] text-nb-blueb"
@@ -25,7 +26,17 @@ const chipCls = (active) =>
   }`;
 const STATE_COLORS = ["#6366F1", "#10B981", "#F59E0B", "#EF4444", "#3B82F6", "#8B5CF6", "#EC4899", "#64748B"];
 
-export default function StateModal({ sopId, state, defaults, onClose, onSaved }: any) {
+export interface StateModalProps {
+  sopId: string;
+  /** The state being edited; null creates one. */
+  state: StatePublic | null;
+  /** Where a NEW state lands (the add-default, or the dragged node). */
+  defaults?: { position_x?: number; position_y?: number } | null;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+export default function StateModal({ sopId, state, defaults, onClose, onSaved }: StateModalProps) {
   const isEdit = !!state;
   const [name, setName] = useState(state?.name || "");
   const [description, setDescription] = useState(state?.description || "");
@@ -33,21 +44,22 @@ export default function StateModal({ sopId, state, defaults, onClose, onSaved }:
   const [isInitial, setIsInitial] = useState(!!state?.is_initial);
   const [isTerminal, setIsTerminal] = useState(!!state?.is_terminal);
   const [isCancellation, setIsCancellation] = useState(!!state?.is_cancellation);
-  const [slaHours, setSlaHours] = useState(state?.sla_hours ?? "");
-  const [requiredRoleIds, setRequiredRoleIds] = useState(state?.required_role_ids || []);
+  const [slaHours, setSlaHours] = useState<string | number>(state?.sla_hours ?? "");
+  const [requiredRoleIds, setRequiredRoleIds] = useState<string[]>(state?.required_role_ids || []);
   const [err, setErr] = useState("");
 
-  const rolesQ = useQuery<any>({
+  const rolesQ = useQuery({
     queryKey: ["auth-roles-min"],
-    queryFn: () => api.get("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<AssignableRole>>("/auth/roles", { params: { page_size: 100 } }).then((r) => r.data),
   });
   const roles = asItems(rolesQ.data);
 
-  const toggleRole = (id) =>
+  const toggleRole = (id: string) =>
     setRequiredRoleIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
-  const save = useMutation<any, any, any>({
-    mutationFn: (body: any) => (isEdit ? wfApi.states.update(sopId, sid(state), body) : wfApi.states.create(sopId, body)),
+  const save = useMutation({
+    mutationFn: (body: CreateStateRequest) =>
+      state ? wfApi.states.update(sopId, state.state_id, body) : wfApi.states.create(sopId, body),
     onSuccess: () => { toast.success(isEdit ? "State updated" : "State created"); onSaved(); },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -72,7 +84,7 @@ export default function StateModal({ sopId, state, defaults, onClose, onSaved }:
     <Modal
       open
       onClose={onClose}
-      title={isEdit ? `Edit state · ${state.name}` : "Add state"}
+      title={state ? `Edit state · ${state.name}` : "Add state"}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>

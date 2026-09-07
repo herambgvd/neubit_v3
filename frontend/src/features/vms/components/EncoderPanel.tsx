@@ -15,12 +15,42 @@ import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
 
-export default function EncoderPanel({ cameraId, cameraName }: any) {
+// The ONVIF driver's encoder echo (backend/vision/app/vms/drivers/onvif.py
+// get_encoder): the current configuration plus best-effort `options` from
+// GetVideoEncoderConfigurationOptions. The wire type is the open ConfigResult,
+// so the fields this panel reads are narrowed here.
+interface EncoderOptions {
+  resolutions?: string[];
+  fps?: { min?: number | null; max?: number | null } | null;
+}
+interface EncoderState {
+  role?: string | null;
+  codec?: string | null;
+  resolution?: string | null;
+  fps?: number | null;
+  bitrate?: number | null;
+  gov_length?: number | null;
+  options?: EncoderOptions;
+}
+// The editable copy — numbers bind to text inputs, so they may be "" or a string.
+interface EncoderDraft {
+  resolution: string;
+  fps: number | string;
+  bitrate: number | string;
+  gov_length: number | string;
+}
+
+export interface EncoderPanelProps {
+  cameraId: string;
+  cameraName?: string | null;
+}
+
+export default function EncoderPanel({ cameraId, cameraName }: EncoderPanelProps) {
   const { can } = useAuth();
   const canManage = can("vms.config.manage");
   const qc = useQueryClient();
 
-  const encQ = useQuery<any>({
+  const encQ = useQuery({
     queryKey: ["vms-encoder", cameraId],
     queryFn: () => vms.cameras.getEncoder(cameraId),
     enabled: !!cameraId,
@@ -29,10 +59,10 @@ export default function EncoderPanel({ cameraId, cameraName }: any) {
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
-  const data = encQ.data || {};
+  const data = (encQ.data ?? {}) as EncoderState;
   const options = data.options || {};
 
-  const [draft, setDraft] = useState<any>({});
+  const [draft, setDraft] = useState<Partial<EncoderDraft>>({});
   useEffect(() => {
     if (!encQ.data) return;
     setDraft({
@@ -43,7 +73,7 @@ export default function EncoderPanel({ cameraId, cameraName }: any) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [encQ.data]);
-  const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
+  const set = (patch: Partial<EncoderDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
   // Resolution dropdown options — device list + the current value if it's not in it.
   const resolutionOptions = (() => {
@@ -66,7 +96,7 @@ export default function EncoderPanel({ cameraId, cameraName }: any) {
     }
   };
 
-  const apply = useMutation<any>({
+  const apply = useMutation({
     mutationFn: () =>
       vms.cameras.setEncoder(cameraId, {
         role: data.role || "main",

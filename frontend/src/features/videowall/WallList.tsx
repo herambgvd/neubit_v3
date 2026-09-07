@@ -19,7 +19,7 @@ export default function WallList() {
   const canView = can("vms.wall.view");
   const canManage = can("vms.wall.manage");
 
-  const wallsQ = useQuery<any>({
+  const wallsQ = useQuery({
     queryKey: ["walls"],
     queryFn: () => videowall.walls.list({ limit: 200 }),
     enabled: canView,

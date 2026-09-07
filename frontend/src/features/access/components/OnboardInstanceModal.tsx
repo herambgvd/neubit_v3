@@ -4,7 +4,7 @@
 // onboard-instance-modal.jsx: name + site + base URL + auth tabs (basic/jwt) +
 // username/secret + reconciler cron, with URL normalization + validation.
 // Rethemed to v3 tokens; uses shared kit Modal/Button + common Field + Select.
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Icon } from "@iconify/react";
@@ -16,8 +16,9 @@ import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { gates } from "../api";
 import { AUTH_METHODS } from "../constants";
+import type { AccessAuthType } from "../types";
 
-function normalizeBaseUrl(value) {
+function normalizeBaseUrl(value: string): string {
   const raw = String(value || "").trim();
   if (!raw) return "";
   try {
@@ -30,7 +31,7 @@ function normalizeBaseUrl(value) {
   }
 }
 
-function isValidHttpUrl(value) {
+function isValidHttpUrl(value: string): boolean {
   try {
     const u = new URL(value);
     return (u.protocol === "http:" || u.protocol === "https:") && !!u.hostname;
@@ -39,8 +40,25 @@ function isValidHttpUrl(value) {
   }
 }
 
-export default function OnboardInstanceModal({ onClose, onSuccess }: any) {
-  const [form, setForm] = useState<any>({
+/** The onboard form. Unset `site_id` / `reconciler_cron` are "" here and the
+ *  request sends them as-is (the backend treats "" as unset). */
+interface OnboardForm {
+  name: string;
+  site_id: string;
+  base_url: string;
+  auth_type: AccessAuthType;
+  username: string;
+  secret: string;
+  reconciler_cron: string;
+}
+
+export interface OnboardInstanceModalProps {
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export default function OnboardInstanceModal({ onClose, onSuccess }: OnboardInstanceModalProps) {
+  const [form, setForm] = useState<OnboardForm>({
     name: "",
     site_id: "",
     base_url: "",
@@ -49,17 +67,17 @@ export default function OnboardInstanceModal({ onClose, onSuccess }: any) {
     secret: "",
     reconciler_cron: "0 3 * * *",
   });
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<OnboardForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const sitesQ = useQuery<any>({
+  const sitesQ = useQuery({
     queryKey: ["sites-list"],
     queryFn: () => sitesApi.list({ limit: 200 }),
   });
   const sites = asItems(sitesQ.data);
 
-  const m = useMutation<any>({
+  const m = useMutation({
     mutationFn: () =>
       gates.instances.create({ ...form, base_url: normalizeBaseUrl(form.base_url) }),
     onSuccess: () => {
@@ -70,7 +88,7 @@ export default function OnboardInstanceModal({ onClose, onSuccess }: any) {
   });
 
   const validate = () => {
-    const next: any = {};
+    const next: Record<string, string> = {};
     const url = normalizeBaseUrl(form.base_url);
     if (!form.name.trim() || form.name.trim().length < 2) next.name = "Required (min 2 chars)";
     if (!url) next.base_url = "Required";
@@ -81,7 +99,7 @@ export default function OnboardInstanceModal({ onClose, onSuccess }: any) {
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e) => {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (validate()) m.mutate();
   };

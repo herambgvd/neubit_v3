@@ -14,10 +14,19 @@ import { apiError } from "@/lib/api";
 import { security } from "../api";
 import SecuritySection from "./SecuritySection";
 import RoleMapEditor from "./RoleMapEditor";
+import type { DirectoryConfigIn, RoleMap } from "../types";
+
+/** The editable half of the directory config. The bind password is held apart
+ *  (it is write-only), and the group map has its own editor. The optional
+ *  strings are held as "" while editing and become null in the body. */
+type DirectoryForm = Omit<
+  DirectoryConfigIn,
+  "bind_password" | "group_role_map" | "user_dn_base" | "default_role"
+> & { user_dn_base: string; default_role: string };
 
 const PLACEHOLDER = "•••••••• (unchanged)";
 
-const EMPTY = {
+const EMPTY: DirectoryForm = {
   name: "Directory",
   enabled: true,
   server_uri: "",
@@ -32,13 +41,17 @@ const EMPTY = {
   default_role: "",
 };
 
-export default function DirectoryCard({ canManage }: any) {
-  const qc = useQueryClient();
-  const q = useQuery<any>({ queryKey: ["security-directory"], queryFn: () => security.directory.get() });
+export interface DirectoryCardProps {
+  canManage: boolean;
+}
 
-  const [form, setForm] = useState(EMPTY);
+export default function DirectoryCard({ canManage }: DirectoryCardProps) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["security-directory"], queryFn: () => security.directory.get() });
+
+  const [form, setForm] = useState<DirectoryForm>(EMPTY);
   const [password, setPassword] = useState("");
-  const [groupRoleMap, setGroupRoleMap] = useState<any>({});
+  const [groupRoleMap, setGroupRoleMap] = useState<RoleMap>({});
   const [hasBindPassword, setHasBindPassword] = useState(false);
   const configured = !!q.data;
 
@@ -69,11 +82,11 @@ export default function DirectoryCard({ canManage }: any) {
     setPassword("");
   }, [q.data]);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<DirectoryForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => {
-      const body: any = {
+      const body: DirectoryConfigIn = {
         ...form,
         default_role: form.default_role || null,
         user_dn_base: form.user_dn_base || null,
@@ -90,7 +103,7 @@ export default function DirectoryCard({ canManage }: any) {
     onError: (e) => toast.error(apiError(e, "Save failed")),
   });
 
-  const remove = useMutation<any>({
+  const remove = useMutation({
     mutationFn: () => security.directory.remove(),
     onSuccess: () => {
       toast.success("Directory removed");
@@ -99,7 +112,7 @@ export default function DirectoryCard({ canManage }: any) {
     onError: (e) => toast.error(apiError(e, "Delete failed")),
   });
 
-  const sync = useMutation<any>({
+  const sync = useMutation({
     mutationFn: () => security.directory.sync(),
     onSuccess: (res) => {
       const msg = `Sync ${res.live ? "(live)" : "(scaffold)"}: +${res.created} created, ${res.updated} updated, ${res.skipped} skipped`;

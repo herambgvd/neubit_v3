@@ -25,6 +25,7 @@
 // `cells` already holds the stop that was on screen.
 import { memo, useMemo } from "react";
 
+import type { EstateCamera, PatternStop } from "../types";
 import WallTile from "./WallTile";
 import { getLayout, gridStyle, tileProfile, tileStyle } from "../videoWall";
 
@@ -34,11 +35,20 @@ export const STAGE_FADE_MS = 500;
 
 // Identity of a stop for buffer bookkeeping — the group AND its cameras, because
 // editing a group's cameras must count as a different thing to show.
-export function stopKey(stop: any) {
+export function stopKey(stop: PatternStop | null): string | null {
   return stop ? `${stop.groupId}:${(stop.cameraIds || []).join(",")}` : null;
 }
 
-function StageLayer({ stop, visible, cameraById, estateReady, qualityProfile }: any) {
+interface StageLayerProps {
+  stop: PatternStop;
+  visible: boolean;
+  cameraById: Map<string, EstateCamera>;
+  estateReady: boolean;
+  /** The wall's global quality profile; null = per-tile heuristic. */
+  qualityProfile: "main" | "sub" | null;
+}
+
+function StageLayer({ stop, visible, cameraById, estateReady, qualityProfile }: StageLayerProps) {
   const layout = useMemo(() => getLayout(stop.wallLayout), [stop.wallLayout]);
   // Stable per-tile grid-area objects, same reason as the manual wall: a fresh
   // object each render would defeat WallTile's memo.
@@ -77,7 +87,17 @@ function StageLayer({ stop, visible, cameraById, estateReady, qualityProfile }: 
 
 const MemoLayer = memo(StageLayer);
 
-function PatternStage({ slots, front, cameraById, estateReady, qualityProfile }: any) {
+export interface PatternStageProps {
+  /** The two layer slots; null = nothing loaded in that slot. */
+  slots: (PatternStop | null)[];
+  /** Which slot is on screen. */
+  front: number;
+  cameraById: Map<string, EstateCamera>;
+  estateReady: boolean;
+  qualityProfile: "main" | "sub" | null;
+}
+
+function PatternStage({ slots, front, cameraById, estateReady, qualityProfile }: PatternStageProps) {
   return (
     <div className="relative h-full min-h-0">
       {[0, 1].map((slot) =>

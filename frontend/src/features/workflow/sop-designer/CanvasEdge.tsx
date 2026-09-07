@@ -5,8 +5,18 @@
 // label chip, selectable/editable. PendingEdge is the dashed rubber-band shown
 // while dragging a new connection from a node's handle to the cursor.
 import { edgePath, bezierPoint, nodeCenter } from "./lib/canvasGeometry";
+import type { Point, Positioned } from "./lib/canvasGeometry";
 
-export default function CanvasEdge({ from, to, label, selected, onSelect, onEdit }: any) {
+export interface CanvasEdgeProps {
+  from: Positioned;
+  to: Positioned;
+  label?: string | null;
+  selected: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+}
+
+export default function CanvasEdge({ from, to, label, selected, onSelect, onEdit }: CanvasEdgeProps) {
   const { a, b, c1, c2 } = edgePath(from, to);
   const d = `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`;
   const mid = bezierPoint(a, c1, c2, b, 0.5);
@@ -47,7 +57,13 @@ export default function CanvasEdge({ from, to, label, selected, onSelect, onEdit
   );
 }
 
-export function PendingEdge({ from, to }: any) {
+export interface PendingEdgeProps {
+  from: Positioned;
+  /** Cursor position in world coordinates. */
+  to: Point;
+}
+
+export function PendingEdge({ from, to }: PendingEdgeProps) {
   const a = nodeCenter(from);
   const dx = to.x - a.x;
   const dy = to.y - a.y;

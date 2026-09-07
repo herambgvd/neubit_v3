@@ -19,21 +19,25 @@ import { Icon } from "@iconify/react";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { gates } from "../api";
+import type { HardwareListResponse, ScheduleListResponse } from "../types";
 
-const SUB_TABS = [
+/** The three sub-tabs: two live controller proxies plus the schedules catalog. */
+type ScheduledSub = "mags" | "readers" | "weekly";
+
+const SUB_TABS: { key: ScheduledSub; label: string }[] = [
   { key: "mags", label: "Scheduled MAGs" },
   { key: "readers", label: "Scheduled Readers" },
   { key: "weekly", label: "Weekly Programs" },
 ];
 
-const COPY = {
+const COPY: Record<ScheduledSub, string> = {
   mags: "Temporary cardholder → security-group grants between two dates, read live from the controller.",
   readers: "Per-reader scheduled weekly-program assignments, read live from the controller.",
   weekly: "The weekly-program inventory synced from the controller.",
 };
 
 // Prefer human-friendly keys first, then fill from whatever the DTO carries.
-function pickColumns(items) {
+function pickColumns(items: Record<string, unknown>[]): string[] {
   const PREFERRED = [
     "Name",
     "UID",
@@ -48,9 +52,9 @@ function pickColumns(items) {
     "ToDateValid",
   ];
   if (!items.length) return [];
-  const keys = new Set<any>();
+  const keys = new Set<string>();
   items.slice(0, 50).forEach((it) => Object.keys(it || {}).forEach((k) => keys.add(k)));
-  const ordered: any[] = [];
+  const ordered: string[] = [];
   PREFERRED.forEach((f) => {
     if (keys.has(f)) {
       ordered.push(f);
@@ -64,15 +68,22 @@ function pickColumns(items) {
   return ordered;
 }
 
-function Cell({ value }: any) {
+function Cell({ value }: { value: unknown }) {
   if (value === null || value === undefined || value === "") return <span className="text-muted/70">—</span>;
   if (typeof value === "object") return <code className="text-[10px] text-muted">{JSON.stringify(value)}</code>;
   const str = String(value);
   return str.length > 48 ? <span title={str}>{str.slice(0, 48)}…</span> : str;
 }
 
-function ScheduledList({ instanceId, sub }: any) {
-  const q = useQuery<any>({
+interface ScheduledListProps {
+  instanceId: string;
+  sub: ScheduledSub;
+}
+
+function ScheduledList({ instanceId, sub }: ScheduledListProps) {
+  // The three sub-tabs hit two different routes, so the response type is the
+  // union of what they return; the table reads it generically either way.
+  const q = useQuery<ScheduleListResponse | HardwareListResponse>({
     queryKey: ["ac-scheduled", instanceId, sub],
     queryFn: () =>
       sub === "weekly"
@@ -82,7 +93,9 @@ function ScheduledList({ instanceId, sub }: any) {
           }),
     enabled: !!instanceId,
   });
-  const items = asItems(q.data);
+  // Weekly Programs come back as `SchedulePublic`, the other two as raw controller
+  // DTOs; this table reads keys generically, so both are read as plain records.
+  const items = asItems(q.data) as Record<string, unknown>[];
   const cols = pickColumns(items);
   const th = "px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-muted";
 
@@ -126,7 +139,7 @@ function ScheduledList({ instanceId, sub }: any) {
       </thead>
       <tbody className="divide-y divide-card-border">
         {items.map((it, i) => (
-          <tr key={it.UID || it.uid || it.id || i} className="hover:bg-hover/50">
+          <tr key={rowKey(it, i)} className="hover:bg-hover/50">
             {cols.map((c) => (
               <td key={c} className="px-3 py-2 align-top font-mono text-[11px] text-muted">
                 <Cell value={it[c]} />
@@ -139,8 +152,18 @@ function ScheduledList({ instanceId, sub }: any) {
   );
 }
 
-export default function ScheduledTab({ instanceId }: any) {
-  const [sub, setSub] = useState("mags");
+/** A row's React key: the DTO's own identifier when it has one, else the index. */
+function rowKey(item: Record<string, unknown>, index: number): string {
+  const id = item.UID ?? item.uid ?? item.id;
+  return typeof id === "string" || typeof id === "number" ? String(id) : String(index);
+}
+
+export interface ScheduledTabProps {
+  instanceId: string;
+}
+
+export default function ScheduledTab({ instanceId }: ScheduledTabProps) {
+  const [sub, setSub] = useState<ScheduledSub>("mags");
 
   return (
     <div className="flex h-full flex-col">

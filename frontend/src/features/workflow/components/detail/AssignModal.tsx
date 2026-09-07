@@ -11,39 +11,46 @@ import { toast } from "sonner";
 
 import { Avatar, Button, Modal, Spinner } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
+import type { Page } from "@/lib/types";
 import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import type { AssignableUser } from "../../types";
 
-const userName = (u) =>
-  u?.full_name ||
-  [u?.first_name, u?.last_name].filter(Boolean).join(" ").trim() ||
-  u?.name ||
-  u?.username ||
-  u?.email ||
-  String(u?.id || "").slice(0, 8);
-const userId = (u) => u?.id ?? u?.user_id ?? u?._id;
+const userName = (u: AssignableUser): string =>
+  u.full_name ||
+  u.email ||
+  String(u.id || "").slice(0, 8);
+const userId = (u: AssignableUser): string => u.id;
 
-export default function AssignModal({ open, onClose, instanceId, currentAssigneeId, onAssigned }: any) {
+export interface AssignModalProps {
+  open: boolean;
+  onClose?: () => void;
+  instanceId: string;
+  currentAssigneeId?: string | null;
+  onAssigned?: () => void;
+}
+
+export default function AssignModal({ open, onClose, instanceId, currentAssigneeId, onAssigned }: AssignModalProps) {
   const qc = useQueryClient();
   const [selected, setSelected] = useState(currentAssigneeId ?? "");
   const [search, setSearch] = useState("");
 
   // Lazy-fetch users only while the modal is open.
-  const usersQ = useQuery<any>({
+  const usersQ = useQuery({
     queryKey: ["auth-users-assign"],
-    queryFn: () => api.get("/auth/users", { params: { page_size: 200 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<AssignableUser>>("/auth/users", { params: { page_size: 200 } }).then((r) => r.data),
     enabled: open,
     staleTime: 5 * 60 * 1000,
   });
 
   const users = useMemo(() => {
-    const list = asItems(usersQ.data);
+    const list: AssignableUser[] = usersQ.data ? asItems(usersQ.data) : [];
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter((u) => `${userName(u)} ${u.email || ""}`.toLowerCase().includes(q));
   }, [usersQ.data, search]);
 
-  const mutation = useMutation<any>({
+  const mutation = useMutation({
     mutationFn: () => wfApi.instances.assign(instanceId, selected || null),
     onSuccess: () => {
       toast.success("Assignee updated");

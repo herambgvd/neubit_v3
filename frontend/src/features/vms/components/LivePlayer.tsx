@@ -29,11 +29,14 @@
 // session url) is what drives a real attach — never an unrelated parent render.
 // Props MUST stay referentially stable for the memo to hold: callers pass stable
 // primitives + useCallback'd handlers (WallTile / Streaming do this).
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
+// Type-only: the runtime module stays a dynamic import (kept out of the bundle).
+import type Hls from "hls.js";
 
 import { useLiveSession } from "../hooks/useLiveSession";
 import { acquireSlot, releaseSlot } from "../lib/connectGate";
+import type { LiveSessionSource } from "../types";
 import TalkButton from "./TalkButton";
 
 const WHEP_MAX_ATTEMPTS = 8;
@@ -94,7 +97,7 @@ if (typeof window !== "undefined" && !window.__neubitAbortSwallow) {
 // republish an H264 stream at that path (see deploy/mediamtx.yml). The "?token="
 // is preserved (same camera → the media token is valid for the /h264 sub-path).
 // Returns null when the URL isn't a WHEP endpoint or already targets /h264.
-function toTranscodedWhepUrl(url) {
+function toTranscodedWhepUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
     const u = new URL(url, window.location.origin);
@@ -114,7 +117,7 @@ function toTranscodedWhepUrl(url) {
 // minutes" the operator saw). An already-established WebRTC connection doesn't
 // need the new token (it's only checked at WHEP connect), so we key the attach
 // effect on this token-less identity: a token-only renew no longer re-attaches.
-function streamKey(url) {
+function streamKey(url: string | null | undefined): string {
   if (!url) return "";
   try {
     const u = new URL(url, window.location.origin);
@@ -125,6 +128,52 @@ function streamKey(url) {
   }
 }
 
+/** Which transport ended up playing — reported through `onReady`. */
+export type LiveTransport = "webrtc" | "hls";
+export type VideoFit = "contain" | "cover";
+
+export interface LivePlayerProps {
+  /** Same contract as useLiveSession: nothing is minted until a camera id is known. */
+  cameraId?: string | null;
+  cameraName?: string | null;
+  profile?: string;
+  autoPlay?: boolean;
+  muted?: boolean;
+  preferWebrtc?: boolean;
+  /** Hide chrome (used for dense wall tiles / thumbnails). */
+  minimal?: boolean;
+  /** Video object-fit. Wall tiles fill the cell edge-to-edge (cover, NVR-style);
+   *  detail/modal views keep the whole frame (contain). */
+  fit?: VideoFit;
+  /** G6 — push-to-talk: show the Talk button when the camera is backchannel/
+   *  two-way capable AND the operator holds vms.live.view. Listen (unmute) is
+   *  always available regardless of these. */
+  talkCapable?: boolean;
+  canTalk?: boolean;
+  className?: string;
+  /** Optional session source override (mint/renew/release) — lets a federated
+   *  recorder camera stream through the node's live endpoint while reusing this
+   *  player's whole WHEP-first / h264-transcode / HLS-fallback engine. */
+  source?: LiveSessionSource | null;
+  /** Hold the session until the caller knows enough to mint the RIGHT one. A wall
+   *  tile does not know whether its camera is federated until the camera list has
+   *  loaded; starting before then mints against the wrong control plane and the
+   *  tile shows "camera not found". Defaults to true — nothing else has to care. */
+  enabled?: boolean;
+  /** Extra control buttons merged INTO the player's own control bar, so a host
+   *  (e.g. a wall tile) can add spotlight/remove next to play/zoom/fit — one
+   *  control cluster, not two. Rendered at the left of the bar with a divider. */
+  extraControls?: ReactNode;
+  onReady?: (transport: LiveTransport) => void;
+  onSnapshot?: () => void;
+}
+
+/** A translate offset for the zoomed frame, in px. */
+interface Point {
+  x: number;
+  y: number;
+}
+
 function LivePlayer({
   cameraId,
   cameraName,
@@ -132,53 +181,38 @@ function LivePlayer({
   autoPlay = true,
   muted = true,
   preferWebrtc = true,
-  minimal = false, // hide chrome (used for dense wall tiles / thumbnails)
-  // Video object-fit. Wall tiles fill the cell edge-to-edge (cover, NVR-style);
-  // detail/modal views keep the whole frame (contain).
+  minimal = false,
   fit = "contain",
-  // G6 — push-to-talk: show the Talk button when the camera is backchannel/
-  // two-way capable AND the operator holds vms.live.view. Listen (unmute) is
-  // always available regardless of these.
   talkCapable = false,
   canTalk = false,
   className = "",
-  // Optional session source override (mint/renew/release) — lets a federated
-  // recorder camera stream through the node's live endpoint while reusing this
-  // player's whole WHEP-first / h264-transcode / HLS-fallback engine.
   source,
-  // Hold the session until the caller knows enough to mint the RIGHT one. A wall
-  // tile does not know whether its camera is federated until the camera list has
-  // loaded; starting before then mints against the wrong control plane and the
-  // tile shows "camera not found". Defaults to true — nothing else has to care.
   enabled = true,
-  // Extra control buttons (React node) merged INTO the player's own control bar,
-  // so a host (e.g. a wall tile) can add spotlight/remove next to play/zoom/fit —
-  // one control cluster, not two. Rendered at the left of the bar with a divider.
   extraControls,
   onReady,
   onSnapshot,
-}: any) {
+}: LivePlayerProps) {
   const { hlsUrl, webrtcUrl, ready, loading: sessionLoading, error: sessionError, retry: retrySession } =
     useLiveSession(cameraId, { profile, source, enabled });
 
   // Keep the freshest session URLs (with the CURRENT token) in refs. The attach
   // effect keys on the token-less stream identity (streamKey) so a token-only
   // renew never re-runs it, but when it DOES run it reads the live token here.
-  const hlsUrlRef = useRef(hlsUrl);
-  const webrtcUrlRef = useRef(webrtcUrl);
+  const hlsUrlRef = useRef<string | null>(hlsUrl);
+  const webrtcUrlRef = useRef<string | null>(webrtcUrl);
   const hlsKey = streamKey(hlsUrl);
   const webrtcKey = streamKey(webrtcUrl);
 
-  const videoRef = useRef<any>(null);
-  const containerRef = useRef<any>(null);
-  const hlsRef = useRef<any>(null);
-  const pcRef = useRef<any>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
   // Which transport won (webrtc | hls). Recorded on every switch; nothing reads
   // it yet — the player chrome does not show the active transport.
-  const [_mode, setMode] = useState(preferWebrtc ? "webrtc" : "hls");
+  const [_mode, setMode] = useState<LiveTransport>(preferWebrtc ? "webrtc" : "hls");
   const [isMuted, setIsMuted] = useState(muted);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showChrome, setShowChrome] = useState(!minimal);
@@ -189,10 +223,11 @@ function LivePlayer({
   // the operator kills letterbox / crop per taste without leaving the wall.
   const [paused, setPaused] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState<any>({ x: 0, y: 0 });
-  const [fitMode, setFitMode] = useState(fit);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const [fitMode, setFitMode] = useState<VideoFit>(fit);
   useEffect(() => setFitMode(fit), [fit]);
-  const panDrag = useRef<any>(null);
+  // The drag origin (client coords) + the pan it started from.
+  const panDrag = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
 
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
@@ -217,7 +252,7 @@ function LivePlayer({
 
   // Pan is clamped to the frame: at scale z the picture overhangs its box by
   // (z-1)/2 per side, so translating further than that just drags black in.
-  const clampPan = (p, z, el) => {
+  const clampPan = (p: Point, z: number, el: HTMLVideoElement | null): Point => {
     const r = el?.getBoundingClientRect?.();
     if (!r) return p;
     const mx = ((z - 1) * r.width) / 2;
@@ -254,7 +289,7 @@ function LivePlayer({
     setPan(clampPan({ x: dx - k * (dx - p.x), y: dy - k * (dy - p.y) }, next, el));
   }, []);
 
-  const zoomBy = useCallback((delta) => zoomAt(delta), [zoomAt]);
+  const zoomBy = useCallback((delta: number) => zoomAt(delta), [zoomAt]);
   const resetZoom = useCallback(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
@@ -267,7 +302,7 @@ function LivePlayer({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return undefined;
-    const onWheel = (e) => {
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       // Normalise to one step per EVENT: a mouse notch reports ~±100 and a
       // trackpad a stream of small deltas, and scaling by the raw delta makes
@@ -279,11 +314,11 @@ function LivePlayer({
   }, [zoomAt]);
 
   // Pan the zoomed frame by dragging.
-  const onPanDown = (e) => {
+  const onPanDown = (e: MouseEvent<HTMLVideoElement>) => {
     if (zoom <= 1) return;
     panDrag.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
   };
-  const onPanMove = (e) => {
+  const onPanMove = (e: MouseEvent<HTMLVideoElement>) => {
     if (!panDrag.current) return;
     setPan(
       clampPan(
@@ -373,7 +408,7 @@ function LivePlayer({
     // checks before rescheduling, so setting it here unwinds the whole ladder
     // (WHEP retries, HLS cold retries) instead of leaving it hammering a recorder
     // that has answered. Retry re-mounts the engine via the `attach` counter.
-    const giveUp = (msg) => {
+    const giveUp = (msg: string) => {
       if (disposed) return;
       disposed = true;
       setError(msg);
@@ -428,7 +463,7 @@ function LivePlayer({
     // POST fails to negotiate (400 — Chrome can't decode HEVC); we then re-enter
     // this with the transcoded /h264 variant. `transcoded` guards against looping
     // the fallback (only one transcode attempt).
-    const startWebRTC = async (url = webrtcUrl, transcoded = false) => {
+    const startWebRTC = async (url: string | null = webrtcUrl, transcoded = false) => {
       if (!url) {
         startHLS();
         return;
@@ -460,7 +495,7 @@ function LivePlayer({
         }
       };
 
-      const sendOffer = async (attempt) => {
+      const sendOffer = async (attempt: number) => {
         if (disposed) return;
         if (pcRef.current) {
           try {
@@ -569,7 +604,8 @@ function LivePlayer({
           // Aborted (unmount/navigation) → swallow silently; never retry or
           // fall back on an aborted signal. This is the AbortError the dev
           // overlay was surfacing as an unhandled rejection.
-          if (disposed || whepAbort.signal.aborted || e?.name === "AbortError") return;
+          // (An aborted fetch rejects with a DOMException, an Error subclass.)
+          if (disposed || whepAbort.signal.aborted || (e instanceof Error && e.name === "AbortError")) return;
           if (attempt < WHEP_MAX_ATTEMPTS) {
             try {
               pc.close();
@@ -983,7 +1019,7 @@ function LivePlayer({
           </span>
           <div className="pointer-events-auto flex items-center gap-0.5">
             {/* Push-to-talk (G6) — only for a talk-capable camera + vms.live.view. */}
-            {talkCapable && canTalk && <TalkButton cameraId={cameraId} />}
+            {talkCapable && canTalk && cameraId && <TalkButton cameraId={cameraId} />}
             {/* Listen (audio) — the media element starts muted for autoplay; this
                 unmutes so the operator hears the camera. Always shown; if the
                 stream carries no audio track it just does nothing audible. */}
@@ -1006,7 +1042,7 @@ function LivePlayer({
 // attach effect never re-runs off a sibling tile's state change.
 export default memo(LivePlayer);
 
-function ChromeBtn({ icon, title, onClick }: any) {
+function ChromeBtn({ icon, title, onClick }: { icon: string; title: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -1022,7 +1058,14 @@ function ChromeBtn({ icon, title, onClick }: any) {
 // Compact control button for the always-available player bar (play/pause, zoom,
 // fit). Stops propagation so a click never bubbles to the wall tile (spotlight).
 // Exported so hosts can add matching buttons via LivePlayer's `extraControls`.
-export function PlayerBtn({ icon, title, onClick, disabled = false }: any) {
+export interface PlayerBtnProps {
+  icon: string;
+  title: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}
+
+export function PlayerBtn({ icon, title, onClick, disabled = false }: PlayerBtnProps) {
   return (
     <button
       type="button"

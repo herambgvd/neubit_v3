@@ -4,18 +4,34 @@
 // Patterns show the groups in rotation + dwell + an "Open in streaming" action
 // (→ /streaming?pattern_id=<id>&autoplay=1). Groups show their grid layout + a
 // live preview of the camera-to-cell placement (the same grid the wall renders).
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 
 import { Button } from "@/components/ui/kit";
 import { fmtDateTime } from "@/lib/format";
+import type { CameraGroupPublic, EstateCamera } from "../types";
 import { getGroupLayout, groupGridStyle } from "../videoWall";
+import { isPatternItem, type PatternItem } from "./patternTypes";
 
-export default function PatternDetail({ item, isPattern, groupById, cameraById, onEdit, onDelete, onToggleActive }: any) {
+export interface PatternDetailProps {
+  item: PatternItem;
+  isPattern: boolean;
+  groupById?: Map<string, CameraGroupPublic> | null;
+  cameraById?: Map<string, EstateCamera> | null;
+  onEdit: (item: PatternItem) => void;
+  onDelete: (item: PatternItem) => void;
+  onToggleActive: (item: PatternItem) => void;
+}
+
+export default function PatternDetail({ item, isPattern, groupById, cameraById, onEdit, onDelete, onToggleActive }: PatternDetailProps) {
   const active = item.is_active !== false;
   const icon = isPattern ? "heroicons:squares-2x2" : "heroicons-outline:video-camera";
+  // The tab says which kind this is; the shape guard just types the reads.
+  const pattern = isPatternItem(item) ? item : null;
+  const group = isPatternItem(item) ? null : item;
   // Only read on the group branches below; a pattern has no layout of its own.
-  const grid = getGroupLayout(item.layout);
+  const grid = getGroupLayout(group?.layout);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
@@ -35,9 +51,9 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
                 {active ? "Active" : "Inactive"}
               </span>
               {isPattern ? (
-                <span>· {item.seconds || 0}s rotation · {(item.camera_group_ids || []).length} groups</span>
+                <span>· {pattern?.seconds || 0}s rotation · {(pattern?.camera_group_ids || []).length} groups</span>
               ) : (
-                <span>· {grid.label} · {(item.camera_ids || []).length} cameras</span>
+                <span>· {grid.label} · {(group?.camera_ids || []).length} cameras</span>
               )}
             </div>
           </div>
@@ -75,11 +91,11 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
 
         {isPattern ? (
           <DetailField label="Camera groups in rotation">
-            {(item.camera_group_ids || []).length === 0 ? (
+            {(pattern?.camera_group_ids || []).length === 0 ? (
               <span className="text-xs italic text-nb-faint">No groups assigned.</span>
             ) : (
               <ol className="space-y-1.5">
-                {item.camera_group_ids.map((gid, i) => {
+                {(pattern?.camera_group_ids || []).map((gid, i) => {
                   const g = groupById?.get(gid);
                   return (
                     <li
@@ -110,7 +126,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
             <div className="rounded-lg border border-nb-line bg-[rgba(6,11,26,.55)] p-2">
               <div className="grid aspect-video gap-1.5" style={groupGridStyle(grid)}>
                 {Array.from({ length: grid.capacity }, (_, i) => {
-                  const cid = item.camera_ids?.[i];
+                  const cid = group?.camera_ids?.[i];
                   const cam = cid ? cameraById?.get(cid) : null;
                   return (
                     <div
@@ -154,7 +170,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
   );
 }
 
-function DetailField({ label, children }: any) {
+function DetailField({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{label}</div>

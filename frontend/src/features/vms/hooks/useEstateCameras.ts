@@ -16,11 +16,11 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { asItems } from "@/lib/format";
 import { vms } from "../api";
+import type { EstateCamera, EstateFederatedCamera } from "../types";
 
 export function useEstateCameras() {
-  const localQ = useQuery<any>({
+  const localQ = useQuery({
     queryKey: ["vms-wall-cameras"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     refetchInterval: 20_000,
@@ -28,37 +28,42 @@ export function useEstateCameras() {
   // Federated recorder cameras — cameras OWNED by registered NVR nodes, pulled up
   // read-only and streamed THROUGH each node. Merged into the same list so the
   // camera tree shows recorders as top-level branches alongside local cameras.
-  const fedQ = useQuery<any>({
+  const fedQ = useQuery({
     queryKey: ["vms-wall-federation-cameras"],
     queryFn: () => vms.federation.cameras(),
     refetchInterval: 30_000,
   });
 
-  const cameras = useMemo(() => {
-    const local = asItems(localQ.data);
+  const cameras = useMemo<EstateCamera[]>(() => {
+    const local = localQ.data?.items || [];
     // Each federated camera gets a composite id (`fed:<node>:<cam>`) so it never
     // collides with a local camera id; real_id + node_id drive the node-issued
     // live source (see WallTile). Grouped under its recorder in the rail via
     // site_id/site_name = the node.
-    const fed = (fedQ.data?.items || []).map((c: any) => ({
-      id: `fed:${c.node_id}:${c.id}`,
-      real_id: c.id,
-      name: c.name,
-      status: c.status,
-      federated: true,
-      // PTZ capability as the node reported it (public.ptz.capable) — drives the
-      // wall's PTZ overlay gate; commands proxy through the node (operate-through-node).
-      ptz_capable: !!(c.ptz && c.ptz.capable),
-      node_id: c.node_id,
-      node_name: c.node_name,
-      site_id: `nvr:${c.node_id}`,
-      site_name: c.node_name,
-    }));
+    const fed: EstateFederatedCamera[] = (fedQ.data?.items || []).map((c) => {
+      // The node's camera dict is the recorder's own shape; only the tag fields
+      // are fixed, so its PTZ block is read as the loose dict it is.
+      const ptz = c.ptz as { capable?: boolean } | null | undefined;
+      return {
+        id: `fed:${c.node_id}:${c.id}`,
+        real_id: c.id,
+        name: c.name,
+        status: c.status,
+        federated: true,
+        // PTZ capability as the node reported it (public.ptz.capable) — drives the
+        // wall's PTZ overlay gate; commands proxy through the node (operate-through-node).
+        ptz_capable: !!(ptz && ptz.capable),
+        node_id: c.node_id,
+        node_name: c.node_name,
+        site_id: `nvr:${c.node_id}`,
+        site_name: c.node_name,
+      };
+    });
     return [...fed, ...local];
   }, [localQ.data, fedQ.data]);
 
   const cameraById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, EstateCamera>();
     cameras.forEach((c) => m.set(c.id, c));
     return m;
   }, [cameras]);

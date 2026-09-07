@@ -7,11 +7,31 @@ import { Icon } from "@iconify/react";
 
 import { Button, Input, Modal } from "@/components/ui/kit";
 
-export default function TourFormModal({ open, tour, presets = [], onClose, onSubmit, busy }: any) {
+import type { PresetPublic, TourCreate, TourPublic } from "../types";
+
+export interface TourFormModalProps {
+  open: boolean;
+  /** The tour being edited, or null/undefined to create one. */
+  tour?: TourPublic | null;
+  /** The wall's saved presets — the pool the sequence is built from. */
+  presets?: PresetPublic[];
+  onClose: () => void;
+  onSubmit?: (body: TourCreate) => void;
+  busy?: boolean;
+}
+
+export default function TourFormModal({
+  open,
+  tour,
+  presets = [],
+  onClose,
+  onSubmit,
+  busy,
+}: TourFormModalProps) {
   const editing = !!tour;
   const [name, setName] = useState("");
   const [dwell, setDwell] = useState<number | string>(10);
-  const [selected, setSelected] = useState<any[]>([]); // ordered preset ids
+  const [selected, setSelected] = useState<string[]>([]); // ordered preset ids
 
   useEffect(() => {
     if (!open) return;
@@ -22,12 +42,12 @@ export default function TourFormModal({ open, tour, presets = [], onClose, onSub
 
   if (!open) return null;
 
-  const presetById = new Map<any, any>(presets.map((p) => [p.id, p]));
+  const presetById = new Map(presets.map((p) => [p.id, p]));
   const available = presets.filter((p) => !selected.includes(p.id));
 
-  const add = (id) => setSelected((s) => [...s, id]);
-  const remove = (id) => setSelected((s) => s.filter((x) => x !== id));
-  const move = (idx, dir) =>
+  const add = (id: string) => setSelected((s) => [...s, id]);
+  const remove = (id: string) => setSelected((s) => s.filter((x) => x !== id));
+  const move = (idx: number, dir: 1 | -1) =>
     setSelected((s) => {
       const j = idx + dir;
       if (j < 0 || j >= s.length) return s;

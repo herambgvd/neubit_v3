@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { LiveSessionLike, LiveSessionSource } from "../types";
 
 // Renew this many ms before the token actually expires (TTL ~300s).
 const RENEW_LEAD_MS = 45_000;
@@ -29,22 +30,31 @@ const READY_POLL_DELAY_MS = 2_000;
 // Callers (e.g. federated recorder cameras) can pass a custom `source` with the
 // same shape to mint/renew/release through a different endpoint while reusing this
 // whole lifecycle (warm-up poll, auto-renew, release-on-unmount).
-const DEFAULT_SOURCE = {
+const DEFAULT_SOURCE: LiveSessionSource = {
   start: (cameraId, profile) => vms.live.start(cameraId, profile),
   renew: (cameraId, sessionId) => vms.live.renew(cameraId, sessionId),
   release: (sessionId) => vms.live.release(sessionId),
 };
 
-export function useLiveSession(cameraId, { profile = "sub", enabled = true, source = DEFAULT_SOURCE }: any = {}) {
+export interface UseLiveSessionOptions {
+  profile?: string;
+  enabled?: boolean;
+  source?: LiveSessionSource | null;
+}
+
+export function useLiveSession(
+  cameraId: string | null | undefined,
+  { profile = "sub", enabled = true, source = DEFAULT_SOURCE }: UseLiveSessionOptions = {},
+) {
   const src = source || DEFAULT_SOURCE;
-  const [session, setSession] = useState<any>(null); // PlaybackSessionPublic
-  const [error, setError] = useState<any>(null);
+  const [session, setSession] = useState<LiveSessionLike | null>(null); // PlaybackSessionPublic
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Live refs so timers/cleanup read the freshest values without re-subscribing.
-  const sessionRef = useRef<any>(null);
-  const renewTimerRef = useRef<any>(null);
-  const readyPollRef = useRef<any>(null);
+  const sessionRef = useRef<LiveSessionLike | null>(null);
+  const renewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readyPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposedRef = useRef(false);
   const attemptRef = useRef(0);
   // `scheduleRenew` re-arms itself and, when a renew fails, restarts the session
@@ -52,7 +62,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
   // These refs break it: each holds the latest callback, so neither reads a
   // binding that is not initialised yet nor captures a stale closure. Assigned in
   // an effect (never during render) so the ref write stays a side effect.
-  const scheduleRenewRef = useRef<((sess: any) => void) | null>(null);
+  const scheduleRenewRef = useRef<((sess: LiveSessionLike) => void) | null>(null);
   const startRef = useRef<(() => void) | null>(null);
 
   const clearTimers = () => {
@@ -70,13 +80,13 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
   // SAME MediaMTX path — it only re-mints the media token so long views (video
   // wall left open for hours) don't 401 mid-segment.
   const scheduleRenew = useCallback(
-    (sess) => {
+    (sess: LiveSessionLike | null) => {
       if (renewTimerRef.current) clearTimeout(renewTimerRef.current);
       const expMs = sess?.expires_at ? new Date(sess.expires_at).getTime() : 0;
       const delay = Math.max(5_000, expMs - Date.now() - RENEW_LEAD_MS);
       renewTimerRef.current = setTimeout(async () => {
         const cur = sessionRef.current;
-        if (disposedRef.current || !cur?.session_id) return;
+        if (disposedRef.current || !cur?.session_id || !cameraId) return;
         try {
           const next = await src.renew(cameraId, cur.session_id);
           if (disposedRef.current) return;
@@ -90,6 +100,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
         }
       }, delay);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads cameraId/src at fire time via the latest closure held in scheduleRenewRef
     [],
   );
 
@@ -169,7 +180,7 @@ export function useLiveSession(cameraId, { profile = "sub", enabled = true, sour
       clearTimers();
       const cur = sessionRef.current;
       sessionRef.current = null;
-       
+
       setSession(null);
       // Fire-and-forget release so the MediaMTX path is reaped once nobody's
       // watching. Never awaited — unmount must not block.

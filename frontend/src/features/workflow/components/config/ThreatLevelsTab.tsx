@@ -3,7 +3,8 @@
 // Threat levels tab — set a per-site (or deployment-wide) posture and list the
 // current register. Scope select + reason use the shared Field; the level picker
 // grid and posture list are bespoke.
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -12,11 +13,14 @@ import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { SitePublic, ThreatLevel } from "@/lib/types";
 import { workflow as wfApi } from "../../api";
+import type { SetThreatLevelRequest, ThreatLevelPublic } from "../../types";
 
-// Threat posture levels (mirrors backend ThreatLevelValue).
-const THREAT_LEVELS = ["normal", "elevated", "high", "critical"];
-const THREAT_COLOR = {
+// Threat posture levels (mirrors backend ThreatLevelValue; `lockdown` is not
+// offered from this picker).
+const THREAT_LEVELS: ThreatLevel[] = ["normal", "elevated", "high", "critical"];
+const THREAT_COLOR: Record<string, string> = {
   normal: "bg-[rgba(52,211,153,.10)] text-nb-good",
   elevated: "bg-[rgba(96,165,250,.10)] text-nb-blueb",
   high: "bg-[rgba(251,191,36,.10)] text-nb-warn",
@@ -25,23 +29,23 @@ const THREAT_COLOR = {
 
 export default function ThreatLevelsTab() {
   const qc = useQueryClient();
-  const q = useQuery<any>({ queryKey: ["wf-threat-levels"], queryFn: () => wfApi.threatLevels.list() });
-  const sitesQ = useQuery<any>({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }) });
-  const levels = asItems(q.data);
-  const sites = asItems(sitesQ.data);
-  const siteName = (sid) => sites.find((s) => s.site_id === sid)?.name || sid || "Deployment-wide";
+  const q = useQuery({ queryKey: ["wf-threat-levels"], queryFn: () => wfApi.threatLevels.list() });
+  const sitesQ = useQuery({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }) });
+  const levels = useMemo<ThreatLevelPublic[]>(() => (q.data ? asItems(q.data) : []), [q.data]);
+  const sites = useMemo<SitePublic[]>(() => (sitesQ.data ? asItems(sitesQ.data) : []), [sitesQ.data]);
+  const siteName = (sid: string | null): string => sites.find((s) => s.site_id === sid)?.name || sid || "Deployment-wide";
 
   const [siteId, setSiteId] = useState("");
-  const [level, setLevel] = useState("normal");
+  const [level, setLevel] = useState<ThreatLevel>("normal");
   const [reason, setReason] = useState("");
 
-  const set = useMutation<any, any, any>({
-    mutationFn: (body: any) => wfApi.threatLevels.set(body),
+  const set = useMutation({
+    mutationFn: (body: SetThreatLevelRequest) => wfApi.threatLevels.set(body),
     onSuccess: () => { toast.success("Threat level set"); qc.invalidateQueries({ queryKey: ["wf-threat-levels"] }); setReason(""); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     set.mutate({ site_id: siteId || null, level, reason: reason.trim() || null });
   }

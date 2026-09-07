@@ -10,31 +10,58 @@
 // bridge (GET /api/v1/realtime/access-events, per-instance). No more 5s polling;
 // Pause simply closes the SSE stream. Both history rows and live frames are
 // normalized to one shape so every renderer/helper works against the combined list.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
+import type { AccessDoorPublic } from "@/lib/types";
 import { gates } from "../api";
 import { RESULT_OPTIONS, EVENT_CATEGORIES } from "../constants";
 import { useAccessEventStream } from "../hooks/useAccessEventStream";
+import type {
+  AccessCardholder,
+  AccessEventFrame,
+  AccessEventPublic,
+  NormalizedAccessEvent,
+  RawAccessEvent,
+} from "../types";
 
-export default function EventsFeed({ instanceId, doorIndex }: any) {
+/** The doors of this instance, keyed for the filter + label lookups by the
+ *  CONTROLLER ref an event carries (`remote_ref`), falling back to the local id. */
+type DoorIndex = Record<string, AccessDoorPublic>;
+/** Cardholders keyed by DDS UID — what an event's `cardholder_ref` holds. */
+type CardholderIndex = Record<string, AccessCardholder>;
+
+/** The three resolved labels a row/alert renders. */
+interface EventLabels {
+  doorLabel?: string | null;
+  cardholderLabel?: string | null;
+  cardLabel?: string | null;
+}
+
+export interface EventsFeedProps {
+  instanceId: string;
+  /** GET /access/doors?instance_id= — drives the door filter and label lookups. */
+  doorIndex?: AccessDoorPublic[] | null;
+}
+
+export default function EventsFeed({ instanceId, doorIndex }: EventsFeedProps) {
   const qc = useQueryClient();
   const [paused, setPaused] = useState(false);
   const [showHeartbeat, setShowHeartbeat] = useState(false);
   const [category, setCategory] = useState("all");
-  const [clearedAt, setClearedAt] = useState<any>(null);
+  const [clearedAt, setClearedAt] = useState<string | null>(null);
   const [result, setResult] = useState("");
   const [doorRef, setDoorRef] = useState("");
-  const scrollRef = useRef<any>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const previousTopEventRef = useRef("");
 
   // Initial history — one fetch (no polling). Live updates arrive over SSE below.
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["ac-events", instanceId, result, doorRef],
     queryFn: () =>
       gates.events.list(instanceId, {
@@ -51,7 +78,7 @@ export default function EventsFeed({ instanceId, doorIndex }: any) {
     enabled: !paused,
   });
 
-  const cardholdersQ = useQuery<any>({
+  const cardholdersQ = useQuery({
     queryKey: ["ac-cardholders", instanceId],
     queryFn: () => gates.cardholders.list(instanceId, { limit: 500 }),
     enabled: !!instanceId,
@@ -63,8 +90,8 @@ export default function EventsFeed({ instanceId, doorIndex }: any) {
   // work identically across both sources.
   const historyEvents = useMemo(() => asItems(q.data).map(normalizeEvent), [q.data]);
   const events = useMemo(() => {
-    const seen = new Set<any>();
-    const merged: any[] = [];
+    const seen = new Set<string>();
+    const merged: NormalizedAccessEvent[] = [];
     for (const raw of [...liveEvents, ...historyEvents]) {
       const e = normalizeEvent(raw);
       const key = e.event_id;
@@ -82,12 +109,15 @@ export default function EventsFeed({ instanceId, doorIndex }: any) {
 
   const cardholders = useMemo(() => asItems(cardholdersQ.data), [cardholdersQ.data]);
 
-  const cardholderById = useMemo(
-    () => Object.fromEntries(cardholders.map((ch) => [ch.cardholder_id, ch])),
+  const cardholderById = useMemo<CardholderIndex>(
+    () => Object.fromEntries(cardholders.map((ch) => [ch.cardholder_id, ch] as const)),
     [cardholders],
   );
-  const doorById = useMemo(
-    () => Object.fromEntries((doorIndex || []).map((d) => [d.door_id, d])),
+  // Keyed by the controller ref the events carry. `DoorPublic` has no `door_id`
+  // (that was the v2 field name), so the old key was undefined for every door —
+  // the filter and every door label resolved to nothing.
+  const doorById = useMemo<DoorIndex>(
+    () => Object.fromEntries((doorIndex || []).map((d) => [doorKey(d), d] as const)),
     [doorIndex],
   );
 
@@ -112,8 +142,8 @@ export default function EventsFeed({ instanceId, doorIndex }: any) {
 
   const securityAlerts = useMemo(() => {
     const relevant = visibleEvents.filter((evt) => isUnknownAccess(evt) || isAuthorizedAccess(evt));
-    const grouped: any[] = [];
-    const bySig = new Map<any, any>();
+    const grouped: { evt: NormalizedAccessEvent; count: number }[] = [];
+    const bySig = new Map<string, number>();
     for (const evt of relevant) {
       const sig = alertSignature(evt, cardholderById, doorById);
       const idx = bySig.get(sig);
@@ -187,7 +217,7 @@ export default function EventsFeed({ instanceId, doorIndex }: any) {
                 All doors
               </option>
               {doorIndex.map((d) => (
-                <option key={d.door_id} value={d.door_id} className="bg-card">
+                <option key={d.id} value={doorKey(d)} className="bg-card">
                   {d.name}
                 </option>
               ))}
@@ -248,7 +278,7 @@ export default function EventsFeed({ instanceId, doorIndex }: any) {
           <div className="mx-2 mb-2 rounded-lg border border-card-border bg-card p-2">
             <div className="px-1 text-[11px] font-semibold text-foreground">Security Alerts</div>
             <div className="mt-1 space-y-1">
-              {securityAlerts.slice(0, 3).map(({ evt, count }: any, idx) => {
+              {securityAlerts.slice(0, 3).map(({ evt, count }, idx) => {
                 const unknown = isUnknownAccess(evt);
                 const doorLabel = resolveDoorLabel(evt, doorById);
                 const cardholderLabel = resolveCardholderLabel(evt, cardholderById);
@@ -314,7 +344,13 @@ export default function EventsFeed({ instanceId, doorIndex }: any) {
   );
 }
 
-function EventRow({ event, cardholderById, doorById }: any) {
+interface EventRowProps {
+  event: NormalizedAccessEvent;
+  cardholderById: CardholderIndex;
+  doorById: DoorIndex;
+}
+
+function EventRow({ event, cardholderById, doorById }: EventRowProps) {
   const [open, setOpen] = useState(false);
   const result = String(event.result || "").toLowerCase();
   const category = eventCategory(event);
@@ -376,7 +412,12 @@ function EventRow({ event, cardholderById, doorById }: any) {
   );
 }
 
-function MetaField({ label, value }: any) {
+interface MetaFieldProps {
+  label: ReactNode;
+  value: ReactNode;
+}
+
+function MetaField({ label, value }: MetaFieldProps) {
   return (
     <div>
       <div className="text-[9px] uppercase tracking-wider text-muted/70">{label}</div>
@@ -393,27 +434,39 @@ function MetaField({ label, value }: any) {
  * card_id — works identically across both sources. Idempotent: re-normalizing an
  * already-normalized record is a no-op.
  */
-function normalizeEvent(e) {
-  if (!e || typeof e !== "object") return e;
-  const raw = e.raw_payload || e.raw || {};
+function normalizeEvent(e: RawAccessEvent): NormalizedAccessEvent {
+  // The record still arrives off the wire, so the object guard stays; the union
+  // above makes it unreachable for every call site in this file.
+  if (!e || typeof e !== "object") return e as NormalizedAccessEvent;
+  // One widened view of the three source shapes — each key below exists on at
+  // least one of them, and the folds pick whichever the record actually carries.
+  const src = e as Partial<AccessEventPublic & AccessEventFrame & NormalizedAccessEvent>;
+  const raw = src.raw_payload || src.raw || {};
   return {
-    ...e,
-    event_id: e.event_id || e.id,
-    timestamp: e.timestamp || e.occurred_at || e.ingested_at,
+    ...src,
+    event_id: src.event_id || src.id || null,
+    timestamp: src.timestamp || src.occurred_at || src.ingested_at || null,
     raw_payload: raw,
     // Keep both the *_ref (v3 controller refs) and *_id aliases the helpers read.
-    door_ref: e.door_ref ?? e.door_id ?? null,
-    door_id: e.door_id ?? e.door_ref ?? null,
-    cardholder_ref: e.cardholder_ref ?? e.cardholder_id ?? null,
-    cardholder_id: e.cardholder_id ?? e.cardholder_ref ?? null,
-    card_id: e.card_id ?? pick(raw, "CardCode", "cardCode") ?? null,
-  };
+    door_ref: src.door_ref ?? src.door_id ?? null,
+    door_id: src.door_id ?? src.door_ref ?? null,
+    cardholder_ref: src.cardholder_ref ?? src.cardholder_id ?? null,
+    cardholder_id: src.cardholder_id ?? src.cardholder_ref ?? null,
+    card_id: src.card_id ?? pickText(raw, "CardCode", "cardCode"),
+  } as NormalizedAccessEvent;
+}
+
+/** The key `doorById` uses and the door filter sends: an event's `door_ref` is
+ *  the CONTROLLER's ref, so match on `remote_ref` and fall back to the local id
+ *  for a door the mirror has not linked yet. */
+function doorKey(door: AccessDoorPublic): string {
+  return door.remote_ref || door.id;
 }
 
 /* ── helpers (ported verbatim from v2, snake_case fields) ─────────── */
 
-function summarize(event, labels: any = {}) {
-  const parts: any[] = [];
+function summarize(event: NormalizedAccessEvent, labels: EventLabels = {}) {
+  const parts: string[] = [];
   if (labels.cardholderLabel) parts.push(labels.cardholderLabel);
   else if (labels.cardLabel) parts.push(`Card ${labels.cardLabel}`);
   if (labels.doorLabel) parts.push(`at ${labels.doorLabel}`);
@@ -424,7 +477,7 @@ function summarize(event, labels: any = {}) {
   return parts.join(" • ") || "—";
 }
 
-function eventTypeLabel(event) {
+function eventTypeLabel(event: NormalizedAccessEvent): string {
   const p = event.raw_payload || {};
   const rawType = String(pick(p, "Type", "type", "EventType", "eventType") || "").trim();
   if (!rawType) return event.event_type || event.reason || "—";
@@ -435,28 +488,28 @@ function eventTypeLabel(event) {
   return rawType;
 }
 
-function formatTime(iso) {
+function formatTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
 }
 
-function formatDate(iso) {
+function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
   return d.toLocaleDateString();
 }
 
-function isHeartbeat(event) {
+function isHeartbeat(event: NormalizedAccessEvent): boolean {
   const t = eventTypeOf(event);
   if (t.includes("statusupdate")) return true;
   if (String(event.result || "").toLowerCase() === "other" && !event.cardholder_id && !event.card_id) return true;
   return false;
 }
 
-function isAuthorizedAccess(event) {
+function isAuthorizedAccess(event: NormalizedAccessEvent): boolean {
   const result = String(event?.result || "").toLowerCase();
   const t = eventTypeOf(event);
   const denied = deniedCodeOf(event);
@@ -465,7 +518,7 @@ function isAuthorizedAccess(event) {
   return t === "1" || /accessgranted|authorized|granted/.test(t);
 }
 
-function isUnknownAccess(event) {
+function isUnknownAccess(event: NormalizedAccessEvent): boolean {
   const result = String(event?.result || "").toLowerCase();
   if (result === "denied" || result === "unknown_card" || result === "forced" || result === "tamper") return true;
   const deniedCode = deniedCodeOf(event);
@@ -474,7 +527,7 @@ function isUnknownAccess(event) {
   return /^[2-9]$|^[1-9]\d+$/.test(t) || /unknowncard|denied|accessdenied/.test(t);
 }
 
-function eventCategory(event) {
+function eventCategory(event: NormalizedAccessEvent): string {
   const explicit = String(event?.category || "").toLowerCase();
   if (explicit) return explicit;
   const t = eventTypeOf(event);
@@ -488,17 +541,17 @@ function eventCategory(event) {
   return "access";
 }
 
-function eventTypeOf(event) {
+function eventTypeOf(event: NormalizedAccessEvent): string {
   return String(
     pick(event?.raw_payload || {}, "Type", "type", "EventType", "eventType") || event?.event_type || event?.reason || "",
   ).toLowerCase();
 }
 
-function deniedCodeOf(event) {
+function deniedCodeOf(event: NormalizedAccessEvent): unknown {
   return pick(event?.raw_payload || {}, "AccessDeniedCode", "accessDeniedCode");
 }
 
-function alertSignature(event, cardholderById, doorById) {
+function alertSignature(event: NormalizedAccessEvent, cardholderById: CardholderIndex, doorById: DoorIndex): string {
   const kind = isUnknownAccess(event) ? "unknown" : "authorized";
   const card = resolveCardLabel(event) || "-";
   const door = resolveDoorLabel(event, doorById) || event.door_id || "-";
@@ -506,7 +559,9 @@ function alertSignature(event, cardholderById, doorById) {
   return `${kind}|${card}|${door}|${holder}`;
 }
 
-function pick(obj, ...keys) {
+/** First non-empty value among `keys`. The vendor payload is genuinely dynamic,
+ *  so the value stays `unknown` and each caller narrows it. */
+function pick(obj: Record<string, unknown> | null | undefined, ...keys: string[]): unknown {
   for (const key of keys) {
     const value = obj?.[key];
     if (value !== undefined && value !== null && `${value}`.trim() !== "") return value;
@@ -514,48 +569,57 @@ function pick(obj, ...keys) {
   return null;
 }
 
-function resolveDoorLabel(event, doorById) {
+/** `pick` narrowed to the text a label renderer can show; a picked value that is
+ *  neither string nor number has no label to render, hence null. */
+function pickText(obj: Record<string, unknown> | null | undefined, ...keys: string[]): string | null {
+  const value = pick(obj, ...keys);
+  return typeof value === "string" ? value : typeof value === "number" ? String(value) : null;
+}
+
+function resolveDoorLabel(event: NormalizedAccessEvent, doorById: DoorIndex): string | null {
   const p = event.raw_payload || {};
   return (
-    pick(p, "ReaderName", "readerName", "DoorName", "doorName") ||
-    doorById?.[event.door_id]?.name ||
-    doorById?.[event.door_ref]?.name ||
+    pickText(p, "ReaderName", "readerName", "DoorName", "doorName") ||
+    (event.door_id ? doorById?.[event.door_id]?.name : null) ||
+    (event.door_ref ? doorById?.[event.door_ref]?.name : null) ||
     null
   );
 }
 
-function resolveCardholderLabel(event, cardholderById) {
+function resolveCardholderLabel(event: NormalizedAccessEvent, cardholderById: CardholderIndex): string | null {
   const p = event.raw_payload || {};
-  const first = pick(p, "CardholderFirstName", "cardholderFirstName", "FirstName", "firstName");
-  const last = pick(p, "CardholderLastName", "cardholderLastName", "LastName", "lastName");
+  const first = pickText(p, "CardholderFirstName", "cardholderFirstName", "FirstName", "firstName");
+  const last = pickText(p, "CardholderLastName", "cardholderLastName", "LastName", "lastName");
   const payloadName =
-    [first, last].filter(Boolean).join(" ").trim() || pick(p, "CardholderName", "cardholderName", "Name", "name");
+    [first, last].filter(Boolean).join(" ").trim() || pickText(p, "CardholderName", "cardholderName", "Name", "name");
   if (payloadName) return payloadName;
-  const mapped = cardholderById?.[event.cardholder_id] || cardholderById?.[event.cardholder_ref];
+  const mapped =
+    (event.cardholder_id ? cardholderById?.[event.cardholder_id] : undefined) ||
+    (event.cardholder_ref ? cardholderById?.[event.cardholder_ref] : undefined);
   if (mapped?.name) return mapped.name;
   if (mapped?.employee_id) return mapped.employee_id;
   return null;
 }
 
-function resolveCardLabel(event) {
+function resolveCardLabel(event: NormalizedAccessEvent): string | null {
   const p = event.raw_payload || {};
-  return pick(p, "CardCode", "cardCode") || event.card_id || null;
+  return pickText(p, "CardCode", "cardCode") || event.card_id || null;
 }
 
-function withId(label, id) {
+function withId(label: string | null | undefined, id: string | null | undefined): string {
   if (label && id) return `${label} (${shortId(id)})`;
   return label || id || "—";
 }
 
-function shortId(id) {
+function shortId(id: string | null | undefined): string {
   if (!id) return "—";
   return String(id).length > 8 ? `${String(id).slice(0, 8)}…` : id;
 }
 
-function eventKey(event, idx) {
+function eventKey(event: NormalizedAccessEvent, idx: number): string {
+  // `event_id` already folds in the REST row's `id` (see normalizeEvent).
   const base =
     event.event_id ||
-    event.id ||
     `${event.instance_id || "inst"}:${event.timestamp || "ts"}:${event.cardholder_id || "ch"}:${event.card_id || "card"}`;
   return `${base}:${idx}`;
 }

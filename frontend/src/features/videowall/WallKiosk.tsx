@@ -18,13 +18,26 @@ import { Icon } from "@iconify/react";
 import { asItems } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { vms } from "@/features/vms/api";
+import type { EstateCamera } from "@/features/vms/types";
 
 import { videowall } from "./api";
 import { useWallState } from "./hooks/useWallState";
 import { monitorGrid, monitorGridStyle, cameraAt } from "./wallLayout";
 import WallCell from "./components/WallCell";
 
-export default function WallKiosk({ wallId, monitorId }: any) {
+export interface WallKioskProps {
+  /** The `[id]` / `[mid]` route segments — the wall and the monitor on it. Next
+   *  hands a dynamic segment through as `string | string[] | undefined`, so both
+   *  are accepted in that shape and normalised once below. */
+  wallId?: string | string[];
+  monitorId?: string | string[];
+}
+
+export default function WallKiosk({ wallId: wallIdParam, monitorId: monitorIdParam }: WallKioskProps) {
+  // Neither segment is a catch-all, so the array form never actually occurs; ""
+  // for a missing id keeps every `enabled` gate and lookup reading as before.
+  const wallId = (Array.isArray(wallIdParam) ? wallIdParam[0] : wallIdParam) ?? "";
+  const monitorId = (Array.isArray(monitorIdParam) ? monitorIdParam[0] : monitorIdParam) ?? "";
   const { status, can } = useAuth();
   const [chromeOn, setChromeOn] = useState(true);
 
@@ -46,17 +59,17 @@ export default function WallKiosk({ wallId, monitorId }: any) {
 
   const canView = status === "authed" && can("vms.wall.view");
 
-  const wallQ = useQuery<any>({
+  const wallQ = useQuery({
     queryKey: ["wall-kiosk", wallId],
     queryFn: () => videowall.walls.get(wallId),
     enabled: !!wallId && canView,
   });
-  const monitorsQ = useQuery<any>({
+  const monitorsQ = useQuery({
     queryKey: ["wall-kiosk-monitors", wallId],
     queryFn: () => videowall.monitors.list(wallId),
     enabled: !!wallId && canView,
   });
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["vms-wall-cameras"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     enabled: canView,
@@ -67,7 +80,7 @@ export default function WallKiosk({ wallId, monitorId }: any) {
   const monitor = useMemo(() => monitors.find((m) => m.id === monitorId), [monitors, monitorId]);
   const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
   const cameraById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, EstateCamera>();
     cameras.forEach((c) => m.set(c.id, c));
     return m;
   }, [cameras]);
@@ -124,7 +137,13 @@ export default function WallKiosk({ wallId, monitorId }: any) {
   );
 }
 
-function KioskMessage({ icon, text }: any) {
+interface KioskMessageProps {
+  /** An iconify name. */
+  icon: string;
+  text: string;
+}
+
+function KioskMessage({ icon, text }: KioskMessageProps) {
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center gap-3 bg-black text-white/60">
       <Icon icon={icon} className="text-3xl" />

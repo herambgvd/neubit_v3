@@ -19,16 +19,18 @@ import {
   EmptyPane,
 } from "@/components/console";
 import { ConfirmDialog } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import { asItems, idOf } from "@/lib/format";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "./api";
+import type { CategoryPublic } from "./types";
 import CategoryList from "./components/CategoryList";
 import CategoryDetail from "./components/CategoryDetail";
 import CategoryFormModal from "./components/CategoryFormModal";
 
 export default function IngestConfigPage() {
   const qc = useQueryClient();
-  const catsQ = useQuery<any>({
+  const catsQ = useQuery({
     queryKey: ["ingest-categories"],
     queryFn: () => ingestApi.categories.list({ limit: 100 }),
   });
@@ -36,12 +38,12 @@ export default function IngestConfigPage() {
   const cats = useMemo(() => asItems(catsQ.data), [catsQ.data]);
 
   const [q, setQ] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [mode, setMode] = useState("view"); // view | create | edit (category)
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<"view" | "create" | "edit">("view");
   const [closed, setClosed] = useState(false);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const catId = (c) => idOf(c, "id", "category_id");
+  const catId = (c: CategoryPublic) => idOf(c, "id", "category_id");
 
   const filtered = useMemo(() => {
     const f = q.trim().toLowerCase();
@@ -58,12 +60,12 @@ export default function IngestConfigPage() {
 
   useEffect(() => {
     if (mode === "view" && !closed && !selected && filtered[0]) {
-      setSelectedId(catId(filtered[0]));
+      setSelectedId(catId(filtered[0]) ?? null);
     }
   }, [filtered, selected, mode, closed]);
 
   const removeCat = useMutation({
-    mutationFn: (id: any) => ingestApi.categories.remove(id),
+    mutationFn: (id: string) => ingestApi.categories.remove(id),
     onSuccess: () => {
       toast.success("Category removed");
       qc.invalidateQueries({ queryKey: ["ingest-categories"] });
@@ -83,7 +85,7 @@ export default function IngestConfigPage() {
           search={q}
           onSearch={setQ}
           selectedId={selectedId}
-          onSelect={(id) => {
+          onSelect={(id: string) => {
             setSelectedId(id);
             setMode("view");
             setClosed(false);
@@ -112,7 +114,8 @@ export default function IngestConfigPage() {
                   message: `Delete "${selected.name}" and all of its webhooks? This cannot be undone.`,
                   confirmLabel: "Delete",
                   onConfirm: () => {
-                    removeCat.mutate(catId(selected));
+                    // `selected` is non-null inside this branch (the ternary above).
+                    removeCat.mutate(catId(selected)!);
                     setConfirm(null);
                   },
                 })
@@ -127,7 +130,7 @@ export default function IngestConfigPage() {
           key={mode === "edit" ? selectedId : "create"}
           category={mode === "edit" ? selected : null}
           onCancel={() => setMode("view")}
-          onSaved={(saved) => {
+          onSaved={(saved: CategoryPublic) => {
             qc.invalidateQueries({ queryKey: ["ingest-categories"] });
             const id = idOf(saved, "id", "category_id");
             if (id) setSelectedId(id);

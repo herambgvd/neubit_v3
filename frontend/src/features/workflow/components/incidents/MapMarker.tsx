@@ -7,7 +7,17 @@
 
 import { sev } from "./lib";
 
-export default function MapMarker({ x, y, priority, count = 1, selected, onClick, title }: any) {
+export interface MapMarkerProps {
+  x: number;
+  y: number;
+  priority: string;
+  count?: number;
+  selected?: boolean;
+  onClick?: () => void;
+  title?: string;
+}
+
+export default function MapMarker({ x, y, priority, count = 1, selected, onClick, title }: MapMarkerProps) {
   const s = sev(priority);
   const r = 13;
   return (

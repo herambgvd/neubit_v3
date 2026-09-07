@@ -8,9 +8,39 @@
 // hero tile spans several cells. Symmetric grids leave `areas` undefined and use
 // plain repeat() columns/rows.
 
+import type { CSSProperties } from "react";
+
+import type { GridLayout, WallPreset } from "./types";
+
+/** One wall grid. Symmetric grids leave `template` undefined; a spotlight grid
+ *  carries its grid-template-areas rows (tile index → area `t<i>`). */
+export interface WallLayout {
+  key: string;
+  label: string;
+  cols: number;
+  rows: number;
+  capacity: number;
+  icon: string;
+  template?: string[];
+}
+
+/** A camera-group grid (the backend's GridLayout enum). */
+export interface GroupLayout {
+  key: GridLayout;
+  label: string;
+  cols: number;
+  rows: number;
+  capacity: number;
+}
+
+/** One wall cell: the camera it shows, or empty. */
+export interface WallCell {
+  cameraId: string | null;
+}
+
 // Supported grids. `capacity = cols * rows` for symmetric layouts. Asymmetric
 // layouts (spotlight) define `capacity` explicitly + a `cells` template.
-export const LAYOUTS = [
+export const LAYOUTS: WallLayout[] = [
   { key: "1x1", label: "1×1", cols: 1, rows: 1, capacity: 1, icon: "single" },
   { key: "2x2", label: "2×2", cols: 2, rows: 2, capacity: 4, icon: "grid-2" },
   { key: "2x3", label: "2×3", cols: 3, rows: 2, capacity: 6, icon: "grid-2x3" },
@@ -56,21 +86,21 @@ export const LAYOUTS = [
 
 export const DEFAULT_LAYOUT_KEY = "2x2";
 
-export function getLayout(key) {
+export function getLayout(key: string | null | undefined): WallLayout {
   return LAYOUTS.find((l) => l.key === key) || LAYOUTS[1];
 }
 
-export function isSpotlightLayout(layout) {
+export function isSpotlightLayout(layout: WallLayout | null | undefined): layout is WallLayout & { template: string[] } {
   return Array.isArray(layout?.template);
 }
 
 // CSS grid-template for a layout. Symmetric → repeat(); spotlight → named areas.
-export function gridStyle(layout) {
+export function gridStyle(layout: WallLayout): CSSProperties {
   if (isSpotlightLayout(layout)) {
     return {
       gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
       gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))`,
-      gridTemplateAreas: layout.template.map((row) => `"${row}"`).join(" "),
+      gridTemplateAreas: layout.template.map((row: string) => `"${row}"`).join(" "),
     };
   }
   return {
@@ -81,19 +111,19 @@ export function gridStyle(layout) {
 
 // Per-tile inline style. For spotlight layouts, maps tile index → its named
 // grid-area; for symmetric layouts, returns undefined (natural flow).
-export function tileStyle(layout, index) {
+export function tileStyle(layout: WallLayout, index: number): CSSProperties | undefined {
   if (isSpotlightLayout(layout)) return { gridArea: `t${index}` };
   return undefined;
 }
 
 // Which tile index is the "hero" (largest) cell of a spotlight layout, or -1.
-export function heroIndex(layout) {
+export function heroIndex(layout: WallLayout): number {
   return isSpotlightLayout(layout) ? 0 : -1;
 }
 
 // Smallest layout that fits `count` cameras (caps at the largest grid). Only
 // considers symmetric grids so results are predictable.
-export function fitLayoutFor(count) {
+export function fitLayoutFor(count: number): WallLayout {
   const sorted = LAYOUTS.filter((l) => !isSpotlightLayout(l)).sort(
     (a, b) => a.capacity - b.capacity,
   );
@@ -102,10 +132,10 @@ export function fitLayoutFor(count) {
 
 // Split a flat camera-id list into PAGES sized to the layout capacity — the
 // unit a tour rotates through (gvd_nvr `tourPages`). Empty list → no pages.
-export function tourPages(cameraIds: string[] = [], capacity = 4) {
+export function tourPages(cameraIds: string[] = [], capacity = 4): string[][] {
   const ids = (cameraIds || []).filter(Boolean);
   if (ids.length === 0 || capacity < 1) return [];
-  const pages: any[] = [];
+  const pages: string[][] = [];
   for (let i = 0; i < ids.length; i += capacity) {
     pages.push(ids.slice(i, i + capacity));
   }
@@ -115,7 +145,7 @@ export function tourPages(cameraIds: string[] = [], capacity = 4) {
 // Pick the profile for a tile given the grid size: full quality for a solo tile
 // (or the spotlight hero), low-bandwidth sub-stream once several tiles share the
 // link (v2 `preferredProfile` heuristic).
-export function tileProfile(capacity, isHero = false) {
+export function tileProfile(capacity: number, isHero = false): "main" | "sub" {
   if (isHero) return "main";
   return capacity <= 1 ? "main" : "sub";
 }
@@ -128,7 +158,7 @@ export function tileProfile(capacity, isHero = false) {
 // persistence, sharing) plugs in on top of this shape later — see the TODO in
 // Streaming.jsx. Keeping the shape here means patterns never need to know about
 // cells/profiles internals.
-export function buildPreset(layoutKey, cells) {
+export function buildPreset(layoutKey: string, cells: WallCell[]): WallPreset {
   return {
     layout: layoutKey,
     tiles: (cells || []).map((c) => c?.cameraId || null),
@@ -136,8 +166,11 @@ export function buildPreset(layoutKey, cells) {
 }
 
 // Normalise a preset's tile list to a given capacity (pads/truncates).
-export function presetTilesForCapacity(tiles = [], capacity = 4) {
-  const out = Array.from({ length: capacity }, () => null);
+export function presetTilesForCapacity(
+  tiles: (string | null | undefined)[] | null | undefined = [],
+  capacity = 4,
+): (string | null)[] {
+  const out: (string | null)[] = Array.from({ length: capacity }, () => null);
   (tiles || []).slice(0, capacity).forEach((id, i) => {
     out[i] = id || null;
   });
@@ -149,7 +182,7 @@ export function presetTilesForCapacity(tiles = [], capacity = 4) {
 // ("1x1|2x2|3x3|4x3|4x4|6x4|6x5|6x6|8x8"). That vocabulary is INDEPENDENT of the
 // wall's own layout keys (which include spotlight grids the config doesn't offer),
 // so we keep an explicit list + a mapping into wall layout keys used at rotation.
-export const GROUP_LAYOUTS = [
+export const GROUP_LAYOUTS: GroupLayout[] = [
   { key: "1x1", label: "1×1", cols: 1, rows: 1, capacity: 1 },
   { key: "2x2", label: "2×2", cols: 2, rows: 2, capacity: 4 },
   { key: "3x3", label: "3×3", cols: 3, rows: 3, capacity: 9 },
@@ -161,9 +194,9 @@ export const GROUP_LAYOUTS = [
   { key: "8x8", label: "8×8", cols: 8, rows: 8, capacity: 64 },
 ];
 
-export const DEFAULT_GROUP_LAYOUT = "2x2";
+export const DEFAULT_GROUP_LAYOUT: GridLayout = "2x2";
 
-export function getGroupLayout(key) {
+export function getGroupLayout(key: string | null | undefined): GroupLayout {
   return GROUP_LAYOUTS.find((l) => l.key === key) || GROUP_LAYOUTS[1];
 }
 
@@ -171,7 +204,7 @@ export function getGroupLayout(key) {
 // two registries overlap on 1x1/2x2/3x3/4x4 (identity); for wall-only grids
 // (2x3/3x4/5x5/1+5/1+7) pick the smallest group layout that fits the wall's
 // capacity so every camera on the wall lands in the group. Falls back to largest.
-export function wallLayoutToGroup(wallKey) {
+export function wallLayoutToGroup(wallKey: string): string {
   if (GROUP_LAYOUTS.some((l) => l.key === wallKey)) return wallKey;
   const cap = getLayout(wallKey)?.capacity || 4;
   const fit = [...GROUP_LAYOUTS]
@@ -181,8 +214,8 @@ export function wallLayoutToGroup(wallKey) {
 }
 
 // CSS grid-template for a group builder/preview cell of `cols × rows`.
-export function groupGridStyle(layout) {
-  const l = getGroupLayout(layout?.key || layout);
+export function groupGridStyle(layout: GroupLayout | string | null | undefined): CSSProperties {
+  const l = getGroupLayout(typeof layout === "string" ? layout : layout?.key);
   return {
     gridTemplateColumns: `repeat(${l.cols}, minmax(0, 1fr))`,
     gridTemplateRows: `repeat(${l.rows}, minmax(0, 1fr))`,
@@ -195,7 +228,7 @@ export function groupGridStyle(layout) {
 // into LAYOUTS on demand via `ensureWallLayout` below. This function returns the
 // layoutKey the wall should use for a given group (identical key — same cols×rows
 // semantics), after ensuring the wall knows about it.
-export function mapGroupLayout(groupLayoutKey) {
+export function mapGroupLayout(groupLayoutKey: string): string {
   const g = getGroupLayout(groupLayoutKey);
   ensureWallLayout(g);
   return g.key;
@@ -205,7 +238,7 @@ export function mapGroupLayout(groupLayoutKey) {
 // the box (e.g. 4x3, 6x4). Idempotent — skips keys already in LAYOUTS. Keeps the
 // wall's math (gridStyle/capacity/tourPages) working for pattern rotation without
 // duplicating the layout registry.
-export function ensureWallLayout(groupLayout) {
+export function ensureWallLayout(groupLayout: GroupLayout | string | null | undefined): void {
   const g = typeof groupLayout === "string" ? getGroupLayout(groupLayout) : groupLayout;
   if (!g) return;
   if (LAYOUTS.some((l) => l.key === g.key)) return;

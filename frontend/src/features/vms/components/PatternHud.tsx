@@ -5,8 +5,22 @@
 // controls. In fullscreen it auto-hides after inactivity (mouse move / key wakes
 // it). Purely presentational — the rotation engine (usePatternRotation) drives
 // the state; this just renders + emits intents.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
+
+export interface PatternHudProps {
+  patternName: ReactNode;
+  groupName?: string | null;
+  /** 0-based index of the current stop. */
+  index: number;
+  total: number;
+  paused: boolean;
+  seconds: number;
+  onPrev: () => void;
+  onNext: () => void;
+  onTogglePause: () => void;
+  onExit: () => void;
+}
 
 export default function PatternHud({
   patternName,
@@ -19,9 +33,9 @@ export default function PatternHud({
   onNext,
   onTogglePause,
   onExit,
-}: any) {
+}: PatternHudProps) {
   const [visible, setVisible] = useState(true);
-  const hideTimer = useRef<any>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-hide after inactivity; any pointer/key activity wakes it. Kept short so
   // the wall stays clean but the controls are one nudge away.
@@ -83,7 +97,16 @@ export default function PatternHud({
   );
 }
 
-function HudBtn({ icon, title, onClick, disabled, accent, danger }: any) {
+interface HudBtnProps {
+  icon: string;
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  accent?: boolean;
+  danger?: boolean;
+}
+
+function HudBtn({ icon, title, onClick, disabled, accent, danger }: HudBtnProps) {
   return (
     <button
       type="button"

@@ -21,29 +21,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
+import type Hls from "hls.js";
 import { toast } from "sonner";
 
 import { Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { asItems } from "@/lib/format";
 import { vms } from "../api";
 import { usePlaybackSession } from "../hooks/usePlaybackSession";
+import type { BookmarkPublic, EvidenceLockPublic, MotionHit, PlaybackSourceFn } from "../types";
 import ScrubBar from "./ScrubBar";
 import H265WebPlayer from "./H265WebPlayer";
 import BookmarkModal from "./BookmarkModal";
 import EvidenceLockModal from "./EvidenceLockModal";
 import BookmarksPanel from "./BookmarksPanel";
 import MotionSearchModal from "./MotionSearchModal";
+import type { ExportRange, IsoSeed, TimelineFn, TimelineLike } from "./playbackTypes";
 
 const SPEEDS = [0.5, 1, 2, 4];
 const DAY_MS = 86_400_000;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
-const dayStartMs = (dayStr) => new Date(`${dayStr}T00:00:00`).getTime();
-const iso = (ms) => new Date(ms).toISOString();
+const dayStartMs = (dayStr: string) => new Date(`${dayStr}T00:00:00`).getTime();
+const iso = (ms: number) => new Date(ms).toISOString();
 
-function readout(ms) {
+function readout(ms: number | null) {
   if (ms == null) return "--:--:--";
   return new Date(ms).toLocaleTimeString(undefined, { hour12: false });
 }
@@ -53,7 +55,7 @@ function readout(ms) {
 // (the media token authorizes the /h264 sub-path too). Used as the H.265/HEVC fallback:
 // browsers/hls.js can't decode HEVC, so on a codec error we reload this transcoded URL.
 // Returns null when it isn't an index.m3u8 URL or is already a /h264 variant.
-function toH264Hls(url) {
+function toH264Hls(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
     const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://x");
@@ -68,7 +70,7 @@ function toH264Hls(url) {
 // WHEP transcode variant: insert "/h264" before the trailing "/whep" so MediaMTX runs
 // ffmpeg on demand and republishes an H.264 stream (Chrome WebRTC can't decode HEVC).
 // The "?token=" is preserved. Returns null when it isn't a plain WHEP endpoint.
-function toTranscodedWhep(url) {
+function toTranscodedWhep(url: string): string | null {
   if (!url) return null;
   try {
     const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://x");
@@ -80,33 +82,55 @@ function toTranscodedWhep(url) {
   }
 }
 
+export interface PlaybackPlayerProps {
+  cameraId: string;
+  cameraName?: string | null;
+  profile?: string;
+  /** Recorded-source override (NVR footage). When set, timeline/coverage come
+   *  from `timelineFn` and the session from `sourceFn`. */
+  sourceFn?: PlaybackSourceFn | null;
+  timelineFn?: TimelineFn | null;
+  /** Deep-link seek (jump-to-recording from a camera event): an ISO timestamp to
+   *  open the player on that day + seek the scrub bar to that instant once ready. */
+  initialSeek?: string | null;
+  /** Controlled (slaved) mode — for synchronized multi-cam. The parent owns the
+   *  clock; this cell just follows it. */
+  controlled?: boolean;
+  playing?: boolean;
+  speed?: number;
+  /** Epoch ms the parent wants everyone at. */
+  seekMs?: number | null;
+  /** Bumped by the parent ONLY on an explicit user scrub. NVR replay reloads on this (a
+   *  linear stream can't random-seek); it must NOT reload on the auto-settled initial
+   *  seekMs, or it would tear down the freshly-loaded session (→ black cell). */
+  seekNonce?: number;
+  windowStart?: number | null;
+  windowEnd?: number | null;
+  /** (ms) => void — report this cell's playback position (slaved lead cell). */
+  onClock?: (ms: number) => void;
+  /** ({ from, to }) => void — open the export dialog for this window. */
+  onExportRange?: (range: ExportRange) => void;
+  className?: string;
+}
+
 export default function PlaybackPlayer({
   cameraId,
   cameraName,
   profile = "main",
-  // Recorded-source override (NVR footage). When set, timeline/coverage come
-  // from `timelineFn` and the session from `sourceFn`.
   sourceFn = null,
   timelineFn = null,
-  // Deep-link seek (jump-to-recording from a camera event): an ISO timestamp to
-  // open the player on that day + seek the scrub bar to that instant once ready.
   initialSeek = null,
-  // Controlled (slaved) mode — for synchronized multi-cam. The parent owns the
-  // clock; this cell just follows it.
   controlled = false,
   playing = false,
   speed = 1,
-  seekMs = null, // epoch ms the parent wants everyone at
-  // Bumped by the parent ONLY on an explicit user scrub. NVR replay reloads on this (a
-  // linear stream can't random-seek); it must NOT reload on the auto-settled initial
-  // seekMs, or it would tear down the freshly-loaded session (→ black cell).
+  seekMs = null,
   seekNonce = 0,
   windowStart: extWindowStart = null,
   windowEnd: extWindowEnd = null,
-  onClock, // (ms) => void — report this cell's playback position (slaved lead cell)
-  onExportRange, // ({ from, to }) => void — open the export dialog for this window
+  onClock,
+  onExportRange,
   className = "",
-}: any) {
+}: PlaybackPlayerProps) {
   // When opened via a deep-link seek, start on that instant's day so its window
   // (and coverage) load; else today.
   const initialDay = useMemo(() => {
@@ -120,17 +144,17 @@ export default function PlaybackPlayer({
   const [day, setDay] = useState(initialDay);
   const [localPlaying, setLocalPlaying] = useState(false);
   const [localSpeed, setLocalSpeed] = useState(1);
-  const [current, setCurrent] = useState<any>(null); // epoch ms of the playhead
+  const [current, setCurrent] = useState<number | null>(null); // epoch ms of the playhead
   const [videoError, setVideoError] = useState(false);
 
-  const videoRef = useRef<any>(null);
-  const hlsRef = useRef<any>(null);
-  const pcRef = useRef<any>(null); // WHEP RTCPeerConnection (NVR-footage WebRTC path)
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null); // WHEP RTCPeerConnection (NVR-footage WebRTC path)
   const seekingRef = useRef(false);
   // NVR replay only: the wall-clock instant the CURRENT session starts from. Our own
   // recordings serve a seekable window (anchor = windowStart); an NVR replay is a
   // linear stream from its starttime, so its anchor moves each time we re-request it.
-  const anchorRef = useRef<any>(null);
+  const anchorRef = useRef<number | null>(null);
 
   // The visible window. Standalone: the whole selected day. Controlled: the
   // parent-provided shared window (falls back to the day).
@@ -138,27 +162,19 @@ export default function PlaybackPlayer({
   const windowEnd = controlled && extWindowEnd != null ? extWindowEnd : windowStart + DAY_MS;
 
   // ── Timeline (coverage + gaps) — standalone only ────────────────────────
-  const timelineQ = useQuery<any>({
+  const timelineQ = useQuery({
     queryKey: ["vms-timeline", cameraId, day, !!sourceFn],
-    queryFn: () => (timelineFn ? timelineFn({ day }) : vms.playback.timeline(cameraId, { day })),
+    queryFn: async (): Promise<TimelineLike> =>
+      timelineFn ? timelineFn({ day }) : vms.playback.timeline(cameraId, { day }),
     enabled: !controlled && !!cameraId,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
-  const coverage = useMemo(() => {
-    const d = timelineQ.data;
-    if (!d) return [];
-    // Accept {coverage:[...]} or a bare array of {start,end}.
-    return Array.isArray(d) ? d : d.coverage || [];
-  }, [timelineQ.data]);
+  const coverage = useMemo(() => timelineQ.data?.coverage || [], [timelineQ.data]);
 
   // Event markers (P5-B/C) — VmsEvent ticks the ScrubBar plots (color by severity).
   // { t, event_type, severity, event_id } from the timeline response.
-  const markers = useMemo(() => {
-    const d = timelineQ.data;
-    if (!d || Array.isArray(d)) return [];
-    return d.markers || [];
-  }, [timelineQ.data]);
+  const markers = useMemo(() => timelineQ.data?.markers || [], [timelineQ.data]);
 
   // Coverage passed down in controlled mode via props isn't needed; the parent
   // renders the shared scrub bar.
@@ -170,14 +186,14 @@ export default function PlaybackPlayer({
   const canSearch = can("vms.playback.view");
   // ── Smart / forensic motion search (G4) — standalone only ───────────────
   const [motionSearchOpen, setMotionSearchOpen] = useState(false);
-  const [motionHits, setMotionHits] = useState<any[]>([]); // [{ start, end?, score? }]
-  const [bookmarkSeed, setBookmarkSeed] = useState<any>(null); // { start, end? } | null → open create
-  const [editBookmark, setEditBookmark] = useState<any>(null); // bookmark row | null → open edit
-  const [lockSeed, setLockSeed] = useState<any>(null); // { start, end } | null → open lock modal
-  const [activeBookmark, setActiveBookmark] = useState<any>(null); // popover after clicking a flag
+  const [motionHits, setMotionHits] = useState<MotionHit[]>([]); // [{ start, end, score }]
+  const [bookmarkSeed, setBookmarkSeed] = useState<IsoSeed | null>(null); // { start, end? } | null → open create
+  const [editBookmark, setEditBookmark] = useState<BookmarkPublic | null>(null); // bookmark row | null → open edit
+  const [lockSeed, setLockSeed] = useState<IsoSeed | null>(null); // { start, end } | null → open lock modal
+  const [activeBookmark, setActiveBookmark] = useState<BookmarkPublic | null>(null); // popover after clicking a flag
 
   // Query bookmarks + active holds for this camera over the loaded window.
-  const bookmarksQ = useQuery<any>({
+  const bookmarksQ = useQuery({
     queryKey: ["vms-bookmarks", cameraId, iso(windowStart), iso(windowEnd)],
     queryFn: () =>
       vms.bookmarks.list({ camera_id: cameraId, from: iso(windowStart), to: iso(windowEnd), limit: 500 }),
@@ -185,21 +201,21 @@ export default function PlaybackPlayer({
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
-  const bookmarks = useMemo(() => asItems(bookmarksQ.data), [bookmarksQ.data]);
+  const bookmarks = useMemo(() => bookmarksQ.data?.items ?? [], [bookmarksQ.data]);
 
-  const locksQ = useQuery<any>({
+  const locksQ = useQuery({
     queryKey: ["vms-evidence", cameraId],
     queryFn: () => vms.evidence.list({ camera_id: cameraId, active_only: true, limit: 500 }),
     enabled: !controlled && !sourceFn && !!cameraId,
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
-  const locks = useMemo(() => asItems(locksQ.data), [locksQ.data]);
+  const locks = useMemo(() => locksQ.data?.items ?? [], [locksQ.data]);
 
   const invalidateBookmarks = () => qc.invalidateQueries({ queryKey: ["vms-bookmarks", cameraId] });
   const invalidateLocks = () => qc.invalidateQueries({ queryKey: ["vms-evidence", cameraId] });
 
-  const deleteBookmark = async (b) => {
+  const deleteBookmark = async (b: BookmarkPublic) => {
     try {
       await vms.bookmarks.remove(b.id);
       if (activeBookmark?.id === b.id) setActiveBookmark(null);
@@ -209,7 +225,7 @@ export default function PlaybackPlayer({
       toast.error(apiError(e, "Delete failed"));
     }
   };
-  const releaseLock = async (l) => {
+  const releaseLock = async (l: EvidenceLockPublic) => {
     try {
       await vms.evidence.release(l.id);
       toast.success("Evidence hold released");
@@ -218,7 +234,7 @@ export default function PlaybackPlayer({
       toast.error(apiError(e, "Release failed"));
     }
   };
-  const deleteLock = async (l) => {
+  const deleteLock = async (l: EvidenceLockPublic) => {
     try {
       await vms.evidence.remove(l.id);
       toast.success("Evidence hold deleted");
@@ -259,7 +275,7 @@ export default function PlaybackPlayer({
   const [whepActive, setWhepActive] = useState(preferWhep);
   const [useH265, setUseH265] = useState(false);
   const useH265Ref = useRef(false);
-  const [h265Seek, setH265Seek] = useState<any>(null); // WASM-path scrub target (epoch ms)
+  const [h265Seek, setH265Seek] = useState<number | null>(null); // WASM-path scrub target (epoch ms)
   const [transcoded, setTranscoded] = useState(false);
   const transcodedRef = useRef(false);
   useEffect(() => {
@@ -446,7 +462,7 @@ export default function PlaybackPlayer({
       setWhepActive(false);
     };
 
-    const negotiate = async (url, transcodedOnce = false) => {
+    const negotiate = async (url: string, transcodedOnce = false): Promise<void> => {
       if (disposed) return;
       const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
       pcRef.current = pc;
@@ -502,7 +518,8 @@ export default function PlaybackPlayer({
         if (disposed) return;
         await pc.setRemoteDescription({ type: "answer", sdp: answer });
       } catch (e) {
-        if (disposed || e?.name === "AbortError") return;
+        // A fetch cut short by `abort` rejects with an AbortError DOMException.
+        if (disposed || (e instanceof DOMException && e.name === "AbortError")) return;
         try {
           pc.close();
         } catch {}
@@ -562,7 +579,7 @@ export default function PlaybackPlayer({
 
   // Map an absolute epoch-ms target to a video offset within the window and seek.
   const seekToMs = useCallback(
-    (ms) => {
+    (ms: number) => {
       const v = videoRef.current;
       if (!v) return;
       const offset = (ms - windowStart) / 1000;
@@ -583,7 +600,7 @@ export default function PlaybackPlayer({
   // NVR replay: a seek RE-REQUESTS the replay from the target instant (that becomes the
   // new anchor). The <video> can't random-seek a linear replay beyond the pulled region.
   const reloadFrom = useCallback(
-    (ms) => {
+    (ms: number) => {
       anchorRef.current = ms;
       setCurrent(ms);
       load({ from: iso(ms), to: iso(windowEnd) });
@@ -676,7 +693,7 @@ export default function PlaybackPlayer({
   const h265Base = sourceFn && anchorRef.current != null ? anchorRef.current : windowStart;
 
   // ── Standalone controls ──────────────────────────────────────────────────
-  const onScrubSeek = (ms) => {
+  const onScrubSeek = (ms: number) => {
     // NVR footage: re-request the replay from here (linear stream can't random-seek).
     if (sourceFn) {
       reloadFrom(ms);
@@ -692,7 +709,7 @@ export default function PlaybackPlayer({
     seekToMs(ms);
   };
 
-  const frameStep = (dir) => {
+  const frameStep = (dir: number) => {
     const v = videoRef.current;
     if (!v) return;
     setLocalPlaying(false);
@@ -746,7 +763,7 @@ export default function PlaybackPlayer({
             // new url → remount), so don't player-seek it. Our recordings are seekable.
             seekMs={sourceFn ? null : seekMs}
             windowStart={h265Base}
-            onTime={(ms) => onClock?.(ms)}
+            onTime={(ms: number) => onClock?.(ms)}
             onError={onWasmError}
           />
         ) : (
@@ -784,7 +801,7 @@ export default function PlaybackPlayer({
             // stays null for it; our recordings player-seek within the window.
             seekMs={sourceFn ? null : h265Seek}
             windowStart={h265Base}
-            onTime={(ms) => setCurrent(ms)}
+            onTime={(ms: number) => setCurrent(ms)}
             onError={onWasmError}
           />
         ) : (
@@ -1047,7 +1064,7 @@ export default function PlaybackPlayer({
           cameraName={cameraName}
           seedFrom={iso(windowStart)}
           seedTo={iso(current ?? windowEnd)}
-          onResults={({ hits }: any) => setMotionHits(hits || [])}
+          onResults={({ hits }) => setMotionHits(hits || [])}
           onSeekHit={(isoTs) => {
             const ms = new Date(isoTs).getTime();
             if (!Number.isNaN(ms)) onScrubSeek(ms);
@@ -1059,7 +1076,16 @@ export default function PlaybackPlayer({
   );
 }
 
-function CtrlBtn({ icon, title, onClick, disabled, primary, plain }: any) {
+interface CtrlBtnProps {
+  icon: string;
+  title: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  plain?: boolean;
+}
+
+function CtrlBtn({ icon, title, onClick, disabled, primary, plain }: CtrlBtnProps) {
   const base =
     "inline-flex h-8 w-8 items-center justify-center rounded-lg transition disabled:opacity-40 disabled:pointer-events-none";
   const skin = primary

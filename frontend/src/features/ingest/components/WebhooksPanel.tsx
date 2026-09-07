@@ -8,6 +8,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { Button, ConfirmDialog, Spinner } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
@@ -16,25 +17,33 @@ import { receiverUrl, copyToClipboard } from "../lib/receiverUrl";
 import WebhookForm from "./WebhookForm";
 import WebhookDetailModal from "./WebhookDetailModal";
 import { RowAction } from "@/components/console";
+import type { CategoryPublic, WebhookPublic } from "../types";
 
-export default function WebhooksPanel({ category, catId }: any) {
+export interface WebhooksPanelProps {
+  category: CategoryPublic;
+  /** The category id the list is scoped to. */
+  catId?: string;
+}
+
+export default function WebhooksPanel({ category, catId }: WebhooksPanelProps) {
   const qc = useQueryClient();
   const key = ["ingest-webhooks", catId];
-  const hooksQ = useQuery<any>({
+  const hooksQ = useQuery({
     queryKey: key,
     queryFn: () => ingestApi.webhooks.list({ category_id: catId, limit: 100 }),
   });
   const hooks = asItems(hooksQ.data);
 
-  const hookId = (h) => h.id ?? h.webhook_id;
+  const hookId = (h: WebhookPublic) => h.id;
 
   const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [detail, setDetail] = useState<any>(null); // webhook whose receiver URL is shown
-  const [confirm, setConfirm] = useState<any>(null);
+  const [editing, setEditing] = useState<WebhookPublic | null>(null);
+  // The webhook whose receiver URL / detail modal is shown.
+  const [detail, setDetail] = useState<WebhookPublic | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => ingestApi.webhooks.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => ingestApi.webhooks.remove(id),
     onSuccess: () => {
       toast.success("Webhook removed");
       qc.invalidateQueries({ queryKey: key });
@@ -102,11 +111,11 @@ export default function WebhooksPanel({ category, catId }: any) {
                         {h.is_active !== false ? "Active" : "Inactive"}
                       </span>
                     </div>
-                    {h.token && (
+                    {(h.ingest_url || h.slug) && (
                       <div className="mt-1.5 flex items-center gap-2">
-                        <code className="max-w-full truncate font-mono text-[11px] text-nb-faint">{receiverUrl(h.token)}</code>
+                        <code className="max-w-full truncate font-mono text-[11px] text-nb-faint">{receiverUrl(h.slug, h.ingest_url)}</code>
                         <button
-                          onClick={() => copyToClipboard(receiverUrl(h.token))}
+                          onClick={() => copyToClipboard(receiverUrl(h.slug, h.ingest_url))}
                           title="Copy receiver URL"
                           className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-nb-faint transition hover:bg-white/5 hover:text-nb-blueb"
                         >

@@ -14,13 +14,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { ConfirmDialog } from "@/components/ui/kit";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { ConsolePage } from "@/components/console";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
+import type { CameraGroupPublic, PatternPublic } from "./types";
 import { useEstateCameras } from "./hooks/useEstateCameras";
+import { isPatternItem, type PatternItem } from "./components/patternTypes";
 import PatternListRow from "./components/PatternListRow";
 import PatternDetail from "./components/PatternDetail";
 import PatternFormModal from "./components/PatternFormModal";
@@ -35,27 +37,27 @@ export default function Patterns() {
   const view = useSearchParams().get("view");
   const tab = view === "groups" ? "groups" : "patterns";
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [editTarget, setEditTarget] = useState<PatternItem | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const isPatternTab = tab === "patterns";
 
   // ── data ──────────────────────────────────────────────────────────────────
-  const patternsQ = useQuery<any>({
+  const patternsQ = useQuery({
     queryKey: ["vms-patterns"],
     queryFn: () => vms.patterns.list(),
     refetchInterval: 30_000,
   });
-  const groupsQ = useQuery<any>({
+  const groupsQ = useQuery({
     queryKey: ["vms-camera-groups"],
     queryFn: () => vms.groups.list(),
     refetchInterval: 30_000,
   });
 
-  const patterns = useMemo(() => asItems(patternsQ.data), [patternsQ.data]);
-  const groups = useMemo(() => asItems(groupsQ.data), [groupsQ.data]);
+  const patterns = useMemo<PatternPublic[]>(() => (patternsQ.data ? asItems(patternsQ.data) : []), [patternsQ.data]);
+  const groups = useMemo<CameraGroupPublic[]>(() => (groupsQ.data ? asItems(groupsQ.data) : []), [groupsQ.data]);
   // Local + FEDERATED cameras, exactly as the wall sees them. This page used to
   // read `/vms/cameras` alone; on a federated install that list is empty, so the
   // builder had nothing to place and a saved group's detail printed the stored
@@ -63,12 +65,12 @@ export default function Patterns() {
   const { cameras, cameraById } = useEstateCameras();
 
   const groupById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, CameraGroupPublic>();
     groups.forEach((g) => m.set(g.id, g));
     return m;
   }, [groups]);
 
-  const items = isPatternTab ? patterns : groups;
+  const items: PatternItem[] = isPatternTab ? patterns : groups;
   const listLoading = isPatternTab ? patternsQ.isLoading : groupsQ.isLoading;
   const listError = isPatternTab ? patternsQ.error : groupsQ.error;
 
@@ -99,15 +101,15 @@ export default function Patterns() {
   const invalidateActive = () =>
     qc.invalidateQueries({ queryKey: [isPatternTab ? "vms-patterns" : "vms-camera-groups"] });
 
-  const toggleActive = useMutation<any, any, any>({
-    mutationFn: ({ id, is_active }: any) =>
+  const toggleActive = useMutation({
+    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }): Promise<PatternItem> =>
       isPatternTab ? vms.patterns.update(id, { is_active }) : vms.groups.update(id, { is_active }),
     onSuccess: () => invalidateActive(),
     onError: (e) => toast.error(apiError(e, "Update failed")),
   });
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => (isPatternTab ? vms.patterns.remove(id) : vms.groups.remove(id)),
+  const remove = useMutation({
+    mutationFn: (id: string) => (isPatternTab ? vms.patterns.remove(id) : vms.groups.remove(id)),
     onSuccess: (_d, id) => {
       toast.success(`${isPatternTab ? "Pattern" : "Camera group"} deleted`);
       if (effectiveId === id) setSelectedId(null);
@@ -116,7 +118,7 @@ export default function Patterns() {
     onError: (e) => toast.error(apiError(e, "Delete failed")),
   });
 
-  const askDelete = (item) =>
+  const askDelete = (item: PatternItem) =>
     setConfirm({
       title: `Delete ${isPatternTab ? "pattern" : "camera group"}`,
       message: `This will remove “${item.name}”. This action cannot be undone.`,
@@ -131,7 +133,7 @@ export default function Patterns() {
     setEditTarget(null);
     setFormOpen(true);
   };
-  const openEdit = (item) => {
+  const openEdit = (item: PatternItem) => {
     setEditTarget(item);
     setFormOpen(true);
   };
@@ -258,7 +260,7 @@ export default function Patterns() {
       {isPatternTab ? (
         <PatternFormModal
           open={formOpen}
-          pattern={editTarget}
+          pattern={editTarget && isPatternItem(editTarget) ? editTarget : null}
           groups={groups}
           onClose={closeForm}
           onSaved={(saved) => saved?.id && setSelectedId(saved.id)}
@@ -266,7 +268,7 @@ export default function Patterns() {
       ) : (
         <CameraGroupFormModal
           open={formOpen}
-          group={editTarget}
+          group={editTarget && !isPatternItem(editTarget) ? editTarget : null}
           cameras={cameras}
           onClose={closeForm}
           onSaved={(saved) => saved?.id && setSelectedId(saved.id)}

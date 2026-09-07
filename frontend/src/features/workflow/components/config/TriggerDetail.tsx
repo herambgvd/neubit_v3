@@ -3,11 +3,23 @@
 // Read-only detail pane for a trigger (right side of the Triggers master-detail).
 // Header (name + enabled badge + edit/delete) over the event match, target SOP,
 // conditions, dedup, and fire stats.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { titleize, fmtRelative } from "@/lib/format";
 import { OP_LABEL } from "../../lib/matcher";
+import type { TriggerPublic } from "../../types";
 
-export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onToggle, toggling, onTest }: any) {
+export interface TriggerDetailProps {
+  trigger: TriggerPublic;
+  sopName: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  onToggle: () => void;
+  toggling?: boolean;
+  onTest?: () => void;
+}
+
+export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onToggle, toggling, onTest }: TriggerDetailProps) {
   const t = trigger;
   const enabled = t.enabled !== false;
   const conds = Array.isArray(t.conditions) ? t.conditions : [];
@@ -68,8 +80,8 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
             <ul className="rounded-lg border border-nb-line divide-y divide-nb-line">
               {conds.map((c, i) => (
                 <li key={i} className="px-3 py-2 text-xs font-mono text-nb-ink flex items-center gap-2 flex-wrap">
-                  <span className="text-nb-faint">{c.path || c.field}</span>
-                  <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] text-nb-faint">{OP_LABEL[c.op || c.operator] || c.op || c.operator}</span>
+                  <span className="text-nb-faint">{c.field}</span>
+                  <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] text-nb-faint">{OP_LABEL[c.operator] || c.operator}</span>
                   <span>{c.value == null ? "—" : String(c.value)}</span>
                 </li>
               ))}
@@ -98,7 +110,7 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
   );
 }
 
-function Section({ title, children }: any) {
+function Section({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
     <section>
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-nb-faint">{title}</h3>
@@ -107,7 +119,7 @@ function Section({ title, children }: any) {
   );
 }
 
-function Row({ label, value, mono }: any) {
+function Row({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div>
       <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">{label}</div>

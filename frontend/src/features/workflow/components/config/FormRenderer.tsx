@@ -3,18 +3,30 @@
 // Pure per-field input renderer for the dynamic-form live preview + submit-test.
 // Works off the v3 field shape:
 //   { id, label, type, placeholder, options:[{value,label}], validation:{ required, pattern } }
+import type { ReactNode } from "react";
 import { fieldClass, areaClass, FieldLabel } from "@/components/common";
 import { checkboxClass } from "@/components/ui/kit";
 import SelectMenu from "@/components/common/SelectMenu";
+import type { FormFieldSchema, FormFieldValue } from "../../types";
 
-export default function FormRenderer({ field, value, onChange, error, disabled = false }: any) {
-  const id = `ff-${field.id || field._key || "x"}`;
+// Text-ish controls only ever hold a string or a number; anything else renders empty.
+const asText = (v: FormFieldValue | undefined): string | number =>
+  typeof v === "string" || typeof v === "number" ? v : "";
+
+export interface FormRendererProps {
+  field: FormFieldSchema;
+  value: FormFieldValue | undefined;
+  onChange?: (value: FormFieldValue) => void;
+  error?: string | null;
+  disabled?: boolean;
+}
+
+export default function FormRenderer({ field, value, onChange, error, disabled = false }: FormRendererProps) {
+  const id = `ff-${field.id || "x"}`;
   const required = !!field?.validation?.required;
   const pattern = field?.validation?.pattern || undefined;
-  const set = (v) => onChange?.(v);
-  const opts = (field.options || []).map((o) =>
-    typeof o === "string" ? { value: o, label: o } : { value: o.value ?? o.label, label: o.label ?? o.value },
-  );
+  const set = (v: FormFieldValue) => onChange?.(v);
+  const opts = (field.options || []).map((o) => ({ value: o.value ?? o.label, label: o.label ?? o.value }));
 
   // boolean/checkbox render as a single toggle with an inline label.
   if (field.type === "boolean" || field.type === "checkbox") {
@@ -30,19 +42,19 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
     );
   }
 
-  let control;
+  let control: ReactNode;
   switch (field.type) {
     case "textarea":
-      control = <textarea id={id} rows={3} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} className={`${areaClass} ${error ? "!border-nb-crit" : ""}`} />;
+      control = <textarea id={id} rows={3} disabled={disabled} value={asText(value)} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} className={`${areaClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "number":
-      control = <input id={id} type="number" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} placeholder={field.placeholder || ""} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
+      control = <input id={id} type="number" disabled={disabled} value={asText(value)} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} placeholder={field.placeholder || ""} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "date":
-      control = <input id={id} type="date" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
+      control = <input id={id} type="date" disabled={disabled} value={asText(value)} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "datetime":
-      control = <input id={id} type="datetime-local" disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
+      control = <input id={id} type="datetime-local" disabled={disabled} value={asText(value)} onChange={(e) => set(e.target.value)} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
       break;
     case "file":
       control = <input id={id} type="file" disabled={disabled} onChange={(e) => set(e.target.files?.[0]?.name || "")} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
@@ -52,7 +64,7 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
         <SelectMenu
           id={id}
           disabled={disabled}
-          value={value ?? ""}
+          value={String(asText(value))}
           onChange={(e) => set(e.target.value)}
           placeholder="— select —"
           options={opts.map((o) => ({ value: o.value, label: o.label }))}
@@ -116,7 +128,7 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
       break;
     }
     default:
-      control = <input id={id} type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"} disabled={disabled} value={value ?? ""} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} pattern={pattern} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
+      control = <input id={id} type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"} disabled={disabled} value={asText(value)} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} pattern={pattern} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
   }
 
   return (

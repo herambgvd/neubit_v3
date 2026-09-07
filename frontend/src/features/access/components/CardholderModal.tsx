@@ -4,7 +4,7 @@
 // first/last name (last required), employee id, email, PIN, description, valid
 // from/until, an access-group multi-select, and (edit only) a cards manager.
 // Rethemed to v3 tokens; uses kit Modal/Button + common Field.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -14,28 +14,52 @@ import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { gates } from "../api";
+import type { AccessCardholder, AccessGroupPublic, CardholderUpdate } from "../types";
 
-export default function CardholderModal({ instanceId, cardholder, onClose, onSuccess }: any) {
+/** The cardholder form. `valid_from`/`valid_until` are the datetime-local strings
+ *  the inputs hold and are converted to ISO on submit. */
+interface CardholderForm {
+  first_name: string;
+  last_name: string;
+  employee_id: string;
+  email: string;
+  description: string;
+  /** Write-only: the controller never returns a PIN, so this starts empty. */
+  pin_code: string;
+  valid_from: string;
+  valid_until: string;
+}
+
+export interface CardholderModalProps {
+  instanceId: string;
+  /** The row being edited; omit/null to create. */
+  cardholder?: AccessCardholder | null;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export default function CardholderModal({ instanceId, cardholder, onClose, onSuccess }: CardholderModalProps) {
   const isEdit = !!cardholder;
   const qc = useQueryClient();
 
-  const [form, setForm] = useState(() => ({
+  const [form, setForm] = useState<CardholderForm>(() => ({
     first_name: cardholder?.first_name || "",
     last_name: cardholder?.last_name || "",
     employee_id: cardholder?.employee_id || "",
     email: cardholder?.email || "",
     description: cardholder?.description || "",
-    pin_code: cardholder?.pin_code || "",
+    // Write-only — a PIN is never returned, so the field always starts blank.
+    pin_code: "",
     valid_from: cardholder?.valid_from?.slice(0, 16) || "",
     valid_until: cardholder?.valid_until?.slice(0, 16) || "",
   }));
-  const [groupIds, setGroupIds] = useState(() => cardholder?.access_groups || []);
-  const [errors, setErrors] = useState<any>({});
+  const [groupIds, setGroupIds] = useState<string[]>(() => cardholder?.access_groups || []);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [newCardId, setNewCardId] = useState("");
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<CardholderForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const groupsQ = useQuery<any>({
+  const groupsQ = useQuery({
     queryKey: ["ac-access-groups", instanceId],
     queryFn: () => gates.accessGroups.list(instanceId),
     enabled: !!instanceId,
@@ -47,7 +71,7 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
     if (cardholder) qc.invalidateQueries({ queryKey: ["ac-cardholder", instanceId, cardholder.cardholder_id] });
   };
 
-  const create = useMutation<any>({
+  const create = useMutation({
     mutationFn: () =>
       gates.cardholders.create(instanceId, {
         first_name: form.first_name.trim() || undefined,
@@ -68,21 +92,25 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
     onError: (e) => toast.error(apiError(e, "Create failed")),
   });
 
-  const update = useMutation<any>({
+  // The three edit-only mutations below only run from the edit form, where
+  // `cardholder` is set.
+  const update = useMutation({
     mutationFn: () => {
-      const body: any = {};
-      if (form.first_name !== (cardholder.first_name || "")) body.first_name = form.first_name.trim() || null;
-      if (form.last_name !== (cardholder.last_name || "")) body.last_name = form.last_name.trim() || null;
-      if (form.employee_id !== (cardholder.employee_id || "")) body.employee_id = form.employee_id.trim() || null;
-      if (form.email !== (cardholder.email || "")) body.email = form.email.trim() || null;
-      if (form.description !== (cardholder.description || "")) body.description = form.description.trim() || null;
-      if (form.pin_code !== (cardholder.pin_code || "")) body.pin_code = form.pin_code.trim() || null;
-      if (JSON.stringify(groupIds) !== JSON.stringify(cardholder.access_groups || [])) body.access_groups = groupIds;
+      const target = cardholder!;
+      const body: CardholderUpdate = {};
+      if (form.first_name !== (target.first_name || "")) body.first_name = form.first_name.trim() || null;
+      if (form.last_name !== (target.last_name || "")) body.last_name = form.last_name.trim() || null;
+      if (form.employee_id !== (target.employee_id || "")) body.employee_id = form.employee_id.trim() || null;
+      if (form.email !== (target.email || "")) body.email = form.email.trim() || null;
+      if (form.description !== (target.description || "")) body.description = form.description.trim() || null;
+      // The form's PIN starts blank (never returned), so any entry is a change.
+      if (form.pin_code !== "") body.pin_code = form.pin_code.trim() || null;
+      if (JSON.stringify(groupIds) !== JSON.stringify(target.access_groups || [])) body.access_groups = groupIds;
       const vf = form.valid_from ? new Date(form.valid_from).toISOString() : null;
       const vu = form.valid_until ? new Date(form.valid_until).toISOString() : null;
-      if (vf !== (cardholder.valid_from || null)) body.valid_from = vf;
-      if (vu !== (cardholder.valid_until || null)) body.valid_until = vu;
-      return gates.cardholders.update(instanceId, cardholder.cardholder_id, body);
+      if (vf !== (target.valid_from || null)) body.valid_from = vf;
+      if (vu !== (target.valid_until || null)) body.valid_until = vu;
+      return gates.cardholders.update(instanceId, target.cardholder_id, body);
     },
     onSuccess: () => {
       toast.success("Cardholder updated");
@@ -92,8 +120,8 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
     onError: (e) => toast.error(apiError(e, "Update failed")),
   });
 
-  const addCard = useMutation<any>({
-    mutationFn: () => gates.cardholders.addCard(instanceId, cardholder.cardholder_id, newCardId.trim()),
+  const addCard = useMutation({
+    mutationFn: () => gates.cardholders.addCard(instanceId, cardholder!.cardholder_id, newCardId.trim()),
     onSuccess: () => {
       setNewCardId("");
       invalidate();
@@ -101,15 +129,16 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
     onError: (e) => toast.error(apiError(e, "Add card failed")),
   });
 
-  const removeCard = useMutation<any>({
-    mutationFn: (cardId: any) => gates.cardholders.removeCard(instanceId, cardholder.cardholder_id, cardId),
+  const removeCard = useMutation({
+    mutationFn: (cardId: string) => gates.cardholders.removeCard(instanceId, cardholder!.cardholder_id, cardId),
     onSuccess: invalidate,
     onError: (e) => toast.error(apiError(e, "Remove card failed")),
   });
 
-  const liveCardholderQ = useQuery<any>({
+  const liveCardholderQ = useQuery({
     queryKey: ["ac-cardholder", instanceId, cardholder?.cardholder_id],
-    queryFn: () => gates.cardholders.get(instanceId, cardholder.cardholder_id),
+    // `enabled: isEdit` below — the query only runs when `cardholder` is set.
+    queryFn: () => gates.cardholders.get(instanceId, cardholder!.cardholder_id),
     enabled: isEdit && !!instanceId,
   });
   const cards = useMemo(
@@ -118,14 +147,14 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
   );
 
   const validate = () => {
-    const next: any = {};
+    const next: Record<string, string> = {};
     if (!form.last_name.trim()) next.last_name = "Required";
     if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) next.email = "Invalid email";
     setErrors(next);
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e) => {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!validate()) return;
     if (isEdit) update.mutate();
@@ -133,7 +162,7 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
   };
 
   const isPending = create.isPending || update.isPending;
-  const displayName = isEdit
+  const displayName = cardholder
     ? `${cardholder.first_name ? cardholder.first_name + " " : ""}${cardholder.last_name || cardholder.name || ""}`
     : "";
 
@@ -226,9 +255,16 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
   );
 }
 
-function GroupSelector({ allGroups, selected, onChange }: any) {
+interface GroupSelectorProps {
+  allGroups: AccessGroupPublic[];
+  /** The selected `group_id`s. */
+  selected: string[];
+  onChange: (groupIds: string[]) => void;
+}
+
+function GroupSelector({ allGroups, selected, onChange }: GroupSelectorProps) {
   const [open, setOpen] = useState(false);
-  const idSet = new Set<any>(selected);
+  const idSet = new Set<string>(selected);
   const selectedGroups = allGroups.filter((g) => idSet.has(g.group_id));
 
   return (

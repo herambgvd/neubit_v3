@@ -10,23 +10,41 @@
 // State model: `cells` is a flat array of `cameraId | null` (top-left →
 // bottom-right), length === layout.capacity. The parent owns it (controlled) so
 // it can seed from an existing group and read it back on save.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
+import type { EstateCamera, GridLayout } from "../types";
 import { getGroupLayout, groupGridStyle } from "../videoWall";
 import { StatusDot } from "./StatusBadge";
 
 const CAMERA_DRAG_MIME = "application/x-neubit-vms-camera";
 
-export default function GroupGridBuilder({ layout, cameras = [], cells = [], onChange, error }: any) {
+/** The drag payload a camera carries (JSON under CAMERA_DRAG_MIME). */
+interface CameraDragPayload {
+  cameraId: string;
+  /** The cell it was dragged out of, when it came from the grid. */
+  sourceIdx: number | null;
+}
+
+export interface GroupGridBuilderProps {
+  /** The group's grid enum (an unknown string falls back to the default layout). */
+  layout: GridLayout | string;
+  cameras?: EstateCamera[];
+  /** `cameraId | null` per cell, top-left → bottom-right. */
+  cells?: (string | null)[];
+  onChange?: (next: (string | null)[]) => void;
+  error?: ReactNode;
+}
+
+export default function GroupGridBuilder({ layout, cameras = [], cells = [], onChange, error }: GroupGridBuilderProps) {
   const [search, setSearch] = useState("");
-  const [dragOverCell, setDragOverCell] = useState<any>(null);
+  const [dragOverCell, setDragOverCell] = useState<number | null>(null);
 
   const grid = getGroupLayout(layout);
   const capacity = grid.capacity;
 
   const cameraById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, EstateCamera>();
     cameras.forEach((c) => m.set(c.id, c));
     return m;
   }, [cameras]);
@@ -37,7 +55,7 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
     return cameras.filter(
       (c) =>
         c.name?.toLowerCase().includes(needle) ||
-        c.ip_address?.toLowerCase?.().includes(needle) ||
+        c.network_info?.ip?.toLowerCase?.().includes(needle) ||
         c.site_name?.toLowerCase?.().includes(needle),
     );
   }, [cameras, search]);
@@ -45,7 +63,7 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
   const placedCount = cells.filter(Boolean).length;
 
   // ── mutations (produce a fresh cells array, hand it up) ────────────────────
-  function place(cameraId, targetIdx = null, sourceIdx = null) {
+  function place(cameraId: string, targetIdx: number | null = null, sourceIdx: number | null = null) {
     const next = [...cells];
     while (next.length < capacity) next.push(null);
 
@@ -74,23 +92,25 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
     onChange?.(next.slice(0, capacity));
   }
 
-  function clearCell(idx) {
+  function clearCell(idx: number) {
     const next = [...cells];
     next[idx] = null;
     onChange?.(next.slice(0, capacity));
   }
 
-  function onCameraDragStart(e, cameraId, sourceIdx: number | null = null) {
-    e.dataTransfer.setData(CAMERA_DRAG_MIME, JSON.stringify({ cameraId, sourceIdx }));
+  function onCameraDragStart(e: DragEvent<HTMLElement>, cameraId: string, sourceIdx: number | null = null) {
+    const payload: CameraDragPayload = { cameraId, sourceIdx };
+    e.dataTransfer.setData(CAMERA_DRAG_MIME, JSON.stringify(payload));
     e.dataTransfer.effectAllowed = "move";
   }
-  function onCellDrop(e, idx) {
+  function onCellDrop(e: DragEvent<HTMLDivElement>, idx: number) {
     e.preventDefault();
     setDragOverCell(null);
     const raw = e.dataTransfer.getData(CAMERA_DRAG_MIME);
     if (!raw) return;
     try {
-      const parsed = JSON.parse(raw);
+      // Our own payload (onCameraDragStart) under a private MIME type.
+      const parsed = JSON.parse(raw) as Partial<CameraDragPayload> | null;
       if (parsed?.cameraId) place(parsed.cameraId, idx, parsed.sourceIdx ?? null);
     } catch {
       /* malformed payload — ignore */
@@ -169,7 +189,7 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
                 <div
                   key={i}
                   draggable={Boolean(cam)}
-                  onDragStart={cam ? (e) => onCameraDragStart(e, cid, i) : undefined}
+                  onDragStart={cam && cid ? (e) => onCameraDragStart(e, cid, i) : undefined}
                   onDragEnd={() => setDragOverCell(null)}
                   onDragOver={(e) => {
                     e.preventDefault();
@@ -215,7 +235,7 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
   );
 }
 
-function FieldLabel({ children }: any) {
+function FieldLabel({ children }: { children: ReactNode }) {
   return (
     <span className="text-xs font-medium uppercase tracking-wide text-muted">{children}</span>
   );

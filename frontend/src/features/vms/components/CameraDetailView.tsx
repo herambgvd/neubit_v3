@@ -12,20 +12,39 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
+import type { TabItem } from "@/components/common/TabBar";
+import type { SitePublic } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
 import { CONFIG_TABS } from "../constants";
 import { fromCamera, toUpdateBody, validateCamera } from "../formUtils";
+import type { CameraForm, CameraFormErrors, VmsCameraPublic } from "../types";
 import CameraConfigForm from "./CameraConfigForm";
 import DeviceMaintenance from "./DeviceMaintenance";
 import LivePlayer from "./LivePlayer";
 import StatusBadge from "./StatusBadge";
 import { usePlacementFloorsZones } from "../hooks/usePlacementFloorsZones";
 
-const VIEW_TAB = { key: "view", label: "View", icon: "heroicons-outline:play-circle" };
-const DEVICE_TAB = { key: "device", label: "Maintenance", icon: "heroicons-outline:wrench-screwdriver" };
-const DETAIL_TABS = [VIEW_TAB, ...CONFIG_TABS, DEVICE_TAB];
+/** The detail pane's tab keys: View + the config tabs (constants.CONFIG_TABS) +
+ *  Maintenance. Shared with EditCameraModal, which renders the same strip. */
+export type DetailTabKey = "view" | "live" | "recording" | "onvif" | "imaging" | "io" | "advanced" | "device";
+
+const VIEW_TAB: TabItem<DetailTabKey> = { key: "view", label: "View", icon: "heroicons-outline:play-circle" };
+const DEVICE_TAB: TabItem<DetailTabKey> = { key: "device", label: "Maintenance", icon: "heroicons-outline:wrench-screwdriver" };
+// CONFIG_TABS is a plain-string list; its keys are the middle of DetailTabKey.
+export const DETAIL_TABS: TabItem<DetailTabKey>[] = [VIEW_TAB, ...(CONFIG_TABS as TabItem<DetailTabKey>[]), DEVICE_TAB];
+
+export interface CameraDetailViewProps {
+  camera: VmsCameraPublic;
+  sites?: SitePublic[];
+  initialTab?: DetailTabKey;
+  /** The recorder is capturing this camera right now (the ● pill). */
+  recording?: boolean;
+  onUpdated?: () => void;
+  onDelete?: (camera: VmsCameraPublic) => void;
+  onSnapshot?: (camera: VmsCameraPublic) => void;
+}
 
 export default function CameraDetailView({
   camera,
@@ -35,10 +54,10 @@ export default function CameraDetailView({
   onUpdated,
   onDelete,
   onSnapshot,
-}: any) {
-  const [tab, setTab] = useState(initialTab);
-  const [form, setForm] = useState(() => fromCamera(camera));
-  const [errors, setErrors] = useState<any>({});
+}: CameraDetailViewProps) {
+  const [tab, setTab] = useState<DetailTabKey>(initialTab);
+  const [form, setForm] = useState<CameraForm>(() => fromCamera(camera));
+  const [errors, setErrors] = useState<CameraFormErrors>({});
   const { can } = useAuth();
   const { floors, zones } = usePlacementFloorsZones(form.site_id, form.floor_id);
 
@@ -50,9 +69,9 @@ export default function CameraDetailView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera.id]);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<CameraForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const update = useMutation<any>({
+  const update = useMutation({
     mutationFn: async () => {
       await vms.cameras.update(camera.id, toUpdateBody(form));
       // When saving the Recording tab, ALSO drive the recorder so a mode change takes
@@ -81,12 +100,12 @@ export default function CameraDetailView({
     onError: (e) => toast.error(apiError(e, "Update failed")),
   });
 
-  const startRec = useMutation<any>({
+  const startRec = useMutation({
     mutationFn: () => vms.recordingConfig.start(camera.id),
     onSuccess: () => toast.success("Recording started"),
     onError: (e) => toast.error(apiError(e, "Could not start recording")),
   });
-  const stopRec = useMutation<any>({
+  const stopRec = useMutation({
     mutationFn: () => vms.recordingConfig.stop(camera.id),
     onSuccess: () => toast.success("Recording stopped"),
     onError: (e) => toast.error(apiError(e, "Could not stop recording")),

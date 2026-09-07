@@ -9,6 +9,32 @@ import { useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { Button, Select } from "@/components/ui/kit";
+import type { CameraBulkBody, CameraGroupPublic, MediaNodePublic } from "../types";
+
+/** What the bar hands the page for POST /cameras/bulk — the body minus the ids
+ *  (the page owns the selection). */
+export type BulkActionRequest = Omit<CameraBulkBody, "camera_ids">;
+
+/** A G7 fleet op for the selected cameras (POST /cameras/bulk/{action}). */
+export type BulkDeviceActionRequest =
+  | { action: "reboot" }
+  | { action: "ntp"; server: string }
+  | { action: "password"; user?: string; new_password: string }
+  | { action: "apply-stream-policy" };
+
+export interface BulkActionBarProps {
+  count: number;
+  groups?: CameraGroupPublic[];
+  nodes?: MediaNodePublic[];
+  onAction: (req: BulkActionRequest) => void;
+  onDeviceAction?: (req: BulkDeviceActionRequest) => void;
+  canManageDevices?: boolean;
+  onClear?: () => void;
+  pending?: boolean;
+}
+
+/** The inline picker currently open (null = the action row). */
+type BulkMode = null | "group" | "retention" | "node" | "device" | "ntp" | "password";
 
 export default function BulkActionBar({
   count,
@@ -19,11 +45,11 @@ export default function BulkActionBar({
   canManageDevices = false,
   onClear,
   pending,
-}: any) {
+}: BulkActionBarProps) {
   // null | group | retention | node | device | ntp | password
-  const [mode, setMode] = useState<any>(null);
+  const [mode, setMode] = useState<BulkMode>(null);
   const [groupId, setGroupId] = useState("");
-  const [retention, setRetention] = useState<any>(30);
+  const [retention, setRetention] = useState<number | string>(30);
   const [nodeId, setNodeId] = useState(""); // "" = pick prompt; "__auto" = unassign
   const [ntpServer, setNtpServer] = useState("");
   const [pwUser, setPwUser] = useState("");

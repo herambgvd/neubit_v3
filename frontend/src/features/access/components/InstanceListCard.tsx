@@ -6,8 +6,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
+import type { AccessInstancePublic } from "@/lib/types";
 import { fmtRelative } from "@/lib/format";
 import HealthBadge from "./HealthBadge";
+
+export interface InstanceListCardProps {
+  instance: AccessInstancePublic;
+  /** Resolved from `instance.site_id`; blank renders "Unassigned site". */
+  siteName?: string | null;
+  isSelected: boolean;
+  onSelect: (instance: AccessInstancePublic) => void;
+  onEdit?: (instance: AccessInstancePublic) => void;
+  onDelete?: (instance: AccessInstancePublic) => void;
+}
 
 export default function InstanceListCard({
   instance,
@@ -16,14 +27,14 @@ export default function InstanceListCard({
   onSelect,
   onEdit,
   onDelete,
-}: any) {
+}: InstanceListCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const ref = useRef<any>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
-    const handler = (e) => {
-      if (!ref.current?.contains(e.target)) setMenuOpen(false);
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);

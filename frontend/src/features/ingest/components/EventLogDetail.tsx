@@ -7,8 +7,14 @@ import { Spinner } from "@/components/ui/kit";
 import { FieldLabel } from "@/components/common";
 import { ingest as ingestApi } from "../api";
 
-export default function EventLogDetail({ id, error }: any) {
-  const q = useQuery<any>({ queryKey: ["ingest-event-log", id], queryFn: () => ingestApi.eventLogs.get(id) });
+export interface EventLogDetailProps {
+  id: string;
+  /** The list row's error text, shown above the payloads. */
+  error?: string | null;
+}
+
+export default function EventLogDetail({ id, error }: EventLogDetailProps) {
+  const q = useQuery({ queryKey: ["ingest-event-log", id], queryFn: () => ingestApi.eventLogs.get(id) });
   const d = q.data;
   return (
     <div className="space-y-3 border-t border-nb-line bg-[rgba(0,0,0,.2)] px-4 py-3">

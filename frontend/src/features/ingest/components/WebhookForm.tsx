@@ -8,6 +8,7 @@
 //                     secret field(s) submitted in the body.
 //   request_method  = post (JSON body) | get (query-param payloads).
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -22,14 +23,34 @@ import PayloadFieldsBuilder, {
   fieldsToTransform,
   transformToFields,
 } from "./PayloadFieldsBuilder";
+import type { AuthType, BuilderField, InboundMethod, JsonObject, WebhookCreate, WebhookPublic, WebhookUpdate } from "../types";
+import type { FieldChangeEvent } from "@/components/common/Field";
 
-export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: any) {
+/** The form's per-field validation messages. */
+interface WebhookFormErrors {
+  name?: string;
+  authUsername?: string;
+  authSecret?: string;
+  schema?: string;
+  transform?: string;
+}
+
+export interface WebhookFormProps {
+  /** The category a NEW webhook is created in. */
+  categoryId?: string;
+  /** Null = create. */
+  webhook?: WebhookPublic | null;
+  onCancel: () => void;
+  onSaved: () => void;
+}
+
+export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: WebhookFormProps) {
   const isEdit = !!webhook;
   const [name, setName] = useState(webhook?.name || "");
-  const [requestMethod, setRequestMethod] = useState(
-    (webhook?.request_method || "post").toLowerCase(),
+  const [requestMethod, setRequestMethod] = useState<InboundMethod>(
+    ((webhook?.request_method || "post").toLowerCase() as InboundMethod),
   );
-  const [authType, setAuthType] = useState(webhook?.auth_type || "none");
+  const [authType, setAuthType] = useState<AuthType>(webhook?.auth_type || "none");
 
   // Per-type auth secret(s). Never pre-filled on edit (backend never echoes the
   // secret); leaving them blank on edit keeps the existing secret.
@@ -46,7 +67,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
       : "",
   );
   const [isActive, setIsActive] = useState(webhook?.is_active !== false);
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<WebhookFormErrors>({});
 
   // Guided transform builder — v2 parity. Its output feeds the same `transform`
   // JSON as the raw editor, so both modes stay in sync.
@@ -56,16 +77,21 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
     transformToFields(webhook?.transform),
   );
 
-  function applyBuilderFields(nextFields) {
+  function applyBuilderFields(nextFields: BuilderField[]) {
     setBuilderFields(nextFields);
     setTransform(JSON.stringify(fieldsToTransform(nextFields), null, 2));
     if (errors.transform) setErrors((p) => ({ ...p, transform: undefined }));
   }
 
-  const saving = useMutation<any>({
-    mutationFn: (body: any) => {
-      const id = webhook?.id ?? webhook?.webhook_id;
-      return isEdit ? ingestApi.webhooks.update(id, body) : ingestApi.webhooks.create(body);
+  const saving = useMutation({
+    // The body is assembled field-by-field below, so it is a partial until the
+    // branch decides which wire shape it is. NOTE: this form does not collect
+    // `slug`, which WebhookCreate requires — see the create path.
+    mutationFn: (body: Partial<WebhookCreate>) => {
+      const id = webhook?.id ?? "";
+      return isEdit
+        ? ingestApi.webhooks.update(id, body as WebhookUpdate)
+        : ingestApi.webhooks.create(body as WebhookCreate);
     },
     onSuccess: () => {
       toast.success(isEdit ? "Webhook updated" : "Webhook created");
@@ -75,7 +101,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
   });
 
   // Per-auth-type secret metadata: label + hint for the secret input.
-  const secretMeta = {
+  const secretMeta: Record<string, { label: string; hint: string }> = {
     api_key: { label: "API key", hint: "Sent by the caller as the API key." },
     bearer: { label: "Bearer token", hint: "Sent as Authorization: Bearer <token>." },
     hmac: {
@@ -87,9 +113,9 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
   const needsUsername = authType === "basic";
   const needsSecret = authType !== "none";
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: WebhookFormErrors = {};
     if (!name.trim()) next.name = "Name is required";
 
     if (needsUsername && !authUsername.trim()) next.authUsername = "Username is required";
@@ -98,12 +124,12 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
     }
 
     // Both are JSON objects on the backend (payload_schema: dict, transform: {key: JMESPath}).
-    let parsedSchema: any = {};
+    let parsedSchema: JsonObject = {};
     if (schema.trim()) {
       try { parsedSchema = JSON.parse(schema); }
       catch { next.schema = "Schema must be valid JSON"; }
     }
-    let parsedTransform: any = {};
+    let parsedTransform: Record<string, string> = {};
     if (transform.trim()) {
       try { parsedTransform = JSON.parse(transform); }
       catch { next.transform = "Transform must be a valid JSON object"; }
@@ -116,7 +142,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
       return;
     }
 
-    const body: any = {
+    const body: Partial<WebhookCreate> = {
       name: name.trim(),
       request_method: requestMethod,
       auth_type: authType,
@@ -151,7 +177,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
           label="Name"
           required
           value={name}
-          onChange={(e) => {
+          onChange={(e: FieldChangeEvent) => {
             setName(e.target.value);
             if (errors.name) setErrors((p) => ({ ...p, name: undefined }));
           }}
@@ -162,7 +188,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
           as="select"
           label="Request method"
           value={requestMethod}
-          onChange={(e) => setRequestMethod(e.target.value)}
+          onChange={(e: FieldChangeEvent) => setRequestMethod(e.target.value as InboundMethod)}
           options={REQUEST_METHODS}
           hint="POST reads a JSON body. GET reads query params as the payload."
         />
@@ -174,8 +200,8 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
           as="select"
           label="Auth type"
           value={authType}
-          onChange={(e) => {
-            setAuthType(e.target.value);
+          onChange={(e: FieldChangeEvent) => {
+            setAuthType(e.target.value as AuthType);
             setErrors((p) => ({ ...p, authUsername: undefined, authSecret: undefined }));
           }}
           options={AUTH_TYPES}
@@ -185,7 +211,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
             label="Username"
             required
             value={authUsername}
-            onChange={(e) => {
+            onChange={(e: FieldChangeEvent) => {
               setAuthUsername(e.target.value);
               if (errors.authUsername) setErrors((p) => ({ ...p, authUsername: undefined }));
             }}
@@ -203,7 +229,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
             required={!isEdit}
             type={showSecret ? "text" : "password"}
             value={authSecret}
-            onChange={(e) => {
+            onChange={(e: FieldChangeEvent) => {
               setAuthSecret(e.target.value);
               if (errors.authSecret) setErrors((p) => ({ ...p, authSecret: undefined }));
             }}
@@ -250,7 +276,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
             as="textarea"
             rows={4}
             value={transform}
-            onChange={(e) => {
+            onChange={(e: FieldChangeEvent) => {
               setTransform(e.target.value);
               if (errors.transform) setErrors((p) => ({ ...p, transform: undefined }));
             }}
@@ -267,7 +293,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
         label="Schema (JSON)"
         rows={5}
         value={schema}
-        onChange={(e) => {
+        onChange={(e: FieldChangeEvent) => {
           setSchema(e.target.value);
           if (errors.schema) setErrors((p) => ({ ...p, schema: undefined }));
         }}

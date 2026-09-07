@@ -4,11 +4,24 @@
 // Header (icon + title + desc + optional action) over a spinner/error/children body.
 // Built on the shared console SectionCard so it carries the same radius, padding
 // and uppercase micro-heading as every other Configurations surface.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 import { SectionCard, SectionHead } from "@/components/console";
 
-export default function SecuritySection({ title, desc, icon, action, loading, error, children }: any) {
+export interface SecuritySectionProps {
+  title: ReactNode;
+  desc?: ReactNode;
+  icon?: string;
+  /** Header-right control (Save / Sync …); `false` renders nothing. */
+  action?: ReactNode;
+  loading?: boolean;
+  /** Error text; replaces the body when set. */
+  error?: ReactNode;
+  children?: ReactNode;
+}
+
+export default function SecuritySection({ title, desc, icon, action, loading, error, children }: SecuritySectionProps) {
   return (
     <SectionCard>
       <SectionHead icon={icon} title={title} desc={desc} action={action} />

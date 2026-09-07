@@ -9,6 +9,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import {
   ConsoleGrid,
   ConsolePanel,
@@ -20,28 +21,31 @@ import {
   EmptyPane,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
-import { asItems, idOf, fmtRelative } from "@/lib/format";
+import { asItems, fmtRelative } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import type { CreateTriggerRequest, SopPublic, TriggerPublic } from "../../types";
 import TriggerForm from "./TriggerForm";
 import TriggerDetail from "./TriggerDetail";
 import TriggerTestModal from "./TriggerTestModal";
 
-const trigId = (t) => idOf(t, "id", "trigger_id");
+const trigId = (t: TriggerPublic): string => t.trigger_id;
+
+type Mode = "view" | "create" | "edit";
 
 export default function TriggersTab() {
   const qc = useQueryClient();
-  const q = useQuery<any>({ queryKey: ["wf-triggers"], queryFn: () => wfApi.triggers.list({ limit: 200 }) });
-  const sopsQ = useQuery<any>({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
-  const triggers = asItems(q.data);
-  const sops = asItems(sopsQ.data);
+  const q = useQuery({ queryKey: ["wf-triggers"], queryFn: () => wfApi.triggers.list({ limit: 200 }) });
+  const sopsQ = useQuery({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
+  const triggers = useMemo<TriggerPublic[]>(() => (q.data ? asItems(q.data) : []), [q.data]);
+  const sops = useMemo<SopPublic[]>(() => (sopsQ.data ? asItems(sopsQ.data) : []), [sopsQ.data]);
 
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [mode, setMode] = useState("view"); // view | create | edit
-  const [confirm, setConfirm] = useState<any>(null);
-  const [test, setTest] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("view"); // view | create | edit
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [test, setTest] = useState<TriggerPublic | null>(null);
   const [search, setSearch] = useState("");
 
-  const sopName = (sid) => sops.find((s) => idOf(s, "id", "sop_id") === sid)?.name || "—";
+  const sopName = (sid: string): string => sops.find((s) => s.sop_id === sid)?.name || "—";
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -60,23 +64,25 @@ export default function TriggersTab() {
   const selected = useMemo(() => (mode === "create" ? null : triggers.find((t) => trigId(t) === effectiveId) || null), [triggers, effectiveId, mode]);
 
 
-  const save = useMutation<any, any, any>({
-    mutationFn: ({ id, body }: any) => (id ? wfApi.triggers.update(id, body) : wfApi.triggers.create(body)),
+  const save = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: CreateTriggerRequest }) =>
+      (id ? wfApi.triggers.update(id, body) : wfApi.triggers.create(body)),
     onSuccess: (saved) => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["wf-triggers"] }); const id = trigId(saved); if (id) setSelectedId(id); setMode("view"); },
     onError: (e) => toast.error(apiError(e)),
   });
   const remove = useMutation({
-    mutationFn: (id: any) => wfApi.triggers.remove(id),
+    mutationFn: (id: string) => wfApi.triggers.remove(id),
     onSuccess: () => { toast.success("Trigger removed"); qc.invalidateQueries({ queryKey: ["wf-triggers"] }); setSelectedId(null); },
     onError: (e) => toast.error(apiError(e)),
   });
-  const toggle = useMutation<any, any, any>({
-    mutationFn: ({ id, enabled }: any) => (enabled ? wfApi.triggers.disable(id) : wfApi.triggers.enable(id)),
+  const toggle = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      (enabled ? wfApi.triggers.disable(id) : wfApi.triggers.enable(id)),
     onSuccess: (_d, v) => { toast.success(v.enabled ? "Disabled" : "Enabled"); qc.invalidateQueries({ queryKey: ["wf-triggers"] }); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function askDelete(t) {
+  function askDelete(t: TriggerPublic) {
     setConfirm({ title: "Delete trigger?", message: `Delete "${t.name}"?`, confirmLabel: "Delete", onConfirm: () => { remove.mutate(trigId(t)); setConfirm(null); } });
   }
 
@@ -129,12 +135,12 @@ export default function TriggersTab() {
         <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
           <TriggerForm
-              key={mode === "edit" ? trigId(selected) : "new"}
+              key={mode === "edit" ? selected?.trigger_id : "new"}
               trigger={mode === "edit" ? selected : null}
               sops={sops}
               pending={save.isPending}
               onCancel={() => setMode("view")}
-              onSubmit={(body) => save.mutate({ id: mode === "edit" ? trigId(selected) : null, body })}
+              onSubmit={(body) => save.mutate({ id: mode === "edit" ? (selected?.trigger_id ?? null) : null, body })}
             />
         ) : !selected ? (
           <EmptyPane icon="heroicons:bolt" title="No trigger selected" subtitle="Pick one from the list, or click ＋ NEW TRIGGER to create one." />

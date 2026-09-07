@@ -26,18 +26,43 @@
 //   POST             /ingest/event-logs/{id}/replay
 //   The public receiver `/ingest/hooks/{slug}` is server-only — we only DISPLAY
 //   the URL in the webhook detail (never call it).
+import type { AxiosResponse } from "axios";
+
 import { api } from "@/lib/api";
+import type { QueryParams } from "@/lib/types";
+import type {
+  CategoryCreate,
+  CategoryListResponse,
+  CategoryPublic,
+  CategoryUpdate,
+  EventLogDetailOut,
+  EventLogListResponse,
+  EventRuleCreate,
+  EventRuleListResponse,
+  EventRulePublic,
+  EventRuleUpdate,
+  JsonObject,
+  ReplayResponse,
+  RotateSecretResponse,
+  RuleTestRequest,
+  RuleTestResponse,
+  WebhookCreate,
+  WebhookListResponse,
+  WebhookPublic,
+  WebhookTestResponse,
+  WebhookUpdate,
+} from "./types";
 
 const CATEGORIES = "/ingest/categories";
 const WEBHOOKS = "/ingest/webhooks";
 
-const unwrap = (p: Promise<any>): Promise<any> => p.then((r) => r.data);
+const unwrap = <T>(p: Promise<AxiosResponse<T>>): Promise<T> => p.then((r) => r.data);
 
 // Drop null/undefined/"" so URLSearchParams doesn't emit empty filters.
-function qs(params: any = {}) {
-  const clean: any = {};
-  for (const [k, v] of Object.entries<any>(params)) {
-    if (v !== undefined && v !== null && v !== "") clean[k] = v;
+function qs(params: QueryParams = {}): string {
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") clean[k] = String(v);
   }
   const s = new URLSearchParams(clean).toString();
   return s ? `?${s}` : "";
@@ -45,49 +70,54 @@ function qs(params: any = {}) {
 
 export const ingest = {
   categories: {
-    list: (params: any = {}) => unwrap(api.get(`${CATEGORIES}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${CATEGORIES}/${id}`)),
-    create: (body) => unwrap(api.post(CATEGORIES, body)),
-    update: (id, body) => unwrap(api.patch(`${CATEGORIES}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${CATEGORIES}/${id}`)),
+    list: (params: QueryParams = {}) => unwrap<CategoryListResponse>(api.get(`${CATEGORIES}${qs(params)}`)),
+    get: (id: string) => unwrap<CategoryPublic>(api.get(`${CATEGORIES}/${id}`)),
+    create: (body: CategoryCreate) => unwrap<CategoryPublic>(api.post(CATEGORIES, body)),
+    update: (id: string, body: CategoryUpdate) => unwrap<CategoryPublic>(api.patch(`${CATEGORIES}/${id}`, body)),
+    remove: (id: string) => unwrap<void>(api.delete(`${CATEGORIES}/${id}`)),
   },
 
   webhooks: {
-    list: (params: any = {}) => unwrap(api.get(`${WEBHOOKS}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${WEBHOOKS}/${id}`)),
-    create: (body) => unwrap(api.post(WEBHOOKS, body)),
-    update: (id, body) => unwrap(api.patch(`${WEBHOOKS}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${WEBHOOKS}/${id}`)),
+    list: (params: QueryParams = {}) => unwrap<WebhookListResponse>(api.get(`${WEBHOOKS}${qs(params)}`)),
+    get: (id: string) => unwrap<WebhookPublic>(api.get(`${WEBHOOKS}/${id}`)),
+    create: (body: WebhookCreate) => unwrap<WebhookPublic>(api.post(WEBHOOKS, body)),
+    update: (id: string, body: WebhookUpdate) => unwrap<WebhookPublic>(api.patch(`${WEBHOOKS}/${id}`, body)),
+    remove: (id: string) => unwrap<void>(api.delete(`${WEBHOOKS}/${id}`)),
     // Dry-run: run the sample through the real receiver pipeline (no publish, no log).
     // → { would_publish, reject_reason, schema_valid, schema_errors, transformed,
     //     transform_errors, would_publish_subject, auth_type, resolved_event_type,
     //     matched_rule_id, matched_rule_name, device_lookup_value, resolved_device_id }
-    test: (id, payload) => unwrap(api.post(`${WEBHOOKS}/${id}/test`, { payload })),
+    test: (id: string, payload: JsonObject) =>
+      unwrap<WebhookTestResponse>(api.post(`${WEBHOOKS}/${id}/test`, { payload })),
     // Mint a fresh auth secret, returned ONCE. The URL/slug is NOT changed.
     // → { id, slug, ingest_url, auth_secret }
-    rotateSecret: (id) => unwrap(api.post(`${WEBHOOKS}/${id}/rotate-secret`, {})),
+    rotateSecret: (id: string) =>
+      unwrap<RotateSecretResponse>(api.post(`${WEBHOOKS}/${id}/rotate-secret`, {})),
   },
 
   // Inbound request audit trail (one row per receiver call).
   eventLogs: {
-    list: (params: any = {}) => unwrap(api.get(`/ingest/event-logs${qs(params)}`)),
-    get: (id) => unwrap(api.get(`/ingest/event-logs/${id}`)),
-    replay: (id) => unwrap(api.post(`/ingest/event-logs/${id}/replay`, {})),
+    list: (params: QueryParams = {}) => unwrap<EventLogListResponse>(api.get(`/ingest/event-logs${qs(params)}`)),
+    get: (id: string) => unwrap<EventLogDetailOut>(api.get(`/ingest/event-logs/${id}`)),
+    replay: (id: string) => unwrap<ReplayResponse>(api.post(`/ingest/event-logs/${id}/replay`, {})),
   },
 
   // Payload-driven routing rules per webhook (priority-ordered; first match wins).
   //   rule: { name, description?, priority, match_conditions:[{path,op,value?}],
   //           field_map:{}, event_type, target_domain?, enabled }
   eventRules: {
-    list: (webhookId, params: any = {}) =>
-      unwrap(api.get(`${WEBHOOKS}/${webhookId}/rules${qs(params)}`)),
-    create: (webhookId, body) => unwrap(api.post(`${WEBHOOKS}/${webhookId}/rules`, body)),
-    get: (ruleId) => unwrap(api.get(`/ingest/event-rules/${ruleId}`)),
-    update: (ruleId, body) => unwrap(api.patch(`/ingest/event-rules/${ruleId}`, body)),
-    remove: (ruleId) => unwrap(api.delete(`/ingest/event-rules/${ruleId}`)),
+    list: (webhookId: string, params: QueryParams = {}) =>
+      unwrap<EventRuleListResponse>(api.get(`${WEBHOOKS}/${webhookId}/rules${qs(params)}`)),
+    create: (webhookId: string, body: EventRuleCreate) =>
+      unwrap<EventRulePublic>(api.post(`${WEBHOOKS}/${webhookId}/rules`, body)),
+    get: (ruleId: string) => unwrap<EventRulePublic>(api.get(`/ingest/event-rules/${ruleId}`)),
+    update: (ruleId: string, body: EventRuleUpdate) =>
+      unwrap<EventRulePublic>(api.patch(`/ingest/event-rules/${ruleId}`, body)),
+    remove: (ruleId: string) => unwrap<void>(api.delete(`/ingest/event-rules/${ruleId}`)),
     // Dry-run a rule against a sample payload (existing rule or a proposed shape).
     // → { matched, condition_results:[{ok,op,path,actual,expected}], extracted, event_type }
-    test: (ruleId, body) => unwrap(api.post(`/ingest/event-rules/${ruleId}/test`, body)),
+    test: (ruleId: string, body: RuleTestRequest) =>
+      unwrap<RuleTestResponse>(api.post(`/ingest/event-rules/${ruleId}/test`, body)),
   },
 };
 

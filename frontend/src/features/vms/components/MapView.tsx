@@ -10,26 +10,40 @@
 // Nothing is invented — an unplaced/unconfigured estate shows a guide to the Sites
 // editor. Coordinates are image-pixel world coords (same model as the editor
 // canvas: screen = world*scale + offset with the plan letterboxed to fit).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type SyntheticEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { asItems } from "@/lib/format";
+import type { EstateCamera } from "../types";
 
-export default function MapView({ cameras = [], onPick }: any) {
-  const [siteId, setSiteId] = useState<any>(null);
-  const [floorId, setFloorId] = useState<any>(null);
+export interface MapViewProps {
+  cameras?: EstateCamera[];
+  /** A pin was clicked — the camera whose id the placement keys on. */
+  onPick?: (camera: EstateCamera) => void;
+}
+
+/** A camera pin — the placement's device id + its image-pixel world coords. */
+interface CameraPin {
+  device_id: string;
+  x: number;
+  y: number;
+}
+
+export default function MapView({ cameras = [], onPick }: MapViewProps) {
+  const [siteId, setSiteId] = useState<string | null>(null);
+  const [floorId, setFloorId] = useState<string | null>(null);
 
   // Live status by device id (wall cameras carry the SAME id device placements key on).
   const statusById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, EstateCamera>();
     cameras.forEach((c) => m.set(c.id, c));
     return m;
   }, [cameras]);
 
-  const sitesQ = useQuery<any>({ queryKey: ["map-sites"], queryFn: () => sitesApi.list({ limit: 100 }) });
+  const sitesQ = useQuery({ queryKey: ["map-sites"], queryFn: () => sitesApi.list({ limit: 100 }) });
   const siteList = asItems(sitesQ.data);
 
   // Default to the first site once loaded.
@@ -38,7 +52,7 @@ export default function MapView({ cameras = [], onPick }: any) {
   // than synced in an effect, which rendered one empty frame first.
   const effectiveSiteId = siteId ?? siteList[0]?.site_id ?? null;
 
-  const floorsQ = useQuery<any>({
+  const floorsQ = useQuery({
     queryKey: ["map-floors", effectiveSiteId],
     queryFn: () => sitesApi.floors.list({ site_id: effectiveSiteId, limit: 100 }),
     enabled: !!effectiveSiteId,
@@ -53,20 +67,21 @@ export default function MapView({ cameras = [], onPick }: any) {
 
   const floor = floorList.find((f) => f.floor_id === floorId) || null;
 
-  const placementsQ = useQuery<any>({
+  const placementsQ = useQuery({
     queryKey: ["map-placements", floorId],
-    queryFn: () => sitesApi.devicePlacements.listByFloor(floorId),
+    // `enabled` gates on floorId, so the fetch never runs with null.
+    queryFn: () => sitesApi.devicePlacements.listByFloor(floorId ?? ""),
     enabled: !!floorId,
   });
   // Only camera devices carry a live status + click-to-wall action here.
-  const placements = useMemo(
+  const placements = useMemo<CameraPin[]>(
     () =>
       asItems(placementsQ.data)
         .filter((p) => String(p.device_type || "").toLowerCase() === "camera")
         .map((p) => ({
           device_id: p.device_id,
-          x: p.floor_position?.x ?? p.x ?? 0,
-          y: p.floor_position?.y ?? p.y ?? 0,
+          x: p.floor_position?.x ?? 0,
+          y: p.floor_position?.y ?? 0,
         })),
     [placementsQ.data],
   );
@@ -134,7 +149,14 @@ export default function MapView({ cameras = [], onPick }: any) {
 }
 
 // A compact mono dropdown for the breadcrumb.
-function Picker({ value, onChange, options, placeholder }: any) {
+interface PickerProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+}
+
+function Picker({ value, onChange, options, placeholder }: PickerProps) {
   if (options.length === 0) {
     return <span className="text-[#7e93bf]">{placeholder}</span>;
   }
@@ -153,7 +175,7 @@ function Picker({ value, onChange, options, placeholder }: any) {
   );
 }
 
-function Empty({ title, body }: any) {
+function Empty({ title, body }: { title: string; body: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
       <Icon icon="heroicons-outline:map" className="text-4xl text-[rgba(103,232,249,.35)]" />
@@ -167,10 +189,24 @@ function Empty({ title, body }: any) {
 // to screen with the plan letterboxed to fit (screen = world*scale + offset) — the
 // same transform the editor canvas uses, so pins land exactly where they were
 // placed.
-function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }: any) {
-  const boxRef = useRef<any>(null);
-  const [box, setBox] = useState<any>({ w: 0, h: 0 });
-  const [nat, setNat] = useState<any>({ w: 0, h: 0 });
+interface FloorPlanProps {
+  url: string;
+  placements: CameraPin[];
+  statusById: Map<string, EstateCamera>;
+  onPick?: (deviceId: string) => void;
+  emptyPlacements: boolean;
+}
+
+/** A width/height pair in CSS pixels. */
+interface Size {
+  w: number;
+  h: number;
+}
+
+function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }: FloorPlanProps) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState<Size>({ w: 0, h: 0 });
+  const [nat, setNat] = useState<Size>({ w: 0, h: 0 });
 
   useEffect(() => {
     const el = boxRef.current;
@@ -193,7 +229,9 @@ function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }: any
       <img
         src={url}
         alt="Floor plan"
-        onLoad={(e: any) => setNat({ w: e.target.naturalWidth, h: e.target.naturalHeight })}
+        onLoad={(e: SyntheticEvent<HTMLImageElement>) =>
+          setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+        }
         className="absolute inset-0 h-full w-full object-contain opacity-90"
         draggable={false}
       />

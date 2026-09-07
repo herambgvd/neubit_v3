@@ -8,11 +8,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { ConfirmDialog } from "@/components/ui/kit";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, titleize } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { NvrPublic } from "@/lib/types";
 import { vms } from "./api";
 import StatusBadge from "./components/StatusBadge";
 import AddNvrModal from "./components/AddNvrModal";
@@ -23,24 +24,24 @@ import NvrDetail from "./components/NvrDetail";
 export default function NvrPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [discoverOpen, setDiscoverOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<any>(null);
-  const [mapTarget, setMapTarget] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [editTarget, setEditTarget] = useState<NvrPublic | null>(null);
+  const [mapTarget, setMapTarget] = useState<NvrPublic | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const nvrsQ = useQuery<any>({
+  const nvrsQ = useQuery({
     queryKey: ["vms-nvrs"],
     queryFn: () => vms.nvrs.list({ limit: 500 }),
     refetchInterval: 20_000,
   });
   const nvrs = useMemo(() => asItems(nvrsQ.data), [nvrsQ.data]);
 
-  const sitesQ = useQuery<any>({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }), staleTime: 60_000 });
+  const sitesQ = useQuery({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }), staleTime: 60_000 });
   const sites = asItems(sitesQ.data);
   const siteNames = useMemo(() => {
-    const m: any = {};
+    const m: Record<string, string> = {};
     for (const s of sites) m[s.site_id] = s.name;
     return m;
   }, [sites]);
@@ -61,8 +62,8 @@ export default function NvrPage() {
 
   const onlineCount = nvrs.filter((n) => n.status === "online").length;
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => vms.nvrs.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => vms.nvrs.remove(id),
     onSuccess: (_d, id) => {
       toast.success("NVR removed");
       if (effectiveId === id) setSelectedId(null);
@@ -71,7 +72,7 @@ export default function NvrPage() {
     onError: (e) => toast.error(apiError(e, "Delete failed")),
   });
 
-  const askDelete = (nvr) =>
+  const askDelete = (nvr: NvrPublic) =>
     setConfirm({
       title: "Delete NVR",
       message: `Remove ${nvr.name}? Its mapped channel-cameras remain but lose their NVR link. This cannot be undone.`,

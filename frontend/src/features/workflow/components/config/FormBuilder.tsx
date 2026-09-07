@@ -7,6 +7,7 @@
 // (options → [{value,label}], validation → { required, pattern }, help_text,
 // default_value, order). The right column is the live FormPreview.
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -17,17 +18,33 @@ import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { titleize } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import type { CreateFormRequest, FieldType, FormFieldSchema, FormFieldValidation, FormPublic } from "../../types";
 import FormPreview from "./FormPreview";
 import { PaneForm } from "@/components/console";
 
 // Form field kinds the builder can create (mirrors backend FieldType enum).
-const FIELD_TYPES = ["text", "textarea", "number", "email", "phone", "date", "datetime", "select", "radio", "multiselect", "checkbox", "boolean", "rating", "file"];
+const FIELD_TYPES: FieldType[] = ["text", "textarea", "number", "email", "phone", "date", "datetime", "select", "radio", "multiselect", "checkbox", "boolean", "rating", "file"];
+const isFieldType = (v: string): v is FieldType => (FIELD_TYPES as string[]).includes(v);
 // Types that own an editable option list.
-const FIELD_TYPES_WITH_OPTIONS = new Set<any>(["select", "radio", "multiselect"]);
+const FIELD_TYPES_WITH_OPTIONS = new Set<string>(["select", "radio", "multiselect"]);
 // Types that accept a validation regex (only meaningful on strings).
-const FIELD_TYPES_WITH_PATTERN = new Set<any>(["text", "textarea", "email", "phone", "number"]);
+const FIELD_TYPES_WITH_PATTERN = new Set<string>(["text", "textarea", "email", "phone", "number"]);
 
-const blankField = () => ({
+/** One editor row — the flat, text-first shape the cards edit (options is a
+ *  comma string; validation is spread into `required` + `pattern`). */
+export interface BuilderField {
+  label: string;
+  type: FieldType;
+  required: boolean;
+  options: string;
+  placeholder: string;
+  default_value: string | number;
+  help_text: string;
+  pattern: string;
+  _collapsed: boolean;
+}
+
+const blankField = (): BuilderField => ({
   label: "",
   type: "text",
   required: false,
@@ -40,40 +57,50 @@ const blankField = () => ({
 });
 
 // Backend field → editor row (options list → comma string; validation → flat).
-function hydrateField(f) {
+function hydrateField(f: FormFieldSchema): BuilderField {
   return {
     label: f.label || "",
     type: f.type || "text",
     required: !!f.validation?.required,
     options: (f.options || []).map((o) => o.label ?? o.value ?? "").join(", "),
     placeholder: f.placeholder || "",
-    default_value: f.default_value ?? "",
+    // `default_value` is `Any` on the wire; the editor holds text (numbers kept).
+    default_value:
+      typeof f.default_value === "number" ? f.default_value : f.default_value == null ? "" : String(f.default_value),
     help_text: f.help_text || "",
     pattern: f.validation?.pattern || "",
     _collapsed: false,
   };
 }
 
-export default function FormBuilder({ form, onCancel, onSaved }: any) {
+export interface FormBuilderProps {
+  /** The form being edited; null creates one. */
+  form: FormPublic | null;
+  onCancel: () => void;
+  onSaved: () => void;
+}
+
+export default function FormBuilder({ form, onCancel, onSaved }: FormBuilderProps) {
   const isEdit = !!form;
   const [name, setName] = useState(form?.name || "");
   const [description, setDescription] = useState(form?.description || "");
   const [isActive, setIsActive] = useState(form?.is_active !== false);
-  const [fields, setFields] = useState(
+  const [fields, setFields] = useState<BuilderField[]>(
     Array.isArray(form?.fields) && form.fields.length ? form.fields.map(hydrateField) : [blankField()],
   );
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Partial<Record<"name" | "fields", string>>>({});
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: (body: any) => (isEdit ? wfApi.forms.update(form.form_id, body) : wfApi.forms.create(body)),
+  const saving = useMutation({
+    mutationFn: (body: CreateFormRequest) => (form ? wfApi.forms.update(form.form_id, body) : wfApi.forms.create(body)),
     onSuccess: () => { toast.success(isEdit ? "Form updated" : "Form created"); onSaved(); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const updateField = (i, patch) => setFields((fs) => fs.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
+  const updateField = (i: number, patch: Partial<BuilderField>) =>
+    setFields((fs) => fs.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
   const addField = () => setFields((fs) => [...fs, blankField()]);
-  const removeField = (i) => setFields((fs) => fs.filter((_, idx) => idx !== i));
-  const moveField = (from, to) =>
+  const removeField = (i: number) => setFields((fs) => fs.filter((_, idx) => idx !== i));
+  const moveField = (from: number, to: number) =>
     setFields((fs) => {
       if (to < 0 || to >= fs.length || from === to) return fs;
       const next = [...fs];
@@ -82,20 +109,20 @@ export default function FormBuilder({ form, onCancel, onSaved }: any) {
       return next;
     });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: Partial<Record<"name" | "fields", string>> = {};
     if (!name.trim()) next.name = "Name is required";
     const clean = fields.filter((f) => f.label.trim());
     if (clean.length === 0) next.fields = "Add at least one field";
     if (Object.keys(next).length) { setErrors(next); return; }
-    const payloadFields = clean.map((f, i) => {
+    const payloadFields = clean.map((f, i): FormFieldSchema => {
       const opts = FIELD_TYPES_WITH_OPTIONS.has(f.type)
         ? f.options.split(",").map((s) => s.trim()).filter(Boolean).map((v) => ({ value: v, label: v }))
         : [];
-      const validation: any = { required: !!f.required };
+      const validation: FormFieldValidation = { required: !!f.required };
       if (FIELD_TYPES_WITH_PATTERN.has(f.type) && f.pattern.trim()) validation.pattern = f.pattern.trim();
-      const out: any = {
+      const out: FormFieldSchema = {
         id: `f_${i}`,
         label: f.label.trim(),
         type: f.type,
@@ -114,7 +141,7 @@ export default function FormBuilder({ form, onCancel, onSaved }: any) {
 
   return (
     <PaneForm
-      title={isEdit ? `Edit ${form.name}` : "New form"}
+      title={form ? `Edit ${form.name}` : "New form"}
       onSubmit={submit}
       footer={
         <>
@@ -184,7 +211,7 @@ export default function FormBuilder({ form, onCancel, onSaved }: any) {
                     <FieldLabel>Type</FieldLabel>
                     <SelectMenu
                       value={f.type}
-                      onChange={(e) => updateField(i, { type: e.target.value })}
+                      onChange={(e) => { if (isFieldType(e.target.value)) updateField(i, { type: e.target.value }); }}
                       options={FIELD_TYPES.map((t) => ({ value: t, label: titleize(t) }))}
                     />
                   </div>

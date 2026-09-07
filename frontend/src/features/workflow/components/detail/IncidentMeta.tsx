@@ -5,20 +5,29 @@
 // current state + when it was entered, priority, status, site, assignee, created,
 // SLA deadline (with a remaining/breached indicator), escalation level, and tags.
 // Resilient to missing keys — always falls back to "—".
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 import { Badge } from "@/components/ui/kit";
 import { titleize, fmtDateTime } from "@/lib/format";
 import { STATUS_COLOR, PRIORITY_COLOR } from "../../constants";
+import type { InstancePublic } from "../../types";
+
+export interface SlaSummary {
+  breached: boolean;
+  label: string;
+  /** Tailwind bg + text classes for the chip. */
+  color: string;
+}
 
 // SLA remaining vs a deadline. Returns null (no SLA), or {breached, label, color}.
-export function slaInfo(deadline, status) {
+export function slaInfo(deadline: string | null | undefined, status: string | null | undefined): SlaSummary | null {
   if (!deadline) return null;
   const end = new Date(deadline).getTime();
   if (Number.isNaN(end)) return null;
   const terminal = status === "resolved" || status === "completed" || status === "cancelled";
   const diffMin = (end - Date.now()) / 60000;
-  const fmt = (m) => {
+  const fmt = (m: number): string => {
     const a = Math.abs(m);
     if (a < 60) return `${Math.round(a)}m`;
     if (a < 1440) return `${Math.floor(a / 60)}h ${Math.round(a % 60)}m`;
@@ -30,7 +39,13 @@ export function slaInfo(deadline, status) {
   return { breached: false, label: `SLA in ${fmt(diffMin)}`, color: "bg-green-500/10 text-green-500" };
 }
 
-function MetaField({ label, children, full }: any) {
+interface MetaFieldProps {
+  label: ReactNode;
+  children?: ReactNode;
+  full?: boolean;
+}
+
+function MetaField({ label, children, full }: MetaFieldProps) {
   return (
     <div className={full ? "sm:col-span-2 lg:col-span-3" : ""}>
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
@@ -39,19 +54,21 @@ function MetaField({ label, children, full }: any) {
   );
 }
 
-export default function IncidentMeta({ instance, currentStateName }: any) {
+export interface IncidentMetaProps {
+  instance: InstancePublic;
+  currentStateName?: string | null;
+}
+
+export default function IncidentMeta({ instance, currentStateName }: IncidentMetaProps) {
   const inst = instance;
   const sla = slaInfo(inst.sla_deadline, inst.status);
-  const escalationLevel = inst.escalation?.level ?? inst.escalation_level ?? 0;
+  const escalationLevel = inst.escalation?.level ?? 0;
   const stateName = currentStateName || inst.current_state_name || "—";
   const assignee =
-    inst.assignee_name ||
-    inst.assignee?.full_name ||
-    inst.assignee?.email ||
     inst.assignment?.assigned_to_name ||
     inst.assignment?.assigned_to ||
     "Unassigned";
-  const site = inst.site_name || inst.site_id || "No site";
+  const site = inst.site_id || "No site";
   const tags = inst.tags?.length ? inst.tags : null;
 
   return (
@@ -87,7 +104,7 @@ export default function IncidentMeta({ instance, currentStateName }: any) {
       <div className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-2 lg:grid-cols-3">
         <MetaField label="Instance ID">
           <span className="font-mono text-xs">
-            {inst.instance_id || inst.id || "—"}
+            {inst.instance_id || "—"}
           </span>
         </MetaField>
         <MetaField label="SOP">

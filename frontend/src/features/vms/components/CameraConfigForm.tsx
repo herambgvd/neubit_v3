@@ -8,25 +8,34 @@
 // Live/Recording/ONVIF drive real CameraCreate fields; Imaging/IO/Advanced are
 // P1-informational (the ONVIF-backed imaging/io/motion/privacy config endpoints are
 // wired in the detail view once a camera exists — see CameraConfigTabs there).
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { vms } from "../api";
 import { asItems } from "@/lib/format";
+import type { FloorPublic, SitePublic, ZonePublic } from "@/lib/types";
 
 import { Field } from "@/components/common";
 import { Button, Toggle } from "@/components/ui/kit";
 import { useAuth } from "@/lib/auth";
 import { CAMERA_BRANDS, CONNECTION_TYPES, RECORDING_MODES } from "../constants";
+import type { CameraForm, CameraFormErrors, ConnectionType, RecordingMode } from "../types";
 import RecordingScheduleGrid from "./RecordingScheduleGrid";
-import RegionDrawModal from "./RegionDrawModal";
+import RegionDrawModal, { type RegionVariant } from "./RegionDrawModal";
 import ImagingPanel from "./ImagingPanel";
 import IoPanel from "./IoPanel";
 import EncoderPanel from "./EncoderPanel";
 import OsdPanel from "./OsdPanel";
 
-function ToggleRow({ label, hint, checked, onChange }: any) {
+interface ToggleRowProps {
+  label: ReactNode;
+  hint?: ReactNode;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}
+
+function ToggleRow({ label, hint, checked, onChange }: ToggleRowProps) {
   return (
     <div className="flex items-center justify-between rounded-lg border border-card-border bg-hover/40 px-3 py-2.5">
       <div className="min-w-0">
@@ -38,13 +47,30 @@ function ToggleRow({ label, hint, checked, onChange }: any) {
   );
 }
 
-function InfoNote({ children }: any) {
+function InfoNote({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-2 rounded-lg border border-card-border bg-hover px-3 py-2.5 text-[11px] text-muted">
       <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0 text-sm" />
       <span>{children}</span>
     </div>
   );
+}
+
+export interface CameraConfigFormProps {
+  /** The active CONFIG_TABS key. */
+  tab: string;
+  form: CameraForm;
+  set: (patch: Partial<CameraForm>) => void;
+  errors?: CameraFormErrors;
+  sites?: SitePublic[];
+  floors?: FloorPublic[];
+  zones?: ZonePublic[];
+  isEdit?: boolean;
+  cameraId?: string | null;
+  cameraName?: string | null;
+  onManualStart?: () => void;
+  onManualStop?: () => void;
+  manualPending?: boolean;
 }
 
 export default function CameraConfigForm({
@@ -61,17 +87,17 @@ export default function CameraConfigForm({
   onManualStart,
   onManualStop,
   manualPending = false,
-}: any) {
+}: CameraConfigFormProps) {
   const { can } = useAuth();
   // Storage pools for the per-camera storage assignment (recording tab).
-  const poolsQ = useQuery<any>({
+  const poolsQ = useQuery({
     queryKey: ["vms-storage-pools"],
     queryFn: () => vms.storage.pools.list({ limit: 200 }),
     staleTime: 60_000,
   });
   const storagePools = asItems(poolsQ.data);
   // Media nodes (recorders) for the per-camera recorder pin (recording tab).
-  const nodesQ = useQuery<any>({
+  const nodesQ = useQuery({
     queryKey: ["vms-media-nodes"],
     queryFn: () => vms.mediaNodes.list({ limit: 200 }),
     staleTime: 60_000,
@@ -79,7 +105,7 @@ export default function CameraConfigForm({
   const mediaNodes = asItems(nodesQ.data);
   const canManageRegions = can("vms.config.manage");
   // Which region draw tool is open: null | "privacy" | "motion".
-  const [regionTool, setRegionTool] = useState<any>(null);
+  const [regionTool, setRegionTool] = useState<RegionVariant | null>(null);
   if (tab === "live") {
     return (
       <div className="space-y-4">
@@ -106,7 +132,8 @@ export default function CameraConfigForm({
             as="select"
             label="Connection type"
             value={form.connection_type ?? ""}
-            onChange={(e) => set({ connection_type: e.target.value })}
+            // The options are CONNECTION_TYPES, so the select only ever hands back one.
+            onChange={(e) => set({ connection_type: e.target.value as ConnectionType })}
             options={CONNECTION_TYPES}
           />
           <Field
@@ -160,7 +187,7 @@ export default function CameraConfigForm({
               { value: "", label: "— None —" },
               ...floors
                 .filter((f) => !form.site_id || f.site_id === form.site_id)
-                .map((f) => ({ value: f.floor_id || f.id, label: f.name })),
+                .map((f) => ({ value: f.floor_id, label: f.name })),
             ]}
           />
           <Field
@@ -172,7 +199,7 @@ export default function CameraConfigForm({
               { value: "", label: "— None —" },
               ...zones
                 .filter((z) => !form.floor_id || z.floor_id === form.floor_id)
-                .map((z) => ({ value: z.zone_id || z.id, label: z.name })),
+                .map((z) => ({ value: z.zone_id, label: z.name })),
             ]}
           />
         </div>
@@ -198,7 +225,8 @@ export default function CameraConfigForm({
                 <button
                   key={m.value}
                   type="button"
-                  onClick={() => set({ recording_mode: m.value })}
+                  // RECORDING_MODES values are the RecordingMode literals.
+                  onClick={() => set({ recording_mode: m.value as RecordingMode })}
                   className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-3 text-xs transition ${
                     active ? "border-foreground bg-hover text-foreground" : "border-card-border text-muted hover:bg-hover"
                   }`}
@@ -471,7 +499,7 @@ export default function CameraConfigForm({
         )}
       </div>
 
-      {isEdit && regionTool && (
+      {isEdit && regionTool && cameraId && (
         <RegionDrawModal
           open
           variant={regionTool}
@@ -485,9 +513,17 @@ export default function CameraConfigForm({
   );
 }
 
+interface RegionEntryProps {
+  icon: string;
+  label: string;
+  hint: string;
+  onClick: () => void;
+  canManage: boolean;
+}
+
 // A clickable card that opens a region draw tool. Disabled (view-only) when the
 // operator lacks vms.config.manage — but still opens read-only so they can see it.
-function RegionEntry({ icon, label, hint, onClick, canManage }: any) {
+function RegionEntry({ icon, label, hint, onClick, canManage }: RegionEntryProps) {
   return (
     <button
       type="button"

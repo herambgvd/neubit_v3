@@ -11,56 +11,72 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { Button } from "@/components/ui/kit";
-import { SCHEDULE_MODES } from "../constants";
+import { SCHEDULE_MODES, presetFor } from "../constants";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
+/** A cell value — one of the SCHEDULE_MODES keys. */
+export type ScheduleMode = keyof typeof SCHEDULE_MODES;
+/** The canonical `{ Mon: [24 slots], … }` week. */
+export type WeeklySchedule = Record<string, ScheduleMode[]>;
+
+const MODE_KEYS = Object.keys(SCHEDULE_MODES) as ScheduleMode[];
+const isMode = (v: unknown): v is ScheduleMode =>
+  typeof v === "string" && Object.prototype.hasOwnProperty.call(SCHEDULE_MODES, v);
+
 // A fresh all-"record" week.
-export function defaultSchedule() {
-  return Object.fromEntries(DAYS.map((d) => [d, Array(24).fill("record")]));
+export function defaultSchedule(): WeeklySchedule {
+  return Object.fromEntries(DAYS.map((d) => [d, Array<ScheduleMode>(24).fill("record")]));
 }
 
 // Coerce an arbitrary stored value into the canonical { day: [24] } shape.
-export function normalizeSchedule(value) {
+export function normalizeSchedule(value: Record<string, unknown> | null | undefined): WeeklySchedule {
   const base = defaultSchedule();
   if (!value || typeof value !== "object") return base;
   for (const day of DAYS) {
     const row = value[day];
     if (Array.isArray(row) && row.length === 24) {
-      base[day] = row.map((v) => (SCHEDULE_MODES[v] ? v : "off"));
+      base[day] = row.map((v): ScheduleMode => (isMode(v) ? v : "off"));
     }
   }
   return base;
 }
 
-export default function RecordingScheduleGrid({ value, onChange }: any) {
+export interface RecordingScheduleGridProps {
+  /** The stored schedule (CameraForm.recording_schedule) — any shape is normalised. */
+  value?: Record<string, unknown> | null;
+  onChange?: (next: WeeklySchedule) => void;
+}
+
+export default function RecordingScheduleGrid({ value, onChange }: RecordingScheduleGridProps) {
   const [schedule, setSchedule] = useState(() => normalizeSchedule(value));
-  const [paintMode, setPaintMode] = useState("record");
+  const [paintMode, setPaintMode] = useState<ScheduleMode>("record");
   const painting = useRef(false);
 
   // Re-hydrate when the parent swaps in a different camera's schedule.
   useEffect(() => {
     setSchedule(normalizeSchedule(value));
-     
+
   }, [value]);
 
   const push = useCallback(
-    (next) => {
+    (next: WeeklySchedule) => {
       setSchedule(next);
       onChange?.(next);
     },
     [onChange],
   );
 
-  const paintCell = (day, hour) => {
+  const paintCell = (day: string, hour: number) => {
     push({
       ...schedule,
       [day]: schedule[day].map((v, i) => (i === hour ? paintMode : v)),
     });
   };
 
-  const fillAll = (mode) => push(Object.fromEntries(DAYS.map((d) => [d, Array(24).fill(mode)])));
+  const fillAll = (mode: ScheduleMode) =>
+    push(Object.fromEntries(DAYS.map((d) => [d, Array<ScheduleMode>(24).fill(mode)])));
 
   const stopPaint = () => {
     painting.current = false;
@@ -71,7 +87,9 @@ export default function RecordingScheduleGrid({ value, onChange }: any) {
       {/* Paint-mode legend + bulk fills */}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[11px] font-medium uppercase tracking-wide text-muted">Paint</span>
-        {Object.entries<any>(SCHEDULE_MODES).map(([key, m]) => (
+        {MODE_KEYS.map((key) => {
+          const m = SCHEDULE_MODES[key];
+          return (
           <button
             key={key}
             type="button"
@@ -85,7 +103,8 @@ export default function RecordingScheduleGrid({ value, onChange }: any) {
             <span className={`inline-block h-3 w-3 rounded-xs ${m.swatch}`} />
             {m.label}
           </button>
-        ))}
+          );
+        })}
         <div className="ml-auto flex gap-1.5">
           <Button variant="secondary" className="!px-2 !py-1 !text-xs" onClick={() => fillAll("record")}>
             All record
@@ -127,7 +146,7 @@ export default function RecordingScheduleGrid({ value, onChange }: any) {
                 <td className="pr-2 text-right text-[11px] font-medium text-muted">{day}</td>
                 {HOURS.map((h) => {
                   const mode = schedule[day]?.[h] || "off";
-                  const m = SCHEDULE_MODES[mode] || SCHEDULE_MODES.off;
+                  const m = presetFor(SCHEDULE_MODES, mode, SCHEDULE_MODES.off);
                   return (
                     <td
                       key={h}

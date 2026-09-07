@@ -19,73 +19,110 @@
 //     GET   /workflow/instances/{id}
 //     PATCH /workflow/instances/{id}/transition   body { to_state, form_data? }
 //     PATCH /workflow/instances/{id}/assign       body { assignee_id }
+import type { AxiosResponse } from "axios";
+
 import { api } from "@/lib/api";
+import type { Paged, QueryParams } from "@/lib/types";
+import type {
+  AlertFormatPublic,
+  ChannelPublic,
+  CreateAlertFormatRequest,
+  CreateChannelRequest,
+  CreateFormRequest,
+  CreateSopRequest,
+  CreateStateRequest,
+  CreateTemplateRequest,
+  CreateTransitionRequest,
+  CreateTriggerRequest,
+  FormPublic,
+  InstancePublic,
+  InstanceStatsResponse,
+  InstanceStatus,
+  SetThreatLevelRequest,
+  SimulateEventRequest,
+  SimulateEventResponse,
+  SopPublic,
+  StatePublic,
+  TemplatePublic,
+  ThreatLevelPublic,
+  TransitionInstanceRequest,
+  TransitionPublic,
+  TriggerPublic,
+} from "./types";
 
 const WF = "/workflow";
 
-const unwrap = (p) => p.then((r) => r.data);
+const unwrap = <T>(p: Promise<AxiosResponse<T>>): Promise<T> => p.then((r) => r.data);
 
-function qs(params: any = {}) {
-  const clean: any = {};
-  for (const [k, v] of Object.entries<any>(params)) {
-    if (v !== undefined && v !== null && v !== "") clean[k] = v;
+function qs(params: QueryParams = {}): string {
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") clean[k] = String(v);
   }
   const s = new URLSearchParams(clean).toString();
   return s ? `?${s}` : "";
 }
 
-// Factory for the seven identical definition resources.
-function resource(path) {
+// Factory for the seven identical definition resources. `List` is the list
+// envelope: most resources page (`Paged<Pub>`), forms + notifications return a
+// bare array. `Update` is the PATCH body (every field optional).
+function resource<Pub, Create, List = Paged<Pub>, Update = Partial<Create>>(path: string) {
   const base = `${WF}/${path}`;
   return {
-    list: (params: any = {}) => unwrap(api.get(`${base}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${base}/${id}`)),
-    create: (body) => unwrap(api.post(base, body)),
-    update: (id, body) => unwrap(api.patch(`${base}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${base}/${id}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<List>(`${base}${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<Pub>(`${base}/${id}`)),
+    create: (body: Create) => unwrap(api.post<Pub>(base, body)),
+    update: (id: string, body: Update) => unwrap(api.patch<Pub>(`${base}/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`${base}/${id}`)),
   };
 }
 
 // States + transitions are NESTED under a SOP on the backend
-// (/workflow/sops/{sop_id}/states, .../transitions) — not flat resources.
-function nested(child) {
+// (/workflow/sops/{sop_id}/states, .../transitions) — not flat resources. Their
+// lists are bare arrays (`list[StatePublic]`), not paged.
+function nested<Pub, Create, Update = Partial<Create>>(child: string) {
   return {
-    list: (sopId, params: any = {}) => unwrap(api.get(`${WF}/sops/${sopId}/${child}${qs(params)}`)),
-    create: (sopId, body) => unwrap(api.post(`${WF}/sops/${sopId}/${child}`, body)),
-    update: (sopId, childId, body) => unwrap(api.patch(`${WF}/sops/${sopId}/${child}/${childId}`, body)),
-    remove: (sopId, childId) => unwrap(api.delete(`${WF}/sops/${sopId}/${child}/${childId}`)),
+    list: (sopId: string, params: QueryParams = {}) =>
+      unwrap(api.get<Pub[]>(`${WF}/sops/${sopId}/${child}${qs(params)}`)),
+    create: (sopId: string, body: Create) => unwrap(api.post<Pub>(`${WF}/sops/${sopId}/${child}`, body)),
+    update: (sopId: string, childId: string, body: Update) =>
+      unwrap(api.patch<Pub>(`${WF}/sops/${sopId}/${child}/${childId}`, body)),
+    remove: (sopId: string, childId: string) =>
+      unwrap(api.delete<void>(`${WF}/sops/${sopId}/${child}/${childId}`)),
   };
 }
 
 export const workflow = {
-  sops: resource("sops"),
-  states: nested("states"),
-  transitions: nested("transitions"),
+  sops: resource<SopPublic, CreateSopRequest>("sops"),
+  states: nested<StatePublic, CreateStateRequest>("states"),
+  transitions: nested<TransitionPublic, CreateTransitionRequest>("transitions"),
   triggers: {
-    ...resource("triggers"),
-    enable: (id) => unwrap(api.post(`${WF}/triggers/${id}/enable`)),
-    disable: (id) => unwrap(api.post(`${WF}/triggers/${id}/disable`)),
+    ...resource<TriggerPublic, CreateTriggerRequest>("triggers"),
+    enable: (id: string) => unwrap(api.post<TriggerPublic>(`${WF}/triggers/${id}/enable`)),
+    disable: (id: string) => unwrap(api.post<TriggerPublic>(`${WF}/triggers/${id}/disable`)),
   },
-  forms: resource("forms"),
+  forms: resource<FormPublic, CreateFormRequest, FormPublic[]>("forms"),
 
   // Alert formats — map an alert_code to a SOP (category/severity/priority/icon/sound).
-  alertFormats: resource("alert-formats"),
+  alertFormats: resource<AlertFormatPublic, CreateAlertFormatRequest>("alert-formats"),
 
   // Dry-run (or live) a synthetic event through trigger + alert-format matching.
   //   body { event_type, payload?, site_id?, alert_code?, dry_run=true }
   //   → { matched_triggers, matched_format, skipped, created_instance_id?, ... }
-  simulate: (body) => unwrap(api.post(`${WF}/events/simulate`, body)),
+  simulate: (body: SimulateEventRequest) =>
+    unwrap(api.post<SimulateEventResponse>(`${WF}/events/simulate`, body)),
 
   // Notifications split into templates + channels (backend: /notifications/{templates,channels}).
   notifications: {
-    templates: resource("notifications/templates"),
-    channels: resource("notifications/channels"),
+    templates: resource<TemplatePublic, CreateTemplateRequest, TemplatePublic[]>("notifications/templates"),
+    channels: resource<ChannelPublic, CreateChannelRequest, ChannelPublic[]>("notifications/channels"),
   },
 
   // Threat-level is a per-site (or deployment-wide) posture register: GET list + PUT set.
   threatLevels: {
-    list: (params: any = {}) => unwrap(api.get(`${WF}/threat-levels${qs(params)}`)),
-    set: (body) => unwrap(api.put(`${WF}/threat-levels`, body)),
+    list: (params: QueryParams = {}) =>
+      unwrap(api.get<ThreatLevelPublic[]>(`${WF}/threat-levels${qs(params)}`)),
+    set: (body: SetThreatLevelRequest) => unwrap(api.put<ThreatLevelPublic>(`${WF}/threat-levels`, body)),
   },
 
   instances: {
@@ -97,22 +134,27 @@ export const workflow = {
     //   • source   — originating domain: "vision" (camera events) | "access" |
     //     "ingest" | … | "manual" (operator-raised, no trigger envelope).
     // Each incident row also carries derived `event_source` + `source_event_id`.
-    list: (params: any = {}) => unwrap(api.get(`${WF}/instances${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${WF}/instances/${id}`)),
-    stats: (params: any = {}) => unwrap(api.get(`${WF}/instances/stats${qs(params)}`)),
-    availableTransitions: (id) => unwrap(api.get(`${WF}/instances/${id}/available-transitions`)),
+    list: (params: QueryParams = {}) =>
+      unwrap(api.get<Paged<InstancePublic>>(`${WF}/instances${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<InstancePublic>(`${WF}/instances/${id}`)),
+    stats: (params: QueryParams = {}) =>
+      unwrap(api.get<InstanceStatsResponse>(`${WF}/instances/stats${qs(params)}`)),
+    availableTransitions: (id: string) =>
+      unwrap(api.get<TransitionPublic[]>(`${WF}/instances/${id}/available-transitions`)),
     // Advance the state machine by transition_id (backend contract); `form_data` is
     // the filled form payload when the chosen transition requires one.
-    transition: (id, body: any = {}) => unwrap(api.patch(`${WF}/instances/${id}/transition`, body)),
-    assign: (id, assigned_to) =>
-      unwrap(api.patch(`${WF}/instances/${id}/assign`, { assigned_to: assigned_to || null })),
+    transition: (id: string, body: TransitionInstanceRequest) =>
+      unwrap(api.patch<InstancePublic>(`${WF}/instances/${id}/transition`, body)),
+    assign: (id: string, assigned_to: string | null | undefined) =>
+      unwrap(api.patch<InstancePublic>(`${WF}/instances/${id}/assign`, { assigned_to: assigned_to || null })),
     // Status machine: pause/resume/resolve/cancel via {status, outcome?}.
-    setStatus: (id, status, outcome) =>
-      unwrap(api.patch(`${WF}/instances/${id}/status`, { status, outcome })),
-    escalate: (id, reason) =>
-      unwrap(api.patch(`${WF}/instances/${id}/escalate`, { reason })),
+    setStatus: (id: string, status: InstanceStatus, outcome?: string | null) =>
+      unwrap(api.patch<InstancePublic>(`${WF}/instances/${id}/status`, { status, outcome })),
+    escalate: (id: string, reason: string | null | undefined) =>
+      unwrap(api.patch<InstancePublic>(`${WF}/instances/${id}/escalate`, { reason })),
     // Incident PDF export — fetched as an authed blob (header auth; <a> can't set it).
-    pdfBlob: (id) => api.get(`${WF}/instances/${id}/pdf`, { responseType: "blob" }).then((r) => r.data),
+    pdfBlob: (id: string) =>
+      api.get<Blob>(`${WF}/instances/${id}/pdf`, { responseType: "blob" }).then((r) => r.data),
   },
 };
 

@@ -2,6 +2,8 @@
 // enums. Kept JSX-free (data-only) so it stays importable anywhere. Rethemed to
 // neubit_v3's Vercel dark tokens (single token set that flips with the theme).
 
+import type { CameraForm } from "./types";
+
 // ── Camera / NVR brands (onboard brand selector) ─────────────────────────
 // ONVIF is the universal default; the named brands add ISAPI/CGI extras. All are
 // selectable — the backend driver factory keys off `brand`.
@@ -104,7 +106,7 @@ export const ACL_PRIVILEGES = [
 ];
 
 // ── Default form shape for the onboard/edit modal ────────────────────────
-export const DEFAULT_CAMERA_FORM = {
+export const DEFAULT_CAMERA_FORM: CameraForm = {
   name: "",
   brand: "onvif",
   connection_type: "onvif",
@@ -164,13 +166,27 @@ export const EVENT_TYPES = [
   "motion", "tamper", "video_loss", "camera_online", "camera_offline",
   "io_input", "line_crossing", "zone_intrusion", "audio",
   "recording_error", "storage_low", "system",
-];
+] as const satisfies readonly (keyof typeof EVENT_TYPE_PRESETS)[];
+
+/** The normalized event-type vocabulary (the keys of EVENT_TYPE_PRESETS). */
+export type VmsEventType = (typeof EVENT_TYPES)[number];
 
 // Type-filter option list for the events feed ("" = all).
 export const EVENT_TYPE_FILTERS = [
   { value: "", label: "All types" },
   ...EVENT_TYPES.map((t) => ({ value: t, label: EVENT_TYPE_PRESETS[t]?.label || t })),
 ];
+
+/** Every preset map above is keyed by a literal; the wire hands us plain strings.
+ *  `presetFor` is the ONE place that indexes a map by an untyped key, returning
+ *  the fallback for anything it does not know. */
+export function presetFor<M extends Record<string, unknown>>(
+  map: M,
+  key: string | null | undefined,
+  fallback: M[keyof M],
+): M[keyof M] {
+  return (key != null && Object.prototype.hasOwnProperty.call(map, key) ? map[key as keyof M] : fallback) as M[keyof M];
+}
 
 // ── Event severity → v3 theme preset (P5-A/C) ────────────────────────────
 // The driver/system severity (info|warning|critical) drives the row band, the

@@ -20,12 +20,22 @@ import { useEffect, useRef, useState } from "react";
 
 import { api, tokens } from "@/lib/api";
 
-export function useWallStream(wallId, { enabled = true }: any = {}) {
-  const [state, setState] = useState<any>(null); // latest full wall state, or null
-  const [lastFrame, setLastFrame] = useState<any>(null); // { action, actor_id, rows, cols }
+import { isWallStateFrame, type WallFrameMeta, type WallState } from "../types";
+
+/** Options — `enabled: false` keeps the stream closed (a gated/hidden wall). */
+export interface UseWallStreamOptions {
+  enabled?: boolean;
+}
+
+export function useWallStream(
+  wallId: string | null | undefined,
+  { enabled = true }: UseWallStreamOptions = {},
+) {
+  const [state, setState] = useState<WallState | null>(null); // latest full wall state, or null
+  const [lastFrame, setLastFrame] = useState<WallFrameMeta | null>(null); // { action, actor_id, rows, cols }
   const [connected, setConnected] = useState(false);
   // Keep the freshest state without re-subscribing when a consumer re-renders.
-  const stateRef = useRef<any>(null);
+  const stateRef = useRef<WallState | null>(null);
 
   useEffect(() => {
     if (!enabled || !wallId) {
@@ -60,14 +70,15 @@ export function useWallStream(wallId, { enabled = true }: any = {}) {
         `?token=${encodeURIComponent(token)}&wall_id=${encodeURIComponent(wallId)}`;
       es = new EventSource(url);
 
-      es.addEventListener("wall.state", (e) => {
-        let data: any = null;
+      es.addEventListener("wall.state", (e: MessageEvent<string>) => {
+        // Whatever JSON the server sent — `unknown` until narrowed.
+        let data: unknown = null;
         try {
           data = JSON.parse(e.data);
         } catch {
           return; // keepalive / comment — ignore
         }
-        if (!data || (data.wall_id && data.wall_id !== wallId)) return;
+        if (!isWallStateFrame(data) || (data.wall_id && data.wall_id !== wallId)) return;
         const next = data.state || {};
         stateRef.current = next;
         setState(next); // REPLACE — shared state is authoritative

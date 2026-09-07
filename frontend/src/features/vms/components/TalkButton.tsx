@@ -21,22 +21,30 @@
 // This is # LIVE-VALIDATE: the handshake is built correctly but real audio into
 // a camera speaker can only be confirmed on hardware with a backchannel-capable
 // device. getUserMedia denial and 409 TALK_UNSUPPORTED are handled with a toast.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
+import type { AxiosError } from "axios";
 
 import { apiError } from "@/lib/api";
+import type { ApiErrorBody } from "@/lib/types";
 import vms from "../api";
+import type { TalkSessionPublic } from "../types";
 
 const ICE_WAIT_MS = 3_000;
 
-export default function TalkButton({ cameraId, disabled = false }: any) {
+export interface TalkButtonProps {
+  cameraId: string;
+  disabled?: boolean;
+}
+
+export default function TalkButton({ cameraId, disabled = false }: TalkButtonProps) {
   const [talking, setTalking] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   // Live handles so teardown always finds them, even mid-connect.
-  const pcRef = useRef<any>(null);
-  const streamRef = useRef<any>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   // Guards against a release that lands before the async start resolves.
   const activeRef = useRef(false);
 
@@ -64,14 +72,16 @@ export default function TalkButton({ cameraId, disabled = false }: any) {
     activeRef.current = true;
     setConnecting(true);
 
-    let session;
+    let session: TalkSessionPublic;
     try {
       session = await vms.cameras.talkSession(cameraId);
     } catch (e) {
       activeRef.current = false;
       setConnecting(false);
-      const status = e?.response?.status;
-      const code = e?.response?.data?.detail?.code || e?.response?.data?.code;
+      // The kernel's AppError envelope: { error: { code, message } }.
+      const res = (e as AxiosError<ApiErrorBody>)?.response;
+      const status = res?.status;
+      const code = res?.data?.error?.code;
       if (status === 409 || code === "TALK_UNSUPPORTED") {
         toast.error("This camera does not support talk / two-way audio.");
       } else {
@@ -96,15 +106,17 @@ export default function TalkButton({ cameraId, disabled = false }: any) {
     }
 
     // ── microphone ──────────────────────────────────────────────────────────
-    let stream;
+    let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (e) {
       activeRef.current = false;
       setConnecting(false);
-      if (e?.name === "NotAllowedError" || e?.name === "SecurityError") {
+      // getUserMedia rejects with a DOMException; its `name` is the reason.
+      const name = e instanceof Error ? e.name : "";
+      if (name === "NotAllowedError" || name === "SecurityError") {
         toast.error("Microphone permission denied — allow mic access to talk.");
-      } else if (e?.name === "NotFoundError") {
+      } else if (name === "NotFoundError") {
         toast.error("No microphone found on this device.");
       } else {
         toast.error("Could not access the microphone.");
@@ -156,7 +168,7 @@ export default function TalkButton({ cameraId, disabled = false }: any) {
       });
       if (!activeRef.current) return; // released mid-handshake
 
-      const headers: any = { "Content-Type": "application/sdp" };
+      const headers: Record<string, string> = { "Content-Type": "application/sdp" };
       // whip_url may already carry ?token=; if a bare token is issued too, send it
       // as a Bearer (MediaMTX accepts either).
       if (session?.token) headers.Authorization = `Bearer ${session.token}`;
@@ -201,7 +213,7 @@ export default function TalkButton({ cameraId, disabled = false }: any) {
   }, [stop]);
 
   const holdProps = {
-    onPointerDown: (e) => {
+    onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
       e.preventDefault();
       e.currentTarget.setPointerCapture?.(e.pointerId);
       start();

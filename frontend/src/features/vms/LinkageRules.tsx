@@ -16,23 +16,24 @@ import { MasterDetail, ListPanel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
+import type { LinkageRuleCreate, LinkageRulePublic } from "./types";
 import LinkageRuleListItem from "./components/LinkageRuleListItem";
 import LinkageRuleDetail from "./components/LinkageRuleDetail";
 import LinkageRuleModal from "./components/LinkageRuleModal";
 
 export default function LinkageRulesPage() {
   const qc = useQueryClient();
-  const [editing, setEditing] = useState<any>(undefined); // undefined=closed, null=new, obj=edit
-  const [saveError, setSaveError] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null); // { rule } or null
+  const [editing, setEditing] = useState<LinkageRulePublic | null | undefined>(undefined); // undefined=closed, null=new, obj=edit
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ rule: LinkageRulePublic } | null>(null); // { rule } or null
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["vms-linkage-rules"],
     queryFn: () => vms.linkage.list({ limit: 200 }),
   });
-  const rules = useMemo(() => asItems(q.data), [q.data]);
+  const rules = useMemo<LinkageRulePublic[]>(() => (q.data ? asItems(q.data) : []), [q.data]);
 
   const activeCount = rules.filter((r) => r.is_active).length;
 
@@ -50,8 +51,9 @@ export default function LinkageRulesPage() {
   const selected = useMemo(() => rules.find((r) => r.id === effectiveId) || null, [rules, effectiveId]);
 
 
-  const saveMut = useMutation<any, any, any>({
-    mutationFn: ({ id, body }: any) => (id ? vms.linkage.update(id, body) : vms.linkage.create(body)),
+  const saveMut = useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: LinkageRuleCreate }) =>
+      id ? vms.linkage.update(id, body) : vms.linkage.create(body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vms-linkage-rules"] });
       toast.success("Rule saved");
@@ -61,14 +63,14 @@ export default function LinkageRulesPage() {
     onError: (e) => setSaveError(apiError(e, "Failed to save rule")),
   });
 
-  const toggleMut = useMutation<any, any, any>({
-    mutationFn: ({ id, is_active }: any) => vms.linkage.update(id, { is_active }),
+  const toggleMut = useMutation({
+    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) => vms.linkage.update(id, { is_active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["vms-linkage-rules"] }),
     onError: (e) => toast.error(apiError(e, "Failed to update rule")),
   });
 
-  const delMut = useMutation<any>({
-    mutationFn: (id: any) => vms.linkage.remove(id),
+  const delMut = useMutation({
+    mutationFn: (id: string) => vms.linkage.remove(id),
     onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ["vms-linkage-rules"] });
       toast.success("Rule deleted");

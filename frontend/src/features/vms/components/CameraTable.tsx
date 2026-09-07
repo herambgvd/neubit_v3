@@ -9,11 +9,13 @@
 // bridge that to TanStack's controlled rowSelection map here — the DataTable
 // stays generic while the page keeps its Set-based state + bulk handlers.
 import { useMemo, useRef, useState } from "react";
+import type { ColumnDef, OnChangeFn, RowSelectionState } from "@tanstack/react-table";
 import { Icon } from "@iconify/react";
 
 import { DataTable } from "@/components/common";
 import { titleize } from "@/lib/format";
-import { STATUS_PRESETS, RECORDING_MODES } from "../constants";
+import { STATUS_PRESETS, RECORDING_MODES, presetFor } from "../constants";
+import type { CameraHealthPublic, VmsCameraPublic } from "../types";
 import StatusBadge, { StatusDot } from "./StatusBadge";
 
 const HEALTH_TONE = {
@@ -24,21 +26,21 @@ const HEALTH_TONE = {
   unknown: "text-amber-500",
 };
 
-function HealthCell({ health }: any) {
+function HealthCell({ health }: { health?: CameraHealthPublic | null }) {
   if (!health) return <span className="text-muted">—</span>;
-  const tone = HEALTH_TONE[health.status] || "text-muted";
+  const tone = presetFor(HEALTH_TONE, health.status, "text-muted");
   const bitrate = health.bitrate_kbps != null ? `${health.bitrate_kbps} kbps` : null;
   const fps = health.fps_actual != null ? `${health.fps_actual} fps` : null;
   const metrics = [bitrate, fps].filter(Boolean).join(" · ");
   return (
     <span className={`inline-flex items-center gap-1 ${tone}`}>
-      <Icon icon={STATUS_PRESETS[health.status]?.icon || STATUS_PRESETS.unknown.icon} className="text-xs" />
+      <Icon icon={presetFor(STATUS_PRESETS, health.status, STATUS_PRESETS.unknown).icon} className="text-xs" />
       <span className="text-xs">{metrics || titleize(health.status)}</span>
     </span>
   );
 }
 
-function RecordingCell({ camera }: any) {
+function RecordingCell({ camera }: { camera: VmsCameraPublic }) {
   const mode = camera.recording?.mode;
   const preset = RECORDING_MODES.find((m) => m.value === mode);
   if (!preset) return <span className="text-muted">—</span>;
@@ -52,9 +54,21 @@ function RecordingCell({ camera }: any) {
   );
 }
 
-function RowMenu({ camera, onLive, onSnapshot, onEdit, onDevice, onDelete }: any) {
+/** A per-row callback — receives the row's camera. */
+type CameraAction = (camera: VmsCameraPublic) => void;
+
+interface RowMenuProps {
+  camera: VmsCameraPublic;
+  onLive?: CameraAction;
+  onSnapshot?: CameraAction;
+  onEdit?: CameraAction;
+  onDevice?: CameraAction;
+  onDelete?: CameraAction;
+}
+
+function RowMenu({ camera, onLive, onSnapshot, onEdit, onDevice, onDelete }: RowMenuProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<any>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   return (
     <div className="relative inline-flex" ref={ref}>
       <button
@@ -112,7 +126,25 @@ function RowMenu({ camera, onLive, onSnapshot, onEdit, onDevice, onDelete }: any
   );
 }
 
-const cameraIp = (c) => c.network_info?.ip || c.onvif?.host || "";
+const cameraIp = (c: VmsCameraPublic) => c.network_info?.ip || c.onvif?.host || "";
+
+export interface CameraTableProps {
+  cameras?: VmsCameraPublic[];
+  /** Latest health sample per camera id. */
+  healthById?: Record<string, CameraHealthPublic>;
+  /** site_id → display name. */
+  siteNames?: Record<string, string>;
+  selectedIds: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  /** `true` selects every row, `false` clears the selection. */
+  onToggleAll?: (all: boolean) => void;
+  onOpen?: CameraAction;
+  onLive?: CameraAction;
+  onSnapshot?: CameraAction;
+  onEdit?: CameraAction;
+  onDevice?: CameraAction;
+  onDelete?: CameraAction;
+}
 
 export default function CameraTable({
   cameras = [],
@@ -127,20 +159,20 @@ export default function CameraTable({
   onEdit,
   onDevice,
   onDelete,
-}: any) {
+}: CameraTableProps) {
   // Bridge the page's Set<id> ↔ TanStack's rowSelection map.
   const rowSelection = useMemo(() => {
-    const m: any = {};
+    const m: RowSelectionState = {};
     for (const id of selectedIds) m[id] = true;
     return m;
   }, [selectedIds]);
 
   // TanStack calls this with either a new map or an updater. We diff against the
   // current Set and translate into the page's toggle helpers (which own state).
-  const onRowSelectionChange = (updater) => {
+  const onRowSelectionChange: OnChangeFn<RowSelectionState> = (updater) => {
     const next = typeof updater === "function" ? updater(rowSelection) : updater;
     const nextKeys = Object.keys(next).filter((k) => next[k]);
-    const nextSet = new Set<any>(nextKeys);
+    const nextSet = new Set<string>(nextKeys);
     // Select-all / clear-all shortcuts.
     if (nextSet.size === 0 && selectedIds.size > 0) { onToggleAll?.(false); return; }
     if (nextSet.size === cameras.length && cameras.every((c) => nextSet.has(c.id))) {
@@ -155,13 +187,13 @@ export default function CameraTable({
     }
   };
 
-  const columns = useMemo(
+  const columns = useMemo<ColumnDef<VmsCameraPublic>[]>(
     () => [
       {
         id: "select",
         enableSorting: false,
         meta: { width: "2rem", headClassName: "px-2 py-2.5", cellClassName: "px-2 py-2.5" },
-        header: ({ table }: any) => (
+        header: ({ table }) => (
           <input
             type="checkbox"
             checked={table.getIsAllRowsSelected()}
@@ -171,7 +203,7 @@ export default function CameraTable({
             className="accent-foreground"
           />
         ),
-        cell: ({ row }: any) => (
+        cell: ({ row }) => (
           <input
             type="checkbox"
             checked={row.getIsSelected()}
@@ -186,7 +218,7 @@ export default function CameraTable({
         header: "Camera",
         accessorFn: (c) => c.name || "",
         meta: { cellClassName: "px-4 py-2.5" },
-        cell: ({ row }: any) => {
+        cell: ({ row }) => {
           const c = row.original;
           return (
             <div className="flex items-center gap-2">
@@ -210,22 +242,22 @@ export default function CameraTable({
         header: "Status",
         accessorFn: (c) => c.status || "",
         meta: { cellClassName: "px-4 py-2.5" },
-        cell: ({ row }: any) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
       {
         id: "brand",
         header: "Brand",
         accessorFn: (c) => titleize(c.brand) || "",
         meta: { cellClassName: "px-4 py-2.5 text-muted" },
-        cell: ({ getValue }: any) => getValue() || "—",
+        cell: ({ getValue }) => getValue<string>() || "—",
       },
       {
         id: "ip",
         header: "IP",
         accessorFn: (c) => cameraIp(c),
         meta: { cellClassName: "px-4 py-2.5" },
-        cell: ({ getValue }: any) => (
-          <span className="font-mono text-[11px] text-muted">{getValue() || "—"}</span>
+        cell: ({ getValue }) => (
+          <span className="font-mono text-[11px] text-muted">{getValue<string>() || "—"}</span>
         ),
       },
       {
@@ -233,28 +265,28 @@ export default function CameraTable({
         header: "Site",
         enableSorting: false,
         meta: { cellClassName: "px-4 py-2.5 text-muted" },
-        cell: ({ row }: any) => siteNames[row.original.placement?.site_id] || "—",
+        cell: ({ row }) => siteNames[row.original.placement?.site_id ?? ""] || "—",
       },
       {
         id: "health",
         header: "Health",
         enableSorting: false,
         meta: { cellClassName: "px-4 py-2.5" },
-        cell: ({ row }: any) => <HealthCell health={healthById[row.original.id]} />,
+        cell: ({ row }) => <HealthCell health={healthById[row.original.id]} />,
       },
       {
         id: "recording",
         header: "Recording",
         enableSorting: false,
         meta: { cellClassName: "px-4 py-2.5" },
-        cell: ({ row }: any) => <RecordingCell camera={row.original} />,
+        cell: ({ row }) => <RecordingCell camera={row.original} />,
       },
       {
         id: "actions",
         header: "",
         enableSorting: false,
         meta: { width: "2.5rem", headClassName: "px-2 py-2.5", cellClassName: "px-2 py-2.5" },
-        cell: ({ row }: any) => (
+        cell: ({ row }) => (
           <div onClick={(e) => e.stopPropagation()}>
             <RowMenu
               camera={row.original}

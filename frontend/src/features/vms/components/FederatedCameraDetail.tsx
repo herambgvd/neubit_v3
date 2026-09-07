@@ -11,7 +11,7 @@
 // The live view reuses LivePlayer's whole WHEP-first / h264-transcode / HLS engine
 // via a custom `source` that mints/renews a node-issued token off /vms/federation
 // (same seam WallTile uses for wall tiles).
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -23,16 +23,21 @@ import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { vms } from "../api";
 import { isPtzCapable } from "../formUtils";
+import type { EstateFederatedCamera, LiveSessionSource } from "../types";
 
-export default function FederatedCameraDetail({ camera }: any) {
+export interface FederatedCameraDetailProps {
+  camera: EstateFederatedCamera;
+}
+
+export default function FederatedCameraDetail({ camera }: FederatedCameraDetailProps) {
   const { can } = useAuth();
   const [snapping, setSnapping] = useState(false);
   const ptzCapable = isPtzCapable(camera);
 
   // Node-issued live session (mint/renew through the owning recorder). Stable per
   // (node, real id) so the player doesn't re-attach on every parent render.
-  const source = useMemo(() => {
-    const mint = async (profile) => {
+  const source = useMemo<LiveSessionSource>(() => {
+    const mint = async (profile: string) => {
       const s = await vms.federation.live(camera.node_id, camera.real_id, profile);
       return { ...s, ready: true };
     };
@@ -50,7 +55,7 @@ export default function FederatedCameraDetail({ camera }: any) {
     setSnapping(true);
     try {
       const blob = await api
-        .get(vms.federation.snapshotUrl(camera.node_id, camera.real_id), { responseType: "blob" })
+        .get<Blob>(vms.federation.snapshotUrl(camera.node_id, camera.real_id), { responseType: "blob" })
         .then((r) => r.data);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -153,7 +158,7 @@ export default function FederatedCameraDetail({ camera }: any) {
   );
 }
 
-function Fact({ label, value }: any) {
+function Fact({ label, value }: { label: ReactNode; value?: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="mb-0.5 text-[9px] font-semibold uppercase tracking-[1.2px] text-nb-faint">{label}</dt>

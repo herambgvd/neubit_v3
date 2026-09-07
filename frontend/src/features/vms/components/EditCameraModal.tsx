@@ -10,11 +10,15 @@ import { toast } from "sonner";
 
 import { Button, Modal } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
+import type { TabItem } from "@/components/common/TabBar";
+import type { SitePublic } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
 import { CONFIG_TABS } from "../constants";
 import { fromCamera, toUpdateBody, validateCamera } from "../formUtils";
+import type { CameraForm, CameraFormErrors, VmsCameraPublic } from "../types";
+import type { DetailTabKey } from "./CameraDetailView";
 import CameraConfigForm from "./CameraConfigForm";
 import DeviceMaintenance from "./DeviceMaintenance";
 import LivePlayer from "./LivePlayer";
@@ -24,21 +28,30 @@ import { usePlacementFloorsZones } from "../hooks/usePlacementFloorsZones";
 // live surface (P2-D). The config tabs' own "live" key is the network/placement
 // config; this is the actual video. A "Maintenance" tab (G7) — device/firmware
 // info + reboot/NTP/password/config backup+restore — is appended at the end.
-const VIEW_TAB = { key: "view", label: "View", icon: "heroicons-outline:play-circle" };
-const DEVICE_TAB = { key: "device", label: "Maintenance", icon: "heroicons-outline:wrench-screwdriver" };
-const DETAIL_TABS = [VIEW_TAB, ...CONFIG_TABS, DEVICE_TAB];
+const VIEW_TAB: TabItem<DetailTabKey> = { key: "view", label: "View", icon: "heroicons-outline:play-circle" };
+const DEVICE_TAB: TabItem<DetailTabKey> = { key: "device", label: "Maintenance", icon: "heroicons-outline:wrench-screwdriver" };
+// CONFIG_TABS is a plain-string list; its keys are the middle of DetailTabKey.
+const DETAIL_TABS: TabItem<DetailTabKey>[] = [VIEW_TAB, ...(CONFIG_TABS as TabItem<DetailTabKey>[]), DEVICE_TAB];
 
-export default function EditCameraModal({ camera, onClose, onSuccess, sites = [], initialTab = "view" }: any) {
-  const [tab, setTab] = useState(initialTab);
-  const [form, setForm] = useState(() => fromCamera(camera));
-  const [errors, setErrors] = useState<any>({});
+export interface EditCameraModalProps {
+  camera: VmsCameraPublic;
+  onClose: () => void;
+  onSuccess?: () => void;
+  sites?: SitePublic[];
+  initialTab?: DetailTabKey;
+}
+
+export default function EditCameraModal({ camera, onClose, onSuccess, sites = [], initialTab = "view" }: EditCameraModalProps) {
+  const [tab, setTab] = useState<DetailTabKey>(initialTab);
+  const [form, setForm] = useState<CameraForm>(() => fromCamera(camera));
+  const [errors, setErrors] = useState<CameraFormErrors>({});
   const { can } = useAuth();
   // Cascading placement: floors of the selected site, zones of the selected floor.
   const { floors, zones } = usePlacementFloorsZones(form.site_id, form.floor_id);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<CameraForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const update = useMutation<any>({
+  const update = useMutation({
     mutationFn: () => vms.cameras.update(camera.id, toUpdateBody(form)),
     onSuccess: () => {
       toast.success("Camera updated");
@@ -49,12 +62,12 @@ export default function EditCameraModal({ camera, onClose, onSuccess, sites = []
 
   // Manual recording controls (Recording tab) — toggle recording on the
   // MediaMTX path immediately, independent of the mode/schedule save.
-  const startRec = useMutation<any>({
+  const startRec = useMutation({
     mutationFn: () => vms.recordingConfig.start(camera.id),
     onSuccess: () => toast.success("Recording started"),
     onError: (e) => toast.error(apiError(e, "Could not start recording")),
   });
-  const stopRec = useMutation<any>({
+  const stopRec = useMutation({
     mutationFn: () => vms.recordingConfig.stop(camera.id),
     onSuccess: () => toast.success("Recording stopped"),
     onError: (e) => toast.error(apiError(e, "Could not stop recording")),

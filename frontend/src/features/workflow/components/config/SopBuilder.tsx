@@ -9,22 +9,29 @@
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 
-import { titleize, idOf } from "@/lib/format";
+import { titleize } from "@/lib/format";
 import SopCanvas from "../../sop-designer/SopCanvas";
+import type { SopPublic } from "../../types";
 import SopForm from "./SopForm";
 import SopTriggersList from "./SopTriggersList";
 
-const sopIdOf = (s) => idOf(s, "id", "sop_id");
+type SubTabKey = "designer" | "properties" | "triggers";
 
-const SUBTABS = [
+const SUBTABS: { key: SubTabKey; label: string; icon: string }[] = [
   { key: "designer", label: "Designer", icon: "heroicons-outline:squares-2x2" },
   { key: "properties", label: "Properties", icon: "heroicons-outline:adjustments-horizontal" },
   { key: "triggers", label: "Triggers", icon: "heroicons:bolt" },
 ];
 
-export default function SopBuilder({ sop, onDelete, onSaved }: any) {
-  const [tab, setTab] = useState("designer");
-  const id = sopIdOf(sop);
+export interface SopBuilderProps {
+  sop: SopPublic;
+  onDelete: () => void;
+  onSaved?: (saved: SopPublic) => void;
+}
+
+export default function SopBuilder({ sop, onDelete, onSaved }: SopBuilderProps) {
+  const [tab, setTab] = useState<SubTabKey>("designer");
+  const id = sop.sop_id;
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -34,7 +41,7 @@ export default function SopBuilder({ sop, onDelete, onSaved }: any) {
           {sop.description && <p className="mt-0.5 text-xs text-nb-faint">{sop.description}</p>}
           <div className="mt-1.5 flex items-center gap-2 text-[11px] text-nb-faint flex-wrap">
             {typeof sop.version === "number" && <span className="font-mono">v{sop.version}</span>}
-            <span className="rounded-full bg-[rgba(96,165,250,.10)] text-nb-blueb px-2 py-0.5 capitalize">{titleize(sop.default_priority || "medium")}</span>
+            <span className="rounded-full bg-[rgba(96,165,250,.10)] text-nb-blueb px-2 py-0.5 capitalize">{titleize(sop.priority || "medium")}</span>
             {sop.sla_hours != null && <span className="rounded-full bg-[rgba(96,165,250,.10)] text-nb-blueb px-2 py-0.5">SLA {sop.sla_hours}h</span>}
             <span className={`rounded-full px-2 py-0.5 ${sop.is_active === false ? "bg-[rgba(96,165,250,.1)] text-nb-faint" : "bg-[rgba(52,211,153,.10)] text-nb-good"}`}>
               {sop.is_active === false ? "Inactive" : "Active"}

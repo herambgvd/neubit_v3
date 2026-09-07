@@ -13,18 +13,33 @@ import { Button, Modal, Toggle } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { CameraGroupPublic, PatternCreate, PatternPublic } from "../types";
 import { getGroupLayout } from "../videoWall";
 
-export default function PatternFormModal({ open, pattern, groups = [], onClose, onSaved }: any) {
+export interface PatternFormModalProps {
+  open: boolean;
+  /** null/undefined = create. */
+  pattern?: PatternPublic | null;
+  groups?: CameraGroupPublic[];
+  onClose?: () => void;
+  onSaved?: (saved: PatternPublic) => void;
+}
+
+interface PatternFormErrors {
+  name?: string;
+  seconds?: string;
+}
+
+export default function PatternFormModal({ open, pattern, groups = [], onClose, onSaved }: PatternFormModalProps) {
   const qc = useQueryClient();
   const isEdit = !!pattern;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [seconds, setSeconds] = useState<number | string>(10);
-  const [groupIds, setGroupIds] = useState<any[]>([]);
+  const [groupIds, setGroupIds] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<PatternFormErrors>({});
 
   useEffect(() => {
     if (!open) return;
@@ -36,24 +51,24 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
     setErrors({});
   }, [open, pattern]);
 
-  const save = useMutation<any, any, any>({
-    mutationFn: (body: any) =>
-      isEdit ? vms.patterns.update(pattern.id, body) : vms.patterns.create(body),
-    onSuccess: () => {
+  const save = useMutation({
+    mutationFn: (body: PatternCreate) =>
+      pattern ? vms.patterns.update(pattern.id, body) : vms.patterns.create(body),
+    onSuccess: (saved) => {
       toast.success(`Pattern ${isEdit ? "updated" : "created"}`);
       qc.invalidateQueries({ queryKey: ["vms-patterns"] });
-      onSaved?.();
+      onSaved?.(saved);
       onClose?.();
     },
     onError: (e) => toast.error(apiError(e, "Save failed")),
   });
 
-  function toggleGroup(id) {
+  function toggleGroup(id: string) {
     setGroupIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   }
 
   function submit() {
-    const next: any = {};
+    const next: PatternFormErrors = {};
     if (!name.trim()) next.name = "Name is required";
     const s = Number(seconds);
     if (!Number.isFinite(s) || s < 1 || s > 3600) next.seconds = "Dwell must be 1–3600 seconds";

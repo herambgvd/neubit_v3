@@ -6,7 +6,7 @@
 // Serializes to the backend shape (camera_scope {all|camera_ids|group_ids},
 // trigger_filter {severity?|min_severity?|zone?}, actions[{type,config}],
 // schedule {mon:[[..]]}). CRUD via vms.linkage.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
@@ -14,8 +14,44 @@ import { Input, Modal, Select, Textarea, Toggle } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { vms } from "../api";
 import { EVENT_TYPE_FILTERS } from "../constants";
+import type {
+  CameraGroupPublic,
+  LinkageAction,
+  LinkageCameraScope,
+  LinkageRuleCreate,
+  LinkageRulePublic,
+  LinkageSchedule,
+  VmsCameraPublic,
+} from "../types";
 import LinkageActionsBuilder from "./LinkageActionsBuilder";
 import LinkageScheduleEditor from "./LinkageScheduleEditor";
+
+/** `camera_scope` as this editor writes it and the engine reads it (vision
+ *  linkage.service.resolve_targets): `{ all: true }`, `{ camera_ids }` or
+ *  `{ group_ids }`. The wire type carries `scope?`; the backend keys on `all`. */
+export interface LinkageScopeDict extends LinkageCameraScope {
+  all?: boolean;
+}
+
+/** The editor's flat form; `toBody` serialises it to LinkageRuleCreate. */
+interface LinkageRuleForm {
+  name: string;
+  description: string;
+  is_active: boolean;
+  trigger_event_type: string;
+  min_severity: string;
+  zone: string;
+  scopeMode: string;
+  camera_ids: string[];
+  group_ids: string[];
+  actions: LinkageAction[];
+  /** Bound to a number input, so a string while editing. */
+  cooldown_seconds: number | string;
+  schedule: LinkageSchedule;
+}
+
+// trigger_filter is a free dict; a filter value is a string or unset.
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
 const SEVERITY_MIN_OPTIONS = [
   { value: "", label: "Any severity" },
@@ -37,8 +73,8 @@ const SCOPE_MODES = [
 ];
 
 // Derive the editor form from a rule row (or defaults for a new rule).
-function toForm(rule) {
-  const scope = rule?.camera_scope || {};
+function toForm(rule: LinkageRulePublic | null | undefined): LinkageRuleForm {
+  const scope: LinkageCameraScope = rule?.camera_scope || {};
   let scopeMode = "all";
   if (Array.isArray(scope.camera_ids) && scope.camera_ids.length) scopeMode = "camera_ids";
   else if (Array.isArray(scope.group_ids) && scope.group_ids.length) scopeMode = "group_ids";
@@ -48,24 +84,24 @@ function toForm(rule) {
     description: rule?.description || "",
     is_active: rule?.is_active ?? true,
     trigger_event_type: rule?.trigger_event_type || "motion",
-    min_severity: flt.min_severity || flt.severity || "",
-    zone: flt.zone || "",
+    min_severity: str(flt.min_severity) || str(flt.severity),
+    zone: str(flt.zone),
     scopeMode,
     camera_ids: Array.isArray(scope.camera_ids) ? scope.camera_ids : [],
     group_ids: Array.isArray(scope.group_ids) ? scope.group_ids : [],
-    actions: Array.isArray(rule?.actions) ? rule.actions : [],
+    actions: rule?.actions || [],
     cooldown_seconds: rule?.cooldown_seconds ?? 0,
     schedule: rule?.schedule || {},
   };
 }
 
 // Serialize the form → the backend LinkageRuleCreate/Update body.
-function toBody(f) {
-  const trigger_filter: any = {};
+function toBody(f: LinkageRuleForm): LinkageRuleCreate {
+  const trigger_filter: Record<string, unknown> = {};
   if (f.min_severity) trigger_filter.min_severity = f.min_severity;
   if (f.zone) trigger_filter.zone = f.zone.trim();
 
-  let camera_scope: any = { all: true };
+  let camera_scope: LinkageScopeDict = { all: true };
   if (f.scopeMode === "camera_ids") camera_scope = { camera_ids: f.camera_ids };
   else if (f.scopeMode === "group_ids") camera_scope = { group_ids: f.group_ids };
 
@@ -82,30 +118,40 @@ function toBody(f) {
   };
 }
 
-export default function LinkageRuleModal({ open, rule, onClose, onSave, saving = false, error }: any) {
+export interface LinkageRuleModalProps {
+  open: boolean;
+  /** null = new rule. */
+  rule?: LinkageRulePublic | null;
+  onClose?: () => void;
+  onSave?: (body: LinkageRuleCreate) => void;
+  saving?: boolean;
+  error?: ReactNode;
+}
+
+export default function LinkageRuleModal({ open, rule, onClose, onSave, saving = false, error }: LinkageRuleModalProps) {
   const [form, setForm] = useState(() => toForm(rule));
 
   useEffect(() => {
     if (open) setForm(toForm(rule));
   }, [open, rule]);
 
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["vms-cameras", "linkage-scope"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     enabled: open,
     staleTime: 60_000,
   });
-  const groupsQ = useQuery<any>({
+  const groupsQ = useQuery({
     queryKey: ["vms-groups", "linkage-scope"],
     queryFn: () => vms.groups.list({ limit: 500 }),
     enabled: open,
     staleTime: 60_000,
   });
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
-  const groups = useMemo(() => asItems(groupsQ.data), [groupsQ.data]);
+  const cameras = useMemo<VmsCameraPublic[]>(() => (camerasQ.data ? asItems(camerasQ.data) : []), [camerasQ.data]);
+  const groups = useMemo<CameraGroupPublic[]>(() => (groupsQ.data ? asItems(groupsQ.data) : []), [groupsQ.data]);
 
-  const patch = (p) => setForm((f) => ({ ...f, ...p }));
-  const toggleIn = (list, id) =>
+  const patch = (p: Partial<LinkageRuleForm>) => setForm((f) => ({ ...f, ...p }));
+  const toggleIn = (list: string[], id: string) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 
   const nameValid = form.name.trim().length > 0;
@@ -244,7 +290,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
   );
 }
 
-function Section({ title, children }: any) {
+function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <section className="space-y-2">
       <h4 className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{title}</h4>
@@ -253,7 +299,7 @@ function Section({ title, children }: any) {
   );
 }
 
-function Field({ label, children }: any) {
+function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div>
       <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{label}</label>
@@ -262,7 +308,15 @@ function Field({ label, children }: any) {
   );
 }
 
-function PickList({ items, selected, onToggle, empty, loading }: any) {
+interface PickListProps {
+  items: { id: string; label: ReactNode }[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  empty: ReactNode;
+  loading?: boolean;
+}
+
+function PickList({ items, selected, onToggle, empty, loading }: PickListProps) {
   if (loading) {
     return (
       <div className="flex items-center gap-2 px-1 py-3 text-[11px] text-nb-soft">

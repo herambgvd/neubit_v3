@@ -8,21 +8,26 @@
 // "applied" / "not supported on this brand" / "failed".
 //
 // Reads (device-info) gate on vms.camera.read; all writes on vms.config.manage.
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog } from "@/components/ui/kit";
+import { Button, ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import DeviceUsers from "./DeviceUsers";
 import { vms } from "../api";
+import type { DeviceInfoPublic, FleetOpPublic, VmsCameraPublic } from "../types";
+
+/** The `{ ok, supported, detail }` triple every best-effort op echoes —
+ *  FleetOpPublic and StreamPolicyResult both carry it. */
+export type OpResultLike = Partial<Pick<FleetOpPublic, "ok" | "supported" | "detail">>;
 
 // Turn a { ok, supported, detail } op result into a toast. `supported === false`
 // means the brand driver has no such op — surface it as an info, not an error.
-export function toastOpResult(res, fallbackLabel = "Done") {
+export function toastOpResult(res: OpResultLike | null | undefined, fallbackLabel = "Done") {
   const detail = res?.detail || "";
   if (res?.supported === false) {
     toast.message(`Not supported on this camera`, { description: detail || undefined });
@@ -33,7 +38,7 @@ export function toastOpResult(res, fallbackLabel = "Done") {
   }
 }
 
-function InfoRow({ label, value }: any) {
+function InfoRow({ label, value }: { label: string; value?: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-card-border/50 py-1.5 last:border-0">
       <span className="text-[11px] uppercase tracking-wide text-muted">{label}</span>
@@ -42,7 +47,14 @@ function InfoRow({ label, value }: any) {
   );
 }
 
-export default function DeviceMaintenance({ cameraId, cameraName, camera }: any) {
+export interface DeviceMaintenanceProps {
+  cameraId: string;
+  cameraName?: string | null;
+  /** The row the parent already holds — seeds the codec-badge query. */
+  camera?: VmsCameraPublic | null;
+}
+
+export default function DeviceMaintenance({ cameraId, cameraName, camera }: DeviceMaintenanceProps) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const canManage = can("vms.config.manage");
@@ -50,25 +62,25 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }: any)
 
   // Fresh camera row for the codec badge — seeded by the passed-in `camera` so it
   // renders instantly, then re-read after an apply so the badge flips to H.264.
-  const cameraQ = useQuery<any>({
+  const cameraQ = useQuery({
     queryKey: ["vms-camera", cameraId],
     queryFn: () => vms.cameras.get(cameraId),
     enabled: canRead,
-    initialData: camera,
+    initialData: camera ?? undefined,
     staleTime: 15_000,
   });
 
   const [ntpServer, setNtpServer] = useState("");
   const [pwUser, setPwUser] = useState("");
   const [pwNew, setPwNew] = useState("");
-  const [confirm, setConfirm] = useState<any>(null);
-  const restoreInput = useRef<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const restoreInput = useRef<HTMLInputElement | null>(null);
 
   // ── Device info (firmware / model) ────────────────────────────────────
   // Device identity is static, so the backend caches it on the camera row — this query
   // is served from that cache and does NOT re-probe the device on every tab open. The
   // "Refresh" button forces a live re-read (?refresh=true).
-  const infoQ = useQuery<any>({
+  const infoQ = useQuery({
     queryKey: ["vms-device-info", cameraId],
     queryFn: () => vms.deviceMgmt.info(cameraId),
     enabled: canRead,
@@ -77,7 +89,7 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }: any)
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
-  const info = infoQ.data || {};
+  const info: Partial<DeviceInfoPublic> = infoQ.data || {};
   const [refreshingInfo, setRefreshingInfo] = useState(false);
   const refreshInfo = async () => {
     setRefreshingInfo(true);
@@ -91,33 +103,33 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }: any)
     }
   };
 
-  // Pull the best-known fields out of a brand-dependent shape.
+  // The DeviceInfoPublic fields (the router's response_model drops everything else).
   const infoRows = useMemo(
     () => [
-      { label: "Manufacturer", value: info.manufacturer || info.make },
+      { label: "Manufacturer", value: info.manufacturer },
       { label: "Model", value: info.model },
-      { label: "Firmware", value: info.firmware || info.firmware_version },
-      { label: "Serial", value: info.serial || info.serial_number },
-      { label: "Hardware ID", value: info.hardware_id || info.hardware },
-      { label: "MAC", value: info.mac || info.mac_address },
+      { label: "Firmware", value: info.firmware },
+      { label: "Serial", value: info.serial_number },
+      { label: "Hardware ID", value: info.hardware_id },
+      { label: "MAC", value: info.mac },
     ],
     [info],
   );
 
   // ── Mutations ─────────────────────────────────────────────────────────
-  const reboot = useMutation<any>({
+  const reboot = useMutation({
     mutationFn: () => vms.deviceMgmt.reboot(cameraId),
     onSuccess: (res) => toastOpResult(res, "Reboot"),
     onError: (e) => toast.error(apiError(e, "Reboot failed")),
   });
 
-  const ntp = useMutation<any>({
+  const ntp = useMutation({
     mutationFn: () => vms.deviceMgmt.ntp(cameraId, ntpServer.trim()),
     onSuccess: (res) => toastOpResult(res, "NTP"),
     onError: (e) => toast.error(apiError(e, "Set NTP failed")),
   });
 
-  const password = useMutation<any>({
+  const password = useMutation({
     mutationFn: () =>
       vms.deviceMgmt.password(cameraId, { user: pwUser.trim() || undefined, new_password: pwNew }),
     onSuccess: (res) => {
@@ -127,7 +139,7 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }: any)
     onError: (e) => toast.error(apiError(e, "Password change failed")),
   });
 
-  const backup = useMutation<any>({
+  const backup = useMutation({
     mutationFn: () => vms.deviceMgmt.configBackup(cameraId),
     onSuccess: (blob) => {
       const url = URL.createObjectURL(blob);
@@ -143,17 +155,18 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }: any)
     onError: (e) => toast.error(apiError(e, "Backup failed")),
   });
 
-  const restore = useMutation<any, any, any>({
-    mutationFn: (base64: any) => vms.deviceMgmt.configRestore(cameraId, base64),
+  const restore = useMutation({
+    mutationFn: (base64: string) => vms.deviceMgmt.configRestore(cameraId, base64),
     onSuccess: (res) => toastOpResult(res, "Config restore"),
     onError: (e) => toast.error(apiError(e, "Restore failed")),
   });
 
   // ── Web codec policy — force the sub-stream to H.264 (browser-direct) ──────
-  const streamPolicy = useMutation<any>({
+  const streamPolicy = useMutation({
     mutationFn: () => vms.cameras.applyStreamPolicy(cameraId),
     onSuccess: (res) => {
-      if (res?.already) {
+      // The service reports a no-op as status "already_h264" (StreamPolicyResult).
+      if (res?.status === "already_h264") {
         toast.message("Already H.264", {
           description: res.detail || "The sub-stream is already H.264 — browsers play it directly.",
         });
@@ -176,7 +189,7 @@ export default function DeviceMaintenance({ cameraId, cameraName, camera }: any)
     streamPolicy.isPending;
 
   // Read the picked file → base64 (strip the data: prefix) → POST.
-  const onRestoreFile = (file) => {
+  const onRestoreFile = (file: File | undefined) => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {

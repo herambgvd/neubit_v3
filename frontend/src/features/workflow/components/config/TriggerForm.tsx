@@ -10,93 +10,120 @@
 // The condition rows use compact inline inputs (below Field's control height) so
 // they stay bespoke; the primary fields use the shared Field.
 import { useMemo, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { Button, Checkbox, checkboxClass } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { api } from "@/lib/api";
-import { titleize, idOf, asItems } from "@/lib/format";
-import { PRIORITIES } from "../../constants";
+import type { Page } from "@/lib/types";
+import { titleize, asItems } from "@/lib/format";
+import { PRIORITIES, isPriority } from "../../constants";
 import { MATCHER_OPS, OP_LABEL } from "../../lib/matcher";
+import type {
+  AssignableUser,
+  CreateTriggerRequest,
+  DedupConfig,
+  DedupStrategy,
+  SopPublic,
+  TransitionCondition,
+  TriggerPublic,
+} from "../../types";
 import ConditionsPreview from "./ConditionsPreview";
+import type { ConditionRow } from "./ConditionsPreview";
 import TriggerTestModal from "./TriggerTestModal";
 import SelectMenu from "@/components/common/SelectMenu";
 import { PaneForm } from "@/components/console";
 
 const TRIGGER_OPS = MATCHER_OPS;
 
-const DEDUP_STRATEGIES = [
+const DEDUP_STRATEGIES: { value: DedupStrategy; label: string; hint: string }[] = [
   { value: "per_event_type", label: "Per event type", hint: "One incident per (source, type) within the window. Default." },
   { value: "per_event_id", label: "Per event ID", hint: "Suppress repeats sharing the envelope's event_id." },
   { value: "per_field", label: "Per field value", hint: "Group by a payload field (e.g. payload.device_id)." },
 ];
 
-export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit }: any) {
+type ErrorKey = "name" | "event" | "sopId";
+
+// Editor rows carry the value as typed; the wire shape is TransitionCondition.
+const toWire = (c: ConditionRow): TransitionCondition => ({
+  field: c.path.trim(),
+  operator: c.op,
+  value: c.value === "" ? null : c.value,
+});
+
+export interface TriggerFormProps {
+  /** The trigger being edited; null creates one. */
+  trigger: TriggerPublic | null;
+  sops: SopPublic[];
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (body: CreateTriggerRequest) => void;
+}
+
+export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit }: TriggerFormProps) {
   const isEdit = !!trigger;
   const [name, setName] = useState(trigger?.name || "");
   const [description, setDescription] = useState(trigger?.description || "");
   const [eventSource, setEventSource] = useState(trigger?.event_source || "");
   const [eventType, setEventType] = useState(trigger?.event_type || "");
   const [sopId, setSopId] = useState(trigger?.sop_id || "");
-  const [priority, setPriority] = useState(trigger?.priority || "");
-  const [assignUsers, setAssignUsers] = useState(
+  const [priority, setPriority] = useState<string>(trigger?.priority || "");
+  const [assignUsers, setAssignUsers] = useState<string[]>(
     Array.isArray(trigger?.assign_users) ? trigger.assign_users : [],
   );
   const [enabled, setEnabled] = useState(trigger?.enabled !== false);
-  const [conditions, setConditions] = useState(
+  const [conditions, setConditions] = useState<ConditionRow[]>(
     Array.isArray(trigger?.conditions) && trigger.conditions.length
-      ? trigger.conditions.map((c) => ({ path: c.path || c.field || "", op: c.op || c.operator || "eq", value: c.value ?? "" }))
+      ? trigger.conditions.map((c) => ({ path: c.field || "", op: c.operator || "eq", value: c.value == null ? "" : String(c.value) }))
       : [],
   );
-  const [dedupStrategy, setDedupStrategy] = useState(trigger?.dedup?.strategy || "per_event_type");
+  const [dedupStrategy, setDedupStrategy] = useState<DedupStrategy>(trigger?.dedup?.strategy || "per_event_type");
   const [dedupKeyField, setDedupKeyField] = useState(trigger?.dedup?.key_field || "");
-  const [dedupWindow, setDedupWindow] = useState(
+  const [dedupWindow, setDedupWindow] = useState<number | "">(
     trigger?.dedup?.window_seconds ?? 300,
   );
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Partial<Record<ErrorKey, string>>>({});
   const [showTest, setShowTest] = useState(false);
 
-  function updateCond(i, patch) {
+  function updateCond(i: number, patch: Partial<ConditionRow>) {
     setConditions((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   }
 
-  const toggleAssignUser = (uid) =>
+  const toggleAssignUser = (uid: string) =>
     setAssignUsers((cur) => (cur.includes(uid) ? cur.filter((x) => x !== uid) : [...cur, uid]));
 
   // Draft trigger passed to the Test modal so it evaluates the live event_type +
   // conditions. When editing, carry the real id so the modal can locate the row
   // in the simulate result.
   const draftForTest = useMemo(
-    () => ({
+    (): Partial<TriggerPublic> => ({
       ...(trigger || {}),
       event_type: eventType.trim(),
       event_source: eventSource.trim(),
-      conditions: conditions
-        .filter((c) => c.path.trim())
-        .map((c) => ({ path: c.path.trim(), op: c.op, value: c.value === "" ? null : c.value })),
+      conditions: conditions.filter((c) => c.path.trim()).map(toWire),
     }),
     [trigger, eventType, eventSource, conditions],
   );
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: Partial<Record<ErrorKey, string>> = {};
     if (!name.trim()) next.name = "Name is required";
     if (!eventType.trim() && !eventSource.trim()) next.event = "Specify event type, event source, or both";
     if (!sopId) next.sopId = "Target SOP is required";
     if (Object.keys(next).length) { setErrors(next); return; }
-    const cleanConds = conditions
-      .filter((c) => c.path.trim())
-      .map((c) => ({ path: c.path.trim(), op: c.op, value: c.value === "" ? null : c.value }));
-    const dedup: any = {
+    const cleanConds = conditions.filter((c) => c.path.trim()).map(toWire);
+    const dedup: DedupConfig = {
       strategy: dedupStrategy,
       window_seconds: Number(dedupWindow) || 0,
     };
     if (dedupStrategy === "per_field") dedup.key_field = dedupKeyField.trim() || null;
-    const body: any = {
+    const body: CreateTriggerRequest = {
       name: name.trim(),
       description: description.trim() || null,
-      event_source: eventSource.trim() || null,
+      // `str = ""` on the backend — "" (not null) means "any source".
+      event_source: eventSource.trim(),
       event_type: eventType.trim() || null,
       sop_id: sopId,
       assign_users: assignUsers,
@@ -106,13 +133,13 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
     };
     // Priority is a non-null enum on create; only send it when explicitly chosen
     // (blank == "use SOP default" → omit so the backend applies its default).
-    if (priority) body.priority = priority;
+    if (isPriority(priority)) body.priority = priority;
     onSubmit(body);
   }
 
   return (
     <PaneForm
-      title={isEdit ? `Edit ${trigger.name}` : "Add trigger"}
+      title={trigger ? `Edit ${trigger.name}` : "Add trigger"}
       onSubmit={submit}
       action={
         <Button variant="secondary" icon="heroicons-outline:beaker" onClick={() => setShowTest(true)}>
@@ -167,7 +194,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
           value={sopId}
           onChange={(e) => { setSopId(e.target.value); if (errors.sopId) setErrors((p) => ({ ...p, sopId: undefined })); }}
           error={errors.sopId}
-          options={[{ value: "", label: "Select a SOP…" }, ...sops.map((s) => ({ value: idOf(s, "id", "sop_id"), label: s.name }))]}
+          options={[{ value: "", label: "Select a SOP…" }, ...sops.map((s) => ({ value: s.sop_id, label: s.name }))]}
         />
         <Field
           as="select"
@@ -262,19 +289,25 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
   );
 }
 
+interface UserMultiSelectProps {
+  label: ReactNode;
+  selectedIds: string[];
+  onToggle: (userId: string) => void;
+  onClear: () => void;
+}
+
 /* Multi-select user picker with search — selected chips on top + searchable
  * list. 1:1 port of the v2 UserMultiSelect (also mirrored in TransitionModal). */
-function UserMultiSelect({ label, selectedIds, onToggle, onClear }: any) {
+function UserMultiSelect({ label, selectedIds, onToggle, onClear }: UserMultiSelectProps) {
   const [query, setQuery] = useState("");
-  const usersQ = useQuery<any>({
+  const usersQ = useQuery({
     queryKey: ["auth-users-picker"],
-    queryFn: () => api.get("/auth/users", { params: { page_size: 100 } }).then((r) => r.data),
+    queryFn: () => api.get<Page<AssignableUser>>("/auth/users", { params: { page_size: 100 } }).then((r) => r.data),
   });
-  const allUsers = asItems(usersQ.data);
+  const allUsers = useMemo<AssignableUser[]>(() => (usersQ.data ? asItems(usersQ.data) : []), [usersQ.data]);
 
-  const uid = (u) => u.user_id || u.id;
-  const display = (u) =>
-    u.full_name || [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email || uid(u);
+  const uid = (u: AssignableUser): string => u.id;
+  const display = (u: AssignableUser): string => u.full_name || u.email || uid(u);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

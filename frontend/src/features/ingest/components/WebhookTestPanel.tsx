@@ -10,18 +10,24 @@ import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
 import { OUTCOME_PILL } from "../constants";
+import type { JsonObject } from "../types";
+import type { FieldChangeEvent } from "@/components/common/Field";
 
-export default function WebhookTestPanel({ hookId }: any) {
+export interface WebhookTestPanelProps {
+  hookId: string;
+}
+
+export default function WebhookTestPanel({ hookId }: WebhookTestPanelProps) {
   const [sample, setSample] = useState('{\n  "event": {\n    "name": "Door forced",\n    "severity": "high"\n  }\n}');
   const [jsonErr, setJsonErr] = useState("");
 
-  const run = useMutation<any>({
-    mutationFn: (payload: any) => ingestApi.webhooks.test(hookId, payload),
+  const run = useMutation({
+    mutationFn: (payload: JsonObject) => ingestApi.webhooks.test(hookId, payload),
     onError: (e) => toast.error(apiError(e)),
   });
 
   function submit() {
-    let payload;
+    let payload: JsonObject;
     try { payload = JSON.parse(sample); }
     catch { setJsonErr("Sample must be valid JSON"); return; }
     setJsonErr("");
@@ -36,7 +42,7 @@ export default function WebhookTestPanel({ hookId }: any) {
         label="Sample payload (JSON)"
         rows={7}
         value={sample}
-        onChange={(e) => { setSample(e.target.value); if (jsonErr) setJsonErr(""); }}
+        onChange={(e: FieldChangeEvent) => { setSample(e.target.value); if (jsonErr) setJsonErr(""); }}
         className="font-mono"
         error={jsonErr}
         hint="Runs schema validation + JMESPath transform. Nothing is published or logged."
@@ -60,12 +66,12 @@ export default function WebhookTestPanel({ hookId }: any) {
           </div>
           {Array.isArray(res.schema_errors) && res.schema_errors.length > 0 && (
             <ul className="list-inside list-disc space-y-0.5 text-xs text-nb-crit">
-              {res.schema_errors.map((er, i) => <li key={i}>{typeof er === "string" ? er : JSON.stringify(er)}</li>)}
+              {res.schema_errors.map((er: string, i: number) => <li key={i}>{typeof er === "string" ? er : JSON.stringify(er)}</li>)}
             </ul>
           )}
           {Array.isArray(res.transform_errors) && res.transform_errors.length > 0 && (
             <ul className="list-inside list-disc space-y-0.5 text-xs text-nb-crit">
-              {res.transform_errors.map((er, i) => <li key={i}>{typeof er === "string" ? er : JSON.stringify(er)}</li>)}
+              {res.transform_errors.map((er: string, i: number) => <li key={i}>{typeof er === "string" ? er : JSON.stringify(er)}</li>)}
             </ul>
           )}
           <div>

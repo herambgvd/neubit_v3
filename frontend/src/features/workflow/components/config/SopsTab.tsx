@@ -19,22 +19,26 @@ import {
   EmptyPane,
 } from "@/components/console";
 import { ConfirmDialog } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { titleize, asItems, idOf } from "@/lib/format";
+import { titleize, asItems } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import type { SopPublic } from "../../types";
 import SopForm from "./SopForm";
 import SopBuilder from "./SopBuilder";
 
-const sopId = (s) => idOf(s, "id", "sop_id");
+const sopId = (s: SopPublic): string => s.sop_id;
+
+type Mode = "view" | "create" | "edit";
 
 export default function SopsTab() {
   const qc = useQueryClient();
-  const sopsQ = useQuery<any>({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
-  const sops = asItems(sopsQ.data);
+  const sopsQ = useQuery({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
+  const sops = useMemo<SopPublic[]>(() => (sopsQ.data ? asItems(sopsQ.data) : []), [sopsQ.data]);
 
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [mode, setMode] = useState("view"); // view | create | edit
-  const [confirm, setConfirm] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("view"); // view | create | edit
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [q, setQ] = useState("");
 
   const filtered = useMemo(() => {
@@ -52,7 +56,7 @@ export default function SopsTab() {
 
 
   const remove = useMutation({
-    mutationFn: (id: any) => wfApi.sops.remove(id),
+    mutationFn: (id: string) => wfApi.sops.remove(id),
     onSuccess: () => {
       toast.success("SOP removed");
       qc.invalidateQueries({ queryKey: ["wf-sops"] });
@@ -86,7 +90,7 @@ export default function SopsTab() {
                 <span className="block text-sm font-semibold text-nb-ink truncate">{s.name}</span>
                 <span className="block text-[11px] text-nb-faint">
                   {typeof s.version === "number" ? `v${s.version} · ` : ""}
-                  {titleize(s.default_priority || "medium")}
+                  {titleize(s.priority || "medium")}
                   {s.is_active === false ? " · Inactive" : ""}
                 </span>
               </span>
@@ -112,7 +116,7 @@ export default function SopsTab() {
             onCancel={() => setMode("view")}
             onSaved={(saved) => {
               qc.invalidateQueries({ queryKey: ["wf-sops"] });
-              const id = idOf(saved, "id", "sop_id");
+              const id = saved.sop_id;
               if (id) setSelectedId(id);
               setMode("view");
             }}

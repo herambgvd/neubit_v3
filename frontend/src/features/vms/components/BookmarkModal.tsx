@@ -14,28 +14,40 @@ import { toast } from "sonner";
 import { Button, Modal } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { BookmarkPublic } from "../types";
+import type { IsoSeed } from "./playbackTypes";
 
 // ISO → the value shape a datetime-local input wants (local wall-clock).
-function toLocalInput(iso) {
+function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-const fromLocalInput = (v) => (v ? new Date(v).toISOString() : null);
+const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOString() : null);
+
+export interface BookmarkModalProps {
+  open: boolean;
+  onClose?: () => void;
+  cameraId: string;
+  cameraName?: string | null;
+  /** Seed for a new bookmark: { start, end? } (ISO). Ignored when `bookmark` set. */
+  seed?: IsoSeed | null;
+  /** When set → edit mode. */
+  bookmark?: BookmarkPublic | null;
+  onSaved?: (bookmark: BookmarkPublic) => void;
+}
 
 export default function BookmarkModal({
   open,
   onClose,
   cameraId,
   cameraName,
-  // Seed for a new bookmark: { start, end? } (ISO). Ignored when `bookmark` set.
   seed = null,
-  // When set → edit mode.
   bookmark = null,
   onSaved,
-}: any) {
+}: BookmarkModalProps) {
   const editing = !!bookmark;
   const [startTs, setStartTs] = useState("");
   const [endTs, setEndTs] = useState("");
@@ -46,7 +58,7 @@ export default function BookmarkModal({
 
   useEffect(() => {
     if (!open) return;
-    if (editing) {
+    if (bookmark) {
       setStartTs(toLocalInput(bookmark.start_ts));
       setEndTs(toLocalInput(bookmark.end_ts));
       setTitle(bookmark.title || "");
@@ -60,22 +72,22 @@ export default function BookmarkModal({
       setTags("");
     }
     setSaving(false);
-  }, [open, editing, bookmark, seed?.start, seed?.end]);
+  }, [open, bookmark, seed?.start, seed?.end]);
 
   const startIso = fromLocalInput(startTs);
   const endIso = fromLocalInput(endTs);
-  const rangeValid = !endIso || (startIso && new Date(endIso) > new Date(startIso));
+  const rangeValid = !endIso || (!!startIso && new Date(endIso) > new Date(startIso));
   const canSave = !!title.trim() && !!startIso && rangeValid;
 
   const save = async () => {
-    if (!canSave) return;
+    if (!canSave || !startIso) return; // `canSave` already implies a start; this narrows it
     setSaving(true);
     const tagList = tags
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
     try {
-      if (editing) {
+      if (bookmark) {
         const res = await vms.bookmarks.update(bookmark.id, {
           start_ts: startIso,
           end_ts: endIso,

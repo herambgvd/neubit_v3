@@ -9,16 +9,21 @@ import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { Spinner } from "@/components/ui/kit";
-import { asItems, idOf, fmtRelative } from "@/lib/format";
+import { asItems, fmtRelative } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import type { TriggerPublic } from "../../types";
 
-export default function SopTriggersList({ sopId }: any) {
-  const q = useQuery<any>({
+export interface SopTriggersListProps {
+  sopId: string;
+}
+
+export default function SopTriggersList({ sopId }: SopTriggersListProps) {
+  const q = useQuery({
     queryKey: ["wf-triggers", { sop_id: sopId }],
     queryFn: () => wfApi.triggers.list({ sop_id: sopId, limit: 200 }),
     enabled: !!sopId,
   });
-  const all = asItems(q.data);
+  const all = useMemo<TriggerPublic[]>(() => (q.data ? asItems(q.data) : []), [q.data]);
   // Defensive: narrow client-side in case the API doesn't filter by sop_id.
   const items = useMemo(() => all.filter((t) => !t.sop_id || t.sop_id === sopId), [all, sopId]);
 
@@ -41,7 +46,7 @@ export default function SopTriggersList({ sopId }: any) {
           {items.map((t) => {
             const enabled = t.enabled !== false;
             return (
-              <li key={idOf(t, "id", "trigger_id")} className="flex items-start gap-3 px-4 py-3">
+              <li key={t.trigger_id} className="flex items-start gap-3 px-4 py-3">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-[rgba(251,191,36,.10)] text-nb-warn shrink-0">
                   <Icon icon="heroicons:bolt" className="text-base" />
                 </span>

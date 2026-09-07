@@ -31,9 +31,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog, Input, Modal } from "@/components/ui/kit";
+import { Button, ConfirmDialog, Input, Modal, type ConfirmState } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
+import type { CameraGroupPublic, EstateCamera, PatternPublic, PatternStop, WallPreset } from "./types";
 import {
   DEFAULT_LAYOUT_KEY,
   getLayout,
@@ -44,6 +45,7 @@ import {
   tileProfile,
   buildPreset,
   presetTilesForCapacity,
+  type WallCell,
 } from "./videoWall";
 import CameraRail from "./components/CameraRail";
 import WallTile from "./components/WallTile";
@@ -80,7 +82,40 @@ const LS_RAIL = "neubit.vms.wall.rail";
 const LS_VIEW = "neubit.vms.wall.view";
 const LS_QUALITY = "neubit.vms.wall.quality";
 
-const emptyCell = () => ({ cameraId: null });
+const emptyCell = (): WallCell => ({ cameraId: null });
+
+type ViewMode = "grid" | "map" | "split";
+const VIEW_MODES: readonly ViewMode[] = ["grid", "map", "split"];
+const isViewMode = (v: unknown): v is ViewMode => (VIEW_MODES as readonly unknown[]).includes(v);
+
+// A browser-local saved layout. Newer entries ARE presets ({layout, tiles}); the
+// legacy {layoutKey, cameraIds} pair from before the redesign is still read.
+interface SavedLayoutEntry {
+  id: string;
+  name: string;
+  layout?: string;
+  tiles?: (string | null)[];
+  layoutKey?: string;
+  cameraIds?: (string | null)[];
+}
+
+interface TourState {
+  active: boolean;
+  pages: string[][];
+  index: number;
+  seconds: number;
+}
+
+// The double-buffered pattern stage: two layer slots + which one is in front.
+interface StageState {
+  slots: (PatternStop | null)[];
+  front: number;
+}
+
+interface PickerState {
+  open: boolean;
+  tileIndex: number | null;
+}
 
 // Single-cell grid template used while spotlighting (the one tile fills it).
 const SPOTLIGHT_GRID = {
@@ -91,16 +126,18 @@ const SPOTLIGHT_GRID = {
 // ── storage helpers (SSR-safe) ────────────────────────────────────────────
 // One pair of readers over both stores, so which store a key lives in is decided
 // once, at the constant, instead of at every call site.
-function read(store, key, fallback) {
+// Whatever came back is OUR OWN earlier write, but a stale/foreign value is
+// possible, so readers get `unknown` and narrow at the use site.
+function read(store: () => Storage, key: string, fallback: unknown): unknown {
   if (typeof window === "undefined") return fallback;
   try {
     const raw = store().getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    return raw ? (JSON.parse(raw) as unknown) : fallback;
   } catch {
     return fallback;
   }
 }
-function write(store, key, value) {
+function write(store: () => Storage, key: string, value: unknown): void {
   if (typeof window === "undefined") return;
   try {
     store().setItem(key, JSON.stringify(value));
@@ -111,11 +148,11 @@ function write(store, key, value) {
 const local = () => localStorage;
 const tab = () => sessionStorage;
 
-const readLS = (key, fallback?: any) => read(local, key, fallback);
-const writeLS = (key, value) => write(local, key, value);
+const readLS = (key: string, fallback?: unknown) => read(local, key, fallback);
+const writeLS = (key: string, value: unknown) => write(local, key, value);
 // Per-tab: the wall's own contents.
-const readSS = (key, fallback?: any) => read(tab, key, fallback);
-const writeSS = (key, value) => write(tab, key, value);
+const readSS = (key: string, fallback?: unknown) => read(tab, key, fallback);
+const writeSS = (key: string, value: unknown) => write(tab, key, value);
 
 export default function Streaming() {
   // ── layout + cells (persisted) ──────────────────────────────────────────
@@ -125,31 +162,34 @@ export default function Streaming() {
   });
   const layout = useMemo(() => getLayout(layoutKey), [layoutKey]);
 
-  const [cells, setCells] = useState(() => {
-    const cap = getLayout(readSS(SS_LAYOUT, DEFAULT_LAYOUT_KEY)).capacity;
+  const [cells, setCells] = useState<WallCell[]>(() => {
+    const k = readSS(SS_LAYOUT, DEFAULT_LAYOUT_KEY);
+    const cap = getLayout(typeof k === "string" ? k : DEFAULT_LAYOUT_KEY).capacity;
     const saved = readSS(SS_CELLS, null);
     const base = Array.from({ length: cap }, emptyCell);
     if (Array.isArray(saved)) {
       for (let i = 0; i < cap && i < saved.length; i += 1) {
-        if (saved[i]?.cameraId) base[i] = { cameraId: saved[i].cameraId };
+        const cameraId = (saved[i] as Partial<WallCell> | null | undefined)?.cameraId;
+        if (cameraId) base[i] = { cameraId };
       }
     }
     return base;
   });
 
-  const [savedLayouts, setSavedLayouts] = useState(() => {
+  const [savedLayouts, setSavedLayouts] = useState<SavedLayoutEntry[]>(() => {
     const s = readLS(LS_SAVED, []);
-    return Array.isArray(s) ? s : [];
+    // Our own earlier writes (see saveCurrent) — the entry shape is trusted.
+    return Array.isArray(s) ? (s as SavedLayoutEntry[]) : [];
   });
 
   // View mode (grid | map | split) + global stream quality + DVR playout bar.
-  const [viewMode, setViewMode] = useState(() => {
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const v = readLS(LS_VIEW, "grid");
-    return ["grid", "map", "split"].includes(v) ? v : "grid";
+    return isViewMode(v) ? v : "grid";
   });
-  const [quality, setQuality] = useState(() => {
+  const [quality, setQuality] = useState<string>(() => {
     const qv = readLS(LS_QUALITY, "auto");
-    return QUALITY_LEVELS.some((l) => l.key === qv) ? qv : "auto";
+    return typeof qv === "string" && QUALITY_LEVELS.some((l) => l.key === qv) ? qv : "auto";
   });
   const [playoutOpen, setPlayoutOpen] = useState(false);
   // The wall's DVR: live ⇄ playback, the window, the shared clock, Sync. The
@@ -160,28 +200,28 @@ export default function Streaming() {
   // in playback — the master clock every synced tile follows. Click any tile to
   // move it; it falls back to the first filled tile so the dock is never
   // pointed at nothing.
-  const [focusIndex, setFocusIndex] = useState<any>(null);
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
 
   const [railOpen, setRailOpen] = useState(() => readLS(LS_RAIL, true) !== false);
   const [railDragging, setRailDragging] = useState(false);
-  const [spotlight, setSpotlight] = useState<any>(null); // tile index or null
+  const [spotlight, setSpotlight] = useState<number | null>(null); // tile index or null
   const [allMuted, setAllMuted] = useState(true);
-  const [picker, setPicker] = useState<any>({ open: false, tileIndex: null });
+  const [picker, setPicker] = useState<PickerState>({ open: false, tileIndex: null });
 
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   // Inline (from the wall) creation surfaces — save current wall → server Camera
   // Group, and build a Pattern — so operators don't have to trip to Config.
   const [saveGroupOpen, setSaveGroupOpen] = useState(false);
   const [patternFormOpen, setPatternFormOpen] = useState(false);
   const qc = useQueryClient();
 
-  const wallRef = useRef<any>(null); // fullscreen-wall target
-  const gridRef = useRef<any>(null); // for mute-all DOM sweep
+  const wallRef = useRef<HTMLDivElement | null>(null); // fullscreen-wall target
+  const gridRef = useRef<HTMLDivElement | null>(null); // for mute-all DOM sweep
 
   // ── tour (carousel) ─────────────────────────────────────────────────────
-  const [tour, setTour] = useState<any>({ active: false, pages: [], index: 0, seconds: 10 });
+  const [tour, setTour] = useState<TourState>({ active: false, pages: [], index: 0, seconds: 10 });
   const cellsRef = useRef(cells);
   useEffect(() => {
     cellsRef.current = cells;
@@ -202,7 +242,7 @@ export default function Streaming() {
   const { cameras, cameraById, localQ: camerasQ, fedQ, isSuccess: estateReady } = useEstateCameras();
 
   const mountedIds = useMemo(
-    () => new Set<any>(cells.map((c) => c.cameraId).filter(Boolean)),
+    () => new Set<string>(cells.map((c) => c.cameraId).filter((id): id is string => !!id)),
     [cells],
   );
   const liveCount = mountedIds.size;
@@ -210,13 +250,13 @@ export default function Streaming() {
 
   // Ordered camera ids currently on the wall (for "save wall as group").
   const wallCameraIds = useMemo(
-    () => cells.map((c) => c.cameraId).filter(Boolean),
+    () => cells.map((c) => c.cameraId).filter((id): id is string => !!id),
     [cells],
   );
 
   // Set of camera ids that still EXIST — the rotation engine uses it to skip
   // groups whose cameras were deleted (robustness).
-  const cameraIdSet = useMemo(() => new Set<any>(cameras.map((c) => c.id)), [cameras]);
+  const cameraIdSet = useMemo(() => new Set<string>(cameras.map((c) => c.id)), [cameras]);
 
   // Auto-prune tiles whose camera no longer exists (camera / NVR was deleted) so the
   // wall never strands "camera not found" tiles pointing at gone ids. Gated on a
@@ -238,7 +278,7 @@ export default function Streaming() {
   }, [camerasQ.isSuccess, fedQ.isSuccess, cameraIdSet]);
 
   // ── layout / assignment ────────────────────────────────────────────────
-  const changeLayout = useCallback((key) => {
+  const changeLayout = useCallback((key: string) => {
     const next = getLayout(key);
     setSpotlight(null);
     setLayoutKey(key);
@@ -249,7 +289,7 @@ export default function Streaming() {
     });
   }, []);
 
-  const assignToCell = useCallback((cellIndex, cameraId) => {
+  const assignToCell = useCallback((cellIndex: number, cameraId: string) => {
     setCells((prev) => {
       const next = [...prev];
       if (next[cellIndex]?.cameraId === cameraId) return prev;
@@ -271,10 +311,10 @@ export default function Streaming() {
   // dropping a recorder twice must not duplicate it across the grid — and the
   // walk stops at the last tile rather than wrapping, so a 12-camera recorder on
   // a 2x2 fills what it can and says what it could not.
-  const assignMany = useCallback((cameraIds, startIndex = 0) => {
+  const assignMany = useCallback((cameraIds: string[], startIndex = 0) => {
     setCells((prev) => {
       const next = [...prev];
-      const already = new Set(next.map((c) => c.cameraId).filter(Boolean));
+      const already = new Set(next.map((c) => c.cameraId).filter((id): id is string => !!id));
       const pending = cameraIds.filter((id) => !already.has(id));
       let placed = 0;
       for (let i = startIndex; i < next.length && placed < pending.length; i += 1) {
@@ -292,7 +332,7 @@ export default function Streaming() {
   }, []);
 
   // Swap two tiles (tile→tile drag).
-  const swapCells = useCallback((from, to) => {
+  const swapCells = useCallback((from: number, to: number) => {
     setCells((prev) => {
       if (from === to) return prev;
       const next = [...prev];
@@ -303,7 +343,7 @@ export default function Streaming() {
     });
   }, []);
 
-  const closeCell = useCallback((cellIndex) => {
+  const closeCell = useCallback((cellIndex: number) => {
     setCells((prev) => {
       const next = [...prev];
       next[cellIndex] = emptyCell();
@@ -313,7 +353,7 @@ export default function Streaming() {
   }, []);
 
   const pickCamera = useCallback(
-    (cam) => {
+    (cam: EstateCamera) => {
       const idx = cellsRef.current.findIndex((c) => !c.cameraId);
       if (idx === -1) {
         toast.message("Grid full — remove a tile or pick a larger layout.");
@@ -328,7 +368,7 @@ export default function Streaming() {
   // tile, so it extends the wall instead of overwriting what is already on it.
   // A drop, by contrast, starts exactly where the operator aimed.
   const pickBranch = useCallback(
-    (cams) => {
+    (cams: EstateCamera[]) => {
       const ids = cams.map((c) => c.id);
       const firstFree = cellsRef.current.findIndex((c) => !c.cameraId);
       if (firstFree === -1) {
@@ -346,17 +386,17 @@ export default function Streaming() {
   // that captured `i` and broke WallTile's React.memo (a fresh function prop each
   // render forced ALL tiles + LivePlayers to re-render on any parent render).
   const handleAssign = useCallback(
-    (cameraId, index) => assignToCell(index, cameraId),
+    (cameraId: string, index: number) => assignToCell(index, cameraId),
     [assignToCell],
   );
   const handleAssignMany = useCallback(
-    (cameraIds, index) => assignMany(cameraIds, index),
+    (cameraIds: string[], index: number) => assignMany(cameraIds, index),
     [assignMany],
   );
-  const handleSwap = useCallback((from, index) => swapCells(from, index), [swapCells]);
-  const handleClose = useCallback((index) => closeCell(index), [closeCell]);
-  const handleSpotlight = useCallback((index) => setSpotlight(index), []);
-  const handleFocus = useCallback((index) => setFocusIndex(index), []);
+  const handleSwap = useCallback((from: number, index: number) => swapCells(from, index), [swapCells]);
+  const handleClose = useCallback((index: number) => closeCell(index), [closeCell]);
+  const handleSpotlight = useCallback((index: number) => setSpotlight(index), []);
+  const handleFocus = useCallback((index: number) => setFocusIndex(index), []);
   // The focused tile searched a whole window and found NO footage — the wall is
   // sitting in a gap. Re-anchor past it: the node clamps forward, so this lands
   // on the next recording there is instead of stopping at every gap.
@@ -370,7 +410,7 @@ export default function Streaming() {
   // stopped tells the operator nothing. Playback that has caught up with the
   // present belongs on the live stream, which is where it goes.
   const handlePlaybackEnded = useCallback(
-    (atMs) => {
+    (atMs: number) => {
       const next = atMs + 1_000;
       if (next >= Date.now()) pb.goLive();
       else pb.playAt(next);
@@ -378,7 +418,7 @@ export default function Streaming() {
     [pb.playAt, pb.goLive],
   );
   const handlePickHere = useCallback(
-    (index) => setPicker({ open: true, tileIndex: index }),
+    (index: number) => setPicker({ open: true, tileIndex: index }),
     [],
   );
 
@@ -401,7 +441,7 @@ export default function Streaming() {
   // single call. This is the seam a future saved-pattern feature plugs into:
   // load a pattern → applyWallPreset(pattern) and the wall reflects it. Nothing
   // else needs to know how cells/profiles are structured.
-  const applyWallPreset = useCallback((preset) => {
+  const applyWallPreset = useCallback((preset: WallPreset | null | undefined) => {
     if (!preset) return;
     const key = preset.layout || DEFAULT_LAYOUT_KEY;
     const cap = getLayout(key).capacity;
@@ -415,31 +455,31 @@ export default function Streaming() {
   // ── server patterns + camera-groups (the real pattern feature) ───────────
   // A pattern rotates through camera GROUPS, each painting the wall via
   // applyWallPreset. Camera groups carry their own grid layout.
-  const patternsQ = useQuery<any>({
+  const patternsQ = useQuery({
     queryKey: ["vms-patterns"],
     queryFn: () => vms.patterns.list({ is_active: true }),
     staleTime: 30_000,
   });
-  const groupsQ = useQuery<any>({
+  const groupsQ = useQuery({
     queryKey: ["vms-camera-groups"],
     queryFn: () => vms.groups.list(),
     staleTime: 30_000,
   });
-  const patterns = useMemo(() => asItems(patternsQ.data), [patternsQ.data]);
-  const groups = useMemo(() => asItems(groupsQ.data), [groupsQ.data]);
+  const patterns = useMemo<PatternPublic[]>(() => (patternsQ.data ? asItems(patternsQ.data) : []), [patternsQ.data]);
+  const groups = useMemo<CameraGroupPublic[]>(() => groupsQ.data?.items ?? [], [groupsQ.data]);
   const groupById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, CameraGroupPublic>();
     groups.forEach((g) => m.set(g.id, g));
     return m;
   }, [groups]);
 
-  const [activePattern, setActivePattern] = useState<any>(null);
+  const [activePattern, setActivePattern] = useState<PatternPublic | null>(null);
   // ── the rotation stage (double buffer) ──────────────────────────────────
   // Two layer slots and which one is in front. The engine hands us the next stop
   // early; we load it into the BACK slot, where it mounts hidden and connects, and
   // at the dwell boundary we just move `front`. Nothing remounts in view, so the
   // switch has no connecting state. See PatternStage for the whole argument.
-  const [stage, setStage] = useState<any>({ slots: [null, null], front: 0 });
+  const [stage, setStage] = useState<StageState>({ slots: [null, null], front: 0 });
   const stageRef = useRef(stage);
   // The dwell timer reads the stage through this ref; refreshed after commit so
   // no discarded render can leak into a timer that is already scheduled.
@@ -448,7 +488,7 @@ export default function Streaming() {
   });
 
   // Preload — put a stop in the back slot without changing what is on screen.
-  const preloadStop = useCallback((stop) => {
+  const preloadStop = useCallback((stop: PatternStop | null) => {
     if (!stop) return;
     setStage((st) => {
       const back = 1 - st.front;
@@ -515,7 +555,7 @@ export default function Streaming() {
   }, [rotation.active]);
 
   const startPattern = useCallback(
-    (pattern, { fullscreen = false }: any = {}) => {
+    (pattern: PatternPublic | null, { fullscreen = false }: { fullscreen?: boolean } = {}) => {
       if (!pattern) return;
       setActivePattern(pattern);
       setSpotlight(null);
@@ -566,24 +606,24 @@ export default function Streaming() {
     // Saved layouts remain a fast, browser-local recall of a single static grid
     // (complementary to server Patterns, which rotate through camera groups).
     const preset = buildPreset(layoutKey, cells);
-    const entry = { id: `${Date.now()}`, name, ...preset };
+    const entry: SavedLayoutEntry = { id: `${Date.now()}`, name, ...preset };
     setSavedLayouts((prev) => [entry, ...prev.filter((s) => s.name !== name)]);
     setSaveName("");
     setSaveOpen(false);
     toast.success(`Saved layout “${name}”`);
   };
 
-  const applySaved = (entry) =>
+  const applySaved = (entry: SavedLayoutEntry) =>
     // Newer entries ARE presets ({layout, tiles}); tolerate the legacy
     // {layoutKey, cameraIds} shape from before the redesign.
     applyWallPreset({
-      layout: entry.layout || entry.layoutKey,
-      tiles: entry.tiles || entry.cameraIds,
+      layout: entry.layout || entry.layoutKey || DEFAULT_LAYOUT_KEY,
+      tiles: entry.tiles || entry.cameraIds || [],
     });
-  const deleteSaved = (id) => setSavedLayouts((prev) => prev.filter((s) => s.id !== id));
+  const deleteSaved = (id: string) => setSavedLayouts((prev) => prev.filter((s) => s.id !== id));
 
   // ── tour / carousel ─────────────────────────────────────────────────────
-  const loadCameraIds = useCallback((ids) => {
+  const loadCameraIds = useCallback((ids: string[]) => {
     setCells((prev) => {
       const next = Array.from({ length: prev.length }, emptyCell);
       ids.slice(0, prev.length).forEach((id, i) => {
@@ -607,7 +647,7 @@ export default function Streaming() {
     loadCameraIds(pages[0]);
   };
   const stopTour = () => setTour((t) => ({ ...t, active: false }));
-  const setTourInterval = (s) => setTour((t) => ({ ...t, seconds: s }));
+  const setTourInterval = (s: number) => setTour((t) => ({ ...t, seconds: s }));
 
   useEffect(() => {
     if (!tour.active || tour.pages.length <= 1) return undefined;
@@ -644,7 +684,7 @@ export default function Streaming() {
   // ESC exits spotlight (fullscreen exit is handled natively by the browser).
   useEffect(() => {
     if (spotlight == null) return undefined;
-    const onKey = (e) => e.key === "Escape" && setSpotlight(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSpotlight(null);
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [spotlight]);
@@ -654,7 +694,7 @@ export default function Streaming() {
     () => cells.map((c, i) => (c.cameraId ? i : -1)).filter((i) => i >= 0),
     [cells],
   );
-  const stepSpotlight = (dir) => {
+  const stepSpotlight = (dir: number) => {
     if (spotlight == null || filledIndexes.length === 0) return;
     const pos = filledIndexes.indexOf(spotlight);
     const nextPos = (pos + dir + filledIndexes.length) % filledIndexes.length;
@@ -679,10 +719,11 @@ export default function Streaming() {
     () => Array.from({ length: layout.capacity }, (_, i) => tileStyle(layout, i)),
     [layout],
   );
-  const tileStyleFor = useCallback((i) => tileStyles[i], [tileStyles]);
+  const tileStyleFor = useCallback((i: number) => tileStyles[i], [tileStyles]);
 
   const isSpotlightActive = spotlight != null && !!cells[spotlight]?.cameraId;
-  const spotlightCam = spotlight != null ? cameraById.get(cells[spotlight]?.cameraId) : null;
+  const spotlightCamId = spotlight != null ? cells[spotlight]?.cameraId : null;
+  const spotlightCam = spotlightCamId ? cameraById.get(spotlightCamId) : null;
 
   // Which tile the transport is bound to. An explicit click wins; a spotlight is
   // the operator pointing at a camera just as plainly; otherwise the first filled
@@ -693,18 +734,23 @@ export default function Streaming() {
     const first = cells.findIndex((c) => c.cameraId);
     return first >= 0 ? first : null;
   }, [focusIndex, cells, isSpotlightActive, spotlight]);
-  const focusCamera = focusTile != null ? cameraById.get(cells[focusTile]?.cameraId) : null;
+  const focusCameraId = focusTile != null ? cells[focusTile]?.cameraId : null;
+  const focusCamera = focusCameraId ? cameraById.get(focusCameraId) : null;
 
   // A tile shows the RECORDING when the wall is in playback and either it is the
   // focused tile or Sync is on (Sync = the whole wall at one instant).
   const playbackFor = useCallback(
-    (i) => pb.isPlayback && (pb.sync || i === focusTile),
+    (i: number) => pb.isPlayback && (pb.sync || i === focusTile),
     [pb.isPlayback, pb.sync, focusTile],
   );
 
   // Render a single WallTile. Keyed by STABLE tile index so promoting to
   // spotlight preserves the mounted LivePlayer (session reuse).
-  const renderTile = (cell, i, { isHero = false, spotlightMode = false }: any = {}) => (
+  const renderTile = (
+    cell: WallCell,
+    i: number,
+    { isHero = false, spotlightMode = false }: { isHero?: boolean; spotlightMode?: boolean } = {},
+  ) => (
     <WallTile
       key={`tile-${i}`}
       index={i}
@@ -770,7 +816,7 @@ export default function Streaming() {
             stop={rotation.index + 1}
             total={rotation.total}
             paused={rotation.paused}
-            onPlay={(p) => startPattern(p)}
+            onPlay={(p: PatternPublic) => startPattern(p)}
             onStop={exitPattern}
             onCreate={() => setPatternFormOpen(true)}
           />
@@ -836,7 +882,7 @@ export default function Streaming() {
                     className="grid h-full min-h-0 gap-1.5"
                     style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
                   >
-                    {isSpotlightActive
+                    {isSpotlightActive && spotlight != null
                       ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
                       : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
                   </div>
@@ -844,7 +890,7 @@ export default function Streaming() {
                 {isSpotlightActive && (
                   <SpotlightOverlay
                     label={spotlightCam?.name || "Camera"}
-                    position={filledIndexes.indexOf(spotlight) + 1}
+                    position={spotlight != null ? filledIndexes.indexOf(spotlight) + 1 : 0}
                     total={filledIndexes.length}
                     onPrev={() => stepSpotlight(-1)}
                     onNext={() => stepSpotlight(1)}
@@ -872,7 +918,7 @@ export default function Streaming() {
                 site geometry / camera coordinates exist (honest empty state). */}
             {viewMode !== "grid" && (
               <div className={`relative min-h-0 p-1.5 ${viewMode === "split" ? "flex-1 border-l border-[rgba(150,180,245,.15)]" : "flex-1"}`}>
-                <MapView cameras={cameras} onPick={(cam) => pickCamera(cam)} />
+                <MapView cameras={cameras} onPick={(cam: EstateCamera) => pickCamera(cam)} />
               </div>
             )}
           </div>
@@ -902,7 +948,7 @@ export default function Streaming() {
         cameras={cameras}
         mountedIds={mountedIds}
         tileIndex={picker.tileIndex}
-        onPick={(camId) => {
+        onPick={(camId: string) => {
           if (picker.tileIndex != null) assignToCell(picker.tileIndex, camId);
           setPicker({ open: false, tileIndex: null });
         }}
@@ -970,14 +1016,22 @@ export default function Streaming() {
 
 // Compact saved-layouts dropdown (browser-local recall of a single static
 // grid). Applies a preset via the parent's applyWallPreset.
-function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }: any) {
+interface SavedLayoutsMenuProps {
+  layouts: SavedLayoutEntry[];
+  onApply: (entry: SavedLayoutEntry) => void;
+  onDelete: (id: string) => void;
+  onSave?: () => void;
+  canSave: boolean;
+}
+
+function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }: SavedLayoutsMenuProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<any>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDoc = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);

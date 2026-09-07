@@ -7,7 +7,17 @@
 import { Icon } from "@iconify/react";
 import { Spinner } from "@/components/ui/kit";
 import { titleize } from "@/lib/format";
+import type { StatePublic, TransitionPublic } from "../../types";
 import { stateId, stateName } from "./StateMachine";
+
+export interface ManagePanelProps {
+  currentStateName?: string | null;
+  states: StatePublic[];
+  allowed: TransitionPublic[];
+  transitionPending: boolean;
+  sopLoading: boolean;
+  onRunTransition: (t: TransitionPublic) => void;
+}
 
 export default function ManagePanel({
   currentStateName,
@@ -16,7 +26,7 @@ export default function ManagePanel({
   transitionPending,
   sopLoading,
   onRunTransition,
-}: any) {
+}: ManagePanelProps) {
   return (
     <aside className="space-y-4">
       <div className="rounded-xl border border-card-border bg-card p-5">
@@ -38,18 +48,17 @@ export default function ManagePanel({
             <p className="text-sm text-muted">No transitions available (terminal state or SOP not loaded).</p>
           ) : (
             allowed.map((t) => {
-              const to = t.to_state_name || stateName(states.find((s) => stateId(s) === (t.to_state_id ?? t.to_state))) || t.to_state;
-              const formRef = t.form_id ?? t.form_config?.form_id;
-              const hasForm = !!(t.form_config?.fields?.length || formRef);
+              const to = stateName(states.find((s) => stateId(s) === t.to_state_id)) || t.to_state_id;
+              const hasForm = !!t.form_id;
               return (
                 <button
-                  key={t.id ?? t.transition_id ?? t.name}
+                  key={t.transition_id}
                   onClick={() => onRunTransition(t)}
                   disabled={transitionPending}
                   className="w-full flex items-center justify-between gap-2 rounded-lg border border-card-border bg-transparent px-3 py-2.5 text-sm text-foreground hover:bg-hover transition disabled:opacity-50"
                 >
                   <span className="flex flex-col text-left">
-                    <span className="font-medium">{t.name || `→ ${titleize(to)}`}</span>
+                    <span className="font-medium">{t.label || `→ ${titleize(to)}`}</span>
                     <span className="text-xs text-muted">to {titleize(to)}</span>
                   </span>
                   {hasForm && <Icon icon="heroicons-outline:document-text" className="text-base text-muted shrink-0" title="Requires a form" />}

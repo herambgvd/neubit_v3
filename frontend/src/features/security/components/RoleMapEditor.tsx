@@ -3,13 +3,24 @@
 // A tiny key→role map editor (directory group → role, or OIDC claim value → role).
 // Renders the current pairs as removable rows + an add-row. Emits the plain object.
 import { useState } from "react";
+import type { ChangeEvent, KeyboardEvent, ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { FieldLabel } from "@/components/common";
+import type { RoleMap } from "../types";
 
-export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, onChange, disabled }: any) {
+export interface RoleMapEditorProps {
+  label: ReactNode;
+  /** What the left-hand column holds (a directory group, an OIDC claim value). */
+  keyLabel?: string;
+  value?: RoleMap;
+  onChange: (next: RoleMap) => void;
+  disabled?: boolean;
+}
+
+export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, onChange, disabled }: RoleMapEditorProps) {
   const [k, setK] = useState("");
   const [v, setV] = useState("");
-  const entries = Object.entries<any>(value);
+  const entries = Object.entries(value);
 
   const add = () => {
     const key = k.trim();
@@ -19,7 +30,7 @@ export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, o
     setK("");
     setV("");
   };
-  const remove = (key) => {
+  const remove = (key: string) => {
     const next = { ...value };
     delete next[key];
     onChange(next);
@@ -51,15 +62,15 @@ export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, o
           <div className="flex items-center gap-2 border-t border-nb-line p-2">
             <input
               value={k}
-              onChange={(e) => setK(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setK(e.target.value)}
               placeholder={keyLabel}
               className="h-8 flex-1 rounded-md border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-hidden focus:border-nb-teal"
             />
             <Icon icon="heroicons-outline:arrow-right" className="text-xs text-nb-muted" />
             <input
               value={v}
-              onChange={(e) => setV(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && add()}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setV(e.target.value)}
+              onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && add()}
               placeholder="role"
               className="h-8 w-32 rounded-md border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-hidden focus:border-nb-teal"
             />

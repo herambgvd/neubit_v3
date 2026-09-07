@@ -8,8 +8,20 @@
 
 import { Icon } from "@iconify/react";
 
-function Tile({ icon, label, value, tone, active, onClick, hint }: any) {
-  const tones = {
+type TileTone = "red" | "blue" | "amber" | "slate";
+
+interface TileProps {
+  icon: string;
+  label: string;
+  value: number;
+  tone: TileTone;
+  active?: boolean;
+  onClick?: () => void;
+  hint?: string;
+}
+
+function Tile({ icon, label, value, tone, active, onClick, hint }: TileProps) {
+  const tones: Record<TileTone, string> = {
     red: "text-[#fca5a5] bg-[rgba(248,113,113,.14)] border-[rgba(248,113,113,.45)]",
     blue: "text-[#93c5fd] bg-[rgba(96,165,250,.13)] border-[rgba(96,165,250,.4)]",
     amber: "text-[#fcd34d] bg-[rgba(251,191,36,.13)] border-[rgba(251,191,36,.4)]",
@@ -39,6 +51,18 @@ function Tile({ icon, label, value, tone, active, onClick, hint }: any) {
   );
 }
 
+export interface StatHeaderProps {
+  criticalOpen?: number;
+  active?: number;
+  slaBreaching?: number;
+  unassigned?: number;
+  /** The current priority / status filter values ("" = none). */
+  activePriority?: string;
+  activeStatus?: string;
+  onPriority?: (priority: string) => void;
+  onStatus?: (status: string) => void;
+}
+
 export default function StatHeader({
   criticalOpen = 0,
   active = 0,
@@ -48,7 +72,7 @@ export default function StatHeader({
   activeStatus,
   onPriority,
   onStatus,
-}: any) {
+}: StatHeaderProps) {
   return (
     <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
       <Tile

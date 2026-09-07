@@ -3,41 +3,54 @@
 // Create/edit form for a SOP (name, default priority, SLA, description, active).
 // Fills the detail pane when the SopsTab is in create/edit mode.
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button, Checkbox } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
-import { titleize, idOf } from "@/lib/format";
-import { PRIORITIES } from "../../constants";
+import { titleize } from "@/lib/format";
+import { PRIORITIES, isPriority } from "../../constants";
 import { workflow as wfApi } from "../../api";
+import type { CreateSopRequest, EscalationRule, SopPublic } from "../../types";
 import { PaneForm } from "@/components/console";
 
-export default function SopForm({ sop, onCancel, onSaved }: any) {
+type ErrorKey = "name" | "escalation_rules";
+
+export interface SopFormProps {
+  /** The SOP being edited; null creates one. */
+  sop: SopPublic | null;
+  onCancel: () => void;
+  onSaved: (saved: SopPublic) => void;
+}
+
+export default function SopForm({ sop, onCancel, onSaved }: SopFormProps) {
   const isEdit = !!sop;
   const [name, setName] = useState(sop?.name || "");
   const [description, setDescription] = useState(sop?.description || "");
-  const [priority, setPriority] = useState(sop?.default_priority || "medium");
-  const [slaHours, setSlaHours] = useState(sop?.sla_hours ?? "");
+  const [priority, setPriority] = useState<string>(sop?.priority || "medium");
+  const [slaHours, setSlaHours] = useState<string | number>(sop?.sla_hours ?? "");
   const [tagsCsv, setTagsCsv] = useState((sop?.tags || []).join(", "));
   const [eventCsv, setEventCsv] = useState((sop?.trigger_event_types || []).join(", "));
   const [escalationCsv, setEscalationCsv] = useState(JSON.stringify(sop?.escalation_rules || [], null, 2));
   const [isActive, setIsActive] = useState(sop?.is_active !== false);
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Partial<Record<ErrorKey, string>>>({});
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: (body: any) => (isEdit ? wfApi.sops.update(idOf(sop, "id", "sop_id"), body) : wfApi.sops.create(body)),
+  const saving = useMutation({
+    mutationFn: (body: CreateSopRequest) => (sop ? wfApi.sops.update(sop.sop_id, body) : wfApi.sops.create(body)),
     onSuccess: (saved) => { toast.success(isEdit ? "SOP updated" : "SOP created"); onSaved(saved); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!name.trim()) { setErrors({ name: "Name is required" }); return; }
-    let escalation_rules: any[] = [];
+    let escalation_rules: EscalationRule[] = [];
     try {
-      const v = JSON.parse(escalationCsv || "[]");
-      if (Array.isArray(v)) escalation_rules = v;
+      const v: unknown = JSON.parse(escalationCsv || "[]");
+      // Free-form JSON from the textarea; the backend validates each rule's
+      // shape (422 on a mismatch), so only the array-ness is checked here.
+      if (Array.isArray(v)) escalation_rules = v as EscalationRule[];
     } catch {
       setErrors({ escalation_rules: "Escalation rules must be valid JSON" });
       toast.error("Escalation rules must be valid JSON");
@@ -46,7 +59,7 @@ export default function SopForm({ sop, onCancel, onSaved }: any) {
     saving.mutate({
       name: name.trim(),
       description: description.trim() || null,
-      default_priority: priority,
+      priority: isPriority(priority) ? priority : "medium",
       sla_hours: slaHours === "" ? null : Number(slaHours),
       tags: tagsCsv.split(",").map((s) => s.trim()).filter(Boolean),
       trigger_event_types: eventCsv.split(",").map((s) => s.trim()).filter(Boolean),
@@ -57,7 +70,7 @@ export default function SopForm({ sop, onCancel, onSaved }: any) {
 
   return (
     <PaneForm
-      title={isEdit ? `Edit ${sop.name}` : "Create SOP"}
+      title={sop ? `Edit ${sop.name}` : "Create SOP"}
       onSubmit={submit}
       footer={
         <>

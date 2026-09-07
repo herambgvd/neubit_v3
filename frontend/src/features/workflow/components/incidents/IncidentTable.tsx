@@ -9,8 +9,25 @@ import { Icon } from "@iconify/react";
 import { Badge, Card, Spinner } from "@/components/ui/kit";
 import { titleize, fmtRelative } from "@/lib/format";
 import { STATUS_COLOR, PRIORITY_COLOR } from "../../constants";
+import type { InstancePublic, NameMap } from "../../types";
 
-const rowId = (it) => it.id ?? it.instance_id;
+const rowId = (it: InstancePublic): string => it.instance_id;
+
+export interface IncidentTableProps {
+  rows?: InstancePublic[];
+  loading?: boolean;
+  hasFilters?: boolean;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  allSelected?: boolean;
+  onToggleAll?: () => void;
+  sopName?: NameMap;
+  siteName?: NameMap;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  onPage?: (page: number) => void;
+}
 
 export default function IncidentTable({
   rows = [],
@@ -26,7 +43,7 @@ export default function IncidentTable({
   page = 0,
   pageSize = 25,
   onPage,
-}: any) {
+}: IncidentTableProps) {
   const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
   const showingFrom = total === 0 ? 0 : page * pageSize + 1;
   const showingTo = Math.min((page + 1) * pageSize, total || rows.length);
@@ -65,8 +82,8 @@ export default function IncidentTable({
             <tbody>
               {rows.map((it) => {
                 const id = rowId(it);
-                const sid = it.sop_id ?? it.sop?.id;
-                const siteRef = it.site_id ?? it.site?.site_id;
+                const sid = it.sop_id;
+                const siteRef = it.site_id;
                 return (
                   <tr key={id} className="border-b border-card-border hover:bg-hover transition">
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -74,13 +91,13 @@ export default function IncidentTable({
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/events/${id}`} className="flex flex-col">
-                        <span className="font-medium text-foreground">{it.title || it.reference || `Incident ${String(id).slice(0, 8)}`}</span>
+                        <span className="font-medium text-foreground">{it.name || `Incident ${String(id).slice(0, 8)}`}</span>
                         <span className="text-xs text-muted font-mono">{String(id).slice(0, 8)}</span>
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-muted">{it.sop_name || sopName[sid] || "—"}</td>
                     <td className="px-4 py-3">
-                      <span className="text-foreground">{titleize(it.current_state || it.state)}</span>
+                      <span className="text-foreground">{titleize(it.current_state_name || it.current_state)}</span>
                     </td>
                     <td className="px-4 py-3">
                       <Badge color={STATUS_COLOR[it.status] || "neutral"}>{titleize(it.status)}</Badge>
@@ -88,9 +105,9 @@ export default function IncidentTable({
                     <td className="px-4 py-3">
                       <Badge color={PRIORITY_COLOR[it.priority] || "neutral"}>{titleize(it.priority)}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-muted">{it.site_name || siteName[siteRef] || "—"}</td>
+                    <td className="px-4 py-3 text-muted">{(siteRef && siteName[siteRef]) || "—"}</td>
                     <td className="px-4 py-3 text-muted">
-                      {it.assignee_name || it.assignee?.full_name || it.assignee?.email || "Unassigned"}
+                      {it.assignment?.assigned_to_name || it.assignment?.assigned_to || "Unassigned"}
                     </td>
                     <td className="px-4 py-3 text-muted">{fmtRelative(it.updated_at || it.created_at)}</td>
                   </tr>

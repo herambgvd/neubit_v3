@@ -23,12 +23,16 @@ import { toast } from "sonner";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
+import type { SitePublic } from "@/lib/types";
 import { workflow as wfApi } from "./api";
+import type { InstancePublic, NameMap, SopPublic } from "./types";
 import IncidentFilters from "./components/incidents/IncidentFilters";
 import IncidentBulkBar from "./components/incidents/IncidentBulkBar";
+import type { BulkAction } from "./components/incidents/IncidentBulkBar";
 import StatHeader from "./components/incidents/StatHeader";
 import PriorityBar from "./components/incidents/PriorityBar";
 import ViewToggle from "./components/incidents/ViewToggle";
+import type { IncidentView } from "./components/incidents/ViewToggle";
 import AlarmBoard from "./components/incidents/AlarmBoard";
 import IncidentMap from "./components/incidents/IncidentMap";
 import AssignModal from "./components/detail/AssignModal";
@@ -38,11 +42,11 @@ import { incId, incAssignedId, isOpen, isSlaBreaching, NEW_WINDOW_MS } from "./c
 // Re-export domain constants from their canonical home for any legacy consumers.
 export { STATUS_COLOR, PRIORITY_COLOR, INCIDENT_STATUSES, PRIORITIES } from "./constants";
 
-const rowId = (it) => incId(it);
+const rowId = (it: InstancePublic): string => incId(it);
 const PAGE_SIZE = 25;
 
 // Small debounce so the search input doesn't refire the query on every keystroke.
-function useDebounced(value, delay = 300) {
+function useDebounced<T>(value: T, delay = 300): T {
   const [v, setV] = useState(value);
   useEffect(() => {
     const t = setTimeout(() => setV(value), delay);
@@ -60,19 +64,19 @@ export default function WorkflowPage() {
   const [sopId, setSopId] = useState("");
   const [source, setSource] = useState("");
   const [page, setPage] = useState(0);
-  const [view, setView] = useState("board");
+  const [view, setView] = useState<IncidentView>("board");
 
   // Any filter change resets to the first page.
   useEffect(() => {
     setPage(0);
   }, [q, status, priority, siteId, sopId, source]);
 
-  const sopsQ = useQuery<any>({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
-  const sitesQ = useQuery<any>({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }) });
-  const sops = asItems(sopsQ.data);
-  const sitesList = asItems(sitesQ.data);
+  const sopsQ = useQuery({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
+  const sitesQ = useQuery({ queryKey: ["sites-list"], queryFn: () => sitesApi.list({ limit: 200 }) });
+  const sops = useMemo<SopPublic[]>(() => (sopsQ.data ? asItems(sopsQ.data) : []), [sopsQ.data]);
+  const sitesList = useMemo<SitePublic[]>(() => (sitesQ.data ? asItems(sitesQ.data) : []), [sitesQ.data]);
 
-  const instancesQ = useQuery<any>({
+  const instancesQ = useQuery({
     queryKey: ["wf-instances", { q, status, priority, siteId, sopId, source, page }],
     queryFn: () =>
       wfApi.instances.list({
@@ -88,17 +92,17 @@ export default function WorkflowPage() {
     refetchInterval: 60000,
   });
 
-  const instances = asItems(instancesQ.data);
+  const instances = useMemo<InstancePublic[]>(() => (instancesQ.data ? asItems(instancesQ.data) : []), [instancesQ.data]);
   const total = instancesQ.data?.total ?? instances.length;
 
   const qc = useQueryClient();
 
   // NEW tracking: ids first seen via SSE (or freshly-created) glow for a short
   // window. We stamp each id with its first-seen time and prune on read.
-  const [newSeen, setNewSeen] = useState(() => new Map<any, any>()); // id -> ts
-  const stampNew = (id) =>
+  const [newSeen, setNewSeen] = useState(() => new Map<string, number>()); // id -> ts
+  const stampNew = (id: string) =>
     setNewSeen((m) => {
-      const n = new Map<any, any>(m);
+      const n = new Map<string, number>(m);
       n.set(String(id), Date.now());
       return n;
     });
@@ -109,8 +113,8 @@ export default function WorkflowPage() {
   const [connected, setConnected] = useState(false);
   useIncidentStream(
     (evt) => {
-      const id = evt?.data?.instance_id ?? evt?.data?.id;
-      if (id) stampNew(id);
+      const id = evt.data?.instance_id ?? evt.data?.id;
+      if (id) stampNew(String(id));
       qc.invalidateQueries({ queryKey: ["wf-instances"] });
       qc.invalidateQueries({ queryKey: ["wf-stats"] });
     },
@@ -131,7 +135,7 @@ export default function WorkflowPage() {
       setNewSeen((m) => {
         const now = Date.now();
         let changed = false;
-        const n = new Map<any, any>();
+        const n = new Map<string, number>();
         for (const [k, v] of m) {
           if (now - v < NEW_WINDOW_MS) n.set(k, v);
           else changed = true;
@@ -144,7 +148,7 @@ export default function WorkflowPage() {
 
   // Set of ids currently "new" (fresh SSE stamp OR created within the window).
   const newIds = useMemo(() => {
-    const s = new Set<any>();
+    const s = new Set<string>();
     for (const [k, v] of newSeen) if (now - v < NEW_WINDOW_MS) s.add(k);
     for (const it of instances) {
       const c = it.created_at ? new Date(it.created_at).getTime() : 0;
@@ -154,7 +158,7 @@ export default function WorkflowPage() {
   }, [newSeen, instances, now]);
 
   // Stats strip (defensive: if the /stats endpoint isn't live, retry:false hides it).
-  const statsQ = useQuery<any>({
+  const statsQ = useQuery({
     queryKey: ["wf-stats"],
     queryFn: () => wfApi.instances.stats(),
     retry: false,
@@ -192,24 +196,24 @@ export default function WorkflowPage() {
   );
 
   // Bulk selection over the current page.
-  const [selected, setSelected] = useState(() => new Set<any>());
-  const toggle = (id) =>
-    setSelected((s) => { const n = new Set<any>(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const clearSel = () => setSelected(new Set<any>());
+  const [selected, setSelected] = useState(() => new Set<string>());
+  const toggle = (id: string) =>
+    setSelected((s) => { const n = new Set<string>(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const clearSel = () => setSelected(new Set<string>());
   const allSelected = instances.length > 0 && instances.every((it) => selected.has(rowId(it)));
   const toggleAll = () =>
-    setSelected(allSelected ? new Set<any>() : new Set<any>(instances.map(rowId)));
+    setSelected(allSelected ? new Set<string>() : new Set<string>(instances.map(rowId)));
 
-  const bulk = useMutation<any>({
-    mutationFn: async (kind: any) => {
+  const bulk = useMutation({
+    mutationFn: async (kind: BulkAction) => {
       const ids = [...selected];
       const fn = kind === "escalate"
-        ? (id) => wfApi.instances.escalate(id, null)
-        : (id) => wfApi.instances.setStatus(id, kind, null); // 'paused' | 'cancelled'
+        ? (id: string) => wfApi.instances.escalate(id, null)
+        : (id: string) => wfApi.instances.setStatus(id, kind, null); // 'paused' | 'cancelled'
       const results = await Promise.allSettled(ids.map(fn));
       return { total: ids.length, failed: results.filter((r) => r.status === "rejected").length };
     },
-    onSuccess: ({ total: n, failed }: any) => {
+    onSuccess: ({ total: n, failed }) => {
       (failed ? toast.warning : toast.success)(`${n - failed}/${n} updated${failed ? ` · ${failed} not applicable` : ""}`);
       clearSel();
       qc.invalidateQueries({ queryKey: ["wf-instances"] });
@@ -220,8 +224,8 @@ export default function WorkflowPage() {
 
   // Inline quick action: Acknowledge = activate a pending incident (matches
   // STATUS_ACTIONS in IncidentActionBar). Reuses the real status endpoint.
-  const quick = useMutation<any, any, any>({
-    mutationFn: ({ id }: any) => wfApi.instances.setStatus(id, "active", null),
+  const quick = useMutation({
+    mutationFn: ({ id }: { id: string }) => wfApi.instances.setStatus(id, "active", null),
     onSuccess: () => {
       toast.success("Incident acknowledged");
       qc.invalidateQueries({ queryKey: ["wf-instances"] });
@@ -229,19 +233,19 @@ export default function WorkflowPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
-  const onAck = (it) => quick.mutate({ id: rowId(it) });
+  const onAck = (it: InstancePublic) => quick.mutate({ id: rowId(it) });
 
   // Assign quick action opens the shared AssignModal for that incident.
-  const [assignFor, setAssignFor] = useState<any>(null);
-  const onAssign = (it) => setAssignFor(it);
+  const [assignFor, setAssignFor] = useState<InstancePublic | null>(null);
+  const onAssign = (it: InstancePublic) => setAssignFor(it);
 
   const sopName = useMemo(() => {
-    const m: any = {};
-    for (const s of sops) m[s.id ?? s.sop_id] = s.name;
+    const m: NameMap = {};
+    for (const s of sops) m[s.sop_id] = s.name;
     return m;
   }, [sops]);
   const siteName = useMemo(() => {
-    const m: any = {};
+    const m: NameMap = {};
     for (const s of sitesList) m[s.site_id] = s.name;
     return m;
   }, [sitesList]);

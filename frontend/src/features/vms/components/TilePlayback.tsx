@@ -47,7 +47,9 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { vms } from "../api";
+import type { WallClock } from "../hooks/useWallPlayback";
 import { acquireSlot, releaseSlot } from "../lib/connectGate";
+import type { EstateCamera } from "../types";
 
 // ── keeping step WITHOUT seeking ───────────────────────────────────────────
 // A seek is not free on a progressive fMP4: the browser tears down and refills
@@ -149,7 +151,7 @@ const NO_PROGRESS_MS = 14_000;
 // Seconds of the served window, read off the URL the node minted
 // (`?duration=`). The browser reports `Infinity` for the progressive fMP4 it
 // serves, so this is the only reliable length.
-function urlDurationSec(url) {
+function urlDurationSec(url: string | null | undefined): number {
   if (!url) return 0;
   try {
     const u = new URL(url, window.location.origin);
@@ -161,7 +163,7 @@ function urlDurationSec(url) {
 }
 
 // How far ahead of the playhead this element already holds footage.
-function bufferedAhead(v) {
+function bufferedAhead(v: HTMLVideoElement | null): number {
   try {
     const b = v?.buffered;
     if (!b || !b.length) return 0;
@@ -172,7 +174,7 @@ function bufferedAhead(v) {
 }
 
 // The furthest instant this element could seek to without fetching anything new.
-function reachableEnd(v) {
+function reachableEnd(v: HTMLVideoElement | null): number {
   try {
     const sk = v?.seekable;
     const bf = v?.buffered;
@@ -185,28 +187,52 @@ function reachableEnd(v) {
   }
 }
 
+/** The window this tile is playing: the node-minted URL(s) and the instant its t=0 is. */
+interface TileSession {
+  url: string;
+  transcodeUrl: string | null;
+  codec: string | null;
+  startMs: number;
+  durationSec: number;
+}
+
+export interface TilePlaybackProps {
+  camera?: EstateCamera | null;
+  /** The instant every tile in this playback anchors at, and a sequence that
+   *  makes a repeat seek to the same instant a real event. */
+  anchorMs: number | null;
+  anchorSeq: number;
+  /** End of the timeline's window — the far edge a session may run to, subject to
+   *  the chunk ceiling above. */
+  windowToMs: number;
+  playing: boolean;
+  speed?: number;
+  /** The master publishes the shared clock; followers subscribe to it. */
+  master?: boolean;
+  clock?: WallClock | null;
+  muted?: boolean;
+  /** Dense grid tile: smaller type in the status overlays. */
+  compact?: boolean;
+  /** The master calls this when it finds NO footage at all, so the wall can skip
+   *  the gap instead of sitting on a still frame with a clock that has stopped. */
+  onReachedEnd?: (atMs: number) => void;
+}
+
 function TilePlayback({
   camera,
-  // The instant every tile in this playback anchors at, and a sequence that
-  // makes a repeat seek to the same instant a real event.
   anchorMs,
   anchorSeq,
-  // End of the timeline's window — the far edge a session may run to, subject to
-  // the chunk ceiling above.
   windowToMs,
   playing,
   speed = 1,
-  // The master publishes the shared clock; followers subscribe to it.
   master = false,
   clock,
   muted = true,
-  compact = false, // dense grid tile: smaller type in the status overlays
-  // The master calls this when it finds NO footage at all, so the wall can skip
-  // the gap instead of sitting on a still frame with a clock that has stopped.
+  compact = false,
   onReachedEnd,
-}: any) {
-  const videoRef = useRef<any>(null);
-  const [session, setSession] = useState<any>(null); // { url, transcodeUrl, startMs, durationSec }
+}: TilePlaybackProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [session, setSession] = useState<TileSession | null>(null);
   const [transcoded, setTranscoded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [noFootage, setNoFootage] = useState(false);
@@ -232,11 +258,11 @@ function TilePlayback({
   // the single sync effect below — never during render, because a render can be
   // discarded and a ref written from a discarded one would leak that value into
   // listeners that are still live.
-  const sessionRef = useRef<any>(null);
+  const sessionRef = useRef<TileSession | null>(null);
   const loadingRef = useRef(true);
   const transcodedRef = useRef(false);
   const masterRef = useRef(master);
-  const onReachedEndRef = useRef<any>(onReachedEnd);
+  const onReachedEndRef = useRef<((atMs: number) => void) | undefined>(onReachedEnd);
   const lastRemintRef = useRef(0);
   // The window's far edge is read through a ref, NOT captured in `openAt`'s deps.
   // It changes whenever the operator re-frames the timeline (the range ladder,
@@ -273,7 +299,7 @@ function TilePlayback({
   const thinRef = useRef(0);
   // openAt calls itself when it steps over a boundary; through a ref so the
   // callback never has to reference its own binding.
-  const openAtRef = useRef<any>(null);
+  const openAtRef = useRef<((atMs: number | null) => Promise<void>) | null>(null);
   // The last sign of life from the stream, for the progress watchdog.
   const lastProgressRef = useRef(0);
   const markProgress = useCallback(() => {
@@ -292,7 +318,7 @@ function TilePlayback({
   // The element now survives, and the LAST FRAME is painted into a canvas over it
   // until the new stream has data. The operator sees the picture hold for a beat
   // instead of going black.
-  const freezeRef = useRef<any>(null);
+  const freezeRef = useRef<HTMLCanvasElement | null>(null);
   const [frozen, setFrozen] = useState(false);
   const freeze = useCallback(() => {
     const v = videoRef.current;
@@ -314,11 +340,11 @@ function TilePlayback({
   // took a slot and only one was ever given back — the gate leaked until no tile
   // on the page could open anything, which from the outside looks like tiles that
   // simply never load. The claim is now made SYNCHRONOUSLY, before the await.
-  const gateRef = useRef<any>(null); // null | Promise (pending) | "held"
-  const gateTimerRef = useRef<any>(null);
+  const gateRef = useRef<Promise<unknown> | "held" | null>(null); // null | Promise (pending) | "held"
+  const gateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropGate = useCallback(() => {
     const g = gateRef.current;
-    clearTimeout(gateTimerRef.current);
+    if (gateTimerRef.current) clearTimeout(gateTimerRef.current);
     gateTimerRef.current = null;
     if (!g) return;
     gateRef.current = null;
@@ -371,7 +397,7 @@ function TilePlayback({
 
   // ── mint a window at an instant ──────────────────────────────────────────
   const openAt = useCallback(
-    async (atMs) => {
+    async (atMs: number | null) => {
       if (!federated || !nodeId || !realId || atMs == null) return;
       const mint = (mintRef.current += 1);
       openingRef.current = true;
@@ -443,10 +469,12 @@ function TilePlayback({
         thinRef.current = 0;
         openingRef.current = false;
         markProgress();
+        // `playback_transcode_url` / `codec` are on the Go node's answer but not
+        // yet in FederatedPlaybackSession, so they arrive through its open dict.
         setSession({
           url,
-          transcodeUrl: s.playback_transcode_url || null,
-          codec: s.codec || null,
+          transcodeUrl: typeof s.playback_transcode_url === "string" ? s.playback_transcode_url : null,
+          codec: typeof s.codec === "string" ? s.codec : null,
           startMs,
           durationSec: Math.max(1, durationSec),
         });
@@ -752,7 +780,15 @@ function TilePlayback({
   );
 }
 
-function Placeholder({ icon, label, compact, danger = false, onRetry }: any) {
+interface PlaceholderProps {
+  icon: string;
+  label: string;
+  compact?: boolean;
+  danger?: boolean;
+  onRetry?: () => void;
+}
+
+function Placeholder({ icon, label, compact, danger = false, onRetry }: PlaceholderProps) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center">
       <Icon icon={icon} className={`${danger ? "text-[#f87171]/70" : "text-white/25"} ${compact ? "text-lg" : "text-2xl"}`} />

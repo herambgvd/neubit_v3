@@ -4,14 +4,23 @@
 // rail toggle + wall identity (name, live-tile count, tour indicator). Right:
 // layout picker, Tour (play/pause + interval), Saved, mute-all, fullscreen-wall,
 // clear, refresh. Kept dense + icon-first so the wall keeps the viewport.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 
 import LayoutPicker from "./LayoutPicker";
 import { getLayout } from "../videoWall";
 
-function IconBtn({ icon, title, onClick, active = false, spinning = false, danger = false }: any) {
+interface IconBtnProps {
+  icon: string;
+  title: string;
+  onClick?: () => void;
+  active?: boolean;
+  spinning?: boolean;
+  danger?: boolean;
+}
+
+function IconBtn({ icon, title, onClick, active = false, spinning = false, danger = false }: IconBtnProps) {
   return (
     <button
       type="button"
@@ -32,7 +41,10 @@ function IconBtn({ icon, title, onClick, active = false, spinning = false, dange
 
 // The three wall view modes (mockup: GRID / MAP / SPLIT). MAP overlays camera
 // positions on a facility map; SPLIT shows grid + map side by side.
-const VIEW_MODES = [
+/** The wall's view mode — GRID / MAP / SPLIT (see VIEW_MODES). */
+export type WallViewMode = "grid" | "map" | "split";
+
+const VIEW_MODES: { key: WallViewMode; label: string; icon: string }[] = [
   { key: "grid", label: "GRID", icon: "heroicons-outline:squares-2x2" },
   { key: "map", label: "MAP", icon: "heroicons-outline:map" },
   { key: "split", label: "SPLIT", icon: "heroicons-outline:view-columns" },
@@ -41,13 +53,63 @@ const VIEW_MODES = [
 // Global stream-quality profiles (mockup top-bar). Maps to the media profile the
 // wall requests: eco/balanced favour the low-bandwidth sub-stream, high/turbo the
 // full main-stream. "auto" defers to the per-tile grid heuristic (tileProfile).
-export const QUALITY_LEVELS = [
+export interface QualityLevel {
+  key: string;
+  label: string;
+  icon: string;
+  /** The media profile this level requests; null = per-tile heuristic. */
+  profile: "main" | "sub" | null;
+}
+
+export const QUALITY_LEVELS: QualityLevel[] = [
   { key: "auto", label: "Auto", icon: "heroicons-outline:sparkles", profile: null },
   { key: "eco", label: "Eco", icon: "mdi:leaf", profile: "sub" },
   { key: "balanced", label: "Balanced", icon: "heroicons-outline:signal", profile: "sub" },
   { key: "high", label: "High", icon: "heroicons-outline:film", profile: "main" },
   { key: "turbo", label: "Turbo", icon: "heroicons-outline:bolt", profile: "main" },
 ];
+
+/** The wall tour: pages of camera ids cycled through the layout on an interval. */
+export interface WallTourState {
+  active: boolean;
+  pages: string[][];
+  index: number;
+  seconds: number;
+}
+
+export interface WallToolbarProps {
+  railOpen: boolean;
+  onToggleRail: () => void;
+  layoutKey: string;
+  onLayoutChange: (key: string) => void;
+  liveCount: number;
+  onlineCount: number;
+  viewMode?: WallViewMode;
+  onViewMode?: (mode: WallViewMode) => void;
+  quality?: string;
+  onQuality?: (key: string) => void;
+  playoutOpen?: boolean;
+  onTogglePlayout?: () => void;
+  alarmCount?: number;
+  tour?: WallTourState | null;
+  onStartTour?: () => void;
+  onStopTour?: () => void;
+  onTourInterval?: (seconds: number) => void;
+  /** <PatternPickerMenu/> element (server-persisted rotations). */
+  patternControl?: ReactNode;
+  /** <SavedLayoutsMenu/> element (localStorage static layouts). */
+  savedControl?: ReactNode;
+  /** Capture the current wall as a server Camera Group (inline). */
+  onSaveGroup?: () => void;
+  /** Gate: at least one camera on the wall. */
+  canSaveGroup?: boolean;
+  allMuted?: boolean;
+  onToggleMuteAll?: () => void;
+  onFullscreen?: () => void;
+  onClear?: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}
 
 export default function WallToolbar({
   railOpen,
@@ -77,7 +139,7 @@ export default function WallToolbar({
   onClear,
   onRefresh,
   refreshing,
-}: any) {
+}: WallToolbarProps) {
   const layout = getLayout(layoutKey);
   const gridMode = viewMode !== "map"; // grid or split show the layout picker
 
@@ -231,7 +293,7 @@ function Clock() {
 }
 
 // Quality selector — global stream-profile switch (Auto/Eco/Balanced/High/Turbo).
-function QualitySelect({ quality, onQuality }: any) {
+function QualitySelect({ quality, onQuality }: { quality: string; onQuality?: (key: string) => void }) {
   return (
     <div className="hidden overflow-hidden rounded-[9px] border border-[rgba(150,180,245,.22)] lg:inline-flex" title="Stream quality">
       {QUALITY_LEVELS.map((lvl) => (
@@ -254,13 +316,20 @@ function QualitySelect({ quality, onQuality }: any) {
 }
 
 // Tour: split button — play/stop + a popover for the dwell interval.
-function TourControl({ tour, onStart, onStop, onInterval }: any) {
+interface TourControlProps {
+  tour?: WallTourState | null;
+  onStart?: () => void;
+  onStop?: () => void;
+  onInterval?: (seconds: number) => void;
+}
+
+function TourControl({ tour, onStart, onStop, onInterval }: TourControlProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<any>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDoc = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    const onDoc = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node | null) && setOpen(false);
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);

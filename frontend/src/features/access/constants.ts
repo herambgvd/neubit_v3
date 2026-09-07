@@ -2,10 +2,21 @@
 // Ported from neubit_v2 (lib/access-control/brands.js + per-tab STATUS maps),
 // rethemed to neubit_v3's Vercel dark tokens (no light/dark class pairs; single
 // token set that already flips with the theme).
+import type { AccessAuthType, AccessCardholderStatus, HardwareSet } from "./types";
 
 // ── Onboardable brands (brand-picker) ────────────────────────────────
 // Only DDS is available today; the rest render greyed with a "Coming soon" pill.
-export const BRANDS = [
+export interface AccessBrand {
+  id: string;
+  label: string;
+  subtitle: string;
+  icon: string;
+  accent: string;
+  description: string;
+  available: boolean;
+}
+
+export const BRANDS: AccessBrand[] = [
   {
     id: "dds",
     label: "DDS / Amadeus8",
@@ -47,13 +58,20 @@ export const BRANDS = [
 ];
 
 // ── Instance auth methods (onboard/edit) ─────────────────────────────
-export const AUTH_METHODS = [
+export const AUTH_METHODS: { id: AccessAuthType; label: string; icon: string }[] = [
   { id: "basic", label: "Basic (user + API key)", icon: "heroicons-outline:key" },
   { id: "jwt", label: "JWT (user + password)", icon: "heroicons-outline:shield-check" },
 ];
 
 // ── HealthBadge presets (instance.status) ────────────────────────────
-export const HEALTH_PRESETS = {
+export interface HealthPreset {
+  label: string;
+  icon: string;
+  cls: string;
+}
+
+// Keyed by `AccessInstancePublic.status`; `unknown` is the fallback.
+export const HEALTH_PRESETS: Record<string, HealthPreset> = {
   online: { label: "Online", icon: "heroicons-outline:check-circle", cls: "bg-emerald-500/10 text-emerald-500" },
   active: { label: "Online", icon: "heroicons-outline:check-circle", cls: "bg-emerald-500/10 text-emerald-500" },
   offline: { label: "Offline", icon: "heroicons-outline:x-circle", cls: "bg-hover text-muted" },
@@ -63,7 +81,12 @@ export const HEALTH_PRESETS = {
 };
 
 // ── Cardholder status → DDS display label + pill (matching v2) ───────
-export const CARDHOLDER_STATUS = {
+export interface StatusPill {
+  label: string;
+  cls: string;
+}
+
+export const CARDHOLDER_STATUS: Record<AccessCardholderStatus, StatusPill> = {
   active: { label: "Validated", cls: "bg-green-500/10 text-green-500" },
   suspended: { label: "Invalidated", cls: "bg-amber-500/10 text-amber-500" },
   expired: { label: "Archived", cls: "bg-hover text-muted" },
@@ -79,14 +102,15 @@ export const CARDHOLDER_STATUS_FILTERS = [
 ];
 
 // ── Card statuses ────────────────────────────────────────────────────
-export const CARD_STATUSES = ["Free", "Used", "Canceled", "Lost", "Stolen", "Archived"];
+export const CARD_STATUSES: string[] = ["Free", "Used", "Canceled", "Lost", "Stolen", "Archived"];
 
 export const CARD_STATUS_FILTERS = [
   { value: "", label: "All" },
   ...CARD_STATUSES.map((s) => ({ value: s, label: s })),
 ];
 
-export const CARD_STATUS_TONE = {
+// Keyed by `AccessCardStatus`; `Free` is the fallback for anything unmapped.
+export const CARD_STATUS_TONE: Record<string, string> = {
   Free: "bg-hover text-muted",
   Used: "bg-emerald-500/10 text-emerald-500",
   Canceled: "bg-amber-500/10 text-amber-500",
@@ -122,7 +146,7 @@ export const EVENT_CATEGORIES = [
 ];
 
 // ── Hardware sections (read-only mirror sets) ────────────────────────
-export const HARDWARE_SECTIONS = [
+export const HARDWARE_SECTIONS: { key: HardwareSet; label: string }[] = [
   { key: "sites", label: "Sites" },
   { key: "controllers", label: "Controllers" },
   { key: "readers", label: "Readers" },
@@ -132,11 +156,25 @@ export const HARDWARE_SECTIONS = [
   { key: "areas", label: "Areas" },
 ];
 
-export const PURPOSE_MAP = { 1: "Standard", 2: "Lift", 3: "Parking", 4: "Alarm" };
+export const PURPOSE_MAP: Record<number, string> = { 1: "Standard", 2: "Lift", 3: "Parking", 4: "Alarm" };
 
 // Per-section column configs (matching v2's reference layout). `render` keys are
 // handled in HardwareTab (kept data-only here so this file stays JSX-free).
-export const HARDWARE_COLUMNS = {
+export interface HardwareColumn {
+  /** The DTO key (PascalCase, as the proxy normalises it). */
+  key: string;
+  header: string;
+  mono?: boolean;
+  /** Rendered by HardwareTab's `renderPill`. */
+  pill?: "onoff" | "purpose" | "bypass";
+  /** `pill: "onoff"` labels. */
+  on?: string;
+  off?: string;
+  /** Cut string values to this many characters. */
+  truncate?: number;
+}
+
+export const HARDWARE_COLUMNS: Record<HardwareSet, HardwareColumn[]> = {
   sites: [
     { key: "Name", header: "Name" },
     { key: "Description", header: "Description" },

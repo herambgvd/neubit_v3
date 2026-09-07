@@ -8,13 +8,25 @@ import { Icon } from "@iconify/react";
 
 import { evaluateConditions, coerceValue, stringifyValue, OP_LABEL } from "../../lib/matcher";
 
+/** One editor row of the trigger form: the dotted path, the operator, and the
+ *  value as typed (coerced to the wire type at submit/preview time). */
+export interface ConditionRow {
+  path: string;
+  op: string;
+  value: string;
+}
+
 const SAMPLE = JSON.stringify(
   { device_id: "cam-42", device: { zone_type: "secure" }, priority: 4 },
   null,
   2,
 );
 
-export default function ConditionsPreview({ conditions }: any) {
+export interface ConditionsPreviewProps {
+  conditions: ConditionRow[];
+}
+
+export default function ConditionsPreview({ conditions }: ConditionsPreviewProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(SAMPLE);
 
@@ -27,12 +39,12 @@ export default function ConditionsPreview({ conditions }: any) {
     [conditions],
   );
 
-  const parsed = useMemo(() => {
+  const parsed = useMemo((): { env: unknown; err: string | null } => {
     if (!text.trim()) return { env: {}, err: null };
     try {
       return { env: JSON.parse(text), err: null };
     } catch (e) {
-      return { env: null, err: e.message || "Invalid JSON" };
+      return { env: null, err: (e instanceof Error && e.message) || "Invalid JSON" };
     }
   }, [text]);
 

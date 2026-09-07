@@ -4,6 +4,7 @@
 // shared Field; the body is a bespoke monospace textarea with clickable
 // {{variable}} insert chips.
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -12,13 +13,23 @@ import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { titleize } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import type { CreateTemplateRequest, TemplatePublic } from "../../types";
 import { PaneForm } from "@/components/console";
 
 // Notification channels a template can target (mirrors backend channel_type).
 const CHANNEL_TYPES = ["email", "webhook", "sms", "whatsapp", "mobile_push"];
 const TEMPLATE_VARS = ["instance_name", "sop_name", "from_state", "to_state", "priority", "site_id", "event_type"];
 
-export default function TemplateForm({ template, onCancel, onSaved }: any) {
+type ErrorKey = "name" | "body";
+
+export interface TemplateFormProps {
+  /** The template being edited; null creates one. */
+  template: TemplatePublic | null;
+  onCancel: () => void;
+  onSaved: () => void;
+}
+
+export default function TemplateForm({ template, onCancel, onSaved }: TemplateFormProps) {
   const isEdit = !!template;
   const [name, setName] = useState(template?.name || "");
   const [channelType, setChannelType] = useState(template?.channel_type || "email");
@@ -27,23 +38,24 @@ export default function TemplateForm({ template, onCancel, onSaved }: any) {
   const [body, setBody] = useState(template?.body || "");
   const [providerRef, setProviderRef] = useState(template?.provider_template_ref || "");
   const [isActive, setIsActive] = useState(template?.is_active !== false);
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Partial<Record<ErrorKey, string>>>({});
   const showSubject = channelType === "email";
   const showProviderRef = channelType === "whatsapp";
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: (payload: any) => (isEdit ? wfApi.notifications.templates.update(template.template_id, payload) : wfApi.notifications.templates.create(payload)),
+  const saving = useMutation({
+    mutationFn: (payload: CreateTemplateRequest) =>
+      (template ? wfApi.notifications.templates.update(template.template_id, payload) : wfApi.notifications.templates.create(payload)),
     onSuccess: () => { toast.success(isEdit ? "Template updated" : "Template created"); onSaved(); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: Partial<Record<ErrorKey, string>> = {};
     if (!name.trim()) next.name = "Name is required";
     if (!body.trim()) next.body = "Body is required";
     if (Object.keys(next).length) { setErrors(next); return; }
-    const payload: any = {
+    const payload: CreateTemplateRequest = {
       name: name.trim(),
       description: description.trim() || null,
       subject: showSubject ? (subject.trim() || null) : null,
@@ -57,7 +69,7 @@ export default function TemplateForm({ template, onCancel, onSaved }: any) {
 
   return (
     <PaneForm
-      title={isEdit ? `Edit ${template.name}` : "New template"}
+      title={template ? `Edit ${template.name}` : "New template"}
       onSubmit={submit}
       footer={
         <>

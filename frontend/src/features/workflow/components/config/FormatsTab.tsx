@@ -6,10 +6,12 @@
 // alert_code returns 409 → surfaced as a friendly toast. v2 master-detail layout.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog, Badge } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import {
   ConsoleGrid,
   ConsolePanel,
@@ -21,27 +23,30 @@ import {
   EmptyPane,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
-import { asItems, idOf, titleize } from "@/lib/format";
+import { asItems, titleize } from "@/lib/format";
 import { PRIORITY_COLOR } from "../../constants";
 import { workflow as wfApi } from "../../api";
+import type { AlertFormatPublic, CreateAlertFormatRequest, SopPublic } from "../../types";
 import FormatForm from "./FormatForm";
 import FormatDetail from "./FormatDetail";
 
-const fmtId = (f) => idOf(f, "format_id", "id");
+const fmtId = (f: AlertFormatPublic): string => f.format_id;
+
+type Mode = "view" | "create" | "edit";
 
 export default function FormatsTab() {
   const qc = useQueryClient();
-  const q = useQuery<any>({ queryKey: ["wf-alert-formats"], queryFn: () => wfApi.alertFormats.list({ limit: 200 }) });
-  const sopsQ = useQuery<any>({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
-  const formats = asItems(q.data);
-  const sops = asItems(sopsQ.data);
+  const q = useQuery({ queryKey: ["wf-alert-formats"], queryFn: () => wfApi.alertFormats.list({ limit: 200 }) });
+  const sopsQ = useQuery({ queryKey: ["wf-sops"], queryFn: () => wfApi.sops.list({ limit: 200 }) });
+  const formats = useMemo<AlertFormatPublic[]>(() => (q.data ? asItems(q.data) : []), [q.data]);
+  const sops = useMemo<SopPublic[]>(() => (sopsQ.data ? asItems(sopsQ.data) : []), [sopsQ.data]);
 
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [mode, setMode] = useState("view"); // view | create | edit
-  const [confirm, setConfirm] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("view"); // view | create | edit
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [search, setSearch] = useState("");
 
-  const sopName = (sid) => sops.find((s) => idOf(s, "id", "sop_id") === sid)?.name || null;
+  const sopName = (sid: string | null): string | null => sops.find((s) => s.sop_id === sid)?.name || null;
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -60,23 +65,24 @@ export default function FormatsTab() {
   const selected = useMemo(() => (mode === "create" ? null : formats.find((f) => fmtId(f) === effectiveId) || null), [formats, effectiveId, mode]);
 
 
-  function onSaveError(e) {
-    if (e?.response?.status === 409) toast.error("That alert code is already in use — pick a unique code.");
+  function onSaveError(e: unknown) {
+    if (isAxiosError(e) && e.response?.status === 409) toast.error("That alert code is already in use — pick a unique code.");
     else toast.error(apiError(e));
   }
 
-  const save = useMutation<any, any, any>({
-    mutationFn: ({ id, body }: any) => (id ? wfApi.alertFormats.update(id, body) : wfApi.alertFormats.create(body)),
+  const save = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: CreateAlertFormatRequest }) =>
+      (id ? wfApi.alertFormats.update(id, body) : wfApi.alertFormats.create(body)),
     onSuccess: (saved) => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["wf-alert-formats"] }); const id = fmtId(saved); if (id) setSelectedId(id); setMode("view"); },
     onError: onSaveError,
   });
   const remove = useMutation({
-    mutationFn: (id: any) => wfApi.alertFormats.remove(id),
+    mutationFn: (id: string) => wfApi.alertFormats.remove(id),
     onSuccess: () => { toast.success("Format removed"); qc.invalidateQueries({ queryKey: ["wf-alert-formats"] }); setSelectedId(null); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function askDelete(f) {
+  function askDelete(f: AlertFormatPublic) {
     setConfirm({ title: "Delete format?", message: `Delete "${f.name}" (${f.alert_code})?`, confirmLabel: "Delete", onConfirm: () => { remove.mutate(fmtId(f)); setConfirm(null); } });
   }
 
@@ -128,12 +134,12 @@ export default function FormatsTab() {
         <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
           <FormatForm
-              key={mode === "edit" ? fmtId(selected) : "new"}
+              key={mode === "edit" ? selected?.format_id : "new"}
               format={mode === "edit" ? selected : null}
               sops={sops}
               pending={save.isPending}
               onCancel={() => setMode("view")}
-              onSubmit={(body) => save.mutate({ id: mode === "edit" ? fmtId(selected) : null, body })}
+              onSubmit={(body) => save.mutate({ id: mode === "edit" ? (selected?.format_id ?? null) : null, body })}
             />
         ) : !selected ? (
           <EmptyPane icon="heroicons-outline:swatch" title="No format selected" subtitle="Pick one from the list, or click ＋ NEW FORMAT to create one." />

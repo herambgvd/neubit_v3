@@ -4,12 +4,26 @@
 // cancellation badges, and a right-edge connect handle. World-space positioned
 // (the parent's transform maps it to screen). All interactions are delegated up
 // via the pointer handlers.
+import type { PointerEvent } from "react";
 import { Icon } from "@iconify/react";
 import { NODE_W, NODE_H, DEFAULT_COLOR } from "./lib/canvasGeometry";
+import type { StatePublic } from "../types";
 
-export default function CanvasNode({ state, selected, onPointerDown, onPointerUp, onHandleDown, onEdit }: any) {
+export interface CanvasNodeProps {
+  state: StatePublic;
+  selected: boolean;
+  onPointerDown: (e: PointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (e: PointerEvent<HTMLDivElement>) => void;
+  onHandleDown: (e: PointerEvent<HTMLButtonElement>) => void;
+  onEdit: () => void;
+}
+
+/** [label, icon, colour] */
+type Badge = [string, string, string];
+
+export default function CanvasNode({ state, selected, onPointerDown, onPointerUp, onHandleDown, onEdit }: CanvasNodeProps) {
   const color = state.color || DEFAULT_COLOR;
-  const badges: any[] = [];
+  const badges: Badge[] = [];
   if (state.is_initial) badges.push(["Initial", "heroicons-solid:play", "#10b981"]);
   if (state.is_terminal) badges.push(["Terminal", "heroicons-solid:stop", "#64748b"]);
   if (state.is_cancellation) badges.push(["Cancel", "heroicons-solid:x-circle", "#ef4444"]);

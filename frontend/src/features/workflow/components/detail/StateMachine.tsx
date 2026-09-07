@@ -8,27 +8,31 @@
 // position_x/y / is_initial / is_terminal). The editable canvas lives in sop-designer/.
 import { useMemo } from "react";
 import { Icon } from "@iconify/react";
+import type { StatePublic, TransitionPublic } from "../../types";
 
-// Normalise id/name accessors across possible backend field names.
-export const stateId = (s) => s?.id ?? s?.state_id;
-export const stateName = (s) => s?.name ?? s?.state_name;
+// Id/name accessors (StatePublic — sops/schemas.py); tolerate a missing state.
+export const stateId = (s: StatePublic | undefined): string | undefined => s?.state_id;
+export const stateName = (s: StatePublic | undefined): string | undefined => s?.name;
 
 // Box + spacing geometry for the diagram.
 const BOX_W = 180;
 const BOX_H = 60;
 const PAD = 24;
 
+/** A state with its resolved diagram position. */
+type Placed = StatePublic & { _x: number; _y: number };
+
 // Lay states out. Prefer stored designer positions (position_x/position_y); fall
 // back to an evenly-spaced vertical chain when no positions are present.
-function useLayout(states) {
+function useLayout(states: StatePublic[]) {
   return useMemo(() => {
-    if (!states.length) return { placed: [], byId: new Map<any, any>(), width: 0, height: 0 };
+    if (!states.length) return { placed: [] as Placed[], byId: new Map<string, Placed>(), width: 0, height: 0 };
 
     const hasPositions = states.some(
       (s) => Number.isFinite(s.position_x) || Number.isFinite(s.position_y),
     );
 
-    let placed;
+    let placed: Placed[];
     if (hasPositions) {
       const xs = states.map((s) => s.position_x ?? 0);
       const ys = states.map((s) => s.position_y ?? 0);
@@ -50,8 +54,8 @@ function useLayout(states) {
     const width = Math.max(...placed.map((s) => s._x + BOX_W)) + PAD;
     const height = Math.max(...placed.map((s) => s._y + BOX_H)) + PAD;
 
-    const byId = new Map<any, any>();
-    placed.forEach((s) => byId.set(stateId(s), s));
+    const byId = new Map<string, Placed>();
+    placed.forEach((s) => byId.set(s.state_id, s));
 
     return { placed, byId, width, height };
   }, [states]);
@@ -59,7 +63,7 @@ function useLayout(states) {
 
 // Cubic-bezier connector from box `a` to box `b`, exiting the bottom / entering the
 // top so arrows read as directional (mirrors sop-designer edgePath intent).
-function connector(a, b) {
+function connector(a: Placed, b: Placed): string {
   const x1 = a._x + BOX_W / 2;
   const y1 = a._y + BOX_H;
   const x2 = b._x + BOX_W / 2;
@@ -68,9 +72,16 @@ function connector(a, b) {
   return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
 }
 
-export default function StateMachine({ states, transitions, currentStateId, currentStateName }: any) {
+export interface StateMachineProps {
+  states: StatePublic[];
+  transitions: TransitionPublic[];
+  currentStateId?: string | null;
+  currentStateName?: string | null;
+}
+
+export default function StateMachine({ states, transitions, currentStateId, currentStateName }: StateMachineProps) {
   const layout = useLayout(states);
-  const isCurrent = (s) =>
+  const isCurrent = (s: StatePublic): boolean =>
     stateId(s) === currentStateId || stateName(s) === currentStateName;
 
   return (
@@ -108,15 +119,13 @@ export default function StateMachine({ states, transitions, currentStateId, curr
 
               {/* Directional arrows following the SOP transitions. */}
               <g className="text-card-border">
-                {transitions.map((t, i) => {
-                  const from = t.from_state_id ?? t.from_state;
-                  const to = t.to_state_id ?? t.to_state;
-                  const a = layout.byId.get(from);
-                  const b = layout.byId.get(to);
+                {transitions.map((t) => {
+                  const a = layout.byId.get(t.from_state_id);
+                  const b = layout.byId.get(t.to_state_id);
                   if (!a || !b || a === b) return null;
                   return (
                     <path
-                      key={t.transition_id ?? t.id ?? i}
+                      key={t.transition_id}
                       d={connector(a, b)}
                       fill="none"
                       stroke="currentColor"

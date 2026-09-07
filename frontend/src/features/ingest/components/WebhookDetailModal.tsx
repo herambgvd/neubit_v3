@@ -4,12 +4,14 @@
 // Test (dry-run) and Recent events. Custom modal shell (tabbed + scroll body +
 // sticky footer) with the shared <TabBar> for the tabs.
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { InfoCell } from "@/components/console";
 import { Button, ConfirmDialog, Overlay } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import { TabBar, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
@@ -18,31 +20,44 @@ import { receiverUrl, copyToClipboard } from "../lib/receiverUrl";
 import WebhookTestPanel from "./WebhookTestPanel";
 import WebhookEventsPanel from "./WebhookEventsPanel";
 import RulesPanel from "./RulesPanel";
+import type { JsonObject, WebhookPublic } from "../types";
+import type { TabItem } from "@/components/common/TabBar";
 
-const DETAIL_TABS = [
+type DetailTabKey = "overview" | "rules" | "test" | "events";
+
+const DETAIL_TABS: TabItem<DetailTabKey>[] = [
   { key: "overview", label: "Overview", icon: "heroicons-outline:information-circle" },
   { key: "rules", label: "Rules", icon: "heroicons-outline:funnel" },
   { key: "test", label: "Test", icon: "heroicons-outline:beaker" },
   { key: "events", label: "Recent events", icon: "heroicons-outline:queue-list" },
 ];
 
-export default function WebhookDetailModal({ webhook, onClose, onChanged }: any) {
-  const [tab, setTab] = useState("overview");
-  const [token, setToken] = useState(webhook.token); // updates live after a rotate
-  const [confirm, setConfirm] = useState<any>(null);
-  const hookId = webhook.id ?? webhook.webhook_id;
+export interface WebhookDetailModalProps {
+  webhook: WebhookPublic;
+  onClose: () => void;
+  /** Called after a rotate, so the list refetches. */
+  onChanged?: () => void;
+}
 
-  const rotate = useMutation<any>({
+export default function WebhookDetailModal({ webhook, onClose, onChanged }: WebhookDetailModalProps) {
+  const [tab, setTab] = useState<DetailTabKey>("overview");
+  // The receiver URL, refreshed live after a rotate. It is built from the slug /
+  // ingest_url the backend returns — there has never been a `token` field.
+  const [ingestUrl, setIngestUrl] = useState(webhook.ingest_url);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const hookId = webhook.id;
+
+  const rotate = useMutation({
     mutationFn: () => ingestApi.webhooks.rotateSecret(hookId),
     onSuccess: (res) => {
-      toast.success("Receiver token rotated");
-      if (res?.token) setToken(res.token);
+      toast.success("Receiver secret rotated");
+      if (res?.ingest_url) setIngestUrl(res.ingest_url);
       onChanged?.();
     },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const url = receiverUrl(token);
+  const url = receiverUrl(webhook.slug, ingestUrl);
 
   return (
     <Overlay onClose={onClose}>
@@ -77,8 +92,8 @@ export default function WebhookDetailModal({ webhook, onClose, onChanged }: any)
                     icon="heroicons-outline:arrow-path"
                     disabled={rotate.isPending}
                     onClick={() => setConfirm({
-                      title: "Rotate receiver token?",
-                      message: "The current URL will stop working immediately. Any integrations must be updated to the new URL.",
+                      title: "Rotate receiver secret?",
+                      message: "The current auth secret will stop working immediately. Any integrations must be updated with the new secret.",
                       confirmLabel: "Rotate",
                       onConfirm: () => { rotate.mutate(); setConfirm(null); },
                     })}
@@ -118,7 +133,14 @@ export default function WebhookDetailModal({ webhook, onClose, onChanged }: any)
 // A pretty-printed JSON value, or an explanatory empty state. The overview used to
 // render a bare "—" inside a full-height code box, which read as a broken field
 // rather than "nothing configured".
-function JsonBlock({ label, value, empty }: any) {
+interface JsonBlockProps {
+  label: ReactNode;
+  /** A transform map or a JSON-Schema document — dynamic by nature. */
+  value?: JsonObject | null;
+  empty: ReactNode;
+}
+
+function JsonBlock({ label, value, empty }: JsonBlockProps) {
   const has = value && Object.keys(value).length > 0;
   return (
     <div>

@@ -12,13 +12,37 @@ import { Icon } from "@iconify/react";
 import { Button, Modal } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
+import { asItems } from "@/lib/format";
+import type { NvrPublic } from "@/lib/types";
 import { vms } from "../api";
 import { CAMERA_BRANDS } from "../constants";
+import type { NvrCreate } from "../types";
 
-export default function AddNvrModal({ nvr, onClose, onSuccess }: any) {
+/** The flat form (port / channel_count bind to text inputs; password is
+ *  write-only — blank on edit keeps the stored one). */
+interface NvrForm {
+  name: string;
+  brand: string;
+  host: string;
+  port: number | string;
+  username: string;
+  password: string;
+  channel_count: number | string;
+  is_enabled: boolean;
+  has_credentials?: boolean;
+}
+
+export interface AddNvrModalProps {
+  /** Present = edit this NVR; absent = onboard a new one. */
+  nvr?: NvrPublic | null;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export default function AddNvrModal({ nvr, onClose, onSuccess }: AddNvrModalProps) {
   const editing = !!nvr;
-  const [form, setForm] = useState(
-    editing
+  const [form, setForm] = useState<NvrForm>(
+    nvr
       ? {
           name: nvr.name || "",
           brand: nvr.brand || "onvif",
@@ -32,14 +56,14 @@ export default function AddNvrModal({ nvr, onClose, onSuccess }: any) {
         }
       : { name: "", brand: "onvif", host: "", port: 80, username: "admin", password: "", channel_count: 0, is_enabled: true },
   );
-  const [errors, setErrors] = useState<any>({});
-  const [probe, setProbe] = useState<any>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [probe, setProbe] = useState<{ ok: boolean; count?: number } | null>(null);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<NvrForm>) => setForm((f) => ({ ...f, ...patch }));
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => {
-      const body: any = {
+      const body: NvrCreate = {
         name: form.name.trim(),
         brand: form.brand,
         host: form.host.trim(),
@@ -49,13 +73,13 @@ export default function AddNvrModal({ nvr, onClose, onSuccess }: any) {
         is_enabled: !!form.is_enabled,
       };
       if (form.password) body.password = form.password;
-      return editing ? vms.nvrs.update(nvr.id, body) : vms.nvrs.create(body);
+      return nvr ? vms.nvrs.update(nvr.id, body) : vms.nvrs.create(body);
     },
     onSuccess: () => { toast.success(editing ? "NVR updated" : "NVR onboarded"); onSuccess?.(); },
     onError: (e) => toast.error(apiError(e, "Save failed")),
   });
 
-  const test = useMutation<any>({
+  const test = useMutation({
     mutationFn: () =>
       vms.nvrs.probeChannels({
         host: form.host,
@@ -65,7 +89,7 @@ export default function AddNvrModal({ nvr, onClose, onSuccess }: any) {
         brand: form.brand,
       }),
     onSuccess: (res) => {
-      const items = Array.isArray(res) ? res : res?.items || [];
+      const items = asItems(res);
       setProbe({ ok: true, count: items.length });
       if (items.length) set({ channel_count: items.length });
       toast.success(`Reachable — ${items.length} channel(s)`);
@@ -74,7 +98,7 @@ export default function AddNvrModal({ nvr, onClose, onSuccess }: any) {
   });
 
   const submit = () => {
-    const errs: any = {};
+    const errs: Record<string, string> = {};
     if (!form.name.trim() || form.name.trim().length < 2) errs.name = "Required (min 2 chars)";
     if (!form.host.trim()) errs.host = "Required";
     setErrors(errs);
@@ -86,7 +110,7 @@ export default function AddNvrModal({ nvr, onClose, onSuccess }: any) {
     <Modal
       open
       onClose={onClose}
-      title={editing ? `Edit NVR — ${nvr.name}` : "Onboard NVR"}
+      title={nvr ? `Edit NVR — ${nvr.name}` : "Onboard NVR"}
       wide
       footer={
         <>

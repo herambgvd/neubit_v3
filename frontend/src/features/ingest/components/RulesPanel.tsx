@@ -13,32 +13,39 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { Button, ConfirmDialog, Spinner, Badge } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
 import RuleFormModal from "./RuleFormModal";
 import { RowAction } from "@/components/console";
+import type { EventRulePublic, MatchCondition } from "../types";
 
-export default function RulesPanel({ webhookId }: any) {
+export interface RulesPanelProps {
+  webhookId: string;
+}
+
+export default function RulesPanel({ webhookId }: RulesPanelProps) {
   const qc = useQueryClient();
   const key = ["ingest-event-rules", webhookId];
-  const q = useQuery<any>({ queryKey: key, queryFn: () => ingestApi.eventRules.list(webhookId) });
+  const q = useQuery({ queryKey: key, queryFn: () => ingestApi.eventRules.list(webhookId) });
   const rules = asItems(q.data); // backend returns priority ASC
 
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [editing, setEditing] = useState<EventRulePublic | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: key });
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => ingestApi.eventRules.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => ingestApi.eventRules.remove(id),
     onSuccess: () => { toast.success("Rule deleted"); invalidate(); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const toggle = useMutation<any, any, any>({
-    mutationFn: ({ id, enabled }: any) => ingestApi.eventRules.update(id, { enabled }),
+  const toggle = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      ingestApi.eventRules.update(id, { enabled }),
     onSuccess: invalidate,
     onError: (e) => toast.error(apiError(e)),
   });
@@ -80,7 +87,7 @@ export default function RulesPanel({ webhookId }: any) {
               key={r.id}
               rule={r}
               onEdit={() => { setEditing(r); setFormOpen(true); }}
-              onToggle={(enabled) => toggle.mutate({ id: r.id, enabled })}
+              onToggle={(enabled: boolean) => toggle.mutate({ id: r.id, enabled })}
               onDelete={() =>
                 setConfirm({
                   title: "Delete rule?",
@@ -108,7 +115,14 @@ export default function RulesPanel({ webhookId }: any) {
   );
 }
 
-function RuleRow({ rule, onEdit, onToggle, onDelete }: any) {
+interface RuleRowProps {
+  rule: EventRulePublic;
+  onEdit: () => void;
+  onToggle: (enabled: boolean) => void;
+  onDelete: () => void;
+}
+
+function RuleRow({ rule, onEdit, onToggle, onDelete }: RuleRowProps) {
   const condCount = (rule.match_conditions || []).length;
   const summary = summarizeConditions(rule.match_conditions);
   return (
@@ -141,7 +155,9 @@ function RuleRow({ rule, onEdit, onToggle, onDelete }: any) {
 }
 
 // One-line condition summary for the list (ported from v2).
-function summarizeConditions(conds) {
+function summarizeConditions(
+  conds: MatchCondition[] | null | undefined,
+): { short: string; full: string } {
   if (!conds || conds.length === 0) {
     return { short: "(matches anything)", full: "no conditions" };
   }
@@ -156,7 +172,7 @@ function summarizeConditions(conds) {
     : first.op;
   const short = `${first.path} ${opLabel}${rest > 0 ? ` (+${rest} more)` : ""}`;
   const full = conds
-    .map((c) => `${c.path} ${c.op}${c.value !== undefined && c.value !== null ? " " + JSON.stringify(c.value) : ""}`)
+    .map((c: MatchCondition) => `${c.path} ${c.op}${c.value !== undefined && c.value !== null ? " " + JSON.stringify(c.value) : ""}`)
     .join(" AND ");
   return { short, full };
 }

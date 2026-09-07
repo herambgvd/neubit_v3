@@ -1,33 +1,43 @@
 "use client";
 
 // Modal that collects a transition's form_data before applying it. Resolves the
-// field list from the transition's inline form_config or a referenced form
-// definition, validates required fields, then hands the values to onSubmit.
+// field list from the transition's referenced form definition, validates
+// required fields, then hands the values to onSubmit.
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { Icon } from "@iconify/react";
 import { Button, Overlay } from "@/components/ui/kit";
 import { titleize } from "@/lib/format";
+import type { FormFieldValue, FormPublic, FormValues, StatePublic, TransitionPublic } from "../../types";
 import { stateId, stateName } from "./StateMachine";
 import FormFieldInput, { fieldKey, fieldRequired } from "./FormFieldInput";
 
-export default function TransitionFormModal({ transition, states, formList, pending, onCancel, onSubmit }: any) {
-  // Resolve the field list: inline form_config, or a referenced form definition.
-  const formRef = transition.form_id ?? transition.form_config?.form_id;
-  const referenced = formList.find((f) => (f.id ?? f.form_id) === formRef);
-  const fields =
-    transition.form_config?.fields || referenced?.fields || [];
+export interface TransitionFormModalProps {
+  transition: TransitionPublic;
+  states: StatePublic[];
+  formList: FormPublic[];
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (values: FormValues) => void;
+}
 
-  const [values, setValues] = useState<any>({});
-  const [errors, setErrors] = useState<any>({});
+export default function TransitionFormModal({ transition, states, formList, pending, onCancel, onSubmit }: TransitionFormModalProps) {
+  // Resolve the field list from the referenced form definition.
+  const formRef = transition.form_id;
+  const referenced = formList.find((f) => f.form_id === formRef);
+  const fields = referenced?.fields || [];
 
-  function setField(key, v) {
+  const [values, setValues] = useState<FormValues>({});
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+
+  function setField(key: string, v: FormFieldValue) {
     setValues((p) => ({ ...p, [key]: v }));
     if (errors[key]) setErrors((p) => ({ ...p, [key]: undefined }));
   }
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: Record<string, string> = {};
     for (const f of fields) {
       const k = fieldKey(f);
       if (fieldRequired(f) && (values[k] === undefined || values[k] === "" || values[k] === null)) {
@@ -41,17 +51,14 @@ export default function TransitionFormModal({ transition, states, formList, pend
     onSubmit(values);
   }
 
-  const toName =
-    transition.to_state_name ||
-    stateName(states.find((s) => stateId(s) === (transition.to_state_id ?? transition.to_state))) ||
-    transition.to_state;
+  const toName = stateName(states.find((s) => stateId(s) === transition.to_state_id));
 
   return (
     <Overlay onClose={onCancel}>
       <div className="relative w-full max-w-lg rounded-xl bg-card border border-card-border shadow-2xl animate-modal-in flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between border-b border-card-border px-5 py-4">
           <div>
-            <h3 className="text-base font-semibold text-foreground">{transition.name || "Apply transition"}</h3>
+            <h3 className="text-base font-semibold text-foreground">{transition.label || "Apply transition"}</h3>
             <p className="text-xs text-muted mt-0.5">Move to {titleize(toName)}</p>
           </div>
           <button onClick={onCancel} className="text-muted hover:text-foreground transition">

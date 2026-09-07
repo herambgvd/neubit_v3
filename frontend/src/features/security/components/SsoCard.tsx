@@ -5,6 +5,7 @@
 // client_secret is write-only. Shows the login + callback (redirect) URLs the IdP
 // app registration needs.
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -15,10 +16,19 @@ import { apiError } from "@/lib/api";
 import { security } from "../api";
 import SecuritySection from "./SecuritySection";
 import RoleMapEditor from "./RoleMapEditor";
+import type { RoleMap, SsoConfigIn } from "../types";
+
+/** The editable half of the SSO config. The client secret is held apart (it is
+ *  write-only), and the claim→role map has its own editor. The optional strings
+ *  are held as "" while editing and become null in the body. */
+type SsoForm = Omit<
+  SsoConfigIn,
+  "client_secret" | "group_role_map" | "redirect_uri" | "groups_claim" | "default_role"
+> & { redirect_uri: string; groups_claim: string; default_role: string };
 
 const PLACEHOLDER = "•••••••• (unchanged)";
 
-const EMPTY = {
+const EMPTY: SsoForm = {
   provider: "oidc",
   enabled: true,
   issuer: "",
@@ -32,13 +42,17 @@ const EMPTY = {
   auto_provision: true,
 };
 
-export default function SsoCard({ canManage }: any) {
-  const qc = useQueryClient();
-  const q = useQuery<any>({ queryKey: ["security-sso"], queryFn: () => security.sso.get() });
+export interface SsoCardProps {
+  canManage: boolean;
+}
 
-  const [form, setForm] = useState(EMPTY);
+export default function SsoCard({ canManage }: SsoCardProps) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["security-sso"], queryFn: () => security.sso.get() });
+
+  const [form, setForm] = useState<SsoForm>(EMPTY);
   const [secret, setSecret] = useState("");
-  const [groupRoleMap, setGroupRoleMap] = useState<any>({});
+  const [groupRoleMap, setGroupRoleMap] = useState<RoleMap>({});
   const [hasSecret, setHasSecret] = useState(false);
   const configured = !!q.data;
 
@@ -68,15 +82,15 @@ export default function SsoCard({ canManage }: any) {
     setSecret("");
   }, [q.data]);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<SsoForm>) => setForm((f) => ({ ...f, ...patch }));
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const loginUrl = `${origin}/api/v1/auth/sso/login`;
   const callbackUrl = form.redirect_uri || `${origin}/login/sso/callback`;
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => {
-      const body: any = {
+      const body: SsoConfigIn = {
         ...form,
         redirect_uri: form.redirect_uri || null,
         groups_claim: form.groups_claim || null,
@@ -94,7 +108,7 @@ export default function SsoCard({ canManage }: any) {
     onError: (e) => toast.error(apiError(e, "Save failed")),
   });
 
-  const remove = useMutation<any>({
+  const remove = useMutation({
     mutationFn: () => security.sso.remove(),
     onSuccess: () => {
       toast.success("SSO removed");
@@ -199,7 +213,12 @@ export default function SsoCard({ canManage }: any) {
   );
 }
 
-function UrlRow({ label, value }: any) {
+interface UrlRowProps {
+  label: ReactNode;
+  value: string;
+}
+
+function UrlRow({ label, value }: UrlRowProps) {
   const copy = () => {
     navigator.clipboard?.writeText(value);
     toast.success("Copied");

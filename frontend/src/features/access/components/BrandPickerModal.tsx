@@ -8,7 +8,13 @@ import { Icon } from "@iconify/react";
 import { Modal } from "@/components/ui/kit";
 import { BRANDS } from "../constants";
 
-export default function BrandPickerModal({ onClose, onPick }: any) {
+export interface BrandPickerModalProps {
+  onClose: () => void;
+  /** `AccessBrand.id` of the picked brand — only available brands can fire. */
+  onPick: (brandId: string) => void;
+}
+
+export default function BrandPickerModal({ onClose, onPick }: BrandPickerModalProps) {
   return (
     <Modal open onClose={onClose} title="Choose Access Control Brand" wide>
       <p className="mb-4 text-xs text-muted">

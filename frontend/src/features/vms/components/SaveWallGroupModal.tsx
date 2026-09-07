@@ -13,9 +13,20 @@ import { toast } from "sonner";
 import { Button, Input, Modal } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { GridLayout } from "../types";
 import { wallLayoutToGroup } from "../videoWall";
 
-export default function SaveWallGroupModal({ open, layoutKey, cameraIds = [], onClose, onSaved }: any) {
+export interface SaveWallGroupModalProps {
+  open: boolean;
+  /** The wall's current layout key (mapped to a group layout on save). */
+  layoutKey: string;
+  /** The cameras on the wall, in tile order. */
+  cameraIds?: string[];
+  onClose?: () => void;
+  onSaved?: () => void;
+}
+
+export default function SaveWallGroupModal({ open, layoutKey, cameraIds = [], onClose, onSaved }: SaveWallGroupModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
@@ -26,12 +37,14 @@ export default function SaveWallGroupModal({ open, layoutKey, cameraIds = [], on
     }
   }, [open]);
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () =>
       vms.groups.create({
         name: name.trim(),
         description: description.trim() || null,
-        layout: wallLayoutToGroup(layoutKey),
+        // wallLayoutToGroup only ever returns a GROUP_LAYOUTS key, and those are
+        // the GridLayout enum; its declared return is the wider string.
+        layout: wallLayoutToGroup(layoutKey) as GridLayout,
         camera_ids: cameraIds,
       }),
     onSuccess: () => {

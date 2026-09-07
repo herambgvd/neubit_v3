@@ -5,13 +5,14 @@
 // (auth / last-connected / last-sync / reconciler cron) + last-error banner, then the
 // tab bar (Events / Cardholders / Cards / Access Groups / Scheduled / Hardware / Sync)
 // hosting each tab. Rethemed to v3 tokens; uses the shared TabBar.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { TabBar } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, fmtDateTime } from "@/lib/format";
+import type { SitePublic } from "@/lib/types";
 import { gates } from "../api";
 import HealthBadge from "./HealthBadge";
 import EventsFeed from "./EventsFeed";
@@ -32,18 +33,24 @@ const TABS = [
   { key: "sync", label: "Sync History", icon: "heroicons-outline:clock" },
 ];
 
-export default function InstanceDetail({ instanceId, sites }: any) {
+export interface InstanceDetailProps {
+  instanceId: string;
+  /** The site catalog, for resolving `instance.site_id` to a name. */
+  sites?: SitePublic[] | null;
+}
+
+export default function InstanceDetail({ instanceId, sites }: InstanceDetailProps) {
   const [activeTab, setActiveTab] = useState("events");
   const [copied, setCopied] = useState(false);
 
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["ac-instance", instanceId],
     queryFn: () => gates.instances.get(instanceId),
     enabled: !!instanceId,
     refetchInterval: 30_000,
   });
 
-  const doorsQ = useQuery<any>({
+  const doorsQ = useQuery({
     queryKey: ["ac-doors", instanceId],
     queryFn: () => gates.doors.list({ instance_id: instanceId, limit: 500 }),
     enabled: !!instanceId,
@@ -65,7 +72,7 @@ export default function InstanceDetail({ instanceId, sites }: any) {
   const instance = q.data;
   const siteName = sites?.find((s) => s.site_id === instance.site_id)?.name || "Unassigned site";
 
-  const handleCopy = async (text) => {
+  const handleCopy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -140,7 +147,12 @@ export default function InstanceDetail({ instanceId, sites }: any) {
   );
 }
 
-function InfoCell({ label, value }: any) {
+interface InfoCellProps {
+  label: ReactNode;
+  value: ReactNode;
+}
+
+function InfoCell({ label, value }: InfoCellProps) {
   return (
     <div>
       <div className="mb-0.5 text-[9px] uppercase tracking-wider text-muted/70">{label}</div>

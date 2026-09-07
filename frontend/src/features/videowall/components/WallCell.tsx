@@ -12,23 +12,39 @@
 //
 // Empty cell is near-black with a faint glyph — matches the Streaming WallTile
 // aesthetic so a sparse wall reads clean, not as a field of dashed drop boxes.
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
 import { Icon } from "@iconify/react";
 
 import LivePlayer from "@/features/vms/components/LivePlayer";
+import type { EstateCamera } from "@/features/vms/types";
+
+export interface WallCellProps {
+  /** The camera assigned to this cell, or null/undefined when it is empty. */
+  cameraId?: string | null;
+  /** The estate row for `cameraId` (for the name strip); null when unknown. */
+  camera?: EstateCamera | null;
+  /** Which cell of the monitor this is. Accepted for the callers that pass it
+   *  as a key/telemetry hint; the cell itself does not render it. */
+  cellIndex?: number;
+  profile?: string;
+  control?: boolean;
+  onAssign?: (cameraId: string) => void; // from a rail drag (control only)
+  onClear?: () => void; // remove the camera (control only)
+  onPick?: () => void; // click an empty cell to open the picker (control only)
+}
 
 export default function WallCell({
   cameraId,
   camera,
   profile = "sub",
   control = false,
-  onAssign, // (cameraId) — from a rail drag (control only)
-  onClear, // () — remove the camera (control only)
-  onPick, // () — click an empty cell to open the picker (control only)
-}: any) {
+  onAssign,
+  onClear,
+  onPick,
+}: WallCellProps) {
   const [dropActive, setDropActive] = useState(false);
 
-  const onDragOver = (e) => {
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     if (!control) return;
     if (e.dataTransfer.types.includes("text/camera-id")) {
       e.preventDefault();
@@ -36,7 +52,7 @@ export default function WallCell({
       if (!dropActive) setDropActive(true);
     }
   };
-  const onDrop = (e) => {
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
     if (!control) return;
     e.preventDefault();
     setDropActive(false);

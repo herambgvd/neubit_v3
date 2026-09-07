@@ -9,10 +9,22 @@ import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 
 import { StatusDot } from "./StatusBadge";
+import type { EstateCamera } from "../types";
 
-export default function CameraQuickPicker({ open, cameras = [], mountedIds, tileIndex, onPick, onClose }: any) {
+export interface CameraQuickPickerProps {
+  open: boolean;
+  cameras?: EstateCamera[];
+  /** Camera ids already on the wall (rendered with the "on wall" glyph). */
+  mountedIds?: Set<string>;
+  /** The tile being filled — only used for the placeholder text. */
+  tileIndex?: number | null;
+  onPick?: (cameraId: string) => void;
+  onClose?: () => void;
+}
+
+export default function CameraQuickPicker({ open, cameras = [], mountedIds, tileIndex, onPick, onClose }: CameraQuickPickerProps) {
   const [q, setQ] = useState("");
-  const inputRef = useRef<any>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -25,7 +37,7 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
 
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e) => e.key === "Escape" && onClose?.();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose?.();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);

@@ -10,7 +10,7 @@
 // Data source mirrors the access EventsFeed: an INITIAL history fetch via
 // GET /vms/events (one request) + LIVE appends over SSE. Both are normalized to
 // one shape and de-duped by event id so every renderer works across sources.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -21,8 +21,9 @@ import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "@/features/workflow/api";
 import { vms } from "./api";
 import { EVENT_TYPE_FILTERS, SEVERITY_FILTERS } from "./constants";
-import { normalizeVmsEvent, eventKey } from "./eventLib";
+import { normalizeVmsEvent, eventKey, type NormalizedVmsEvent } from "./eventLib";
 import { useVmsEventStream } from "./hooks/useVmsEventStream";
+import type { VmsCameraPublic, VmsEventPublic } from "./types";
 import CameraEventRow from "./components/CameraEventRow";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -37,17 +38,17 @@ export default function CameraEventsPage() {
   const [live, setLive] = useState(true);
 
   // Camera roster (filter dropdown + name lookup).
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["vms-cameras", "events-picker"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     staleTime: 60_000,
   });
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+  const cameras = useMemo<VmsCameraPublic[]>(() => (camerasQ.data ? asItems(camerasQ.data) : []), [camerasQ.data]);
   const cameraById = useMemo(
     () => Object.fromEntries(cameras.map((c) => [c.id, c])),
     [cameras],
   );
-  const cameraName = (id) => cameraById[id]?.name || null;
+  const cameraName = (id: string | null | undefined): string | null => (id ? cameraById[id]?.name : null) || null;
 
   // The day filter → a [from,to) window (local day).
   const window = useMemo(() => {
@@ -71,7 +72,7 @@ export default function CameraEventsPage() {
   );
 
   // Initial history — one fetch (no polling). Live updates arrive over SSE below.
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["vms-events", listParams],
     queryFn: () => vms.events.list(listParams),
     refetchOnWindowFocus: false,
@@ -84,8 +85,8 @@ export default function CameraEventsPage() {
     enabled: live,
   });
 
-  const ackMut = useMutation<any>({
-    mutationFn: (id: any) => vms.events.ack(id),
+  const ackMut = useMutation({
+    mutationFn: (id: string) => vms.events.ack(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vms-events"] });
       toast.success("Event acknowledged");
@@ -98,7 +99,7 @@ export default function CameraEventsPage() {
   // `source_event_id`). Rather than N per-row calls, fetch recent camera-origin
   // incidents ONCE and match client-side by the camera-event id. `retry:false` so a
   // workflow outage just hides the badge instead of erroring the events feed.
-  const linkedIncidentsQ = useQuery<any>({
+  const linkedIncidentsQ = useQuery({
     queryKey: ["wf-incidents-by-camera-event"],
     queryFn: () => wfApi.instances.list({ source: "vision", limit: 500 }),
     retry: false,
@@ -106,10 +107,10 @@ export default function CameraEventsPage() {
     refetchInterval: 60_000,
   });
   const incidentByEventId = useMemo(() => {
-    const m = new Map<any, any>();
-    for (const inc of asItems(linkedIncidentsQ.data)) {
+    const m = new Map<string, string>();
+    for (const inc of linkedIncidentsQ.data ? asItems(linkedIncidentsQ.data) : []) {
       const key = inc.source_event_id;
-      if (key && !m.has(key)) m.set(key, inc.instance_id ?? inc.id);
+      if (key && !m.has(key)) m.set(key, inc.instance_id);
     }
     return m;
   }, [linkedIncidentsQ.data]);
@@ -117,12 +118,16 @@ export default function CameraEventsPage() {
   // Merge live frames (newest-first) ahead of the fetched history, de-dupe by id,
   // and re-apply the active filters against the live-merged list so a live frame
   // that doesn't match the current filter isn't shown.
-  const history = useMemo(() => asItems(q.data).map(normalizeVmsEvent), [q.data]);
+  const history = useMemo(() => {
+    const rows: VmsEventPublic[] = q.data ? asItems(q.data) : [];
+    return rows.map(normalizeVmsEvent).filter((e): e is NormalizedVmsEvent => !!e);
+  }, [q.data]);
   const events = useMemo(() => {
-    const seen = new Set<any>();
-    const out: any[] = [];
+    const seen = new Set<string>();
+    const out: NormalizedVmsEvent[] = [];
     for (const raw of [...liveEvents, ...history]) {
       const e = normalizeVmsEvent(raw);
+      if (!e) continue; // normalizeVmsEvent only returns null for a null input
       const key = e.id || e.event_id;
       if (key && seen.has(key)) continue;
       if (key) seen.add(key);
@@ -145,8 +150,9 @@ export default function CameraEventsPage() {
   // Severity breakdown + unacked count for the summary row (from the visible feed).
   const summary = useMemo(() => {
     const s = { critical: 0, warning: 0, info: 0, unacked: 0 };
+    const isBucket = (k: string): k is keyof typeof s => Object.prototype.hasOwnProperty.call(s, k);
     for (const e of events) {
-      if (s[e.severity] != null) s[e.severity] += 1;
+      if (isBucket(e.severity)) s[e.severity] += 1;
       if (!e.acknowledged) s.unacked += 1;
     }
     return s;
@@ -275,8 +281,10 @@ export default function CameraEventsPage() {
                 key={eventKey(e, idx)}
                 event={e}
                 cameraName={cameraName(e.camera_id)}
-                incidentId={incidentByEventId.get(e.event_id || e.id) || null}
-                onAck={(ev) => ackMut.mutate(ev.id)}
+                incidentId={incidentByEventId.get(e.event_id || e.id || "") || null}
+                onAck={(ev) => {
+                  if (ev.id) ackMut.mutate(ev.id);
+                }}
                 ackPending={ackMut.isPending && ackMut.variables === e.id}
               />
             ))}
@@ -287,7 +295,7 @@ export default function CameraEventsPage() {
   );
 }
 
-function FilterField({ label, children }: any) {
+function FilterField({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="min-w-[9rem]">
       <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">{label}</label>

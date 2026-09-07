@@ -12,13 +12,20 @@ import { useAuth } from "@/lib/auth";
 import LivePlayer from "./LivePlayer";
 import PtzOverlay from "./PtzOverlay";
 import { isPtzCapable } from "../formUtils";
+import type { EstateCamera } from "../types";
 
 const PROFILE_OPTIONS = [
   { value: "sub", label: "Sub-stream (low latency)" },
   { value: "main", label: "Main stream (full quality)" },
 ];
 
-export default function LivePlayerModal({ camera, onClose }: any) {
+export interface LivePlayerModalProps {
+  /** A local VmsCameraPublic row satisfies this too (EstateCamera is its Partial). */
+  camera: EstateCamera;
+  onClose?: () => void;
+}
+
+export default function LivePlayerModal({ camera, onClose }: LivePlayerModalProps) {
   const [profile, setProfile] = useState("sub");
   const { can } = useAuth();
   const ptz = isPtzCapable(camera);

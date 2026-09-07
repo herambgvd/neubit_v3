@@ -29,17 +29,48 @@
 // username/password write-only/channel_count + a probe action) and the caller
 // gates the decoder UI so it degrades cleanly (a 404 surfaces as "decoder API not
 // available yet"). If VW-B lands at a different path, only DECODERS below changes.
+import type { AxiosResponse } from "axios";
+
 import { api } from "@/lib/api";
+import type { QueryParams } from "@/lib/types";
+
+import type {
+  ClearCellBody,
+  DecoderCreate,
+  DecoderListResponse,
+  DecoderPublic,
+  DecoderTestResult,
+  DecoderUpdate,
+  MonitorCreate,
+  MonitorListResponse,
+  MonitorUpdate,
+  PresetCreate,
+  PresetListResponse,
+  PresetPublic,
+  PresetUpdate,
+  PushCellBody,
+  TourCreate,
+  TourListResponse,
+  TourPublic,
+  TourUpdate,
+  WallCreate,
+  WallListResponse,
+  WallMonitor,
+  WallPublic,
+  WallStateResponse,
+  WallUpdate,
+} from "./types";
 
 const WALLS = "/vms/walls";
 const DECODERS = "/vms/decoders";
 
-const unwrap = (p: Promise<any>): Promise<any> => p.then((r) => r.data);
+const unwrap = <T>(p: Promise<AxiosResponse<T>>): Promise<T> => p.then((r) => r.data);
 
-function qs(params: any = {}) {
-  const clean: any = {};
-  for (const [k, v] of Object.entries<any>(params)) {
-    if (v !== undefined && v !== null && v !== "") clean[k] = v;
+// Drop null/undefined/"" so URLSearchParams doesn't emit empty filters.
+function qs(params: QueryParams = {}): string {
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") clean[k] = String(v);
   }
   const s = new URLSearchParams(clean).toString();
   return s ? `?${s}` : "";
@@ -49,65 +80,79 @@ export const videowall = {
   // ── Walls ────────────────────────────────────────────────────────────
   walls: {
     // GET /walls → { items, total, skip, limit }. Filter: site_id + skip/limit.
-    list: (params: any = {}) => unwrap(api.get(`${WALLS}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${WALLS}/${id}`)),
+    list: (params: QueryParams = {}) => unwrap(api.get<WallListResponse>(`${WALLS}${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<WallPublic>(`${WALLS}/${id}`)),
     // POST /walls { name, description?, site_id?, rows, cols, is_active }.
-    create: (body) => unwrap(api.post(WALLS, body)),
-    update: (id, body) => unwrap(api.patch(`${WALLS}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${WALLS}/${id}`)),
+    create: (body: WallCreate) => unwrap(api.post<WallPublic>(WALLS, body)),
+    update: (id: string, body: WallUpdate) => unwrap(api.patch<WallPublic>(`${WALLS}/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`${WALLS}/${id}`)),
   },
 
   // ── Monitors ─────────────────────────────────────────────────────────
   // A monitor: { id, wall_id, name, position, kind (browser|decoder),
   //   layout (1|4|9|16), decoder_id?, decoder_channel? }.
   monitors: {
-    list: (wallId) => unwrap(api.get(`${WALLS}/${wallId}/monitors`)),
-    create: (wallId, body) => unwrap(api.post(`${WALLS}/${wallId}/monitors`, body)),
-    update: (wallId, monitorId, body) =>
-      unwrap(api.patch(`${WALLS}/${wallId}/monitors/${monitorId}`, body)),
-    remove: (wallId, monitorId) =>
-      unwrap(api.delete(`${WALLS}/${wallId}/monitors/${monitorId}`)),
+    list: (wallId: string) => unwrap(api.get<MonitorListResponse>(`${WALLS}/${wallId}/monitors`)),
+    create: (wallId: string, body: MonitorCreate) =>
+      unwrap(api.post<WallMonitor>(`${WALLS}/${wallId}/monitors`, body)),
+    update: (wallId: string, monitorId: string, body: MonitorUpdate) =>
+      unwrap(api.patch<WallMonitor>(`${WALLS}/${wallId}/monitors/${monitorId}`, body)),
+    remove: (wallId: string, monitorId: string) =>
+      unwrap(api.delete<void>(`${WALLS}/${wallId}/monitors/${monitorId}`)),
   },
 
   // ── Live shared state ────────────────────────────────────────────────
   state: {
     // GET /walls/{id}/state → { wall_id, state }.
-    get: (wallId) => unwrap(api.get(`${WALLS}/${wallId}/state`)),
+    get: (wallId: string) => unwrap(api.get<WallStateResponse>(`${WALLS}/${wallId}/state`)),
     // POST /walls/{id}/state/push { monitor_id, cell_index, camera_id } → new full state.
-    push: (wallId, { monitor_id, cell_index, camera_id }) =>
-      unwrap(api.post(`${WALLS}/${wallId}/state/push`, { monitor_id, cell_index, camera_id })),
-    // POST /walls/{id}/state/clear { monitor_id, cell_index? } — omit cell to clear a whole monitor.
-    clear: (wallId, { monitor_id, cell_index = null }) =>
+    push: (wallId: string, { monitor_id, cell_index, camera_id }: PushCellBody) =>
       unwrap(
-        api.post(`${WALLS}/${wallId}/state/clear`, { monitor_id, ...(cell_index != null ? { cell_index } : {}) }),
+        api.post<WallStateResponse>(`${WALLS}/${wallId}/state/push`, {
+          monitor_id,
+          cell_index,
+          camera_id,
+        }),
+      ),
+    // POST /walls/{id}/state/clear { monitor_id, cell_index? } — omit cell to clear a whole monitor.
+    clear: (wallId: string, { monitor_id, cell_index = null }: ClearCellBody) =>
+      unwrap(
+        api.post<WallStateResponse>(`${WALLS}/${wallId}/state/clear`, {
+          monitor_id,
+          ...(cell_index != null ? { cell_index } : {}),
+        }),
       ),
   },
 
   // ── Presets (saved wall snapshots) ───────────────────────────────────
   presets: {
-    list: (wallId) => unwrap(api.get(`${WALLS}/${wallId}/presets`)),
+    list: (wallId: string) => unwrap(api.get<PresetListResponse>(`${WALLS}/${wallId}/presets`)),
     // POST /walls/{id}/presets { name, is_default?, state? } — omit state → snapshot live.
-    create: (wallId, body) => unwrap(api.post(`${WALLS}/${wallId}/presets`, body)),
-    update: (wallId, presetId, body) =>
-      unwrap(api.patch(`${WALLS}/${wallId}/presets/${presetId}`, body)),
-    remove: (wallId, presetId) =>
-      unwrap(api.delete(`${WALLS}/${wallId}/presets/${presetId}`)),
+    create: (wallId: string, body: PresetCreate) =>
+      unwrap(api.post<PresetPublic>(`${WALLS}/${wallId}/presets`, body)),
+    update: (wallId: string, presetId: string, body: PresetUpdate) =>
+      unwrap(api.patch<PresetPublic>(`${WALLS}/${wallId}/presets/${presetId}`, body)),
+    remove: (wallId: string, presetId: string) =>
+      unwrap(api.delete<void>(`${WALLS}/${wallId}/presets/${presetId}`)),
     // POST /walls/{id}/presets/{pid}/apply → recall the preset onto the live wall.
-    apply: (wallId, presetId) =>
-      unwrap(api.post(`${WALLS}/${wallId}/presets/${presetId}/apply`, {})),
+    apply: (wallId: string, presetId: string) =>
+      unwrap(api.post<WallStateResponse>(`${WALLS}/${wallId}/presets/${presetId}/apply`, {})),
   },
 
   // ── Tours (preset cycles) ────────────────────────────────────────────
   tours: {
-    list: (wallId) => unwrap(api.get(`${WALLS}/${wallId}/tours`)),
+    list: (wallId: string) => unwrap(api.get<TourListResponse>(`${WALLS}/${wallId}/tours`)),
     // POST /walls/{id}/tours { name, preset_ids[], dwell_seconds }.
-    create: (wallId, body) => unwrap(api.post(`${WALLS}/${wallId}/tours`, body)),
-    update: (wallId, tourId, body) =>
-      unwrap(api.patch(`${WALLS}/${wallId}/tours/${tourId}`, body)),
-    remove: (wallId, tourId) =>
-      unwrap(api.delete(`${WALLS}/${wallId}/tours/${tourId}`)),
-    start: (wallId, tourId) => unwrap(api.post(`${WALLS}/${wallId}/tours/${tourId}/start`, {})),
-    stop: (wallId, tourId) => unwrap(api.post(`${WALLS}/${wallId}/tours/${tourId}/stop`, {})),
+    create: (wallId: string, body: TourCreate) =>
+      unwrap(api.post<TourPublic>(`${WALLS}/${wallId}/tours`, body)),
+    update: (wallId: string, tourId: string, body: TourUpdate) =>
+      unwrap(api.patch<TourPublic>(`${WALLS}/${wallId}/tours/${tourId}`, body)),
+    remove: (wallId: string, tourId: string) =>
+      unwrap(api.delete<void>(`${WALLS}/${wallId}/tours/${tourId}`)),
+    start: (wallId: string, tourId: string) =>
+      unwrap(api.post<TourPublic>(`${WALLS}/${wallId}/tours/${tourId}/start`, {})),
+    stop: (wallId: string, tourId: string) =>
+      unwrap(api.post<TourPublic>(`${WALLS}/${wallId}/tours/${tourId}/stop`, {})),
   },
 
   // ── Decoders (VW-B — LIVE, confirmed against decoder_router.py) ───────
@@ -115,15 +160,17 @@ export const videowall = {
   //   username, has_password, channel_count, is_enabled }. `password` is
   //   WRITE-ONLY (sent on create/update, never returned — has_password flags it).
   decoders: {
-    list: (params: any = {}) => unwrap(api.get(`${DECODERS}${qs(params)}`)),
-    get: (id) => unwrap(api.get(`${DECODERS}/${id}`)),
-    create: (body) => unwrap(api.post(DECODERS, body)),
-    update: (id, body) => unwrap(api.patch(`${DECODERS}/${id}`, body)),
-    remove: (id) => unwrap(api.delete(`${DECODERS}/${id}`)),
+    list: (params: QueryParams = {}) =>
+      unwrap(api.get<DecoderListResponse>(`${DECODERS}${qs(params)}`)),
+    get: (id: string) => unwrap(api.get<DecoderPublic>(`${DECODERS}/${id}`)),
+    create: (body: DecoderCreate) => unwrap(api.post<DecoderPublic>(DECODERS, body)),
+    update: (id: string, body: DecoderUpdate) =>
+      unwrap(api.patch<DecoderPublic>(`${DECODERS}/${id}`, body)),
+    remove: (id: string) => unwrap(api.delete<void>(`${DECODERS}/${id}`)),
     // POST /vms/decoders/{id}/test → a live probe of the appliance:
     //   { reachable, manufacturer?, model?, firmware?, serial_number?,
     //     channel_count, error? }.
-    test: (id) => unwrap(api.post(`${DECODERS}/${id}/test`, {})),
+    test: (id: string) => unwrap(api.post<DecoderTestResult>(`${DECODERS}/${id}/test`, {})),
   },
 };
 

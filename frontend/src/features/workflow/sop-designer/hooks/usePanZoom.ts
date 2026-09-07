@@ -7,12 +7,18 @@
 // connect), reading/writing offset via the returned setter.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MIN_SCALE, MAX_SCALE, computeFit } from "../lib/canvasGeometry";
+import type { Point, Positioned } from "../lib/canvasGeometry";
 
-export function usePanZoom(states) {
-  const wrapRef = useRef<any>(null);
+export interface CanvasSize {
+  w: number;
+  h: number;
+}
+
+export function usePanZoom(states: Positioned[]) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState<any>({ x: 40, y: 40 });
-  const [size, setSize] = useState<any>({ w: 0, h: 0 });
+  const [offset, setOffset] = useState<Point>({ x: 40, y: 40 });
+  const [size, setSize] = useState<CanvasSize>({ w: 0, h: 0 });
   const didFitRef = useRef(false);
 
   /* ── measure container ── */
@@ -50,7 +56,7 @@ export function usePanZoom(states) {
   }, [states, size]);
 
   const screenToWorld = useCallback(
-    (sx, sy) => ({ x: (sx - offset.x) / scale, y: (sy - offset.y) / scale }),
+    (sx: number, sy: number): Point => ({ x: (sx - offset.x) / scale, y: (sy - offset.y) / scale }),
     [offset, scale],
   );
 
@@ -58,7 +64,7 @@ export function usePanZoom(states) {
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const onWheel = (e) => {
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const mx = e.clientX - rect.left;
@@ -79,7 +85,7 @@ export function usePanZoom(states) {
   }, []);
 
   const zoomBy = useCallback(
-    (factor) => {
+    (factor: number) => {
       const cx = size.w / 2;
       const cy = size.h / 2;
       setScale((prev) => {

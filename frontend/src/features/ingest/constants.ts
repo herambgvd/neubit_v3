@@ -1,6 +1,17 @@
 // Ingest shared constants — auth types, event-log statuses, and pill styles.
+//
+// The pill maps are keyed by a wire value (auth_type, an outcome, a status), so
+// they are typed as open string maps: an unknown value from the backend falls
+// back rather than failing to compile.
 
-export const AUTH_TYPES = [
+/** One picker row. Labels are plain strings here so `authLabel` can return one;
+ *  the shape is assignable to the kit's `SelectOption`. */
+export interface Choice {
+  value: string;
+  label: string;
+}
+
+export const AUTH_TYPES: Choice[] = [
   { value: "none", label: "None (open endpoint)" },
   { value: "api_key", label: "API key" },
   { value: "basic", label: "Basic auth (user + password)" },
@@ -12,7 +23,7 @@ export const AUTH_TYPES = [
 export const PERM_READ = "ingest.read";
 export const PERM_MANAGE = "ingest.manage";
 
-export const AUTH_PILL = {
+export const AUTH_PILL: Record<string, string> = {
   none: "bg-[rgba(10,18,40,.6)] text-nb-faint border-nb-line",
   api_key: "bg-[rgba(96,165,250,.1)] text-nb-blueb border-[rgba(96,165,250,.35)]",
   basic: "bg-[rgba(251,191,36,.1)] text-nb-warn border-[rgba(251,191,36,.35)]",
@@ -20,17 +31,17 @@ export const AUTH_PILL = {
   hmac: "bg-[rgba(52,211,153,.1)] text-nb-good border-[rgba(52,211,153,.35)]",
 };
 
-export const authLabel = (t) => AUTH_TYPES.find((a) => a.value === t)?.label || t || "None";
+export const authLabel = (t?: string | null): string => AUTH_TYPES.find((a) => a.value === t)?.label || t || "None";
 
 // Request method for the inbound receiver: POST reads a JSON body, GET reads
 // query params as the payload.
-export const REQUEST_METHODS = [
+export const REQUEST_METHODS: Choice[] = [
   { value: "post", label: "POST (JSON body)" },
   { value: "get", label: "GET (query params)" },
 ];
 
 // Event-log / test outcome pills (ok / failed / skipped).
-export const OUTCOME_PILL = {
+export const OUTCOME_PILL: Record<string, string> = {
   ok: "border border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good",
   failed: "border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit",
   skipped: "border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint",
@@ -41,7 +52,7 @@ export const OUTCOME_PILL = {
 // The sentinel for "no filter" — "" would be dropped by api.js's qs().
 export const STATUS_ALL = "_all_";
 
-export const STATUS_FILTERS = [
+export const STATUS_FILTERS: Choice[] = [
   { value: STATUS_ALL, label: "All" },
   { value: "accepted", label: "Accepted" },
   { value: "no_rule_match", label: "No rule match" },
@@ -53,14 +64,14 @@ export const STATUS_FILTERS = [
   { value: "publish_failed", label: "Publish failed" },
 ];
 
-export const STATUS_LABEL = Object.fromEntries(
+export const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUS_FILTERS.map((s) => [s.value, s.label]),
 );
 
 // Only "accepted" published. The rest are all failures, but they differ in who
 // has to fix them: auth/schema/method are the SENDER's problem, while
 // no_rule_match / transform_failed / publish_failed are ours — hence amber.
-export const STATUS_PILL = {
+export const STATUS_PILL: Record<string, string> = {
   accepted: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
   no_rule_match: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   transform_failed: "bg-amber-500/10 text-amber-500 border-amber-500/20",

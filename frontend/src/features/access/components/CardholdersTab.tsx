@@ -11,23 +11,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, ConfirmDialog } from "@/components/ui/kit";
+import { Button, ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { gates } from "../api";
 import { CARDHOLDER_STATUS, CARDHOLDER_STATUS_FILTERS } from "../constants";
+import type { AccessCardholder } from "../types";
 import CardholderModal from "./CardholderModal";
 
-export default function CardholdersTab({ instanceId }: any) {
+export interface CardholdersTabProps {
+  instanceId: string;
+}
+
+export default function CardholdersTab({ instanceId }: CardholdersTabProps) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
-  const [editTarget, setEditTarget] = useState<any>(null);
+  const [editTarget, setEditTarget] = useState<AccessCardholder | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const groupsQ = useQuery<any>({
+  const groupsQ = useQuery({
     queryKey: ["ac-access-groups", instanceId],
     queryFn: () => gates.accessGroups.list(instanceId),
     enabled: !!instanceId,
@@ -35,7 +40,7 @@ export default function CardholdersTab({ instanceId }: any) {
   });
   const groups = asItems(groupsQ.data);
 
-  const q = useQuery<any>({
+  const q = useQuery({
     queryKey: ["ac-cardholders", instanceId],
     queryFn: () => gates.cardholders.list(instanceId, { limit: 500 }),
     enabled: !!instanceId,
@@ -56,24 +61,24 @@ export default function CardholdersTab({ instanceId }: any) {
     });
   }, [all, search, statusFilter, groupFilter]);
 
-  const suspend = useMutation<any>({
-    mutationFn: (id: any) => gates.cardholders.suspend(instanceId, id),
+  const suspend = useMutation({
+    mutationFn: (id: string) => gates.cardholders.suspend(instanceId, id),
     onSuccess: () => {
       toast.success("Cardholder suspended");
       qc.invalidateQueries({ queryKey: ["ac-cardholders", instanceId] });
     },
     onError: (e) => toast.error(apiError(e, "Suspend failed")),
   });
-  const reinstate = useMutation<any>({
-    mutationFn: (id: any) => gates.cardholders.reinstate(instanceId, id),
+  const reinstate = useMutation({
+    mutationFn: (id: string) => gates.cardholders.reinstate(instanceId, id),
     onSuccess: () => {
       toast.success("Cardholder reinstated");
       qc.invalidateQueries({ queryKey: ["ac-cardholders", instanceId] });
     },
     onError: (e) => toast.error(apiError(e, "Reinstate failed")),
   });
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => gates.cardholders.remove(instanceId, id),
+  const remove = useMutation({
+    mutationFn: (id: string) => gates.cardholders.remove(instanceId, id),
     onSuccess: () => {
       toast.success("Cardholder removed");
       qc.invalidateQueries({ queryKey: ["ac-cardholders", instanceId] });

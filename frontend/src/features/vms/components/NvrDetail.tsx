@@ -6,7 +6,7 @@
 // /vms/nvrs/{id}/map-channels, add:true); OFF deletes the channel-camera. No modal /
 // "Map channels" click needed — the toggle IS the mapping. A "Bulk map" button still
 // opens the full modal (naming + site assignment) for onboarding many at once.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Icon } from "@iconify/react";
@@ -14,10 +14,12 @@ import { Icon } from "@iconify/react";
 import { Button, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems, fmtRelative, titleize } from "@/lib/format";
+import type { NvrPublic } from "@/lib/types";
 import { vms } from "../api";
+import type { ChannelPublic, VmsCameraPublic } from "../types";
 import StatusBadge from "./StatusBadge";
 
-function InfoCell({ label, value }: any) {
+function InfoCell({ label, value }: { label: ReactNode; value?: ReactNode }) {
   return (
     <div className="rounded-lg border border-card-border bg-hover/40 px-3 py-1.5">
       <p className="text-[10px] uppercase tracking-wide text-muted">{label}</p>
@@ -26,11 +28,20 @@ function InfoCell({ label, value }: any) {
   );
 }
 
-export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, onDelete }: any) {
-  const qc = useQueryClient();
-  const [busyCh, setBusyCh] = useState<any>({}); // channel_number → true while toggling
+export interface NvrDetailProps {
+  nvr: NvrPublic;
+  /** site_id → display name. */
+  siteNames?: Record<string, string>;
+  onMapChannels?: (nvr: NvrPublic) => void;
+  onEdit?: (nvr: NvrPublic) => void;
+  onDelete?: (nvr: NvrPublic) => void;
+}
 
-  const healthQ = useQuery<any>({
+export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, onDelete }: NvrDetailProps) {
+  const qc = useQueryClient();
+  const [busyCh, setBusyCh] = useState<Record<number, boolean>>({}); // channel_number → true while toggling
+
+  const healthQ = useQuery({
     queryKey: ["nvr-health", nvr.id],
     queryFn: () => vms.nvrs.health(nvr.id),
     refetchInterval: 30_000,
@@ -38,7 +49,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
   const health = healthQ.data;
 
   // Channel-cameras belonging to this NVR (a mapped channel IS a camera with nvr_id).
-  const camsQ = useQuery<any>({
+  const camsQ = useQuery({
     queryKey: ["nvr-cams", nvr.id],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     staleTime: 5_000,
@@ -60,7 +71,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
   // the NVR row's cached channel list (backend caches the ONVIF enumeration), so it
   // loads instantly on every visit and does NOT silently re-run the slow enumeration
   // on each browser refresh; the ↻ button (below) forces a live re-enumeration.
-  const channelsQ = useQuery<any>({
+  const channelsQ = useQuery({
     queryKey: ["nvr-enum-channels", nvr.id],
     queryFn: () => vms.nvrs.channels(nvr.id),
     staleTime: Infinity,
@@ -83,7 +94,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
 
   // channel_number → its mapped camera (if any). Drives each toggle's on/off state.
   const camByChannel = useMemo(() => {
-    const m: any = {};
+    const m: Record<number, VmsCameraPublic> = {};
     for (const c of channelCams) if (c.nvr_channel_number != null) m[c.nvr_channel_number] = c;
     return m;
   }, [channelCams]);
@@ -96,7 +107,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
   };
 
   // Toggle a single channel on (map → create camera) or off (unmap → delete camera).
-  const toggleChannel = async (ch, on) => {
+  const toggleChannel = async (ch: ChannelPublic, on: boolean) => {
     const chNo = ch.channel_number ?? ch.channel;
     setBusyCh((b) => ({ ...b, [chNo]: true }));
     try {
@@ -105,7 +116,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
           {
             channel_number: chNo,
             name: ch.name || `Channel ${chNo}`,
-            profile_token: ch.source_token || ch.profile_token || undefined,
+            profile_token: ch.source_token || undefined,
             add: true,
           },
         ]);
@@ -125,7 +136,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
     }
   };
 
-  const refresh = useMutation<any>({
+  const refresh = useMutation({
     mutationFn: () => vms.nvrs.refresh(nvr.id),
     onSuccess: () => {
       toast.success("NVR re-probed");
@@ -188,7 +199,7 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
         {/* Inline channel toggles */}
         <div className="mb-2 flex items-center justify-between">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-            Channels ({sortedChannels.length}: any){" "}
+            Channels ({sortedChannels.length}){" "}
             <span className="text-emerald-500">· {channelCams.length} on</span>
           </p>
           <div className="flex items-center gap-2">
@@ -243,11 +254,11 @@ export default function NvrDetail({ nvr, siteNames = {}, onMapChannels, onEdit, 
                     {(ch.main?.resolution || cam?.status) && (
                       <p className="truncate text-[11px] text-muted">
                         {ch.main?.resolution || ""}
-                        {cam ? `${ch.main?.resolution ? " · " : ""}${siteNames[cam.placement?.site_id] || ""}` : ""}
+                        {cam ? `${ch.main?.resolution ? " · " : ""}${siteNames[cam.placement?.site_id ?? ""] || ""}` : ""}
                       </p>
                     )}
                   </div>
-                  {on && <StatusBadge status={cam.status} />}
+                  {cam && <StatusBadge status={cam.status} />}
                   {busy ? (
                     <Icon icon="svg-spinners:180-ring" className="text-base text-muted" />
                   ) : (

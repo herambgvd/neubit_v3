@@ -15,12 +15,29 @@ import { useMutation } from "@tanstack/react-query";
 import { Button, Modal, Input, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import vms from "../api";
+import type { PatrolCreate, PatrolPublic, PresetPublic } from "../types";
 
-export default function PatrolEditorModal({ cameraId, presets = [], patrol, onClose, onSaved }: any) {
+// A stop while it is being edited — dwell binds to a number input, so it may be a
+// string until save coerces it.
+interface StopDraft {
+  preset_id: string;
+  dwell_seconds: number | string;
+}
+
+export interface PatrolEditorModalProps {
+  cameraId: string;
+  presets?: PresetPublic[];
+  /** Null/undefined = create a new patrol. */
+  patrol?: PatrolPublic | null;
+  onClose?: () => void;
+  onSaved?: () => void;
+}
+
+export default function PatrolEditorModal({ cameraId, presets = [], patrol, onClose, onSaved }: PatrolEditorModalProps) {
   const editing = !!patrol;
   const [name, setName] = useState(patrol?.name || "");
-  const [speed, setSpeed] = useState(patrol?.speed ?? 0.5);
-  const [stops, setStops] = useState(() =>
+  const [speed, setSpeed] = useState<number | string>(patrol?.speed ?? 0.5);
+  const [stops, setStops] = useState<StopDraft[]>(() =>
     (patrol?.stops || []).map((s) => ({
       preset_id: s.preset_id,
       dwell_seconds: s.dwell_seconds ?? 5,
@@ -36,10 +53,10 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
     const first = presets[0];
     setStops((s) => [...s, { preset_id: first ? first.id : "", dwell_seconds: 5 }]);
   };
-  const removeStop = (i) => setStops((s) => s.filter((_, idx) => idx !== i));
-  const patchStop = (i, patch) =>
+  const removeStop = (i: number) => setStops((s) => s.filter((_, idx) => idx !== i));
+  const patchStop = (i: number, patch: Partial<StopDraft>) =>
     setStops((s) => s.map((st, idx) => (idx === i ? { ...st, ...patch } : st)));
-  const moveStop = (i, dir) => {
+  const moveStop = (i: number, dir: -1 | 1) => {
     const j = i + dir;
     if (j < 0 || j >= stops.length) return;
     setStops((s) => {
@@ -49,9 +66,9 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
     });
   };
 
-  const save = useMutation<any>({
+  const save = useMutation({
     mutationFn: () => {
-      const body = {
+      const body: PatrolCreate = {
         name: name.trim(),
         speed: Number(speed),
         stops: stops
@@ -61,7 +78,7 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
             dwell_seconds: Math.max(1, Number(s.dwell_seconds) || 1),
           })),
       };
-      return editing
+      return patrol
         ? vms.ptz.patrols.update(cameraId, patrol.id, body)
         : vms.ptz.patrols.create(cameraId, body);
     },
@@ -81,7 +98,7 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
       open
       onClose={onClose}
       wide
-      title={editing ? `Edit patrol — ${patrol.name}` : "New patrol"}
+      title={patrol ? `Edit patrol — ${patrol.name}` : "New patrol"}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
@@ -182,12 +199,20 @@ export default function PatrolEditorModal({ cameraId, presets = [], patrol, onCl
 }
 
 // The Select emits string values; map back to the preset's real id type.
-function numericId(value, presets) {
+function numericId(value: string, presets: PresetPublic[]): string {
   const match = presets.find((p) => String(p.id) === String(value));
   return match ? match.id : value;
 }
 
-function IconBtn({ icon, title, onClick, disabled, danger }: any) {
+interface IconBtnProps {
+  icon: string;
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
+function IconBtn({ icon, title, onClick, disabled, danger }: IconBtnProps) {
   return (
     <button
       type="button"

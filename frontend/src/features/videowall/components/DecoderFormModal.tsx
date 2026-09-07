@@ -11,13 +11,43 @@ import { useEffect, useState } from "react";
 
 import { Button, Input, Modal, Select, Toggle } from "@/components/ui/kit";
 import { DECODER_BRANDS } from "../wallLayout";
+import type { DecoderBrand, DecoderCreate, DecoderPublic } from "../types";
 
 const PLACEHOLDER = "•••••••• (unchanged)";
 const BRAND_OPTS = DECODER_BRANDS.map((b) => ({ value: b.value, label: b.label }));
 
-export default function DecoderFormModal({ open, decoder, onClose, onSubmit, busy }: any) {
+/** The edit buffer. Number fields hold the input's raw string until submit
+ *  coerces them, so both shapes are allowed here. */
+interface DecoderForm {
+  name: string;
+  brand: string;
+  host: string;
+  port: number | string;
+  username: string;
+  /** Never prefilled — write-only, sent only when the operator types one. */
+  password: string;
+  channel_count: number | string;
+  is_enabled: boolean;
+}
+
+export interface DecoderFormModalProps {
+  open: boolean;
+  /** The decoder being edited, or null/undefined to register one. */
+  decoder?: DecoderPublic | null;
+  onClose: () => void;
+  onSubmit?: (body: DecoderCreate) => void;
+  busy?: boolean;
+}
+
+export default function DecoderFormModal({
+  open,
+  decoder,
+  onClose,
+  onSubmit,
+  busy,
+}: DecoderFormModalProps) {
   const editing = !!decoder;
-  const [form, setForm] = useState<any>(null);
+  const [form, setForm] = useState<DecoderForm | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -34,12 +64,13 @@ export default function DecoderFormModal({ open, decoder, onClose, onSubmit, bus
   }, [open, decoder]);
 
   if (!open || !form) return null;
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const set = <K extends keyof DecoderForm>(k: K, v: DecoderForm[K]) =>
+    setForm((f) => (f ? { ...f, [k]: v } : f));
 
   const submit = () => {
-    const body: any = {
+    const body: DecoderCreate = {
       name: form.name.trim(),
-      brand: form.brand,
+      brand: form.brand as DecoderBrand,
       host: form.host.trim(),
       port: Number(form.port),
       username: form.username.trim(),

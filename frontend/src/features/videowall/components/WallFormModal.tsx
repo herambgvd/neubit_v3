@@ -10,20 +10,48 @@ import { Button, Input, Modal, Select, Textarea, Toggle } from "@/components/ui/
 import { asItems } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
 
+import type { WallCreate, WallPublic } from "../types";
+
 const GRID_OPTS = [1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: String(n) }));
 
-export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: any) {
-  const editing = !!wall;
-  const [form, setForm] = useState<any>(null);
+/** The edit buffer. `rows`/`cols` hold the Select's raw string until submit
+ *  coerces them, so both shapes are allowed here. */
+interface WallForm {
+  name: string;
+  description: string;
+  site_id: string;
+  rows: number | string;
+  cols: number | string;
+  is_active: boolean;
+}
 
-  const sitesQ = useQuery<any>({
+export interface WallFormModalProps {
+  open: boolean;
+  /** The wall being edited, or null/undefined to create one. */
+  wall?: WallPublic | null;
+  onClose: () => void;
+  onSubmit?: (body: WallCreate) => void;
+  busy?: boolean;
+}
+
+export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: WallFormModalProps) {
+  const editing = !!wall;
+  const [form, setForm] = useState<WallForm | null>(null);
+
+  const sitesQ = useQuery({
     queryKey: ["sites-list", "wall-form"],
     queryFn: () => sitesApi.list({ limit: 500 }),
     enabled: open,
     staleTime: 60_000,
   });
   const siteOpts = useMemo(
-    () => [{ value: "", label: "No site" }, ...asItems(sitesQ.data).map((s) => ({ value: s.id, label: s.name }))],
+    // `site_id`, not `id`: SitePublic keys its identifier `site_id`, so the old
+    // `s.id` put `undefined` in every option value and the picked site was never
+    // sent with the wall.
+    () => [
+      { value: "", label: "No site" },
+      ...asItems(sitesQ.data).map((s) => ({ value: s.site_id, label: s.name })),
+    ],
     [sitesQ.data],
   );
 
@@ -41,7 +69,8 @@ export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: a
 
   if (!open || !form) return null;
 
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const set = <K extends keyof WallForm>(k: K, v: WallForm[K]) =>
+    setForm((f) => (f ? { ...f, [k]: v } : f));
 
   const submit = () => {
     const body = {
@@ -86,7 +115,7 @@ export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: a
           <Select label="Monitor columns" options={GRID_OPTS} value={String(form.cols)} onChange={(e) => set("cols", e.target.value)} />
         </div>
         <p className="text-xs text-nb-soft">
-          Wall grid: {form.rows} × {form.cols} = {form.rows * form.cols} monitor slots. Add and place monitors in the Monitors tab.
+          Wall grid: {form.rows} × {form.cols} = {Number(form.rows) * Number(form.cols)} monitor slots. Add and place monitors in the Monitors tab.
         </p>
         <label className="flex items-center justify-between rounded-[9px] border border-nb-line px-3 py-2">
           <span className="text-sm text-nb-ink">Active</span>

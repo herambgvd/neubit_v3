@@ -29,15 +29,33 @@ import { useAuth } from "@/lib/auth";
 import { useScreens } from "@/lib/desktop";
 import { vms } from "@/features/vms/api";
 import CameraRail from "@/features/vms/components/CameraRail";
+import type { EstateCamera } from "@/features/vms/types";
 
 import { videowall } from "./api";
+import type { PresetPublic, TourPublic } from "./types";
 import { useWallState } from "./hooks/useWallState";
 import { sortedMonitors, filledCount, wallGridStyle } from "./wallLayout";
 import MonitorTile from "./components/MonitorTile";
 import WallCellPicker from "./components/WallCellPicker";
 import ScreenMenu from "./components/ScreenMenu";
 
-export default function WallConsole({ wallId }: any) {
+export interface WallConsoleProps {
+  /** The wall this console drives. Next hands a dynamic route segment through as
+   *  `string | string[] | undefined`, so it is accepted in that shape and
+   *  normalised once below rather than at the page. */
+  wallId?: string | string[];
+}
+
+/** Where a rail click / picker lands: one cell of one monitor. */
+interface CellTarget {
+  monitorId: string;
+  cellIndex: number;
+}
+
+export default function WallConsole({ wallId: wallIdParam }: WallConsoleProps) {
+  // `[id]` is not a catch-all, so the array form never actually occurs; "" for a
+  // missing id keeps every `enabled: !!wallId` gate reading exactly as before.
+  const wallId = (Array.isArray(wallIdParam) ? wallIdParam[0] : wallIdParam) ?? "";
   const { can } = useAuth();
   const control = can("vms.wall.control");
   // Desktop shell only — in a browser this is inert and ScreenMenu renders
@@ -51,29 +69,29 @@ export default function WallConsole({ wallId }: any) {
   // not currently change while a camera is being dragged. Kept (rather than
   // dropped) so the signal is still there when the drop affordance lands.
   const [_railDragging, setRailDragging] = useState(false);
-  const [picker, setPicker] = useState<any>(null); // { monitorId, cellIndex }
+  const [picker, setPicker] = useState<CellTarget | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [busy, setBusy] = useState(false);
 
   // ── Wall + monitors + cameras + presets + tours ────────────────────────
-  const wallQ = useQuery<any>({ queryKey: ["wall", wallId], queryFn: () => videowall.walls.get(wallId), enabled: !!wallId });
-  const monitorsQ = useQuery<any>({
+  const wallQ = useQuery({ queryKey: ["wall", wallId], queryFn: () => videowall.walls.get(wallId), enabled: !!wallId });
+  const monitorsQ = useQuery({
     queryKey: ["wall-monitors", wallId],
     queryFn: () => videowall.monitors.list(wallId),
     enabled: !!wallId,
   });
-  const camerasQ = useQuery<any>({
+  const camerasQ = useQuery({
     queryKey: ["vms-wall-cameras"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     refetchInterval: 30_000,
   });
-  const presetsQ = useQuery<any>({
+  const presetsQ = useQuery({
     queryKey: ["wall-presets", wallId],
     queryFn: () => videowall.presets.list(wallId),
     enabled: !!wallId,
   });
-  const toursQ = useQuery<any>({
+  const toursQ = useQuery({
     queryKey: ["wall-tours", wallId],
     queryFn: () => videowall.tours.list(wallId),
     enabled: !!wallId,
@@ -85,7 +103,7 @@ export default function WallConsole({ wallId }: any) {
   const presets = useMemo(() => asItems(presetsQ.data), [presetsQ.data]);
   const tours = useMemo(() => asItems(toursQ.data), [toursQ.data]);
   const cameraById = useMemo(() => {
-    const m = new Map<any, any>();
+    const m = new Map<string, EstateCamera>();
     cameras.forEach((c) => m.set(c.id, c));
     return m;
   }, [cameras]);
@@ -96,9 +114,9 @@ export default function WallConsole({ wallId }: any) {
   });
 
   const mountedIds = useMemo(() => {
-    const ids = new Set<any>();
-    Object.values<any>(state || {}).forEach((mon) =>
-      Object.values<any>(mon || {}).forEach((cam) => cam && ids.add(cam)),
+    const ids = new Set<string>();
+    Object.values(state || {}).forEach((mon) =>
+      Object.values(mon || {}).forEach((cam) => cam && ids.add(cam)),
     );
     return ids;
   }, [state]);
@@ -111,7 +129,7 @@ export default function WallConsole({ wallId }: any) {
     // Collect then take the first, rather than returning out of a nested loop:
     // the compiler cannot preserve a memo it cannot follow, and a wall is at most
     // a few dozen cells, so walking all of them costs nothing.
-    const empties = monitors.flatMap((mon: any) => {
+    const empties = monitors.flatMap((mon) => {
       const cap = Number(mon.layout) || 1;
       const cells = state?.[mon.id] ?? {};
       return Array.from({ length: cap }, (_, i) => i)
@@ -130,20 +148,20 @@ export default function WallConsole({ wallId }: any) {
     return true;
   };
 
-  const doPush = (monitorId, cellIndex, cameraId) => {
+  const doPush = (monitorId: string, cellIndex: number, cameraId: string) => {
     if (!guard()) return;
     push(monitorId, cellIndex, cameraId).catch((e) => toast.error(apiError(e, "Could not update the wall")));
   };
-  const doClearCell = (monitorId, cellIndex) => {
+  const doClearCell = (monitorId: string, cellIndex: number) => {
     if (!guard()) return;
     clearCell(monitorId, cellIndex).catch((e) => toast.error(apiError(e, "Could not clear the cell")));
   };
-  const doClearMonitor = (monitorId) => {
+  const doClearMonitor = (monitorId: string) => {
     if (!guard()) return;
     clearMonitor(monitorId).catch((e) => toast.error(apiError(e, "Could not clear the monitor")));
   };
 
-  const pickFromRail = (cam) => {
+  const pickFromRail = (cam: EstateCamera) => {
     if (!guard()) return;
     if (!firstEmpty) {
       toast.message("Wall is full — clear a cell first.");
@@ -169,7 +187,7 @@ export default function WallConsole({ wallId }: any) {
     }
   };
 
-  const recallPreset = async (preset) => {
+  const recallPreset = async (preset: PresetPublic) => {
     if (!guard()) return;
     try {
       await applyPreset(preset.id);
@@ -179,7 +197,7 @@ export default function WallConsole({ wallId }: any) {
     }
   };
 
-  const toggleTour = async (tour) => {
+  const toggleTour = async (tour: TourPublic) => {
     if (!guard()) return;
     try {
       if (tour.is_running) await videowall.tours.stop(wallId, tour.id);
@@ -322,7 +340,7 @@ export default function WallConsole({ wallId }: any) {
         open={!!picker}
         cameras={cameras}
         mountedIds={mountedIds}
-        onPick={(camId) => {
+        onPick={(camId: string) => {
           if (picker) doPush(picker.monitorId, picker.cellIndex, camId);
           setPicker(null);
         }}
@@ -362,7 +380,17 @@ export default function WallConsole({ wallId }: any) {
 }
 
 // ── Preset dropdown ────────────────────────────────────────────────────────
-function PresetMenu({ presets, onApply, onSave }: any) {
+interface PresetMenuProps {
+  presets: PresetPublic[];
+  onApply: (preset: PresetPublic) => void;
+  /** Opens the "save current wall" modal. */
+  onSave?: () => void;
+  /** Accepted for the caller that passes them; the menu itself refetches nothing. */
+  onRefetch?: () => void;
+  wallId?: string;
+}
+
+function PresetMenu({ presets, onApply, onSave }: PresetMenuProps) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
@@ -425,7 +453,12 @@ function PresetMenu({ presets, onApply, onSave }: any) {
 }
 
 // ── Tour dropdown ──────────────────────────────────────────────────────────
-function TourMenu({ tours, onToggle }) {
+interface TourMenuProps {
+  tours: TourPublic[];
+  onToggle: (tour: TourPublic) => void;
+}
+
+function TourMenu({ tours, onToggle }: TourMenuProps) {
   const [open, setOpen] = useState(false);
   const running = tours.find((t) => t.is_running);
   return (

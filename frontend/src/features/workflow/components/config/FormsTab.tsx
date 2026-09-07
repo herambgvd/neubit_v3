@@ -9,6 +9,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ui/kit";
+import type { ConfirmState } from "@/components/ui/kit";
 import {
   ConsoleGrid,
   ConsolePanel,
@@ -22,17 +23,20 @@ import {
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
+import type { FormPublic } from "../../types";
 import FormBuilder from "./FormBuilder";
 import FormDetail from "./FormDetail";
 
+type Mode = "view" | "create" | "edit";
+
 export default function FormsTab() {
   const qc = useQueryClient();
-  const q = useQuery<any>({ queryKey: ["wf-forms"], queryFn: () => wfApi.forms.list({ limit: 200 }) });
-  const forms = asItems(q.data);
+  const q = useQuery({ queryKey: ["wf-forms"], queryFn: () => wfApi.forms.list({ limit: 200 }) });
+  const forms = useMemo<FormPublic[]>(() => (q.data ? asItems(q.data) : []), [q.data]);
 
-  const [selectedId, setSelectedId] = useState<any>(null);
-  const [mode, setMode] = useState("view"); // view | create | edit
-  const [confirm, setConfirm] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("view"); // view | create | edit
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -49,13 +53,13 @@ export default function FormsTab() {
   const selected = useMemo(() => (mode === "create" ? null : forms.find((f) => f.form_id === effectiveId) || null), [forms, effectiveId, mode]);
 
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => wfApi.forms.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => wfApi.forms.remove(id),
     onSuccess: () => { toast.success("Form removed"); qc.invalidateQueries({ queryKey: ["wf-forms"] }); setSelectedId(null); },
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function askDelete(f) {
+  function askDelete(f: FormPublic) {
     setConfirm({ title: "Delete form?", message: `Delete "${f.name}"?`, confirmLabel: "Delete", onConfirm: () => { remove.mutate(f.form_id); setConfirm(null); } });
   }
 

@@ -3,6 +3,7 @@
 // Category create / edit modal. Presentational shell via kit <Modal>; the form
 // fields use the shared <Field>.
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -10,16 +11,26 @@ import { Button, Modal } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { ingest as ingestApi } from "../api";
+import type { CategoryCreate, CategoryPublic } from "../types";
+import type { FieldChangeEvent } from "@/components/common/Field";
 
-export default function CategoryFormModal({ category, onCancel, onSaved }: any) {
+export interface CategoryFormModalProps {
+  /** Null = create. */
+  category?: CategoryPublic | null;
+  onCancel: () => void;
+  onSaved: (saved: CategoryPublic) => void;
+}
+
+export default function CategoryFormModal({ category, onCancel, onSaved }: CategoryFormModalProps) {
   const isEdit = !!category;
   const [name, setName] = useState(category?.name || "");
   const [description, setDescription] = useState(category?.description || "");
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<{ name?: string }>({});
 
-  const saving = useMutation<any, any, any>({
-    mutationFn: (body: any) => {
-      const id = category?.id ?? category?.category_id;
+  const saving = useMutation({
+    mutationFn: (body: CategoryCreate) => {
+      // `isEdit` IS `!!category`, so the id is present on the update branch.
+      const id = category?.id ?? "";
       return isEdit ? ingestApi.categories.update(id, body) : ingestApi.categories.create(body);
     },
     onSuccess: (saved) => {
@@ -29,7 +40,7 @@ export default function CategoryFormModal({ category, onCancel, onSaved }: any) 
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!name.trim()) {
       setErrors({ name: "Name is required" });
@@ -57,7 +68,7 @@ export default function CategoryFormModal({ category, onCancel, onSaved }: any) 
           label="Name"
           required
           value={name}
-          onChange={(e) => {
+          onChange={(e: FieldChangeEvent) => {
             setName(e.target.value);
             if (errors.name) setErrors({});
           }}
@@ -69,7 +80,7 @@ export default function CategoryFormModal({ category, onCancel, onSaved }: any) 
           label="Description"
           rows={2}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e: FieldChangeEvent) => setDescription(e.target.value)}
           placeholder="Optional description"
         />
       </form>

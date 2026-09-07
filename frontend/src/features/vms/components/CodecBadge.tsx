@@ -15,9 +15,22 @@
 // the other inline chips.
 import { Icon } from "@iconify/react";
 
+import type { CameraPublic } from "../types";
+
+/** The two CameraPublic fields the policy reads — optional so an EstateCamera
+ *  (a Partial of the row) or a bare `{ sub_stream_codec, web_codec_enforced }`
+ *  literal both qualify. */
+export type CodecPolicySource = Partial<Pick<CameraPublic, "sub_stream_codec" | "web_codec_enforced">>;
+
+export interface CodecPolicyState {
+  kind: "direct" | "transcoded";
+  label: string;
+  icon: string;
+}
+
 // Resolve the codec policy state from a camera (or a { sub_stream_codec,
 // web_codec_enforced } shape). Returns null when unknown.
-export function codecPolicyState(camera) {
+export function codecPolicyState(camera: CodecPolicySource | null | undefined): CodecPolicyState | null {
   if (!camera) return null;
   const enforced = camera.web_codec_enforced === true;
   const sub = (camera.sub_stream_codec || "").toString().toUpperCase();
@@ -30,7 +43,13 @@ export function codecPolicyState(camera) {
   return null;
 }
 
-export default function CodecBadge({ camera, showDash = false, className = "" }: any) {
+export interface CodecBadgeProps {
+  camera?: CodecPolicySource | null;
+  showDash?: boolean;
+  className?: string;
+}
+
+export default function CodecBadge({ camera, showDash = false, className = "" }: CodecBadgeProps) {
   const state = codecPolicyState(camera);
   if (!state) {
     return showDash ? <span className="text-[11px] text-muted">—</span> : null;

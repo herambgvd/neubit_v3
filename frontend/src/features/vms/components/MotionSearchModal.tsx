@@ -10,43 +10,56 @@
 // Regions are stored NORMALIZED (0..1): {x,y} = top-left, {w,h} = size relative to
 // the frame. An empty region list = whole frame. Both start + poll gate on
 // vms.playback.view (the backend enforces it too).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
 import { Icon } from "@iconify/react";
 
 import { Button, Modal } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { MotionHit, MotionRegion } from "../types";
+import type { MotionSearchResults } from "./playbackTypes";
 
 // ISO ↔ the value a datetime-local input wants (local wall-clock).
-function toLocalInput(iso) {
+function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
     d.getHours(),
   )}:${pad(d.getMinutes())}`;
 }
-const fromLocalInput = (v) => (v ? new Date(v).toISOString() : null);
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
-const fmtTime = (iso) =>
+const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOString() : null);
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const fmtTime = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, { hour12: false });
+
+export interface MotionSearchModalProps {
+  open: boolean;
+  onClose?: () => void;
+  cameraId: string;
+  cameraName?: string | null;
+  /** Seed window (ISO) — defaults to the loaded playback window. */
+  seedFrom?: string | null;
+  seedTo?: string | null;
+  /** Called on a successful `done` so the parent can plot the intervals on the
+   *  timeline. Also fires with hits:[] to clear. */
+  onResults?: (results: MotionSearchResults) => void;
+  /** Click a hit → seek playback there. */
+  onSeekHit?: (iso: string) => void;
+}
 
 export default function MotionSearchModal({
   open,
   onClose,
   cameraId,
   cameraName,
-  // Seed window (ISO) — defaults to the loaded playback window.
   seedFrom = null,
   seedTo = null,
-  // ({ hits, jobId, note }) => void — called on a successful `done` so the parent
-  // can plot the intervals on the timeline. Also fires with hits:[] to clear.
   onResults,
-  // (iso) => void — click a hit → seek playback there.
   onSeekHit,
-}: any) {
+}: MotionSearchModalProps) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sensitivity, setSensitivity] = useState(0.5);
@@ -54,25 +67,25 @@ export default function MotionSearchModal({
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Reference frame (camera snapshot as a blob object-URL).
-  const [frameUrl, setFrameUrl] = useState<any>(null);
+  const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [frameError, setFrameError] = useState(false);
   const [frameLoading, setFrameLoading] = useState(false);
 
   // Drawn regions — normalized rects { x, y, w, h }.
-  const [regions, setRegions] = useState<any[]>([]);
-  const [draft, setDraft] = useState<any>(null); // in-progress rect while dragging (normalized)
+  const [regions, setRegions] = useState<MotionRegion[]>([]);
+  const [draft, setDraft] = useState<MotionRegion | null>(null); // in-progress rect while dragging (normalized)
 
   // Job lifecycle.
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
-  const [hits, setHits] = useState<any>(null); // null = not run yet; [] = ran, no hits
+  const [hits, setHits] = useState<MotionHit[] | null>(null); // null = not run yet; [] = ran, no hits
   const [note, setNote] = useState("");
   const [jobError, setJobError] = useState("");
 
-  const drawRef = useRef<any>(null);
-  const dragRef = useRef<any>(null); // { startX, startY }
-  const abortRef = useRef<any>(null);
+  const drawRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // ── Seed window + fetch a reference frame when opened ────────────────────
   useEffect(() => {
@@ -94,7 +107,7 @@ export default function MotionSearchModal({
     setFrameError(false);
     setFrameUrl(null);
     api
-      .get(vms.cameras.snapshotUrl(cameraId), { responseType: "blob" })
+      .get<Blob>(vms.cameras.snapshotUrl(cameraId), { responseType: "blob" })
       .then((r) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(r.data);
@@ -112,7 +125,7 @@ export default function MotionSearchModal({
   }, [open, cameraId, seedFrom, seedTo]);
 
   // ── Draw layer — drag to add a normalized rect ───────────────────────────
-  const rectFromEvent = (e) => {
+  const rectFromEvent = (e: MouseEvent<HTMLDivElement>) => {
     const box = drawRef.current?.getBoundingClientRect();
     if (!box?.width || !box?.height) return null;
     return {
@@ -121,7 +134,7 @@ export default function MotionSearchModal({
     };
   };
 
-  const onDrawDown = (e) => {
+  const onDrawDown = (e: MouseEvent<HTMLDivElement>) => {
     if (running) return;
     const p = rectFromEvent(e);
     if (!p) return;
@@ -130,7 +143,7 @@ export default function MotionSearchModal({
     e.preventDefault();
   };
 
-  const onDrawMove = (e) => {
+  const onDrawMove = (e: MouseEvent<HTMLDivElement>) => {
     if (!dragRef.current) return;
     const p = rectFromEvent(e);
     if (!p) return;
@@ -155,17 +168,17 @@ export default function MotionSearchModal({
     });
   };
 
-  const removeRegion = (idx) => setRegions((prev) => prev.filter((_, i) => i !== idx));
+  const removeRegion = (idx: number) => setRegions((prev) => prev.filter((_, i) => i !== idx));
   const clearRegions = () => setRegions([]);
 
   // ── Run the search ────────────────────────────────────────────────────────
   const fromIso = fromLocalInput(from);
   const toIso = fromLocalInput(to);
-  const windowValid = fromIso && toIso && new Date(toIso) > new Date(fromIso);
+  const windowValid = !!fromIso && !!toIso && new Date(toIso) > new Date(fromIso);
   const canRun = !!cameraId && windowValid && !running;
 
   const runSearch = async () => {
-    if (!canRun) return;
+    if (!canRun || !fromIso || !toIso) return; // `canRun` already implies the window; this narrows it
     setRunning(true);
     setProgress(0);
     setHits(null);
@@ -211,7 +224,8 @@ export default function MotionSearchModal({
         toast.success(found.length ? `${found.length} motion hit${found.length === 1 ? "" : "s"} found` : "No motion in the selected region");
       }
     } catch (e) {
-      if (e?.name === "AbortError") return; // modal closed / cancelled
+      // `poll` rejects with an AbortError DOMException when the modal closes / cancels.
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setJobError(apiError(e, "Motion search failed"));
       setHits([]);
       toast.error(apiError(e, "Motion search failed"));

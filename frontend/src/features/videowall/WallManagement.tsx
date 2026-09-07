@@ -8,25 +8,48 @@
 // Perm-gated on vms.wall.manage (writes). Reads need vms.wall.view. Bound to the
 // VW-A backend (/api/v1/vms/walls/...) + the VW-B decoder endpoints
 // (/api/v1/vms/decoders — degrades cleanly if VW-B isn't live yet).
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 import Link from "next/link";
 
-import { Button, ConfirmDialog, EmptyState, Spinner } from "@/components/ui/kit";
+import { Button, ConfirmDialog, EmptyState, Spinner, type ConfirmState } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 import { videowall } from "./api";
-import { sortedMonitors, monitorGrid, DECODER_BRANDS } from "./wallLayout";
+import { sortedMonitors, monitorGrid, DECODER_BRANDS, type WallMonitor } from "./wallLayout";
+import type {
+  DecoderCreate,
+  DecoderPublic,
+  MonitorCreate,
+  MonitorListResponse,
+  PresetListResponse,
+  PresetPublic,
+  TourCreate,
+  TourPublic,
+  WallCreate,
+  WallPublic,
+} from "./types";
 import WallFormModal from "./components/WallFormModal";
 import MonitorFormModal from "./components/MonitorFormModal";
 import DecoderFormModal from "./components/DecoderFormModal";
 import TourFormModal from "./components/TourFormModal";
 
-const TABS = [
+/** The right-hand pane's tabs. */
+type TabKey = "monitors" | "presets" | "tours" | "decoders";
+
+interface TabDef {
+  key: TabKey;
+  label: string;
+  /** An iconify name. */
+  icon: string;
+}
+
+const TABS: TabDef[] = [
   { key: "monitors", label: "Monitors", icon: "heroicons:computer-desktop" },
   { key: "presets", label: "Presets", icon: "heroicons-outline:bookmark" },
   { key: "tours", label: "Tours", icon: "heroicons-outline:arrow-path-rounded-square" },
@@ -39,17 +62,19 @@ export default function WallManagement() {
   const canManage = can("vms.wall.manage");
   const canView = can("vms.wall.view");
 
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState("monitors");
-  const [wallModal, setWallModal] = useState<any>(null); // { wall } | { }
-  const [monitorModal, setMonitorModal] = useState<any>(null);
-  const [decoderModal, setDecoderModal] = useState<any>(null);
-  const [tourModal, setTourModal] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  const [tab, setTab] = useState<TabKey>("monitors");
+  // Each modal's state doubles as its open flag: null = closed, an object = open
+  // on that row (an empty object = "create").
+  const [wallModal, setWallModal] = useState<{ wall?: WallPublic } | null>(null);
+  const [monitorModal, setMonitorModal] = useState<{ wallId: string; monitor?: WallMonitor } | null>(null);
+  const [decoderModal, setDecoderModal] = useState<{ decoder?: DecoderPublic } | null>(null);
+  const [tourModal, setTourModal] = useState<{ wallId: string; tour?: TourPublic } | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const wallsQ = useQuery<any>({
+  const wallsQ = useQuery({
     queryKey: ["walls"],
     queryFn: () => videowall.walls.list({ limit: 200 }),
     enabled: canView,
@@ -71,9 +96,9 @@ export default function WallManagement() {
 
   // Decoders are wall-independent (tenant-scoped catalog) — used across the
   // Decoders tab and the monitor form. Gracefully empty if VW-B isn't live.
-  const decodersQ = useQuery<any>({
+  const decodersQ = useQuery({
     queryKey: ["wall-decoders"],
-    queryFn: () => videowall.decoders.list().catch(() => ({ items: [] })),
+    queryFn: () => videowall.decoders.list().catch(() => ({ items: [], total: 0 })),
     enabled: canView,
   });
   const decoders = useMemo(() => asItems(decodersQ.data), [decodersQ.data]);
@@ -85,7 +110,7 @@ export default function WallManagement() {
   const refetchWalls = () => qc.invalidateQueries({ queryKey: ["walls"] });
 
   // ── wall CRUD ──────────────────────────────────────────────────────────
-  const submitWall = async (body) => {
+  const submitWall = async (body: WallCreate) => {
     setBusy(true);
     try {
       if (wallModal?.wall) {
@@ -105,7 +130,7 @@ export default function WallManagement() {
     }
   };
 
-  const deleteWall = (wall) =>
+  const deleteWall = (wall: WallPublic) =>
     setConfirm({
       title: "Delete wall",
       message: `Delete “${wall.name}” and its monitors, presets and tours? This can't be undone.`,
@@ -224,11 +249,11 @@ export default function WallManagement() {
             onEditWall={() => setWallModal({ wall: selected })}
             onDeleteWall={() => deleteWall(selected)}
             onAddMonitor={() => setMonitorModal({ wallId: selected.id })}
-            onEditMonitor={(m) => setMonitorModal({ wallId: selected.id, monitor: m })}
+            onEditMonitor={(m: WallMonitor) => setMonitorModal({ wallId: selected.id, monitor: m })}
             onAddTour={() => setTourModal({ wallId: selected.id })}
-            onEditTour={(t) => setTourModal({ wallId: selected.id, tour: t })}
+            onEditTour={(t: TourPublic) => setTourModal({ wallId: selected.id, tour: t })}
             onAddDecoder={() => setDecoderModal({})}
-            onEditDecoder={(d) => setDecoderModal({ decoder: d })}
+            onEditDecoder={(d: DecoderPublic) => setDecoderModal({ decoder: d })}
             setConfirm={setConfirm}
             refetchDecoders={() => qc.invalidateQueries({ queryKey: ["wall-decoders"] })}
           />
@@ -252,10 +277,15 @@ export default function WallManagement() {
         open={!!monitorModal}
         monitor={monitorModal?.monitor}
         decoders={decoders}
-        defaultPosition={selected ? (asItems(qc.getQueryData(["wall-monitors", selected.id]))?.length || 0) : 0}
+        defaultPosition={
+          selected
+            ? asItems(qc.getQueryData<MonitorListResponse>(["wall-monitors", selected.id]))?.length || 0
+            : 0
+        }
         onClose={() => setMonitorModal(null)}
         busy={busy}
-        onSubmit={async (body) => {
+        onSubmit={async (body: MonitorCreate) => {
+          if (!monitorModal) return;
           setBusy(true);
           try {
             if (monitorModal.monitor) await videowall.monitors.update(monitorModal.wallId, monitorModal.monitor.id, body);
@@ -276,7 +306,8 @@ export default function WallManagement() {
         decoder={decoderModal?.decoder}
         onClose={() => setDecoderModal(null)}
         busy={busy}
-        onSubmit={async (body) => {
+        onSubmit={async (body: DecoderCreate) => {
+          if (!decoderModal) return;
           setBusy(true);
           try {
             if (decoderModal.decoder) await videowall.decoders.update(decoderModal.decoder.id, body);
@@ -285,7 +316,7 @@ export default function WallManagement() {
             setDecoderModal(null);
             qc.invalidateQueries({ queryKey: ["wall-decoders"] });
           } catch (e) {
-            const status = e?.response?.status;
+            const status = isAxiosError(e) ? e.response?.status : undefined;
             toast.error(
               status === 404
                 ? "Decoder API isn't available yet (VW-B pending)."
@@ -300,10 +331,15 @@ export default function WallManagement() {
       <TourFormModal
         open={!!tourModal}
         tour={tourModal?.tour}
-        presets={tourModal ? asItems(qc.getQueryData(["wall-presets", tourModal.wallId])) : []}
+        presets={
+          tourModal
+            ? asItems(qc.getQueryData<PresetListResponse>(["wall-presets", tourModal.wallId]))
+            : []
+        }
         onClose={() => setTourModal(null)}
         busy={busy}
-        onSubmit={async (body) => {
+        onSubmit={async (body: TourCreate) => {
+          if (!tourModal) return;
           setBusy(true);
           try {
             if (tourModal.tour) await videowall.tours.update(tourModal.wallId, tourModal.tour.id, body);
@@ -325,6 +361,25 @@ export default function WallManagement() {
 }
 
 // ── Wall detail (tabbed) ────────────────────────────────────────────────────
+interface WallDetailProps {
+  wall: WallPublic;
+  tab: TabKey;
+  setTab: (tab: TabKey) => void;
+  canManage: boolean;
+  decoders: DecoderPublic[];
+  decodersLoading: boolean;
+  onEditWall: () => void;
+  onDeleteWall: () => void;
+  onAddMonitor: () => void;
+  onEditMonitor: (monitor: WallMonitor) => void;
+  onAddTour: () => void;
+  onEditTour: (tour: TourPublic) => void;
+  onAddDecoder: () => void;
+  onEditDecoder: (decoder: DecoderPublic) => void;
+  setConfirm: (state: ConfirmState | null) => void;
+  refetchDecoders: () => void;
+}
+
 function WallDetail({
   wall,
   tab,
@@ -342,19 +397,19 @@ function WallDetail({
   onEditDecoder,
   setConfirm,
   refetchDecoders,
-}: any) {
+}: WallDetailProps) {
   const qc = useQueryClient();
 
-  const monitorsQ = useQuery<any>({ queryKey: ["wall-monitors", wall.id], queryFn: () => videowall.monitors.list(wall.id) });
-  const presetsQ = useQuery<any>({ queryKey: ["wall-presets", wall.id], queryFn: () => videowall.presets.list(wall.id) });
-  const toursQ = useQuery<any>({ queryKey: ["wall-tours", wall.id], queryFn: () => videowall.tours.list(wall.id) });
+  const monitorsQ = useQuery({ queryKey: ["wall-monitors", wall.id], queryFn: () => videowall.monitors.list(wall.id) });
+  const presetsQ = useQuery({ queryKey: ["wall-presets", wall.id], queryFn: () => videowall.presets.list(wall.id) });
+  const toursQ = useQuery({ queryKey: ["wall-tours", wall.id], queryFn: () => videowall.tours.list(wall.id) });
 
   const monitors = useMemo(() => sortedMonitors(asItems(monitorsQ.data)), [monitorsQ.data]);
   const presets = useMemo(() => asItems(presetsQ.data), [presetsQ.data]);
   const tours = useMemo(() => asItems(toursQ.data), [toursQ.data]);
-  const decoderById = useMemo(() => new Map<any, any>(decoders.map((d) => [d.id, d])), [decoders]);
+  const decoderById = useMemo(() => new Map(decoders.map((d) => [d.id, d])), [decoders]);
 
-  const delMonitor = (m) =>
+  const delMonitor = (m: WallMonitor) =>
     setConfirm({
       title: "Remove monitor",
       message: `Remove “${m.name}” from this wall?`,
@@ -372,7 +427,7 @@ function WallDetail({
       },
     });
 
-  const delPreset = (p) =>
+  const delPreset = (p: PresetPublic) =>
     setConfirm({
       title: "Delete preset",
       message: `Delete preset “${p.name}”?`,
@@ -390,7 +445,7 @@ function WallDetail({
       },
     });
 
-  const delTour = (t) =>
+  const delTour = (t: TourPublic) =>
     setConfirm({
       title: "Delete tour",
       message: `Delete tour “${t.name}”?`,
@@ -408,7 +463,7 @@ function WallDetail({
       },
     });
 
-  const testDecoder = async (d) => {
+  const testDecoder = async (d: DecoderPublic) => {
     const t = toast.loading(`Probing “${d.name}”…`);
     try {
       const r = await videowall.decoders.test(d.id);
@@ -424,7 +479,7 @@ function WallDetail({
     }
   };
 
-  const delDecoder = (d) =>
+  const delDecoder = (d: DecoderPublic) =>
     setConfirm({
       title: "Delete decoder",
       message: `Delete decoder “${d.name}”?`,
@@ -501,7 +556,7 @@ function WallDetail({
             addLabel="Add monitor"
             canManage={canManage}
             onAdd={onAddMonitor}
-            renderRow={(m) => {
+            renderRow={(m: WallMonitor) => {
               const cap = monitorGrid(m.layout).capacity;
               const isDecoder = m.kind === "decoder";
               return (
@@ -528,13 +583,13 @@ function WallDetail({
             emptyIcon="heroicons-outline:bookmark"
             emptyText="No presets — save one from the operator console (arrange the wall, then Save current)."
             canManage={canManage}
-            renderRow={(p) => (
+            renderRow={(p: PresetPublic) => (
               <>
                 <Icon icon="heroicons-outline:bookmark" className="text-base text-nb-muted" />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium text-nb-ink">{p.name}</span>
                   <span className="text-[11px] text-nb-faint">
-                    {Object.values<any>(p.state || {}).reduce((n, mon) => n + Object.values<any>(mon || {}).filter(Boolean).length, 0)} cameras
+                    {Object.values(p.state || {}).reduce((n, mon) => n + Object.values(mon || {}).filter(Boolean).length, 0)} cameras
                     {p.is_default ? " · default" : ""}
                   </span>
                 </span>
@@ -553,7 +608,7 @@ function WallDetail({
             addLabel="New tour"
             canManage={canManage}
             onAdd={onAddTour}
-            renderRow={(t) => (
+            renderRow={(t: TourPublic) => (
               <>
                 <Icon icon="heroicons-outline:arrow-path-rounded-square" className={`text-base ${t.is_running ? "text-nb-blueb" : "text-nb-muted"}`} />
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -581,7 +636,7 @@ function WallDetail({
             addLabel="Register decoder"
             canManage={canManage}
             onAdd={onAddDecoder}
-            renderRow={(d) => (
+            renderRow={(d: DecoderPublic) => (
               <>
                 <Icon icon="heroicons:cpu-chip" className={`text-base ${d.is_enabled ? "text-nb-warn" : "text-nb-muted"}`} />
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -595,7 +650,7 @@ function WallDetail({
             )}
             onEdit={onEditDecoder}
             onDelete={delDecoder}
-            extraAction={(d) => (
+            extraAction={(d: DecoderPublic) => (
               <button
                 type="button"
                 title="Test connection"
@@ -612,8 +667,29 @@ function WallDetail({
   );
 }
 
+/** Anything TabList can list: a row it can key by id. */
+interface TabRow {
+  id: string;
+}
+
+interface TabListProps<T extends TabRow> {
+  loading: boolean;
+  items: T[];
+  /** An iconify name for the empty state. */
+  emptyIcon: string;
+  emptyText: string;
+  addLabel?: string;
+  canManage: boolean;
+  onAdd?: () => void;
+  renderRow: (item: T) => ReactNode;
+  onEdit?: (item: T) => void;
+  onDelete?: (item: T) => void;
+  /** An extra per-row control, rendered before edit/delete (the decoder probe). */
+  extraAction?: (item: T) => ReactNode;
+}
+
 // A simple add-button + row-list with edit/delete actions, shared by all tabs.
-function TabList({ loading, items, emptyIcon, emptyText, addLabel, canManage, onAdd, renderRow, onEdit, onDelete, extraAction }: any) {
+function TabList<T extends TabRow>({ loading, items, emptyIcon, emptyText, addLabel, canManage, onAdd, renderRow, onEdit, onDelete, extraAction }: TabListProps<T>) {
   return (
     <div>
       {canManage && onAdd && (

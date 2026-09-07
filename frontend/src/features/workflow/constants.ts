@@ -2,12 +2,20 @@
 // kit-Badge color mappings. Extracted from IncidentList so both the list and the
 // detail page (and any future incident view) share one source of truth.
 
+import type { BadgeColor } from "@/components/ui/kit";
+import type { InstancePriority } from "./types";
+
 // Domain statuses mirror neubit_v2's incident lifecycle (pending→active→…→completed).
-export const INCIDENT_STATUSES = ["pending", "active", "paused", "completed", "cancelled"];
-export const PRIORITIES = ["low", "medium", "high", "critical"];
+// Wider than `InstanceStatus`: `completed` is the v2 alias the stats endpoint
+// still reports alongside `resolved`, so the filter keeps offering it.
+export const INCIDENT_STATUSES: string[] = ["pending", "active", "paused", "completed", "cancelled"];
+export const PRIORITIES: InstancePriority[] = ["low", "medium", "high", "critical"];
+
+/** True for the four `InstancePriority` literals — narrows a select's string value. */
+export const isPriority = (v: string): v is InstancePriority => (PRIORITIES as string[]).includes(v);
 
 // status → kit Badge color
-export const STATUS_COLOR = {
+export const STATUS_COLOR: Record<string, BadgeColor> = {
   pending: "amber",
   active: "blue",
   paused: "amber",
@@ -15,7 +23,7 @@ export const STATUS_COLOR = {
   cancelled: "neutral",
 };
 // priority → kit Badge color
-export const PRIORITY_COLOR = {
+export const PRIORITY_COLOR: Record<string, BadgeColor> = {
   low: "slate",
   medium: "blue",
   high: "amber",
@@ -26,7 +34,7 @@ export const PRIORITY_COLOR = {
 // query value (the EventBus domain tag stored on the originating event envelope,
 // i.e. WorkflowInstance.trigger_data.source). "vision" is the camera-events domain
 // (shown as "Camera"); operator-raised incidents (no envelope) match "manual".
-export const INCIDENT_SOURCES = [
+export const INCIDENT_SOURCES: { value: string; label: string }[] = [
   { value: "", label: "All sources" },
   { value: "vision", label: "Camera" },
   { value: "access", label: "Access control" },
@@ -35,7 +43,7 @@ export const INCIDENT_SOURCES = [
 ];
 
 // Camera-origin source values → the incident carries a linked camera event.
-export const CAMERA_SOURCES = new Set<any>(["vision"]);
+export const CAMERA_SOURCES = new Set<string>(["vision"]);
 
 // ── Workflow console sub-views ────────────────────────────────────────────
 // The /workflow-config console's seven surfaces. Like every other console
@@ -43,7 +51,15 @@ export const CAMERA_SOURCES = new Set<any>(["vision"]);
 // segment lives in the global header bar — NOT in the page. So this list is shared:
 // ConsoleStrip renders the segment from it and WorkflowConfig maps `key` to the tab
 // component. `key` is the ?view= value; the FIRST entry is the default view.
-export const WORKFLOW_VIEWS = [
+export type WorkflowViewKey = "sops" | "triggers" | "forms" | "formats" | "simulator" | "notifications" | "threat";
+
+export interface WorkflowView {
+  key: WorkflowViewKey;
+  label: string;
+  icon: string;
+}
+
+export const WORKFLOW_VIEWS: WorkflowView[] = [
   { key: "sops", label: "SOPS", icon: "heroicons:rectangle-stack" },
   { key: "triggers", label: "TRIGGERS", icon: "heroicons:bolt" },
   { key: "forms", label: "FORMS", icon: "heroicons-outline:clipboard-document-list" },

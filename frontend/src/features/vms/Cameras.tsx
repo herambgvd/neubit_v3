@@ -21,18 +21,25 @@ import { vms } from "./api";
 import { STATUS_FILTERS } from "./constants";
 import { StatusDot } from "./components/StatusBadge";
 import FederatedCameraDetail from "./components/FederatedCameraDetail";
+import type { EstateFederatedCamera } from "./types";
+
+/** One row of the left list — the federated camera as the detail pane reads it,
+ *  plus the recorder name the list prints under it. */
+interface CameraRow extends EstateFederatedCamera {
+  source_label: string;
+}
 
 export default function CamerasPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null); // detail selection
+  const [selectedId, setSelectedId] = useState<string | null>(null); // detail selection
 
   // ── Data ─────────────────────────────────────────────────────────────
   // Federated (recorder-owned) cameras — cameras OWNED by registered recorder
   // nodes (our own standalone recorder + 3rd-party NVRs surfaced through the node),
   // pulled up READ-ONLY and streamed THROUGH each node. This is the entire Devices →
   // Cameras inventory now: there are no local VMS cameras.
-  const fedQ = useQuery<any>({
+  const fedQ = useQuery({
     queryKey: ["vms-federation-cameras"],
     queryFn: () => vms.federation.cameras(),
     refetchInterval: 30_000,
@@ -42,22 +49,30 @@ export default function CamerasPage() {
   // (`fed:<node>:<cam>`) matches the floor-builder inventory + the video wall, so a
   // camera plotted here keys the same everywhere. Filtered client-side by status +
   // search (name or owning node).
-  const cameras = useMemo(() => {
+  const cameras = useMemo<CameraRow[]>(() => {
     const q = search.trim().toLowerCase();
     return (fedQ.data?.items || [])
-      .map((c) => ({
-        id: `fed:${c.node_id}:${c.id}`,
-        real_id: c.id,
-        name: c.name,
-        status: c.status,
-        federated: true,
-        // PTZ capability as the node reported it (public.ptz.capable) — drives the
-        // detail pane's PTZ control; commands proxy through the node.
-        ptz_capable: !!(c.ptz && c.ptz.capable),
-        node_id: c.node_id,
-        node_name: c.node_name,
-        source_label: c.node_name,
-      }))
+      .map((c) => {
+        // The node's camera dict is the recorder's own shape; only the tag fields
+        // are fixed, so its PTZ block is read as the loose dict it is.
+        const ptz = c.ptz as { capable?: boolean } | null | undefined;
+        return {
+          id: `fed:${c.node_id}:${c.id}`,
+          real_id: c.id,
+          name: c.name,
+          status: c.status,
+          federated: true as const,
+          // PTZ capability as the node reported it (public.ptz.capable) — drives the
+          // detail pane's PTZ control; commands proxy through the node.
+          ptz_capable: !!(ptz && ptz.capable),
+          node_id: c.node_id,
+          node_name: c.node_name,
+          // The recorder doubles as the row's site (same fold as useEstateCameras).
+          site_id: c.node_id,
+          site_name: c.node_name,
+          source_label: c.node_name,
+        };
+      })
       .filter((c) => (status ? c.status === status : true))
       .filter((c) =>
         q ? c.name?.toLowerCase().includes(q) || (c.node_name || "").toLowerCase().includes(q) : true,
@@ -168,7 +183,13 @@ export default function CamerasPage() {
 // Compact camera row for the left list — status dot + name, with the owning
 // recorder as a quiet secondary line (no loud "via …" pill). All rows are
 // read-through (node-owned): no bulk checkbox, no editable recorder line.
-function CameraListItem({ camera, selected, onSelect }: any) {
+interface CameraListItemProps {
+  camera: CameraRow;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+function CameraListItem({ camera, selected, onSelect }: CameraListItemProps) {
   return (
     <div
       role="button"

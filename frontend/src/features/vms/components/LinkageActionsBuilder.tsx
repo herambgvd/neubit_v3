@@ -12,21 +12,28 @@
 //   ptz_preset      : preset_token
 //   trigger_output  : relay_token, state, release_after_seconds
 //   popup           : reason
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 import { Input, Select } from "@/components/ui/kit";
 import { LINKAGE_ACTION_TYPES } from "../constants";
+import type { LinkageAction } from "../types";
 
-const emptyAction = (type = "start_recording") => ({ type, config: {} });
+const emptyAction = (type = "start_recording"): LinkageAction => ({ type, config: {} });
 
-export default function LinkageActionsBuilder({ actions = [], onChange }: any) {
-  const set = (next) => onChange?.(next);
+export interface LinkageActionsBuilderProps {
+  actions?: LinkageAction[];
+  onChange?: (next: LinkageAction[]) => void;
+}
+
+export default function LinkageActionsBuilder({ actions = [], onChange }: LinkageActionsBuilderProps) {
+  const set = (next: LinkageAction[]) => onChange?.(next);
 
   const add = () => set([...actions, emptyAction()]);
-  const remove = (idx) => set(actions.filter((_, i) => i !== idx));
-  const patchType = (idx, type) =>
+  const remove = (idx: number) => set(actions.filter((_, i) => i !== idx));
+  const patchType = (idx: number, type: string) =>
     set(actions.map((a, i) => (i === idx ? { type, config: {} } : a)));
-  const patchConfig = (idx, key, value) =>
+  const patchConfig = (idx: number, key: string, value: unknown) =>
     set(
       actions.map((a, i) =>
         i === idx ? { ...a, config: { ...(a.config || {}), [key]: value } } : a,
@@ -85,7 +92,7 @@ export default function LinkageActionsBuilder({ actions = [], onChange }: any) {
 }
 
 // A tiny labelled input used inside the config grid.
-function Cfg({ label, children, span = 1 }: any) {
+function Cfg({ label, children, span = 1 }: { label: ReactNode; children: ReactNode; span?: 1 | 2 }) {
   return (
     <div className={span === 2 ? "col-span-2" : ""}>
       <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted">{label}</label>
@@ -94,9 +101,25 @@ function Cfg({ label, children, span = 1 }: any) {
   );
 }
 
-function ActionConfig({ action, idx, patchConfig }: any) {
-  const c = action.config || {};
-  const num = (v) => (v === "" || v == null ? undefined : Number(v));
+interface ActionConfigProps {
+  action: LinkageAction;
+  idx: number;
+  patchConfig: (idx: number, key: string, value: unknown) => void;
+}
+
+function ActionConfig({ action, idx, patchConfig }: ActionConfigProps) {
+  const c: Record<string, unknown> = action.config || {};
+  // Config is a free dict (see the header); these read a key as the input type
+  // it binds to, and anything else as "unset".
+  const str = (k: string): string => {
+    const v = c[k];
+    return typeof v === "string" ? v : "";
+  };
+  const numOrStr = (k: string): number | string => {
+    const v = c[k];
+    return typeof v === "number" || typeof v === "string" ? v : "";
+  };
+  const num = (v: string) => (v === "" || v == null ? undefined : Number(v));
 
   switch (action.type) {
     case "start_recording":
@@ -106,7 +129,7 @@ function ActionConfig({ action, idx, patchConfig }: any) {
             <Input
               type="number"
               min={0}
-              value={c.pre_buffer_seconds ?? ""}
+              value={numOrStr("pre_buffer_seconds")}
               onChange={(e) => patchConfig(idx, "pre_buffer_seconds", num(e.target.value))}
               placeholder="camera default"
             />
@@ -115,7 +138,7 @@ function ActionConfig({ action, idx, patchConfig }: any) {
             <Input
               type="number"
               min={0}
-              value={c.post_buffer_seconds ?? ""}
+              value={numOrStr("post_buffer_seconds")}
               onChange={(e) => patchConfig(idx, "post_buffer_seconds", num(e.target.value))}
               placeholder="camera default"
             />
@@ -128,7 +151,7 @@ function ActionConfig({ action, idx, patchConfig }: any) {
         <>
           <Cfg label="Channel">
             <Select
-              value={c.channel || "email"}
+              value={str("channel") || "email"}
               onChange={(e) => patchConfig(idx, "channel", e.target.value)}
               options={[
                 { value: "email", label: "Email" },
@@ -139,13 +162,13 @@ function ActionConfig({ action, idx, patchConfig }: any) {
             />
           </Cfg>
           <Cfg label="Target (address / URL)">
-            <Input value={c.target || ""} onChange={(e) => patchConfig(idx, "target", e.target.value)} placeholder="ops@site / https://…" />
+            <Input value={str("target")} onChange={(e) => patchConfig(idx, "target", e.target.value)} placeholder="ops@site / https://…" />
           </Cfg>
           <Cfg label="Subject">
-            <Input value={c.subject || ""} onChange={(e) => patchConfig(idx, "subject", e.target.value)} placeholder="VMS: {event}" />
+            <Input value={str("subject")} onChange={(e) => patchConfig(idx, "subject", e.target.value)} placeholder="VMS: {event}" />
           </Cfg>
           <Cfg label="Body">
-            <Input value={c.body || ""} onChange={(e) => patchConfig(idx, "body", e.target.value)} placeholder="uses the event reason if blank" />
+            <Input value={str("body")} onChange={(e) => patchConfig(idx, "body", e.target.value)} placeholder="uses the event reason if blank" />
           </Cfg>
         </>
       );
@@ -153,7 +176,7 @@ function ActionConfig({ action, idx, patchConfig }: any) {
     case "ptz_preset":
       return (
         <Cfg label="Preset token" span={2}>
-          <Input value={c.preset_token || ""} onChange={(e) => patchConfig(idx, "preset_token", e.target.value)} placeholder="e.g. Preset1 / a preset token" />
+          <Input value={str("preset_token")} onChange={(e) => patchConfig(idx, "preset_token", e.target.value)} placeholder="e.g. Preset1 / a preset token" />
         </Cfg>
       );
 
@@ -161,11 +184,11 @@ function ActionConfig({ action, idx, patchConfig }: any) {
       return (
         <>
           <Cfg label="Relay token">
-            <Input value={c.relay_token || ""} onChange={(e) => patchConfig(idx, "relay_token", e.target.value)} placeholder="RelayOut1" />
+            <Input value={str("relay_token")} onChange={(e) => patchConfig(idx, "relay_token", e.target.value)} placeholder="RelayOut1" />
           </Cfg>
           <Cfg label="State">
             <Select
-              value={c.state || "active"}
+              value={str("state") || "active"}
               onChange={(e) => patchConfig(idx, "state", e.target.value)}
               options={[
                 { value: "active", label: "Active" },
@@ -178,7 +201,7 @@ function ActionConfig({ action, idx, patchConfig }: any) {
             <Input
               type="number"
               min={0}
-              value={c.release_after_seconds ?? ""}
+              value={numOrStr("release_after_seconds")}
               onChange={(e) => patchConfig(idx, "release_after_seconds", num(e.target.value))}
               placeholder="0 = latch"
             />
@@ -189,7 +212,7 @@ function ActionConfig({ action, idx, patchConfig }: any) {
     case "popup":
       return (
         <Cfg label="Reason (shown to operator)" span={2}>
-          <Input value={c.reason || ""} onChange={(e) => patchConfig(idx, "reason", e.target.value)} placeholder="uses the event reason if blank" />
+          <Input value={str("reason")} onChange={(e) => patchConfig(idx, "reason", e.target.value)} placeholder="uses the event reason if blank" />
         </Cfg>
       );
 

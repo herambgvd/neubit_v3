@@ -11,6 +11,8 @@ import { Icon } from "@iconify/react";
 import { Button, Modal, Spinner } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { workflow as wfApi } from "../../api";
+import { isRecord } from "../../types";
+import type { SimulateEventRequest, SimulateEventResponse, TriggerPublic } from "../../types";
 
 const SAMPLE_PAYLOAD = JSON.stringify(
   { device_id: "cam-42", device: { zone_type: "secure" }, priority: 4 },
@@ -18,13 +20,22 @@ const SAMPLE_PAYLOAD = JSON.stringify(
   2,
 );
 
-export default function TriggerTestModal({ open, trigger, onClose }: any) {
+type Tone = "ok" | "warn" | "bad";
+
+export interface TriggerTestModalProps {
+  open: boolean;
+  /** A saved trigger, or the form's unsaved draft (a partial). */
+  trigger: Partial<TriggerPublic> | null;
+  onClose: () => void;
+}
+
+export default function TriggerTestModal({ open, trigger, onClose }: TriggerTestModalProps) {
   const [eventType, setEventType] = useState("");
   const [payloadText, setPayloadText] = useState(SAMPLE_PAYLOAD);
-  const [parseError, setParseError] = useState<any>(null);
-  const [result, setResult] = useState<any>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [result, setResult] = useState<SimulateEventResponse | null>(null);
 
-  const trigId = trigger?.trigger_id || trigger?.id;
+  const trigId = trigger?.trigger_id;
 
   // Seed the event_type from the trigger each time the modal opens.
   useEffect(() => {
@@ -36,20 +47,21 @@ export default function TriggerTestModal({ open, trigger, onClose }: any) {
     }
   }, [open, trigger]);
 
-  const run = useMutation<any, any, any>({
-    mutationFn: (body: any) => wfApi.simulate(body),
+  const run = useMutation({
+    mutationFn: (body: SimulateEventRequest) => wfApi.simulate(body),
     onSuccess: (data) => setResult(data),
   });
 
   function submit() {
     setParseError(null);
     setResult(null);
-    let payload: any = {};
+    let payload: Record<string, unknown> = {};
     if (payloadText.trim()) {
       try {
-        payload = JSON.parse(payloadText);
+        const parsed: unknown = JSON.parse(payloadText);
+        payload = isRecord(parsed) ? parsed : {};
       } catch (e) {
-        setParseError(e.message || "Invalid JSON");
+        setParseError((e instanceof Error && e.message) || "Invalid JSON");
         return;
       }
     }
@@ -59,13 +71,13 @@ export default function TriggerTestModal({ open, trigger, onClose }: any) {
   // Locate THIS trigger in the simulate response.
   const matched = result?.matched_triggers?.find((t) => t.trigger_id === trigId);
   const skipped = result?.skipped?.find((s) => s.trigger_id === trigId);
-  const verdict = matched
+  const verdict: { tone: Tone; text: string } = matched
     ? matched.would_create
       ? { tone: "ok", text: "Matched — this trigger would fire and raise an incident." }
       : { tone: "warn", text: "Matched, but no incident would be created (see reason below)." }
     : { tone: "bad", text: "No match — this trigger would NOT fire for this event." };
 
-  const toneCls = {
+  const toneCls: Record<Tone, string> = {
     ok: "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good",
     warn: "border-[rgba(251,191,36,.40)] bg-[rgba(251,191,36,.10)] text-nb-warn",
     bad: "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit",

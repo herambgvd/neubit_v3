@@ -13,10 +13,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { ConfirmDialog } from "@/components/ui/kit";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
+import type { AccessInstancePublic } from "@/lib/types";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { gates } from "./api";
 import InstanceListCard from "./components/InstanceListCard";
@@ -28,20 +29,21 @@ import EditInstanceModal from "./components/EditInstanceModal";
 export default function AccessControlPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
-  const [activeBrand, setActiveBrand] = useState<any>(null);
-  const [editTarget, setEditTarget] = useState<any>(null);
-  const [confirm, setConfirm] = useState<any>(null);
+  /** The `AccessBrand.id` picked in step 1; only "dds" opens a form today. */
+  const [activeBrand, setActiveBrand] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<AccessInstancePublic | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  const instancesQ = useQuery<any>({
+  const instancesQ = useQuery({
     queryKey: ["ac-instances"],
     queryFn: () => gates.instances.list(),
     refetchInterval: 15_000,
   });
   const instances = useMemo(() => asItems(instancesQ.data), [instancesQ.data]);
 
-  const sitesQ = useQuery<any>({
+  const sitesQ = useQuery({
     queryKey: ["sites-list"],
     queryFn: () => sitesApi.list({ limit: 200 }),
     staleTime: 60_000,
@@ -64,8 +66,8 @@ export default function AccessControlPage() {
 
   const onlineCount = instances.filter((i) => i.status === "online" || i.status === "active").length;
 
-  const remove = useMutation<any>({
-    mutationFn: (id: any) => gates.instances.remove(id),
+  const remove = useMutation({
+    mutationFn: (id: string) => gates.instances.remove(id),
     onSuccess: (_d, id) => {
       toast.success("Instance removed");
       if (effectiveId === id) setSelectedId(null);

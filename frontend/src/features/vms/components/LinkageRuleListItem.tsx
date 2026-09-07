@@ -4,10 +4,17 @@
 // with an active-status dot, name + inactive pill, trigger summary. Mirrors
 // SiteListItem.
 import { Icon } from "@iconify/react";
-import { EVENT_TYPE_PRESETS } from "../constants";
+import { EVENT_TYPE_PRESETS, presetFor } from "../constants";
+import type { LinkageRulePublic } from "../types";
 
-export default function LinkageRuleListItem({ rule, selected, onSelect }: any) {
-  const tp = EVENT_TYPE_PRESETS[rule.trigger_event_type] || EVENT_TYPE_PRESETS.system;
+export interface LinkageRuleListItemProps {
+  rule: LinkageRulePublic;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+export default function LinkageRuleListItem({ rule, selected, onSelect }: LinkageRuleListItemProps) {
+  const tp = presetFor(EVENT_TYPE_PRESETS, rule.trigger_event_type, EVENT_TYPE_PRESETS.system);
   return (
     <li className="relative">
       <button

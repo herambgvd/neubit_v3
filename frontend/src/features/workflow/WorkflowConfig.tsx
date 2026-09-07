@@ -9,6 +9,7 @@
 // Sites) this one is driven by ?view= and its segment lives in the global header bar
 // (ConsoleStrip), built from the same WORKFLOW_VIEWS list. Keeping the view in the URL
 // is what lets the header own it, and it makes a tab linkable and refresh-proof.
+import type { ComponentType } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { ConsolePage } from "@/components/console";
@@ -21,8 +22,9 @@ import NotificationTemplatesTab from "./components/config/NotificationTemplatesT
 import ThreatLevelsTab from "./components/config/ThreatLevelsTab";
 import SimulatorTab from "./components/config/SimulatorTab";
 import { WORKFLOW_VIEWS } from "./constants";
+import type { WorkflowViewKey } from "./constants";
 
-const VIEWS = {
+const VIEWS: Record<WorkflowViewKey, ComponentType> = {
   sops: SopsTab,
   triggers: TriggersTab,
   forms: FormsTab,
@@ -32,9 +34,11 @@ const VIEWS = {
   threat: ThreatLevelsTab,
 };
 
+const isViewKey = (k: string): k is WorkflowViewKey => k in VIEWS;
+
 export default function WorkflowConfigPage() {
   const v = useSearchParams().get("view");
-  const View = (v ? VIEWS[v] : undefined) || VIEWS[WORKFLOW_VIEWS[0].key];
+  const View = (v && isViewKey(v) ? VIEWS[v] : undefined) || VIEWS[WORKFLOW_VIEWS[0].key];
 
   return (
     <ConsolePage>

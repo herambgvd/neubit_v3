@@ -10,14 +10,18 @@ import { api } from "@/lib/api";
 import { titleize } from "@/lib/format";
 import { vms } from "../api";
 import { RECORDING_MODES } from "../constants";
+import type { CameraHealthPublic, VmsCameraPublic } from "../types";
 import StatusBadge, { StatusDot } from "./StatusBadge";
+
+/** A per-tile callback — receives the tile's camera. */
+type CameraAction = (camera: VmsCameraPublic) => void;
 
 // Fetches the camera's snapshot as an authed blob → object URL (same pattern as
 // SnapshotModal/MotionSearchModal — a plain <img src> wouldn't carry the bearer
 // token). Only attempts online cameras; any failure/500 falls back to null so the
 // tile shows the play-button placeholder. Revokes the object URL on unmount.
-function useSnapshotThumb(camera) {
-  const [url, setUrl] = useState<any>(null);
+function useSnapshotThumb(camera: Pick<VmsCameraPublic, "id" | "status">) {
+  const [url, setUrl] = useState<string | null>(null);
   const online = camera.status === "online";
   useEffect(() => {
     if (!online) {
@@ -27,7 +31,7 @@ function useSnapshotThumb(camera) {
     let objectUrl: string | null = null;
     let cancelled = false;
     api
-      .get(vms.cameras.snapshotUrl(camera.id), { responseType: "blob" })
+      .get<Blob>(vms.cameras.snapshotUrl(camera.id), { responseType: "blob" })
       .then((r) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(r.data);
@@ -44,7 +48,20 @@ function useSnapshotThumb(camera) {
   return url;
 }
 
-function Tile({ camera, siteName, selected, onToggleSelect, onLive, onSnapshot, onEdit, onDelete }: any) {
+interface TileProps {
+  camera: VmsCameraPublic;
+  /** Passed by the grid; the tile does not render it yet. */
+  health?: CameraHealthPublic;
+  siteName?: string;
+  selected: boolean;
+  onToggleSelect?: (id: string) => void;
+  onLive?: CameraAction;
+  onSnapshot?: CameraAction;
+  onEdit?: CameraAction;
+  onDelete?: CameraAction;
+}
+
+function Tile({ camera, siteName, selected, onToggleSelect, onLive, onSnapshot, onEdit, onDelete }: TileProps) {
   const rec = RECORDING_MODES.find((m) => m.value === camera.recording?.mode);
   const thumb = useSnapshotThumb(camera);
   return (
@@ -120,6 +137,20 @@ function Tile({ camera, siteName, selected, onToggleSelect, onLive, onSnapshot, 
   );
 }
 
+export interface CameraGridProps {
+  cameras?: VmsCameraPublic[];
+  /** Latest health sample per camera id. */
+  healthById?: Record<string, CameraHealthPublic>;
+  /** site_id → display name. */
+  siteNames?: Record<string, string>;
+  selectedIds: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onLive?: CameraAction;
+  onSnapshot?: CameraAction;
+  onEdit?: CameraAction;
+  onDelete?: CameraAction;
+}
+
 export default function CameraGrid({
   cameras = [],
   healthById = {},
@@ -130,7 +161,7 @@ export default function CameraGrid({
   onSnapshot,
   onEdit,
   onDelete,
-}: any) {
+}: CameraGridProps) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {cameras.map((c) => (
@@ -138,7 +169,7 @@ export default function CameraGrid({
           key={c.id}
           camera={c}
           health={healthById[c.id]}
-          siteName={siteNames[c.placement?.site_id]}
+          siteName={siteNames[c.placement?.site_id ?? ""]}
           selected={selectedIds.has(c.id)}
           onToggleSelect={onToggleSelect}
           onLive={onLive}

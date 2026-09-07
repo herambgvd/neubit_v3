@@ -27,13 +27,15 @@
 // `onPickHere(index)`) so a single useCallback'd handler is shared by every tile
 // instead of a fresh per-render closure that captures `i`. The tile supplies its
 // own stable `index` when invoking them.
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { Icon } from "@iconify/react";
 
 import { vms } from "../api";
 import LivePlayer, { PlayerBtn } from "./LivePlayer";
 import TilePlayback from "./TilePlayback";
-import { STATUS_PRESETS } from "../constants";
+import { presetFor, STATUS_PRESETS } from "../constants";
+import type { WallClock } from "../hooks/useWallPlayback";
+import type { EstateCamera, LiveSessionSource } from "../types";
 
 const EDGE = {
   online: "bg-emerald-500",
@@ -47,6 +49,51 @@ const EDGE = {
 // A tile in one of these does not dial the recorder at all (see below).
 const DARK_STATUSES = new Set(["offline", "error"]);
 
+export interface WallTileProps {
+  index: number;
+  cameraId?: string | null;
+  camera?: EstateCamera | null;
+  profile?: string;
+  isHero?: boolean;
+  railDragging?: boolean;
+  /** True once the camera list has ANSWERED (local + federated). Until then a tile
+   *  restored from storage knows its camera id but not whether that camera is
+   *  federated — and guessing "local" mints against the wrong control plane, which
+   *  is what showed "camera not found" on every tile after a refresh. */
+  estateReady?: boolean;
+  // ── recorded playback, IN THIS TILE ──────────────────────────────────────
+  // When the wall is in playback and this tile is participating (the focused
+  // tile, or every filled tile with Sync on), the cell shows the recording at
+  // `playbackAnchorMs` instead of the live stream. The tile does not open
+  // anything: same cell, same chrome, same neighbours — see TilePlayback.
+  playback?: boolean;
+  /** This tile drives the shared clock. */
+  playbackMaster?: boolean;
+  playbackAnchorMs?: number | null;
+  playbackAnchorSeq?: number;
+  playbackToMs?: number;
+  playbackPlaying?: boolean;
+  playbackSpeed?: number;
+  playbackClock?: WallClock | null;
+  /** (atMs) — the master's window ran out; carry the wall on. */
+  onPlaybackEnded?: (atMs: number) => void;
+  focused?: boolean;
+  /** (index) — a click makes this the tile the transport is bound to. */
+  onFocus?: (index: number) => void;
+  /** (cameraId, index) — from rail drag / picker. */
+  onAssign?: (cameraId: string, index: number) => void;
+  /** (cameraIds[], index) — a whole rail branch dropped here. */
+  onAssignMany?: (cameraIds: string[], index: number) => void;
+  /** (fromIndex, index) — from tile→tile drag. */
+  onSwap?: (fromIndex: number, index: number) => void;
+  onClose?: (index: number) => void;
+  /** (index) — promote this tile to fill the wall. */
+  onSpotlight?: (index: number) => void;
+  /** (index) — open quick camera picker for an empty tile. */
+  onPickHere?: (index: number) => void;
+  style?: CSSProperties;
+}
+
 function WallTile({
   index,
   cameraId,
@@ -54,36 +101,27 @@ function WallTile({
   profile = "sub",
   isHero = false,
   railDragging = false,
-  // True once the camera list has ANSWERED (local + federated). Until then a tile
-  // restored from storage knows its camera id but not whether that camera is
-  // federated — and guessing "local" mints against the wrong control plane, which
-  // is what showed "camera not found" on every tile after a refresh.
   estateReady = true,
-  // ── recorded playback, IN THIS TILE ──────────────────────────────────────
-  // When the wall is in playback and this tile is participating (the focused
-  // tile, or every filled tile with Sync on), the cell shows the recording at
-  // `playbackAnchorMs` instead of the live stream. The tile does not open
-  // anything: same cell, same chrome, same neighbours — see TilePlayback.
   playback = false,
-  playbackMaster = false, // this tile drives the shared clock
+  playbackMaster = false,
   playbackAnchorMs = null,
   playbackAnchorSeq = 0,
   playbackToMs = 0,
   playbackPlaying = true,
   playbackSpeed = 1,
   playbackClock = null,
-  onPlaybackEnded, // (atMs) — the master's window ran out; carry the wall on
+  onPlaybackEnded,
   focused = false,
-  onFocus, // (index) — a click makes this the tile the transport is bound to
-  onAssign, // (cameraId, index) — from rail drag / picker
-  onAssignMany, // (cameraIds[], index) — a whole rail branch dropped here
-  onSwap, // (fromIndex, index) — from tile→tile drag
-  onClose, // (index)
-  onSpotlight, // (index) — promote this tile to fill the wall
-  onPickHere, // (index) — open quick camera picker for an empty tile
+  onFocus,
+  onAssign,
+  onAssignMany,
+  onSwap,
+  onClose,
+  onSpotlight,
+  onPickHere,
   style,
-}: any) {
-  const rootRef = useRef<any>(null);
+}: WallTileProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [dropActive, setDropActive] = useState(false);
   // "Try anyway" on a dark tile. The estate's status is a poll result and can be a
   // minute stale, so the operator keeps the final say — but the DEFAULT must be to
@@ -96,9 +134,9 @@ function WallTile({
   // re-attach on every wall render.
   const fedNodeId = camera?.federated ? camera.node_id : null;
   const fedRealId = camera?.federated ? camera.real_id : null;
-  const source = useMemo(() => {
+  const source = useMemo<LiveSessionSource | undefined>(() => {
     if (!fedNodeId || !fedRealId) return undefined;
-    const mint = async (profile) => {
+    const mint = async (profile: string) => {
       const s = await vms.federation.live(fedNodeId, fedRealId, profile);
       return { ...s, ready: true };
     };
@@ -126,7 +164,7 @@ function WallTile({
     [index, onSpotlight, onClose],
   );
 
-  const onDragOver = (e) => {
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     // Accept a rail camera, a whole rail branch (a recorder), or another tile.
     const types = e.dataTransfer.types;
     const fromTile = types.includes("text/tile-index");
@@ -148,7 +186,7 @@ function WallTile({
     if (!dropActive) setDropActive(true);
   };
   const onDragLeave = () => setDropActive(false);
-  const onDrop = (e) => {
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDropActive(false);
     const tileIdx = e.dataTransfer.getData("text/tile-index");
@@ -161,9 +199,10 @@ function WallTile({
     const many = e.dataTransfer.getData("text/camera-ids");
     if (many) {
       try {
-        const ids = JSON.parse(many);
+        // The rail serialises its branch as a JSON array of camera ids.
+        const ids: unknown = JSON.parse(many);
         if (Array.isArray(ids) && ids.length) {
-          onAssignMany?.(ids, index);
+          onAssignMany?.(ids as string[], index);
           return;
         }
       } catch {
@@ -216,8 +255,8 @@ function WallTile({
   // ── Filled cell ────────────────────────────────────────────────────────────
   const name = camera?.name || "Camera";
   const status = camera?.status || "unknown";
-  const preset = STATUS_PRESETS[status] || STATUS_PRESETS.unknown;
-  const edge = EDGE[status] || EDGE.unknown;
+  const preset = presetFor(STATUS_PRESETS, status, STATUS_PRESETS.unknown);
+  const edge = presetFor(EDGE, status, EDGE.unknown);
 
   // A camera the estate reports as offline/error gets NO player: we already know
   // the answer, and asking anyway is not free. Each attempt holds one of the four

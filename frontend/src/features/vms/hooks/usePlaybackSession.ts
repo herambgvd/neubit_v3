@@ -20,26 +20,34 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import type { IsoWindow, PlayableSession, PlaybackSourceFn } from "../types";
 
 const RENEW_LEAD_MS = 45_000;
 
+export interface UsePlaybackSessionOptions {
+  profile?: string;
+  sourceFn?: PlaybackSourceFn | null;
+  enabled?: boolean;
+}
+
 export function usePlaybackSession(
-  cameraId,
-  { profile = "main", sourceFn = null, enabled = true }: any = {},
+  cameraId: string | null | undefined,
+  { profile = "main", sourceFn = null, enabled = true }: UsePlaybackSessionOptions = {},
 ) {
-  const [session, setSession] = useState<any>(null);
-  const [error, setError] = useState<any>(null);
+  const [session, setSession] = useState<PlayableSession | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const sessionRef = useRef<any>(null);
-  const windowRef = useRef<any>(null); // last requested { from, to }
-  const renewTimerRef = useRef<any>(null);
+  const sessionRef = useRef<PlayableSession | null>(null);
+  const windowRef = useRef<IsoWindow | null>(null); // last requested { from, to }
+  const renewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposedRef = useRef(false);
   const attemptRef = useRef(0);
 
   // Prefer an explicit source (NVR footage) else the camera playback endpoint.
   const issue = useCallback(
-    (win) => (sourceFn ? sourceFn(win) : vms.playback.session(cameraId, { ...win, profile })),
+    (win: IsoWindow): Promise<PlayableSession> =>
+      sourceFn ? sourceFn(win) : vms.playback.session(cameraId ?? "", { ...win, profile }),
     [cameraId, profile, sourceFn],
   );
 
@@ -53,10 +61,10 @@ export function usePlaybackSession(
   // `scheduleRenew` re-arms itself, which means referring to a `const` from
   // inside its own initialiser. The ref holds the latest one instead, so nothing
   // reads a binding before it exists. Written in an effect, never during render.
-  const scheduleRenewRef = useRef<((sess: any) => void) | null>(null);
+  const scheduleRenewRef = useRef<((sess: PlayableSession | null) => void) | null>(null);
 
   const scheduleRenew = useCallback(
-    (sess) => {
+    (sess: PlayableSession | null) => {
       clearRenew();
       const expMs = sess?.expires_at ? new Date(sess.expires_at).getTime() : 0;
       if (!expMs) return;
@@ -80,7 +88,7 @@ export function usePlaybackSession(
 
   // Load (or re-load) a window — the seek primitive.
   const load = useCallback(
-    async (win) => {
+    async (win: IsoWindow | null | undefined) => {
       if (!cameraId || !win?.from || !win?.to) return;
       disposedRef.current = false;
       windowRef.current = win;

@@ -6,10 +6,12 @@
 // bespoke row for the colour swatches (below Field's control API). The parent
 // (FormatsTab) owns the mutation; this form just collects + validates a body.
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { Button, Checkbox } from "@/components/ui/kit";
 import { Field } from "@/components/common";
-import { titleize, idOf } from "@/lib/format";
+import { titleize } from "@/lib/format";
 import { PaneForm } from "@/components/console";
+import type { AlertFormatPublic, CreateAlertFormatRequest, SopPublic } from "../../types";
 
 const ALERT_CATEGORIES = ["custom", "security", "performance", "maintenance", "system"];
 const SEVERITIES = ["low", "medium", "high", "critical"];
@@ -18,7 +20,18 @@ const SOP_MODES = ["manual", "automatic"];
 // A few sensible swatches; a native colour input covers the rest.
 const SWATCHES = ["#ef4444", "#f97316", "#f59e0b", "#22c55e", "#3b82f6", "#6366f1", "#a855f7", "#64748b"];
 
-export default function FormatForm({ format, sops, pending, onCancel, onSubmit }: any) {
+type ErrorKey = "name" | "alertCode";
+
+export interface FormatFormProps {
+  /** The format being edited; null creates one. */
+  format: AlertFormatPublic | null;
+  sops: SopPublic[];
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (body: CreateAlertFormatRequest) => void;
+}
+
+export default function FormatForm({ format, sops, pending, onCancel, onSubmit }: FormatFormProps) {
   const isEdit = !!format;
   const [name, setName] = useState(format?.name || "");
   const [alertCode, setAlertCode] = useState(format?.alert_code || "");
@@ -32,15 +45,15 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
   const [sopId, setSopId] = useState(format?.sop_id || "");
   const [sopMode, setSopMode] = useState(format?.sop_mode || "manual");
   const [isActive, setIsActive] = useState(format?.is_active !== false);
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<Partial<Record<ErrorKey, string>>>({});
 
-  function clearErr(k) {
+  function clearErr(k: ErrorKey) {
     if (errors[k]) setErrors((p) => ({ ...p, [k]: undefined }));
   }
 
-  function submit(e) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const next: any = {};
+    const next: Partial<Record<ErrorKey, string>> = {};
     if (!name.trim()) next.name = "Name is required";
     if (!alertCode.trim()) next.alertCode = "Alert code is required";
     if (Object.keys(next).length) { setErrors(next); return; }
@@ -62,7 +75,7 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
 
   return (
     <PaneForm
-      title={isEdit ? `Edit ${format.name}` : "Add alert format"}
+      title={format ? `Edit ${format.name}` : "Add alert format"}
       onSubmit={submit}
       footer={
         <>
@@ -169,7 +182,7 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
           label="Linked SOP"
           value={sopId}
           onChange={(e) => setSopId(e.target.value)}
-          options={[{ value: "", label: "No SOP linked" }, ...sops.map((s) => ({ value: idOf(s, "id", "sop_id"), label: s.name }))]}
+          options={[{ value: "", label: "No SOP linked" }, ...sops.map((s) => ({ value: s.sop_id, label: s.name }))]}
           hint="Alerts of this kind can raise an incident from this SOP."
         />
         <Field

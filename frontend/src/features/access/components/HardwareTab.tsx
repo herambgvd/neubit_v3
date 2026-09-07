@@ -4,16 +4,21 @@
 // a section selector (Sites/Controllers/Readers/Inputs/Outputs/Alarm Zones/Areas)
 // and a per-section table using the reference column configs (with on/off, purpose
 // and bypass pills). Column configs live in constants.js; pill rendering is here.
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { gates } from "../api";
-import { HARDWARE_SECTIONS, HARDWARE_COLUMNS, PURPOSE_MAP } from "../constants";
+import { HARDWARE_SECTIONS, HARDWARE_COLUMNS, PURPOSE_MAP, type HardwareColumn } from "../constants";
+import type { HardwareItem, HardwareSet } from "../types";
 
-function OnPill({ label }: any) {
+interface PillProps {
+  label?: string;
+}
+
+function OnPill({ label }: PillProps) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-500">
       <Icon icon="heroicons-solid:check-circle" className="text-[10px]" />
@@ -21,7 +26,7 @@ function OnPill({ label }: any) {
     </span>
   );
 }
-function OffPill({ label }: any) {
+function OffPill({ label }: PillProps) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-[10px] font-medium text-muted">
       <Icon icon="heroicons-solid:minus-circle" className="text-[10px]" />
@@ -30,12 +35,20 @@ function OffPill({ label }: any) {
   );
 }
 
-function renderPill(col, value) {
+/** `PURPOSE_MAP` keyed by the DTO's Purpose, which some firmwares send as the
+ *  numeral and some as its string. */
+function purposeLabel(value: unknown): string | undefined {
+  if (typeof value !== "number" && typeof value !== "string") return undefined;
+  return PURPOSE_MAP[Number(value)];
+}
+
+// A controller DTO value is `unknown`; each pill narrows only what it needs.
+function renderPill(col: HardwareColumn, value: unknown): ReactElement | null {
   if (col.pill === "onoff") return value ? <OnPill label={col.on} /> : <OffPill label={col.off} />;
   if (col.pill === "purpose")
     return (
       <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-500">
-        {PURPOSE_MAP[value] || value || "—"}
+        {purposeLabel(value) || String(value ?? "") || "—"}
       </span>
     );
   if (col.pill === "bypass")
@@ -50,19 +63,21 @@ function renderPill(col, value) {
   return null;
 }
 
-function Cell({ value }: any) {
+function Cell({ value }: { value: unknown }) {
   if (value === null || value === undefined || value === "") return <span className="text-muted/70">—</span>;
   if (typeof value === "object") return <code className="text-[10px] text-muted">{JSON.stringify(value)}</code>;
   const str = String(value);
   return str.length > 60 ? <span title={str}>{str.slice(0, 60)}…</span> : str;
 }
 
-function pickColumns(items) {
+// The generic table's columns: the preferred DTO keys a section actually has,
+// then whatever else the controller reported (up to eight in total).
+function pickColumns(items: HardwareItem[]): string[] {
   const PREFERRED = ["Name", "UID", "Description", "ControllerUID", "ReaderUID", "InputType", "OutputType", "SiteUID", "AreaName", "Status"];
   if (!items.length) return [];
-  const keys = new Set<any>();
+  const keys = new Set<string>();
   items.slice(0, 50).forEach((it) => Object.keys(it || {}).forEach((k) => keys.add(k)));
-  const ordered: any[] = [];
+  const ordered: string[] = [];
   PREFERRED.forEach((f) => {
     if (keys.has(f)) {
       ordered.push(f);
@@ -76,16 +91,26 @@ function pickColumns(items) {
   return ordered;
 }
 
-export default function HardwareTab({ instanceId }: any) {
-  const [section, setSection] = useState("sites");
+/** A row's React key: the controller UID when the DTO carries one, else the index. */
+function rowKey(item: HardwareItem, index: number): string {
+  const uid = item.UID ?? item.uid;
+  return typeof uid === "string" || typeof uid === "number" ? String(uid) : String(index);
+}
 
-  const q = useQuery<any>({
+export interface HardwareTabProps {
+  instanceId: string;
+}
+
+export default function HardwareTab({ instanceId }: HardwareTabProps) {
+  const [section, setSection] = useState<HardwareSet>("sites");
+
+  const q = useQuery({
     queryKey: ["ac-hw", instanceId, section],
     queryFn: () => gates.hardware.list(instanceId, section),
     enabled: !!instanceId,
   });
   const items = asItems(q.data);
-  const colDefs = HARDWARE_COLUMNS[section] || null;
+  const colDefs: HardwareColumn[] | null = HARDWARE_COLUMNS[section] || null;
   // Only read by the generic table below, i.e. when there is no colDefs.
   const genericCols: string[] = colDefs ? [] : pickColumns(items);
 
@@ -139,7 +164,7 @@ export default function HardwareTab({ instanceId }: any) {
             </thead>
             <tbody className="divide-y divide-card-border">
               {items.map((it, i) => (
-                <tr key={it.UID || it.uid || i} className="hover:bg-hover/50">
+                <tr key={rowKey(it, i)} className="hover:bg-hover/50">
                   {colDefs.map((col) => {
                     const val = it[col.key];
                     return (
@@ -173,7 +198,7 @@ export default function HardwareTab({ instanceId }: any) {
             </thead>
             <tbody className="divide-y divide-card-border">
               {items.map((it, i) => (
-                <tr key={it.UID || it.uid || i} className="hover:bg-hover/50">
+                <tr key={rowKey(it, i)} className="hover:bg-hover/50">
                   {genericCols.map((c) => (
                     <td key={c} className="px-3 py-2 align-top text-muted">
                       <Cell value={it[c]} />

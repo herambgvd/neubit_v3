@@ -8,6 +8,22 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 
+import type { PatternPublic } from "../types";
+
+export interface PatternPickerMenuProps {
+  patterns?: PatternPublic[];
+  loading?: boolean;
+  /** The rotating pattern's id; null/undefined when none is running. */
+  activeId?: string | null;
+  /** Which stop the running rotation is on, 1-based, and how many there are. */
+  stop?: number;
+  total?: number;
+  paused?: boolean;
+  onPlay?: (pattern: PatternPublic) => void;
+  onStop?: () => void;
+  onCreate?: () => void;
+}
+
 export default function PatternPickerMenu({
   patterns = [],
   loading,
@@ -16,18 +32,18 @@ export default function PatternPickerMenu({
   // Shown instead of a spinner: a rotation that is WORKING must not look like a
   // request that never came back.
   stop,
-  total,
+  total = 0,
   paused = false,
   onPlay,
   onStop,
   onCreate,
-}: any) {
+}: PatternPickerMenuProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<any>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDoc = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    const onDoc = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node | null) && setOpen(false);
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
