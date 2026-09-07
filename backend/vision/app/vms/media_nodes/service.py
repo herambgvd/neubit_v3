@@ -839,28 +839,43 @@ async def _heartbeat_one(node: MediaNode, *, timeout: float | None = None) -> No
             # Only for nodes holding a credential: without one the call would 401
             # every cycle, and a node with no federation trust has no cameras of
             # its own for us to count anyway.
-            count = await _federated_camera_count(node, timeout=timeout)
+            count, credential_error = await _federated_camera_count(node, timeout=timeout)
             if count is not None:
                 node.used_channels = count
+            # A node that ANSWERS but refuses our credential is reachable and useless.
+            # Recording the reason here is what turns "this one screen errors" into
+            # "this node needs re-enrolling", which is a thing an operator can act on.
+            node.credential_error = credential_error
     else:
         node.status = "offline"
     node.updated_at = now
 
 
-async def _federated_camera_count(node: MediaNode, *, timeout: float | None = None) -> int | None:
-    """How many cameras the recorder itself hosts, or None when it cannot be asked.
+async def _federated_camera_count(
+    node: MediaNode, *, timeout: float | None = None
+) -> tuple[int | None, str | None]:
+    """``(camera_count, credential_error)`` for a federated recorder.
 
-    Best-effort by design: a node that is momentarily unreachable, or answers an
-    error, leaves ``used_channels`` at its last known value rather than dropping the
-    reading to 0 — a transient blip must not read as "the recorder lost its cameras".
+    The count is best-effort: a node that is momentarily unreachable leaves
+    ``used_channels`` at its last known value rather than dropping the reading to 0 —
+    a transient blip must not read as "the recorder lost its cameras".
+
+    The second value is the point of this being on the heartbeat at all. This call
+    already carries the node's credential every cycle, so it is where a REFUSAL is
+    discovered for free — and a refusal is the one failure that does not resolve
+    itself, does not affect reachability, and is otherwise invisible until somebody
+    opens the screen it broke.
     """
     credential = (getattr(node, "credential", None) or "").strip()
     if not credential or not node.api_url:
-        return None
-    from app.vms.federation.client import list_estate_cameras
+        return None, None
+    from app.vms.federation.client import NodeRefused, list_estate_cameras
 
     try:
-        return len(await list_estate_cameras(node.api_url, credential))
+        return len(await list_estate_cameras(node.api_url, credential)), None
+    except NodeRefused as exc:
+        log.info("node %s: credential refused: %s", node.id, exc)
+        return None, str(exc)[:512]
     except Exception as exc:  # noqa: BLE001 — a count must never break the heartbeat
         log.debug("node %s: camera count unavailable: %s", node.id, exc)
-        return None
+        return None, None

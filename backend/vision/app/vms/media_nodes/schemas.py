@@ -76,6 +76,14 @@ class MediaNodePublic(BaseModel):
     # Populated on the CREATE response only — reachability warning when the node did not
     # answer its health probe at register time (the row is still stored, marked offline).
     warning: Optional[str] = None
+    # Why this node's credential is not working, when it is not. Set by the heartbeat
+    # and cleared as soon as a call succeeds.
+    #
+    # DISTINCT from ``status``, and that is the whole reason it exists: a node whose
+    # credential is stale is still REACHABLE and still reports online, so status alone
+    # says everything is fine while one screen quietly errors. The sentence names the
+    # missing permission and the remedy (re-enrol).
+    credential_error: Optional[str] = None
 
     @classmethod
     def from_row(
@@ -102,6 +110,7 @@ class MediaNodePublic(BaseModel):
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
                 "warning": warning,
+                "credential_error": getattr(row, "credential_error", None),
                 "has_credential": bool((getattr(row, "credential", None) or "").strip()),
             }
         )

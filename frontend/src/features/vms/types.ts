@@ -925,6 +925,13 @@ export interface MediaNodePublic {
   updated_at: string;
   has_credential: boolean;
   warning?: string | null;
+  /** Why this node's credential is not working, when it is not.
+   *
+   *  Read it INSTEAD of trusting `status` alone: a node whose credential went stale
+   *  is still reachable and still reports `online`, so status says everything is
+   *  fine while one screen quietly errors. The sentence names the missing permission
+   *  and the remedy (re-enrol the node). */
+  credential_error?: string | null;
 }
 
 export type MediaNodeListResponse = Paged<MediaNodePublic>;

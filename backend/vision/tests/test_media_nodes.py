@@ -237,3 +237,103 @@ async def test_heartbeat_skips_nodes_without_api_url(db, sessionmaker, monkeypat
     assert await monitor.run_cycle() == 0
     await db.refresh(legacy)
     assert legacy.status == "unknown"
+
+
+# ── a stale credential is visible BEFORE somebody hits the screen it broke ────
+#
+# This is the failure the column exists for. A federation credential freezes the
+# grants it was minted with, so widening the recorder's grant set leaves every
+# existing credential short — and the node stays REACHABLE and keeps reporting
+# online the whole time. Without a place to record it, the estate's node list says
+# "online" while one screen quietly errors, and nothing connects the two.
+
+
+async def _node_with_credential(db, **over):
+    from app.vms.models import MediaNode
+
+    row = MediaNode(
+        id=str(uuid.uuid4()), tenant_id=TENANT_A, name="recorder-a", host="rec-a",
+        api_url="http://rec-a:8000", credential="scoped-key", status="online",
+        **over,
+    )
+    db.add(row)
+    await db.commit()
+    return row
+
+
+def _reachable(monkeypatch):
+    async def _probe(url, *, timeout=None):
+        return True, {}
+
+    monkeypatch.setattr(node_service, "probe_node", _probe)
+
+
+async def test_a_refused_credential_is_recorded_on_the_node(db, monkeypatch):
+    from app.vms.federation.client import NodeRefused
+
+    node = await _node_with_credential(db)
+    _reachable(monkeypatch)
+
+    async def _refused(api_url, credential=None):
+        raise NodeRefused(
+            "the recorder refused this call: the federation credential is missing "
+            "vms.storage.read. ... re-enrol this node",
+            status_code=403,
+            missing_permission="vms.storage.read",
+        )
+
+    monkeypatch.setattr("app.vms.federation.client.list_estate_cameras", _refused)
+    await node_service._heartbeat_one(node)  # noqa: SLF001
+
+    # Still ONLINE — it answered. That is exactly why status alone cannot carry this.
+    assert node.status == "online"
+    assert node.credential_error, "a refused credential left no trace on the node"
+    assert "vms.storage.read" in node.credential_error
+    assert "re-enrol" in node.credential_error.lower()
+
+
+async def test_the_error_clears_as_soon_as_the_credential_works(db, monkeypatch):
+    """A re-enrol fixes it, and the node must stop reporting a problem it no longer
+    has — a warning that outlives its cause is one nobody reads the next time."""
+    node = await _node_with_credential(db, credential_error="missing vms.storage.read")
+    _reachable(monkeypatch)
+
+    async def _ok(api_url, credential=None):
+        return [{"id": "c1"}, {"id": "c2"}]
+
+    monkeypatch.setattr("app.vms.federation.client.list_estate_cameras", _ok)
+    await node_service._heartbeat_one(node)  # noqa: SLF001
+
+    assert node.credential_error is None
+    assert node.used_channels == 2
+
+
+async def test_an_unreachable_node_does_not_invent_a_credential_error(db, monkeypatch):
+    """A node that is DOWN says nothing about its credential. Blaming the credential
+    for a network outage sends an operator to re-enrol a node that was fine."""
+    node = await _node_with_credential(db)
+
+    async def _down(url, *, timeout=None):
+        return False, {}
+
+    monkeypatch.setattr(node_service, "probe_node", _down)
+    await node_service._heartbeat_one(node)  # noqa: SLF001
+
+    assert node.status == "offline"
+    assert node.credential_error is None
+
+
+async def test_a_transient_count_failure_is_not_a_credential_error(db, monkeypatch):
+    """Only a REFUSAL marks the credential. A timeout mid-count is a blip, and
+    recording it here would flap a permanent-looking warning on and off."""
+    node = await _node_with_credential(db)
+    _reachable(monkeypatch)
+
+    async def _boom(api_url, credential=None):
+        raise TimeoutError("read timed out")
+
+    monkeypatch.setattr("app.vms.federation.client.list_estate_cameras", _boom)
+    await node_service._heartbeat_one(node)  # noqa: SLF001
+
+    assert node.status == "online"
+    assert node.credential_error is None

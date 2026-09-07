@@ -74,6 +74,17 @@ class MediaNode(Base):
     )
     last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Why this node's CREDENTIAL is not working, when it is not — set by the
+    # heartbeat, cleared the moment a call succeeds.
+    #
+    # It exists because a stale credential is invisible until somebody uses the one
+    # feature it broke. A federation credential freezes the grants it was minted
+    # with, so widening the recorder's grant set leaves every existing credential
+    # short — and the node stays REACHABLE and reports online the whole time. Without
+    # this the estate's node list says "online" while a screen somewhere returns an
+    # error, and the two are never connected.
+    credential_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
