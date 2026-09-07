@@ -25,7 +25,6 @@ from app.vms.audio.router import router as audio_router
 from app.vms.bookmarks.router import router as bookmark_router
 from app.vms.cameras.router import router as camera_router
 from app.vms.dashboard.router import router as dashboard_router
-from app.vms.devicemgmt.router import router as devicemgmt_router
 from app.vms.evidence.router import router as evidence_router
 from app.vms.export.router import router as export_router
 from app.vms.groups.router import router as group_router
@@ -130,7 +129,6 @@ routers = [
     # and ``/cameras/bulk/{action}`` must match here (not resolve to get_camera("bulk")).
     # Driver-backed fleet ops (reboot/ntp/password/config backup+restore), graceful per
     # brand. Reads vms.camera.read / writes vms.config.manage.
-    devicemgmt_router,
     camera_router,
     group_router,
     pattern_router,
