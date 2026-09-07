@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  fallbackPhrases,
   loadGazetteer,
   looksNumeric,
   parseCoordinate,
@@ -20,12 +21,13 @@ import {
 // first, and JS sort is stable — so a fixture in that order would let a ranking
 // with no population tiebreak pass. This one fails without it.
 const TSV = [
-  "Delhi\t\tUnited States\t42.2778\t-74.9160\t2892",
-  "New Delhi\tDelhi\tIndia\t28.6214\t77.2148\t317797",
-  "Pune\tMaharashtra\tIndia\t18.5196\t73.8553\t2935744",
-  "Malmö\tSkåne\tSweden\t55.6058\t13.0358\t301706",
-  "Delhi\tDelhi\tIndia\t28.6667\t77.2167\t10927986",
-  "Mumbai\tMaharashtra\tIndia\t19.0728\t72.8826\t12691836",
+  "Delhi\t\tUnited States\t42.2778\t-74.9160\t2892\t",
+  "New Delhi\tDelhi\tIndia\t28.6214\t77.2148\t317797\t",
+  "Pune\tMaharashtra\tIndia\t18.5196\t73.8553\t2935744\tpoona",
+  "Malmö\tSkåne\tSweden\t55.6058\t13.0358\t301706\t",
+  "Gurugram\tHaryana\tIndia\t28.4601\t77.0263\t886519\tGurgaon",
+  "Delhi\tDelhi\tIndia\t28.6667\t77.2167\t10927986\t",
+  "Mumbai\tMaharashtra\tIndia\t19.0728\t72.8826\t12691836\tBombay|Bombai",
 ].join("\n");
 
 const byName = (name: string, country = "India") =>
@@ -37,7 +39,7 @@ beforeEach(() => resetGazetteer());
 
 describe("parseGazetteer", () => {
   it("reads every column and builds the label the result row shows", () => {
-    expect(places).toHaveLength(6);
+    expect(places).toHaveLength(7);
     expect(byName("Mumbai")).toMatchObject({
       name: "Mumbai",
       region: "Maharashtra",
@@ -45,12 +47,13 @@ describe("parseGazetteer", () => {
       lat: 19.0728,
       lng: 72.8826,
       population: 12691836,
+      alternates: ["Bombay", "Bombai"],
       label: "Mumbai, Maharashtra, India",
     });
   });
 
   it("drops a row it cannot fly to instead of shipping a NaN", () => {
-    expect(parseGazetteer("Nowhere\t\t\t\t\t0\n")).toHaveLength(0);
+    expect(parseGazetteer("Nowhere\t\t\t\t\t0\t\n")).toHaveLength(0);
   });
 
   it("leaves the region out of the label when there is none", () => {
@@ -132,6 +135,46 @@ describe("searchPlaces", () => {
   });
 });
 
+describe("alternate names", () => {
+  it("finds a renamed city by the name people still type", () => {
+    expect(searchPlaces(places, "gurgaon")[0].name).toBe("Gurugram");
+    expect(searchPlaces(places, "bombay")[0].name).toBe("Mumbai");
+  });
+
+  it("keeps an alternate BELOW every real-name match", () => {
+    // "poona" is only an alternate; a place actually named that would win.
+    const withRealPoona = parseGazetteer(
+      [TSV, "Poona\t\tNowhereland\t1.0\t1.0\t100\t"].join("\n"),
+    );
+    expect(searchPlaces(withRealPoona, "poona")[0].name).toBe("Poona");
+  });
+});
+
+describe("a pasted street address", () => {
+  it("falls back to the town at the end of it", () => {
+    const hits = searchPlaces(places, "Star Tower Sector 30 Gurgaon");
+    expect(hits[0].name).toBe("Gurugram");
+  });
+
+  it("prefers the LONGEST trailing phrase, so 'new delhi' beats 'delhi'", () => {
+    expect(fallbackPhrases("Connaught Place New Delhi")).toEqual([
+      "place new delhi",
+      "new delhi",
+      "delhi",
+    ]);
+    expect(searchPlaces(places, "Connaught Place New Delhi")[0].name).toBe("New Delhi");
+  });
+
+  it("does not fall back for a single word — that was already the whole query", () => {
+    expect(fallbackPhrases("zzzqqq")).toEqual([]);
+    expect(searchPlaces(places, "zzzqqq")).toEqual([]);
+  });
+
+  it("leaves a direct match alone rather than second-guessing it", () => {
+    expect(searchPlaces(places, "New Delhi")[0].name).toBe("New Delhi");
+  });
+});
+
 describe("zoomForPlace", () => {
   it("pulls back for a metropolis and closes in on a town", () => {
     expect(zoomForPlace(byName("Mumbai"))).toBeLessThan(zoomForPlace(byName("New Delhi")));
@@ -159,6 +202,6 @@ describe("loadGazetteer", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(loadGazetteer()).rejects.toThrow(/404/);
-    await expect(loadGazetteer()).resolves.toHaveLength(6);
+    await expect(loadGazetteer()).resolves.toHaveLength(7);
   });
 });

@@ -22,6 +22,8 @@ export const GAZETTEER_URL = "/map/gazetteer.tsv";
 
 export interface Place {
   name: string;
+  /** Names the place is still called: Gurgaon for Gurugram, Bombay for Mumbai. */
+  alternates: string[];
   /** State / province, blank for the places GeoNames has none for. */
   region: string;
   country: string;
@@ -85,10 +87,11 @@ export function parseGazetteer(text: string): Place[] {
   const places: Place[] = [];
   for (const line of text.split("\n")) {
     if (!line) continue;
-    const [name, region, country, lat, lng, population] = line.split("\t");
+    const [name, region, country, lat, lng, population, alternates] = line.split("\t");
     if (!name || !lat || !lng) continue;
     places.push({
       name,
+      alternates: alternates ? alternates.split("|").filter(Boolean) : [],
       region: region || "",
       country: country || "",
       lat: +lat,
@@ -131,22 +134,24 @@ export function resetGazetteer(): void {
  *   0  the name IS the query          ("delhi" → Delhi, before New Delhi)
  *   1  the name STARTS WITH the query ("new de" → New Delhi)
  *   2  a later word starts with it    ("delhi" → New Delhi)
- *   3  region or country matches      ("maharashtra" → its cities)
+ *   3  an ALTERNATE name matches      ("gurgaon" → Gurugram)
+ *   4  region or country matches      ("maharashtra" → its cities)
  * Ties break on population, which is why the file is written most-populous first.
+ *
+ * Alternates sit BELOW every real-name match on purpose: they are old and foreign
+ * names, and one of them must never outrank a place actually called that today.
  */
 function rank(place: Place, query: string): number {
   const name = normalize(place.name);
   if (name === query) return 0;
   if (name.startsWith(query)) return 1;
   if (name.split(/[\s-]+/).some((word) => word.startsWith(query))) return 2;
-  if (normalize(`${place.region} ${place.country}`).includes(query)) return 3;
+  if (place.alternates.some((alt) => normalize(alt).startsWith(query))) return 3;
+  if (normalize(`${place.region} ${place.country}`).includes(query)) return 4;
   return -1;
 }
 
-export function searchPlaces(places: Place[], rawQuery: string, limit = 8): Place[] {
-  const query = normalize(rawQuery);
-  if (query.length < 2) return [];
-
+function match(places: Place[], query: string, limit: number): Place[] {
   const scored: { place: Place; rank: number }[] = [];
   for (const place of places) {
     const r = rank(place, query);
@@ -154,6 +159,43 @@ export function searchPlaces(places: Place[], rawQuery: string, limit = 8): Plac
   }
   scored.sort((a, b) => a.rank - b.rank || b.place.population - a.place.population);
   return scored.slice(0, limit).map((s) => s.place);
+}
+
+/**
+ * The phrases to try when the whole query matches nothing — an operator pastes a
+ * full address ("Star Tower Sector 30 Gurgaon"), and the only part this file can
+ * possibly know is the town, which is almost always at the END.
+ *
+ * So: trailing phrases, longest first — "sector 30 gurgaon", "30 gurgaon",
+ * "gurgaon". Longest-first matters because "new delhi" must be tried before
+ * "delhi", or a Connaught Place address lands on the wrong one of the two.
+ */
+export function fallbackPhrases(rawQuery: string, maxWords = 3): string[] {
+  const words = normalize(rawQuery).split(/[\s,]+/).filter(Boolean);
+  if (words.length < 2) return [];
+  const phrases: string[] = [];
+  for (let take = Math.min(maxWords, words.length - 1); take >= 1; take--) {
+    phrases.push(words.slice(words.length - take).join(" "));
+  }
+  return phrases;
+}
+
+export function searchPlaces(places: Place[], rawQuery: string, limit = 8): Place[] {
+  const query = normalize(rawQuery);
+  if (query.length < 2) return [];
+
+  const direct = match(places, query, limit);
+  if (direct.length) return direct;
+
+  // Nothing matched the whole string. Fall back to the trailing phrases — a city
+  // gazetteer cannot know the building, but it does know the town it is in, and
+  // flying there beats telling the operator to drag the world.
+  for (const phrase of fallbackPhrases(rawQuery)) {
+    if (phrase.length < 3) continue;
+    const hits = match(places, phrase, limit);
+    if (hits.length) return hits;
+  }
+  return [];
 }
 
 /** How close to zoom in on a chosen place — a metropolis needs more room than a town. */

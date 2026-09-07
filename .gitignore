@@ -42,6 +42,10 @@ pgdata/
 # and the image must build without network.
 deploy/tiles/
 
+# The Photon address index (a few GB unpacked) and its jar. Provisioned by the
+# geocoder container on first start, or dropped in by hand on an air-gapped host.
+deploy/geocoder/
+
 # --- OS / editor ---
 .DS_Store
 Thumbs.db

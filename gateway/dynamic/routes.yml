@@ -21,6 +21,17 @@ http:
       service: tiles
       entryPoints: [web]
       priority: 110
+    geocoder:
+      # Offline address search for the site-form map picker. Photon answers on
+      # /api, so the prefix is stripped: the browser calls /geocode/api?q=…
+      #
+      # No ForwardAuth, for the same reason as tiles: what it serves is public
+      # OpenStreetMap data, not tenant data, and the index never leaves the box.
+      rule: "PathPrefix(`/geocode`)"
+      service: geocoder
+      entryPoints: [web]
+      priority: 110
+      middlewares: [geocode-strip]
     ingest:
       # The versioned config API + ONLY the public webhook receiver (/ingest/hooks).
       # A bare /ingest prefix would swallow the operator UI's /ingest page → keep it narrow.
@@ -295,6 +306,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://tiles:80"
+    geocoder:
+      loadBalancer:
+        servers:
+          - url: "http://geocoder:2322"
     frontend:
       loadBalancer:
         servers:

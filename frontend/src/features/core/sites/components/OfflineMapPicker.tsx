@@ -182,7 +182,7 @@ export default function OfflineMapPicker({
       <div ref={containerRef} className="h-full w-full" />
       {/* Above the canvas, left of MapLibre's zoom control. */}
       <div className="absolute left-3 top-3 z-10 w-[min(22rem,calc(100%-5rem))]">
-        <PlaceSearch onGo={goTo} />
+        <PlaceSearch onGo={goTo} near={value ?? center} />
       </div>
       {status.state === "probing" && (
         <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-nb-muted">

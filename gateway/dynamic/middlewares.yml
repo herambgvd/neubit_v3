@@ -82,6 +82,14 @@ http:
         prefixes:
           - "/media/hls"
 
+    # Strip /geocode so Photon sees its native /api?q=… (and /reverse, /status).
+    # The prefix exists only to peel this off the SPA catch-all; keep it stable,
+    # the browser builds the URL from it (frontend/src/lib/map/geocoder.ts).
+    geocode-strip:
+      stripPrefix:
+        prefixes:
+          - "/geocode"
+
     # Strip the /media/whep prefix so MediaMTX sees /<name>/whep.
     media-whep-strip:
       stripPrefix:

@@ -842,6 +842,27 @@ services:
     # Routed by the gateway's FILE provider (gateway/dynamic/routes.yml), not by
     # Docker labels — the label provider is off in gateway/traefik.yml.
 
+  # Offline address geocoder — Photon over a prebuilt OpenStreetMap index, so the
+  # site-form map picker can find a street or a building without asking anyone.
+  #
+  #   GEOCODER_COUNTRY      ISO code of the extract to serve (default "in").
+  #                         graphhopper publishes one per country.
+  #   GEOCODER_AUTO_PROVISION=0   never download; serve only what is already in
+  #                               deploy/geocoder/ (the air-gapped setting)
+  #
+  # The index is a few GB and Photon reads it at startup, so this service takes
+  # minutes to become useful on a cold volume. Nothing else waits on it: the
+  # picker falls back to its built-in city list until it answers.
+  geocoder:
+    build: ./geocoder-server
+    environment:
+      GEOCODER_COUNTRY: ${GEOCODER_COUNTRY:-in}
+      GEOCODER_AUTO_PROVISION: ${GEOCODER_AUTO_PROVISION:-1}
+    volumes:
+      - ./geocoder:/data
+    networks: [neubit]
+    # Routed by the gateway's FILE provider (gateway/dynamic/routes.yml), like tiles.
+
   # ── super-admin panel (separate app) ────────────────────────────
   admin-frontend:
     # PRODUCTION by default (standalone runner). API base is same-origin relative

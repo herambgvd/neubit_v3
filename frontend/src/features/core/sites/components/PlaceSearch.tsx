@@ -3,15 +3,21 @@
 // The search box over the offline map picker. Without it the picker opens on the
 // whole world and the only way to reach a site is to drag and zoom to it.
 //
-// Two kinds of query, because operators arrive with both:
-//   • a place name, matched against the committed gazetteer (see lib/map/gazetteer)
-//   • a pasted coordinate pair, which needs no lookup and drops the pin exactly
+// THREE kinds of query, because operators arrive with all three:
 //
-// Nothing here reaches the network beyond the one same-origin fetch of the
-// gazetteer file itself.
+//   • a full address — "Star Tower Sector 30 Gurgaon" — answered by the Photon
+//     `geocoder` service if it is installed (lib/map/geocoder). Street and
+//     building level, and still entirely on our own box.
+//   • a city — matched against the committed gazetteer (lib/map/gazetteer). This
+//     is the fallback that always works, with no service to provision.
+//   • a pasted coordinate pair, which needs no lookup at all.
+//
+// Nothing here reaches the public internet. The geocoder is same-origin, and the
+// gazetteer is one same-origin fetch of a static file.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
+import { geocode, probeGeocoder, type GeocodeHit } from "@/lib/map/geocoder";
 import {
   loadGazetteer,
   looksNumeric,
@@ -21,18 +27,61 @@ import {
   type Place,
 } from "@/lib/map/gazetteer";
 
+export interface PlaceSearchTarget {
+  lat: number;
+  lng: number;
+  zoom: number;
+  /** Whether choosing this also drops the pin, or only flies the map. */
+  drop: boolean;
+}
+
 export interface PlaceSearchProps {
-  /** Fly the map here. `drop` is true only when the query WAS a position. */
-  onGo: (target: { lat: number; lng: number; zoom: number; drop: boolean }) => void;
+  onGo: (target: PlaceSearchTarget) => void;
+  /** Where the map is looking, so the geocoder can bias towards it. */
+  near?: { lat: number; lng: number } | null;
 }
 
 /** Zoom for a pasted coordinate — the operator already knows the exact spot. */
 const COORDINATE_ZOOM = 16;
+/** Long enough that typing an address is one lookup, short enough to feel live. */
+const DEBOUNCE_MS = 250;
 
-export default function PlaceSearch({ onGo }: PlaceSearchProps) {
+/** One row of the dropdown, whichever source produced it. */
+interface Row extends PlaceSearchTarget {
+  key: string;
+  title: string;
+  detail: string;
+}
+
+const fromHit = (hit: GeocodeHit, i: number): Row => ({
+  key: `g${i}-${hit.lat}-${hit.lng}`,
+  title: hit.title,
+  detail: hit.detail,
+  lat: hit.lat,
+  lng: hit.lng,
+  zoom: hit.zoom,
+  // A house or a street is the point itself; a city is a region whose centre is
+  // not a site, so that one only flies. See PRECISE_TYPES in lib/map/geocoder.
+  drop: hit.precise,
+});
+
+const fromPlace = (place: Place): Row => ({
+  key: `p-${place.label}-${place.lat}-${place.lng}`,
+  title: place.name,
+  detail: [place.region, place.country].filter(Boolean).join(", "),
+  lat: place.lat,
+  lng: place.lng,
+  zoom: zoomForPlace(place),
+  drop: false,
+});
+
+export default function PlaceSearch({ onGo, near }: PlaceSearchProps) {
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<Place[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [gazetteerFailed, setGazetteerFailed] = useState(false);
+  const [found, setFound] = useState<GeocodeHit[] | null>(null);
+  const [hasGeocoder, setHasGeocoder] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
   // The highlighted row is stored WITH the query it belongs to, so a new query
   // resets it by derivation. Resetting it from an effect instead costs a second
   // render on every keystroke, and briefly highlights a row from the old results.
@@ -41,29 +90,72 @@ export default function PlaceSearch({ onGo }: PlaceSearchProps) {
   const boxRef = useRef<HTMLDivElement | null>(null);
 
   const coordinate = parseCoordinate(query);
+  const searching = query.trim().length >= 2 && !coordinate && !looksNumeric(query);
 
-  // The file is fetched on the FIRST search, not when the picker mounts: an
-  // operator who already knows where to click should not pay for it at all.
+  // Ask once, when the picker is opened — not at page load.
   useEffect(() => {
-    // `looksNumeric` covers the half-typed coordinate: "28.6139" is not a
-    // coordinate yet and never will be a place, so it must not trigger the load.
-    if (coordinate || looksNumeric(query) || query.trim().length < 2 || places || failed) return;
+    let cancelled = false;
+    probeGeocoder().then((ok) => !cancelled && setHasGeocoder(ok));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // `near` moves with the map and must not restart the lookup, so it is read
+  // through a ref rather than being a dependency.
+  const nearRef = useRef(near);
+  useEffect(() => {
+    nearRef.current = near;
+  });
+
+  // The address lookup. Debounced and abortable: an address is a dozen
+  // keystrokes, and every one of them would otherwise be a query.
+  useEffect(() => {
+    if (!searching || !hasGeocoder) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setBusy(true);
+      geocode(query, { signal: controller.signal, near: nearRef.current ?? undefined })
+        .then(setFound)
+        // An abort is the next keystroke, not a failure; either way there is
+        // nothing to show, and the gazetteer below still answers.
+        .catch(() => setFound(null))
+        .finally(() => setBusy(false));
+    }, DEBOUNCE_MS);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [query, searching, hasGeocoder]);
+
+  // Stale results belong to the PREVIOUS query, so they are derived away rather
+  // than cleared from the effect above — clearing state in an effect body costs
+  // a second render and shows the old address for one frame.
+  const hits = searching && hasGeocoder ? found : null;
+
+  // The city list is fetched on the FIRST search that needs it, never at mount —
+  // and never for a query that is (or is becoming) a coordinate.
+  useEffect(() => {
+    if (!searching || places || gazetteerFailed) return;
     let cancelled = false;
     loadGazetteer().then(
       (loaded) => !cancelled && setPlaces(loaded),
-      () => !cancelled && setFailed(true),
+      () => !cancelled && setGazetteerFailed(true),
     );
     return () => {
       cancelled = true;
     };
-  }, [query, coordinate, places, failed]);
+  }, [searching, places, gazetteerFailed]);
+
+  const rows = useMemo<Row[]>(() => {
+    if (coordinate || !searching) return [];
+    // Addresses first when we have them. The gazetteer is the fallback, not a
+    // second opinion — showing both would put "Gurugram" under the actual building.
+    if (hits?.length) return hits.map(fromHit);
+    return places ? searchPlaces(places, query).map(fromPlace) : [];
+  }, [coordinate, searching, hits, places, query]);
 
   const active = highlight.query === query ? highlight.index : 0;
-
-  const results = useMemo(
-    () => (coordinate || !places ? [] : searchPlaces(places, query)),
-    [places, query, coordinate],
-  );
 
   // Click outside closes the list. The map is right underneath, and a stale
   // dropdown would swallow the click that drops the pin.
@@ -76,9 +168,9 @@ export default function PlaceSearch({ onGo }: PlaceSearchProps) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  function go(place: Place) {
-    onGo({ lat: place.lat, lng: place.lng, zoom: zoomForPlace(place), drop: false });
-    setQuery(place.label);
+  function go(row: Row) {
+    onGo({ lat: row.lat, lng: row.lng, zoom: row.zoom, drop: row.drop });
+    setQuery([row.title, row.detail].filter(Boolean).join(", "));
     setOpen(false);
   }
 
@@ -89,7 +181,7 @@ export default function PlaceSearch({ onGo }: PlaceSearchProps) {
       setOpen(false);
       return;
     }
-    if (results[active]) go(results[active]);
+    if (rows[active]) go(rows[active]);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -103,20 +195,24 @@ export default function PlaceSearch({ onGo }: PlaceSearchProps) {
       return;
     }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      if (!results.length) return;
+      if (!rows.length) return;
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
-      setHighlight({ query, index: (active + step + results.length) % results.length });
+      setHighlight({ query, index: (active + step + rows.length) % rows.length });
     }
   }
 
-  const searching = query.trim().length >= 2 && !coordinate && !looksNumeric(query);
-  const showList = open && (coordinate !== null || results.length > 0 || (searching && !places && !failed));
+  const loading = searching && (busy || (!places && !gazetteerFailed && !hits));
+  const showList = open && (coordinate !== null || rows.length > 0 || loading);
+  const emptyHanded = open && searching && !loading && !rows.length;
 
   return (
     <div ref={boxRef} className="relative w-full max-w-sm">
       <div className="flex items-center gap-2 rounded-lg border border-nb-line bg-[rgba(6,11,26,.92)] px-3 py-2 backdrop-blur-sm focus-within:border-[rgba(96,165,250,.6)]">
-        <Icon icon="heroicons-outline:magnifying-glass" className="shrink-0 text-sm text-nb-muted" />
+        <Icon
+          icon={loading ? "svg-spinners:180-ring" : "heroicons-outline:magnifying-glass"}
+          className="shrink-0 text-sm text-nb-muted"
+        />
         <input
           value={query}
           onChange={(e) => {
@@ -125,7 +221,11 @@ export default function PlaceSearch({ onGo }: PlaceSearchProps) {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search a city, or paste 28.6139, 77.2090"
+          placeholder={
+            hasGeocoder
+              ? "Search an address, or paste 28.6139, 77.2090"
+              : "Search a city, or paste 28.6139, 77.2090"
+          }
           aria-label="Search for a place"
           className="w-full bg-transparent text-[12.5px] text-nb-ink outline-none placeholder:text-nb-muted"
         />
@@ -145,7 +245,7 @@ export default function PlaceSearch({ onGo }: PlaceSearchProps) {
       </div>
 
       {showList && (
-        <div className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-nb-line bg-[rgba(6,11,26,.96)] shadow-2xl backdrop-blur-sm">
+        <div className="absolute inset-x-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded-lg border border-nb-line bg-[rgba(6,11,26,.96)] shadow-2xl backdrop-blur-sm">
           {coordinate ? (
             <button
               type="button"
@@ -157,39 +257,38 @@ export default function PlaceSearch({ onGo }: PlaceSearchProps) {
                 Go to {coordinate.lat.toFixed(6)}, {coordinate.lng.toFixed(6)}
               </span>
             </button>
-          ) : results.length ? (
-            results.map((place, i) => (
+          ) : rows.length ? (
+            rows.map((row, i) => (
               <button
-                key={`${place.label}-${place.lat}-${place.lng}`}
+                key={row.key}
                 type="button"
                 onMouseEnter={() => setHighlight({ query, index: i })}
-                onClick={() => go(place)}
+                onClick={() => go(row)}
                 className={`block w-full px-3 py-2 text-left transition ${
                   i === active ? "bg-[rgba(96,165,250,.14)]" : "hover:bg-[rgba(96,165,250,.08)]"
                 }`}
               >
-                <div className="text-[12.5px] text-nb-ink">{place.name}</div>
-                <div className="text-[11px] text-nb-muted">
-                  {[place.region, place.country].filter(Boolean).join(", ")}
-                </div>
+                <div className="text-[12.5px] text-nb-ink">{row.title}</div>
+                {row.detail && <div className="text-[11px] text-nb-muted">{row.detail}</div>}
               </button>
             ))
           ) : (
-            <div className="px-3 py-2.5 text-[11.5px] text-nb-muted">Loading places…</div>
+            <div className="px-3 py-2.5 text-[11.5px] text-nb-muted">Searching…</div>
           )}
         </div>
       )}
 
-      {failed && (
+      {gazetteerFailed && !hasGeocoder && (
         <p className="mt-1 text-[11px] text-amber-400">
           Place list not installed — paste coordinates, or run{" "}
-          <code className="font-mono">node scripts/fetch-gazetteer.mjs</code>.
+          <code className="font-mono">npm run map:gazetteer</code>.
         </p>
       )}
-      {searching && places && !results.length && open && (
+      {emptyHanded && (
         <p className="mt-1 text-[11px] text-nb-muted">
-          No place matched. It covers towns over 15,000 people — try the nearest city, then click the
-          exact spot.
+          {hasGeocoder
+            ? "No match. Try the street and the city, or paste coordinates."
+            : "No place matched. Address search is not installed, so this only knows towns over 15,000 people — try the nearest city, then click the exact spot."}
         </p>
       )}
     </div>

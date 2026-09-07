@@ -212,21 +212,44 @@ the site form swaps "Fetch from address" for **Pick on map**: click the basemap,
 latitude and longitude fill into the form.
 
 Clicking is only reasonable if you can *get* to the right place first, so the picker has a search
-box over the canvas. It takes two kinds of query:
+box over the canvas. It takes three kinds of query, in this order of preference:
 
-- **a city** — matched against `public/map/gazetteer.tsv`, built by `npm run map:gazetteer` from
-  GeoNames `cities15000` (CC BY 4.0; ~34k places, 1.8 MB, about a third of that on the wire) and
-  committed for the same reason the glyphs are. Selecting one only *flies* the map: a city centre
-  is not a site, so the pin still has to be clicked.
-- **a pasted coordinate** — `28.6139, 77.2090`, and the forms people actually paste (space or
-  slash instead of a comma, a stray `°`). That one is the exact point, so it drops the pin too, and
-  never downloads the place list.
+**1. A full address** — "Star Tower Sector 30 Gurgaon". Answered by the `geocoder` service:
+[Photon](https://github.com/komoot/photon) over a prebuilt OpenStreetMap index, routed at
+`/geocode`. **Nothing leaves the box** — the index is a file on disk, so this works air-gapped and
+costs nothing per query. That is why it is here instead of a call to Google or the public Nominatim,
+neither of which can be self-hosted (Google) or used at volume (Nominatim's usage policy), and both
+of which would send every site's address off the deployment.
 
-It is a **city** gazetteer, not a street geocoder — that distinction is the whole reason it fits in
-1.8 MB. It gets you to the town; the last mile stays a click, which is the part a partial-address
-geocoder would have got wrong anyway.
+The index is per country. `GEOCODER_COUNTRY` picks it (default `in`); graphhopper publishes one per
+ISO code, and the whole planet is available too at ~75 GB. India is a 780 MB download that unpacks
+to a few GB. The container provisions itself on first start, so `docker compose up` is the whole
+instruction; set `GEOCODER_AUTO_PROVISION=0` and drop `photon.jar` + `photon_data/` into
+`deploy/geocoder/` for an air-gapped host.
 
-`npm run map:gazetteer:check` verifies the file offline, like `map:assets:check`.
+A house or a street result **drops the pin** — it is the exact point, which is what the service is
+for. A coarser result (a city, a district) only *flies* the map, because a city centre is not a site.
+
+**2. A city** — matched against `public/map/gazetteer.tsv`, built by `npm run map:gazetteer` from
+GeoNames `cities15000` (CC BY 4.0; ~34k places, 1.9 MB, about 800 KB on the wire) and committed for
+the same reason the glyphs are. This is the **fallback**, so the picker still works before the index
+is provisioned, or on a deployment that chooses not to run it.
+
+It carries alternate names, which is why *Gurgaon* finds Gurugram, *Bombay* finds Mumbai and
+*Bangalore* finds Bengaluru. Those come from a separate 204 MB `alternateNamesV2` download at build
+time — the `alternatenames` column inside `cities15000` is an unmarked alphabetical list of every
+transliteration, and taking the first few ASCII entries gives Mumbai "Asumumbay, BOM, Bombai,
+Bombaim, Bombaj" and stops one short of the only one anybody types.
+
+Given a full address it cannot match, it retries the **trailing phrases** — "sector 30 gurgaon",
+"30 gurgaon", "gurgaon" — longest first, so a Connaught Place address lands on New Delhi and not on
+Delhi. It gets you to the town; the last mile stays a click.
+
+**3. A pasted coordinate** — `28.6139, 77.2090`, and the forms people actually paste (space or
+slash instead of a comma, a stray `°`). That one is the exact point, so it drops the pin, and it
+looks nothing up at all.
+
+`npm run map:gazetteer:check` verifies the city list offline, like `map:assets:check`.
 
 ## File naming
 
