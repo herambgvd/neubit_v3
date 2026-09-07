@@ -28,7 +28,11 @@ const PLACEHOLDER = "•••••••• (unchanged)";
 
 const EMPTY: DirectoryForm = {
   name: "Directory",
-  enabled: true,
+  // FALSE for an unconfigured tenant. It defaulted to true, so a console with no
+  // directory at all still drew the switch as ON — the control claimed a state the
+  // backend did not have. Enabling is now a deliberate act, which is also what
+  // reveals the form.
+  enabled: false,
   server_uri: "",
   base_dn: "",
   bind_dn: "",
@@ -54,6 +58,11 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
   const [groupRoleMap, setGroupRoleMap] = useState<RoleMap>({});
   const [hasBindPassword, setHasBindPassword] = useState(false);
   const configured = !!q.data;
+  // Open when the feature is ON. `showDetails` lets an admin open it anyway —
+  // a directory that is configured but switched off still has settings worth
+  // reading, and collapsing must not put them out of reach.
+  const [showDetails, setShowDetails] = useState(false);
+  const expanded = form.enabled || showDetails;
 
   useEffect(() => {
     const c = q.data;
@@ -131,7 +140,8 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
       loading={q.isLoading}
       error={q.isError ? apiError(q.error, "Failed to load directory") : null}
       action={
-        canManage && (
+        canManage &&
+        expanded && (
           <div className="flex items-center gap-2">
             {configured && (
               <QuietButton
@@ -148,13 +158,21 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
           </div>
         )
       }
-    >
-      <div className="space-y-4">
+      enable={
         <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
           <span className="text-sm text-nb-ink">Directory enabled</span>
           <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} label="Enable directory sync" />
         </label>
-
+      }
+      expanded={expanded}
+      summary={
+        configured
+          ? `Configured${form.server_uri ? ` — ${form.server_uri}` : ""}, currently off`
+          : "Not configured"
+      }
+      onToggleDetails={canManage && !form.enabled ? () => setShowDetails((v) => !v) : undefined}
+    >
+      <div className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input label="Display name" value={form.name} onChange={(e) => set({ name: e.target.value })} disabled={!canManage} />
           <Input

@@ -5,6 +5,7 @@
  * the dual-authorization queue from the person who has to clear it.
  */
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { stubApi } from "@/test/apiStub";
@@ -65,5 +66,88 @@ describe("an operator who may manage security", () => {
     expect(await screen.findByText("Two-factor authentication policy")).toBeInTheDocument();
     expect(screen.getByText("LDAP / Active Directory")).toBeInTheDocument();
     expect(screen.getByText("Single sign-on (OIDC)")).toBeInTheDocument();
+  });
+});
+
+/**
+ * PROGRESSIVE DISCLOSURE. Directory and SSO each carry a dozen inputs, an
+ * attribute mapper and a role-map editor. Rendered unconditionally, a tenant
+ * using neither met two long forms for two features that are off — which is what
+ * made this screen read as bloated.
+ *
+ * The rule: the switch and a one-line summary always show; the form shows when
+ * the feature is ON, or when an admin asks for it. Collapsing must not HIDE
+ * state, so the summary says whether it is configured.
+ */
+describe("the security cards disclose progressively", () => {
+  beforeEach(() => {
+    perms = ["security.manage"];
+  });
+
+  it("shows the switch but not the form while a feature is off and unconfigured", async () => {
+    stubApi({
+      "GET /security/policy": { require_2fa: false, require_2fa_roles: [] },
+      "GET /security/directory": null,
+      "GET /security/sso": null,
+      "GET /security/dual-auth": { items: [], total: 0, page: 1, page_size: 20 },
+      "GET /auth/roles": { items: [], total: 0, page: 1, page_size: 20 },
+    });
+    renderWithProviders(<SecurityPage />);
+
+    expect(await screen.findByRole("switch", { name: /enable directory sync/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Server URI")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Issuer URL")).not.toBeInTheDocument();
+  });
+
+  it("reveals the form when the operator turns the feature on", async () => {
+    stubApi({
+      "GET /security/policy": { require_2fa: false, require_2fa_roles: [] },
+      "GET /security/directory": null,
+      "GET /security/sso": null,
+      "GET /security/dual-auth": { items: [], total: 0, page: 1, page_size: 20 },
+      "GET /auth/roles": { items: [], total: 0, page: 1, page_size: 20 },
+    });
+    renderWithProviders(<SecurityPage />);
+
+    await userEvent.click(await screen.findByRole("switch", { name: /enable directory sync/i }));
+
+    expect(await screen.findByLabelText("Server URI")).toBeInTheDocument();
+    // Turning the directory on must not open SSO too.
+    expect(screen.queryByLabelText("Issuer URL")).not.toBeInTheDocument();
+  });
+
+  it("says a disabled feature is still CONFIGURED rather than hiding that", async () => {
+    stubApi({
+      "GET /security/policy": { require_2fa: false, require_2fa_roles: [] },
+      "GET /security/directory": {
+        enabled: false,
+        name: "Corp AD",
+        server_uri: "ldaps://ad.example.com:636",
+        base_dn: "dc=example,dc=com",
+        group_role_map: {},
+      },
+      "GET /security/sso": null,
+      "GET /security/dual-auth": { items: [], total: 0, page: 1, page_size: 20 },
+      "GET /auth/roles": { items: [], total: 0, page: 1, page_size: 20 },
+    });
+    renderWithProviders(<SecurityPage />);
+
+    expect(await screen.findByText(/Configured — ldaps:\/\/ad\.example\.com:636, currently off/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Server URI")).not.toBeInTheDocument();
+  });
+
+  it("lets an admin open the settings of a feature that is off", async () => {
+    stubApi({
+      "GET /security/policy": { require_2fa: false, require_2fa_roles: [] },
+      "GET /security/directory": { enabled: false, server_uri: "ldaps://ad", group_role_map: {} },
+      "GET /security/sso": null,
+      "GET /security/dual-auth": { items: [], total: 0, page: 1, page_size: 20 },
+      "GET /auth/roles": { items: [], total: 0, page: 1, page_size: 20 },
+    });
+    renderWithProviders(<SecurityPage />);
+
+    await userEvent.click((await screen.findAllByRole("button", { name: "Show settings" }))[0]);
+
+    expect(await screen.findByLabelText("Server URI")).toBeInTheDocument();
   });
 });

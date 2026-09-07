@@ -30,7 +30,11 @@ const PLACEHOLDER = "•••••••• (unchanged)";
 
 const EMPTY: SsoForm = {
   provider: "oidc",
-  enabled: true,
+  // FALSE for an unconfigured tenant. It defaulted to true, so a console with no
+  // SSO at all still drew the switch as ON — the control claimed a state the
+  // backend did not have. Enabling is now a deliberate act, which is also what
+  // reveals the form.
+  enabled: false,
   issuer: "",
   client_id: "",
   scopes: "openid email profile",
@@ -55,6 +59,10 @@ export default function SsoCard({ canManage }: SsoCardProps) {
   const [groupRoleMap, setGroupRoleMap] = useState<RoleMap>({});
   const [hasSecret, setHasSecret] = useState(false);
   const configured = !!q.data;
+  // Same rule as DirectoryCard: open when SSO is ON, and openable while off so a
+  // configured-but-disabled IdP is still reachable.
+  const [showDetails, setShowDetails] = useState(false);
+  const expanded = form.enabled || showDetails;
 
   useEffect(() => {
     const c = q.data;
@@ -125,19 +133,28 @@ export default function SsoCard({ canManage }: SsoCardProps) {
       loading={q.isLoading}
       error={q.isError ? apiError(q.error, "Failed to load SSO") : null}
       action={
-        canManage && (
+        canManage &&
+        expanded && (
           <ActionButton icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Saving…" : "Save"}
           </ActionButton>
         )
       }
-    >
-      <div className="space-y-4">
+      enable={
         <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
           <span className="text-sm text-nb-ink">SSO enabled</span>
           <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} label="Enable single sign-on" />
         </label>
-
+      }
+      expanded={expanded}
+      summary={
+        configured
+          ? `Configured${form.issuer ? ` — ${form.issuer}` : ""}, currently off`
+          : "Not configured"
+      }
+      onToggleDetails={canManage && !form.enabled ? () => setShowDetails((v) => !v) : undefined}
+    >
+      <div className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input label="Issuer URL" value={form.issuer} onChange={(e) => set({ issuer: e.target.value })} disabled={!canManage} placeholder="https://login.example.com" />
           <Input label="Client ID" value={form.client_id} onChange={(e) => set({ client_id: e.target.value })} disabled={!canManage} />
