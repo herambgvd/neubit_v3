@@ -26,6 +26,7 @@ from .conftest import PREFIX, auth, client
 # federation test modules testing against a stale fabrication. ``app`` comes from
 # conftest, so it needs no import here.
 from .test_federation_device import (  # noqa: F401 — node/recorder are fixtures
+    CAM,
     NODE_ID,
     TENANT_A,
     TENANT_B,
@@ -155,3 +156,37 @@ async def test_gated_and_tenant_scoped(app, node, recorder, method, path):
     # node id exists.
     assert stranger.status_code == 404
     assert not recorder.calls
+
+
+# ── the watermark option ─────────────────────────────────────────────────────
+#
+# A watermark is the operator's choice per export, and it costs something real: the
+# recorder must RE-ENCODE, so the clip stops being bit-identical to the recorded
+# segments and the job takes materially longer. That makes "was it asked for?" a
+# question the wire has to answer unambiguously — a default that leaked through as
+# true would silently re-encode every export in the estate.
+
+
+async def test_watermark_is_off_unless_asked_for(app, node, recorder):
+    recorder.json({"id": "exp-1", "status": "pending"})
+    async with client(app) as c:
+        r = await c.post(f"{FED}/cameras/{CAM}/exports",
+                         json={"from": "2026-07-09T10:00:00Z", "to": "2026-07-09T10:01:00Z"},
+                         headers=_admin())
+    assert r.status_code == 200
+    sent = json.loads(recorder.calls[-1]["content"])
+    assert sent["watermark"] is False
+
+
+async def test_watermark_is_forwarded_when_asked_for(app, node, recorder):
+    recorder.json({"id": "exp-1", "status": "pending"})
+    async with client(app) as c:
+        r = await c.post(f"{FED}/cameras/{CAM}/exports",
+                         json={"from": "2026-07-09T10:00:00Z", "to": "2026-07-09T10:01:00Z",
+                               "watermark": True},
+                         headers=_admin())
+    assert r.status_code == 200
+    sent = json.loads(recorder.calls[-1]["content"])
+    assert sent["watermark"] is True
+    # The window and camera still travel intact alongside it.
+    assert sent["camera_id"] == CAM and sent["from"].startswith("2026-07-09T10:00")

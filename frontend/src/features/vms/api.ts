@@ -311,8 +311,13 @@ export const vms = {
       // ── Clip export (job) — { from, to } (RFC3339) → { id, status }. Poll getExport
       // until status is ready/done, then pull the mp4 as an authed blob (Bearer header,
       // same idiom as export.downloadBlob) rather than a bare <a href>.
-      createExport: (nodeId: string, cameraId: string, from: string, to: string) =>
-        unwrap(api.post<FederatedExportJob>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`, { from, to })),
+      // `watermark` burns a visible provenance stamp into the picture. It makes the
+      // recorder RE-ENCODE — pixels cannot be drawn into a stream copy — so the clip
+      // stops being bit-identical to the recorded segments and the job takes
+      // materially longer. Off by default; the operator opts in per export.
+      createExport: (nodeId: string, cameraId: string, from: string, to: string, watermark = false) =>
+        unwrap(api.post<FederatedExportJob>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`, { from, to, watermark })),
       listExports: (nodeId: string, cameraId: string) =>
         unwrap(api.get<FederatedExportList>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/exports`)),
       getExport: (nodeId: string, exportId: string) =>

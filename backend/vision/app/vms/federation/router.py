@@ -344,12 +344,21 @@ async def federated_export_create(
     body: Annotated[dict, Body(...)],
 ) -> dict:
     """Queue a clip export of a federated camera THROUGH its recorder node. ``body`` =
-    { from, to } (RFC3339). Returns the node-issued 202 { id, status, ... }."""
+    { from, to, watermark? } (RFC3339). Returns the node-issued 202 { id, status, ... }.
+
+    ``watermark`` burns a visible provenance stamp into the picture and forces a
+    re-encode on the recorder — a slower job producing a clip that is no longer
+    bit-identical to the segments. The operator chooses it per export; it is not a
+    policy this service applies."""
     node = await _resolve_node(db, scope, node_id)
     frm = str((body or {}).get("from") or "").strip()
     to = str((body or {}).get("to") or "").strip()
     try:
-        result = await fed.create_export_node(node.api_url, camera_id, frm, to, credential=node.credential)
+        result = await fed.create_export_node(
+            node.api_url, camera_id, frm, to,
+            watermark=bool((body or {}).get("watermark")),
+            credential=node.credential,
+        )
     except fed.NodeUnavailable as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"recorder unavailable: {e}")
     if isinstance(result, dict):

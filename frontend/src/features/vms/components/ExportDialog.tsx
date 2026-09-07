@@ -13,10 +13,16 @@
 // Then the evidence trio: verify (the recorder re-hashes its own file), the signed
 // manifest (relayed byte for byte), and the recorder's public key.
 //
-// NOT offered any more, because the recorder's export API does not take them: a
-// container FORMAT choice (it produces mp4) and a burnt-in provenance WATERMARK.
-// The dialog used to send both to the VMS's own exporter. Showing controls the
-// recorder ignores would be worse than not showing them.
+// The container FORMAT choice is not offered: the recorder produces mp4, and showing
+// a control it ignores would be worse than not showing one.
+//
+// The WATERMARK is offered, and it is a real trade the operator makes. It burns
+// camera / window / recorder / operator into the picture — which survives the clip
+// being screenshotted or pasted into a slide, where a detached signature does not
+// travel — but the recorder must re-encode to draw it, so the export takes materially
+// longer and the result is no longer bit-identical to the recorded segments. The
+// signed manifest is the other half of the same story, not a substitute; an export
+// can carry both.
 //
 // Wired from: the Recordings row "Export" action (pre-fills a single recording's
 // range) and the PlaybackPlayer "Export this window" hook.
@@ -24,7 +30,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Modal } from "@/components/ui/kit";
+import { Button, Modal, Toggle } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { fmtBytes, fmtDuration } from "@/lib/format";
 import { vms } from "../api";
@@ -62,6 +68,7 @@ export interface ExportDialogProps {
 export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraName, range }: ExportDialogProps) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [watermark, setWatermark] = useState(false);
   const [job, setJob] = useState<ExportJobState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -74,6 +81,7 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
     setFrom(toLocalInput(range?.from));
     setTo(toLocalInput(range?.to));
     setJob(null);
+    setWatermark(false);
     setSubmitting(false);
     setDownloading(false);
     setVerify(null);
@@ -118,7 +126,7 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
     if (!nodeId || !cameraId || !rangeValid || !a || !b) return;
     setSubmitting(true);
     try {
-      const res = await vms.federation.actions.createExport(nodeId, cameraId, a, b);
+      const res = await vms.federation.actions.createExport(nodeId, cameraId, a, b, watermark);
       setJob({ id: res.id, status: res.status || "queued" });
     } catch (e) {
       toast.error(apiError(e, "Could not start the export"));
@@ -251,6 +259,17 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
                 />
               </label>
             </div>
+            <label className="flex items-start gap-2">
+              <Toggle checked={watermark} onChange={setWatermark} />
+              <span className="text-xs text-[#aec2e8]">
+                Burn a provenance watermark
+                <span className="mt-0.5 block text-[11px] text-[#8fa4c8]">
+                  Stamps the camera, window, recorder and your name into the picture. The
+                  recorder re-encodes to draw it, so the export is slower and the clip is not
+                  byte-identical to the recording.
+                </span>
+              </span>
+            </label>
             <p className="text-xs text-[#aec2e8]">
               {rangeValid ? (
                 <>
@@ -308,11 +327,17 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
                       <Icon icon="heroicons-outline:shield-exclamation" className="text-sm" /> Not signed
                     </span>
                   )}
+                  {watermark && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
+                      <Icon icon="heroicons-outline:identification" className="text-sm" /> Watermarked
+                    </span>
+                  )}
                   {job.encode_mode === "reencode" && (
-                    /* Worth surfacing on an evidence artefact: the clip was
-                       re-encoded because the source segments could not be
-                       concatenated by stream copy, so it is not bit-identical to
-                       what was recorded. The manifest still pins both. */
+                    /* Worth surfacing on an evidence artefact: the clip is not
+                       bit-identical to what was recorded. Either the source segments
+                       could not be concatenated by stream copy, or a watermark was
+                       drawn — which can only be done on a re-encode. The manifest
+                       pins the clip either way. */
                     <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
                       <Icon icon="heroicons-outline:arrow-path" className="text-sm" /> Re-encoded
                     </span>

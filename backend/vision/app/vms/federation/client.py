@@ -489,12 +489,27 @@ async def reboot_camera_node(api_url: str, camera_id: str, *, credential: str | 
 
 
 async def create_export_node(
-    api_url: str, camera_id: str, frm: str, to: str, *, credential: str | None = None
+    api_url: str,
+    camera_id: str,
+    frm: str,
+    to: str,
+    *,
+    watermark: bool = False,
+    credential: str | None = None,
 ) -> dict:
     """POST {api_url}/api/v1/nvr/estate/exports → the node queues a clip export of its own
-    camera for [frm, to] (RFC3339). Returns 202 { id, status, ... }. NodeUnavailable on non-2xx."""
+    camera for [frm, to] (RFC3339). Returns 202 { id, status, ... }. NodeUnavailable on non-2xx.
+
+    ``watermark`` burns a visible provenance stamp (camera, window, recorder, operator)
+    into the picture. It forces the recorder to RE-ENCODE — pixels cannot be drawn into
+    a stream copy — so the clip is no longer bit-identical to the recorded segments and
+    the job takes materially longer. Off by default for that reason.
+
+    It is not an alternative to the signed manifest. The manifest proves the FILE is
+    the one this recorder produced; the stamp survives the clip being screenshotted or
+    pasted into a slide, where a detached signature does not travel."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports"
-    body = {"camera_id": camera_id, "from": frm, "to": to}
+    body = {"camera_id": camera_id, "from": frm, "to": to, "watermark": bool(watermark)}
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json=body)
