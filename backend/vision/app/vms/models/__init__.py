@@ -22,17 +22,16 @@ Domain split:
   * ``storage``    — StoragePool (where recorded segments live, P3-B). Tiering and
                      RAID are the NVR's job; TierRule/RaidArray were deleted.
   * ``pattern``    — CameraPattern (video-wall rotating group sequences, P3-C)
-  * ``export``     — ExportJob (clip-export: concat recorded segments → mp4, P4-B)
   * ``event``      — VmsEvent (normalized camera device / system events, P5-A)
   * ``linkage``    — LinkageRule + LinkageFire (event→action rules + fire-audit, P5-B)
   * ``videowall``  — VideoWall + WallMonitor + WallPreset + WallTour (shared control-room
                      display wall + live shared-state + presets/tours, VW-A)
   * ``decoder``    — VideoDecoder (hardware video-decoder appliance the wall pushes camera
                      RTSP to over the brand SDK, VW-B)
-  * ``ptz``        — PtzPreset + PtzPatrol (named saved viewpoints + ordered guard-tours the
-                     server-side patrol cycler goto-presets on dwell, G1)
-  * ``motion_search`` — MotionSearchJob (forensic non-AI VMD search: ffmpeg scene/motion
-                     over a drawn region of recorded segments → hit intervals, G4)
+
+NOT here, and each for the same reason — the recorder that owns the footage owns the
+work: ``export`` (ExportJob), ``motion_search`` (MotionSearchJob) and ``ptz``
+(PtzPreset + PtzPatrol). Their tables are dropped by 0031.
 """
 
 from __future__ import annotations
@@ -42,16 +41,13 @@ from .camera import Camera, MediaProfile
 from .decoder import VideoDecoder
 from .event import VmsEvent
 from .evidence import EvidenceLock
-from .export import ExportJob
 from .group import CameraACL, CameraGroup
 from .health import CameraHealth
 from .linkage import LinkageFire, LinkageRule
 from .live import PlaybackSession
 from .media_node import MediaNode
-from .motion_search import MotionSearchJob
 from .nvr import NVR
 from .pattern import CameraPattern
-from .ptz import PtzPatrol, PtzPreset
 from .recording import Recording
 from .report import ReportRun, ReportSchedule
 from .storage import StoragePool
@@ -69,7 +65,6 @@ __all__ = [
     "Recording",
     "StoragePool",
     "CameraPattern",
-    "ExportJob",
     "VmsEvent",
     "LinkageRule",
     "LinkageFire",
@@ -80,9 +75,6 @@ __all__ = [
     "WallPreset",
     "WallTour",
     "VideoDecoder",
-    "PtzPreset",
-    "PtzPatrol",
     "Bookmark",
     "EvidenceLock",
-    "MotionSearchJob",
 ]

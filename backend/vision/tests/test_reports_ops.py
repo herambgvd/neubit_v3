@@ -1,8 +1,15 @@
 """G8 report tests — operator-activity + alarm-response rollups.
 
-No network. In-memory SQLite seeded with vision's actor-stamped rows (exports, motion
-searches, bookmarks, evidence locks/releases) + VmsEvent rows (some acked) across two
-tenants. Asserts:
+No network. In-memory SQLite seeded with vision's actor-stamped rows (bookmarks,
+evidence locks/releases) + VmsEvent rows (some acked) across two tenants.
+
+Clip exports and forensic motion searches are NOT seeded and NOT counted: they are
+performed and audited by the recorder that owns the footage. The rollup used to read
+both from vision's own tables; leaving those sources in place after the work moved
+would report zero for an operator who exported all day, which is a worse answer than
+saying the report does not cover it.
+
+Asserts:
   * operator-activity: per-operator action counts + by_action totals from vision's own
     tables; tenant isolation; the source_note honesty flag.
   * alarm-response: ack-rate + time-to-ack over alarm/critical VmsEvents; per-camera +
@@ -27,8 +34,6 @@ from app.vms.models import (
     Bookmark,
     Camera,
     EvidenceLock,
-    ExportJob,
-    MotionSearchJob,
     VmsEvent,
 )
 from app.vms.reports import computations, render
@@ -62,23 +67,19 @@ async def seeded(db):
     db.add(Camera(id="cam-b", tenant_id=TENANT, name="Cam B", connection_type="rtsp", status="online"))
 
     # ── operator-activity sources (all inside [09:00, 12:00)) ──
-    # alice: 2 exports + 1 bookmark; bob: 1 motion search + 1 evidence lock.
-    db.add(ExportJob(tenant_id=TENANT, camera_id="cam-a", from_time=_dt(8), to_time=_dt(9),
-                     requested_by="alice", created_at=_dt(9, 10)))
-    db.add(ExportJob(tenant_id=TENANT, camera_id="cam-a", from_time=_dt(8), to_time=_dt(9),
-                     requested_by="alice", created_at=_dt(9, 20)))
+    # alice: 2 bookmarks; bob: 1 evidence lock.
     db.add(Bookmark(tenant_id=TENANT, camera_id="cam-a", title="Interesting", start_ts=_dt(9, 30),
                     created_by="alice", created_at=_dt(9, 30)))
-    db.add(MotionSearchJob(tenant_id=TENANT, camera_id="cam-b", from_time=_dt(8), to_time=_dt(9),
-                           requested_by="bob", created_at=_dt(10, 0)))
+    db.add(Bookmark(tenant_id=TENANT, camera_id="cam-a", title="Also interesting", start_ts=_dt(9, 40),
+                    created_by="alice", created_at=_dt(9, 40)))
     db.add(EvidenceLock(tenant_id=TENANT, camera_id="cam-b", start_ts=_dt(8), end_ts=_dt(9),
                         created_by="bob", created_at=_dt(10, 5)))
-    # An export OUTSIDE the window (should be excluded).
-    db.add(ExportJob(tenant_id=TENANT, camera_id="cam-a", from_time=_dt(1), to_time=_dt(2),
-                     requested_by="alice", created_at=_dt(2, 0)))
-    # A foreign-tenant export (isolation).
-    db.add(ExportJob(tenant_id=OTHER, camera_id="cam-x", from_time=_dt(8), to_time=_dt(9),
-                     requested_by="mallory", created_at=_dt(9, 15)))
+    # A bookmark OUTSIDE the window (should be excluded).
+    db.add(Bookmark(tenant_id=TENANT, camera_id="cam-a", title="Yesterday", start_ts=_dt(1),
+                    created_by="alice", created_at=_dt(2, 0)))
+    # A foreign-tenant bookmark (isolation).
+    db.add(Bookmark(tenant_id=OTHER, camera_id="cam-x", title="Theirs", start_ts=_dt(8),
+                    created_by="mallory", created_at=_dt(9, 15)))
 
     # ── alarm-response sources ──
     # cam-a: 2 alarm events, 1 acked (occurred 09:00 → acked 09:05 = 300s).
@@ -106,27 +107,29 @@ async def test_operator_activity_rollup(db, seeded):
     r = await computations.compute_operator_activity(db, _scope(), _dt(9, 0), _dt(12, 0), None)
     by_op = {row["operator"]: row for row in r["rows"]}
     assert set(by_op) == {"alice", "bob"}
-    # alice: 2 exports + 1 bookmark + 1 event-ack (she acked the cam-a alarm) = 4.
-    assert by_op["alice"]["exports"] == 2
-    assert by_op["alice"]["bookmarks"] == 1
+    # alice: 2 bookmarks + 1 event-ack (she acked the cam-a alarm) = 3.
+    assert by_op["alice"]["bookmarks"] == 2
     assert by_op["alice"]["event_acks"] == 1
-    assert by_op["alice"]["total_actions"] == 4
-    # bob: 1 motion search + 1 evidence lock + 1 event-ack (cam-b critical) = 3.
-    assert by_op["bob"]["motion_searches"] == 1
+    assert by_op["alice"]["total_actions"] == 3
+    # bob: 1 evidence lock + 1 event-ack (cam-b critical) = 2.
     assert by_op["bob"]["evidence_locks"] == 1
     assert by_op["bob"]["event_acks"] == 1
-    assert by_op["bob"]["total_actions"] == 3
+    assert by_op["bob"]["total_actions"] == 2
     # by_action totals + grand total.
-    assert r["by_action"]["export"] == 2
+    assert r["by_action"]["bookmark"] == 2
     assert r["by_action"]["event_ack"] == 2
     assert r["totals"]["operators"] == 2
-    assert r["totals"]["total_actions"] == 7
-    # honesty note present.
+    assert r["totals"]["total_actions"] == 5
+    # The honesty note names BOTH limits: what core holds, and what the recorder does.
     assert "core's Activity log" in r["source_note"]
+    assert "recorder" in r["source_note"]
+    # And the row shape must not still advertise columns nothing can fill.
+    assert "exports" not in by_op["alice"]
+    assert "motion_searches" not in by_op["bob"]
 
 
 async def test_operator_activity_camera_filter(db, seeded):
-    # cam-b sources: bob's motion search + evidence lock (alice's are on cam-a).
+    # cam-b sources: bob's evidence lock (alice's are on cam-a).
     r = await computations.compute_operator_activity(db, _scope(), _dt(9, 0), _dt(12, 0), "cam-b")
     ops = {row["operator"] for row in r["rows"]}
     assert ops == {"bob"}

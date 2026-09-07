@@ -32,8 +32,6 @@ from app.vms.models import (
     Camera,
     CameraHealth,
     EvidenceLock,
-    ExportJob,
-    MotionSearchJob,
     Recording,
     StoragePool,
     VmsEvent,
@@ -311,23 +309,26 @@ async def compute_operator_activity(
     query core's DB directly, so this report aggregates ONLY the operator actions that
     leave an actor-stamped row in vision's OWN tables:
 
-      * ``export``        — ExportJob.requested_by     (clip exports)
-      * ``motion_search`` — MotionSearchJob.requested_by (forensic searches)
       * ``bookmark``      — Bookmark.created_by        (marked moments)
       * ``evidence_lock`` — EvidenceLock.created_by    (legal holds placed)
       * ``evidence_release``— EvidenceLock.released_by (legal holds released)
       * ``event_ack``     — VmsEvent.acknowledged_by   (alarms acknowledged)
 
+    NOT here any more, and deliberately: clip EXPORTS and forensic MOTION SEARCHES.
+    Both moved to the recorder that owns the footage — it is the only box that can read
+    the segments — and it audits them itself. Counting them from vision's own tables
+    would report zero for work that is happening, which is worse than not reporting it:
+    an activity rollup that silently under-counts reads as an operator who did nothing.
+    Those actions live in the owning recorder's audit trail.
+
     Each row is one operator with a per-action breakdown + a total. This is an operator-
     ACTIVITY rollup of what vision can see; for the complete audit (logins / config / raw
     playback) the frontend should link to core's Activity log. Tenant-scoped; an optional
-    ``camera_id`` narrows the camera-bearing sources (bookmarks/exports/motion/evidence/
-    event-ack). Empty window → zero rows (not an error).
+    ``camera_id`` narrows the camera-bearing sources (bookmarks/evidence/event-ack).
+    Empty window → zero rows (not an error).
     """
     # (action_label, model, actor_column, time_column, has_camera)
     sources = [
-        ("export", ExportJob, ExportJob.requested_by, ExportJob.created_at, True),
-        ("motion_search", MotionSearchJob, MotionSearchJob.requested_by, MotionSearchJob.created_at, True),
         ("bookmark", Bookmark, Bookmark.created_by, Bookmark.created_at, True),
         ("evidence_lock", EvidenceLock, EvidenceLock.created_by, EvidenceLock.created_at, True),
         ("evidence_release", EvidenceLock, EvidenceLock.released_by, EvidenceLock.released_at, True),
@@ -357,8 +358,6 @@ async def compute_operator_activity(
         rows.append({
             "operator": operator,
             "total_actions": total,
-            "exports": actions.get("export", 0),
-            "motion_searches": actions.get("motion_search", 0),
             "bookmarks": actions.get("bookmark", 0),
             "evidence_locks": actions.get("evidence_lock", 0),
             "evidence_releases": actions.get("evidence_release", 0),
@@ -375,9 +374,11 @@ async def compute_operator_activity(
             "total_actions": sum(action_totals.values()),
         },
         "source_note": (
-            "Aggregated from vision's actor-stamped rows (exports, motion searches, "
-            "bookmarks, evidence locks/releases, event acks). The full operator audit "
-            "trail (logins, config changes, raw playback) lives in core's Activity log."
+            "Aggregated from vision's actor-stamped rows (bookmarks, evidence "
+            "locks/releases, event acks). Clip exports and forensic motion searches "
+            "are performed and audited by the recorder that owns the footage, so they "
+            "are NOT counted here. The full operator audit trail (logins, config "
+            "changes, raw playback) lives in core's Activity log."
         ),
     }
 

@@ -59,10 +59,17 @@ def _report_table():
 
 def upgrade() -> None:
     bind = op.get_bind()
-    # 1. export_jobs signing columns (idempotent).
-    for name, col in _export_columns():
-        if not _has_column(bind, "export_jobs", name):
-            op.add_column("export_jobs", col)
+    # 1. export_jobs signing columns — only if the table is here at all.
+    #
+    # It is not, on a fresh database: the VMS no longer exports clips (the recorder
+    # that owns the footage does, and signs its own manifest), so ``export_jobs`` is
+    # never created and 0031 drops it where it exists. The guard was on the COLUMNS
+    # and not on the table, which is a distinction that costs nothing until the table
+    # goes — then every fresh install dies here with "no such table: export_jobs".
+    if inspect(bind).has_table("export_jobs"):
+        for name, col in _export_columns():
+            if not _has_column(bind, "export_jobs", name):
+                op.add_column("export_jobs", col)
     # 2. report_schedules table (idempotent off the model metadata).
     _report_table().create(bind, checkfirst=True)
 
@@ -70,6 +77,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     _report_table().drop(bind, checkfirst=True)
-    for name, _col in reversed(_export_columns()):
-        if _has_column(bind, "export_jobs", name):
-            op.drop_column("export_jobs", name)
+    if inspect(bind).has_table("export_jobs"):
+        for name, _col in reversed(_export_columns()):
+            if _has_column(bind, "export_jobs", name):
+                op.drop_column("export_jobs", name)

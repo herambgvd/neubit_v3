@@ -847,13 +847,6 @@ export interface MotionRegion {
   h: number;
 }
 
-export interface MotionSearchStartBody {
-  from: string;
-  to: string;
-  regions?: MotionRegion[];
-  sensitivity?: number;
-  sample_fps?: number;
-}
 
 export interface MotionHit {
   start: string;
@@ -861,21 +854,6 @@ export interface MotionHit {
   score: number;
 }
 
-export interface MotionSearchJobPublic {
-  job_id: string;
-  camera_id: string;
-  status: "queued" | "running" | "done" | "failed" | string;
-  progress: number;
-  from: string;
-  to: string;
-  regions: MotionRegion[];
-  sensitivity: number;
-  hits: MotionHit[];
-  note?: string | null;
-  error?: string | null;
-  created_at: string;
-  finished_at?: string | null;
-}
 
 /* --- device management (backend/vision/app/vms/devicemgmt/schemas.py) ------ */
 
@@ -1275,6 +1253,55 @@ export interface FederatedOpResult {
   ok?: boolean;
   supported?: boolean;
   detail?: string | null;
+  [k: string]: unknown;
+}
+
+/** A stretch of time with no recording, inside a searched range. */
+export interface FederatedCoverageGap {
+  start?: string | null;
+  end?: string | null;
+  [k: string]: unknown;
+}
+
+/** `POST …/cameras/{id}/motion-search` — the recorder's forensic region search over
+ *  its OWN recorded footage, relayed whole.
+ *
+ *  Four fields here carry weight and must not be dropped in rendering:
+ *
+ *   - `method` / `summary` — the recorder's own disclosure that this is pixel
+ *     difference, NOT object detection. A hit list without it is what somebody reads
+ *     as "three intruders".
+ *   - `complete` / `notes` — the search is BOUNDED (span, frame budget, deadline).
+ *     A bounded search that gave up must never present an empty hit list as "the
+ *     footage is clear"; `notes` says which bound bit.
+ *   - `examined_from` / `examined_to` — what was ACTUALLY covered, which is not
+ *     necessarily the window that was asked for.
+ *   - `gaps` — minutes with no footage inside the examined range. Nothing can be
+ *     found in footage that does not exist. */
+/** `POST …/cameras/{id}/motion-search` body. One region or none (whole frame);
+ *  `sensitivity` is the recorder's 1..100 scale, and the sample rate is an INTERVAL
+ *  in seconds, not a frame rate. */
+export interface FederatedMotionSearchBody {
+  from: string;
+  to: string;
+  region?: MotionRegion;
+  sensitivity?: number;
+  sample_interval_sec?: number;
+  min_duration_sec?: number;
+  merge_gap_sec?: number;
+}
+
+export interface FederatedMotionSearch extends NodeTagged {
+  hits?: MotionHit[] | null;
+  examined_from?: string | null;
+  examined_to?: string | null;
+  frames_examined?: number | null;
+  sample_interval_sec?: number | null;
+  complete?: boolean;
+  notes?: string[] | null;
+  gaps?: FederatedCoverageGap[] | null;
+  summary?: string | null;
+  method?: string | null;
   [k: string]: unknown;
 }
 

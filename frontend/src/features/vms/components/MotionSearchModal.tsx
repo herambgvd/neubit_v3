@@ -2,14 +2,29 @@
 
 // MotionSearchModal (G4) — Smart / forensic motion search over recorded footage.
 //
-// The investigator draws one or more region rectangles over a REFERENCE FRAME (a
-// snapshot of the camera), picks a time window + sensitivity, and runs a VMD job
-// (ffmpeg motion energy on the cropped region — NOT AI). The backend returns hit
-// intervals which the caller plots on the ScrubBar and lists for click-to-seek.
+// The investigator draws a region over a REFERENCE FRAME (a snapshot of the camera),
+// picks a time window and sensitivity, and the RECORDER searches its own footage.
+// It has to be the recorder: the search decodes the segment files, and those live on
+// its disk. Hit intervals come back for the caller to plot on the ScrubBar.
 //
-// Regions are stored NORMALIZED (0..1): {x,y} = top-left, {w,h} = size relative to
-// the frame. An empty region list = whole frame. Both start + poll gate on
-// vms.playback.view (the backend enforces it too).
+// The region is stored NORMALIZED (0..1): {x,y} = top-left, {w,h} = size relative to
+// the frame. No region = the whole frame.
+//
+// ONE region, not a list. The recorder's search takes a single rectangle, and the
+// modal used to collect several and send them all to the VMS's own searcher — so the
+// two disagreed about what was even being asked. Drawing a new rectangle replaces
+// the previous one rather than adding to it.
+//
+// SYNCHRONOUS. There is no job to poll: the recorder bounds the search itself (span,
+// frame budget, deadline) and answers with what it managed to examine. That is a
+// better shape than a queue, and it is why `complete`/`notes` below are load-bearing
+// — a bounded search that gave up must never present an empty hit list as "the
+// footage is clear".
+//
+// The response's `method` disclosure is rendered verbatim, every time. This is
+// pixel-difference over sampled frames, NOT object detection, and a hit list is
+// exactly the sort of output somebody reads as "three intruders" if nothing says
+// otherwise.
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
 import { Icon } from "@iconify/react";
@@ -17,7 +32,7 @@ import { Icon } from "@iconify/react";
 import { Button, Modal } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import { vms } from "../api";
-import type { MotionHit, MotionRegion } from "../types";
+import type { FederatedMotionSearch, MotionHit, MotionRegion } from "../types";
 import type { MotionSearchResults } from "./playbackTypes";
 
 // ISO ↔ the value a datetime-local input wants (local wall-clock).
@@ -38,6 +53,9 @@ const fmtTime = (iso: string) =>
 export interface MotionSearchModalProps {
   open: boolean;
   onClose?: () => void;
+  /** The recorder that holds the footage and runs the search. */
+  nodeId: string;
+  /** The camera's id ON that recorder. */
   cameraId: string;
   cameraName?: string | null;
   /** Seed window (ISO) — defaults to the loaded playback window. */
@@ -53,6 +71,7 @@ export interface MotionSearchModalProps {
 export default function MotionSearchModal({
   open,
   onClose,
+  nodeId,
   cameraId,
   cameraName,
   seedFrom = null,
@@ -62,7 +81,11 @@ export default function MotionSearchModal({
 }: MotionSearchModalProps) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  // 0..1 in the UI, 1..100 on the wire — the recorder's scale. Converted at the
+  // call, not stored converted, so the slider keeps its own vocabulary.
   const [sensitivity, setSensitivity] = useState(0.5);
+  // Frames per second in the UI; the recorder takes an INTERVAL in seconds. Same
+  // idea, reciprocal — converted at the call.
   const [sampleFps, setSampleFps] = useState(4);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -75,17 +98,16 @@ export default function MotionSearchModal({
   const [regions, setRegions] = useState<MotionRegion[]>([]);
   const [draft, setDraft] = useState<MotionRegion | null>(null); // in-progress rect while dragging (normalized)
 
-  // Job lifecycle.
+  // Search lifecycle.
   const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [statusText, setStatusText] = useState("");
   const [hits, setHits] = useState<MotionHit[] | null>(null); // null = not run yet; [] = ran, no hits
-  const [note, setNote] = useState("");
+  // The recorder's own account of the search: what it examined, what it could not,
+  // and what the method does and does not mean.
+  const [result, setResult] = useState<FederatedMotionSearch | null>(null);
   const [jobError, setJobError] = useState("");
 
   const drawRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number } | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   // ── Seed window + fetch a reference frame when opened ────────────────────
   useEffect(() => {
@@ -95,11 +117,9 @@ export default function MotionSearchModal({
     setRegions([]);
     setDraft(null);
     setHits(null);
-    setNote("");
+    setResult(null);
     setJobError("");
-    setProgress(0);
     setRunning(false);
-    setStatusText("");
 
     let objectUrl: string | null = null;
     let cancelled = false;
@@ -107,7 +127,7 @@ export default function MotionSearchModal({
     setFrameError(false);
     setFrameUrl(null);
     api
-      .get<Blob>(vms.cameras.snapshotUrl(cameraId), { responseType: "blob" })
+      .get<Blob>(vms.federation.snapshotUrl(nodeId, cameraId), { responseType: "blob" })
       .then((r) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(r.data);
@@ -119,10 +139,9 @@ export default function MotionSearchModal({
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
-      if (abortRef.current) abortRef.current.abort();
     };
      
-  }, [open, cameraId, seedFrom, seedTo]);
+  }, [open, nodeId, cameraId, seedFrom, seedTo]);
 
   // ── Draw layer — drag to add a normalized rect ───────────────────────────
   const rectFromEvent = (e: MouseEvent<HTMLDivElement>) => {
@@ -180,65 +199,52 @@ export default function MotionSearchModal({
   const runSearch = async () => {
     if (!canRun || !fromIso || !toIso) return; // `canRun` already implies the window; this narrows it
     setRunning(true);
-    setProgress(0);
     setHits(null);
-    setNote("");
+    setResult(null);
     setJobError("");
-    setStatusText("Queuing…");
     onResults?.({ hits: [], jobId: null, note: "" }); // clear any prior plot
 
-    const controller = new AbortController();
-    abortRef.current = controller;
     try {
-      const started = await vms.motionSearch.start(cameraId, {
+      const res = await vms.federation.motionSearch(nodeId, cameraId, {
         from: fromIso,
         to: toIso,
-        regions, // [] = whole frame
-        sensitivity,
-        sample_fps: sampleFps,
+        // One rectangle, or none at all for the whole frame. The recorder takes a
+        // single region; sending a list would be sending it something it cannot read.
+        region: regions[0],
+        // 0..1 slider → the recorder's 1..100. Rounded and clamped so the ends of
+        // the slider land on real values rather than 0 or 101.
+        sensitivity: Math.min(100, Math.max(1, Math.round(sensitivity * 100))),
+        // fps → seconds between samples.
+        sample_interval_sec: sampleFps > 0 ? 1 / sampleFps : 1,
       });
-      const jobId = started?.job_id;
-      if (!jobId) throw new Error("No job id returned");
-      setStatusText("Analyzing footage…");
-
-      const job = await vms.motionSearch.poll(jobId, {
-        intervalMs: 1500,
-        signal: controller.signal,
-        onTick: (j) => {
-          setProgress(typeof j?.progress === "number" ? j.progress : 0);
-          setStatusText(
-            j?.status === "running" ? "Analyzing footage…" : j?.status === "queued" ? "Queued…" : "",
-          );
-        },
-      });
-
-      if (job.status === "failed") {
-        setJobError(job.error || "Motion search failed");
-        setHits([]);
-        toast.error(job.error || "Motion search failed");
+      setResult(res);
+      const found = Array.isArray(res.hits) ? res.hits : [];
+      setHits(found);
+      // `notes` is the recorder saying which of its bounds bit. It rides through to
+      // the caller as the plot's note so an incomplete search cannot be read off the
+      // timeline as a complete one.
+      const note = (res.notes || []).join(" ");
+      onResults?.({ hits: found, jobId: null, note });
+      if (res.complete === false) {
+        toast.warning(
+          found.length
+            ? `${found.length} hit${found.length === 1 ? "" : "s"} — the search did not cover the whole window`
+            : "The search did not cover the whole window; nothing found in the part it examined",
+        );
       } else {
-        const found = Array.isArray(job.hits) ? job.hits : [];
-        setHits(found);
-        setNote(job.note || "");
-        onResults?.({ hits: found, jobId, note: job.note || "" });
-        toast.success(found.length ? `${found.length} motion hit${found.length === 1 ? "" : "s"} found` : "No motion in the selected region");
+        toast.success(
+          found.length
+            ? `${found.length} motion hit${found.length === 1 ? "" : "s"} found`
+            : "No motion in the selected region",
+        );
       }
     } catch (e) {
-      // `poll` rejects with an AbortError DOMException when the modal closes / cancels.
-      if (e instanceof DOMException && e.name === "AbortError") return;
       setJobError(apiError(e, "Motion search failed"));
       setHits([]);
       toast.error(apiError(e, "Motion search failed"));
     } finally {
-      abortRef.current = null;
       setRunning(false);
     }
-  };
-
-  const cancelRun = () => {
-    if (abortRef.current) abortRef.current.abort();
-    setRunning(false);
-    setStatusText("");
   };
 
   const regionSummary = useMemo(
@@ -258,8 +264,11 @@ export default function MotionSearchModal({
             Close
           </Button>
           {running ? (
-            <Button variant="secondary" icon="heroicons-outline:x-circle" onClick={cancelRun}>
-              Cancel
+            /* No Cancel. The recorder runs the search in one bounded call — there is
+               no job to cancel, and a button that only stopped this browser waiting
+               would suggest the recorder had stopped too. */
+            <Button variant="primary" disabled>
+              <Icon icon="svg-spinners:180-ring" className="text-base" /> Searching…
             </Button>
           ) : (
             <Button
@@ -456,19 +465,13 @@ export default function MotionSearchModal({
           )}
         </div>
 
-        {/* Progress */}
+        {/* Working. Indeterminate on purpose: the recorder runs the search in one
+            call and reports no progress, so a percentage here would be invented. */}
         {running && (
           <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2.5">
-            <div className="mb-1.5 flex items-center gap-2 text-xs text-[#f2f6ff]">
+            <div className="flex items-center gap-2 text-xs text-[#f2f6ff]">
               <Icon icon="svg-spinners:180-ring" className="text-sm text-fuchsia-400" />
-              {statusText || "Working…"}
-              <span className="ml-auto font-mono text-[#aec2e8]">{Math.round((progress || 0) * 100)}%</span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[rgba(150,180,245,.22)]/60">
-              <div
-                className="h-full rounded-full bg-fuchsia-500 transition-all"
-                style={{ width: `${Math.round((progress || 0) * 100)}%` }}
-              />
+              Searching the recorded footage…
             </div>
           </div>
         )}
@@ -489,10 +492,37 @@ export default function MotionSearchModal({
                 {hits.length ? `${hits.length} hit${hits.length === 1 ? "" : "s"}` : "No motion found"}
               </span>
             </div>
-            {note && (
-              <p className="mb-1.5 flex items-start gap-1 text-[11px] text-amber-400/90">
+            {/* An INCOMPLETE search is the dangerous result, not a failed one: an
+                empty hit list from a search that gave up reads as "the footage is
+                clear". The recorder says which of its bounds bit, and that is shown
+                before the hits, not under them. */}
+            {result?.complete === false && (
+              <div className="mb-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-300">
+                <p className="flex items-start gap-1 font-medium">
+                  <Icon icon="heroicons-outline:exclamation-triangle" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  This search did not cover the whole window.
+                </p>
+                {(result.notes || []).map((n, i) => (
+                  <p key={i} className="mt-0.5 pl-4.5">
+                    {n}
+                  </p>
+                ))}
+                {result.examined_from && result.examined_to && (
+                  <p className="mt-0.5 pl-4.5 font-mono tabular-nums">
+                    Examined {fmtTime(result.examined_from)} – {fmtTime(result.examined_to)}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Recording GAPS inside the examined range: footage that does not exist
+                cannot be searched, and an operator reading an empty result needs to
+                know which minutes were never on disk. */}
+            {!!result?.gaps?.length && (
+              <p className="mb-1.5 flex items-start gap-1 text-[11px] text-[#aec2e8]">
                 <Icon icon="heroicons-outline:information-circle" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                {note}
+                {result.gaps.length} recording gap{result.gaps.length === 1 ? "" : "s"} inside this window — there is
+                no footage there to search.
               </p>
             )}
             {hits.length > 0 ? (
@@ -524,6 +554,16 @@ export default function MotionSearchModal({
             ) : (
               <p className="rounded-lg border border-dashed border-[rgba(150,180,245,.22)] px-3 py-3 text-center text-xs text-[#aec2e8]">
                 No motion detected in the selected region and window.
+              </p>
+            )}
+
+            {/* The method disclosure, verbatim from the recorder and shown on every
+                result. A list of timestamps is exactly what somebody reads as
+                "three intruders" — this is pixel change, and it says so itself
+                rather than being paraphrased here. */}
+            {result?.method && (
+              <p className="mt-2 border-t border-[rgba(150,180,245,.22)] pt-2 text-[10px] leading-relaxed text-[#aec2e8]">
+                {result.method}
               </p>
             )}
           </div>

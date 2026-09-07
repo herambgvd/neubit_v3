@@ -46,7 +46,6 @@ from app.vms.anr import AnrConsumer
 from app.vms.common.events import bus
 from app.vms.events import EventSupervisor
 from app.vms.health import HealthSampler
-from app.vms.motion_search import MotionSearchWorker
 from app.vms.linkage import LinkageConsumer
 from app.vms.media_nodes import NodeHeartbeatMonitor
 from app.vms.recording import RecordingConsumer, RecordingScheduler
@@ -111,14 +110,12 @@ async def lifespan(app: FastAPI):
     # files the recorder owns, and produced clips nothing could attest to. The
     # console now asks the owning recorder (/vms/federation/…/exports).
 
-    # G4 forensic motion search: drain queued MotionSearchJobs → non-AI ffmpeg VMD over
-    # the covered recorded fmp4 segments in the drawn region(s) → threshold the per-frame
-    # scene-change scores into hit intervals → store them. Own DB session per cycle;
-    # bounded concurrency; graceful (missing/tiered segment or ffmpeg fail → partial hits
-    # + a note, only a fully-unanalyzable job fails; never crashes the loop).
-    motion_search_worker = MotionSearchWorker(get_sessionmaker())
-    await motion_search_worker.start()
-    app.state.motion_search_worker = motion_search_worker
+    # No forensic motion-search worker here either, for the same reason as export: the
+    # search DECODES the recorded segments, and they live on the recorder's disk. The
+    # recorder also bounds its own search and reports what it managed to examine — a
+    # queue here could not, and an incomplete search that says nothing is read as
+    # "the footage is clear". The console asks the owning recorder
+    # (/vms/federation/…/motion-search).
 
     # P5-A camera device-events: the event-supervisor opens one ONVIF/brand
     # subscription per active ``onvif_events_enabled`` camera (re-scanned on a tick,
@@ -173,7 +170,6 @@ async def lifespan(app: FastAPI):
 
     await report_scheduler.stop()
     await event_supervisor.stop()
-    await motion_search_worker.stop()
     await rec_scheduler.stop()
     await node_heartbeat.stop()
     await sampler.stop()

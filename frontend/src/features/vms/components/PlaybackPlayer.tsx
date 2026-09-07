@@ -84,6 +84,18 @@ function toTranscodedWhep(url: string): string | null {
 
 export interface PlaybackPlayerProps {
   cameraId: string;
+  /** The recorder that owns this camera, when there is one.
+   *
+   *  Required for anything that asks the recorder to DO something with the footage:
+   *  the forensic motion search decodes the segment files, which live on its disk.
+   *  Absent for a third-party NVR channel, which this platform proxies for viewing
+   *  and does not run jobs on — those affordances stay hidden rather than failing. */
+  nodeId?: string | null;
+  /** The camera's id ON that recorder. Distinct from `cameraId`, which is what the
+   *  VMS keys ITS records on (bookmarks, evidence holds) — for a federated tile the
+   *  two differ, and sending one where the other belongs silently addresses the
+   *  wrong camera. */
+  realCameraId?: string | null;
   cameraName?: string | null;
   profile?: string;
   /** Recorded-source override (NVR footage). When set, timeline/coverage come
@@ -115,6 +127,8 @@ export interface PlaybackPlayerProps {
 
 export default function PlaybackPlayer({
   cameraId,
+  nodeId = null,
+  realCameraId = null,
   cameraName,
   profile = "main",
   sourceFn = null,
@@ -183,7 +197,9 @@ export default function PlaybackPlayer({
   const qc = useQueryClient();
   const { can } = useAuth();
   const canLock = can("vms.recording.control");
-  const canSearch = can("vms.playback.view");
+  // Permission AND a recorder to ask. Without the second, there is nothing that
+  // could run the search.
+  const canSearch = can("vms.playback.view") && !!nodeId && !!realCameraId;
   // ── Smart / forensic motion search (G4) — standalone only ───────────────
   const [motionSearchOpen, setMotionSearchOpen] = useState(false);
   const [motionHits, setMotionHits] = useState<MotionHit[]>([]); // [{ start, end, score }]
@@ -1060,7 +1076,8 @@ export default function PlaybackPlayer({
         <MotionSearchModal
           open={motionSearchOpen}
           onClose={() => setMotionSearchOpen(false)}
-          cameraId={cameraId}
+          nodeId={nodeId!}
+          cameraId={realCameraId!}
           cameraName={cameraName}
           seedFrom={iso(windowStart)}
           seedTo={iso(current ?? windowEnd)}

@@ -65,6 +65,8 @@ import type {
   FederatedHold,
   FederatedHoldList,
   FederatedLiveSession,
+  FederatedMotionSearch,
+  FederatedMotionSearchBody,
   FederatedOpResult,
   FederatedPatrol,
   FederatedPatrolBody,
@@ -88,8 +90,6 @@ import type {
   MediaNodeListResponse,
   MediaNodePublic,
   MediaNodeUpdate,
-  MotionSearchJobPublic,
-  MotionSearchStartBody,
   MotionZonesResponse,
   NodeCredentialPublic,
   NodeEnrollResult,
@@ -180,13 +180,6 @@ interface FederatedRecordingsOpt extends WindowOpt {
   profile?: string | null;
   limit?: number;
   offset?: number;
-}
-
-/** `motionSearch.poll` options. */
-interface PollOpt {
-  intervalMs?: number;
-  onTick?: (job: MotionSearchJobPublic) => void;
-  signal?: AbortSignal;
 }
 
 export const vms = {
@@ -281,6 +274,16 @@ export const vms = {
         unwrap(api.post<FederatedOpResult>(
           `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/imaging/focus/stop`, {})),
     },
+    // Forensic region motion search over the recorder's OWN recorded footage. It has
+    // to run there: the search decodes the segment files, and those are on its disk.
+    //
+    // Synchronous and BOUNDED — the recorder caps span, frames and time, and reports
+    // what it actually examined. Render `complete`/`notes` or an incomplete search
+    // reads as "the footage is clear", and render `method` or a list of timestamps
+    // reads as object detection. Neither is optional.
+    motionSearch: (nodeId: string, cameraId: string, body: FederatedMotionSearchBody) =>
+      unwrap(api.post<FederatedMotionSearch>(
+        `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/motion-search`, body)),
     // Snapshot URL for a federated camera (relative path — fetched as an authed
     // blob, same as cameras.snapshotUrl, since the endpoint needs the Bearer header).
     snapshotUrl: (nodeId: string, cameraId: string) =>
@@ -712,58 +715,6 @@ export const vms = {
     check: (params: QueryParams = {}) => unwrap(api.get<EvidenceCheckResult>(`${EVIDENCE}/check${qs(params)}`)),
   },
 
-  // ── Smart / forensic motion search (G4) — VMD over recorded footage ──────
-  // Find motion inside drawn region(s) over a time window in a camera's recorded
-  // segments (ffmpeg motion/scene energy on the cropped region — NOT AI). An async
-  // job: start → poll → hit intervals. Regions are NORMALIZED 0..1 ({x,y}=top-left,
-  // {w,h}=size); an empty regions[] = whole frame. Both start + poll gate on
-  // vms.playback.view; tenant-scoped. Hit timestamps are ISO-8601 UTC.
-  motionSearch: {
-    // POST /vms/cameras/{id}/motion-search
-    //   { from, to, regions:[{x,y,w,h}], sensitivity?=0.5, sample_fps?=4.0 }
-    //   → 201 { job_id, status:"queued", ... }.
-    start: (cameraId: string, body: MotionSearchStartBody) =>
-      unwrap(api.post<MotionSearchJobPublic>(`${CAMERAS}/${cameraId}/motion-search`, body)),
-    // GET /vms/motion-search/{job_id} → { status:"queued"|"running"|"done"|
-    //   "failed", progress, hits:[{start,end,score}], note, error }.
-    get: (jobId: string) => unwrap(api.get<MotionSearchJobPublic>(`/vms/motion-search/${jobId}`)),
-    // Poll `get(jobId)` every `intervalMs` until the job reaches a terminal state
-    // (done|failed) or `signal` aborts. `onTick(job)` fires each poll so the caller
-    // can render progress. Resolves with the terminal job (or rejects on abort).
-    poll: (jobId: string, { intervalMs = 1500, onTick, signal }: PollOpt = {}): Promise<MotionSearchJobPublic> =>
-      new Promise<MotionSearchJobPublic>((resolve, reject) => {
-        let stopped = false;
-        const stop = () => {
-          stopped = true;
-        };
-        if (signal) {
-          if (signal.aborted) {
-            reject(new DOMException("Aborted", "AbortError"));
-            return;
-          }
-          signal.addEventListener("abort", () => {
-            stop();
-            reject(new DOMException("Aborted", "AbortError"));
-          });
-        }
-        const tick = async () => {
-          if (stopped) return;
-          try {
-            const job = await vms.motionSearch.get(jobId);
-            if (stopped) return;
-            onTick?.(job);
-            if (job?.status === "done" || job?.status === "failed") {
-              resolve(job);
-              return;
-            }
-            setTimeout(tick, intervalMs);
-          } catch (e) {
-            if (!stopped) reject(e);
-          }
-        };
-        tick();
-      }),
-  },
 
 
   // ── NVR footage extraction (P4-B) — search + play an onboarded NVR's own

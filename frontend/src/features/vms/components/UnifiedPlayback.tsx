@@ -1218,6 +1218,12 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
             <PlaybackPlayer
               key={focusTile.key}
               cameraId={focusTile.cameraId}
+              // The recorder and the camera's id ON it — needed by anything that asks
+              // the recorder to act on the footage. `cameraId` above stays the id the
+              // VMS keys its own records on (bookmarks, evidence holds), and the two
+              // are NOT interchangeable for a federated tile.
+              nodeId={focusTile.kind === "federated" ? focusTile.nodeId : null}
+              realCameraId={focusTile.kind === "federated" ? focusTile.realId : null}
               cameraName={focusTile.name}
               sourceFn={tileSource(focusTile)}
               profile={stream}
