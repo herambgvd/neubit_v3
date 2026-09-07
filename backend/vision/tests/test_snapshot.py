@@ -1,14 +1,15 @@
-"""Camera snapshot tests — MediaMTX frame-grab fallback + in-memory cache.
+"""Camera snapshot tests — the recorder takes it, the VMS caches it.
 
-No live devices / no ffmpeg binary is required: the ffmpeg frame-grab is
-monkeypatched to a fabricated JPEG, and the ONVIF driver is a fake. We assert:
+No live devices: the recorder's snapshot call is monkeypatched. We assert:
 
   * ``mediamtx_path`` mirrors the Go ``mediamtx.PathName`` convention (tenant→platform).
   * the cache stores + serves a frame, and evicts once past TTL.
-  * ``snapshot_for`` prefers the driver's ONVIF snapshot when it yields bytes.
-  * ``snapshot_for`` FALLS BACK to the MediaMTX frame-grab when ONVIF returns None,
-    and the grabbed frame is then served from cache (no 2nd ffmpeg spawn).
-  * a total failure (ONVIF None + grab None) degrades to ``None`` (→ router 502s).
+  * ``snapshot_for`` asks the RECORDER that owns the camera, with that recorder's own
+    scoped credential, and serves the second ask from cache.
+  * a camera with no recorder attempts NOTHING — the case that used to fall back to
+    opening a session with the camera's own decrypted password.
+  * an unreachable recorder degrades to ``None`` (→ the router 502s) and does not
+    cache the failure.
 """
 
 from __future__ import annotations
@@ -112,73 +113,93 @@ async def seeded(db):
     await db.commit()
 
 
-def _stub_ensure(monkeypatch):
-    """Stub the LiveService ensure path (RTSP-source derive + nvr ensure) so the
-    fallback reaches the frame-grab without a real nvr/MediaMTX. Returns the ensure
-    call recorder."""
-    ensured = []
+async def _mk_node(db, camera_id, *, api_url="http://rec-a:8000", credential="scoped-key"):
+    """Register a recorder and put `camera_id` behind it."""
+    from app.vms.models import MediaNode
 
-    async def _rtsp_source_for(self, camera, profile):
-        return f"rtsp://cam/{camera.id}/{profile}"
-
-    async def _ensure(self, *, camera_id, rtsp_url, profile):
-        ensured.append((camera_id, rtsp_url, profile))
-        return {"name": snapshot_frame.mediamtx_path(None, camera_id, profile), "ready": False}
-
-    monkeypatch.setattr(
-        "app.vms.live.service.LiveService._rtsp_source_for", _rtsp_source_for
+    node = MediaNode(
+        id=str(uuid.uuid4()), tenant_id=TENANT, name="recorder-a", host="rec-a",
+        api_url=api_url, credential=credential, status="online",
     )
-    monkeypatch.setattr(
-        "app.vms.common.nvr_client.NvrClient.ensure_stream", _ensure
-    )
-    return ensured
+    db.add(node)
+    cam = await db.get(Camera, camera_id)
+    cam.media_node_id = node.id
+    await db.commit()
+    return node
 
 
-async def test_snapshot_total_failure_returns_none(db, seeded, monkeypatch):
+async def test_snapshot_is_taken_by_the_owning_recorder(db, seeded, monkeypatch):
+    """The VMS asks the recorder; it does not grab the frame itself.
+
+    It used to do that two ways — the camera's own ONVIF GetSnapshotUri, and a frame
+    off the MediaMTX path, which still meant deriving the camera's RTSP URL from its
+    decrypted password. The recorder holds the credentials and fronts the stream.
+    """
     from app.vms.cameras.service import CameraService
 
     snapshot_frame._cache.clear()
-    _stub_ensure(monkeypatch)
+    await _mk_node(db, "cam-nvr")
+    asks = []
 
-    async def _grab(url, **k):
-        return None
+    async def _snap(api_url, camera_id, *, refresh=False, credential=None):
+        asks.append((api_url, camera_id, credential))
+        return FAKE_JPEG, "image/jpeg"
 
-    monkeypatch.setattr(snapshot_frame, "grab_frame", _grab)
+    monkeypatch.setattr("app.vms.cameras.service.fed.snapshot_node", _snap)
 
     svc = CameraService(db, _scope())
-    assert await svc.snapshot_for("cam-nvr") is None  # → router 502s
+    out = await svc.snapshot_for("cam-nvr")
+    assert out == FAKE_JPEG
+    assert asks == [("http://rec-a:8000", "cam-nvr", "scoped-key")]
+    # Cached: the camera grid asks for sixteen of these at once, and each one makes
+    # the recorder talk to a device.
+    assert snapshot_frame.cache_get("cam-nvr", "sub") == FAKE_JPEG
+    await svc.snapshot_for("cam-nvr")
+    assert len(asks) == 1
 
 
-async def test_snapshot_none_when_nvr_ensure_unreachable(db, seeded, monkeypatch):
-    """nvr/MediaMTX unreachable → the fallback degrades to None (never raises)."""
+async def test_snapshot_none_when_no_recorder_fronts_the_camera(db, seeded, monkeypatch):
+    """No node → None, and NOTHING attempted.
+
+    The absence of a call is the assertion: this is the case that used to fall back to
+    opening a session with the camera's own credentials.
+    """
     from app.vms.cameras.service import CameraService
-    from app.vms.common.nvr_client import NvrUnavailable
 
     snapshot_frame._cache.clear()
+    called = []
 
-    async def _rtsp_source_for(self, camera, profile):
-        return f"rtsp://cam/{camera.id}/{profile}"
+    async def _snap(*a, **k):
+        called.append(a)
+        return FAKE_JPEG, "image/jpeg"
 
-    async def _ensure_boom(self, **k):
-        raise NvrUnavailable("nvr data-plane unreachable")
-
-    monkeypatch.setattr("app.vms.live.service.LiveService._rtsp_source_for", _rtsp_source_for)
-    monkeypatch.setattr("app.vms.common.nvr_client.NvrClient.ensure_stream", _ensure_boom)
-
-    grabbed = []
-
+    monkeypatch.setattr("app.vms.cameras.service.fed.snapshot_node", _snap)
+    # The frame-grab must not be reached either — it would mean the VMS pulled RTSP.
     async def _grab(url, **k):
-        grabbed.append(url)
+        called.append(("grab", url))
         return FAKE_JPEG
 
     monkeypatch.setattr(snapshot_frame, "grab_frame", _grab)
 
     svc = CameraService(db, _scope())
-    assert await svc.snapshot_for("cam-nvr") is None  # ensure failed → no grab, 502 upstream
-    assert grabbed == []  # never reached the frame-grab
+    assert await svc.snapshot_for("cam-nvr") is None
+    assert called == []
 
 
-# The two ONVIF-preference tests are gone with the path they covered. snapshot_for no
-# longer opens an ONVIF session with the camera's credentials — the recorder holds
-# those and already fronts the stream, so the frame comes off the MediaMTX path it
-# serves. What remains below is the cache, the path convention, and the honest None.
+async def test_snapshot_none_when_the_recorder_is_unreachable(db, seeded, monkeypatch):
+    """A recorder that is down degrades to None (the router 502s), never raises."""
+    from app.vms.cameras.service import CameraService
+    from app.vms.federation import client as fed_client
+
+    snapshot_frame._cache.clear()
+    await _mk_node(db, "cam-nvr")
+
+    async def _down(*a, **k):
+        raise fed_client.NodeUnavailable("connection refused")
+
+    monkeypatch.setattr("app.vms.cameras.service.fed.snapshot_node", _down)
+
+    svc = CameraService(db, _scope())
+    assert await svc.snapshot_for("cam-nvr") is None
+    # And a failure is NOT cached — the next ask retries rather than serving a hole.
+    assert snapshot_frame.cache_get("cam-nvr", "sub") is None

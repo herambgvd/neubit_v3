@@ -35,6 +35,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kernel.auth import Scope, assert_owned, owns, scoped
 from kernel.errors import ConflictError, NotFoundError, ValidationError
 
+from app.vms.common.node_routing import node_for_camera
+from app.vms.federation import client as fed
 from app.vms.common.crypto import decrypt_secret, encrypt_secret
 from app.vms.common.events import emit_camera_lifecycle, emit_camera_status
 from app.vms.common.stream_policy import (
@@ -512,74 +514,45 @@ class CameraService:
         return {"reordered": applied}
 
     async def snapshot_for(self, camera_id: str) -> bytes | None:
-        """A JPEG snapshot for a camera — cached ~30s, grabbed off the live stream.
+        """A JPEG snapshot for a camera, taken by the RECORDER that owns it.
 
-        Order:
-          1. Serve a fresh cached frame if we have one (bounds ffmpeg spawns + the
-             MediaMTX on-demand activation the grid would otherwise trigger 16×).
-          2. Grab ONE frame off the live MediaMTX path with ffmpeg
-             (``cameras/<tenant>/<cam>/sub``) — codec-agnostic, so it works for the
-             H.265 and NVR-channel cameras an ONVIF snapshot fails on.
+        Cached ~30s, because the camera grid asks for sixteen of these at once and a
+        snapshot makes the recorder talk to a device.
 
-        There used to be a step between them: the camera's own ONVIF
-        ``GetSnapshotUri``, reached by decrypting its credentials here. That is the
-        recorder's business — it holds the credentials and fronts the stream — and the
-        MediaMTX path already goes through it. Losing that step costs nothing the
-        recorder does not already provide, and it takes the VMS off the device.
+        The VMS does not grab this frame itself. It used to, two ways: the camera's
+        own ONVIF GetSnapshotUri, and — after that went — a frame off the MediaMTX
+        path, which still meant deriving the camera's RTSP URL with its decrypted
+        password. Both are the recorder's business. It holds the credentials, it
+        fronts the stream, and it already serves a snapshot endpoint.
 
-        Returns ``None`` when no frame can be grabbed (→ the router 502s and the
-        frontend shows its placeholder). Never raises.
+        Returns ``None`` when the camera has no recorder or the recorder cannot
+        produce a frame (→ the router 502s and the frontend shows its placeholder).
+        Never raises.
         """
         row = await self._row(camera_id)
 
-        # 1) cache.
         cached = snapshot_frame.cache_get(camera_id, "sub")
         if cached is not None:
             return cached
 
-        # 2) grab a frame off the live MediaMTX stream (sub profile).
-        #
-        # The MediaMTX path is on-demand: it only exists once the Go nvr has been asked
-        # to "ensure" it (which configures the source = the camera's RTSP URL). A raw
-        # read of an un-provisioned path is a 400. So we mirror the live-view control
-        # flow — build the RTSP source (LiveService, decrypts creds) → nvr ensure → then
-        # pull one frame from the now-live MediaMTX path. All best-effort: any failure
-        # degrades to None. The path is left up (its idle-close timer reaps it).
-        jpeg = await self._snapshot_from_mediamtx(row)
-        if jpeg:
-            snapshot_frame.cache_put(camera_id, "sub", jpeg)
-            return jpeg
-        return None
-
-    async def _snapshot_from_mediamtx(self, row: Camera) -> bytes | None:
-        """Ensure the camera's ``sub`` MediaMTX path is up, then grab one JPEG frame.
-
-        Reuses ``LiveService`` (RTSP-source derivation + nvr ensure) so the snapshot
-        pulls from exactly the same on-demand path live view uses — codec-agnostic
-        (H.264/H.265). Never raises; returns ``None`` on any failure.
-        """
-        from app.vms.live.service import LiveService, LiveUpstreamError
-
-        profile = "sub"
-        live = LiveService(self.db, self.scope, bearer=self.bearer)
-        # Bring the on-demand path up (idempotent on the nvr/MediaMTX side).
-        try:
-            rtsp_source = await live._rtsp_source_for(row, profile)  # noqa: SLF001
-            if not rtsp_source:
-                log.info("snapshot(camera=%s): no RTSP source derivable", row.id)
-                return None
-            await live.nvr.ensure_stream(
-                camera_id=row.id, rtsp_url=rtsp_source, profile=profile
-            )
-        except (LiveUpstreamError, Exception) as exc:  # noqa: BLE001
-            # nvr unreachable / MediaMTX upstream error — degrade to None (502 upstream).
-            log.info("snapshot(camera=%s): ensure-stream failed: %s", row.id, exc)
+        node = await node_for_camera(self.db, self.scope.tenant_id, row)
+        if node is None:
+            log.info("snapshot(camera=%s): no recorder fronts this camera", camera_id)
             return None
-
-        # Now read one frame from the (freshly ensured) MediaMTX path.
-        path = snapshot_frame.mediamtx_path(row.tenant_id, row.id, profile)
-        rtsp_url = f"{snapshot_frame.rtsp_base()}/{path}"
-        return await snapshot_frame.grab_frame(rtsp_url)
+        try:
+            jpeg, _ = await fed.snapshot_node(
+                node.api_url, camera_id, credential=node.credential
+            )
+        except fed.NodeUnavailable as exc:
+            log.info("snapshot(camera=%s): recorder could not produce a frame: %s", camera_id, exc)
+            return None
+        except Exception as exc:  # noqa: BLE001 — a snapshot must never raise
+            log.info("snapshot(camera=%s) failed: %s", camera_id, exc)
+            return None
+        if not jpeg:
+            return None
+        snapshot_frame.cache_put(camera_id, "sub", jpeg)
+        return jpeg
 
     async def get_acl(self, camera_id: str) -> list[CameraACLPublic]:
         await self._row(camera_id)  # ownership check
