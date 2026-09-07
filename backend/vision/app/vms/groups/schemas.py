@@ -79,18 +79,8 @@ class CameraGroupListResponse(BaseModel):
 # ── Camera ACL ────────────────────────────────────────────────────────────────────
 
 
-class CameraACLCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    subject_type: AclSubjectType
-    subject_id: str = Field(min_length=1, max_length=64)
-    target_type: AclTargetType
-    target_id: str = Field(min_length=1, max_length=36)
-    privileges: list[AclPrivilege] = Field(default_factory=list)
 
 
-class CameraACLUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    privileges: Optional[list[AclPrivilege]] = None
 
 
 class CameraACLPublic(BaseModel):

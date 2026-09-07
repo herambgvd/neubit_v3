@@ -48,14 +48,6 @@ class MediaProfileCreate(BaseModel):
     bitrate: Optional[int] = Field(default=None, ge=0)  # kbps
 
 
-class MediaProfileUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    name: Optional[ProfileName] = None
-    codec: Optional[str] = Field(default=None, max_length=32)
-    resolution: Optional[str] = Field(default=None, max_length=32)
-    fps: Optional[int] = Field(default=None, ge=1, le=240)
-    rtsp_path: Optional[str] = Field(default=None, max_length=512)
-    bitrate: Optional[int] = Field(default=None, ge=0)
 
 
 class MediaProfilePublic(BaseModel):
@@ -602,19 +594,8 @@ class StreamPolicyResult(BaseModel):
     detail: Optional[str] = None
 
 
-class StreamPolicyBulkBody(BaseModel):
-    """POST /vms/cameras/bulk/apply-stream-policy — targets + optional force re-assert."""
-
-    model_config = ConfigDict(extra="forbid")
-    camera_ids: list[str] = Field(min_length=1, max_length=1000)
-    force: bool = False
 
 
-class StreamPolicyBulkResult(BaseModel):
-    action: str = "apply-stream-policy"
-    total: int = 0
-    succeeded: int = 0
-    items: list[StreamPolicyResult] = Field(default_factory=list)
 
 
 # Camera-health shapes (CameraHealthPublic / CameraHealthListResponse) moved to the

@@ -571,7 +571,6 @@ const PASSTHROUGH: Record<string, string> = {
   "features/core/types.ts:PermissionCatalog": "an envelope around PermissionRegistry.grouped(); the entry shape is checked as PermissionEntry",
   "features/ingest/types.ts:ConditionResult": "a row inside RuleTestResponse.conditions, typed list[dict] on the backend",
   "features/vms/types.ts:RecordingActiveResponse": "built by the recording service, not a model",
-  "features/vms/types.ts:ExportPublicKey": "built by the export router from the signing key",
   "features/vms/types.ts:LinkageCameraScope": "the known keys of LinkageRule.camera_scope, typed dict on the backend",
   "features/vms/types.ts:DeviceUserPublic": "ONVIF device accounts, shaped by the camera driver",
   "features/vms/types.ts:ReportResponse": "the reports service builds one dict per report kind; rows and totals are kind-specific",
@@ -618,9 +617,6 @@ const PASSTHROUGH: Record<string, string> = {
 const NOT_MODELLED: Record<string, Record<string, string>> = {
   "features/core/types.ts:CreateUserIn": {
     tenant_id: "a super-admin-only field; the operator console never places a user in another tenant",
-  },
-  "features/ingest/types.ts:RuleTestResponse": {
-    _preview: "set by the client-side preview (lib/rulePreview) so a preview result renders in the same panel; never sent by the API",
   },
   "features/vms/types.ts:PlaybackRange": {
     trigger_type: "present on the federated recorder's ranges, absent on vision's; declared optional so both parse",

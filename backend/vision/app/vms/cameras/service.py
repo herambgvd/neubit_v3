@@ -637,23 +637,6 @@ def _discovered_dict(d) -> dict:
     }
 
 
-def _deviceinfo_dict(info) -> dict:
-    return {
-        "reachable": info.reachable,
-        "manufacturer": info.manufacturer,
-        "model": info.model,
-        "firmware": info.firmware,
-        "serial_number": info.serial_number,
-        "hardware_id": info.hardware_id,
-        "mac": info.mac,
-        "channel_count": info.channel_count,
-        "has_ptz": info.has_ptz,
-        "has_imaging": info.has_imaging,
-        "has_events": info.has_events,
-        "has_analytics": info.has_analytics,
-        "has_audio": info.has_audio,
-        "error": info.error,
-    }
 
 
 def _stream_dict(s) -> dict | None:

@@ -296,8 +296,6 @@ export interface RuleTestResponse {
   condition_results: ConditionResult[];
   extracted: Record<string, unknown> | null;
   event_type: string | null;
-  /** Set only by the client-side preview (lib/rulePreview), never by the API. */
-  _preview?: boolean;
 }
 
 /* --- UI-only draft shapes ------------------------------------------------ */
