@@ -99,7 +99,7 @@ export default function WallKiosk({ wallId: wallIdParam, monitorId: monitorIdPar
     return <KioskMessage icon="svg-spinners:180-ring" text="Loading monitor…" />;
   }
   if (!monitor) {
-    return <KioskMessage icon="heroicons-outline:exclamation-triangle" text="Monitor not found on this wall." />;
+    return <KioskMessage icon="heroicons:exclamation-triangle" text="Monitor not found on this wall." />;
   }
 
   const { capacity } = monitorGrid(monitor.layout);

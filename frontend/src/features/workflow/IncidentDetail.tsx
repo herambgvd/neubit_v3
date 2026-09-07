@@ -148,7 +148,7 @@ export default function WorkflowDetailPage() {
   if (instQ.isError || !inst) {
     return (
       <div className="py-20 text-center">
-        <Icon icon="heroicons-outline:exclamation-triangle" className="text-4xl text-muted mb-3 opacity-60" />
+        <Icon icon="heroicons:exclamation-triangle" className="text-4xl text-muted mb-3 opacity-60" />
         <p className="text-foreground font-medium">Incident not found</p>
         <Link href="/events" className="mt-3 inline-block text-sm text-blue-500 hover:underline">
           Back to incidents

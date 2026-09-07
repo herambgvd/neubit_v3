@@ -107,7 +107,7 @@ export default function AssignModal({ open, onClose, instanceId, currentAssignee
             }`}
           >
             <div className="flex h-7 w-7 items-center justify-center rounded-full bg-hover border border-card-border text-muted shrink-0">
-              <Icon icon="heroicons-outline:user-minus" className="text-sm" />
+              <Icon icon="heroicons:user-minus" className="text-sm" />
             </div>
             <span className="flex-1 text-sm text-foreground">Unassigned</span>
             {!selected && <Icon icon="heroicons-solid:check-circle" className="text-[#22d3ee] text-lg shrink-0" />}

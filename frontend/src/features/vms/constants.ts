@@ -88,7 +88,7 @@ export const BRAND_FILTERS = [
 
 // ── Camera config tabs (onboard modal + detail) ──────────────────────────
 export const CONFIG_TABS = [
-  { key: "live", label: "Live", icon: "heroicons-outline:play-circle" },
+  { key: "live", label: "Live", icon: "heroicons:play-circle" },
   { key: "recording", label: "Recording", icon: "heroicons-outline:film" },
   { key: "onvif", label: "ONVIF", icon: "heroicons-outline:signal" },
   { key: "imaging", label: "Imaging", icon: "heroicons-outline:sun" },
@@ -156,7 +156,7 @@ export const EVENT_TYPE_PRESETS = {
   line_crossing: { label: "Line crossing", icon: "heroicons-outline:arrow-trending-up", cls: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" },
   zone_intrusion: { label: "Zone intrusion", icon: "heroicons-outline:shield-exclamation", cls: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
   audio: { label: "Audio alarm", icon: "heroicons-outline:speaker-wave", cls: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
-  recording_error: { label: "Recording error", icon: "heroicons-outline:exclamation-triangle", cls: "bg-red-500/10 text-red-500 border-red-500/20" },
+  recording_error: { label: "Recording error", icon: "heroicons:exclamation-triangle", cls: "bg-red-500/10 text-red-500 border-red-500/20" },
   storage_low: { label: "Storage low", icon: "heroicons-outline:circle-stack", cls: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
   system: { label: "System", icon: "heroicons-outline:cog-6-tooth", cls: "bg-hover text-muted border-card-border" },
 };
@@ -208,7 +208,7 @@ export const SEVERITY_FILTERS = [
 export const LINKAGE_ACTION_TYPES = [
   { value: "start_recording", label: "Start recording", icon: "heroicons-outline:film", hint: "Cut an event-clip with pre/post buffer" },
   { value: "notify", label: "Notify", icon: "heroicons-outline:bell-alert", hint: "Send on a channel (email / webhook / push)" },
-  { value: "ptz_preset", label: "PTZ preset", icon: "heroicons-outline:viewfinder-circle", hint: "Move a PTZ camera to a preset" },
+  { value: "ptz_preset", label: "PTZ preset", icon: "heroicons:viewfinder-circle", hint: "Move a PTZ camera to a preset" },
   { value: "trigger_output", label: "Trigger output", icon: "heroicons-outline:arrows-right-left", hint: "Pulse a camera relay / digital output" },
-  { value: "popup", label: "Operator popup", icon: "heroicons-outline:window", hint: "Pop the camera live for the operator" },
+  { value: "popup", label: "Operator popup", icon: "heroicons:window", hint: "Pop the camera live for the operator" },
 ];

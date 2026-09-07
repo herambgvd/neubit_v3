@@ -126,7 +126,7 @@ export default function TriggerTestModal({ open, trigger, onClose }: TriggerTest
 
         {run.isError && (
           <p className="text-xs text-nb-crit flex items-center gap-1.5">
-            <Icon icon="heroicons-outline:exclamation-triangle" /> {apiError(run.error)}
+            <Icon icon="heroicons:exclamation-triangle" /> {apiError(run.error)}
           </p>
         )}
 

@@ -6,13 +6,23 @@
  */
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SitePublic } from "@/lib/types";
 import { httpError, paged, stubApi, type ApiStub } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
 import SitesConfigPage from "./Sites";
+
+
+/**
+ * SiteDetail gates its Building tab on the BI entitlement. These tests are about
+ * the list and the form, so the tenant here has everything; the gate itself is
+ * covered in SiteDetail.test.tsx.
+ */
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({ user: { id: "me" }, can: () => true, hasModule: () => true }),
+}));
 
 const site = (over: Partial<SitePublic> = {}): SitePublic =>
   ({

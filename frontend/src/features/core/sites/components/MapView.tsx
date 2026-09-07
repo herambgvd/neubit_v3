@@ -103,7 +103,7 @@ export default function MapView({ apiKey, center, zoom, sites, selected, onSelec
   if (loadError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl text-red-500" />
+        <Icon icon="heroicons:exclamation-triangle" className="text-3xl text-red-500" />
         <p className="text-sm font-semibold text-nb-ink">Could not load Google Maps</p>
         <p className="max-w-md text-xs text-nb-muted">
           Google Maps needs internet access. On an air-gapped site, turn{" "}

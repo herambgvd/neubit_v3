@@ -12,7 +12,7 @@ import type { Entitlements } from "@/lib/types";
 
 const STATE_META: Record<NonNullable<Entitlements["license_state"]>, { tone: string; label: string; icon: string }> = {
   active: { tone: "text-nb-good bg-nb-good/10 border-nb-good/25", label: "Active", icon: "heroicons-outline:check-badge" },
-  grace: { tone: "text-nb-warn bg-nb-warn/10 border-nb-warn/25", label: "Grace period", icon: "heroicons-outline:exclamation-triangle" },
+  grace: { tone: "text-nb-warn bg-nb-warn/10 border-nb-warn/25", label: "Grace period", icon: "heroicons:exclamation-triangle" },
   expired: { tone: "text-nb-crit bg-nb-crit/10 border-nb-crit/25", label: "Expired", icon: "heroicons-outline:x-circle" },
 };
 

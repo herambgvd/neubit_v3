@@ -45,7 +45,7 @@ export default function CanvasToolbar({ scale, onAddState, onZoomIn, onZoomOut, 
         <ToolBtn icon="heroicons-outline:minus" title="Zoom out" onClick={onZoomOut} />
         <span className="text-[11px] text-nb-muted w-10 text-center tabular-nums">{Math.round(scale * 100)}%</span>
         <ToolBtn icon="heroicons-outline:plus" title="Zoom in" onClick={onZoomIn} />
-        <ToolBtn icon="heroicons-outline:viewfinder-circle" title="Fit to view" onClick={onFit} />
+        <ToolBtn icon="heroicons:viewfinder-circle" title="Fit to view" onClick={onFit} />
       </div>
     </div>
   );

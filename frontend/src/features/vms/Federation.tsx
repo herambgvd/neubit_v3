@@ -244,7 +244,7 @@ function NodeDetail({ node, cameras, camsLoading, unreachable }: NodeDetailProps
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {unreachable && (
           <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-nb-crit/40 bg-nb-crit/10 px-3 py-2 text-[12px] text-nb-crit">
-            <Icon icon="heroicons-outline:exclamation-triangle" className="shrink-0 text-sm" />
+            <Icon icon="heroicons:exclamation-triangle" className="shrink-0 text-sm" />
             This node is not reachable right now — its federated cameras can&apos;t be listed or streamed until it comes back online.
           </div>
         )}
@@ -288,7 +288,7 @@ function NodeDetail({ node, cameras, camsLoading, unreachable }: NodeDetailProps
         )}
 
         <p className="mt-3 flex items-center gap-1.5 text-[11px] text-nb-faint">
-          <Icon icon="heroicons-outline:play-circle" className="text-sm text-nb-blueb" />
+          <Icon icon="heroicons:play-circle" className="text-sm text-nb-blueb" />
           Federated cameras stream through their node — view them live on the
           <Link href="/streaming" className="text-nb-blueb underline decoration-dotted underline-offset-2 hover:text-nb-ink">Live wall</Link>.
         </p>

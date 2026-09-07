@@ -30,7 +30,7 @@ export default function Error({ error, reset }: ErrorViewProps) {
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
       <div className="w-full max-w-md text-center">
         <div className="mx-auto mb-5 h-12 w-12 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
-          <Icon icon="heroicons-outline:exclamation-triangle" className="text-2xl" />
+          <Icon icon="heroicons:exclamation-triangle" className="text-2xl" />
         </div>
         <h1 className="text-lg font-semibold text-red-500">
           {status ? `Request failed (${status})` : "Something went wrong"}

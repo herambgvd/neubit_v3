@@ -220,7 +220,7 @@ export default function WallConsole({ wallId: wallIdParam }: WallConsoleProps) {
   if (wallQ.isError || !wall) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-[#aec2e8]">
-        <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl text-[#fbbf24]" />
+        <Icon icon="heroicons:exclamation-triangle" className="text-3xl text-[#fbbf24]" />
         <p>Wall not found or unavailable.</p>
         <Link href="/wall" className="text-[#67e8f9] hover:underline">
           Back to walls
@@ -473,7 +473,7 @@ function TourMenu({ tours, onToggle }: TourMenuProps) {
             : "border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         }`}
       >
-        <Icon icon={running ? "heroicons-solid:play" : "heroicons-outline:arrow-path-rounded-square"} className="text-sm" />
+        <Icon icon={running ? "heroicons-solid:play" : "heroicons:arrow-path-rounded-square"} className="text-sm" />
         {running ? running.name : "Tours"}
       </button>
       {open && (

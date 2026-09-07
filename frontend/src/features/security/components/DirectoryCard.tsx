@@ -205,7 +205,7 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
 
         {configured && canManage && (
           <div className="flex items-center gap-2 border-t border-nb-line pt-3">
-            <Icon icon="heroicons-outline:exclamation-triangle" className="text-sm text-red-500" />
+            <Icon icon="heroicons:exclamation-triangle" className="text-sm text-red-500" />
             <button
               className="text-xs text-red-500 transition hover:underline"
               onClick={() => {

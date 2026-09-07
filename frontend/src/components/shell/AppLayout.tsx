@@ -42,7 +42,7 @@ function LicenseBanner() {
     return (
       <div className="shrink-0 bg-amber-500/10 border-b border-amber-500/20 text-amber-500">
         <div className="w-full px-6 lg:px-8 py-2 flex items-center gap-2 text-[13px]">
-          <Icon icon="heroicons-outline:exclamation-triangle" className="text-base shrink-0" />
+          <Icon icon="heroicons:exclamation-triangle" className="text-base shrink-0" />
           <span className="truncate">
             Your license is in its grace period — renew soon to avoid interruption.
           </span>

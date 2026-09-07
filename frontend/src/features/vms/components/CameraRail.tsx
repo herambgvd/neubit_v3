@@ -166,7 +166,7 @@ export default function CameraRail({
           </span>
           {onWall ? (
             <Icon
-              icon="heroicons-solid:tv"
+              icon="heroicons:tv-solid"
               className="shrink-0 text-sm text-[#22d3ee]"
               title="On wall"
             />

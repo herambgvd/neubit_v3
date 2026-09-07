@@ -80,7 +80,7 @@ export default function ScreenMenu({ wall, monitors, screens }: ScreenMenuProps)
         title="Put this wall's monitors on the screens attached to this workstation"
         className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] px-2.5 text-xs font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
       >
-        <Icon icon="heroicons-outline:tv" className="text-sm text-[#9a92c8]" />
+        <Icon icon="heroicons:tv" className="text-sm text-[#9a92c8]" />
         Screens
         {openCount > 0 && (
           <span className="rounded-full border border-[rgba(52,211,153,.45)] bg-[rgba(52,211,153,.1)] px-1.5 font-mono text-[9px] font-semibold text-[#34d399]">

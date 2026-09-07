@@ -256,7 +256,7 @@ export default function WallToolbar({
               : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
           }`}
         >
-          <Icon icon="heroicons-outline:play-circle" className="text-base" />
+          <Icon icon="heroicons:play-circle" className="text-base" />
           Playback
         </button>
 

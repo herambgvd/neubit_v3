@@ -88,7 +88,7 @@ export default function FloorsPanel({ site }: { site: SitePublic }) {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={fileUrl(f.floorplan_url) ?? undefined} alt={f.name} className="h-full w-full object-cover" />
                   ) : (
-                    <Icon icon="heroicons-outline:square-3-stack-3d" className="text-base" />
+                    <Icon icon="heroicons:square-3-stack-3d" className="text-base" />
                   )}
                 </span>
                 <div className="flex-1 min-w-0">

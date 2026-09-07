@@ -674,7 +674,7 @@ export function ConfirmDialog({ state, onClose, pending, staticBackdrop }: Confi
         <p className="text-sm text-nb-ink">{cfg.message}</p>
       ) : (
         <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-sm text-red-400">
-          <Icon icon="heroicons-outline:exclamation-triangle" className="text-base mt-0.5 shrink-0" />
+          <Icon icon="heroicons:exclamation-triangle" className="text-base mt-0.5 shrink-0" />
           <span>{cfg.message || "This action cannot be undone."}</span>
         </div>
       )}

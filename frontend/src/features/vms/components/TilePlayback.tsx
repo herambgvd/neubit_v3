@@ -769,7 +769,7 @@ function TilePlayback({
       )}
       {failed && (
         <Placeholder
-          icon="heroicons-outline:exclamation-triangle"
+          icon="heroicons:exclamation-triangle"
           label="Playback failed"
           compact={compact}
           danger

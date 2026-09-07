@@ -71,7 +71,7 @@ export default function PatternListRow({
       </div>
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
         <RowBtn
-          icon={active ? "heroicons-outline:pause-circle" : "heroicons-outline:play-circle"}
+          icon={active ? "heroicons:pause-circle" : "heroicons:play-circle"}
           title={active ? "Deactivate" : "Activate"}
           onClick={(e) => {
             e.stopPropagation();

@@ -187,7 +187,7 @@ export default function CardholdersTab({ instanceId }: CardholdersTabProps) {
                             title="Reinstate"
                             className="rounded-sm p-1 text-emerald-500 hover:bg-emerald-500/10"
                           >
-                            <Icon icon="heroicons-outline:play-circle" className="text-sm" />
+                            <Icon icon="heroicons:play-circle" className="text-sm" />
                           </button>
                         ) : (
                           <button
@@ -196,7 +196,7 @@ export default function CardholdersTab({ instanceId }: CardholdersTabProps) {
                             title="Suspend"
                             className="rounded-sm p-1 text-amber-500 hover:bg-amber-500/10"
                           >
-                            <Icon icon="heroicons-outline:user-minus" className="text-sm" />
+                            <Icon icon="heroicons:user-minus" className="text-sm" />
                           </button>
                         )}
                         <button

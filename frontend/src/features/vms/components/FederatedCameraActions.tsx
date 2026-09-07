@@ -480,7 +480,7 @@ function FedExportModal({ camera, onClose }: FedModalProps) {
             <Icon
               icon={
                 failed
-                  ? "heroicons-outline:exclamation-triangle"
+                  ? "heroicons:exclamation-triangle"
                   : ready
                     ? "heroicons-outline:check-circle"
                     : "heroicons-outline:arrow-path"

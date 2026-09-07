@@ -222,7 +222,7 @@ export default function H265WebPlayer({
       )}
       {status === "error" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/70 text-center text-[11px] text-red-300">
-          <Icon icon="heroicons-outline:exclamation-triangle" className="text-xl" />
+          <Icon icon="heroicons:exclamation-triangle" className="text-xl" />
           HEVC decoder unavailable
         </div>
       )}

@@ -52,7 +52,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { key: "monitors", label: "Monitors", icon: "heroicons:computer-desktop" },
   { key: "presets", label: "Presets", icon: "heroicons-outline:bookmark" },
-  { key: "tours", label: "Tours", icon: "heroicons-outline:arrow-path-rounded-square" },
+  { key: "tours", label: "Tours", icon: "heroicons:arrow-path-rounded-square" },
   { key: "decoders", label: "Decoders", icon: "heroicons:cpu-chip" },
 ];
 
@@ -610,14 +610,14 @@ function WallDetail({
           <TabList
             loading={toursQ.isLoading}
             items={tours}
-            emptyIcon="heroicons-outline:arrow-path-rounded-square"
+            emptyIcon="heroicons:arrow-path-rounded-square"
             emptyText="No tours — cycle a sequence of presets on a dwell interval."
             addLabel="New tour"
             canManage={canManage}
             onAdd={onAddTour}
             renderRow={(t: TourPublic) => (
               <>
-                <Icon icon="heroicons-outline:arrow-path-rounded-square" className={`text-base ${t.is_running ? "text-nb-blueb" : "text-nb-muted"}`} />
+                <Icon icon="heroicons:arrow-path-rounded-square" className={`text-base ${t.is_running ? "text-nb-blueb" : "text-nb-muted"}`} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium text-nb-ink">
                     {t.name}

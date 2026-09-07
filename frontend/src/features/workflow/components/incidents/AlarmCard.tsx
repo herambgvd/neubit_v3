@@ -37,7 +37,7 @@ import AlarmCardCamera from "./AlarmCardCamera";
 const STATUS_ICON: Record<string, string> = {
   pending: "heroicons-solid:bell-alert",
   active: "heroicons-solid:signal",
-  paused: "heroicons-solid:pause-circle",
+  paused: "heroicons:pause-circle-solid",
   resolved: "heroicons-solid:check-circle",
   completed: "heroicons-solid:check-circle",
   cancelled: "heroicons-solid:x-circle",

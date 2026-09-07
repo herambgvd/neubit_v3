@@ -47,7 +47,7 @@ declare module "@tanstack/react-table" {
 }
 
 function SortCaret({ dir }: { dir: SortDirection | false }) {
-  if (!dir) return <Icon icon="heroicons-outline:chevron-up-down" className="text-xs opacity-40" />;
+  if (!dir) return <Icon icon="heroicons:chevron-up-down" className="text-xs opacity-40" />;
   return (
     <Icon
       icon={dir === "asc" ? "heroicons-outline:chevron-up" : "heroicons-outline:chevron-down"}

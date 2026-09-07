@@ -194,7 +194,7 @@ export default function CameraEventsPage() {
         className="mb-4"
         items={[
           { label: "Events", value: events.length, icon: "heroicons-outline:signal", tone: "info" },
-          { label: "Critical", value: summary.critical, icon: "heroicons-outline:exclamation-triangle", tone: summary.critical ? "bad" : "neutral" },
+          { label: "Critical", value: summary.critical, icon: "heroicons:exclamation-triangle", tone: summary.critical ? "bad" : "neutral" },
           { label: "Warning", value: summary.warning, icon: "heroicons-outline:exclamation-circle", tone: summary.warning ? "warn" : "neutral" },
           { label: "Unacked", value: summary.unacked, icon: "heroicons-outline:bell-alert", tone: summary.unacked ? "warn" : "ok" },
         ]}

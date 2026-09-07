@@ -167,7 +167,7 @@ export default function OfflineMapPicker({
   if (status.state === "missing") {
     return (
       <div className="flex h-[clamp(320px,58vh,760px)] flex-col items-center justify-center gap-2 px-6 text-center">
-        <Icon icon="heroicons-outline:exclamation-triangle" className="text-2xl text-amber-400" />
+        <Icon icon="heroicons:exclamation-triangle" className="text-2xl text-amber-400" />
         <p className="text-sm font-semibold text-nb-ink">Offline basemap not installed</p>
         <p className="max-w-sm text-xs text-nb-muted">
           Without it there is no map to pick from — type the latitude and longitude by hand, or

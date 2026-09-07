@@ -88,7 +88,7 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
                       {c.site_name && <span className="truncate text-[11px] text-[#7e93bf]">{c.site_name}</span>}
                     </span>
                     {onWall && (
-                      <Icon icon="heroicons-solid:tv" className="shrink-0 text-sm text-[#22d3ee]" title="Already on wall" />
+                      <Icon icon="heroicons:tv-solid" className="shrink-0 text-sm text-[#22d3ee]" title="Already on wall" />
                     )}
                   </button>
                 </li>

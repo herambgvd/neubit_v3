@@ -87,7 +87,7 @@ const POOL_KIND: Record<string, { label: string; icon: string }> = {
 type RaidTone = "emerald" | "red" | "amber" | "muted";
 const RAID_HEALTH: Record<string, { tone: RaidTone; label: string; icon: string }> = {
   healthy: { tone: "emerald", label: "Healthy", icon: "heroicons-outline:shield-check" },
-  degraded: { tone: "red", label: "Degraded", icon: "heroicons-outline:exclamation-triangle" },
+  degraded: { tone: "red", label: "Degraded", icon: "heroicons:exclamation-triangle" },
   rebuilding: { tone: "amber", label: "Rebuilding", icon: "heroicons-outline:arrow-path" },
   failed: { tone: "red", label: "Failed", icon: "heroicons-outline:x-circle" },
   unknown: { tone: "muted", label: "Unknown", icon: "heroicons-outline:question-mark-circle" },
@@ -334,7 +334,7 @@ function NodeStorageDetail({ node, nvrs }: { node: FederationNode; nvrs: Upstrea
 
         {reachableOffline && (
           <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-nb-crit/40 bg-nb-crit/10 px-3 py-2 text-[12px] text-nb-crit">
-            <Icon icon="heroicons-outline:exclamation-triangle" className="shrink-0 text-sm" />
+            <Icon icon="heroicons:exclamation-triangle" className="shrink-0 text-sm" />
             This recorder is not reachable right now — its storage figures may be stale until it comes back online.
           </div>
         )}
@@ -365,7 +365,7 @@ function NodeStorageDetail({ node, nvrs }: { node: FederationNode; nvrs: Upstrea
             )}
             {usedPct > 90 && total > 0 && (
               <div className="mt-2 flex items-center gap-1 text-xs text-nb-crit">
-                <Icon icon="heroicons-outline:exclamation-triangle" className="text-xs" /> Storage nearly full
+                <Icon icon="heroicons:exclamation-triangle" className="text-xs" /> Storage nearly full
               </div>
             )}
           </div>

@@ -25,7 +25,7 @@ export default function RevealKeyModal({ revealed, onClose, copied, onCopy }: Re
     >
       <div className="space-y-4">
         <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
-          <Icon icon="heroicons-outline:exclamation-triangle" className="text-base mt-0.5 shrink-0" />
+          <Icon icon="heroicons:exclamation-triangle" className="text-base mt-0.5 shrink-0" />
           <span>Copy this key now — you won&apos;t be able to see it again.</span>
         </div>
         <div>

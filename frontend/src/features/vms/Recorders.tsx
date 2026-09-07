@@ -608,7 +608,7 @@ function FederationTrust({ node }: { node: MediaNodePublic }) {
       >
         <div className="space-y-3">
           <div className="flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.08)] px-3 py-2 text-[12px] text-[#fbbf24]">
-            <Icon icon="heroicons-outline:exclamation-triangle" className="mt-0.5 shrink-0 text-sm" />
+            <Icon icon="heroicons:exclamation-triangle" className="mt-0.5 shrink-0 text-sm" />
             Copy this now — it is shown once and cannot be retrieved again. Store it on the recorder, then revoke + re-enroll to rotate.
           </div>
           <div>

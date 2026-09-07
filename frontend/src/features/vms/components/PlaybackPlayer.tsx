@@ -793,7 +793,7 @@ export default function PlaybackPlayer({
         )}
         {(error || videoError) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/70 px-2 text-center text-[11px] text-red-300">
-            <Icon icon="heroicons-outline:exclamation-triangle" className="text-xl" />
+            <Icon icon="heroicons:exclamation-triangle" className="text-xl" />
             No footage
           </div>
         )}
@@ -845,7 +845,7 @@ export default function PlaybackPlayer({
         )}
         {error && !loading && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/85 px-4 text-center">
-            <Icon icon="heroicons-outline:exclamation-triangle" className="text-3xl text-red-400" />
+            <Icon icon="heroicons:exclamation-triangle" className="text-3xl text-red-400" />
             <p className="max-w-sm text-xs text-red-200">{error}</p>
           </div>
         )}

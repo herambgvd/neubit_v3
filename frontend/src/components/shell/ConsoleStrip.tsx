@@ -163,7 +163,7 @@ export default function ConsoleStrip() {
             title="Open the live Wall Console"
             className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
-            <Icon icon="heroicons-outline:tv" className="text-[14px]" /> LIVE WALL
+            <Icon icon="heroicons:tv" className="text-[14px]" /> LIVE WALL
           </Link>
         </div>
       )}
@@ -196,7 +196,7 @@ export default function ConsoleStrip() {
             title="Open the live wall"
             className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
-            <Icon icon="heroicons-outline:tv" className="text-[14px]" /> LIVE WALL
+            <Icon icon="heroicons:tv" className="text-[14px]" /> LIVE WALL
           </Link>
         </div>
       )}
