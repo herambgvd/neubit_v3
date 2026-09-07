@@ -5,6 +5,23 @@
 // figure comes from an endpoint, and anything that isn't backed (lockout/password
 // values, encryption-at-rest, watermark, port-exposure, STQC scores) is deliberately
 // NOT shown. Config lives in the Security / License / Audit screens — this links out.
+//
+// That "never fabricates" claim used to be false in two places: rows reading
+// "Dual-authorization — AVAILABLE" and "Export signing — Ed25519 · SHA-256" were
+// string constants, not measurements. They said a FEATURE EXISTS, which is a
+// brochure line, and in a posture dashboard it is indistinguishable from a
+// measured green. Both are gone.
+//
+// LAYOUT — four tiles, sized by weight, in the order the questions get asked:
+//
+//   NEEDS ATTENTION  what wants a human right now      (tall, left)
+//   LICENSING        can we operate at all             (wide)
+//   ACCESS           who can get in                    (small)
+//   RETENTION        what we keep, and for how long    (small)
+//
+// Each fact has ONE home. Active evidence holds used to appear three times on this
+// page — as a KPI, under Approvals and again under Data — which is how a reader
+// loses track of whether they are looking at one number or three.
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -44,23 +61,32 @@ const KPI_TONE: Record<KpiTone, string> = {
   faint: "text-nb-faint",
 };
 
-function Kpi({ icon, label, value, tone = "blue", sub }: { icon: string; label: ReactNode; value: ReactNode; tone?: KpiTone; sub?: ReactNode }) {
-  const c = KPI_TONE[tone];
+/**
+ * One bento cell. `span` is the only layout knob: the grid is six columns on
+ * `lg`, and a tile says how much of it it deserves. Sizing by WEIGHT — how much
+ * a reader has to do with what is inside — is the whole point of the arrangement;
+ * a uniform grid gives the licence expiry and the audit-retention number equal
+ * billing, and they are not equal.
+ */
+function Tile({
+  icon,
+  title,
+  span = "lg:col-span-2",
+  link,
+  linkLabel,
+  children,
+}: {
+  icon: string;
+  title: ReactNode;
+  span?: string;
+  link?: string;
+  linkLabel?: string;
+  children?: ReactNode;
+}) {
   return (
-    <div className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] px-4 py-3">
-      <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[1.2px] text-nb-faint">
-        <Icon icon={icon} className="text-sm text-nb-blueb" />
-        {label}
-      </div>
-      <div className={`mt-1.5 font-mono text-[20px] font-semibold ${c}`}>{value}</div>
-      {sub && <div className="mt-0.5 text-[11px] text-nb-faint">{sub}</div>}
-    </div>
-  );
-}
-
-function Section({ icon, title, link, linkLabel, children }: { icon: string; title: ReactNode; link?: string; linkLabel?: string; children?: ReactNode }) {
-  return (
-    <div className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4">
+    <div
+      className={`flex flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 ${span}`}
+    >
       <div className="mb-2 flex items-center gap-2">
         <Icon icon={icon} className="text-sm text-nb-blueb" />
         <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{title}</span>
@@ -70,8 +96,43 @@ function Section({ icon, title, link, linkLabel, children }: { icon: string; tit
           </Link>
         )}
       </div>
-      <div>{children}</div>
+      <div className="min-h-0 flex-1">{children}</div>
     </div>
+  );
+}
+
+/**
+ * A number big enough to read across a room, with the place you go to act on it.
+ * Only used in "Needs attention" — a figure nobody can act on does not get to be
+ * this size.
+ */
+function Stat({
+  label,
+  value,
+  tone = "faint",
+  sub,
+  href,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  tone?: KpiTone;
+  sub?: ReactNode;
+  href?: string;
+}) {
+  const body = (
+    <>
+      <div className="text-[10.5px] font-semibold uppercase tracking-[1.2px] text-nb-faint">{label}</div>
+      <div className={`mt-0.5 font-mono text-[26px] font-semibold leading-none ${KPI_TONE[tone]}`}>{value}</div>
+      {sub && <div className="mt-1 text-[11px] text-nb-faint">{sub}</div>}
+    </>
+  );
+  const cls = "block rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.45)] px-3 py-2.5";
+  return href ? (
+    <Link href={href} className={`${cls} transition hover:border-nb-blue`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={cls}>{body}</div>
   );
 }
 
@@ -135,90 +196,154 @@ export default function SystemAssurance() {
   const ssoCfg = sso.data;
   const auditDays = settings.data?.values?.audit_retention_days;
 
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-6">
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi
-          icon="heroicons-outline:key"
-          label="License"
-          value={licState ? licState.toUpperCase() : dash}
-          tone={licTone}
-          sub={lic?.expires_at ? `expires ${fmtDate(lic.expires_at)}` : lic ? "perpetual" : "—"}
-        />
-        <Kpi
-          icon="heroicons-outline:device-phone-mobile"
-          label="MFA enrolment"
-          value={users.data ? `${enrolled}/${uItems.length}` : dash}
-          tone={enrolled === uItems.length && uItems.length ? "good" : "warn"}
-          sub={require2fa != null ? (require2fa ? "enforced by policy" : "optional") : sampled ? "first 100 users" : undefined}
-        />
-        <Kpi
-          icon="heroicons-outline:lock-closed"
-          label="Evidence holds"
-          value={evidence.data ? activeHolds : evidence.isError ? dash : dash}
-          tone={activeHolds ? "blue" : "faint"}
-          sub="active legal holds"
-        />
-        <Kpi
-          icon="heroicons-outline:user-group"
-          label="Dual-auth pending"
-          value={dual.data ? pendingDual : dash}
-          tone={pendingDual ? "warn" : "faint"}
-          sub="awaiting approval"
-        />
-      </div>
+  // MFA adoption is counted over the FIRST PAGE of users, because that is all
+  // this screen fetches. Say so whenever it is a sample: a bare "8/8" on a tenant
+  // with 400 users reads as full coverage and is not.
+  const mfaValue = users.data ? `${enrolled}/${uItems.length}` : dash;
+  const mfaSub = !users.data
+    ? undefined
+    : sampled
+      ? `sample — first ${uItems.length} of ${uTotal} users`
+      : `${uTotal} user${uTotal === 1 ? "" : "s"}`;
 
-      {/* Sections */}
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <Section icon="heroicons-outline:shield-check" title="Authentication & access" link="/config/security" linkLabel="Security">
+  // "all / none" said nothing. Either a policy names roles, or it applies to
+  // everyone, or there is no requirement to scope.
+  const roleScope = !require2fa
+    ? "Not required"
+    : policy.data?.require_2fa_roles?.length
+      ? policy.data.require_2fa_roles.join(", ")
+      : "Everyone";
+
+  return (
+    <section>
+      <h2 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">
+        <Icon icon="heroicons-outline:shield-check" className="text-sm text-nb-blueb" />
+        Posture
+        <span className="ml-1 font-normal normal-case tracking-normal text-nb-faint">read-only</span>
+      </h2>
+      {/* Six columns on lg; each tile below claims its share. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
+        {/* ── what wants a human — the only actionable tile, so it leads ── */}
+        <Tile
+          icon="heroicons-outline:bell-alert"
+          title="Needs attention"
+          span="lg:col-span-2 lg:row-span-2"
+        >
+          <div className="grid gap-2">
+            <Stat
+              label="Pending approvals"
+              value={dual.data ? pendingDual : dash}
+              tone={pendingDual ? "warn" : "faint"}
+              sub={canSec ? "dual-authorization queue" : "needs security.manage"}
+              href={canSec ? "/config/security" : undefined}
+            />
+            <Stat
+              label="Evidence holds"
+              value={evidence.data ? activeHolds : dash}
+              tone={activeHolds ? "blue" : "faint"}
+              sub="active legal holds"
+              href="/audit"
+            />
+            <Stat
+              label="MFA enrolment"
+              value={mfaValue}
+              tone={users.data && enrolled === uItems.length && uItems.length ? "good" : "warn"}
+              sub={mfaSub}
+              href="/users"
+            />
+          </div>
+        </Tile>
+
+        {/* ── can we operate at all ── */}
+        <Tile
+          icon="heroicons-outline:key"
+          title="Licensing"
+          span="lg:col-span-4"
+          link="/license"
+          linkLabel="License"
+        >
+          <div className="mb-2 flex items-baseline gap-3">
+            <span className={`font-mono text-[26px] font-semibold leading-none ${KPI_TONE[licTone]}`}>
+              {licState ? licState.toUpperCase() : dash}
+            </span>
+            <span className="text-[11px] text-nb-faint">
+              {lic?.expires_at ? `expires ${fmtDate(lic.expires_at)}` : lic ? "perpetual" : dash}
+            </span>
+          </div>
+          <Row label="Plan" value={lic?.plan ? String(lic.plan).toUpperCase() : dash} tone="ink" />
+          <Row
+            label="Modules enabled"
+            value={lic ? `${enabledMods.length}/${modules.length}` : dash}
+            tone="blue"
+            note={enabledMods.slice(0, 4).map((m) => m.key).join(", ")}
+          />
+          {lic?.limits && Object.keys(lic.limits).length > 0 && (
+            <Row
+              label="Limits"
+              value={Object.entries(lic.limits).map(([k, v]) => `${k}:${v}`).join(" · ")}
+              tone="faint"
+            />
+          )}
+        </Tile>
+
+        {/* ── who can get in ── */}
+        <Tile
+          icon="heroicons-outline:shield-check"
+          title="Access"
+          span="lg:col-span-2"
+          link="/config/security"
+          linkLabel="Security"
+        >
           {canSec ? (
             <>
               <Row label="Two-factor (MFA)" value={require2fa ? "REQUIRED" : "OPTIONAL"} tone={require2fa ? "good" : "warn"} />
-              <Row label="Enforced for roles" value={policy.data?.require_2fa_roles?.length ? policy.data.require_2fa_roles.join(", ") : "all / none"} tone="faint" />
-              <Row label="Session idle timeout" value={idle ? `${idle} min` : "Not set"} tone={idle ? "ink" : "faint"} />
-              <Row label="Directory (LDAP/AD)" value={dir ? (dir.enabled ? "ENABLED" : "CONFIGURED") : "OFF"} tone={dir?.enabled ? "good" : "faint"} note={dir?.last_sync_at ? `synced ${fmtDate(dir.last_sync_at)}` : undefined} />
-              <Row label="Single sign-on (SSO)" value={ssoCfg ? (ssoCfg.enabled ? "ENABLED" : "CONFIGURED") : "OFF"} tone={ssoCfg?.enabled ? "good" : "faint"} note={ssoCfg?.issuer || undefined} />
+              <Row label="Applies to" value={roleScope} tone="faint" />
+              <Row label="Idle timeout" value={idle ? `${idle} min` : "Not set"} tone={idle ? "ink" : "faint"} />
+              <Row
+                label="Directory (LDAP/AD)"
+                value={dir ? (dir.enabled ? "ENABLED" : "CONFIGURED") : "OFF"}
+                tone={dir?.enabled ? "good" : "faint"}
+                note={dir?.last_sync_at ? `synced ${fmtDate(dir.last_sync_at)}` : undefined}
+              />
+              <Row
+                label="Single sign-on"
+                value={ssoCfg ? (ssoCfg.enabled ? "ENABLED" : "CONFIGURED") : "OFF"}
+                tone={ssoCfg?.enabled ? "good" : "faint"}
+                note={ssoCfg?.issuer || undefined}
+              />
             </>
           ) : (
             <p className="py-3 text-[12px] text-nb-faint">Requires the security.manage permission.</p>
           )}
-        </Section>
+        </Tile>
 
-        <Section icon="heroicons-outline:user-group" title="Approvals & oversight" link="/config/security" linkLabel="Dual-auth">
-          {canSec ? (
-            <>
-              <Row label="Dual-authorization" value="AVAILABLE" tone="blue" note="four-eye approvals" />
-              <Row label="Pending approvals" value={dual.data ? pendingDual : dash} tone={pendingDual ? "warn" : "faint"} />
-              <Row label="Active evidence holds" value={evidence.data ? activeHolds : dash} tone={activeHolds ? "blue" : "faint"} />
-            </>
-          ) : (
-            <p className="py-3 text-[12px] text-nb-faint">Requires the security.manage permission.</p>
-          )}
-        </Section>
-
-        <Section icon="heroicons-outline:key" title="Licensing" link="/license" linkLabel="License">
-          <Row label="State" value={licState ? licState.toUpperCase() : dash} tone={licTone} />
-          <Row label="Plan" value={lic?.plan ? String(lic.plan).toUpperCase() : dash} tone="ink" />
-          <Row label="Expiry" value={lic?.expires_at ? fmtDate(lic.expires_at) : lic ? "Perpetual" : dash} tone="ink" />
-          <Row label="Modules enabled" value={lic ? `${enabledMods.length}/${modules.length}` : dash} tone="blue" note={enabledMods.slice(0, 4).map((m) => m.key).join(", ")} />
-          {lic?.limits && Object.keys(lic.limits).length > 0 && (
-            <Row label="Limits" value={Object.entries(lic.limits).map(([k, v]) => `${k}:${v}`).join(" · ")} tone="faint" />
-          )}
-        </Section>
-
-        <Section icon="heroicons-outline:archive-box" title="Data & evidence" link="/audit" linkLabel="Audit">
-          <Row label="Audit retention" value={auditDays != null ? (Number(auditDays) > 0 ? `${auditDays} days` : "Forever") : dash} tone="ink" />
-          <Row label="Active evidence holds" value={evidence.data ? activeHolds : dash} tone={activeHolds ? "blue" : "faint"} />
-          <Row label="Export signing" value="Ed25519 · SHA-256" tone="good" note="tamper-evident" />
-        </Section>
+        {/* ── what we keep ── */}
+        <Tile
+          icon="heroicons-outline:archive-box"
+          title="Retention"
+          span="lg:col-span-2"
+          link="/audit"
+          linkLabel="Audit"
+        >
+          <Row
+            label="Audit log"
+            value={auditDays != null ? (Number(auditDays) > 0 ? `${auditDays} days` : "Forever") : dash}
+            tone="ink"
+          />
+          <Row
+            label="Evidence under hold"
+            value={evidence.data ? activeHolds : dash}
+            tone={activeHolds ? "blue" : "faint"}
+            note="exempt from purge"
+          />
+        </Tile>
       </div>
 
-      <p className="mt-4 text-[11px] leading-relaxed text-nb-faint">
-        This is a read-only posture overview — every figure is read live from the security, licensing,
-        evidence and settings services. Change policy in the linked screens. Metrics with no backing
-        source (host hardening, encryption-at-rest, watermarking) are intentionally not shown here.
+      <p className="mt-2 text-[11px] leading-relaxed text-nb-faint">
+        Every figure is read live from the security, licensing, evidence and settings services —
+        change policy in the linked screens. Anything with no backing source (host hardening,
+        encryption-at-rest, watermarking) is deliberately absent rather than asserted.
       </p>
-    </div>
+    </section>
   );
 }

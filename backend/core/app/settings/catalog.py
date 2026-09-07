@@ -7,6 +7,17 @@ here and it shows up in the UI with no extra frontend work.
 
 Settings live in the ``app_settings`` table as JSON values; anything not stored
 falls back to the ``default`` below.
+
+REMOVED, deliberately — do not re-add without a consumer:
+
+``support_email``   had none. Not read by any service and not rendered anywhere;
+                    it described a footer that does not show it.
+``allow_signups``   enforced NOTHING. No signup path consulted it, so an admin
+                    could turn "Open sign-ups" on and nothing happened. On a
+                    physical-security product a control that implies public
+                    self-registration and does not govern it is worse than absent.
+
+A settings key is a promise that something reads it. Both promises were empty.
 """
 
 from __future__ import annotations
@@ -24,31 +35,12 @@ CATALOG: list[dict] = [
         "public": True,
     },
     {
-        "key": "support_email",
-        "type": "text",
-        "default": "",
-        "group": "General",
-        "label": "Support email",
-        "placeholder": "support@yourcompany.com",
-        "description": "Contact address shown in the footer and system emails.",
-        "public": True,
-    },
-    {
         "key": "allow_avatar_uploads",
         "type": "bool",
         "default": True,
         "group": "Features",
         "label": "Allow profile photos",
         "description": "Let users upload a profile picture.",
-        "public": True,
-    },
-    {
-        "key": "allow_signups",
-        "type": "bool",
-        "default": False,
-        "group": "Features",
-        "label": "Open sign-ups",
-        "description": "Reserved for scenarios that expose public self-registration.",
         "public": True,
     },
     {
@@ -86,7 +78,7 @@ CATALOG: list[dict] = [
         "key": "google_maps_enabled",
         "type": "bool",
         "default": False,
-        "group": "Google Maps",
+        "group": "Maps",
         "label": "Enable Google Maps",
         "description": (
             "Draw the Sites Map with Google Maps instead of the offline basemap. "
@@ -98,7 +90,7 @@ CATALOG: list[dict] = [
         "key": "google_maps_api_key",
         "type": "text",
         "default": "",
-        "group": "Google Maps",
+        "group": "Maps",
         "label": "Maps API key",
         "placeholder": "AIzaSy… (paste your Google Maps API key)",
         "description": "Google Maps JavaScript API key. Restrict it by HTTP referrer in Google Cloud Console.",
@@ -109,7 +101,7 @@ CATALOG: list[dict] = [
         "key": "google_maps_default_lat",
         "type": "number",
         "default": 22.9734,
-        "group": "Google Maps",
+        "group": "Maps",
         "label": "Default latitude",
         "placeholder": "e.g. 22.9734",
         "description": "Initial map centre latitude when no sites have coordinates.",
@@ -119,7 +111,7 @@ CATALOG: list[dict] = [
         "key": "google_maps_default_lng",
         "type": "number",
         "default": 78.6569,
-        "group": "Google Maps",
+        "group": "Maps",
         "label": "Default longitude",
         "placeholder": "e.g. 78.6569",
         "description": "Initial map centre longitude when no sites have coordinates.",
@@ -129,7 +121,7 @@ CATALOG: list[dict] = [
         "key": "google_maps_default_zoom",
         "type": "number",
         "default": 5,
-        "group": "Google Maps",
+        "group": "Maps",
         "label": "Default zoom",
         "placeholder": "1–22, e.g. 5",
         "description": "Initial map zoom level (1–22).",

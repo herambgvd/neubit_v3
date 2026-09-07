@@ -124,7 +124,7 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
     pathname === "/config/patterns" ||
     pathname === "/config/linkage" ||
     pathname === "/config/video-wall" ||
-    pathname === "/general" ||
+    pathname === "/system" ||
     pathname === "/workflow-config" ||
     pathname === "/ingest" ||
     pathname === "/config/security" ||

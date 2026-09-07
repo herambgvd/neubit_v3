@@ -22,7 +22,7 @@ import { useAuth } from "@/lib/auth";
 // Routes that render a console strip (must match AppLayout's minimalConsole set,
 // minus /home which has no strip).
 const STRIP_ROUTES = new Set<string>([
-  "/users", "/roles", "/audit", "/sites", "/map", "/general", "/workflow-config",
+  "/users", "/roles", "/audit", "/sites", "/map", "/system", "/workflow-config",
   "/ingest", "/config/security", "/platform", "/config/video-wall",
   "/config/linkage", "/federation", "/storage",
   "/config/patterns",
@@ -55,7 +55,7 @@ export default function ConsoleStrip() {
   const usersRoles = pathname === "/users" || pathname === "/roles";
   const isAudit = pathname === "/audit";
   const isSites = pathname === "/sites" || pathname === "/map";
-  const isSystem = pathname === "/general";
+  const isSystem = pathname === "/system";
   const isWorkflow = pathname === "/workflow-config";
   const isIngest = pathname === "/ingest";
   const isSecurity = pathname === "/config/security";
@@ -244,19 +244,14 @@ export default function ConsoleStrip() {
         </div>
       )}
 
+      {/* No segment: Assurance and Settings are one page now. Posture and the
+          settings that produce it read together, and neither filled a screen on
+          its own. */}
       {isSystem && (
         <div className="flex min-w-0 items-center gap-2">
           <div className={modtab}>
             <Icon icon="heroicons-outline:adjustments-horizontal" className="text-[14px]" />
             System
-          </div>
-          <div className={segBox}>
-            <Link href="/general?view=assurance" className={seg(view !== "settings")}>
-              <Icon icon="heroicons-outline:shield-check" className="text-[14px]" /> ASSURANCE
-            </Link>
-            <Link href="/general?view=settings" className={seg(view === "settings")}>
-              <Icon icon="heroicons-outline:cog-6-tooth" className="text-[14px]" /> SETTINGS
-            </Link>
           </div>
         </div>
       )}

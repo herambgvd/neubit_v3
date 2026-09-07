@@ -48,6 +48,19 @@ const nextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // /general was the old URL for the System console — everything else already
+  // called it "System", so the route was the only thing still saying "general".
+  //
+  // Done HERE and not as a redirecting page: the (app) layout is a client
+  // component, so a `redirect()` inside a page under it comes back as a 200 with
+  // the redirect encoded in the RSC payload — it works, but the browser paints an
+  // empty shell first and no proxy or crawler ever sees a 308. This is a real
+  // HTTP redirect before React is involved. Next carries the query string along;
+  // the old ?view= is inert now that the two views are one page, so an old
+  // bookmark lands on the whole screen rather than on half of it.
+  async redirects() {
+    return [{ source: "/general", destination: "/system", permanent: true }];
+  },
 };
 
 module.exports = nextConfig;

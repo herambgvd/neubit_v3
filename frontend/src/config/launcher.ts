@@ -247,7 +247,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         tiles: [
           { icon: "heroicons:users", label: "Users & Roles", href: "/users", tone: "blue", perm: "user.read" },
           { icon: "heroicons:map-pin", label: "Sites", href: "/sites", tone: "blue", perm: "neubit.read" },
-          { icon: "heroicons:adjustments-horizontal", label: "System", href: "/general", tone: "blue", perm: "settings.manage" },
+          { icon: "heroicons:adjustments-horizontal", label: "System", href: "/system", tone: "blue", perm: "settings.manage" },
           { icon: "heroicons:shield-exclamation", label: "Security", href: "/config/security", tone: "blue", perm: "security.manage" },
           { icon: "heroicons:squares-2x2", label: "Platform", href: "/platform", tone: "blue", perm: "settings.manage" },
           { icon: "heroicons:share", label: "Federation", href: "/federation", tone: "blue", perm: "vms.camera.read", module: "vms" },
